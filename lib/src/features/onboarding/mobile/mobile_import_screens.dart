@@ -21,14 +21,16 @@ const kMnemonicMaxWords = 24;
 /// Split arbitrary pasted/typed text into candidate BIP39 words. English
 /// BIP39 words are pure lowercase a-z, so quotes, numbering, and punctuation
 /// can all be treated as separators.
-List<String> tokenizeMnemonicWords(String raw) =>
-    raw
-        .toLowerCase()
-        .split(RegExp(r'[^a-z]+'))
-        .where((word) => word.isNotEmpty)
-        .toList();
+List<String> tokenizeMnemonicWords(String raw) => raw
+    .toLowerCase()
+    .split(RegExp(r'[^a-z]+'))
+    .where((word) => word.isNotEmpty)
+    .toList();
 
 /// Validates a candidate phrase; returns an error message or null.
+const _kMnemonicCheckFailedMessage =
+    "That passphrase couldn't be checked. Try again.";
+
 String? validateImportedMnemonic(List<String> words) {
   if (!kMnemonicWordCounts.contains(words.length)) {
     return 'A secret passphrase has 12, 15, 18, 21, or 24 words — '
@@ -41,16 +43,37 @@ String? validateImportedMnemonic(List<String> words) {
     }
   } catch (e) {
     log('validateImportedMnemonic: ERROR: $e');
-    return "That passphrase couldn't be checked. Try again.";
+    return _kMnemonicCheckFailedMessage;
   }
   return null;
 }
 
 enum _ImportPasteState { idle, reading, error }
 
-const _kImportClipboardDataErrorMessage = "Can't read clipboard data";
-const _kImportPasteHelperText =
-    'Accept 12, 15, 18, 21 or 24-length Secret Passphrases';
+class _ImportPasteErrorMessage {
+  const _ImportPasteErrorMessage({required this.title, required this.body});
+
+  final String title;
+  final String body;
+}
+
+const _kImportPasteHelperText = 'Accept 12, 15, 18, 21, or 24-word phrases';
+const _kImportClipboardReadError = _ImportPasteErrorMessage(
+  title: "Can't read clipboard data",
+  body: 'Try again or enter it manually.',
+);
+const _kImportNoPhraseError = _ImportPasteErrorMessage(
+  title: 'No Secret Passphrase found',
+  body: 'Paste a 12, 15, 18, 21, or 24-word phrase.',
+);
+const _kImportInvalidPhraseError = _ImportPasteErrorMessage(
+  title: 'Invalid Secret Passphrase',
+  body: 'Check the word order and try again.',
+);
+const _kImportCheckFailedError = _ImportPasteErrorMessage(
+  title: "Couldn't check Secret Passphrase",
+  body: 'Try again or enter it manually.',
+);
 const _kImportPasteCardHeight = 390.0;
 const _kImportPasteCardTextWidth = 217.0;
 
@@ -70,7 +93,7 @@ class MobileImportScreen extends StatefulWidget {
 
 class _MobileImportScreenState extends State<MobileImportScreen> {
   var _pasteState = _ImportPasteState.idle;
-  String? _error;
+  _ImportPasteErrorMessage? _error;
 
   @override
   void initState() {
@@ -78,7 +101,10 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     final initialError = widget.initialPreviewError;
     if (initialError != null) {
       _pasteState = _ImportPasteState.error;
-      _error = initialError;
+      _error = _ImportPasteErrorMessage(
+        title: initialError,
+        body: _kImportClipboardReadError.body,
+      );
     }
   }
 
@@ -97,7 +123,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       if (!mounted) return;
       setState(() {
         _pasteState = _ImportPasteState.error;
-        _error = _kImportClipboardDataErrorMessage;
+        _error = _kImportClipboardReadError;
       });
       return;
     }
@@ -113,8 +139,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       return;
     }
 
-    final error = validateImportedMnemonic(words);
-    if (error == null) {
+    final pasteError = _validatePastedMnemonic(words);
+    if (pasteError == null) {
       if (!mounted) return;
       setState(() {
         _pasteState = _ImportPasteState.idle;
@@ -130,8 +156,29 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     if (!mounted) return;
     setState(() {
       _pasteState = _ImportPasteState.error;
-      _error = _kImportClipboardDataErrorMessage;
+      _error = pasteError;
     });
+  }
+
+  _ImportPasteErrorMessage? _validatePastedMnemonic(List<String> words) {
+    if (!kMnemonicWordCounts.contains(words.length)) {
+      return _kImportNoPhraseError;
+    }
+
+    try {
+      final wordList = rust_wallet.mnemonicWordList().toSet();
+      if (wordList.isNotEmpty && !words.every(wordList.contains)) {
+        return _kImportNoPhraseError;
+      }
+    } catch (e) {
+      log('MobileImport: ERROR reading mnemonic word list: $e');
+      return _kImportCheckFailedError;
+    }
+
+    final error = validateImportedMnemonic(words);
+    if (error == null) return null;
+    if (error == _kMnemonicCheckFailedMessage) return _kImportCheckFailedError;
+    return _kImportInvalidPhraseError;
   }
 
   void _openManual() {
@@ -171,7 +218,7 @@ class _ImportClipboardCard extends StatelessWidget {
   });
 
   final _ImportPasteState state;
-  final String? error;
+  final _ImportPasteErrorMessage? error;
   final VoidCallback? onPaste;
 
   @override
@@ -179,15 +226,13 @@ class _ImportClipboardCard extends StatelessWidget {
     final colors = context.colors;
     final isReading = state == _ImportPasteState.reading;
     final hasError = error != null;
-    final titleText =
-        hasError ? _kImportClipboardDataErrorMessage : 'Paste from clipboard';
-    const bodyText = _kImportPasteHelperText;
-    final buttonLabel =
-        isReading
-            ? 'Reading...'
-            : hasError
-            ? 'Try again'
-            : 'Paste';
+    final titleText = error?.title ?? 'Paste from clipboard';
+    final bodyText = error?.body ?? _kImportPasteHelperText;
+    final buttonLabel = isReading
+        ? 'Reading...'
+        : hasError
+        ? 'Try again'
+        : 'Paste';
 
     return Container(
       key: const ValueKey('mobile_import_paste_card'),
@@ -206,10 +251,9 @@ class _ImportClipboardCard extends StatelessWidget {
           AppIcon(
             hasError ? AppIcons.warning : AppIcons.importWallet,
             size: 33,
-            color:
-                hasError
-                    ? colors.icon.destructiveLight
-                    : colors.text.homeCard.withValues(alpha: 0.55),
+            color: hasError
+                ? colors.icon.destructiveLight
+                : colors.text.homeCard.withValues(alpha: 0.55),
           ),
           const SizedBox(height: AppSpacing.base),
           SizedBox(
@@ -217,22 +261,23 @@ class _ImportClipboardCard extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  titleText,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colors.text.homeCard,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    titleText,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    style: AppTypography.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.text.homeCard,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 Text(
                   bodyText,
                   textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.homeCard.withValues(alpha: 0.5),
                   ),

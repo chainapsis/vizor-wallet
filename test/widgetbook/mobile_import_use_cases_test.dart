@@ -59,10 +59,13 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text("Can't read clipboard data"), findsOneWidget);
+    final errorBody = find.text('Try again or enter it manually.');
+    expect(errorBody, findsOneWidget);
     expect(
-      find.text('Accept 12, 15, 18, 21 or 24-length Secret Passphrases'),
-      findsOneWidget,
+      tester.widget<Text>(errorBody).overflow,
+      isNot(TextOverflow.ellipsis),
     );
+    expect(tester.widget<Text>(errorBody).maxLines, isNull);
     expect(find.text('Try again'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_import_paste_card'))),

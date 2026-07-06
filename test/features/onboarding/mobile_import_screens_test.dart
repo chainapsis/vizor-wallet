@@ -19,6 +19,8 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _validMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
+const _invalidOrderedMnemonic =
+    'ability abandon able about above absent absorb abstract absurd abuse access accident';
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
@@ -40,10 +42,9 @@ Widget _entryAppWithBirthdayProbe() {
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
         path: '/import/review',
-        builder:
-            (_, state) => MobileImportReviewScreen(
-              args: state.extra as ImportSecretPassphraseArgs,
-            ),
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
       ),
       GoRoute(
         path: '/import/birthday',
@@ -159,7 +160,9 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
-  testWidgets('an invalid paste renders the retry card state', (tester) async {
+  testWidgets('a non-phrase paste renders the no-phrase retry card', (
+    tester,
+  ) async {
     _mockClipboard(tester, 'one two three');
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
@@ -167,9 +170,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(find.text('No Secret Passphrase found'), findsOneWidget);
     expect(
-      find.text('Accept 12, 15, 18, 21 or 24-length Secret Passphrases'),
+      find.text('Paste a 12, 15, 18, 21, or 24-word phrase.'),
       findsOneWidget,
     );
     expect(find.text('Try again'), findsOneWidget);
@@ -179,6 +182,21 @@ void main() {
       find.byKey(const ValueKey('mobile_import_paste_card')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('an invalid mnemonic candidate explains the phrase error', (
+    tester,
+  ) async {
+    _mockClipboard(tester, _invalidOrderedMnemonic);
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid Secret Passphrase'), findsOneWidget);
+    expect(find.text('Check the word order and try again.'), findsOneWidget);
+    expect(find.text("Can't read clipboard data"), findsNothing);
   });
 
   testWidgets('clipboard read failure renders the retry card state', (
@@ -192,6 +210,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(find.text('Try again or enter it manually.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
     expect(find.text('Paste from clipboard'), findsNothing);
     expect(
@@ -210,7 +229,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(find.text('No Secret Passphrase found'), findsOneWidget);
     expect(find.textContaining('found 3'), findsNothing);
     expect(find.textContaining('"one"'), findsNothing);
   });
@@ -308,10 +327,8 @@ class _RustApiFake implements RustLibApi {
   List<String> crateApiWalletMnemonicWordList() => _validMnemonic.split(' ');
 
   @override
-  bool crateApiWalletValidateMnemonic({required String mnemonic}) {
-    final count = mnemonic.trim().split(RegExp(r'\s+')).length;
-    return kMnemonicWordCounts.contains(count);
-  }
+  bool crateApiWalletValidateMnemonic({required String mnemonic}) =>
+      mnemonic == _validMnemonic;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
