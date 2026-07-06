@@ -1846,6 +1846,41 @@ void main() {
     );
   });
 
+  test('status rejects duplicate 1Click ticker fallback market variants', () {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithDuplicateEthUsdc),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: '1cs_v1:usdc:native:coin',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '12',
+          amountOutFormatted: '1',
+          minAmountOut: '99500000',
+          depositAddress: 'duplicate-market-deposit',
+          quoteRequestRefundTo: '0xrefund',
+          quoteRequestRecipient: 'u1recipient',
+          status: 'PROCESSING',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    expect(
+      provider.getStatus('duplicate-market-deposit'),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'status')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('Unsupported 1Click status pair'),
+            ),
+      ),
+    );
+  });
+
   test(
     'status derives minimum receive from swap details slippage when min amount is missing',
     () async {

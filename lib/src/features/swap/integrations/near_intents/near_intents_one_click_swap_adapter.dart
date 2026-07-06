@@ -907,7 +907,7 @@ class NearIntentsOneClickSwapAdapter
     for (final token in tokens) {
       final asset = _assetForToken(token);
       if (asset.symbol.toLowerCase() != ticker) continue;
-      candidates.putIfAbsent(_assetMarketKey(asset), () => asset);
+      candidates.putIfAbsent(token.assetId, () => asset);
     }
     return candidates.length == 1 ? candidates.values.single : null;
   }
@@ -925,11 +925,6 @@ class NearIntentsOneClickSwapAdapter
       decimals: token.decimals,
     );
   }
-
-  String _assetMarketKey(SwapAsset asset) =>
-      '${asset.symbol.toLowerCase()}:'
-      '${asset.chainTicker.toLowerCase()}:'
-      '${asset.decimals}';
 
   Map<String, String> _headers({bool contentType = false}) {
     return {
