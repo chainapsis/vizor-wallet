@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,7 @@ import 'mobile_onboarding_scaffold.dart';
 
 const _kImportReviewSeedCardHeight = 360.0;
 const _kImportReviewSeedChipWidth = 90.0;
+const _kImportReviewSeedColumns = 3;
 
 /// Review step for software wallet import. Figma `Review Import`: after
 /// clipboard paste or manual word entry, the user gets one final seed phrase
@@ -168,23 +170,39 @@ class MobileImportReviewSeedCard extends StatelessWidget {
       ),
       child: SizedBox(
         width: double.infinity,
-        child: Wrap(
-          spacing: AppSpacing.s,
-          runSpacing: AppSpacing.s,
-          children: [
-            for (var index = 0; index < words.length; index++)
-              _wordChip(context, index),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final chipWidth = _chipWidthFor(constraints.maxWidth);
+            return Wrap(
+              spacing: AppSpacing.s,
+              runSpacing: AppSpacing.s,
+              children: [
+                for (var index = 0; index < words.length; index++)
+                  _wordChip(context, index, chipWidth),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _wordChip(BuildContext context, int index) {
+  double _chipWidthFor(double availableWidth) {
+    if (!availableWidth.isFinite) return _kImportReviewSeedChipWidth;
+    final gapWidth = AppSpacing.s * (_kImportReviewSeedColumns - 1);
+    final responsiveWidth =
+        (availableWidth - gapWidth) / _kImportReviewSeedColumns;
+    return math.min(
+      _kImportReviewSeedChipWidth,
+      math.max(0.0, responsiveWidth),
+    );
+  }
+
+  Widget _wordChip(BuildContext context, int index, double width) {
     final colors = context.colors;
     return SizedBox(
       key: ValueKey('mobile_import_review_word_chip_${index + 1}'),
-      width: _kImportReviewSeedChipWidth,
+      width: width,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: Row(

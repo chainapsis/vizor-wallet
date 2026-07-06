@@ -229,6 +229,67 @@ void main() {
     );
   });
 
+  testWidgets(
+    'mobile import review seed card keeps three columns when narrow',
+    (tester) async {
+      const words = [
+        'caution',
+        'dream',
+        'solar',
+        'agent',
+        'witness',
+        'logic',
+        'hurdle',
+        'focus',
+        'benefit',
+        'rough',
+        'index',
+        'genuine',
+        'puzzle',
+        'sudden',
+        'modify',
+        'active',
+        'effort',
+        'merit',
+        'fossil',
+        'carbon',
+        'drift',
+        'narrow',
+        'across',
+        'raise',
+      ];
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: Center(
+              child: SizedBox(
+                width: 328,
+                child: MobileImportReviewSeedCard(words: words),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final card = find.byKey(const ValueKey('mobile_import_review_seed_card'));
+      final firstChip = find.byKey(
+        const ValueKey('mobile_import_review_word_chip_1'),
+      );
+      final lastChip = find.byKey(
+        const ValueKey('mobile_import_review_word_chip_24'),
+      );
+      expect(tester.getSize(firstChip).width, closeTo(85.33, 0.01));
+      expect(
+        tester.getBottomRight(lastChip).dy,
+        lessThanOrEqualTo(tester.getBottomRight(card).dy),
+      );
+    },
+  );
+
   testWidgets('mobile import review use case clears back to paste', (
     tester,
   ) async {
