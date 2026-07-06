@@ -297,6 +297,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (oldWidget.zecUsdUnitPrice != widget.zecUsdUnitPrice &&
         _amountInputIsUsd &&
         _fiatAmountText.trim().isNotEmpty) {
+      if (_isMaxMode) {
+        _syncMaxUsdTextForPriceRefresh();
+        return;
+      }
       final zatoshi = sendZatoshiFromUsdText(
         _fiatAmountText,
         widget.zecUsdUnitPrice,
@@ -308,6 +312,32 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         if (!mounted) return;
         _validateAmount();
       });
+    }
+  }
+
+  void _syncMaxUsdTextForPriceRefresh() {
+    final quote = _maxQuote;
+    if (quote == null) return;
+
+    _amountText = ZecAmount.fromZatoshi(
+      quote.amountZatoshi,
+    ).pretty().amountText;
+
+    final zecUsdUnitPrice = widget.zecUsdUnitPrice;
+    if (zecUsdUnitPrice == null) return;
+
+    final fiatText = sendableUsdInputTextForZatoshi(
+      quote.amountZatoshi,
+      zecUsdUnitPrice,
+    );
+    if (fiatText.isEmpty) return;
+
+    _programmaticAmountEdit = true;
+    try {
+      _setAmountControllerText(fiatText);
+      _fiatAmountText = fiatText;
+    } finally {
+      _programmaticAmountEdit = false;
     }
   }
 
@@ -890,7 +920,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final reviewButtonLabel =
         _showAmountError &&
             (_amountError?.toLowerCase().contains('insufficient') ?? false)
-        ? 'Not Enough ZEC'
+        ? 'Not enough ZEC'
         : 'Review';
 
     _addressController.edgeHighlightColor = null;

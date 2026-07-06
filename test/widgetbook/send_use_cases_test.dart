@@ -190,6 +190,19 @@ void main() {
       ),
     );
     expect(clearIcon.size, 20);
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_clear_button')));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final clearedInput = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(clearedInput.controller?.text, isEmpty);
+
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('send_amount_field')),

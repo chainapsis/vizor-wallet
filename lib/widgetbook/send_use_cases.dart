@@ -104,7 +104,7 @@ Widget buildSendNotEnoughZecUseCase(BuildContext context) {
       amountFocused: true,
       amountConversionText: '651.12 ZEC',
       amountError: 'Not enough ZEC',
-      reviewButtonLabel: 'Not Enough ZEC',
+      reviewButtonLabel: 'Not enough ZEC',
     ),
   );
 }

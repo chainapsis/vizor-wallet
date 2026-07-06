@@ -393,6 +393,53 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  testWidgets('Max in USD mode preserves the quote when prices refresh', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(500000000),
+        zecUsdUnitPriceBuilder: (ref) => ref.watch(_testZecPriceProvider),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('send_amount_currency_toggle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Max: 5 ZEC'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(_fieldText(tester, 'send_amount_field'), '349.99');
+    expect(find.text('4.9999 ZEC'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    );
+    container.read(_testZecPriceProvider.notifier).set(71);
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(_fieldText(tester, 'send_amount_field'), '354.99');
+    expect(find.text('4.9999 ZEC'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(499990000));
+  });
+
   testWidgets('amount field switches to USD and proposes canonical ZEC', (
     tester,
   ) async {
@@ -603,7 +650,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Insufficient balance'), findsOneWidget);
-    expect(find.text('Not Enough ZEC'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
@@ -689,6 +736,7 @@ Widget _sendHarness({
   BigInt? spendableBalance,
   BigInt? transparentBalance,
   double? zecUsdUnitPrice = 70,
+  double? Function(Ref ref)? zecUsdUnitPriceBuilder,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -713,7 +761,9 @@ Widget _sendHarness({
       ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
-      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdUnitPrice),
+      zecHomeUsdUnitPriceProvider.overrideWith(
+        zecUsdUnitPriceBuilder ?? (_) => zecUsdUnitPrice,
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -815,6 +865,19 @@ final _hardwareBootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+final _testZecPriceProvider = NotifierProvider<_TestZecPriceNotifier, double?>(
+  _TestZecPriceNotifier.new,
+);
+
+class _TestZecPriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 70;
+
+  void set(double? value) {
+    state = value;
+  }
+}
 
 class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({

@@ -174,7 +174,11 @@ class _SendAmountCurrencyFieldState extends State<SendAmountCurrencyField> {
     final selection = TextSelection.collapsed(offset: _controller.text.length);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_focusNode.hasFocus) return;
-      _controller.selection = selection;
+      final textLength = _controller.text.length;
+      final offset = selection.baseOffset > textLength
+          ? textLength
+          : selection.baseOffset;
+      _controller.selection = TextSelection.collapsed(offset: offset);
     });
   }
 
