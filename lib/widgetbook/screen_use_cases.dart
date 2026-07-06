@@ -27,6 +27,9 @@ import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_screens.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -54,6 +57,33 @@ const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
     'access accident account accuse achieve acid acoustic acquire across act '
     'action actor actress actual';
+
+const _previewImportReviewMnemonic =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify active effort merit fossil carbon drift '
+    'narrow across raise';
+const _previewImportReviewMnemonic12 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine';
+const _previewImportReviewMnemonic18 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify active effort merit';
+
+const _previewManualAcceptedWords = [
+  'abandon',
+  'ability',
+  'able',
+  'about',
+  'above',
+  'absent',
+  'absorb',
+  'abstract',
+  'absurd',
+  'abuse',
+  'access',
+];
+
+const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
 /// with `appLayoutProvider` overridden to a no-op so the dev window does
@@ -143,6 +173,90 @@ Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
       child: MobilePasscodeScreen(
         args: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
       ),
+    ),
+  );
+}
+
+Widget buildMobileImportPasteUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(child: _MobileImportHarness());
+}
+
+Widget buildMobileImportPasteErrorUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(initialPasteError: "Can't read clipboard data"),
+  );
+}
+
+Widget buildMobileImportManualEmptyUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(wordListOverride: _previewManualWordList),
+    ),
+  );
+}
+
+Widget buildMobileImportManualTypingUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialTypedWord: 'Ag',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportManualErrorUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialTypedWord: 'Secr\$',
+        initialError: 'Invalid Secret Passphrase word.',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportManualDoneUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialAcceptedWords: _previewManualAcceptedWords,
+        initialTypedWord: 'Age',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportReviewUseCase(BuildContext context) {
+  return buildMobileImportReview24UseCase(context);
+}
+
+Widget buildMobileImportReview12UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic12,
+    ),
+  );
+}
+
+Widget buildMobileImportReview18UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic18,
+    ),
+  );
+}
+
+Widget buildMobileImportReview24UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic,
     ),
   );
 }
@@ -588,6 +702,79 @@ Widget _buildMobileAccountsUseCase(
       ),
     ),
   );
+}
+
+class _MobileImportHarness extends StatefulWidget {
+  const _MobileImportHarness({
+    this.initialLocation = '/import',
+    this.initialPasteError,
+    this.initialReviewMnemonic = _previewImportReviewMnemonic,
+  });
+
+  final String initialLocation;
+  final String? initialPasteError;
+  final String initialReviewMnemonic;
+
+  @override
+  State<_MobileImportHarness> createState() => _MobileImportHarnessState();
+}
+
+class _MobileImportHarnessState extends State<_MobileImportHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.initialLocation,
+      routes: [
+        GoRoute(
+          path: '/import',
+          builder:
+              (_, _) => MobileImportScreen(
+                initialPreviewError: widget.initialPasteError,
+              ),
+        ),
+        GoRoute(
+          path: '/import/manual',
+          builder:
+              (_, _) => const MobileImportManualScreen(
+                wordListOverride: _previewManualWordList,
+              ),
+        ),
+        GoRoute(
+          path: '/import/review',
+          builder: (_, state) {
+            final extra = state.extra;
+            final args =
+                extra is ImportSecretPassphraseArgs
+                    ? extra
+                    : ImportSecretPassphraseArgs(
+                      mnemonic: widget.initialReviewMnemonic,
+                    );
+            return MobileImportReviewScreen(args: args);
+          },
+        ),
+        GoRoute(
+          path: '/import/birthday',
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
 }
 
 class _NoOpLayoutNotifier extends AppLayoutNotifier {

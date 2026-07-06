@@ -142,6 +142,42 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileSecretPassphraseScreenshotWarningUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Import paste',
+                      builder: buildMobileImportPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import paste error',
+                      builder: buildMobileImportPasteErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import manual empty',
+                      builder: buildMobileImportManualEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import manual typing',
+                      builder: buildMobileImportManualTypingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import manual error',
+                      builder: buildMobileImportManualErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import manual finish',
+                      builder: buildMobileImportManualDoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import review 12 words',
+                      builder: buildMobileImportReview12UseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import review 18 words',
+                      builder: buildMobileImportReview18UseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Import review 24 words',
+                      builder: buildMobileImportReview24UseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Create passcode',
                       builder: buildMobileCreatePasscodeUseCase,
                     ),
