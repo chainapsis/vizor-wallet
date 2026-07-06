@@ -481,7 +481,7 @@ class _MobileImportBirthdayScreenState
         : AppIcons.chevronForward;
 
     return MobileOnboardingStepScaffold(
-      progress: widget.progress ?? mobileImportProgress(2),
+      progress: widget.progress ?? mobileImportProgress(3),
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.

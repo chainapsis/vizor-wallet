@@ -1,15 +1,20 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _validMnemonic =
@@ -34,6 +39,13 @@ Widget _entryAppWithBirthdayProbe() {
     routes: [
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
+        path: '/import/review',
+        builder:
+            (_, state) => MobileImportReviewScreen(
+              args: state.extra as ImportSecretPassphraseArgs,
+            ),
+      ),
+      GoRoute(
         path: '/import/birthday',
         builder: (_, state) {
           final args = state.extra as ImportBirthdayArgs;
@@ -50,11 +62,45 @@ Widget _entryAppWithBirthdayProbe() {
   );
 }
 
+Widget _reviewApp({
+  Stream<void>? screenshotStream,
+  SensitivePrivacyOverlayController? privacyOverlayController,
+}) {
+  return MaterialApp(
+    home: AppTheme(
+      data: AppThemeData.light,
+      child: MobileImportReviewScreen(
+        args: const ImportSecretPassphraseArgs(mnemonic: _validMnemonic),
+        screenshotStream: screenshotStream,
+        privacyOverlayController: privacyOverlayController,
+      ),
+    ),
+  );
+}
+
 void _mockClipboard(WidgetTester tester, String? text) {
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     SystemChannels.platform,
     (call) async {
       if (call.method == 'Clipboard.getData') return {'text': text};
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+}
+
+void _mockClipboardFailure(WidgetTester tester) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.getData') {
+        throw PlatformException(code: 'clipboard-unavailable');
+      }
       return null;
     },
   );
@@ -96,16 +142,7 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
-  testWidgets('tapping the slot grid opens the manual wizard', (tester) async {
-    await tester.pumpWidget(_app('/import'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
-    await tester.pumpAndSettle();
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-  });
-
-  testWidgets('the slot grid stays tappable after a rejected paste', (
+  testWidgets('the manual link stays tappable after a rejected paste', (
     tester,
   ) async {
     _mockClipboard(tester, 'one two three');
@@ -115,12 +152,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_import_slots')));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
   });
 
-  testWidgets('word-count validation rejects a short paste', (tester) async {
+  testWidgets('an invalid paste renders the retry card state', (tester) async {
     _mockClipboard(tester, 'one two three');
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
@@ -128,9 +167,37 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('found 3'), findsOneWidget);
-    // The pasted words still render into the slot card for inspection.
-    expect(find.text('one'), findsOneWidget);
+    expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(
+      find.text('Accept 12, 15, 18, 21 or 24-length Secret Passphrases'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.textContaining('found 3'), findsNothing);
+    expect(find.text('Invalid Secret Passphrase'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_import_paste_card')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('clipboard read failure renders the retry card state', (
+    tester,
+  ) async {
+    _mockClipboardFailure(tester);
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Paste from clipboard'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_import_paste_card')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('paste normalizes quoted and numbered mnemonic text', (
@@ -143,16 +210,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('found 3'), findsOneWidget);
-    expect(find.text('one'), findsOneWidget);
-    expect(find.text('two'), findsOneWidget);
-    expect(find.text('three'), findsOneWidget);
+    expect(find.text("Can't read clipboard data"), findsOneWidget);
+    expect(find.textContaining('found 3'), findsNothing);
     expect(find.textContaining('"one"'), findsNothing);
   });
 
-  testWidgets('confirming a valid paste opens birthday directly', (
-    tester,
-  ) async {
+  testWidgets('a valid paste opens review before birthday', (tester) async {
     _mockClipboard(tester, _validMnemonic);
     await tester.pumpWidget(_entryAppWithBirthdayProbe());
     await tester.pumpAndSettle();
@@ -160,13 +223,70 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('mobile_import_confirm')), findsOneWidget);
+    expect(find.text('Review Import'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_import_review_seed_card')),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.byKey(const ValueKey('mobile_import_confirm')));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_review_continue')),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Review Import'), findsNothing);
     expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
+  });
+
+  testWidgets('review phrase is covered when privacy controller is unsafe', (
+    tester,
+  ) async {
+    final privacyController = SensitivePrivacyOverlayController(
+      initiallySafe: false,
+    );
+    addTearDown(privacyController.dispose);
+
+    await tester.pumpWidget(
+      _reviewApp(privacyOverlayController: privacyController),
+    );
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+    privacyController.markSafe();
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+  });
+
+  testWidgets('review phrase shows screenshot warning', (tester) async {
+    final screenshots = StreamController<void>();
+    addTearDown(screenshots.close);
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(_reviewApp(screenshotStream: screenshots.stream));
+    await tester.pump();
+
+    screenshots.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+    expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
+    expect(haptics, ['HapticFeedbackType.mediumImpact']);
   });
 
   testWidgets('an empty clipboard surfaces a toast', (tester) async {

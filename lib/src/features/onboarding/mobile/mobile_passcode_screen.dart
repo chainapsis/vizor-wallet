@@ -290,6 +290,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
   SetPasswordFlow.create => mobileCreateProgress(7),
   SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
-  SetPasswordFlow.importWallet => mobileImportProgress(3),
+  SetPasswordFlow.importWallet => mobileImportProgress(4),
   SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,
 };

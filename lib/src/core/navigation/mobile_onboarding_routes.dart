@@ -5,6 +5,7 @@ import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
 import '../../features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
+import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
 import '../../features/onboarding/mobile/mobile_keystone_screens.dart';
 import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
@@ -100,6 +101,17 @@ List<RouteBase> mobileOnboardingRoutes() => [
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: const MobileImportManualScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/import/review',
+    redirect: (_, state) =>
+        state.extra is ImportSecretPassphraseArgs ? null : '/import',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileImportReviewScreen(
+        args: state.extra as ImportSecretPassphraseArgs,
+      ),
     ),
   ),
   GoRoute(

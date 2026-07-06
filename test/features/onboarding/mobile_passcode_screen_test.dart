@@ -108,14 +108,14 @@ void main() {
     expect(_stepsProgress(tester), closeTo(mobileCreateProgress(7), 0.0001));
   });
 
-  testWidgets('import passcode progress follows the compact import flow', (
+  testWidgets('import passcode progress follows the review import flow', (
     tester,
   ) async {
     await tester.pumpWidget(
       _importApp(accountNotifier: _RecordingAccountNotifier()),
     );
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(mobileImportProgress(3), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileImportProgress(4), 0.0001));
   });
 
   testWidgets('a mismatched confirmation restarts with an error', (
