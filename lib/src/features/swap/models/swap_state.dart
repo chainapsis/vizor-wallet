@@ -221,11 +221,20 @@ class SwapState {
     if (liveQuote == null || estimate == null) return null;
     if (liveQuote.direction != direction ||
         liveQuote.externalAsset != externalAsset ||
-        !quoteMode.usesInputAmount ||
-        liveQuote.sellAmount != estimate.sellAmount ||
-        estimate.receiveAmount <= 0) {
+        !quoteMode.usesInputAmount) {
       return null;
     }
+    if (estimate.sellAmount > 0) {
+      final sellDelta =
+          (liveQuote.sellAmount - estimate.sellAmount) / estimate.sellAmount;
+      if (sellDelta.abs() >= swapQuoteDifferenceWarningThreshold) {
+        final sellAsset = estimate.sellAsset;
+        final liveText = sellAsset.formatAmount(liveQuote.sellAmount);
+        final estimateText = sellAsset.formatAmount(estimate.sellAmount);
+        return 'Live quote uses $liveText ${sellAsset.symbol} instead of $estimateText ${sellAsset.symbol}. Check the guaranteed minimum before you continue.';
+      }
+    }
+    if (estimate.receiveAmount <= 0) return null;
     final delta =
         (liveQuote.receiveAmount - estimate.receiveAmount) /
         estimate.receiveAmount;
