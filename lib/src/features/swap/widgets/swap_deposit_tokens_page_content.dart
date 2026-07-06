@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -946,6 +947,12 @@ class _DepositDetailsList extends StatelessWidget {
   final String? memo;
   final bool mobile;
 
+  static const _desktopAmountRightWidth = 120.0;
+  static const _desktopAddressRightWidth = 177.0;
+  static const _desktopAmountLabelWidth = 60.0;
+  static const _desktopAddressLabelWidth = 125.0;
+  static const _desktopMemoLabelWidth = 60.0;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -956,58 +963,98 @@ class _DepositDetailsList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _DepositDetailRow(
-            label: kAppFormFactor == AppFormFactor.mobile
-                ? 'Amount to deposit'
-                : 'Amount',
+          _detailRow(
+            label: mobile ? 'Amount to deposit' : 'Amount',
             value: amountText,
             copyText: _depositAmountCopyText(amountText, asset),
-            toastMessage: kAppFormFactor == AppFormFactor.mobile
-                ? 'Amount copied'
-                : 'Amount Copied',
+            toastMessage: mobile ? 'Amount copied' : 'Amount Copied',
             copyKey: const ValueKey('swap_copy_deposit_amount'),
             rightKey: const ValueKey('swap_deposit_amount_right_item'),
-            mobile: mobile,
+            desktopLabelWidth: _desktopAmountLabelWidth,
+            desktopRightWidth: _desktopAmountRightWidth,
+            desktopAllowRightSlotGrowth: true,
+            desktopValueOverflow: TextOverflow.visible,
           ),
-          _DepositDetailRow(
-            label: 'One-time address',
+          _detailRow(
+            label: 'One-time Address',
             value: compactSwapAddress(depositAddress),
             copyText: depositAddress,
             toastMessage: 'Address copied',
             copyKey: const ValueKey('swap_copy_deposit_address'),
             scaleValueToFit: true,
             rightKey: const ValueKey('swap_deposit_address_right_item'),
-            mobile: mobile,
+            desktopLabelWidth: _desktopAddressLabelWidth,
+            desktopRightWidth: _desktopAddressRightWidth,
           ),
           if (memo?.trim().isNotEmpty ?? false)
-            _DepositDetailRow(
+            _detailRow(
               label: 'Memo',
               value: memo!.trim(),
               copyText: memo!.trim(),
               toastMessage: 'Memo copied',
               copyKey: const ValueKey('swap_copy_deposit_memo'),
               rightKey: const ValueKey('swap_deposit_memo_right_item'),
-              mobile: mobile,
+              desktopLabelWidth: _desktopMemoLabelWidth,
+              desktopRightWidth: _desktopAddressRightWidth,
             ),
         ],
       ),
     );
   }
+
+  Widget _detailRow({
+    required String label,
+    required String value,
+    required String copyText,
+    required String toastMessage,
+    required Key copyKey,
+    required Key rightKey,
+    required double desktopLabelWidth,
+    required double desktopRightWidth,
+    bool desktopAllowRightSlotGrowth = false,
+    TextOverflow desktopValueOverflow = TextOverflow.ellipsis,
+    bool scaleValueToFit = false,
+  }) {
+    if (mobile) {
+      return _MobileDepositDetailRow(
+        label: label,
+        value: value,
+        copyText: copyText,
+        toastMessage: toastMessage,
+        copyKey: copyKey,
+        rightKey: rightKey,
+      );
+    }
+    return _DesktopDepositDetailRow(
+      label: label,
+      value: value,
+      copyText: copyText,
+      toastMessage: toastMessage,
+      copyKey: copyKey,
+      rightKey: rightKey,
+      labelWidth: desktopLabelWidth,
+      rightWidth: desktopRightWidth,
+      allowRightSlotGrowth: desktopAllowRightSlotGrowth,
+      valueOverflow: desktopValueOverflow,
+      scaleValueToFit: scaleValueToFit,
+    );
+  }
 }
 
-class _DepositDetailRow extends StatelessWidget {
-  const _DepositDetailRow({
+class _DesktopDepositDetailRow extends StatelessWidget {
+  const _DesktopDepositDetailRow({
     required this.label,
     required this.value,
     required this.copyText,
     required this.toastMessage,
     required this.copyKey,
     required this.rightKey,
+    required this.labelWidth,
+    required this.rightWidth,
+    this.allowRightSlotGrowth = false,
+    this.valueOverflow = TextOverflow.ellipsis,
     this.scaleValueToFit = false,
-    this.mobile = false,
   });
-
-  static const _mobileLabelMaxWidth = 134.0;
 
   final String label;
   final String value;
@@ -1015,21 +1062,143 @@ class _DepositDetailRow extends StatelessWidget {
   final String toastMessage;
   final Key copyKey;
   final Key rightKey;
+  final double labelWidth;
+  final double rightWidth;
+  final bool allowRightSlotGrowth;
+  final TextOverflow valueOverflow;
   final bool scaleValueToFit;
-  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final labelText = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
+    final valueTextStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.accent,
+    );
+    return SizedBox(
+      height: 32,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final rowWidth = constraints.maxWidth;
+          final labelNaturalWidth =
+              _textWidth(context, label, AppTypography.labelLarge) +
+              (AppSpacing.xxs * 2);
+          final rightNaturalWidth = _rightNaturalWidth(
+            context,
+            style: valueTextStyle,
+          );
+          final desiredRightWidth = allowRightSlotGrowth
+              ? math.max(rightWidth, rightNaturalWidth)
+              : rightWidth;
+          final maxRightWidth = math.max(
+            0.0,
+            rowWidth - labelWidth - AppSpacing.s,
+          );
+          final effectiveRightWidth = math.min(
+            desiredRightWidth,
+            maxRightWidth,
+          );
+          final desiredLabelWidth = math.max(labelWidth, labelNaturalWidth);
+          final maxLabelWidth = math.max(
+            0.0,
+            rowWidth - effectiveRightWidth - AppSpacing.s,
+          );
+          final effectiveLabelWidth = math.min(
+            desiredLabelWidth,
+            maxLabelWidth,
+          );
+          final shouldScaleValue =
+              scaleValueToFit || effectiveRightWidth < desiredRightWidth;
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: effectiveLabelWidth,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: _DepositDetailLabel(label),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s),
+              const Spacer(),
+              SizedBox(
+                width: effectiveRightWidth,
+                child: Padding(
+                  key: rightKey,
+                  padding: const EdgeInsets.only(right: AppSpacing.xxs),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: _DepositDetailValueText(
+                          value,
+                          overflow: valueOverflow,
+                          scaleToFit: shouldScaleValue,
+                          style: valueTextStyle,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      _DepositCopyButton(
+                        copyKey: copyKey,
+                        copyText: copyText,
+                        toastMessage: toastMessage,
+                        size: AppIconSize.medium,
+                        color: colors.icon.muted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  double _rightNaturalWidth(BuildContext context, {required TextStyle style}) {
+    return _textWidth(context, value, style) +
+        AppSpacing.xxs +
+        AppIconSize.medium +
+        AppSpacing.xxs;
+  }
+
+  double _textWidth(BuildContext context, String text, TextStyle style) {
+    final textPainter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return textPainter.width;
+  }
+}
+
+class _MobileDepositDetailRow extends StatelessWidget {
+  const _MobileDepositDetailRow({
+    required this.label,
+    required this.value,
+    required this.copyText,
+    required this.toastMessage,
+    required this.copyKey,
+    required this.rightKey,
+  });
+
+  static const _labelWidth = 134.0;
+  static const _copyIconSize = 20.0;
+
+  final String label;
+  final String value;
+  final String copyText;
+  final String toastMessage;
+  final Key copyKey;
+  final Key rightKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
     final valueTextStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.accent,
     );
@@ -1037,85 +1206,54 @@ class _DepositDetailRow extends StatelessWidget {
       value,
       maxLines: 1,
       softWrap: false,
-      overflow: mobile ? TextOverflow.visible : TextOverflow.ellipsis,
+      overflow: TextOverflow.visible,
       textAlign: TextAlign.end,
       style: valueTextStyle,
     );
     return SizedBox(
       height: 32,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (mobile)
-            // Keep the label column at the Figma width (so the value area
-            // stays >=190) but scale the label down to fit instead of
-            // truncating it — mirrors the value's own scaleDown, so labels
-            // like "Amount to deposit" / "One-time address" read in full.
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _mobileLabelMaxWidth),
+          SizedBox(
+            width: _labelWidth,
+            child: Align(
+              alignment: Alignment.centerLeft,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: labelText,
+                child: _DepositDetailLabel(label),
               ),
-            )
-          else
-            Flexible(fit: FlexFit.loose, child: labelText),
+            ),
+          ),
           const SizedBox(width: AppSpacing.s),
           Expanded(
             child: Padding(
               key: rightKey,
-              padding: EdgeInsets.fromLTRB(
-                mobile ? AppSpacing.xs : 0,
-                mobile ? AppSpacing.xxs : 0,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xs,
                 AppSpacing.xxs,
-                mobile ? AppSpacing.xxs : 0,
+                AppSpacing.xxs,
+                AppSpacing.xxs,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Flexible(
-                    child: mobile
-                        ? FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: valueText,
-                          )
-                        : _DepositDetailValueText(
-                            value,
-                            scaleToFit: scaleValueToFit,
-                            style: valueTextStyle,
-                          ),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: valueText,
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      key: copyKey,
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        copyTextWithToast(
-                          context,
-                          text: copyText,
-                          toastMessage: toastMessage,
-                        );
-                      },
-                      child: kAppFormFactor == AppFormFactor.mobile
-                          ? SizedBox.square(
-                              dimension: 20,
-                              child: AppIcon(
-                                AppIcons.copy,
-                                size: 20,
-                                color: colors.icon.regular.withValues(
-                                  alpha: 0.72,
-                                ),
-                              ),
-                            )
-                          : AppIcon(
-                              AppIcons.copy,
-                              size: AppIconSize.medium,
-                              color: colors.icon.muted,
-                            ),
-                    ),
+                  _DepositCopyButton(
+                    copyKey: copyKey,
+                    copyText: copyText,
+                    toastMessage: toastMessage,
+                    size: _copyIconSize,
+                    color: colors.icon.regular.withValues(alpha: 0.72),
                   ),
                 ],
               ),
@@ -1127,14 +1265,76 @@ class _DepositDetailRow extends StatelessWidget {
   }
 }
 
+class _DepositDetailLabel extends StatelessWidget {
+  const _DepositDetailLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.visible,
+        style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
+      ),
+    );
+  }
+}
+
+class _DepositCopyButton extends StatelessWidget {
+  const _DepositCopyButton({
+    required this.copyKey,
+    required this.copyText,
+    required this.toastMessage,
+    required this.size,
+    required this.color,
+  });
+
+  final Key copyKey;
+  final String copyText;
+  final String toastMessage;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: copyKey,
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            copyTextWithToast(
+              context,
+              text: copyText,
+              toastMessage: toastMessage,
+            );
+          },
+          child: Center(
+            child: AppIcon(AppIcons.copy, size: size, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DepositDetailValueText extends StatelessWidget {
   const _DepositDetailValueText(
     this.value, {
+    this.overflow = TextOverflow.ellipsis,
     required this.scaleToFit,
     required this.style,
   });
 
   final String value;
+  final TextOverflow overflow;
   final bool scaleToFit;
   final TextStyle style;
 
@@ -1144,7 +1344,7 @@ class _DepositDetailValueText extends StatelessWidget {
       value,
       maxLines: 1,
       softWrap: false,
-      overflow: scaleToFit ? TextOverflow.visible : TextOverflow.ellipsis,
+      overflow: scaleToFit ? TextOverflow.visible : overflow,
       textAlign: TextAlign.end,
       style: style,
     );
