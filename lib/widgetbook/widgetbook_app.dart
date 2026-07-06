@@ -133,6 +133,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileSecretPassphraseRevealedUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Secret phrase long words',
+                      builder: buildMobileSecretPassphraseLongWordsUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Secret phrase protected',
                       builder: buildMobileSecretPassphraseProtectedUseCase,
                     ),

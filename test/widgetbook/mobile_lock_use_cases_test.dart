@@ -96,6 +96,22 @@ void main() {
 
     await _pumpMobileLockUseCase(
       tester,
+      buildMobileSecretPassphraseLongWordsUseCase,
+    );
+    expect(tester.takeException(), isNull);
+    final longSeedWord = find.text('business');
+    expect(longSeedWord, findsOneWidget);
+    expect(
+      find.ancestor(of: longSeedWord, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Text>(longSeedWord).overflow,
+      isNot(TextOverflow.ellipsis),
+    );
+
+    await _pumpMobileLockUseCase(
+      tester,
       buildMobileSecretPassphraseProtectedUseCase,
     );
     expect(tester.takeException(), isNull);

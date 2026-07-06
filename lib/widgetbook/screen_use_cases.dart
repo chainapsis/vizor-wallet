@@ -58,6 +58,10 @@ const _previewMnemonic =
     'access accident account accuse achieve acid acoustic acquire across act '
     'action actor actress actual';
 
+const _previewLongWordMnemonic =
+    'business question physical security language purchase abstract accident '
+    'distance elephant hospital umbrella';
+
 const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit fossil carbon drift '
@@ -266,6 +270,17 @@ Widget buildMobileSecretPassphraseRevealedUseCase(BuildContext context) {
     child: IgnorePointer(
       child: MobileSecretPassphraseScreen(
         args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+        screenshotStream: Stream.empty(),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseLongWordsUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileSecretPassphraseScreen(
+        args: CreateSecretPassphraseArgs(mnemonic: _previewLongWordMnemonic),
         screenshotStream: Stream.empty(),
       ),
     ),
