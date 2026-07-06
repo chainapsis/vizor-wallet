@@ -342,7 +342,7 @@ void main() {
     expect(find.byType(ImportBirthdayCalendarPanel), findsOneWidget);
   });
 
-  testWidgets('busy skip action remains text-only', (tester) async {
+  testWidgets('busy skip action is a disabled ghost button', (tester) async {
     final submitCompleter = Completer<void>();
 
     await tester.pumpWidget(
@@ -364,19 +364,13 @@ void main() {
     );
     await tester.pump();
 
-    final skipAction = find.byKey(
-      const ValueKey('mobile_import_birthday_skip'),
+    final skipAction = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_import_birthday_skip')),
     );
     expect(find.text('Importing wallet...'), findsOneWidget);
-    expect(skipAction, findsOneWidget);
-    expect(
-      find.descendant(of: skipAction, matching: find.byType(AppButton)),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: skipAction, matching: find.byType(DecoratedBox)),
-      findsNothing,
-    );
+    expect(skipAction.variant, AppButtonVariant.ghost);
+    expect(skipAction.expand, isTrue);
+    expect(skipAction.onPressed, isNull);
 
     submitCompleter.complete();
   });
