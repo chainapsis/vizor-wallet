@@ -17,10 +17,10 @@ import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
+import '../formatting/sync_status_label.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
-import '../formatting/sync_status_label.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_copy_feedback.dart';
 import '../widgets/app_icon.dart';
@@ -437,7 +437,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     SizedBox(height: bottomSyncGap),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: _SidebarSyncStatus(sync: sync),
+                      child: AppSidebarSyncStatus(sync: sync),
                     ),
                   ],
                 ),
@@ -998,25 +998,23 @@ class _SidebarPopoverHoverTargetState
 }
 
 /// Sidebar sync status row. While syncing (and reduced-motion is off) a slow
-/// shimmer band sweeps the muted-green label up to the full synced green and a
-/// breathing glow pulses the indicator bar, so the row reads as "actively
-/// working". Synced / failed / reduced-motion render static.
+/// shimmer band sweeps the neutral label up to white and a breathing glow
+/// pulses the indicator bar, so the row reads as "actively working".
+/// Synced / failed / reduced-motion render static.
 ///
-/// The desktop color policy is preserved: the indicator stays the sync-success
-/// green while syncing (only failed differs); only the motion + glow are
-/// added. (The mobile top-nav has the same effect with its own colors; the
-/// small shimmer/motion helpers are intentionally duplicated rather than
-/// shared so the two surfaces ship as independent changes.)
-class _SidebarSyncStatus extends StatefulWidget {
-  const _SidebarSyncStatus({required this.sync});
+/// The mobile top-nav has the same effect with its own colors; the small
+/// shimmer/motion helpers are intentionally duplicated rather than shared so
+/// the two surfaces ship as independent changes.
+class AppSidebarSyncStatus extends StatefulWidget {
+  const AppSidebarSyncStatus({required this.sync, super.key});
 
   final SyncState sync;
 
   @override
-  State<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
+  State<AppSidebarSyncStatus> createState() => _AppSidebarSyncStatusState();
 }
 
-class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
+class _AppSidebarSyncStatusState extends State<AppSidebarSyncStatus>
     with SingleTickerProviderStateMixin {
   static const _width = 176.0;
   static const _height = 32.0;
@@ -1051,7 +1049,7 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
   }
 
   @override
-  void didUpdateWidget(covariant _SidebarSyncStatus oldWidget) {
+  void didUpdateWidget(covariant AppSidebarSyncStatus oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncAnimation();
   }
@@ -1087,7 +1085,7 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
       SyncStatusKind.synced => colors.sync.text,
     };
     final indicatorColor = switch (status.kind) {
-      SyncStatusKind.syncing => colors.text.muted,
+      SyncStatusKind.syncing => colors.sync.lightSyncing,
       SyncStatusKind.failed => colors.sync.lightError,
       SyncStatusKind.synced => colors.sync.lightSuccess,
     };
@@ -1104,7 +1102,7 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
                   key: const ValueKey('sidebar_sync_text'),
                   label: status.label,
                   baseColor: textColor,
-                  highlightColor: colors.sync.lightSuccess,
+                  highlightColor: colors.sync.textSyncingHighlight,
                   progress: t,
                 ),
               );

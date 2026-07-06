@@ -43,8 +43,9 @@ void main() {
           accountName: 'Account1',
           syncLabel: '20% Syncing...',
           syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
-          syncIndicatorColor: AppThemeData.dark.colors.text.muted,
-          syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
+          syncIndicatorColor: AppThemeData.dark.colors.sync.lightSyncing,
+          syncHighlightColor:
+              AppThemeData.dark.colors.sync.textSyncingHighlight,
           syncAnimated: true,
         ),
       ),
@@ -68,8 +69,8 @@ void main() {
   testWidgets('MobileTopNav.account syncing is static under reduce-motion', (
     tester,
   ) async {
-    final mutedGreen = AppThemeData.dark.colors.sync.textSyncing;
-    final greyBar = AppThemeData.dark.colors.text.muted;
+    final syncingText = AppThemeData.dark.colors.sync.textSyncing;
+    final syncingBar = AppThemeData.dark.colors.sync.lightSyncing;
     await tester.pumpWidget(
       _harness(
         Builder(
@@ -78,9 +79,10 @@ void main() {
             child: MobileTopNav.account(
               accountName: 'Account1',
               syncLabel: '20% Syncing...',
-              syncLabelColor: mutedGreen,
-              syncIndicatorColor: greyBar,
-              syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
+              syncLabelColor: syncingText,
+              syncIndicatorColor: syncingBar,
+              syncHighlightColor:
+                  AppThemeData.dark.colors.sync.textSyncingHighlight,
               syncAnimated: true,
             ),
           ),
@@ -88,21 +90,20 @@ void main() {
       ),
     );
 
-    // No shimmer mask; the label keeps its muted green base and the edge bar
-    // is a neutral grey. The brighter shimmer peak only appears in the
-    // animated state.
+    // No shimmer mask; the label and edge bar keep the neutral syncing color.
+    // The white shimmer peak only appears in the animated state.
     expect(find.byType(ShaderMask), findsNothing);
     final label = tester.widget<Text>(find.text('20% Syncing...'));
-    expect(label.style?.color, mutedGreen);
+    expect(label.style?.color, syncingText);
 
-    final greyBars = tester
+    final syncingBars = tester
         .widgetList<Container>(find.byType(Container))
         .where(
           (c) =>
               c.decoration is BoxDecoration &&
-              (c.decoration as BoxDecoration).color == greyBar,
+              (c.decoration as BoxDecoration).color == syncingBar,
         );
-    expect(greyBars, isNotEmpty);
+    expect(syncingBars, isNotEmpty);
   });
 
   testWidgets('MobileTopNav.back shows serif title and fires onBack', (

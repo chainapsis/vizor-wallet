@@ -304,9 +304,11 @@ class _SyncStatus extends StatelessWidget {
         Container(
           width: 5,
           height: 32,
-          decoration: const BoxDecoration(
-            color: Color(0xFF0DC87D),
-            borderRadius: BorderRadius.horizontal(right: Radius.circular(999)),
+          decoration: BoxDecoration(
+            color: colors.sync.lightSyncing,
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(999),
+            ),
           ),
         ),
         const SizedBox(width: 19),

@@ -101,11 +101,11 @@ class MobileTopNav extends StatelessWidget {
   final Color? syncIndicatorColor;
 
   /// When true (the live syncing state, reduced-motion off) the label
-  /// shimmers a bright-green band across itself and the edge bar breathes
-  /// a slow glow pulse. Otherwise the label and bar render static.
+  /// shimmers a bright band across itself and the edge bar breathes a slow
+  /// glow pulse. Otherwise the label and bar render static.
   final bool syncAnimated;
 
-  /// Bright-green peak used for the shimmer band and the breathing glow.
+  /// Peak used for the shimmer band and the breathing glow.
   /// Falls back to [syncLabelColor] when null.
   final Color? syncHighlightColor;
 
@@ -384,8 +384,8 @@ abstract final class _SyncStatusMotion {
 /// The right-aligned sync status: the label plus the edge glow bar.
 ///
 /// While [animated] (the live syncing state, reduced-motion off) a single
-/// [AnimationController] drives a bright-green shimmer band sweeping across
-/// the label and a slow breathing pulse on the green edge bar, so the two
+/// [AnimationController] drives a bright shimmer band sweeping across the
+/// label and a slow breathing pulse on the edge bar, so the two
 /// read as one "actively working" affordance. Otherwise — synced, failed,
 /// or reduced-motion — it renders the same static label + bar as before.
 class _SyncStatus extends StatefulWidget {
@@ -510,7 +510,7 @@ class _SyncStatusState extends State<_SyncStatus>
   }
 }
 
-/// The sync label with a bright-green highlight band sweeping across it.
+/// The sync label with a bright highlight band sweeping across it.
 ///
 /// A [ShaderMask] (`srcIn`) replaces the glyph pixels with a horizontal
 /// `base → highlight → base` gradient; sliding the gradient's mapping
