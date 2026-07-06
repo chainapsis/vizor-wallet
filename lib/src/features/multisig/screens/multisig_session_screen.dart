@@ -15,11 +15,13 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../../../providers/multisig_realtime_provider.dart';
-import '../models/multisig_finalize_args.dart';
+import '../../../providers/wallet_mutation_guard.dart';
+import '../../onboarding/shared/onboarding_flow_args.dart';
 import '../widgets/multisig_backup_wizard.dart';
 import '../widgets/multisig_onboarding_flow.dart';
 import '../widgets/multisig_setup_security_gate.dart';
@@ -214,15 +216,33 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
             );
       }
       if (!mounted) return;
-      context.go(
-        '/multisig/session/${Uri.encodeComponent(session.storageId)}/birthday',
-        extra: MultisigFinalizeArgs(
-          sessionStorageId: session.storageId,
-          sessionId: session.sessionId,
-          backupArtifactJson: completion.backupArtifactJson,
-          backupPassphrase: completion.backupPassphrase,
-        ),
-      );
+      final security = ref.read(appSecurityProvider);
+      final hasAccounts =
+          ref.read(accountProvider).value?.accounts.isNotEmpty ?? false;
+      if (!hasAccounts && !security.isPasswordConfigured) {
+        context.go(
+          '/multisig/set-password',
+          extra: SetPasswordScreenArgs.multisigFinalize(
+            sessionStorageId: session.storageId,
+            sessionId: session.sessionId,
+            backupArtifactJson: completion.backupArtifactJson,
+            backupPassphrase: completion.backupPassphrase,
+          ),
+        );
+        return;
+      }
+
+      await runWithSyncPausedForAccountMutation(ref, () async {
+        await ref
+            .read(accountProvider.notifier)
+            .finalizeMultisigAccount(
+              session.storageId,
+              backupArtifactJson: completion.backupArtifactJson,
+              backupPassphrase: completion.backupPassphrase,
+            );
+      });
+      if (!mounted) return;
+      context.go('/home');
     } catch (e) {
       if (!mounted) return;
       setState(() {

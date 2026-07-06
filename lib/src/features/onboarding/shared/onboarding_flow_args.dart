@@ -74,10 +74,8 @@ class SetPasswordScreenArgs {
     required String sessionId,
     required String backupArtifactJson,
     required String backupPassphrase,
-    required int birthdayHeight,
   }) : this._(
          flow: SetPasswordFlow.multisigFinalize,
-         birthdayHeight: birthdayHeight,
          multisigSessionStorageId: sessionStorageId,
          multisigSessionId: sessionId,
          multisigBackupArtifactJson: backupArtifactJson,
@@ -116,10 +114,10 @@ class SetPasswordScreenArgs {
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
     SetPasswordFlow.multisigFinalize =>
-      '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionStorageId)}/birthday',
+      '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionStorageId)}',
   };
 
-  Object get backRouteExtra => switch (flow) {
+  Object? get backRouteExtra => switch (flow) {
     SetPasswordFlow.create => CreateSecretPassphraseArgs(
       mnemonic: requiredMnemonic,
     ),
@@ -129,6 +127,6 @@ class SetPasswordScreenArgs {
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
-    SetPasswordFlow.multisigFinalize => this,
+    SetPasswordFlow.multisigFinalize => null,
   };
 }

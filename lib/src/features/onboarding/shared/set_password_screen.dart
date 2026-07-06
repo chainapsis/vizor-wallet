@@ -139,7 +139,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   session.storageId,
                   backupArtifactJson: args.requiredMultisigBackupArtifactJson,
                   backupPassphrase: args.requiredMultisigBackupPassphrase,
-                  birthdayHeight: args.importBirthdayHeight,
                 );
             }
           },
@@ -236,7 +235,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       ImportOnboardingStep.walletBirthdayHeight.label,
     SetPasswordFlow.importKeystone =>
       KeystoneOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.multisigFinalize => 'Wallet Birthday Height',
+    SetPasswordFlow.multisigFinalize => 'Backup',
   };
 }
 

@@ -48,8 +48,6 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
-import 'src/features/multisig/models/multisig_finalize_args.dart';
-import 'src/features/multisig/screens/multisig_birthday_screen.dart';
 import 'src/features/multisig/screens/multisig_connect_screen.dart';
 import 'src/features/multisig/screens/multisig_create_session_screen.dart';
 import 'src/features/multisig/screens/multisig_join_session_screen.dart';
@@ -653,24 +651,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
 ];
 
-MultisigFinalizeArgs? _multisigFinalizeArgsFromExtra(Object? extra) {
-  if (extra is MultisigFinalizeArgs) return extra;
-  if (extra is SetPasswordScreenArgs &&
-      extra.flow == SetPasswordFlow.multisigFinalize &&
-      extra.multisigSessionId != null &&
-      extra.multisigBackupArtifactJson != null &&
-      extra.multisigBackupPassphrase != null) {
-    return MultisigFinalizeArgs(
-      sessionStorageId:
-          extra.multisigSessionStorageId ?? extra.requiredMultisigSessionId,
-      sessionId: extra.requiredMultisigSessionId,
-      backupArtifactJson: extra.requiredMultisigBackupArtifactJson,
-      backupPassphrase: extra.requiredMultisigBackupPassphrase,
-    );
-  }
-  return null;
-}
-
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
@@ -802,10 +782,10 @@ List<RouteBase> _desktopRoutes() => [
           final args = state.extra;
           if (args is SetPasswordScreenArgs &&
               args.flow == SetPasswordFlow.multisigFinalize &&
+              args.requiredMultisigSessionStorageId.isNotEmpty &&
               args.requiredMultisigSessionId.isNotEmpty &&
               args.requiredMultisigBackupArtifactJson.isNotEmpty &&
-              args.requiredMultisigBackupPassphrase.isNotEmpty &&
-              args.birthdayHeight != null) {
+              args.requiredMultisigBackupPassphrase.isNotEmpty) {
             return null;
           }
           return '/welcome';
@@ -817,38 +797,6 @@ List<RouteBase> _desktopRoutes() => [
           child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
           transitionsBuilder: _onboardingFadeTransition,
         ),
-      ),
-      GoRoute(
-        path: '/multisig/session/:sessionStorageId/birthday',
-        redirect: (_, state) {
-          final sessionStorageId = state.pathParameters['sessionStorageId'];
-          final args = _multisigFinalizeArgsFromExtra(state.extra);
-          if (sessionStorageId != null &&
-              sessionStorageId.isNotEmpty &&
-              args != null &&
-              args.sessionStorageId == Uri.decodeComponent(sessionStorageId)) {
-            return null;
-          }
-          if (sessionStorageId == null || sessionStorageId.isEmpty) {
-            return '/welcome';
-          }
-          return '/multisig/session/$sessionStorageId';
-        },
-        pageBuilder: (context, state) {
-          final sessionStorageId =
-              state.pathParameters['sessionStorageId'] ?? '';
-          final finalizeArgs = _multisigFinalizeArgsFromExtra(state.extra)!;
-          return CustomTransitionPage<void>(
-            key: state.pageKey,
-            transitionDuration: kOnboardingForwardDuration,
-            reverseTransitionDuration: kOnboardingReverseDuration,
-            child: MultisigBirthdayScreen(
-              sessionStorageId: Uri.decodeComponent(sessionStorageId),
-              finalizeArgs: finalizeArgs,
-            ),
-            transitionsBuilder: _onboardingFadeTransition,
-          );
-        },
       ),
       GoRoute(
         path: '/multisig/session/:sessionStorageId',

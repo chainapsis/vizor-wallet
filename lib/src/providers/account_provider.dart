@@ -807,20 +807,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String sessionStorageId, {
     required String backupArtifactJson,
     required String backupPassphrase,
-    required int birthdayHeight,
     String? name,
   }) async {
     try {
       final materialStore = ref.read(multisigAccountMaterialStoreProvider);
       final materialized = await materialStore.readAll();
       final currentAccounts = state.value?.accounts ?? const <AccountInfo>[];
-      if (birthdayHeight <= 0) {
-        throw ArgumentError.value(
-          birthdayHeight,
-          'birthdayHeight',
-          'must be positive',
-        );
-      }
 
       final pendingNotifier = ref.read(
         multisigPendingSessionsProvider.notifier,
@@ -868,6 +860,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final network = prev.accounts.isEmpty
           ? ref.read(rpcEndpointProvider).networkName
           : await _getNetwork();
+      final birthday = await _fetchCreationBirthdayHeight();
+      log('finalizeMultisigAccount: birthday=$birthday');
       final verification = await rust_multisig.verifyMultisigShareBackup(
         network: network,
         artifactJson: backupArtifactJson,
@@ -904,7 +898,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           network: network,
           name: accountName,
           groupPublicPackageJson: verification.groupPublicPackageJson,
-          birthdayHeight: BigInt.from(birthdayHeight),
+          birthdayHeight: birthday,
         );
         importedAccountUuid = result.accountUuid;
         final address = result.unifiedAddress;
@@ -952,11 +946,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         final ownLabel = session.label?.trim();
         if (ownLabel != null && ownLabel.isNotEmpty) {
           try {
-            await ref
-                .read(multisigVaultLabelStoreProvider)
-                .setLabels(session.storageId, {
-                  session.participantId: ownLabel,
-                });
+            await ref.read(multisigVaultLabelStoreProvider).setLabels(
+              session.storageId,
+              {session.participantId: ownLabel},
+            );
           } catch (e) {
             log('finalizeMultisigAccount: vault label seed failed: $e');
           }

@@ -9,13 +9,7 @@ import '../../onboarding/shared/onboarding_chrome.dart';
 export '../../onboarding/shared/onboarding_chrome.dart'
     show OnboardingBackTarget;
 
-enum MultisigOnboardingStep {
-  connect,
-  sessionSetup,
-  backup,
-  walletBirthdayHeight,
-  setPassword,
-}
+enum MultisigOnboardingStep { connect, sessionSetup, backup, setPassword }
 
 extension MultisigOnboardingStepX on MultisigOnboardingStep {
   // Sidebar step labels use the onboarding Title Case convention.
@@ -23,7 +17,6 @@ extension MultisigOnboardingStepX on MultisigOnboardingStep {
     MultisigOnboardingStep.connect => 'Connect Multisig',
     MultisigOnboardingStep.sessionSetup => 'Session Setup',
     MultisigOnboardingStep.backup => 'Backup',
-    MultisigOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
     MultisigOnboardingStep.setPassword => 'Set Password',
   };
 
@@ -31,7 +24,6 @@ extension MultisigOnboardingStepX on MultisigOnboardingStep {
     MultisigOnboardingStep.connect => AppIcons.users,
     MultisigOnboardingStep.sessionSetup => AppIcons.link,
     MultisigOnboardingStep.backup => AppIcons.key,
-    MultisigOnboardingStep.walletBirthdayHeight => AppIcons.block,
     MultisigOnboardingStep.setPassword => AppIcons.lock,
   };
 }
@@ -39,10 +31,6 @@ extension MultisigOnboardingStepX on MultisigOnboardingStep {
 MultisigOnboardingStep multisigOnboardingStepFromLocation(String location) {
   if (location.startsWith('/multisig/set-password')) {
     return MultisigOnboardingStep.setPassword;
-  }
-  if (location.startsWith('/multisig/session/') &&
-      location.endsWith('/birthday')) {
-    return MultisigOnboardingStep.walletBirthdayHeight;
   }
   if (location.startsWith('/multisig/session/')) {
     return MultisigOnboardingStep.backup;
@@ -107,8 +95,7 @@ class _MultisigOnboardingWindowBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
-      MultisigOnboardingStep.backup ||
-      MultisigOnboardingStep.walletBirthdayHeight =>
+      MultisigOnboardingStep.backup =>
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
@@ -215,7 +202,6 @@ class _Sidebar extends StatelessWidget {
     MultisigOnboardingStep.connect,
     MultisigOnboardingStep.sessionSetup,
     MultisigOnboardingStep.backup,
-    MultisigOnboardingStep.walletBirthdayHeight,
     if (showPasswordStep) MultisigOnboardingStep.setPassword,
   ];
 
@@ -270,10 +256,6 @@ class _SidebarIllustration extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.png',
-      MultisigOnboardingStep.walletBirthdayHeight =>
-        isDark
-            ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_wallet_birthday_sidebar_light.png',
       MultisigOnboardingStep.setPassword =>
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
