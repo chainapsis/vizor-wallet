@@ -74,34 +74,34 @@ url = "2.5.8"
 [dependencies.zcash_primitives]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_address]
 version = "0.12"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_keys]
 version = "0.14"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.9"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.8"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_client_backend]
 version = "0.23"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = [
     "orchard",
     "transparent-inputs",
@@ -114,13 +114,13 @@ features = [
 [dependencies.zcash_client_sqlite]
 version = "0.21"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "4f5d5134e94d2cdbb900d041cc826421e634f4bc"
+rev = "ce08cba8ce8dc8b908435ca02527455675de2b7b"
 package = "zcash_voting"
 
 # Must match the orchard node used by zcash_client_sqlite / zcash_voting to
@@ -135,12 +135,12 @@ version = "0.15.0-pre.2"
 [dependencies.zcash_proofs]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.pczt]
 version = "0.7"
 git = "https://github.com/valargroup/librustzcash"
-rev = "a2d82b1cd758deef21064fff951bedeb97065ec5"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = [
     "orchard",
     "io-finalizer",
@@ -173,7 +173,7 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "4f5d5134e94d2cdbb900d041cc826421e634f4bc"
+rev = "ce08cba8ce8dc8b908435ca02527455675de2b7b"
 package = "vote-commitment-tree"
 
 # Redirect every crates.io `orchard` requirement (this crate's direct dep plus
