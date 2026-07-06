@@ -122,7 +122,7 @@ class NearIntentsOneClickSwapAdapter
       expectedRecipient: requestedRecipient,
       sellToken: sellToken,
       receiveToken: receiveToken,
-      allowFlexibleAmountEcho:
+      allowFlexibleQuotedAmount:
           request.direction == SwapDirection.externalToZec &&
           quoteMode == SwapQuoteMode.flexInput,
     );
@@ -728,7 +728,7 @@ class NearIntentsOneClickSwapAdapter
     required String expectedRecipient,
     required _OneClickToken sellToken,
     required _OneClickToken receiveToken,
-    required bool allowFlexibleAmountEcho,
+    required bool allowFlexibleQuotedAmount,
   }) {
     final actual = response.quoteRequest;
     final actualSwapType = actual.swapTypeRaw?.trim().toUpperCase();
@@ -758,9 +758,9 @@ class NearIntentsOneClickSwapAdapter
       actual.amount,
       'quoteRequest.amount',
     );
-    if (!allowFlexibleAmountEcho &&
-        (responseFixedAmount != expectedFixedAmount ||
-            requestFixedAmount != expectedFixedAmount)) {
+    if (requestFixedAmount != expectedFixedAmount ||
+        (!allowFlexibleQuotedAmount &&
+            responseFixedAmount != expectedFixedAmount)) {
       throw OneClickApiException(
         '1Click quote response did not match the requested amount',
         operation: 'quote',
