@@ -8,6 +8,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,6 +17,9 @@ import '../../../providers/multisig_account_material_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_realtime_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
+
+const _multisigSigningContentMaxWidth = 560.0;
+const _multisigHeaderTitleHeight = 33.0;
 
 class MultisigSigningHomeScreen extends ConsumerStatefulWidget {
   const MultisigSigningHomeScreen({super.key});
@@ -125,139 +129,71 @@ class _MultisigSigningHomeScreenState
           in requestsAsync.value ?? const <MultisigSigningRequestRecord>[])
         if (accountUuid != null && request.accountUuid == accountUuid) request,
     ];
+    final activeRequests = requests
+        .where((request) => !request.hasBroadcastTxid)
+        .toList();
     final localParticipantId = _localParticipantId(requests);
-    final needsAction = requests
-        .where((request) => _needsLocalAction(request, localParticipantId))
-        .toList();
-    final ready = requests
-        .where((request) => request.readyToBroadcast)
-        .toList();
-    final waitingOnOthers = requests
+    final actionNeeded = activeRequests
         .where(
           (request) =>
-              _waitingOnOtherSigners(request, localParticipantId) &&
-              !needsAction.contains(request) &&
-              !ready.contains(request),
+              request.readyToBroadcast ||
+              _needsLocalAction(request, localParticipantId),
         )
         .toList();
-    final requestedByMe = requests
-        .where(
-          (request) =>
-              request.requesterParticipantId == localParticipantId &&
-              !needsAction.contains(request) &&
-              !ready.contains(request) &&
-              !waitingOnOthers.contains(request) &&
-              !request.isBroadcasted,
-        )
-        .toList();
-    final reviewOnly = requests
-        .where(
-          (request) =>
-              request.isReviewOnly &&
-              !needsAction.contains(request) &&
-              !ready.contains(request) &&
-              !request.isBroadcasted,
-        )
-        .toList();
-    final completed = requests
-        .where((request) => request.isBroadcasted)
+    final waitingForSignatures = activeRequests
+        .where((request) => !actionNeeded.contains(request))
         .toList();
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const AppIcon(AppIcons.users, size: AppIconSize.large),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text('Multisig', style: AppTypography.displaySmall),
-                  if (isMultisig) ...[
-                    const SizedBox(width: AppSpacing.sm),
-                    Flexible(
-                      fit: FlexFit.loose,
-                      child: _SessionIdBadge(
-                        sessionId: activeMaterial?.sessionId,
-                        isLoading: materialsAsync.isLoading,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AppPaneToolbar(backLinkMinWidth: 60),
+            _MultisigHeader(
+              material: activeMaterial,
+              isMaterialLoading: materialsAsync.isLoading,
+              isMultisig: isMultisig,
+              isRefreshing: _refreshing,
+              onSetup: () => context.go('/multisig/connect'),
+              onRefresh: isMultisig && !_refreshing
+                  ? () => unawaited(_refresh())
+                  : null,
+            ),
+            if (!isMultisig)
+              const _EmptyPanel(
+                title: 'No multisig account selected',
+                body: 'Switch to a multisig account to view active sends.',
+              )
+            else if (requestsAsync.isLoading && requests.isEmpty)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (activeRequests.isEmpty)
+              Expanded(
+                child: Column(
+                  children: [
+                    if (_refreshError != null)
+                      _WarningPanel(message: _refreshError!),
+                    const Expanded(
+                      child: _EmptyPanelContent(
+                        title: 'No active multisig sends',
+                        body:
+                            'New multisig sends will appear here when they need your attention.',
                       ),
                     ),
                   ],
-                  const Spacer(),
-                  AppButton(
-                    onPressed: () => context.go('/multisig/connect'),
-                    variant: AppButtonVariant.secondary,
-                    leading: const AppIcon(AppIcons.cog),
-                    child: const Text('Setup'),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  AppButton(
-                    onPressed: _refreshing || !isMultisig
-                        ? null
-                        : () => unawaited(_refresh()),
-                    variant: AppButtonVariant.secondary,
-                    leading: const AppIcon(AppIcons.renew),
-                    child: Text(_refreshing ? 'Refreshing' : 'Refresh'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (!isMultisig)
-                const _EmptyPanel(
-                  title: 'No multisig account selected',
-                  body:
-                      'Switch to a multisig account to view signing requests.',
-                )
-              else if (requestsAsync.isLoading && requests.isEmpty)
-                const Expanded(
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else
-                Expanded(
-                  child: ListView(
-                    children: [
-                      if (_refreshError != null)
-                        _WarningPanel(message: _refreshError!),
-                      _RequestSection(
-                        title: 'Needs your action',
-                        requests: needsAction,
-                        empty: 'No signing requests need your action.',
-                      ),
-                      _RequestSection(
-                        title: 'Ready to broadcast',
-                        requests: ready,
-                        empty:
-                            'No completed signatures are ready to broadcast.',
-                      ),
-                      _RequestSection(
-                        title: 'Waiting on others',
-                        requests: waitingOnOthers,
-                        empty: 'No signing requests are waiting on others.',
-                      ),
-                      _RequestSection(
-                        title: 'Requested by me',
-                        requests: requestedByMe,
-                        empty: 'No open requests created by you.',
-                      ),
-                      _RequestSection(
-                        title: 'Review only',
-                        requests: reviewOnly,
-                        empty: 'No review-only signing requests.',
-                      ),
-                      _RequestSection(
-                        title: 'Completed',
-                        requests: completed,
-                        empty: 'No completed multisig sends yet.',
-                      ),
-                    ],
-                  ),
                 ),
-            ],
-          ),
+              )
+            else
+              Expanded(
+                child: _RequestListView(
+                  refreshError: _refreshError,
+                  actionNeeded: actionNeeded,
+                  waitingForSignatures: waitingForSignatures,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -285,7 +221,7 @@ class _MultisigSigningHomeScreenState
   ) {
     if (!request.coordinatorSubmitted) return false;
     if (!request.selectedParticipantIds.contains(localParticipantId) ||
-        request.isBroadcasted) {
+        request.hasBroadcastTxid) {
       return false;
     }
     if (request.readyToBroadcast) return false;
@@ -294,38 +230,118 @@ class _MultisigSigningHomeScreenState
     }
     return request.round1Complete && !request.localRound2Submitted;
   }
+}
 
-  bool _waitingOnOtherSigners(
-    MultisigSigningRequestRecord request,
-    String localParticipantId,
-  ) {
-    if (!request.coordinatorSubmitted || request.isBroadcasted) return false;
-    if (request.requesterParticipantId == localParticipantId) return false;
-    if (!request.selectedParticipantIds.contains(localParticipantId)) {
-      return false;
-    }
-    return request.localRound1Submitted || request.localRound2Submitted;
+class _MultisigHeader extends StatelessWidget {
+  const _MultisigHeader({
+    required this.material,
+    required this.isMaterialLoading,
+    required this.isMultisig,
+    required this.isRefreshing,
+    required this.onSetup,
+    required this.onRefresh,
+  });
+
+  final MultisigAccountMaterial? material;
+  final bool isMaterialLoading;
+  final bool isMultisig;
+  final bool isRefreshing;
+  final VoidCallback onSetup;
+  final VoidCallback? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final showBadge = isMultisig && (material != null || isMaterialLoading);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _multisigSigningContentMaxWidth,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.sm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: _multisigHeaderTitleHeight,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Text(
+                      'Multisig',
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (showBadge)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _GroupBadge(
+                          material: material,
+                          isLoading: isMaterialLoading,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                height: 24,
+                child: Row(
+                  children: [
+                    const Spacer(),
+                    AppButton(
+                      onPressed: onSetup,
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.small,
+                      leading: const AppIcon(AppIcons.cog),
+                      child: const Text('Setup'),
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppButton(
+                      onPressed: onRefresh,
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.small,
+                      leading: const AppIcon(AppIcons.renew),
+                      child: Text(isRefreshing ? 'Refreshing' : 'Refresh'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
-class _SessionIdBadge extends StatelessWidget {
-  const _SessionIdBadge({required this.sessionId, required this.isLoading});
+class _GroupBadge extends StatelessWidget {
+  const _GroupBadge({required this.material, required this.isLoading});
 
-  final String? sessionId;
+  final MultisigAccountMaterial? material;
   final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final value = sessionId?.trim();
-    final displayValue = value == null || value.isEmpty
-        ? isLoading
-              ? 'Loading'
-              : 'Unavailable'
-        : value;
+    final sessionId = material?.sessionId.trim();
+    final displayValue = material == null
+        ? 'Loading'
+        : '${material!.threshold} of ${material!.participantCount}';
+    final tooltip = sessionId == null || sessionId.isEmpty
+        ? displayValue
+        : 'Setup ID: $sessionId';
 
     return Tooltip(
-      message: value == null || value.isEmpty ? displayValue : value,
+      message: tooltip,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.surface.input,
@@ -338,7 +354,7 @@ class _SessionIdBadge extends StatelessWidget {
             vertical: AppSpacing.xxs,
           ),
           child: Text(
-            'Session ID: $displayValue',
+            displayValue,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.labelMedium.copyWith(
@@ -351,16 +367,72 @@ class _SessionIdBadge extends StatelessWidget {
   }
 }
 
-class _RequestSection extends StatelessWidget {
-  const _RequestSection({
-    required this.title,
-    required this.requests,
-    required this.empty,
+class _RequestListView extends StatelessWidget {
+  const _RequestListView({
+    required this.refreshError,
+    required this.actionNeeded,
+    required this.waitingForSignatures,
   });
+
+  final String? refreshError;
+  final List<MultisigSigningRequestRecord> actionNeeded;
+  final List<MultisigSigningRequestRecord> waitingForSignatures;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[
+      if (refreshError != null) _WarningPanel(message: refreshError!),
+      if (actionNeeded.isNotEmpty)
+        _RequestSection(title: 'Action needed', requests: actionNeeded),
+      if (waitingForSignatures.isNotEmpty)
+        _RequestSection(
+          title: 'Waiting for signatures',
+          requests: waitingForSignatures,
+        ),
+    ];
+
+    return AppPaneScrollbar(
+      builder: (context, controller) => ListView(
+        controller: controller,
+        primary: false,
+        padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: 40),
+        children: [
+          for (final child in children)
+            _CenteredTrack(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: child,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CenteredTrack extends StatelessWidget {
+  const _CenteredTrack({required this.padding, required this.child});
+
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _multisigSigningContentMaxWidth,
+        ),
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+class _RequestSection extends StatelessWidget {
+  const _RequestSection({required this.title, required this.requests});
 
   final String title;
   final List<MultisigSigningRequestRecord> requests;
-  final String empty;
 
   @override
   Widget build(BuildContext context) {
@@ -371,10 +443,7 @@ class _RequestSection extends StatelessWidget {
         children: [
           Text(title, style: AppTypography.headlineSmall),
           const SizedBox(height: AppSpacing.xs),
-          if (requests.isEmpty)
-            _EmptySectionLabel(empty)
-          else
-            for (final request in requests) _RequestRow(request: request),
+          for (final request in requests) _RequestRow(request: request),
         ],
       ),
     );
@@ -393,18 +462,28 @@ class _RequestRow extends StatelessWidget {
       BigInt.tryParse(request.amountZatoshi) ?? BigInt.zero,
     ).receipt;
     final reviewOnly = request.isReviewOnly;
-    final stateLabel = request.isBroadcasted
-        ? 'Broadcasted'
-        : !request.coordinatorSubmitted
-        ? 'Pending'
+    final signerCount = request.selectedParticipantIds.length;
+    final stateLabel = !request.coordinatorSubmitted
+        ? 'Preparing'
         : reviewOnly
-        ? 'Review'
+        ? 'Review only'
         : request.readyToBroadcast
-        ? 'Ready'
-        : request.localParticipantSelected &&
-              (request.localRound1Submitted || request.localRound2Submitted)
-        ? 'Waiting'
-        : 'Requested';
+        ? 'Ready to send'
+        : _needsSignature(request)
+        ? 'Sign needed'
+        : request.requesterParticipantId == request.localParticipantId
+        ? 'Created by you'
+        : 'Waiting';
+    final progressLabel = signerCount == 0
+        ? 'No signers'
+        : 'Signed ${request.round2SelectedParticipantCount}/$signerCount';
+
+    final ownershipLabel =
+        request.requesterParticipantId == request.localParticipantId &&
+            !reviewOnly &&
+            stateLabel != 'Created by you'
+        ? 'Created by you'
+        : null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
@@ -443,22 +522,14 @@ class _RequestRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                if (reviewOnly)
-                  const _ProgressPill(label: 'Review only')
-                else ...[
-                  _ProgressPill(
-                    label:
-                        'R1 ${request.round1SelectedParticipantCount}/${request.selectedParticipantIds.length}',
-                  ),
+                _ProgressPill(label: progressLabel),
+                if (ownershipLabel != null) ...[
                   const SizedBox(width: AppSpacing.xxs),
-                  _ProgressPill(
-                    label:
-                        'R2 ${request.round2SelectedParticipantCount}/${request.selectedParticipantIds.length}',
-                  ),
+                  _ProgressPill(label: ownershipLabel),
                 ],
                 const SizedBox(width: AppSpacing.sm),
                 SizedBox(
-                  width: 96,
+                  width: 112,
                   child: Text(
                     stateLabel,
                     textAlign: TextAlign.right,
@@ -473,6 +544,16 @@ class _RequestRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _needsSignature(MultisigSigningRequestRecord request) {
+    if (!request.localParticipantSelected || request.readyToBroadcast) {
+      return false;
+    }
+    if (!request.localRound1Submitted) {
+      return true;
+    }
+    return request.round1Complete && !request.localRound2Submitted;
   }
 }
 
@@ -532,46 +613,40 @@ class _EmptyPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Expanded(
-      child: Center(
-        child: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const AppIcon(AppIcons.users, size: AppIconSize.large),
-              const SizedBox(height: AppSpacing.sm),
-              Text(title, style: AppTypography.headlineMedium),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                body,
-                textAlign: TextAlign.center,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: _EmptyPanelContent(title: title, body: body),
     );
   }
 }
 
-class _EmptySectionLabel extends StatelessWidget {
-  const _EmptySectionLabel(this.text);
+class _EmptyPanelContent extends StatelessWidget {
+  const _EmptyPanelContent({required this.title, required this.body});
 
-  final String text;
+  final String title;
+  final String body;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Text(
-        text,
-        style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+    return Center(
+      child: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AppIcon(AppIcons.users, size: AppIconSize.large),
+            const SizedBox(height: AppSpacing.sm),
+            Text(title, style: AppTypography.headlineMedium),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -32,16 +32,40 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Waiting on others'), findsOneWidget);
+    expect(find.text('Waiting for signatures'), findsOneWidget);
     expect(find.text('uregtest1recipient'), findsOneWidget);
     expect(find.text('Waiting'), findsOneWidget);
-    expect(
-      find.text('No signing requests are waiting on others.'),
-      findsNothing,
-    );
+    expect(find.text('No active multisig sends'), findsNothing);
   });
 
-  testWidgets('shows completed shares as ready without local Round 2 state', (
+  testWidgets(
+    'shows completed shares as an action without local Round 2 state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        _harness([
+          _record(
+            signingRequestId: 'request-ready',
+            requesterParticipantId: 'participant-a',
+            localParticipantId: 'participant-b',
+            selectedParticipantIds: const ['participant-a', 'participant-b'],
+            round1ParticipantIds: const ['participant-a', 'participant-b'],
+            round2ParticipantIds: const ['participant-a', 'participant-b'],
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Action needed'), findsOneWidget);
+      expect(find.text('Ready to send'), findsOneWidget);
+      expect(find.text('Signed 2/2'), findsOneWidget);
+      expect(find.text('No active multisig sends'), findsNothing);
+    },
+  );
+
+  testWidgets('hides already sent requests from the active work list', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
@@ -50,23 +74,21 @@ void main() {
     await tester.pumpWidget(
       _harness([
         _record(
-          signingRequestId: 'request-ready',
+          signingRequestId: 'request-broadcasted',
           requesterParticipantId: 'participant-a',
           localParticipantId: 'participant-b',
           selectedParticipantIds: const ['participant-a', 'participant-b'],
           round1ParticipantIds: const ['participant-a', 'participant-b'],
           round2ParticipantIds: const ['participant-a', 'participant-b'],
+          broadcastTxid: 'txid-1',
         ),
       ]),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready to broadcast'), findsOneWidget);
-    expect(find.text('Ready'), findsOneWidget);
-    expect(
-      find.text('No completed signatures are ready to broadcast.'),
-      findsNothing,
-    );
+    expect(find.text('No active multisig sends'), findsOneWidget);
+    expect(find.text('uregtest1recipient'), findsNothing);
+    expect(find.text('Ready to send'), findsNothing);
   });
 }
 
@@ -78,7 +100,10 @@ Widget _harness(List<MultisigSigningRequestRecord> records) {
         path: '/multisig',
         builder: (_, _) => const MultisigSigningHomeScreen(),
       ),
-      GoRoute(path: '/multisig/setup', builder: (_, _) => const Text('setup')),
+      GoRoute(
+        path: '/multisig/connect',
+        builder: (_, _) => const Text('setup'),
+      ),
       GoRoute(
         path: '/multisig/sign/:signingRequestId',
         builder: (_, _) => const Text('detail'),
@@ -172,6 +197,8 @@ MultisigSigningRequestRecord _record({
   List<String> round1ParticipantIds = const <String>[],
   List<String> round2ParticipantIds = const <String>[],
   String? localStateJson,
+  String? broadcastTxid,
+  bool broadcastResultSent = false,
 }) {
   return MultisigSigningRequestRecord(
     signingRequestId: signingRequestId,
@@ -193,5 +220,7 @@ MultisigSigningRequestRecord _record({
     round1ParticipantIds: round1ParticipantIds,
     round2ParticipantIds: round2ParticipantIds,
     localStateJson: localStateJson,
+    broadcastTxid: broadcastTxid,
+    broadcastResultSent: broadcastResultSent,
   );
 }

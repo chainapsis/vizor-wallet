@@ -479,7 +479,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     var count = 0;
     for (final request in requests) {
       if (request.accountUuid != activeAccountUuid ||
-          request.isBroadcasted ||
+          request.hasBroadcastTxid ||
           !request.selectedParticipantIds.contains(
             request.localParticipantId,
           )) {
