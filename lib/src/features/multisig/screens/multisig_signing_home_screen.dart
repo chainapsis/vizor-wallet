@@ -157,7 +157,6 @@ class _MultisigSigningHomeScreenState
               isMaterialLoading: materialsAsync.isLoading,
               isMultisig: isMultisig,
               isRefreshing: _refreshing,
-              onSetup: () => context.go('/multisig/connect'),
               onRefresh: isMultisig && !_refreshing
                   ? () => unawaited(_refresh())
                   : null,
@@ -238,7 +237,6 @@ class _MultisigHeader extends StatelessWidget {
     required this.isMaterialLoading,
     required this.isMultisig,
     required this.isRefreshing,
-    required this.onSetup,
     required this.onRefresh,
   });
 
@@ -246,7 +244,6 @@ class _MultisigHeader extends StatelessWidget {
   final bool isMaterialLoading;
   final bool isMultisig;
   final bool isRefreshing;
-  final VoidCallback onSetup;
   final VoidCallback? onRefresh;
 
   @override
@@ -297,14 +294,6 @@ class _MultisigHeader extends StatelessWidget {
                 child: Row(
                   children: [
                     const Spacer(),
-                    AppButton(
-                      onPressed: onSetup,
-                      variant: AppButtonVariant.secondary,
-                      size: AppButtonSize.small,
-                      leading: const AppIcon(AppIcons.cog),
-                      child: const Text('Setup'),
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
                     AppButton(
                       onPressed: onRefresh,
                       variant: AppButtonVariant.secondary,
