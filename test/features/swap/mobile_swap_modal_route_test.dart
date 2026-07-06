@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
+import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -470,6 +471,66 @@ void main() {
       find.byKey(const ValueKey('swap_address_avatar_button')),
       findsNothing,
     );
+  });
+
+  testWidgets('QR scan returns to address editor before committing address', (
+    tester,
+  ) async {
+    const scannedAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileAddressScanCard), findsOneWidget);
+
+    tester
+        .widget<MobileAddressScanCard>(find.byType(MobileAddressScanCard))
+        .onScanned(scannedAddress);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('swap_destination_field')),
+          )
+          .controller
+          ?.text,
+      scannedAddress,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_address_remember_toggle')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
+    expect(find.text('Add recipient address'), findsOneWidget);
+
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
+    await tester.pumpAndSettle();
+    tester
+        .widget<MobileAddressScanCard>(find.byType(MobileAddressScanCard))
+        .onScanned(scannedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
+    expect(find.text('Add recipient address'), findsNothing);
   });
 
   // The screen-level morph (keyboardOpen ? cross : chevron) is driven by

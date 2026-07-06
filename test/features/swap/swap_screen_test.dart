@@ -461,11 +461,11 @@ void main() {
     );
     final addressLabel = find.descendant(
       of: find.byKey(const ValueKey('swap_deposit_details')),
-      matching: find.text('One-time Address'),
+      matching: find.text('One-time address'),
     );
     expect(addressLabel, findsOneWidget);
     expect(find.text('One time'), findsNothing);
-    expect(find.text('One-time address'), findsNothing);
+    expect(find.text('One-time Address'), findsNothing);
     expect(tester.widget<Text>(addressLabel).overflow, TextOverflow.visible);
     final detailsRect = tester.getRect(
       find.byKey(const ValueKey('swap_deposit_details')),

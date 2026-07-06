@@ -976,7 +976,7 @@ class _DepositDetailsList extends StatelessWidget {
             desktopValueOverflow: TextOverflow.visible,
           ),
           _detailRow(
-            label: 'One-time Address',
+            label: 'One-time address',
             value: compactSwapAddress(depositAddress),
             copyText: depositAddress,
             toastMessage: 'Address copied',
