@@ -280,7 +280,9 @@ pub fn add_proofs_to_pczt(
 
     if prover.requires_orchard_proof() {
         prover = prover
-            .create_orchard_proof(orchard_proving_key_for_consensus_branch(consensus_branch_id))
+            .create_orchard_proof(orchard_proving_key_for_consensus_branch(
+                consensus_branch_id,
+            ))
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
@@ -353,23 +355,6 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// send keeps [`redact_pczt_for_signer`].
 pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, true)
-}
-
-/// Redacts a migration-batch PCZT and wraps it as a compressed kind-2 Keystone
-/// payload. Firmware inflates this back into the same redacted PCZT before
-/// running the normal review and signing checks.
-pub fn redact_pczt_for_compressed_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let redacted = redact_pczt_for_batch_signer(pczt_bytes)?;
-    crate::wallet::keystone::encode_compressed_pczt_payload(&redacted)
-}
-
-/// Redacts a migration-child PCZT and encodes it in the compact migration child
-/// payload shape consumed by matching firmware.
-pub fn redact_pczt_for_compact_migration_child_signer(
-    pczt_bytes: &[u8],
-) -> Result<Vec<u8>, String> {
-    pczt::compact_migration::encode_child_from_pczt_bytes(pczt_bytes)
-        .map_err(|e| format!("Encode compact migration child PCZT: {e:?}"))
 }
 
 /// Derived-field elisions for one Orchard-shaped action of a batch request.

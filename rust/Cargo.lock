@@ -2968,7 +2968,6 @@ dependencies = [
  "jubjub",
  "log",
  "minicbor",
- "miniz_oxide",
  "nonempty",
  "orchard",
  "pasta_curves",

@@ -139,144 +139,10 @@ const ZCASH_SIGN_BATCH_TYPE: &str = "zcash-sign-batch";
 const ZCASH_SIGN_BATCH_VERSION: u32 = 1;
 const ZCASH_SIGN_BATCH_NETWORK_MAINNET: u32 = 1;
 pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
-pub(crate) const ZCASH_SIGN_MESSAGE_KIND_MIGRATION_COMPACT_V1: u32 = 2;
-pub(crate) const ZCASH_COMPRESSED_PCZT_PAYLOAD_MAGIC: &[u8; 4] = b"ZCPZ";
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
 // Must match the signer's `ZCASH_BATCH_MAX_MESSAGES`; the device rejects any batch
 // larger than this. Sized to fit a full migration batch.
 pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 80;
-
-pub(crate) struct ZcashBatchMessagePayload<'a> {
-    pub id: &'a str,
-    pub kind: u32,
-    pub payload: &'a [u8],
-}
-
-fn zcash_batch_payload_kind(payload: &[u8]) -> u32 {
-    if payload.starts_with(ZCASH_COMPRESSED_PCZT_PAYLOAD_MAGIC)
-        || payload.starts_with(pczt::compact_migration::COMPACT_MIGRATION_CHILD_MAGIC)
-        || payload.starts_with(pczt::compact_migration::COMPACT_MIGRATION_BATCH_MAGIC)
-    {
-        ZCASH_SIGN_MESSAGE_KIND_MIGRATION_COMPACT_V1
-    } else {
-        ZCASH_SIGN_MESSAGE_KIND_PCZT_V1
-    }
-}
-
-struct ZcashBatchWireMessage {
-    id: String,
-    kind: u32,
-    payload: Vec<u8>,
-}
-
-fn migration_message_index(id: &str) -> Option<u32> {
-    id.strip_prefix("migration-")?.parse().ok()
-}
-
-fn pack_zcash_sign_batch_messages(
-    messages: &[ZcashBatchMessagePayload<'_>],
-) -> Vec<ZcashBatchWireMessage> {
-    let mut out = Vec::with_capacity(messages.len());
-    let mut index = 0;
-    while index < messages.len() {
-        let message = &messages[index];
-        if !pczt::compact_migration::is_compact_migration_child_payload(message.payload) {
-            out.push(ZcashBatchWireMessage {
-                id: message.id.to_string(),
-                kind: message.kind,
-                payload: message.payload.to_vec(),
-            });
-            index += 1;
-            continue;
-        }
-
-        let Some(first_child_index) = migration_message_index(message.id) else {
-            out.push(ZcashBatchWireMessage {
-                id: message.id.to_string(),
-                kind: message.kind,
-                payload: message.payload.to_vec(),
-            });
-            index += 1;
-            continue;
-        };
-
-        let mut end = index + 1;
-        while end < messages.len() {
-            let expected_child_index = first_child_index + (end - index) as u32;
-            let next = &messages[end];
-            if !pczt::compact_migration::is_compact_migration_child_payload(next.payload)
-                || migration_message_index(next.id) != Some(expected_child_index)
-            {
-                break;
-            }
-            end += 1;
-        }
-
-        if end == index + 1 {
-            out.push(ZcashBatchWireMessage {
-                id: message.id.to_string(),
-                kind: message.kind,
-                payload: message.payload.to_vec(),
-            });
-        } else {
-            let child_payloads = messages[index..end]
-                .iter()
-                .map(|message| message.payload)
-                .collect::<Vec<_>>();
-            match pczt::compact_migration::encode_batch_from_child_payloads(
-                first_child_index,
-                &child_payloads,
-            ) {
-                Ok(payload) => out.push(ZcashBatchWireMessage {
-                    id: format!("migration-batch-{first_child_index}"),
-                    kind: ZCASH_SIGN_MESSAGE_KIND_MIGRATION_COMPACT_V1,
-                    payload,
-                }),
-                Err(_) => {
-                    out.extend(
-                        messages[index..end]
-                            .iter()
-                            .map(|message| ZcashBatchWireMessage {
-                                id: message.id.to_string(),
-                                kind: message.kind,
-                                payload: message.payload.to_vec(),
-                            }),
-                    );
-                }
-            }
-        }
-
-        index = end;
-    }
-
-    out
-}
-
-/// Encodes a redacted PCZT as a migration compact v1 payload.
-///
-/// The payload shape is:
-///
-/// ```text
-/// ZCPZ || uncompressed_len:u32_le || zlib_compressed_pczt
-/// ```
-///
-/// This is deliberately conservative: kind 2 initially means "compressed PCZT",
-/// so firmware can inflate and reuse the existing PCZT verifier and signer path.
-/// More aggressive migration-specific dictionaries can share this message kind
-/// by using a different four-byte payload marker.
-pub(crate) fn encode_compressed_pczt_payload(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let uncompressed_len: u32 = pczt_bytes
-        .len()
-        .try_into()
-        .map_err(|_| "PCZT payload is too large to compress for Keystone".to_string())?;
-    let compressed = miniz_oxide::deflate::compress_to_vec_zlib(pczt_bytes, 10);
-    let mut payload =
-        Vec::with_capacity(ZCASH_COMPRESSED_PCZT_PAYLOAD_MAGIC.len() + 4 + compressed.len());
-    payload.extend_from_slice(ZCASH_COMPRESSED_PCZT_PAYLOAD_MAGIC);
-    payload.extend_from_slice(&uncompressed_len.to_le_bytes());
-    payload.extend_from_slice(&compressed);
-    Ok(payload)
-}
 
 // `zcash-batch-sig-result` (UR tag 49207) wire constants. The registry CBOR shape is
 // `{1: version, 2: request_id, 3: results: [{1: message_id, 2: sigs:
@@ -587,9 +453,9 @@ pub fn encode_pczt_ur_parts(
 
 /// Encode several redacted PCZTs into the local `zcash-sign-batch` UR used by
 /// the Keystone batch-signing firmware branch.
-pub(crate) fn encode_zcash_sign_batch_cbor_payloads(
+pub(crate) fn encode_zcash_sign_batch_cbor(
     request_id: &str,
-    messages: &[ZcashBatchMessagePayload<'_>],
+    messages: &[ZcashBatchMessageInput],
 ) -> Result<Vec<u8>, String> {
     if request_id.is_empty() {
         return Err("Zcash batch request id must not be empty".to_string());
@@ -609,18 +475,16 @@ pub(crate) fn encode_zcash_sign_batch_cbor_payloads(
         if !ids.insert(message.id.as_bytes().to_vec()) {
             return Err(format!("Duplicate Zcash batch message id {}", message.id));
         }
-        if message.payload.is_empty() {
+        if message.pczt_bytes.is_empty() {
             return Err(format!(
                 "Zcash batch message {} has an empty payload",
                 message.id
             ));
         }
-        if !payloads.insert(message.payload.to_vec()) {
+        if !payloads.insert(message.pczt_bytes.clone()) {
             return Err("Duplicate Zcash batch payload".to_string());
         }
     }
-
-    let wire_messages = pack_zcash_sign_batch_messages(messages);
 
     let mut cbor = Vec::new();
     let mut encoder = minicbor::Encoder::new(&mut cbor);
@@ -641,10 +505,10 @@ pub(crate) fn encode_zcash_sign_batch_cbor_payloads(
         .map_err(|e| format!("CBOR encode batch network: {e}"))?
         .u8(4)
         .map_err(|e| format!("CBOR encode batch messages key: {e}"))?
-        .array(wire_messages.len() as u64)
+        .array(messages.len() as u64)
         .map_err(|e| format!("CBOR encode batch messages array: {e}"))?;
 
-    for message in &wire_messages {
+    for message in messages {
         encoder
             .map(3)
             .map_err(|e| format!("CBOR encode message map: {e}"))?
@@ -654,27 +518,29 @@ pub(crate) fn encode_zcash_sign_batch_cbor_payloads(
             .map_err(|e| format!("CBOR encode message id: {e}"))?
             .u8(2)
             .map_err(|e| format!("CBOR encode message kind key: {e}"))?
-            .u32(message.kind)
+            .u32(ZCASH_SIGN_MESSAGE_KIND_PCZT_V1)
             .map_err(|e| format!("CBOR encode message kind: {e}"))?
             .u8(3)
             .map_err(|e| format!("CBOR encode message payload key: {e}"))?
-            .bytes(&message.payload)
+            .bytes(&message.pczt_bytes)
             .map_err(|e| format!("CBOR encode message payload: {e}"))?;
     }
 
     Ok(cbor)
 }
 
-pub(crate) fn encode_zcash_sign_batch_ur_parts_payloads(
+/// Encode several redacted PCZTs into the local `zcash-sign-batch` UR used by
+/// the Keystone batch-signing firmware branch.
+pub fn encode_zcash_sign_batch_ur_parts(
     request_id: &str,
-    messages: &[ZcashBatchMessagePayload<'_>],
+    messages: &[ZcashBatchMessageInput],
     max_fragment_len: usize,
 ) -> Result<Vec<String>, String> {
     let payload_bytes = messages
         .iter()
-        .map(|message| message.payload.len())
+        .map(|message| message.pczt_bytes.len())
         .sum::<usize>();
-    let cbor = encode_zcash_sign_batch_cbor_payloads(request_id, messages)?;
+    let cbor = encode_zcash_sign_batch_cbor(request_id, messages)?;
     let cbor_len = cbor.len();
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
@@ -697,24 +563,6 @@ pub(crate) fn encode_zcash_sign_batch_ur_parts_payloads(
         parts.len()
     );
     Ok(parts)
-}
-
-/// Encode several redacted PCZTs into the local `zcash-sign-batch` UR used by
-/// the Keystone batch-signing firmware branch.
-pub fn encode_zcash_sign_batch_ur_parts(
-    request_id: &str,
-    messages: &[ZcashBatchMessageInput],
-    max_fragment_len: usize,
-) -> Result<Vec<String>, String> {
-    let messages = messages
-        .iter()
-        .map(|message| ZcashBatchMessagePayload {
-            id: &message.id,
-            kind: zcash_batch_payload_kind(&message.pczt_bytes),
-            payload: &message.pczt_bytes,
-        })
-        .collect::<Vec<_>>();
-    encode_zcash_sign_batch_ur_parts_payloads(request_id, &messages, max_fragment_len)
 }
 
 /// Decode the raw CBOR payload from a `zcash-sign-result` UR.
