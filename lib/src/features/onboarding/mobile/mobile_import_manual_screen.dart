@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
+import 'mobile_import_review_screen.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
@@ -278,7 +279,16 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
         )
         .then((result) {
-          if (mounted) _editLastWordAfterReviewBack();
+          if (!mounted) return;
+          if (result == MobileImportReviewResult.clear) {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/import');
+            }
+            return;
+          }
+          _editLastWordAfterReviewBack();
         });
   }
 

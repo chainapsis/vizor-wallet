@@ -63,6 +63,39 @@ Widget _entryAppWithBirthdayProbe() {
   );
 }
 
+Widget _stackedPasteApp() {
+  final router = GoRouter(
+    initialLocation: '/method',
+    routes: [
+      GoRoute(
+        path: '/method',
+        builder: (context, _) => Scaffold(
+          body: Center(
+            child: TextButton(
+              key: const ValueKey('method_import'),
+              onPressed: () => context.push('/import'),
+              child: const Text('Method selection'),
+            ),
+          ),
+        ),
+      ),
+      GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
+      GoRoute(
+        path: '/import/review',
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    ),
+  );
+}
+
 Widget _reviewApp({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
@@ -254,6 +287,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
+  });
+
+  testWidgets('clearing a pasted review preserves the import stack', (
+    tester,
+  ) async {
+    _mockClipboard(tester, _validMnemonic);
+    await tester.pumpWidget(_stackedPasteApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('method_import')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_review_clear')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Wallet'), findsOneWidget);
+    expect(find.text('Review Import'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Method selection'), findsOneWidget);
   });
 
   testWidgets('review phrase is covered when privacy controller is unsafe', (

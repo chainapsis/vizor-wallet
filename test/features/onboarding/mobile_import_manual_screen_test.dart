@@ -7,12 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
 const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
+const _validMnemonic =
+    'abandon ability able about above absent absorb abstract absurd abuse access accident';
 
 Widget _app() {
   return ProviderScope(
@@ -45,6 +48,47 @@ Widget _routedApp() {
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _stackedManualApp() {
+  final words = _validMnemonic.split(' ');
+  final router = GoRouter(
+    initialLocation: '/method',
+    routes: [
+      GoRoute(
+        path: '/method',
+        builder: (context, _) => Scaffold(
+          body: Center(
+            child: TextButton(
+              key: const ValueKey('method_import'),
+              onPressed: () => context.push('/import'),
+              child: const Text('Method selection'),
+            ),
+          ),
+        ),
+      ),
+      GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
+      GoRoute(
+        path: '/import/manual',
+        builder: (_, _) => MobileImportManualScreen(
+          wordListOverride: words,
+          initialAcceptedWords: words,
+        ),
+      ),
+      GoRoute(
+        path: '/import/review',
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -147,6 +191,33 @@ void main() {
     expect(find.textContaining('Review:'), findsOneWidget);
     expect(find.textContaining('zebra'), findsOneWidget);
     expect(find.textContaining('found 25'), findsNothing);
+  });
+
+  testWidgets('clearing a manual review preserves the import stack', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_stackedManualApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('method_import')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_manual_finish')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_review_clear')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Wallet'), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsNothing);
+    expect(find.text('Review Import'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Method selection'), findsOneWidget);
   });
 
   testWidgets('keyboard action advances without dropping focus', (

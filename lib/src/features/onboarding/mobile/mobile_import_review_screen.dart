@@ -21,6 +21,8 @@ const _kImportReviewSeedCardHeight = 360.0;
 const _kImportReviewSeedChipWidth = 90.0;
 const _kImportReviewSeedColumns = 3;
 
+enum MobileImportReviewResult { clear }
+
 /// Review step for software wallet import. Figma `Review Import`: after
 /// clipboard paste or manual word entry, the user gets one final seed phrase
 /// confirmation before birthday selection starts.
@@ -101,6 +103,10 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   }
 
   void _clear(BuildContext context) {
+    if (context.canPop()) {
+      context.pop(MobileImportReviewResult.clear);
+      return;
+    }
     context.go('/import');
   }
 
