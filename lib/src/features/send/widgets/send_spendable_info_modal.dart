@@ -68,8 +68,8 @@ class SendSpendableInfoModal extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Your Spendable Balance may be lower than\n'
-                  'your Total Balance.',
+                  'Your spendable balance may be lower than\n'
+                  'your total balance.',
                   style: bodyStyle,
                   softWrap: false,
                 ),

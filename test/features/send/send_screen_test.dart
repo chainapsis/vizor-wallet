@@ -598,8 +598,8 @@ void main() {
       tester
           .widget<Text>(
             find.text(
-              'Your Spendable Balance may be lower than\n'
-              'your Total Balance.',
+              'Your spendable balance may be lower than\n'
+              'your total balance.',
             ),
           )
           .style
