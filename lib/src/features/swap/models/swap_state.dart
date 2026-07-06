@@ -46,6 +46,7 @@ class SwapState {
     required this.externalAsset,
     required this.reviewVisible,
     required this.intents,
+    this.pendingKeystoneSigningIntent,
     this.quoteMode = SwapQuoteMode.exactInput,
     this.amountInputMode = SwapAmountInputMode.token,
     this.receiveAmountInputMode = SwapAmountInputMode.token,
@@ -78,6 +79,7 @@ class SwapState {
   final SwapAsset externalAsset;
   final bool reviewVisible;
   final List<SwapIntent> intents;
+  final SwapIntent? pendingKeystoneSigningIntent;
   final SwapQuoteMode quoteMode;
   final SwapAmountInputMode amountInputMode;
   final SwapAmountInputMode receiveAmountInputMode;
@@ -120,10 +122,9 @@ class SwapState {
     return intent;
   }
 
-  String get walletZecPlaceholderAddress =>
-      direction.sendsZec
-          ? 'u1wallet-refund-placeholder'
-          : 'u1wallet-shielded-placeholder';
+  String get walletZecPlaceholderAddress => direction.sendsZec
+      ? 'u1wallet-refund-placeholder'
+      : 'u1wallet-shielded-placeholder';
 
   double? get sellAmount {
     final amount = double.tryParse(amountText);
@@ -140,16 +141,14 @@ class SwapState {
   double? get quoteAmount =>
       quoteMode == SwapQuoteMode.exactInput ? sellAmount : receiveAmount;
 
-  String get quoteAmountText =>
-      quoteMode == SwapQuoteMode.exactInput
-          ? amountText.trim()
-          : receiveAmountText.trim();
+  String get quoteAmountText => quoteMode == SwapQuoteMode.exactInput
+      ? amountText.trim()
+      : receiveAmountText.trim();
 
   String? get quoteAmountPrecisionError => swapTokenAmountPrecisionError(
-    asset:
-        quoteMode == SwapQuoteMode.exactInput
-            ? direction.fromAsset(externalAsset)
-            : direction.toAsset(externalAsset),
+    asset: quoteMode == SwapQuoteMode.exactInput
+        ? direction.fromAsset(externalAsset)
+        : direction.toAsset(externalAsset),
     amountText: quoteAmountText,
   );
 
@@ -165,19 +164,17 @@ class SwapState {
     );
   }
 
-  String get destinationFieldLabel =>
-      direction.sendsZec
-          ? 'Destination'
-          : '${externalAsset.symbol} refund address';
+  String get destinationFieldLabel => direction.sendsZec
+      ? 'Destination'
+      : '${externalAsset.symbol} refund address';
 
   // The address belongs to a chain, not the token (you don't have a "USDC
   // address" — you have an Ethereum address that holds USDC), so name the
   // chain. Leading with it also keeps the relevant part visible in the narrow
   // modal field (the old "Refund address on the ET…" cut off the chain).
-  String get destinationFieldHint =>
-      direction.sendsZec
-          ? '${externalAsset.chainLabel} address or account'
-          : '${externalAsset.chainLabel} address';
+  String get destinationFieldHint => direction.sendsZec
+      ? '${externalAsset.chainLabel} address or account'
+      : '${externalAsset.chainLabel} address';
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when
@@ -250,6 +247,7 @@ class SwapState {
     SwapAsset? externalAsset,
     bool? reviewVisible,
     List<SwapIntent>? intents,
+    SwapIntent? pendingKeystoneSigningIntent,
     SwapQuoteMode? quoteMode,
     SwapAmountInputMode? amountInputMode,
     SwapAmountInputMode? receiveAmountInputMode,
@@ -278,6 +276,7 @@ class SwapState {
     bool clearStatusError = false,
     bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
+    bool clearPendingKeystoneSigningIntent = false,
   }) {
     return SwapState(
       direction: direction ?? this.direction,
@@ -287,6 +286,9 @@ class SwapState {
       externalAsset: externalAsset ?? this.externalAsset,
       reviewVisible: reviewVisible ?? this.reviewVisible,
       intents: intents ?? this.intents,
+      pendingKeystoneSigningIntent: clearPendingKeystoneSigningIntent
+          ? null
+          : pendingKeystoneSigningIntent ?? this.pendingKeystoneSigningIntent,
       quoteMode: quoteMode ?? this.quoteMode,
       amountInputMode: amountInputMode ?? this.amountInputMode,
       receiveAmountInputMode:
@@ -300,10 +302,12 @@ class SwapState {
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
-      reviewAddressPlan:
-          clearReview ? null : reviewAddressPlan ?? this.reviewAddressPlan,
-      reviewAccountUuid:
-          clearReview ? null : reviewAccountUuid ?? this.reviewAccountUuid,
+      reviewAddressPlan: clearReview
+          ? null
+          : reviewAddressPlan ?? this.reviewAddressPlan,
+      reviewAccountUuid: clearReview
+          ? null
+          : reviewAccountUuid ?? this.reviewAccountUuid,
       quoteLoading: quoteLoading ?? this.quoteLoading,
       quoteExpired: clearReview ? false : quoteExpired ?? this.quoteExpired,
       quoteError: clearQuoteError ? null : quoteError ?? this.quoteError,
@@ -311,14 +315,14 @@ class SwapState {
       statusError: clearStatusError ? null : statusError ?? this.statusError,
       startSubmitting: startSubmitting ?? this.startSubmitting,
       maxAmountLoading: maxAmountLoading ?? this.maxAmountLoading,
-      maxAmountError:
-          clearMaxAmountError ? null : maxAmountError ?? this.maxAmountError,
+      maxAmountError: clearMaxAmountError
+          ? null
+          : maxAmountError ?? this.maxAmountError,
       depositTxHashText: depositTxHashText ?? this.depositTxHashText,
       depositSubmitting: depositSubmitting ?? this.depositSubmitting,
-      selectedIntentId:
-          clearSelectedIntent
-              ? null
-              : selectedIntentId ?? this.selectedIntentId,
+      selectedIntentId: clearSelectedIntent
+          ? null
+          : selectedIntentId ?? this.selectedIntentId,
     );
   }
 }

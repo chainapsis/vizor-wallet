@@ -90,6 +90,48 @@ void main() {
     expect(args.intent.id, _hardwareIntent.id);
   });
 
+  testWidgets('auto-sign skips the mobile ZEC deposit page', (tester) async {
+    Object? capturedExtra;
+    final router = GoRouter(
+      initialLocation:
+          '/activity/swap/${_hardwareIntent.id}?$swapActivitySignQueryKey=$swapActivitySignZecDepositValue',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            autoSignZecDeposit:
+                state.uri.queryParameters[swapActivitySignQueryKey] ==
+                swapActivitySignZecDepositValue,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+        GoRoute(
+          path: '/swap/keystone-sign',
+          builder: (_, state) {
+            capturedExtra = state.extra;
+            return const SizedBox(
+              key: ValueKey('mobile_swap_keystone_sign_route'),
+            );
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_swap_keystone_sign_route')),
+      findsOneWidget,
+    );
+    expect(capturedExtra, isA<MobileSwapKeystoneSignArgs>());
+    final args = capturedExtra! as MobileSwapKeystoneSignArgs;
+    expect(args.intent.id, _hardwareIntent.id);
+  });
+
   testWidgets('mobile Keystone broadcast failure shows toast without submit', (
     tester,
   ) async {
