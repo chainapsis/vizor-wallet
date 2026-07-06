@@ -18,6 +18,7 @@ import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
+import 'mobile_swap_keystone_sign_screen.dart';
 
 /// Mobile swap review — hosts the shared review content (a 400 pt
 /// surface that fits the phone; smaller devices scale down) with the
@@ -94,6 +95,18 @@ class _MobileSwapReviewScreenState
             ).toString(),
           );
         case SwapStartedKeystoneSigning(:final intentId):
+          final pendingIntent = ref
+              .read(swapStateProvider)
+              .pendingKeystoneSigningIntent;
+          if (pendingIntent != null && pendingIntent.id == intentId) {
+            context.go(
+              '/swap/keystone-sign',
+              extra: MobileSwapKeystoneSignArgs.fromReview(
+                intent: pendingIntent,
+              ),
+            );
+            return;
+          }
           context.go(
             swapActivityDetailUri(
               intentId: intentId,

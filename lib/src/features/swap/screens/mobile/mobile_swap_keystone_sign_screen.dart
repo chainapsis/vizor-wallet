@@ -12,14 +12,27 @@ import '../../../send/screens/mobile/mobile_send_screen.dart'
     show MobileSaplingParamsSheet;
 import '../../../send/services/sapling_params.dart';
 import '../../models/swap_deposit_broadcast_result.dart';
+import '../../models/swap_activity_navigation.dart';
 import '../../models/swap_keystone_broadcast_result.dart';
 import '../../models/swap_models.dart';
+import '../../providers/swap_state_provider.dart';
 import '../../providers/swap_hardware_signing_service.dart';
 
 class MobileSwapKeystoneSignArgs {
-  const MobileSwapKeystoneSignArgs({required this.intent});
+  const MobileSwapKeystoneSignArgs({
+    required this.intent,
+    this.startedFromReview = false,
+    this.returnTarget = SwapActivityReturnTarget.activity,
+  });
+
+  const MobileSwapKeystoneSignArgs.fromReview({
+    required this.intent,
+    this.returnTarget = SwapActivityReturnTarget.swap,
+  }) : startedFromReview = true;
 
   final SwapIntent intent;
+  final bool startedFromReview;
+  final SwapActivityReturnTarget returnTarget;
 }
 
 sealed class MobileSwapKeystoneSignResult {
@@ -39,9 +52,18 @@ class MobileSwapKeystoneSignFailure extends MobileSwapKeystoneSignResult {
 }
 
 class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
-  const MobileSwapKeystoneSignScreen({required this.args, super.key});
+  const MobileSwapKeystoneSignScreen({
+    required this.args,
+    this.scannerBuilder,
+    this.signedPcztDecoder,
+    this.forceScannerActiveForTesting = false,
+    super.key,
+  });
 
   final MobileSwapKeystoneSignArgs args;
+  final MobileKeystonePcztScannerBuilder? scannerBuilder;
+  final MobileKeystonePcztDecoder? signedPcztDecoder;
+  final bool forceScannerActiveForTesting;
 
   @override
   ConsumerState<MobileSwapKeystoneSignScreen> createState() =>
@@ -64,6 +86,10 @@ class _MobileSwapKeystoneSignScreenState
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
+      onCancel: _handleCancel,
+      signedPcztDecoder: widget.signedPcztDecoder,
+      scannerBuilder: widget.scannerBuilder,
+      forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
       keyPrefix: 'mobile_swap_keystone_sign',
       scanCaption:
           'Scan the QR code on your Keystone to finish the ZEC deposit',
@@ -166,16 +192,15 @@ class _MobileSwapKeystoneSignScreenState
     } catch (e, st) {
       log('MobileSwapKeystoneSign._broadcast: ERROR: $e\n$st');
       if (!context.mounted) return;
-      context.pop(MobileSwapKeystoneSignFailure(_friendlyError(e)));
+      await _completeWithFailure(context, _friendlyError(e));
       return;
     }
 
+    if (!context.mounted) return;
     if (!_hasBroadcastTxid(result)) {
-      if (!context.mounted) return;
-      context.pop(
-        MobileSwapKeystoneSignFailure(
-          _friendlyBroadcastFailureMessage(result.message),
-        ),
+      await _completeWithFailure(
+        context,
+        _friendlyBroadcastFailureMessage(result.message),
       );
       return;
     }
@@ -186,15 +211,65 @@ class _MobileSwapKeystoneSignScreenState
       );
     }
     if (!context.mounted) return;
-    context.pop(
-      MobileSwapKeystoneSignSuccess(
-        SwapKeystoneBroadcastResult(
-          txHash: result.txid,
-          status: result.status,
-          message: result.message,
-        ),
+    await _completeWithBroadcast(
+      context,
+      SwapKeystoneBroadcastResult(
+        txHash: result.txid,
+        status: result.status,
+        message: result.message,
       ),
     );
+  }
+
+  Future<void> _completeWithBroadcast(
+    BuildContext context,
+    SwapKeystoneBroadcastResult broadcast,
+  ) async {
+    if (!widget.args.startedFromReview) {
+      if (!context.mounted) return;
+      context.pop(MobileSwapKeystoneSignSuccess(broadcast));
+      return;
+    }
+
+    await ref
+        .read(swapStateProvider.notifier)
+        .recordKeystoneDepositBroadcast(
+          intent: widget.args.intent,
+          broadcast: broadcast,
+        );
+    if (!context.mounted) return;
+    context.go(
+      swapActivityDetailUri(
+        intentId: widget.args.intent.id,
+        returnTarget: widget.args.returnTarget,
+      ).toString(),
+    );
+  }
+
+  Future<void> _completeWithFailure(
+    BuildContext context,
+    String message,
+  ) async {
+    if (widget.args.startedFromReview) {
+      throw _MobileSwapKeystoneSignFailureException(message);
+    }
+    if (!context.mounted) return;
+    context.pop(MobileSwapKeystoneSignFailure(message));
+  }
+
+  void _handleCancel() {
+    if (widget.args.startedFromReview) {
+      ref
+          .read(swapStateProvider.notifier)
+          .clearPendingKeystoneSigningIntent(widget.args.intent.id);
+      context.go(widget.args.returnTarget.path);
+      return;
+    }
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go(widget.args.returnTarget.path);
   }
 
   bool _hasBroadcastTxid(rust_sync.ExtractAndBroadcastPcztResult result) {
@@ -216,6 +291,9 @@ class _MobileSwapKeystoneSignScreenState
   }
 
   String _friendlyError(Object error) {
+    if (error is _MobileSwapKeystoneSignFailureException) {
+      return error.message;
+    }
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
@@ -234,6 +312,15 @@ class _MobileSwapKeystoneSignScreenState
     }
     return 'ZEC deposit signing could not be completed.';
   }
+}
+
+class _MobileSwapKeystoneSignFailureException implements Exception {
+  const _MobileSwapKeystoneSignFailureException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 String _shortSwapValue(String? value) {
