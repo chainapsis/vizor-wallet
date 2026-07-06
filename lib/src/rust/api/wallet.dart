@@ -153,6 +153,16 @@ Future<List<AccountInfo>> listAccounts({
   network: network,
 );
 
+Future<AccountExportMetadata> getAccountExportMetadata({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetAccountExportMetadata(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Delete an account from the wallet database.
 Future<void> deleteAccount({
   required String dbPath,
@@ -246,6 +256,34 @@ class AccountCreationResult {
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
           unifiedAddress == other.unifiedAddress;
+}
+
+/// Sensitive metadata for explicit encrypted wallet export flows.
+class AccountExportMetadata {
+  final int? zip32AccountIndex;
+  final String? hardwareUfvk;
+  final Uint8List? seedFingerprint;
+
+  const AccountExportMetadata({
+    this.zip32AccountIndex,
+    this.hardwareUfvk,
+    this.seedFingerprint,
+  });
+
+  @override
+  int get hashCode =>
+      zip32AccountIndex.hashCode ^
+      hardwareUfvk.hashCode ^
+      seedFingerprint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountExportMetadata &&
+          runtimeType == other.runtimeType &&
+          zip32AccountIndex == other.zip32AccountIndex &&
+          hardwareUfvk == other.hardwareUfvk &&
+          seedFingerprint == other.seedFingerprint;
 }
 
 /// Account info returned by list_accounts.

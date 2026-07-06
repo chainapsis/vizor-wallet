@@ -66,6 +66,13 @@ pub struct AccountInfo {
     pub is_hardware: bool,
 }
 
+/// Sensitive metadata for explicit encrypted wallet export flows.
+pub struct AccountExportMetadata {
+    pub zip32_account_index: Option<u32>,
+    pub hardware_ufvk: Option<String>,
+    pub seed_fingerprint: Option<Vec<u8>>,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -667,6 +674,22 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 is_hardware: a.is_hardware,
             })
             .collect())
+    })
+}
+
+pub fn get_account_export_metadata(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<AccountExportMetadata, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let metadata = keys::get_account_export_metadata(&db_path, network, &account_uuid)?;
+        Ok(AccountExportMetadata {
+            zip32_account_index: metadata.zip32_account_index,
+            hardware_ufvk: metadata.hardware_ufvk,
+            seed_fingerprint: metadata.seed_fingerprint,
+        })
     })
 }
 

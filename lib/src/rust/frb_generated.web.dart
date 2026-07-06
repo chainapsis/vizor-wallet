@@ -59,6 +59,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AccountCreationResult dco_decode_account_creation_result(dynamic raw);
 
   @protected
+  AccountExportMetadata dco_decode_account_export_metadata(dynamic raw);
+
+  @protected
   AccountInfo dco_decode_account_info(dynamic raw);
 
   @protected
@@ -561,6 +564,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AccountCreationResult sse_decode_account_creation_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  AccountExportMetadata sse_decode_account_export_metadata(
     SseDeserializer deserializer,
   );
 
@@ -1193,6 +1201,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_account_creation_result(
     AccountCreationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_account_export_metadata(
+    AccountExportMetadata self,
     SseSerializer serializer,
   );
 
