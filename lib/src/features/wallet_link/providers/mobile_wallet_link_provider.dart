@@ -18,6 +18,8 @@ enum MobileWalletLinkScanError { invalid, expired, failed }
 class MobileWalletLinkState {
   const MobileWalletLinkState({
     this.payload,
+    this.packageId,
+    this.completionToken,
     this.selectedAccountUuids = const <String>{},
     this.selectedContactIds = const <String>{},
     this.scanError,
@@ -28,6 +30,8 @@ class MobileWalletLinkState {
   const MobileWalletLinkState.initial() : this();
 
   final WalletLinkTransferPayload? payload;
+  final String? packageId;
+  final String? completionToken;
   final Set<String> selectedAccountUuids;
   final Set<String> selectedContactIds;
   final MobileWalletLinkScanError? scanError;
@@ -57,6 +61,10 @@ class MobileWalletLinkState {
   MobileWalletLinkState copyWith({
     WalletLinkTransferPayload? payload,
     bool clearPayload = false,
+    String? packageId,
+    bool clearPackageId = false,
+    String? completionToken,
+    bool clearCompletionToken = false,
     Set<String>? selectedAccountUuids,
     Set<String>? selectedContactIds,
     MobileWalletLinkScanError? scanError,
@@ -66,6 +74,10 @@ class MobileWalletLinkState {
   }) {
     return MobileWalletLinkState(
       payload: clearPayload ? null : payload ?? this.payload,
+      packageId: clearPackageId ? null : packageId ?? this.packageId,
+      completionToken: clearCompletionToken
+          ? null
+          : completionToken ?? this.completionToken,
       selectedAccountUuids: selectedAccountUuids ?? this.selectedAccountUuids,
       selectedContactIds: selectedContactIds ?? this.selectedContactIds,
       scanError: clearScanError ? null : scanError ?? this.scanError,
@@ -108,6 +120,8 @@ class MobileWalletLinkController extends Notifier<MobileWalletLinkState> {
         };
         state = MobileWalletLinkState(
           payload: payload,
+          packageId: qr.packageId,
+          completionToken: qr.completionToken,
           selectedAccountUuids: selectedAccounts,
           selectedContactIds: selectedContacts,
           scanResetToken: state.scanResetToken,

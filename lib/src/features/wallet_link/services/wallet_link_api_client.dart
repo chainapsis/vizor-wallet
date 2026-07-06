@@ -66,6 +66,47 @@ class WalletLinkApiClient {
     }
   }
 
+  Future<WalletLinkPackageStatus> getPackageStatus(String packageId) async {
+    final request = await _client
+        .getUrl(walletLinkPackageStatusUri(_baseUri, packageId: packageId))
+        .timeout(timeout);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+
+    final response = await request.close().timeout(timeout);
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw WalletLinkApiException(response.statusCode, body.trim());
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException('Wallet link response must be an object.');
+    }
+    return WalletLinkPackageStatus.fromJson(decoded);
+  }
+
+  Future<WalletLinkPackageStatus> completePackage({
+    required String packageId,
+    required String completionToken,
+  }) async {
+    final request = await _client
+        .postUrl(walletLinkPackageCompleteUri(_baseUri, packageId: packageId))
+        .timeout(timeout);
+    request.headers.contentType = ContentType.json;
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    request.write(jsonEncode({'completionToken': completionToken}));
+
+    final response = await request.close().timeout(timeout);
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw WalletLinkApiException(response.statusCode, body.trim());
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException('Wallet link response must be an object.');
+    }
+    return WalletLinkPackageStatus.fromJson(decoded);
+  }
+
   Future<WalletLinkPackageDownload> getPackage(String packageId) async {
     final request = await _client
         .getUrl(walletLinkPackagesUri(_baseUri, packageId: packageId))

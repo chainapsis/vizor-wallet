@@ -39,15 +39,18 @@ class WalletLinkCreatePackageRequest {
   const WalletLinkCreatePackageRequest({
     required this.id,
     required this.envelope,
+    required this.completionTokenHash,
   });
 
   final String id;
   final WalletLinkEnvelope envelope;
+  final String completionTokenHash;
 
   Map<String, Object?> toJson() => {
     'id': id,
     'version': 1,
     'envelope': envelope.toJson(),
+    'completionTokenHash': completionTokenHash,
   };
 }
 
@@ -99,6 +102,39 @@ class WalletLinkPackageDownload {
   }
 }
 
+enum WalletLinkPackageCompletionStatus { pending, completed }
+
+class WalletLinkPackageStatus {
+  const WalletLinkPackageStatus({
+    required this.id,
+    required this.status,
+    required this.expiresAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final WalletLinkPackageCompletionStatus status;
+  final int expiresAt;
+  final int? completedAt;
+
+  bool get isCompleted => status == WalletLinkPackageCompletionStatus.completed;
+
+  factory WalletLinkPackageStatus.fromJson(Map<String, Object?> json) {
+    final statusRaw = json['status'] as String;
+    final status = switch (statusRaw) {
+      'pending' => WalletLinkPackageCompletionStatus.pending,
+      'completed' => WalletLinkPackageCompletionStatus.completed,
+      _ => throw FormatException('Unknown wallet link status: $statusRaw'),
+    };
+    return WalletLinkPackageStatus(
+      id: json['id'] as String,
+      status: status,
+      expiresAt: (json['expiresAt'] as num).toInt(),
+      completedAt: (json['completedAt'] as num?)?.toInt(),
+    );
+  }
+}
+
 class WalletLinkPackageUpload {
   const WalletLinkPackageUpload({
     required this.packageId,
@@ -114,10 +150,15 @@ class WalletLinkPackageUpload {
 }
 
 class WalletLinkQrPayload {
-  const WalletLinkQrPayload({required this.packageId, required this.keyBytes});
+  const WalletLinkQrPayload({
+    required this.packageId,
+    required this.keyBytes,
+    required this.completionToken,
+  });
 
   final String packageId;
   final Uint8List keyBytes;
+  final String completionToken;
 
   static WalletLinkQrPayload parse(String raw) {
     final uri = Uri.tryParse(raw.trim());
@@ -130,11 +171,17 @@ class WalletLinkQrPayload {
 
     final packageId = uri.queryParameters['id']?.trim();
     final key = uri.queryParameters['key']?.trim();
+    final completionToken =
+        (uri.queryParameters['completion'] ??
+                uri.queryParameters['completionToken'])
+            ?.trim();
     if (packageId == null ||
         packageId.isEmpty ||
         !kWalletLinkPackageIdRegex.hasMatch(packageId) ||
         key == null ||
-        key.isEmpty) {
+        key.isEmpty ||
+        completionToken == null ||
+        completionToken.isEmpty) {
       throw const FormatException(
         'Vizor wallet link QR payload is incomplete.',
       );
@@ -144,10 +191,16 @@ class WalletLinkQrPayload {
     if (keyBytes.length != 32) {
       throw const FormatException('Vizor wallet link key must be 32 bytes.');
     }
+    if (_base64UrlNoPaddingDecode(completionToken).length != 32) {
+      throw const FormatException(
+        'Vizor wallet link completion token must be 32 bytes.',
+      );
+    }
 
     return WalletLinkQrPayload(
       packageId: packageId.toLowerCase(),
       keyBytes: keyBytes,
+      completionToken: completionToken,
     );
   }
 }

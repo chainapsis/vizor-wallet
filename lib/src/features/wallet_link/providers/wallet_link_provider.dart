@@ -35,6 +35,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   WalletLinkApiClient? _apiClient;
   Timer? _timer;
   int _epoch = 0;
+  int? _statusPollEpoch;
   String? _remotePackageId;
 
   @override
@@ -71,7 +72,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         accountCount: upload.accountCount,
         contactCount: upload.contactCount,
       );
-      _startCountdown(epoch, expiresAt);
+      _startReadyLoop(epoch, upload.packageId, expiresAt);
     } catch (error) {
       if (epoch != _epoch) return;
       state = WalletLinkState(
@@ -100,17 +101,29 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   Future<WalletLinkPackageUpload> _createUpload() async {
     final id = _newUuidV4();
     final keyBytes = _randomBytes(32);
+    final completionToken = _base64UrlNoPadding(_randomBytes(32));
     final payload = await _buildTransferPayload();
     final envelope = await _encryptPayload(payload, keyBytes: keyBytes);
+    final completionTokenHash = await _sha256Base64UrlNoPadding(
+      completionToken,
+    );
     await _client.createPackage(
-      WalletLinkCreatePackageRequest(id: id, envelope: envelope),
+      WalletLinkCreatePackageRequest(
+        id: id,
+        envelope: envelope,
+        completionTokenHash: completionTokenHash,
+      ),
     );
 
     final qrPayload = Uri(
       scheme: 'vizor',
       host: 'wallet-link',
       path: '/v1',
-      queryParameters: {'id': id, 'key': _base64UrlNoPadding(keyBytes)},
+      queryParameters: {
+        'id': id,
+        'key': _base64UrlNoPadding(keyBytes),
+        'completion': completionToken,
+      },
     ).toString();
 
     final accountCount = (payload['accounts'] as List<Object?>).length;
@@ -212,8 +225,9 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     );
   }
 
-  void _startCountdown(int epoch, DateTime expiresAt) {
+  void _startReadyLoop(int epoch, String packageId, DateTime expiresAt) {
     _timer?.cancel();
+    unawaited(_pollForCompletion(epoch, packageId));
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (epoch != _epoch) return;
       final remaining = expiresAt.difference(DateTime.now());
@@ -222,12 +236,45 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         return;
       }
       state = state.copyWith(remaining: remaining);
+      unawaited(_pollForCompletion(epoch, packageId));
     });
+  }
+
+  Future<void> _pollForCompletion(int epoch, String packageId) async {
+    if (_statusPollEpoch == epoch) return;
+    _statusPollEpoch = epoch;
+    try {
+      final status = await _client.getPackageStatus(packageId);
+      if (epoch != _epoch ||
+          state.phase != WalletLinkPhase.ready ||
+          !status.isCompleted) {
+        return;
+      }
+      _timer?.cancel();
+      _remotePackageId = null;
+      state = WalletLinkState(
+        phase: WalletLinkPhase.linked,
+        accountCount: state.accountCount,
+        contactCount: state.contactCount,
+      );
+    } on WalletLinkApiException catch (error) {
+      if (epoch != _epoch) return;
+      if (error.statusCode == 404 || error.statusCode == 410) {
+        _expire(deleteRemote: false);
+      }
+    } catch (_) {
+      // Status polling is advisory; keep the QR visible until local expiry.
+    } finally {
+      if (_statusPollEpoch == epoch) {
+        _statusPollEpoch = null;
+      }
+    }
   }
 
   void _expire({required bool deleteRemote}) {
     _timer?.cancel();
     _epoch++;
+    _statusPollEpoch = null;
     final packageId = _remotePackageId;
     _remotePackageId = null;
     if (deleteRemote && packageId != null) {
@@ -252,6 +299,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   void _dispose() {
     _timer?.cancel();
     _epoch++;
+    _statusPollEpoch = null;
     _remotePackageId = null;
   }
 
@@ -273,6 +321,11 @@ class WalletLinkController extends Notifier<WalletLinkState> {
 
   static String _base64UrlNoPadding(Uint8List bytes) {
     return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  static Future<String> _sha256Base64UrlNoPadding(String value) async {
+    final digest = await Sha256().hash(utf8.encode(value));
+    return base64UrlEncode(digest.bytes).replaceAll('=', '');
   }
 
   static String _friendlyError(Object error) {

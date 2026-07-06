@@ -24,3 +24,13 @@ Uri walletLinkPackagesUri(Uri baseUri, {String? packageId}) {
       : '$kWalletLinkPackagePath/${Uri.encodeComponent(packageId)}';
   return baseUri.replace(path: '$basePath$packagePath', query: null);
 }
+
+Uri walletLinkPackageStatusUri(Uri baseUri, {required String packageId}) {
+  final packageUri = walletLinkPackagesUri(baseUri, packageId: packageId);
+  return packageUri.replace(path: '${packageUri.path}/status');
+}
+
+Uri walletLinkPackageCompleteUri(Uri baseUri, {required String packageId}) {
+  final packageUri = walletLinkPackagesUri(baseUri, packageId: packageId);
+  return packageUri.replace(path: '${packageUri.path}/complete');
+}

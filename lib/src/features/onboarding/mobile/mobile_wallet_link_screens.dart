@@ -23,6 +23,7 @@ import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../wallet_link/models/wallet_link_models.dart';
 import '../../wallet_link/providers/mobile_wallet_link_provider.dart';
+import '../../wallet_link/services/wallet_link_completion.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_keystone_scan_card.dart';
@@ -570,6 +571,9 @@ Future<void> _continueToPasscodeOrImport(
   final state = ref.read(mobileWalletLinkControllerProvider);
   final payload = state.payload;
   if (payload == null || state.selectedAccounts.isEmpty) return;
+  final packageId = state.packageId;
+  final completionToken = state.completionToken;
+  if (packageId == null || completionToken == null) return;
   final accounts = [
     for (final account in state.selectedAccounts) account.toAccountImport(),
   ];
@@ -582,6 +586,8 @@ Future<void> _continueToPasscodeOrImport(
         network: payload.network,
         accounts: accounts,
         contacts: contacts,
+        packageId: packageId,
+        completionToken: completionToken,
       ),
     );
     return;
@@ -599,6 +605,10 @@ Future<void> _continueToPasscodeOrImport(
           ),
     );
     await ref.read(addressBookProvider.notifier).importContacts(contacts);
+    await completeWalletLinkPackageBestEffort(
+      packageId: packageId,
+      completionToken: completionToken,
+    );
   } catch (error) {
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(

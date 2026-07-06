@@ -14,6 +14,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../wallet_link/services/wallet_link_completion.dart';
 import '../create/onboarding_split_view.dart'
     show clearCreateOnboardingSecretState;
 import '../keystone/keystone_onboarding_flow.dart'
@@ -154,6 +155,12 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         }
         if (args.flow == SetPasswordFlow.create) {
           clearCreateOnboardingSecretState(ref.read);
+        }
+        if (args.flow == SetPasswordFlow.importWalletLink) {
+          await completeWalletLinkPackageBestEffort(
+            packageId: args.requiredWalletLinkPackageId,
+            completionToken: args.requiredWalletLinkCompletionToken,
+          );
         }
         router.go('/onboarding/biometrics');
       });
