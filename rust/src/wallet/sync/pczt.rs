@@ -403,13 +403,12 @@ struct PcztElisions {
 ///
 /// Per action, the three unconditionally recomputable derived fields (`cv_net`,
 /// `cmx`, `ephemeral_key`) are candidates, and `enc_ciphertext` is a candidate
-/// tagged by the memo the wallet attaches to that output kind. The zero-valued
-/// output paired with a real spend in a cross-address-disabled Orchard bundle is
-/// deliberately randomized for quantum-safety unlinkability, so it is not an
-/// `enc_ciphertext` elision candidate and must stay on the wire. Real spends are
-/// recognized as the unsigned ones — at request time the only signatures present
-/// are the IO finalizer's dummy-spend signatures. Bundle anchors are v6-only batch
-/// candidates: `fill_derived_fields` refills them with the fixed `empty_tree`
+/// tagged by the memo the wallet attaches to that output kind. Zero-valued
+/// outputs use the all-zero memo tag; the verification pass keeps the elision only
+/// when recomputation is byte-identical, so external-scope randomized dummy
+/// ciphertexts stay on the wire while internal-scope migration dummies can be
+/// elided. Bundle anchors are v6-only batch candidates: `fill_derived_fields`
+/// refills them with the fixed `empty_tree`
 /// placeholder, and v6 signatures do not commit to anchors.
 ///
 /// Every candidate is verified against a recomputation before use; see
@@ -419,10 +418,8 @@ fn plan_candidate_bundle_elisions(bundle: &pczt::orchard::Bundle) -> BundleElisi
         .actions()
         .iter()
         .map(|action| {
-            let spend_is_unsigned = action.spend().spend_auth_sig().is_none();
             let can_refill_spend_fvk = action.spend().has_zip32_derivation();
             let enc_ciphertext = match *action.output().value() {
-                Some(0) if spend_is_unsigned => None,
                 Some(0) => Some(pczt::orchard::MemoKind::Zero),
                 Some(_) => Some(pczt::orchard::MemoKind::Empty),
                 None => None,
