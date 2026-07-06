@@ -721,6 +721,8 @@ class _MobileImportHarness extends StatefulWidget {
 
 class _MobileImportHarnessState extends State<_MobileImportHarness> {
   late final GoRouter _router;
+  late final SensitivePrivacyOverlayController _reviewPrivacyController =
+      SensitivePrivacyOverlayController();
 
   @override
   void initState() {
@@ -730,36 +732,35 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
       routes: [
         GoRoute(
           path: '/import',
-          builder:
-              (_, _) => MobileImportScreen(
-                initialPreviewError: widget.initialPasteError,
-              ),
+          builder: (_, _) =>
+              MobileImportScreen(initialPreviewError: widget.initialPasteError),
         ),
         GoRoute(
           path: '/import/manual',
-          builder:
-              (_, _) => const MobileImportManualScreen(
-                wordListOverride: _previewManualWordList,
-              ),
+          builder: (_, _) => const MobileImportManualScreen(
+            wordListOverride: _previewManualWordList,
+          ),
         ),
         GoRoute(
           path: '/import/review',
           builder: (_, state) {
             final extra = state.extra;
-            final args =
-                extra is ImportSecretPassphraseArgs
-                    ? extra
-                    : ImportSecretPassphraseArgs(
-                      mnemonic: widget.initialReviewMnemonic,
-                    );
-            return MobileImportReviewScreen(args: args);
+            final args = extra is ImportSecretPassphraseArgs
+                ? extra
+                : ImportSecretPassphraseArgs(
+                    mnemonic: widget.initialReviewMnemonic,
+                  );
+            return MobileImportReviewScreen(
+              args: args,
+              screenshotStream: const Stream.empty(),
+              privacyOverlayController: _reviewPrivacyController,
+            );
           },
         ),
         GoRoute(
           path: '/import/birthday',
-          builder:
-              (_, _) =>
-                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );
@@ -768,6 +769,7 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
   @override
   void dispose() {
     _router.dispose();
+    _reviewPrivacyController.dispose();
     super.dispose();
   }
 

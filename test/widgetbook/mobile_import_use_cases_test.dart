@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
@@ -136,6 +137,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Review Import'), findsOneWidget);
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
     expect(find.text('Confirm & continue'), findsOneWidget);
     expect(find.text('Clear secret phrase'), findsOneWidget);
     final clearButton = tester.widget<AppButton>(
@@ -217,7 +219,10 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
-      home: AppTheme(data: AppThemeData.dark, child: Builder(builder: builder)),
+      home: AppTheme(
+        data: AppThemeData.dark,
+        child: Builder(builder: builder),
+      ),
     ),
   );
   await tester.pump();
