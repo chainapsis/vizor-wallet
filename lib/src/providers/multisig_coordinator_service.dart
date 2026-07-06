@@ -42,14 +42,20 @@ abstract class MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
-    String? inviteSecret,
+    required String inviteSecret,
   });
 
   Future<rust_multisig.ApiMultisigSession> getSession({
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    String? inviteSecret,
+    required String inviteSecret,
+  });
+
+  Future<rust_multisig.ApiMultisigSession> getSessionRoster({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
   });
 
   Future<rust_multisig.ApiMultisigSession> lockSession({
@@ -57,7 +63,7 @@ abstract class MultisigCoordinatorService {
     required String sessionId,
     required String accessToken,
     required int threshold,
-    String? inviteSecret,
+    required String inviteSecret,
   });
 
   /// Publishes the local participant's label for a finalized vault as a
@@ -112,7 +118,7 @@ abstract class MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
-    String? groupPublicPackageJson,
+    required String groupPublicPackageJson,
     required int after,
   });
 
@@ -255,7 +261,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
-    String? inviteSecret,
+    required String inviteSecret,
   }) {
     return rust_multisig.resumeMultisigParticipant(
       coordinatorUrl: coordinatorUrl,
@@ -271,7 +277,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    String? inviteSecret,
+    required String inviteSecret,
   }) {
     return rust_multisig.getMultisigSession(
       coordinatorUrl: coordinatorUrl,
@@ -282,12 +288,25 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
+  Future<rust_multisig.ApiMultisigSession> getSessionRoster({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+  }) {
+    return rust_multisig.getMultisigSessionRoster(
+      coordinatorUrl: coordinatorUrl,
+      sessionId: sessionId,
+      accessToken: accessToken,
+    );
+  }
+
+  @override
   Future<rust_multisig.ApiMultisigSession> lockSession({
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
     required int threshold,
-    String? inviteSecret,
+    required String inviteSecret,
   }) {
     return rust_multisig.lockMultisigSession(
       coordinatorUrl: coordinatorUrl,
@@ -395,7 +414,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
-    String? groupPublicPackageJson,
+    required String groupPublicPackageJson,
     required int after,
   }) {
     return rust_multisig.getMultisigSigningInbox(
@@ -565,22 +584,21 @@ class MultisigAuthRefresher {
     if (existing != null) return existing;
 
     late final Future<rust_multisig.ApiMultisigAuthUpdate> refresh;
-    refresh =
-        _ref
-            .read(multisigCoordinatorServiceProvider)
-            .refreshOrResumeAuth(
-              coordinatorUrl: coordinatorUrl,
-              sessionId: sessionId,
-              participantId: participantId,
-              refreshToken: refreshToken,
-              admissionSecretKey: admissionSecretKey,
-              deliverySecretKey: deliverySecretKey,
-            )
-            .whenComplete(() {
-              if (identical(_inFlight[key], refresh)) {
-                _inFlight.remove(key);
-              }
-            });
+    refresh = _ref
+        .read(multisigCoordinatorServiceProvider)
+        .refreshOrResumeAuth(
+          coordinatorUrl: coordinatorUrl,
+          sessionId: sessionId,
+          participantId: participantId,
+          refreshToken: refreshToken,
+          admissionSecretKey: admissionSecretKey,
+          deliverySecretKey: deliverySecretKey,
+        )
+        .whenComplete(() {
+          if (identical(_inFlight[key], refresh)) {
+            _inFlight.remove(key);
+          }
+        });
     _inFlight[key] = refresh;
     return refresh;
   }

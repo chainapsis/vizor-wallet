@@ -25,11 +25,9 @@ const _accessTokenRefreshSkewSeconds = 30;
 /// sealed under it, and the coordinator never sees it.
 String normalizeMultisigInviteCode(String value) {
   final trimmed = value.trim();
-  const minLength = 22; // 16-byte secret, base64url no-pad
-  const maxLength = 64;
+  const inviteCodeLength = 22; // 16-byte secret, base64url no-pad
   final valid =
-      trimmed.length >= minLength &&
-      trimmed.length <= maxLength &&
+      trimmed.length == inviteCodeLength &&
       trimmed.codeUnits.every(_isBase64UrlCodeUnit);
   if (!valid) {
     throw const FormatException('Invite code is not valid.');
@@ -214,6 +212,7 @@ class MultisigPendingSession {
   final List<String> localBackupDestinations;
 
   String get storageId => '$sessionId:$participantId';
+
   /// The invite code is the secret itself; joiners derive the session id
   /// from it locally.
   String get inviteCode => inviteSecret;

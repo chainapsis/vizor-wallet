@@ -4721,7 +4721,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-coordinator-2"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=418db0b0aa86d010830f052e8edaed27a3d24495#418db0b0aa86d010830f052e8edaed27a3d24495"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -4736,7 +4736,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-core"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=418db0b0aa86d010830f052e8edaed27a3d24495#418db0b0aa86d010830f052e8edaed27a3d24495"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
 dependencies = [
  "anyhow",
  "frost-core",
@@ -4766,7 +4766,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-sdk"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=418db0b0aa86d010830f052e8edaed27a3d24495#418db0b0aa86d010830f052e8edaed27a3d24495"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
 dependencies = [
  "argon2",
  "base64",

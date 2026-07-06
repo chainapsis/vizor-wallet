@@ -497,22 +497,23 @@ class MultisigSigningRequestsNotifier
     await _ensureLocalBackupCompleted(material);
     final vaultLabels = await _vaultLabelStore.read(material.storageId);
     return _withAuthRetry(material, (freshMaterial) async {
-      final session = await _coordinator.getSession(
+      final session = await _coordinator.getSessionRoster(
         coordinatorUrl: freshMaterial.coordinatorUrl,
         sessionId: freshMaterial.sessionId,
         accessToken: freshMaterial.accessToken,
       );
       // Post-finalize the invite secret is gone, so labels come from the
       // vault metadata broadcasts collected via the signing inbox.
-      final participants = session.participants
-          .map(
-            (participant) => MultisigSigningParticipant.fromApi(
-              participant,
-              vaultLabel: vaultLabels[participant.participantId],
-            ),
-          )
-          .toList()
-        ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      final participants =
+          session.participants
+              .map(
+                (participant) => MultisigSigningParticipant.fromApi(
+                  participant,
+                  vaultLabel: vaultLabels[participant.participantId],
+                ),
+              )
+              .toList()
+            ..sort((a, b) => a.displayName.compareTo(b.displayName));
       return MultisigSigningDraft(
         material: freshMaterial,
         threshold: session.threshold ?? freshMaterial.threshold,

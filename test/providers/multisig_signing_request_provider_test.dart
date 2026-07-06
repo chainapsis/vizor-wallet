@@ -551,51 +551,27 @@ void main() {
     },
   );
 
-  test(
-    'createRequest keeps the proposal when auth refresh fails after the '
-    'PCZT is consumed',
-    () async {
-      final requestStore = _FakeSigningRequestStore();
-      final materialStore = _FakeAccountMaterialStore()
-        ..put(_accountMaterial(localBackupCompletedAt: 10));
-      final proposalService = _FakeProposalService(
-        pcztBytes: Uint8List.fromList([1, 2, 3]),
-      );
-      final coordinator = _FakeCoordinatorService(failRefreshOnce: true);
-      final container = _container(
-        requestStore: requestStore,
-        materialStore: materialStore,
-        proposalService: proposalService,
-        coordinatorService: coordinator,
-      );
-      addTearDown(container.dispose);
+  test('createRequest keeps the proposal when auth refresh fails after the '
+      'PCZT is consumed', () async {
+    final requestStore = _FakeSigningRequestStore();
+    final materialStore = _FakeAccountMaterialStore()
+      ..put(_accountMaterial(localBackupCompletedAt: 10));
+    final proposalService = _FakeProposalService(
+      pcztBytes: Uint8List.fromList([1, 2, 3]),
+    );
+    final coordinator = _FakeCoordinatorService(failRefreshOnce: true);
+    final container = _container(
+      requestStore: requestStore,
+      materialStore: materialStore,
+      proposalService: proposalService,
+      coordinatorService: coordinator,
+    );
+    addTearDown(container.dispose);
 
-      final notifier = container.read(multisigSigningRequestsProvider.notifier);
+    final notifier = container.read(multisigSigningRequestsProvider.notifier);
 
-      await expectLater(
-        notifier.createRequest(
-          dbPath: '/tmp/wallet.db',
-          network: 'test',
-          proposalId: BigInt.from(7),
-          sendFlowId: 'flow-1',
-          accountUuid: 'account-1',
-          recipientAddress: 'u1recipient',
-          addressType: 'unified',
-          amountZatoshi: BigInt.from(1000),
-          feeZatoshi: BigInt.from(100),
-          selectedParticipantIds: const ['participant-1', 'participant-2'],
-          needsSaplingParams: false,
-        ),
-        throwsA(anything),
-      );
-
-      // The PCZT was created before the token refresh, so the record must
-      // survive the failure and the proposal must not be discarded — a
-      // retry continues from the stored record.
-      expect(proposalService.discardCalls, isEmpty);
-      expect(requestStore.records.single.signingRequestId, 'local_flow-1');
-
-      final submitted = await notifier.createRequest(
+    await expectLater(
+      notifier.createRequest(
         dbPath: '/tmp/wallet.db',
         network: 'test',
         proposalId: BigInt.from(7),
@@ -607,13 +583,34 @@ void main() {
         feeZatoshi: BigInt.from(100),
         selectedParticipantIds: const ['participant-1', 'participant-2'],
         needsSaplingParams: false,
-      );
+      ),
+      throwsA(anything),
+    );
 
-      expect(proposalService.createCalls, hasLength(1));
-      expect(submitted.signingRequestId, 'signing-request');
-      expect(submitted.coordinatorSubmitted, isTrue);
-    },
-  );
+    // The PCZT was created before the token refresh, so the record must
+    // survive the failure and the proposal must not be discarded — a
+    // retry continues from the stored record.
+    expect(proposalService.discardCalls, isEmpty);
+    expect(requestStore.records.single.signingRequestId, 'local_flow-1');
+
+    final submitted = await notifier.createRequest(
+      dbPath: '/tmp/wallet.db',
+      network: 'test',
+      proposalId: BigInt.from(7),
+      sendFlowId: 'flow-1',
+      accountUuid: 'account-1',
+      recipientAddress: 'u1recipient',
+      addressType: 'unified',
+      amountZatoshi: BigInt.from(1000),
+      feeZatoshi: BigInt.from(100),
+      selectedParticipantIds: const ['participant-1', 'participant-2'],
+      needsSaplingParams: false,
+    );
+
+    expect(proposalService.createCalls, hasLength(1));
+    expect(submitted.signingRequestId, 'signing-request');
+    expect(submitted.coordinatorSubmitted, isTrue);
+  });
 
   test('createRequest retry honors a changed signer selection', () async {
     final requestStore = _FakeSigningRequestStore();
@@ -729,8 +726,8 @@ void main() {
   test(
     'refreshRequestProgress merges coordinator round progress into record',
     () async {
-      final record =
-          _record(accountUuid: 'account-1', sendFlowId: 'flow-1').copyWith(
+      final record = _record(accountUuid: 'account-1', sendFlowId: 'flow-1')
+          .copyWith(
             state: 'open',
             selectedParticipantIds: const ['participant-1', 'participant-2'],
           );
@@ -772,16 +769,13 @@ void main() {
           );
 
       expect(coordinator.signingRequestCalls, [record.signingRequestId]);
-      expect(updated?.round1ParticipantIds, [
+      expect(updated?.round1ParticipantIds, ['participant-1', 'participant-2']);
+      expect(updated?.round2ParticipantIds, ['participant-2']);
+      expect(updated?.round1Complete, isTrue);
+      expect(requestStore.records.single.round1ParticipantIds, [
         'participant-1',
         'participant-2',
       ]);
-      expect(updated?.round2ParticipantIds, ['participant-2']);
-      expect(updated?.round1Complete, isTrue);
-      expect(
-        requestStore.records.single.round1ParticipantIds,
-        ['participant-1', 'participant-2'],
-      );
     },
   );
 }
@@ -1150,6 +1144,42 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
+  Future<rust_multisig.ApiMultisigSession> getSessionRoster({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
+  }) async {
+    return rust_multisig.ApiMultisigSession(
+      sessionId: sessionId,
+      state: 'ready',
+      creatorParticipantId: 'participant-1',
+      threshold: 2,
+      rosterHash: 'roster',
+      groupPublicPackageHash: 'group',
+      participants: [
+        rust_multisig.ApiMultisigParticipant(
+          participantId: 'participant-1',
+          label: null,
+          admissionPublicKey: 'admission-public-1',
+          deliveryPublicKey: 'delivery-public-1',
+          joinedAt: BigInt.one,
+          dkgCompleted: true,
+        ),
+        rust_multisig.ApiMultisigParticipant(
+          participantId: 'participant-2',
+          label: null,
+          admissionPublicKey: 'admission-public-2',
+          deliveryPublicKey: 'delivery-public-2',
+          joinedAt: BigInt.from(2),
+          dkgCompleted: true,
+        ),
+      ],
+      createdAt: BigInt.one,
+      updatedAt: BigInt.from(2),
+    );
+  }
+
+  @override
   Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
     required String coordinatorUrl,
     required String sessionId,
@@ -1157,7 +1187,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
-    String? groupPublicPackageJson,
+    required String groupPublicPackageJson,
     required int after,
   }) async {
     inboxCalls.add('$sessionId|$participantId|$after');

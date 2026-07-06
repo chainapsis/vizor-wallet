@@ -609,13 +609,14 @@ class _GatedGetSessionCoordinatorService
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    String? inviteSecret,
+    required String inviteSecret,
   }) async {
     await gate.future;
     return super.getSession(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       accessToken: accessToken,
+      inviteSecret: inviteSecret,
     );
   }
 }
@@ -1139,7 +1140,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
-    String? inviteSecret,
+    required String inviteSecret,
   }) async {
     resumeCalls.add('$sessionId|$admissionSecretKey');
     return resumeResponse;
@@ -1150,7 +1151,17 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    String? inviteSecret,
+    required String inviteSecret,
+  }) async {
+    getCalls.add('$sessionId|$accessToken');
+    return sessionResponse;
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSession> getSessionRoster({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String accessToken,
   }) async {
     getCalls.add('$sessionId|$accessToken');
     return sessionResponse;
@@ -1178,7 +1189,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String accessToken,
     required int threshold,
-    String? inviteSecret,
+    required String inviteSecret,
   }) async {
     lockCalls.add('$sessionId|$accessToken|$threshold');
     return lockResponse;
@@ -1267,7 +1278,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
-    String? groupPublicPackageJson,
+    required String groupPublicPackageJson,
     required int after,
   }) async {
     return const rust_multisig.ApiMultisigSigningInbox(
