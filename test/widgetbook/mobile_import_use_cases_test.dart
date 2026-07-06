@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -190,6 +191,39 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('24'), findsOneWidget);
     expect(find.text('raise'), findsOneWidget);
+  });
+
+  testWidgets('mobile import review seed card scales long words', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Center(
+            child: SizedBox(
+              width: 361,
+              child: MobileImportReviewSeedCard(
+                words: ['quantum', 'question', 'business'],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final longWord = find.byKey(const ValueKey('mobile_import_review_word_1'));
+    expect(find.text('quantum'), findsOneWidget);
+    expect(
+      find.ancestor(of: longWord, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Text>(longWord).overflow,
+      isNot(TextOverflow.ellipsis),
+    );
   });
 
   testWidgets('mobile import review use case clears back to paste', (

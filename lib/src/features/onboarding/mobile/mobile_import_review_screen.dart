@@ -50,12 +50,11 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   late final SensitivePrivacyOverlayController _privacyController;
   bool _screenshotSheetShowing = false;
 
-  List<String> get _words =>
-      widget.args.mnemonic
-          .trim()
-          .split(RegExp(r'\s+'))
-          .where((word) => word.isNotEmpty)
-          .toList();
+  List<String> get _words => widget.args.mnemonic
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .toList();
 
   @override
   void initState() {
@@ -198,13 +197,19 @@ class MobileImportReviewSeedCard extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xxs),
             Flexible(
-              child: Text(
-                words[index],
-                key: ValueKey('mobile_import_review_word_${index + 1}'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.homeCard,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    words[index],
+                    key: ValueKey('mobile_import_review_word_${index + 1}'),
+                    maxLines: 1,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.homeCard,
+                    ),
+                  ),
                 ),
               ),
             ),
