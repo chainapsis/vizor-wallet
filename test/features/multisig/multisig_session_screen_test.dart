@@ -136,6 +136,7 @@ MultisigPendingSession _pendingSession() {
     accessToken: 'access-token',
     refreshToken: 'refresh-token',
     identity: _identity,
+    inviteSecret: 'invite-secret',
     accessTokenExpiresAt: 2000,
     refreshTokenExpiresAt: 3000,
     creatorParticipantId: 'participant-1',

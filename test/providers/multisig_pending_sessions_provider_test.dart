@@ -92,6 +92,29 @@ void main() {
     },
   );
 
+  test('normalizes invite codes and rejects malformed ones', () {
+    expect(
+      normalizeMultisigInviteCode(' invitesecretinvite_s-1 '),
+      'invitesecretinvite_s-1',
+    );
+
+    // Too short (a 16-byte secret is 22 base64url chars).
+    expect(
+      () => normalizeMultisigInviteCode('short'),
+      throwsA(isA<FormatException>()),
+    );
+    // Legacy two-part format is not a valid single token.
+    expect(
+      () => normalizeMultisigInviteCode('session-1#invitesecretinvitesec'),
+      throwsA(isA<FormatException>()),
+    );
+    // Non-base64url characters.
+    expect(
+      () => normalizeMultisigInviteCode('invitesecretinvite!s-1'),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test('creates a session with a generated identity and stores it', () async {
     final store = _FakePendingSessionStore();
     final service = _FakeMultisigCoordinatorService();
@@ -115,6 +138,8 @@ void main() {
     expect(service.createCalls, [
       'https://coordinator.example|Family vault|${_apiIdentity.admissionSecretKey}',
     ]);
+    expect(created.inviteSecret, 'invite-secret');
+    expect(created.inviteCode, 'invite-secret');
     expect(store.sessions[created.storageId], same(created));
     expect(store.summaries[created.storageId]?.label, 'Family vault');
     expect(
@@ -133,7 +158,7 @@ void main() {
         .read(multisigPendingSessionsProvider.notifier)
         .joinSession(
           coordinatorUrl: 'https://coordinator.example',
-          sessionId: ' session-join ',
+          inviteCode: ' invitesecretinvitesecr ',
           label: 'Signer 2',
         );
 
@@ -162,7 +187,7 @@ void main() {
           .read(multisigPendingSessionsProvider.notifier)
           .joinSession(
             coordinatorUrl: 'https://coordinator.example',
-            sessionId: 'session-join',
+            inviteCode: 'invitesecretinvitesecr',
             label: 'Signer 2',
           ),
       throwsA(isA<StateError>()),
@@ -584,6 +609,7 @@ class _GatedGetSessionCoordinatorService
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
+    String? inviteSecret,
   }) async {
     await gate.future;
     return super.getSession(
@@ -699,6 +725,7 @@ MultisigPendingSession _pendingSession({
     accessToken: accessToken,
     refreshToken: refreshToken,
     identity: _identity,
+    inviteSecret: 'invite-secret',
     accessTokenExpiresAt: accessTokenExpiresAt,
     refreshTokenExpiresAt: refreshTokenExpiresAt,
     creatorParticipantId: participantId,
@@ -1037,6 +1064,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
 
   final createCalls = <String>[];
   final joinCalls = <String>[];
+  final vaultLabelCalls = <String>[];
   final refreshCalls = <String>[];
   final resumeCalls = <String>[];
   final getCalls = <String>[];
@@ -1049,9 +1077,16 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
+  String generateInviteSecret() => 'invite-secret';
+
+  @override
+  String deriveSessionId(String inviteSecret) => 'session-join';
+
+  @override
   Future<rust_multisig.ApiMultisigAuthSession> createSession({
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) async {
     createCalls.add('$coordinatorUrl|$label|${identity.admissionSecretKey}');
@@ -1063,12 +1098,26 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
+    required String inviteSecret,
     String? label,
   }) async {
     joinCalls.add(
       '$coordinatorUrl|$sessionId|$label|${identity.deliverySecretKey}',
     );
     return joinResponse;
+  }
+
+  @override
+  Future<void> postVaultLabel({
+    required String coordinatorUrl,
+    required String sessionId,
+    required String participantId,
+    required String accessToken,
+    required String rosterHash,
+    required String groupPublicPackageJson,
+    required String label,
+  }) async {
+    vaultLabelCalls.add('$sessionId|$participantId|$label');
   }
 
   @override
@@ -1090,6 +1139,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String admissionSecretKey,
     required String deliverySecretKey,
+    String? inviteSecret,
   }) async {
     resumeCalls.add('$sessionId|$admissionSecretKey');
     return resumeResponse;
@@ -1100,6 +1150,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
+    String? inviteSecret,
   }) async {
     getCalls.add('$sessionId|$accessToken');
     return sessionResponse;
@@ -1127,6 +1178,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String sessionId,
     required String accessToken,
     required int threshold,
+    String? inviteSecret,
   }) async {
     lockCalls.add('$sessionId|$accessToken|$threshold');
     return lockResponse;
@@ -1215,6 +1267,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String accessToken,
     required String rosterHash,
     required String deliverySecretKey,
+    String? groupPublicPackageJson,
     required int after,
   }) async {
     return const rust_multisig.ApiMultisigSigningInbox(

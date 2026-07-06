@@ -52,10 +52,10 @@ class _MultisigJoinSessionScreenState
 
   Future<void> _join() async {
     if (_isSubmitting) return;
-    final sessionId = _sessionController.text.trim();
+    final inviteCode = _sessionController.text.trim();
     final coordinatorUrl = _coordinatorController.text.trim();
     final security = ref.read(appSecurityProvider);
-    if (sessionId.isEmpty ||
+    if (inviteCode.isEmpty ||
         coordinatorUrl.isEmpty ||
         !_securityGateController.isValid(security)) {
       setState(() {
@@ -78,7 +78,7 @@ class _MultisigJoinSessionScreenState
             .read(multisigPendingSessionsProvider.notifier)
             .joinSession(
               coordinatorUrl: coordinatorUrl,
-              sessionId: sessionId,
+              inviteCode: inviteCode,
               label: _labelController.text,
             ),
       );
@@ -110,7 +110,7 @@ class _MultisigJoinSessionScreenState
             children: [
               const MultisigOnboardingTitle(
                 title: 'Join multisig setup',
-                subtitle: 'Enter the session ID shared by the creator.',
+                subtitle: 'Enter the invite code shared by the creator.',
                 iconName: AppIcons.link,
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -124,9 +124,9 @@ class _MultisigJoinSessionScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           AppTextField(
-                            label: 'Session ID',
+                            label: 'Invite code',
                             controller: _sessionController,
-                            hintText: 'Session ID',
+                            hintText: 'Invite code',
                             leading: const AppIcon(AppIcons.link),
                             showClearButton: true,
                             tone:

@@ -16,6 +16,7 @@ import 'multisig_coordinator_service.dart';
 import 'multisig_operation_error.dart';
 import 'multisig_pending_session_provider.dart';
 import 'multisig_realtime_cursor_store.dart';
+import 'multisig_vault_label_store.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'sync_provider.dart';
@@ -38,9 +39,10 @@ class MultisigSigningParticipant {
   String get shortParticipantId => _shortId(participantId);
 
   static MultisigSigningParticipant fromApi(
-    rust_multisig.ApiMultisigParticipant value,
-  ) {
-    final label = value.label?.trim();
+    rust_multisig.ApiMultisigParticipant value, {
+    String? vaultLabel,
+  }) {
+    final label = value.label?.trim() ?? vaultLabel?.trim();
     return MultisigSigningParticipant(
       participantId: value.participantId,
       deliveryPublicKey: value.deliveryPublicKey,
@@ -474,6 +476,9 @@ class MultisigSigningRequestsNotifier
   MultisigRealtimeCursorStore get _cursorStore =>
       ref.read(multisigRealtimeCursorStoreProvider);
 
+  MultisigVaultLabelStore get _vaultLabelStore =>
+      ref.read(multisigVaultLabelStoreProvider);
+
   final Map<String, Future<void>> _refreshesByAccount = {};
 
   @override
@@ -490,15 +495,24 @@ class MultisigSigningRequestsNotifier
       await _materialForAccount(accountUuid),
     );
     await _ensureLocalBackupCompleted(material);
+    final vaultLabels = await _vaultLabelStore.read(material.storageId);
     return _withAuthRetry(material, (freshMaterial) async {
       final session = await _coordinator.getSession(
         coordinatorUrl: freshMaterial.coordinatorUrl,
         sessionId: freshMaterial.sessionId,
         accessToken: freshMaterial.accessToken,
       );
-      final participants =
-          session.participants.map(MultisigSigningParticipant.fromApi).toList()
-            ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      // Post-finalize the invite secret is gone, so labels come from the
+      // vault metadata broadcasts collected via the signing inbox.
+      final participants = session.participants
+          .map(
+            (participant) => MultisigSigningParticipant.fromApi(
+              participant,
+              vaultLabel: vaultLabels[participant.participantId],
+            ),
+          )
+          .toList()
+        ..sort((a, b) => a.displayName.compareTo(b.displayName));
       return MultisigSigningDraft(
         material: freshMaterial,
         threshold: session.threshold ?? freshMaterial.threshold,
@@ -853,6 +867,7 @@ class MultisigSigningRequestsNotifier
       }
       for (final storageId in cursorStorageIds) {
         await _cursorStore.clear(storageId);
+        await _vaultLabelStore.clear(storageId);
       }
       state = AsyncData(_sorted(next));
     });
@@ -1165,8 +1180,10 @@ class MultisigSigningRequestsNotifier
       accessToken: material.accessToken,
       rosterHash: material.rosterHash,
       deliverySecretKey: material.identity.deliverySecretKey,
+      groupPublicPackageJson: material.groupPublicPackageJson,
       after: storedCursor.inboxCursor,
     );
+    final vaultLabels = <String, String>{};
     await _synchronized(() async {
       final records = [...await _currentRecords()];
       var changed = false;
@@ -1174,6 +1191,13 @@ class MultisigSigningRequestsNotifier
         // A single malformed message must not abort the refresh: the cursor
         // would never advance past it and the inbox would be stuck forever.
         try {
+          if (message.kind == 'vault_label') {
+            final label = _vaultLabelFromMessage(message);
+            if (label != null) {
+              vaultLabels[message.fromParticipantId] = label;
+            }
+            continue;
+          }
           changed = _applyInboxMessage(records, material, message) || changed;
         } catch (e) {
           log(
@@ -1187,10 +1211,24 @@ class MultisigSigningRequestsNotifier
         state = AsyncData(_sorted(records));
       }
     });
+    await _vaultLabelStore.setLabels(material.storageId, vaultLabels);
     await _cursorStore.advanceInboxCursor(
       material.storageId,
       inbox.cursor.toInt(),
     );
+  }
+
+  String? _vaultLabelFromMessage(
+    rust_multisig.ApiMultisigSigningMessage message,
+  ) {
+    final plaintext = message.plaintextJson;
+    if (plaintext == null || plaintext.trim().isEmpty) return null;
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map) return null;
+    final label = decoded['label'];
+    if (label is! String) return null;
+    final trimmed = label.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   bool _applyInboxMessage(

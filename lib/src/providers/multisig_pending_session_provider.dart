@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../main.dart' show log;
 import '../core/storage/app_secure_store.dart';
 import '../rust/api/multisig.dart' as rust_multisig;
 import 'app_security_provider.dart';
@@ -18,6 +19,31 @@ const kDefaultMultisigCoordinatorUrl = String.fromEnvironment(
 
 const _multisigCreateStateStoragePrefix = 'zcash_multisig_create_state_v1_';
 const _accessTokenRefreshSkewSeconds = 30;
+
+/// The invite code shared out-of-band IS the session secret: a single
+/// base64url token. The session id is derived from it locally, labels are
+/// sealed under it, and the coordinator never sees it.
+String normalizeMultisigInviteCode(String value) {
+  final trimmed = value.trim();
+  const minLength = 22; // 16-byte secret, base64url no-pad
+  const maxLength = 64;
+  final valid =
+      trimmed.length >= minLength &&
+      trimmed.length <= maxLength &&
+      trimmed.codeUnits.every(_isBase64UrlCodeUnit);
+  if (!valid) {
+    throw const FormatException('Invite code is not valid.');
+  }
+  return trimmed;
+}
+
+bool _isBase64UrlCodeUnit(int codeUnit) {
+  return (codeUnit >= 0x30 && codeUnit <= 0x39) || // 0-9
+      (codeUnit >= 0x41 && codeUnit <= 0x5a) || // A-Z
+      (codeUnit >= 0x61 && codeUnit <= 0x7a) || // a-z
+      codeUnit == 0x2d || // -
+      codeUnit == 0x5f; // _
+}
 
 typedef MultisigNow = DateTime Function();
 
@@ -125,6 +151,7 @@ class MultisigPendingSession {
     required this.accessToken,
     required this.refreshToken,
     required this.identity,
+    required this.inviteSecret,
     required this.accessTokenExpiresAt,
     required this.refreshTokenExpiresAt,
     required this.participants,
@@ -132,6 +159,7 @@ class MultisigPendingSession {
     required this.updatedAt,
     required this.createdLocallyAt,
     required this.updatedLocallyAt,
+    this.vaultLabelPostedAt,
     this.localBackupCompleted = false,
     this.localBackupCompletedAt,
     this.localBackupVersion = 2,
@@ -156,6 +184,11 @@ class MultisigPendingSession {
   final String accessToken;
   final String refreshToken;
   final MultisigParticipantIdentity identity;
+
+  /// Out-of-band session secret from the invite code. Seals participant
+  /// labels so the coordinator never sees them. Lives only as long as this
+  /// pending session; after finalize the vault metadata key takes over.
+  final String inviteSecret;
   final int accessTokenExpiresAt;
   final int refreshTokenExpiresAt;
   final String? creatorParticipantId;
@@ -169,6 +202,10 @@ class MultisigPendingSession {
   final int updatedAt;
   final int createdLocallyAt;
   final int updatedLocallyAt;
+
+  /// When this participant's own label was published to the group under the
+  /// vault metadata key (after DKG). Null until posted or when no label set.
+  final int? vaultLabelPostedAt;
   final bool localBackupCompleted;
   final int? localBackupCompletedAt;
   final int localBackupVersion;
@@ -177,6 +214,9 @@ class MultisigPendingSession {
   final List<String> localBackupDestinations;
 
   String get storageId => '$sessionId:$participantId';
+  /// The invite code is the secret itself; joiners derive the session id
+  /// from it locally.
+  String get inviteCode => inviteSecret;
   bool get isCreator => participantId == creatorParticipantId;
   bool get isTerminal => state == 'ready' || state == 'failed';
   bool get isPending => !isTerminal;
@@ -196,6 +236,7 @@ class MultisigPendingSession {
     String? accessToken,
     String? refreshToken,
     MultisigParticipantIdentity? identity,
+    int? vaultLabelPostedAt,
     int? accessTokenExpiresAt,
     int? refreshTokenExpiresAt,
     String? creatorParticipantId,
@@ -225,6 +266,8 @@ class MultisigPendingSession {
       accessToken: accessToken ?? this.accessToken,
       refreshToken: refreshToken ?? this.refreshToken,
       identity: identity ?? this.identity,
+      inviteSecret: inviteSecret,
+      vaultLabelPostedAt: vaultLabelPostedAt ?? this.vaultLabelPostedAt,
       accessTokenExpiresAt: accessTokenExpiresAt ?? this.accessTokenExpiresAt,
       refreshTokenExpiresAt:
           refreshTokenExpiresAt ?? this.refreshTokenExpiresAt,
@@ -327,6 +370,8 @@ class MultisigPendingSession {
     'accessToken': accessToken,
     'refreshToken': refreshToken,
     'identity': identity.toJson(),
+    'inviteSecret': inviteSecret,
+    'vaultLabelPostedAt': vaultLabelPostedAt,
     'accessTokenExpiresAt': accessTokenExpiresAt,
     'refreshTokenExpiresAt': refreshTokenExpiresAt,
     'creatorParticipantId': creatorParticipantId,
@@ -402,6 +447,12 @@ class MultisigPendingSession {
         'Multisig pending session',
       ),
       identity: _readIdentity(json['identity']),
+      inviteSecret: _readRequiredString(
+        json,
+        'inviteSecret',
+        'Multisig pending session',
+      ),
+      vaultLabelPostedAt: _readNullableInt(json['vaultLabelPostedAt']),
       accessTokenExpiresAt: _readRequiredInt(
         json,
         'accessTokenExpiresAt',
@@ -456,6 +507,7 @@ class MultisigPendingSession {
     required rust_multisig.ApiMultisigAuthSession auth,
     required MultisigPendingRole role,
     required String coordinatorUrl,
+    required String inviteSecret,
     required String? label,
   }) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -475,6 +527,7 @@ class MultisigPendingSession {
         deliverySecretKey: auth.deliverySecretKey,
         deliveryPublicKey: auth.deliveryPublicKey,
       ),
+      inviteSecret: inviteSecret,
       accessTokenExpiresAt: auth.accessTokenExpiresAt.toInt(),
       refreshTokenExpiresAt: auth.refreshTokenExpiresAt.toInt(),
       creatorParticipantId: role == MultisigPendingRole.creator
@@ -780,15 +833,18 @@ class MultisigPendingSessionsNotifier
     final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
     final cleanLabel = _cleanOptional(label);
     final identity = _coordinator.generateParticipantIdentity();
+    final inviteSecret = _coordinator.generateInviteSecret();
     final auth = await _coordinator.createSession(
       coordinatorUrl: cleanUrl,
       identity: identity,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     final pending = MultisigPendingSession.fromAuth(
       auth: auth,
       role: MultisigPendingRole.creator,
       coordinatorUrl: cleanUrl,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     await upsert(pending);
@@ -796,28 +852,31 @@ class MultisigPendingSessionsNotifier
   }
 
   Future<MultisigPendingSession> joinSession({
-    required String sessionId,
+    required String inviteCode,
     String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
     String? label,
   }) async {
     final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
-    final cleanSessionId = _cleanRequired(sessionId, 'session ID');
+    final inviteSecret = normalizeMultisigInviteCode(inviteCode);
+    final sessionId = _coordinator.deriveSessionId(inviteSecret);
     final cleanLabel = _cleanOptional(label);
     final identity = _coordinator.generateParticipantIdentity();
     final auth = await _coordinator.joinSession(
       coordinatorUrl: cleanUrl,
-      sessionId: cleanSessionId,
+      sessionId: sessionId,
       identity: identity,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     _validateSessionOwner(
-      expectedSessionId: cleanSessionId,
+      expectedSessionId: sessionId,
       returnedSessionId: auth.sessionId,
     );
     final pending = MultisigPendingSession.fromAuth(
       auth: auth,
       role: MultisigPendingRole.participant,
       coordinatorUrl: cleanUrl,
+      inviteSecret: inviteSecret,
       label: cleanLabel,
     );
     await upsert(pending);
@@ -832,6 +891,7 @@ class MultisigPendingSessionsNotifier
       coordinatorUrl: pending.coordinatorUrl,
       sessionId: pending.sessionId,
       accessToken: pending.accessToken,
+      inviteSecret: pending.inviteSecret,
     );
     _validateSessionOwner(
       expectedSessionId: pending.sessionId,
@@ -860,6 +920,7 @@ class MultisigPendingSessionsNotifier
       coordinatorUrl: pending.coordinatorUrl,
       sessionId: pending.sessionId,
       accessToken: pending.accessToken,
+      inviteSecret: pending.inviteSecret,
     );
     _validateSessionOwner(
       expectedSessionId: pending.sessionId,
@@ -888,9 +949,11 @@ class MultisigPendingSessionsNotifier
       accessToken: pending.accessToken,
       admissionSecretKey: pending.identity.admissionSecretKey,
       deliverySecretKey: pending.identity.deliverySecretKey,
+      inviteSecret: pending.inviteSecret,
       localStateJson: localStateJson,
     );
     await _store.writeCreateState(pending, advanced.localStateJson);
+    await _publishVaultLabelIfReady(pending, advanced);
     final updated = await _applySessionUpdate(
       pending,
       (current) => current
@@ -960,6 +1023,7 @@ class MultisigPendingSessionsNotifier
       sessionId: stored.sessionId,
       admissionSecretKey: stored.identity.admissionSecretKey,
       deliverySecretKey: stored.identity.deliverySecretKey,
+      inviteSecret: stored.inviteSecret,
     );
     _validateAuthOwner(
       expectedSessionId: stored.sessionId,
@@ -991,6 +1055,7 @@ class MultisigPendingSessionsNotifier
       sessionId: pending.sessionId,
       accessToken: pending.accessToken,
       threshold: threshold,
+      inviteSecret: pending.inviteSecret,
     );
     _validateSessionOwner(
       expectedSessionId: pending.sessionId,
@@ -1068,6 +1133,45 @@ class MultisigPendingSessionsNotifier
       state = AsyncData(sessions);
     });
     await _applyAuthUpdateToAccountMaterials(update);
+  }
+
+  /// Publishes the local participant's label under the vault metadata key
+  /// as soon as the local DKG output exists, so participants that finalize
+  /// (and drop the invite secret) early still learn everyone's label.
+  /// Best-effort: a failure is retried on the next advance poll.
+  Future<void> _publishVaultLabelIfReady(
+    MultisigPendingSession pending,
+    rust_multisig.ApiMultisigCreateAdvance advanced,
+  ) async {
+    final label = pending.label?.trim();
+    final groupPublicPackageJson = advanced.groupPublicPackageJson;
+    final rosterHash = advanced.session.rosterHash ?? pending.rosterHash;
+    if (label == null ||
+        label.isEmpty ||
+        pending.vaultLabelPostedAt != null ||
+        !advanced.dkgCompleteSubmitted ||
+        groupPublicPackageJson == null ||
+        rosterHash == null) {
+      return;
+    }
+    try {
+      await _coordinator.postVaultLabel(
+        coordinatorUrl: pending.coordinatorUrl,
+        sessionId: pending.sessionId,
+        participantId: pending.participantId,
+        accessToken: pending.accessToken,
+        rosterHash: rosterHash,
+        groupPublicPackageJson: groupPublicPackageJson,
+        label: label,
+      );
+      final now = ref.read(multisigNowProvider)().millisecondsSinceEpoch;
+      await _applySessionUpdate(
+        pending,
+        (current) => current.copyWith(vaultLabelPostedAt: now),
+      );
+    } catch (e) {
+      log('MultisigPendingSessions: vault label publish failed: $e');
+    }
   }
 
   Future<MultisigPendingSession> _sessionWithFreshAccess(
