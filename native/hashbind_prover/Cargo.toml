@@ -1,0 +1,54 @@
+# On-device ProveKit hashbind prover for the zwap b2z/z2b swap directions.
+#
+# This crate is intentionally NOT part of the FRB workspace in rust/:
+# ProveKit requires the nightly toolchain (pinned in rust-toolchain.toml)
+# while the FRB crate is stable Rust. It is built ahead of time by
+# scripts/build-hashbind-prover.sh into an xcframework and linked into the
+# app as a dynamic framework; Dart talks to it over dart:ffi.
+#
+# REV PARITY: the provekit rev
+# below MUST equal the solver's pin (shielded-zwap-e2z-proxy
+# rust/solverd-v2/Cargo.toml) and provekit_ntt must stay enabled, or the
+# proof will not verify against the solver's pallas.pkv. The round-trip test
+# in tests/prove_roundtrip.rs gates this.
+
+[package]
+name = "vizor_hashbind_prover"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+provekit-ffi = { git = "https://github.com/worldfnd/provekit.git", rev = "cc391c8cc72766cc47f8243402e7f51e16c6d7cd" }
+provekit-common = { git = "https://github.com/worldfnd/provekit.git", rev = "cc391c8cc72766cc47f8243402e7f51e16c6d7cd", features = ["provekit_ntt"] }
+
+# Vendored hashbind-core (src/hashbind_core.rs) dependencies — versions match
+# shielded-zwap-e2z-proxy rust/hashbind-core/Cargo.toml.
+anyhow = "1"
+num-bigint = "0.4"
+num-traits = "0.2"
+serde_json = "1"
+
+zeroize = "1"
+
+# Not used directly: exact-version pins matching provekit's Cargo.lock at
+# cc391c8. Fresh resolution picks blake3 1.8.5 / digest 0.11.3, which break
+# the whir dep's `blake3::Hasher: digest::Digest` bound.
+blake3 = "=1.8.3"
+digest = "=0.11.2"
+
+[dev-dependencies]
+hex = "0.4"
+
+# Shippable mobile/desktop profile: full optimization for prover latency,
+# thin LTO + debuginfo strip for size. panic stays "unwind" — provekit-ffi's
+# catch_panic relies on unwinding to convert panics into status codes.
+[profile.release-mobile]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

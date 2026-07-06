@@ -30,6 +30,19 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+
+  # On-device zwap hashbind prover (prebuilt by scripts/build-hashbind-prover.sh;
+  # not committed). Without it the app still builds — the zwap b2z/z2b flow
+  # surfaces a clear "prover unavailable" error instead.
+  hashbind_pod = File.expand_path('../native/hashbind_prover/apple', __dir__)
+  if File.directory?(File.join(hashbind_pod, 'VizorHashbindProver.xcframework'))
+    pod 'VizorHashbindProver', :path => hashbind_pod
+  else
+    Pod::UI.warn 'VizorHashbindProver.xcframework not built — on-device zwap ' \
+                 'hashbind proving disabled. Run scripts/build-hashbind-prover.sh ' \
+                 'then `pod install` to enable it.'
+  end
+
   target 'RunnerTests' do
     inherit! :search_paths
   end

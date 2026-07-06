@@ -78,3 +78,10 @@ app.*.map.json
 # Generated when selecting Linux release flavors.
 /linux/FlavorOverrides.cmake
 .design-refs/
+
+# On-device hashbind prover build outputs (rebuild: scripts/build-hashbind-prover.sh)
+native/hashbind_prover/target/
+native/hashbind_prover/apple/VizorHashbindProver.xcframework/
+
+# Redundant with assets/zwap/pallas.pkp (the round-trip test reads the asset copy)
+native/hashbind_prover/fixtures/pallas.pkp
