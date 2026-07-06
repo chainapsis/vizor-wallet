@@ -87,6 +87,27 @@ void main() {
     },
   );
 
+  test(
+    'account material storage allows empty auth tokens for restored backup',
+    () {
+      final raw = accountMaterial()
+          .copyWith(
+            accessToken: '',
+            refreshToken: '',
+            accessTokenExpiresAt: 0,
+            refreshTokenExpiresAt: 0,
+          )
+          .toStorageJson();
+
+      final restored = MultisigAccountMaterial.fromStorageJson(raw);
+
+      expect(restored.accessToken, isEmpty);
+      expect(restored.refreshToken, isEmpty);
+      expect(restored.accessTokenExpiresAt, 0);
+      expect(restored.refreshTokenExpiresAt, 0);
+    },
+  );
+
   test('pending session storage rejects missing identity', () {
     final decoded = storageMap(pendingSession().toStorageJson())
       ..remove('identity');

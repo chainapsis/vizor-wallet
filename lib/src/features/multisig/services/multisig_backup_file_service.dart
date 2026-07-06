@@ -11,13 +11,30 @@ typedef MultisigBackupFileWriter =
 
 typedef MultisigBackupSavePathPicker =
     Future<String?> Function({required String suggestedName});
+typedef MultisigBackupFileReader =
+    Future<MultisigBackupFileReadResult?> Function();
+typedef MultisigBackupOpenFilePicker = Future<XFile?> Function();
 
 final multisigBackupFileWriterProvider = Provider<MultisigBackupFileWriter>(
   (ref) => writeMultisigBackupFile,
 );
 
+final multisigBackupFileReaderProvider = Provider<MultisigBackupFileReader>(
+  (ref) => readMultisigBackupFile,
+);
+
 class MultisigBackupFileSaveResult {
   const MultisigBackupFileSaveResult({
+    required this.path,
+    required this.artifactJson,
+  });
+
+  final String path;
+  final String artifactJson;
+}
+
+class MultisigBackupFileReadResult {
+  const MultisigBackupFileReadResult({
     required this.path,
     required this.artifactJson,
   });
@@ -33,6 +50,18 @@ class MultisigBackupFileSaveException implements Exception {
 
   static const message =
       'Could not save the backup file. Choose a writable location and try again.';
+
+  @override
+  String toString() => message;
+}
+
+class MultisigBackupFileReadException implements Exception {
+  const MultisigBackupFileReadException([this.cause]);
+
+  final Object? cause;
+
+  static const message =
+      'Could not read the backup file. Choose a valid backup and try again.';
 
   @override
   String toString() => message;
@@ -70,6 +99,24 @@ Future<MultisigBackupFileSaveResult?> writeMultisigBackupFile({
   }
 }
 
+Future<MultisigBackupFileReadResult?> readMultisigBackupFile({
+  MultisigBackupOpenFilePicker? pickFile,
+}) async {
+  final picker = pickFile ?? pickMultisigBackupOpenFile;
+
+  try {
+    final file = await picker();
+    if (file == null) return null;
+    final artifactJson = await file.readAsString();
+    return MultisigBackupFileReadResult(
+      path: file.path,
+      artifactJson: artifactJson,
+    );
+  } catch (e) {
+    throw MultisigBackupFileReadException(e);
+  }
+}
+
 Future<String?> pickMultisigBackupSavePath({
   required String suggestedName,
 }) async {
@@ -82,6 +129,15 @@ Future<String?> pickMultisigBackupSavePath({
     canCreateDirectories: true,
   );
   return location?.path;
+}
+
+Future<XFile?> pickMultisigBackupOpenFile() {
+  return openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'Vizor backup', extensions: ['vizorbackup', 'json']),
+    ],
+    confirmButtonText: 'Restore',
+  );
 }
 
 String _backupFileTimestamp(DateTime value) {

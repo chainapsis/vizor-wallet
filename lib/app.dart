@@ -780,13 +780,20 @@ List<RouteBase> _desktopRoutes() => [
         path: '/multisig/set-password',
         redirect: (_, state) {
           final args = state.extra;
-          if (args is SetPasswordScreenArgs &&
-              args.flow == SetPasswordFlow.multisigFinalize &&
-              args.requiredMultisigSessionStorageId.isNotEmpty &&
-              args.requiredMultisigSessionId.isNotEmpty &&
-              args.requiredMultisigBackupArtifactJson.isNotEmpty &&
-              args.requiredMultisigBackupPassphrase.isNotEmpty) {
-            return null;
+          if (args is SetPasswordScreenArgs) {
+            if (args.flow == SetPasswordFlow.multisigFinalize &&
+                args.requiredMultisigSessionStorageId.isNotEmpty &&
+                args.requiredMultisigSessionId.isNotEmpty &&
+                args.requiredMultisigBackupArtifactJson.isNotEmpty &&
+                args.requiredMultisigBackupPassphrase.isNotEmpty) {
+              return null;
+            }
+            if (args.flow == SetPasswordFlow.multisigRestore &&
+                args.requiredMultisigBackupArtifactJson.isNotEmpty &&
+                args.requiredMultisigBackupPassphrase.isNotEmpty &&
+                args.requiredMultisigCoordinatorUrl.isNotEmpty) {
+              return null;
+            }
           }
           return '/welcome';
         },

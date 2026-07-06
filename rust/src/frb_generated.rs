@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1767064555;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2019732922;
 
 // Section: executor
 
@@ -4614,6 +4614,45 @@ fn wire__crate__api__multisig__restore_multisig_participant_identity_impl(
         },
     )
 }
+fn wire__crate__api__multisig__restore_multisig_share_backup_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "restore_multisig_share_backup",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            let api_artifact_json = <String>::sse_decode(&mut deserializer);
+            let api_passphrase = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::multisig::restore_multisig_share_backup(
+                        api_network,
+                        api_artifact_json,
+                        api_passphrase,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__multisig__resume_multisig_participant_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -8677,31 +8716,32 @@ fn pde_ffi_dispatcher_primary_impl(
 113 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
 114 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
 115 => wire__crate__api__voting__resolve_voting_config_impl(port, ptr, rust_vec_len, data_len),
-117 => wire__crate__api__multisig__resume_multisig_participant_impl(port, ptr, rust_vec_len, data_len),
-118 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
-119 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
-120 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-121 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
-123 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
-124 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
-125 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
-126 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-127 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-128 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-129 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
-131 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
-132 => wire__crate__api__multisig__submit_multisig_signing_round1_impl(port, ptr, rust_vec_len, data_len),
-133 => wire__crate__api__multisig__submit_multisig_signing_round2_impl(port, ptr, rust_vec_len, data_len),
-134 => wire__crate__api__multisig__submit_prepared_multisig_signing_request_impl(port, ptr, rust_vec_len, data_len),
-135 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-136 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-137 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-138 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-139 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-142 => wire__crate__api__multisig__verify_multisig_share_backup_impl(port, ptr, rust_vec_len, data_len),
-143 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
-144 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-146 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+117 => wire__crate__api__multisig__restore_multisig_share_backup_impl(port, ptr, rust_vec_len, data_len),
+118 => wire__crate__api__multisig__resume_multisig_participant_impl(port, ptr, rust_vec_len, data_len),
+119 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
+120 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
+121 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
+122 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
+124 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
+125 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
+126 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
+127 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+128 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+129 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+130 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
+132 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
+133 => wire__crate__api__multisig__submit_multisig_signing_round1_impl(port, ptr, rust_vec_len, data_len),
+134 => wire__crate__api__multisig__submit_multisig_signing_round2_impl(port, ptr, rust_vec_len, data_len),
+135 => wire__crate__api__multisig__submit_prepared_multisig_signing_request_impl(port, ptr, rust_vec_len, data_len),
+136 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+137 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+138 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+139 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+140 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+143 => wire__crate__api__multisig__verify_multisig_share_backup_impl(port, ptr, rust_vec_len, data_len),
+144 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
+145 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+147 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -8757,15 +8797,15 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        122 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        130 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        140 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        141 => wire__crate__api__multisig__validate_multisig_threshold_impl(
+        123 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
+        131 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        141 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        142 => wire__crate__api__multisig__validate_multisig_threshold_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        145 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        146 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

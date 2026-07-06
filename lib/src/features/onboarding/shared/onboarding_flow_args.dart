@@ -1,4 +1,10 @@
-enum SetPasswordFlow { create, importWallet, importKeystone, multisigFinalize }
+enum SetPasswordFlow {
+  create,
+  importWallet,
+  importKeystone,
+  multisigFinalize,
+  multisigRestore,
+}
 
 class CreateSecretPassphraseArgs {
   const CreateSecretPassphraseArgs({required this.mnemonic});
@@ -38,6 +44,8 @@ class SetPasswordScreenArgs {
     this.multisigSessionId,
     this.multisigBackupArtifactJson,
     this.multisigBackupPassphrase,
+    this.multisigBackupFilePath,
+    this.multisigCoordinatorUrl,
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -82,6 +90,19 @@ class SetPasswordScreenArgs {
          multisigBackupPassphrase: backupPassphrase,
        );
 
+  const SetPasswordScreenArgs.multisigRestore({
+    required String backupArtifactJson,
+    required String backupPassphrase,
+    String? backupFilePath,
+    required String coordinatorUrl,
+  }) : this._(
+         flow: SetPasswordFlow.multisigRestore,
+         multisigBackupArtifactJson: backupArtifactJson,
+         multisigBackupPassphrase: backupPassphrase,
+         multisigBackupFilePath: backupFilePath,
+         multisigCoordinatorUrl: coordinatorUrl,
+       );
+
   final SetPasswordFlow flow;
   final String? mnemonic;
   final int? birthdayHeight;
@@ -94,6 +115,8 @@ class SetPasswordScreenArgs {
   final String? multisigSessionId;
   final String? multisigBackupArtifactJson;
   final String? multisigBackupPassphrase;
+  final String? multisigBackupFilePath;
+  final String? multisigCoordinatorUrl;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -108,6 +131,7 @@ class SetPasswordScreenArgs {
   String get requiredMultisigSessionId => multisigSessionId!;
   String get requiredMultisigBackupArtifactJson => multisigBackupArtifactJson!;
   String get requiredMultisigBackupPassphrase => multisigBackupPassphrase!;
+  String get requiredMultisigCoordinatorUrl => multisigCoordinatorUrl!;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
@@ -115,6 +139,7 @@ class SetPasswordScreenArgs {
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
     SetPasswordFlow.multisigFinalize =>
       '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionStorageId)}',
+    SetPasswordFlow.multisigRestore => '/multisig/connect',
   };
 
   Object? get backRouteExtra => switch (flow) {
@@ -128,5 +153,6 @@ class SetPasswordScreenArgs {
     ),
     SetPasswordFlow.importKeystone => this,
     SetPasswordFlow.multisigFinalize => null,
+    SetPasswordFlow.multisigRestore => null,
   };
 }

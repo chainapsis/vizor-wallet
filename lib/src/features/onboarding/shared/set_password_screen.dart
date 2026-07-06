@@ -140,6 +140,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   backupArtifactJson: args.requiredMultisigBackupArtifactJson,
                   backupPassphrase: args.requiredMultisigBackupPassphrase,
                 );
+              case SetPasswordFlow.multisigRestore:
+                await accountNotifier.restoreMultisigAccountFromBackup(
+                  backupArtifactJson: args.requiredMultisigBackupArtifactJson,
+                  backupPassphrase: args.requiredMultisigBackupPassphrase,
+                  backupFilePath: args.multisigBackupFilePath,
+                  coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+                );
             }
           },
           onStoppingSync: () {
@@ -226,6 +233,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         backTarget: backTarget,
         child: content,
       ),
+      SetPasswordFlow.multisigRestore => OnboardingTrailingPane(
+        backTarget: backTarget,
+        child: content,
+      ),
     };
   }
 
@@ -236,6 +247,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     SetPasswordFlow.importKeystone =>
       KeystoneOnboardingStep.walletBirthdayHeight.label,
     SetPasswordFlow.multisigFinalize => 'Backup',
+    SetPasswordFlow.multisigRestore => 'Connect Multisig',
   };
 }
 

@@ -137,6 +137,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
               );
             case SetPasswordFlow.multisigFinalize:
               throw StateError('Multisig setup is not available on mobile.');
+            case SetPasswordFlow.multisigRestore:
+              throw StateError('Multisig restore is not available on mobile.');
           }
         });
 

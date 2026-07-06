@@ -597,6 +597,34 @@ pub fn verify_multisig_share_backup(
     expected_roster_hash: String,
     expected_group_public_package_hash: String,
 ) -> Result<ApiMultisigBackupVerification, String> {
+    let verified = restore_multisig_share_backup(network, artifact_json, passphrase)?;
+    if verified.session_id != expected_session_id {
+        return Err("Backup belongs to a different multisig session.".to_string());
+    }
+    if verified.participant_id != expected_participant_id {
+        return Err("Backup belongs to a different multisig participant.".to_string());
+    }
+    if verified.threshold != expected_threshold {
+        return Err("Backup threshold does not match this session.".to_string());
+    }
+    if verified.participant_count != expected_participant_count {
+        return Err("Backup participant count does not match this session.".to_string());
+    }
+    if verified.roster_hash != expected_roster_hash {
+        return Err("Backup roster does not match this session.".to_string());
+    }
+    if verified.group_public_package_hash != expected_group_public_package_hash {
+        return Err("Backup group package does not match this session.".to_string());
+    }
+
+    Ok(verified)
+}
+
+pub fn restore_multisig_share_backup(
+    network: String,
+    artifact_json: String,
+    passphrase: String,
+) -> Result<ApiMultisigBackupVerification, String> {
     let encrypted: EncryptedShareBackup = serde_json::from_str(&artifact_json)
         .map_err(|e| format!("Failed to parse multisig backup file: {e}"))?;
     let ciphertext = decode_b64(&encrypted.ciphertext, "multisig backup ciphertext")?;
@@ -607,21 +635,6 @@ pub fn verify_multisig_share_backup(
 
     let plaintext = decrypt_share_backup(&encrypted, &passphrase)
         .map_err(|_| "Backup password did not decrypt this multisig backup.".to_string())?;
-    if plaintext.session_id != expected_session_id {
-        return Err("Backup belongs to a different multisig session.".to_string());
-    }
-    if plaintext.participant_id != expected_participant_id {
-        return Err("Backup belongs to a different multisig participant.".to_string());
-    }
-    if plaintext.threshold != expected_threshold {
-        return Err("Backup threshold does not match this session.".to_string());
-    }
-    if plaintext.participant_count != expected_participant_count {
-        return Err("Backup participant count does not match this session.".to_string());
-    }
-    if plaintext.roster_hash != expected_roster_hash {
-        return Err("Backup roster does not match this session.".to_string());
-    }
 
     let identity = restore_multisig_participant_identity(
         plaintext.admission_secret_key.clone(),
@@ -632,9 +645,6 @@ pub fn verify_multisig_share_backup(
     let group: GroupPublicPackage = serde_json::from_str(&group_public_package_json)
         .map_err(|e| format!("Backup group package is invalid: {e}"))?;
     let group_public_package_hash = hash_group_public_package(&group)?;
-    if group_public_package_hash != expected_group_public_package_hash {
-        return Err("Backup group package does not match this session.".to_string());
-    }
 
     let derived_address =
         vault_address_from_group_public_package(&network, &group_public_package_json)?;
@@ -768,6 +778,18 @@ pub fn refresh_or_resume_multisig_auth(
         let client = Coordinator2Client::new(coordinator_url);
         let (admission, delivery, identity) =
             restore_participant_identity(admission_secret_key, delivery_secret_key)?;
+        if refresh_token.trim().is_empty() {
+            let resumed =
+                resume_participant_auth_session(&client, session_id.clone(), &admission, &delivery)
+                    .await?;
+            ensure_auth_owner(
+                &session_id,
+                &participant_id,
+                &resumed.session_id,
+                &resumed.participant_id,
+            )?;
+            return Ok(map_auth_update_from_session(resumed, identity, true));
+        }
         match client.refresh_auth(&AuthRefreshReq { refresh_token }).await {
             Ok(tokens) => {
                 ensure_auth_owner(
@@ -3274,6 +3296,20 @@ mod tests {
             passphrase.clone(),
         )
         .unwrap();
+
+        let restored = restore_multisig_share_backup(
+            "regtest".to_string(),
+            artifact.artifact_json.clone(),
+            passphrase.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(restored.session_id, "sess-1");
+        assert_eq!(restored.participant_id, "part-1");
+        assert_eq!(
+            restored.group_public_package_hash,
+            group_public_package_hash
+        );
 
         let verified = verify_multisig_share_backup(
             "regtest".to_string(),

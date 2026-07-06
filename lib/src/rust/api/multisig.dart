@@ -100,6 +100,16 @@ Future<ApiMultisigBackupVerification> verifyMultisigShareBackup({
   expectedGroupPublicPackageHash: expectedGroupPublicPackageHash,
 );
 
+Future<ApiMultisigBackupVerification> restoreMultisigShareBackup({
+  required String network,
+  required String artifactJson,
+  required String passphrase,
+}) => RustLib.instance.api.crateApiMultisigRestoreMultisigShareBackup(
+  network: network,
+  artifactJson: artifactJson,
+  passphrase: passphrase,
+);
+
 Future<ApiMultisigAuthSession> createMultisigSession({
   required String coordinatorUrl,
   required String admissionSecretKey,

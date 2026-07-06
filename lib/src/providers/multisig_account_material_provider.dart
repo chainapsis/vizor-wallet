@@ -182,8 +182,8 @@ class MultisigAccountMaterial {
         'groupPublicPackageJson',
       ),
       vaultAddress: _readRequiredString(json, 'vaultAddress'),
-      accessToken: _readRequiredString(json, 'accessToken'),
-      refreshToken: _readRequiredString(json, 'refreshToken'),
+      accessToken: _readString(json, 'accessToken'),
+      refreshToken: _readString(json, 'refreshToken'),
       accessTokenExpiresAt: _readRequiredInt(json, 'accessTokenExpiresAt'),
       refreshTokenExpiresAt: _readRequiredInt(json, 'refreshTokenExpiresAt'),
       localBackupHash: json['localBackupHash'] as String?,
@@ -271,6 +271,14 @@ String _readRequiredIdentityString(Map<String, Object?> json, String key) {
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! String || value.trim().isEmpty) {
+    throw FormatException('Multisig account material is missing $key.');
+  }
+  return value;
+}
+
+String _readString(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! String) {
     throw FormatException('Multisig account material is missing $key.');
   }
   return value;

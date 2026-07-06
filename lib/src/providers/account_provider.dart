@@ -1033,6 +1033,151 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
+  Future<void> restoreMultisigAccountFromBackup({
+    required String backupArtifactJson,
+    required String backupPassphrase,
+    String? backupFilePath,
+    String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    String? name,
+  }) async {
+    try {
+      final materialStore = ref.read(multisigAccountMaterialStoreProvider);
+      final materialized = await materialStore.readAll();
+      final prev = state.value ?? const AccountState();
+      final dbPath = await _getDbPath();
+      final network = prev.accounts.isEmpty
+          ? ref.read(rpcEndpointProvider).networkName
+          : await _getNetwork();
+      final verification = await rust_multisig.restoreMultisigShareBackup(
+        network: network,
+        artifactJson: backupArtifactJson,
+        passphrase: backupPassphrase,
+      );
+      _validateRestoredMultisigBackupVerification(verification);
+
+      for (final material in materialized) {
+        if (material.sessionId == verification.sessionId &&
+            material.participantId == verification.participantId &&
+            prev.accounts.any(
+              (account) => account.uuid == material.accountUuid,
+            )) {
+          await switchAccount(material.accountUuid);
+          return;
+        }
+      }
+
+      final accountName = _multisigAccountName(
+        name ?? 'Multisig account',
+        prev.accounts.length,
+      );
+      final birthday = await _fetchCreationBirthdayHeight();
+      log('restoreMultisigAccountFromBackup: birthday=$birthday');
+      if (prev.accounts.isEmpty) {
+        await _deleteExistingDb(dbPath);
+      }
+
+      String? importedAccountUuid;
+      var accountMetadataPersisted = false;
+      try {
+        final result = await rust_wallet.importMultisigAccount(
+          dbPath: dbPath,
+          network: network,
+          name: accountName,
+          groupPublicPackageJson: verification.groupPublicPackageJson,
+          birthdayHeight: birthday,
+        );
+        importedAccountUuid = result.accountUuid;
+        final address = result.unifiedAddress;
+        if (prev.accounts.isEmpty) {
+          await _storage.writeString(_networkKey, network);
+        }
+
+        final now = DateTime.now().millisecondsSinceEpoch;
+        await materialStore.write(
+          MultisigAccountMaterial(
+            accountUuid: importedAccountUuid,
+            sessionId: verification.sessionId,
+            participantId: verification.participantId,
+            coordinatorUrl: coordinatorUrl,
+            rosterHash: verification.rosterHash,
+            groupPublicPackageHash: verification.groupPublicPackageHash,
+            threshold: verification.threshold,
+            participantCount: verification.participantCount,
+            identity: MultisigParticipantIdentity(
+              admissionSecretKey: verification.admissionSecretKey,
+              admissionPublicKey: verification.admissionPublicKey,
+              deliverySecretKey: verification.deliverySecretKey,
+              deliveryPublicKey: verification.deliveryPublicKey,
+            ),
+            keyPackageB64: verification.keyPackageB64,
+            groupPublicPackageJson: verification.groupPublicPackageJson,
+            vaultAddress: verification.vaultAddress,
+            accessToken: '',
+            refreshToken: '',
+            accessTokenExpiresAt: 0,
+            refreshTokenExpiresAt: 0,
+            localBackupHash: verification.backupHash,
+            localBackupCompletedAt: now,
+            localBackupVerifiedAt: now,
+            localBackupDestinations: backupFilePath == null
+                ? const <String>[]
+                : ['file:$backupFilePath'],
+          ),
+        );
+        ref.invalidate(multisigAccountMaterialsProvider);
+
+        final newAccount = AccountInfo(
+          uuid: importedAccountUuid,
+          name: accountName,
+          order: prev.accounts.length,
+          kind: AccountKind.multisig,
+          isSeedAnchor: false,
+        );
+        final updated = [...prev.accounts, newAccount];
+        await _saveAccounts(updated);
+        accountMetadataPersisted = true;
+        await _storage.writeString(_activeAccountKey, importedAccountUuid);
+        state = AsyncData(
+          AccountState(
+            accounts: updated,
+            activeAccountUuid: importedAccountUuid,
+            activeAddress: address,
+          ),
+        );
+        unawaited(
+          _refreshMultisigSigningRequestsForAccount(importedAccountUuid),
+        );
+      } catch (e, st) {
+        var importedAccountRemoved = true;
+        final accountUuid = importedAccountUuid;
+        if (accountUuid != null) {
+          importedAccountRemoved = await _rollbackImportedMultisigAccount(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: accountUuid,
+            wasFirstAccount: prev.accounts.isEmpty,
+            materialStore: materialStore,
+          );
+        }
+        if (accountMetadataPersisted && importedAccountRemoved) {
+          await _restoreAccountMetadataAfterFailedMultisigImport(
+            previousAccounts: prev.accounts,
+            previousActiveAccountUuid: prev.activeAccountUuid,
+          );
+        }
+        Error.throwWithStackTrace(e, st);
+      }
+
+      log(
+        'restoreMultisigAccountFromBackup: uuid=$importedAccountUuid, '
+        'session=${verification.sessionId}',
+      );
+    } catch (e, st) {
+      log('restoreMultisigAccountFromBackup: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
   /// Check if the active account is a hardware wallet account.
   bool get isActiveAccountHardware {
     final active = state.value?.activeAccount;
@@ -1284,6 +1429,23 @@ void _validateMultisigBackupVerification({
       verification.groupPublicPackageJson.trim().isEmpty ||
       verification.vaultAddress.trim().isEmpty) {
     throw StateError('Multisig backup is missing account material.');
+  }
+}
+
+void _validateRestoredMultisigBackupVerification(
+  rust_multisig.ApiMultisigBackupVerification verification,
+) {
+  if (verification.sessionId.trim().isEmpty ||
+      verification.participantId.trim().isEmpty ||
+      verification.rosterHash.trim().isEmpty ||
+      verification.groupPublicPackageHash.trim().isEmpty ||
+      verification.keyPackageB64.trim().isEmpty ||
+      verification.groupPublicPackageJson.trim().isEmpty ||
+      verification.vaultAddress.trim().isEmpty) {
+    throw StateError('Multisig backup is missing account material.');
+  }
+  if (verification.threshold <= 0 || verification.participantCount <= 0) {
+    throw StateError('Multisig backup has invalid threshold data.');
   }
 }
 
