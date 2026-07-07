@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -275,7 +276,7 @@ void main() {
       find.text("Nothing was sent, your funds haven't moved. Try again."),
       findsOneWidget,
     );
-    expect(find.text('Return Home'), findsOneWidget);
+    expect(find.text('Return home'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
     expect(nativeHaptics, ['sendFailure']);
     expect(platformHaptics, isEmpty);
@@ -287,6 +288,113 @@ void main() {
       find.byKey(const ValueKey('mobile_send_status_icon_failed')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('send success falls back to Flutter haptics on Android', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+    });
+    final platformHaptics = <Object?>[];
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      hapticsChannel,
+      (_) async => false,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          platformHaptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
+        null,
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.succeeded,
+        proposalConsumed: true,
+        txid: 'txid-1',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      platformHaptics,
+      containsAllInOrder([
+        'HapticFeedbackType.mediumImpact',
+        'HapticFeedbackType.lightImpact',
+        'HapticFeedbackType.selectionClick',
+      ]),
+    );
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('send failure falls back to Flutter haptics on Android', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+    });
+    final platformHaptics = <Object?>[];
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      hapticsChannel,
+      (_) async => false,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          platformHaptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
+        null,
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: true,
+        error: 'failed',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(platformHaptics, contains('HapticFeedbackType.lightImpact'));
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('Done pops the status route back to home', (tester) async {

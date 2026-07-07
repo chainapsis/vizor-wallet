@@ -189,7 +189,7 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
       _MobileSendStatusPhase.succeeded => 'Done',
-      _MobileSendStatusPhase.failed => 'Return Home',
+      _MobileSendStatusPhase.failed => 'Return home',
     };
   }
 
