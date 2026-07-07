@@ -17,7 +17,10 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
-    this.frameInterval = const Duration(milliseconds: 100),
+    // 5 fps: each frame sits ~12 refreshes on a 60 Hz display, so the Keystone
+    // camera captures dense (300 B) frames without tearing; pairs with the
+    // fragment length set by callers.
+    this.frameInterval = const Duration(milliseconds: 200),
     super.key,
   });
 

@@ -41,7 +41,10 @@ class MigrationScreen extends ConsumerStatefulWidget {
 }
 
 class _MigrationScreenState extends ConsumerState<MigrationScreen> {
-  static const _keystoneMigrationBatchMaxFragmentLen = 200;
+  // Frame length is the dominant scan-speed lever: fewer, denser frames finish
+  // a loop faster than many sparse ones, and the Keystone camera locks 300 B
+  // frames reliably at the 5 fps interval set in KeystonePcztQrStage.
+  static const _keystoneMigrationBatchMaxFragmentLen = 300;
   static const _keystoneBatchSigResultUrType = 'zcash-batch-sig-result';
   static const _keystoneSignResultUrType = 'zcash-sign-result';
 
