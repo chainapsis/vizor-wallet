@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/familiar_widget_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
+import 'package:zcash_wallet/src/services/familiar_widget_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -148,6 +151,63 @@ void main() {
     },
   );
 
+  test('familiar widget snapshot follows active account mutations', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    const channel = MethodChannel('test/familiar_widget_account_provider');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return true;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        familiarWidgetServiceProvider.overrideWithValue(
+          FamiliarWidgetService(
+            channel: channel,
+            supportsFamiliarWidget: () => true,
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountProvider.future);
+    await _flushFamiliarWidgetUpdate();
+    expect(calls, isEmpty);
+
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await _flushFamiliarWidgetUpdate();
+    expect(calls.last.arguments, {
+      'profilePictureId': 'pfp-06',
+      'accountName': 'Keystone',
+    });
+
+    await container
+        .read(accountProvider.notifier)
+        .renameAccount('account-2', '  Vault  ');
+    await _flushFamiliarWidgetUpdate();
+    expect(calls.last.arguments, {
+      'profilePictureId': 'pfp-06',
+      'accountName': 'Vault',
+    });
+
+    await container
+        .read(accountProvider.notifier)
+        .updateProfilePicture('account-2', 'pfp-09');
+    await _flushFamiliarWidgetUpdate();
+    expect(calls.last.arguments, {
+      'profilePictureId': 'pfp-09',
+      'accountName': 'Vault',
+    });
+  });
+
   test('voting submission guard tracks multiple active jobs', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -201,11 +261,20 @@ void main() {
   });
 }
 
+Future<void> _flushFamiliarWidgetUpdate() async {
+  await Future<void>.delayed(Duration.zero);
+}
+
 AppBootstrapState _bootstrapWithAccounts() {
   const accountState = AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
-      AccountInfo(uuid: 'account-2', name: 'Keystone', order: 1),
+      AccountInfo(
+        uuid: 'account-2',
+        name: 'Keystone',
+        order: 1,
+        profilePictureId: 'pfp-06',
+      ),
     ],
     activeAccountUuid: 'account-1',
   );

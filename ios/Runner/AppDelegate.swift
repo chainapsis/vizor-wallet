@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -13,6 +14,7 @@ import UIKit
       BackgroundSyncManager.shared.registerBackgroundTask()
       TxTrackManager.shared.registerTask()
     }
+    FamiliarWidgetReloader.reload()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -86,6 +88,25 @@ import UIKit
         } else {
           result(false)
         }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let familiarWidgetChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/familiar_widget",
+      binaryMessenger: messenger
+    )
+    familiarWidgetChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "updateFamiliar":
+        let args = call.arguments as? [String: Any]
+        let saved = FamiliarWidgetStore.save(
+          profilePictureId: args?["profilePictureId"] as? String,
+          accountName: args?["accountName"] as? String
+        )
+        FamiliarWidgetReloader.reload()
+        result(saved)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -200,6 +221,33 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+private enum FamiliarWidgetStore {
+  private static let defaults = UserDefaults(suiteName: "group.com.keplr.vizor")
+  private static let profilePictureIdKey = "familiar_widget_profile_picture_id"
+  private static let accountNameKey = "familiar_widget_account_name"
+  private static let revisionKey = "familiar_widget_revision"
+
+  static func save(profilePictureId: String?, accountName: String?) -> Bool {
+    guard let defaults else { return false }
+    defaults.set(profilePictureId ?? "pfp-01", forKey: profilePictureIdKey)
+    defaults.set(accountName ?? "Vizor", forKey: accountNameKey)
+    defaults.set(Date().timeIntervalSince1970, forKey: revisionKey)
+    return defaults.synchronize()
+  }
+}
+
+private enum FamiliarWidgetReloader {
+  private static let kind = "SyncWidget"
+
+  static func reload() {
+    WidgetCenter.shared.reloadTimelines(ofKind: kind)
+    WidgetCenter.shared.reloadAllTimelines()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+      WidgetCenter.shared.reloadTimelines(ofKind: kind)
+    }
   }
 }
 

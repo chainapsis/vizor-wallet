@@ -19,6 +19,7 @@ import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'familiar_widget_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
@@ -128,7 +129,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
-      state = AsyncData(
+      _setAccountState(
         AccountState(
           accounts: updatedAccounts,
           activeAccountUuid: accountUuid,
@@ -203,7 +204,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
-      state = AsyncData(
+      _setAccountState(
         AccountState(
           accounts: updatedAccounts,
           activeAccountUuid: accountUuid,
@@ -287,7 +288,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
-      state = AsyncData(
+      _setAccountState(
         AccountState(
           accounts: updatedAccounts,
           activeAccountUuid: activeAccountUuid,
@@ -386,7 +387,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final prev = state.value ?? const AccountState();
-    state = AsyncData(
+    _setAccountState(
       prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
     );
 
@@ -402,7 +403,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
         .toList();
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    _setAccountState(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
   }
 
@@ -431,7 +432,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         )
         .toList();
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    _setAccountState(prev.copyWith(accounts: updated));
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
@@ -519,7 +520,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _storage.writeString(_activeAccountKey, nextActiveUuid);
     }
 
-    state = AsyncData(
+    _setAccountState(
       AccountState(
         accounts: updated,
         activeAccountUuid: nextActiveUuid,
@@ -592,7 +593,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // router derives requiresUnlock from hasWallet && !isUnlocked, so the
     // reverse order bounces a locked-start session to /unlock mid-uninstall
     // (the /settings/uninstall exemption only covers the no-wallet branch).
-    state = const AsyncData(AccountState());
+    _setAccountState(const AccountState());
     try {
       ref.read(appSecurityProvider.notifier).reset();
     } catch (e, st) {
@@ -745,7 +746,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updated);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
-      state = AsyncData(
+      _setAccountState(
         AccountState(
           accounts: updated,
           activeAccountUuid: accountUuid,
@@ -794,6 +795,24 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   // ======================== Helpers ========================
+
+  void _setAccountState(AccountState next) {
+    state = AsyncData(next);
+    _publishFamiliarWidgetSnapshot(next);
+  }
+
+  void _publishFamiliarWidgetSnapshot(AccountState accountState) {
+    final active = accountState.activeAccount;
+    unawaited(
+      ref
+          .read(familiarWidgetServiceProvider)
+          .update(
+            profilePictureId:
+                active?.profilePictureId ?? kDefaultProfilePictureId,
+            accountName: active?.name ?? 'Vizor',
+          ),
+    );
+  }
 
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());
