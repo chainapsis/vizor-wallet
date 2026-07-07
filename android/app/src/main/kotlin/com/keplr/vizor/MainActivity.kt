@@ -2,7 +2,9 @@ package com.keplr.vizor
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -20,6 +22,8 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "error" -> result.success(performErrorHaptic())
+                "sendSuccess" -> result.success(performSendSuccessHaptic())
+                "sendFailure" -> result.success(performSendFailureHaptic())
                 else -> result.notImplemented()
             }
         }
@@ -69,12 +73,30 @@ class MainActivity : FlutterFragmentActivity() {
     /** REJECT is the platform's error haptic; older APIs report
      *  unhandled so Dart falls back to its own pattern. */
     private fun performErrorHaptic(): Boolean {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return false
         }
         return window.decorView.performHapticFeedback(
-            android.view.HapticFeedbackConstants.REJECT
+            HapticFeedbackConstants.REJECT
         )
+    }
+
+    private fun performSendSuccessHaptic(): Boolean {
+        val feedbackConstant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            HapticFeedbackConstants.CONFIRM
+        } else {
+            HapticFeedbackConstants.VIRTUAL_KEY
+        }
+        return window.decorView.performHapticFeedback(feedbackConstant)
+    }
+
+    private fun performSendFailureHaptic(): Boolean {
+        val feedbackConstant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            HapticFeedbackConstants.REJECT
+        } else {
+            HapticFeedbackConstants.LONG_PRESS
+        }
+        return window.decorView.performHapticFeedback(feedbackConstant)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

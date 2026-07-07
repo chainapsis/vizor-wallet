@@ -62,16 +62,15 @@ pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentStatus;
 pub use transactions::{
-    check_tx_mined, decrypt_and_store_transaction, get_next_available_address,
-    get_pending_transactions, get_previous_transaction_count_for_address,
-    get_transaction_data_requests, get_transaction_detail, get_transaction_history,
-    get_wallet_balance, parse_address_request_kind, set_transaction_status, AddressRequestKind,
+    decrypt_and_store_transaction, get_next_available_address,
+    get_previous_transaction_count_for_address, get_transaction_data_requests,
+    get_transaction_detail, get_transaction_history, get_wallet_balance,
+    parse_address_request_kind, set_transaction_status, AddressRequestKind,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
-    PendingTxInfo, TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest,
-    WalletBalance,
+    TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
 };
 
 pub(super) fn open_wallet_db(
