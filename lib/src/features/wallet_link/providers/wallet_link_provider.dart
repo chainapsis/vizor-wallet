@@ -194,6 +194,9 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         'order': account.order,
         'isHardware': account.isHardware,
         'isSeedAnchor': account.isSeedAnchor,
+        'hardwareKind': account.isHardware
+            ? kWalletLinkHardwareKindKeystone
+            : null,
         'profilePictureId': account.profilePictureId,
         'birthdayHeight': birthdayHeight.toInt(),
         'zip32AccountIndex': zip32AccountIndex,

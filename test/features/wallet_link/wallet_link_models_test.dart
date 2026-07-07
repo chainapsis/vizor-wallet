@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/wallet_link/models/wallet_link_models.dart';
+import 'package:zcash_wallet/src/features/wallet_link/providers/mobile_wallet_link_provider.dart';
 import 'package:zcash_wallet/src/features/wallet_link/services/wallet_link_completion_crypto.dart';
 
 String _base64UrlNoPadding(List<int> bytes) {
@@ -60,4 +61,112 @@ void main() {
       expect(decoded.importedContactCount, 1);
     },
   );
+
+  test('wallet link transfer filters hardware accounts by kind', () {
+    final payload = WalletLinkTransferPayload.fromJson({
+      'version': 1,
+      'exportedAt': '2026-07-07T00:00:00Z',
+      'network': 'main',
+      'activeAccountUuid': 'software',
+      'contacts': [],
+      'accounts': [
+        {
+          'uuid': 'software',
+          'name': 'Software',
+          'order': 0,
+          'isHardware': false,
+          'isSeedAnchor': true,
+          'birthdayHeight': 100,
+          'zip32AccountIndex': 0,
+          'mnemonic': 'abandon abandon abandon abandon abandon abandon',
+        },
+        {
+          'uuid': 'keystone',
+          'name': 'Keystone',
+          'order': 1,
+          'isHardware': true,
+          'isSeedAnchor': false,
+          'hardwareKind': 'KEYSTONE',
+          'birthdayHeight': 100,
+          'zip32AccountIndex': 1,
+          'ufvk': 'uview1keystone',
+          'seedFingerprint': List<int>.filled(32, 7),
+        },
+        {
+          'uuid': 'legacy-keystone',
+          'name': 'Legacy Keystone',
+          'order': 2,
+          'isHardware': true,
+          'isSeedAnchor': false,
+          'birthdayHeight': 100,
+          'zip32AccountIndex': 2,
+          'ufvk': 'uview1legacy',
+          'seedFingerprint': List<int>.filled(32, 8),
+        },
+        {
+          'uuid': 'ledger',
+          'name': 'Ledger',
+          'order': 3,
+          'isHardware': true,
+          'isSeedAnchor': false,
+          'hardwareKind': 'ledger',
+          'birthdayHeight': 100,
+          'zip32AccountIndex': 3,
+          'ufvk': 'uview1ledger',
+          'seedFingerprint': List<int>.filled(32, 9),
+        },
+      ],
+    });
+
+    expect(payload.accounts, hasLength(4));
+    expect(payload.supportedAccounts.map((account) => account.uuid), [
+      'software',
+      'keystone',
+      'legacy-keystone',
+    ]);
+    expect(payload.importableAccounts.map((account) => account.uuid), [
+      'software',
+      'keystone',
+      'legacy-keystone',
+    ]);
+
+    final keystone = payload.accounts.singleWhere(
+      (account) => account.uuid == 'keystone',
+    );
+    expect(keystone.hardwareKind, kWalletLinkHardwareKindKeystone);
+    expect(keystone.effectiveHardwareKind, kWalletLinkHardwareKindKeystone);
+
+    final legacyKeystone = payload.accounts.singleWhere(
+      (account) => account.uuid == 'legacy-keystone',
+    );
+    expect(legacyKeystone.hardwareKind, isNull);
+    expect(
+      legacyKeystone.effectiveHardwareKind,
+      kWalletLinkHardwareKindKeystone,
+    );
+
+    final ledger = payload.accounts.singleWhere(
+      (account) => account.uuid == 'ledger',
+    );
+    expect(ledger.isSupportedByMobile, isFalse);
+    expect(ledger.isImportable, isFalse);
+
+    final state = MobileWalletLinkState(
+      payload: payload,
+      selectedAccountUuids: {
+        for (final account in payload.accounts) account.uuid,
+      },
+    );
+    expect(state.accounts.map((account) => account.uuid), [
+      'software',
+      'keystone',
+      'legacy-keystone',
+    ]);
+    expect(state.importableAccountCount, 3);
+    expect(state.selectedAccounts.map((account) => account.uuid), [
+      'software',
+      'keystone',
+      'legacy-keystone',
+    ]);
+  });
 }

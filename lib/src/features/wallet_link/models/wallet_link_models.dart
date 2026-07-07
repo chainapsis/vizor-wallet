@@ -5,6 +5,8 @@ import '../../../features/address_book/models/address_book_contact.dart';
 import '../../../providers/account_provider.dart';
 import '../wallet_link_config.dart';
 
+const kWalletLinkHardwareKindKeystone = 'keystone';
+
 class WalletLinkEnvelope {
   const WalletLinkEnvelope({
     required this.algorithm,
@@ -293,6 +295,11 @@ class WalletLinkTransferPayload {
     for (final account in accounts)
       if (account.isImportable) account,
   ];
+
+  List<WalletLinkTransferAccount> get supportedAccounts => [
+    for (final account in accounts)
+      if (account.isSupportedByMobile) account,
+  ];
 }
 
 class WalletLinkTransferAccount {
@@ -302,6 +309,7 @@ class WalletLinkTransferAccount {
     required this.order,
     required this.isHardware,
     required this.isSeedAnchor,
+    required this.hardwareKind,
     required this.profilePictureId,
     required this.birthdayHeight,
     required this.zip32AccountIndex,
@@ -315,6 +323,7 @@ class WalletLinkTransferAccount {
   final int order;
   final bool isHardware;
   final bool isSeedAnchor;
+  final String? hardwareKind;
   final String? profilePictureId;
   final int? birthdayHeight;
   final int? zip32AccountIndex;
@@ -329,6 +338,7 @@ class WalletLinkTransferAccount {
       order: (json['order'] as num?)?.toInt() ?? 0,
       isHardware: json['isHardware'] as bool? ?? false,
       isSeedAnchor: json['isSeedAnchor'] as bool? ?? false,
+      hardwareKind: _normalizedOptionalString(json['hardwareKind']),
       profilePictureId: (json['profilePictureId'] as String?)?.trim(),
       birthdayHeight: (json['birthdayHeight'] as num?)?.toInt(),
       zip32AccountIndex: (json['zip32AccountIndex'] as num?)?.toInt(),
@@ -342,7 +352,18 @@ class WalletLinkTransferAccount {
 
   String get displayName => name.isEmpty ? 'Account ${order + 1}' : name;
 
+  String? get effectiveHardwareKind {
+    if (!isHardware) return null;
+    return hardwareKind ?? kWalletLinkHardwareKindKeystone;
+  }
+
+  bool get isSupportedByMobile {
+    if (!isHardware) return true;
+    return effectiveHardwareKind == kWalletLinkHardwareKindKeystone;
+  }
+
   bool get isImportable {
+    if (!isSupportedByMobile) return false;
     if (birthdayHeight == null || zip32AccountIndex == null) return false;
     if (isHardware) {
       return ufvk != null &&
@@ -370,6 +391,12 @@ class WalletLinkTransferAccount {
       profilePictureId: profilePictureId,
     );
   }
+}
+
+String? _normalizedOptionalString(Object? value) {
+  if (value is! String) return null;
+  final normalized = value.trim().toLowerCase();
+  return normalized.isEmpty ? null : normalized;
 }
 
 enum WalletLinkPhase { idle, preparing, ready, linked, expired, error }

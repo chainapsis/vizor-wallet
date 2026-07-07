@@ -42,7 +42,8 @@ class MobileWalletLinkState {
   final bool loading;
   final int scanResetToken;
 
-  List<WalletLinkTransferAccount> get accounts => payload?.accounts ?? const [];
+  List<WalletLinkTransferAccount> get accounts =>
+      payload?.supportedAccounts ?? const [];
   List<AddressBookContact> get contacts => payload?.contacts ?? const [];
 
   List<WalletLinkTransferAccount> get selectedAccounts => [
