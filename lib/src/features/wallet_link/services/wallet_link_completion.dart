@@ -1,3 +1,5 @@
+import '../../../../main.dart' show log;
+
 import 'wallet_link_api_client.dart';
 
 Future<void> completeWalletLinkPackageBestEffort({
@@ -10,7 +12,8 @@ Future<void> completeWalletLinkPackageBestEffort({
       packageId: packageId,
       completionToken: completionToken,
     );
-  } catch (_) {
+  } catch (error, stackTrace) {
+    log('WalletLinkCompletion.completePackage: ERROR: $error\n$stackTrace');
     // The local import already succeeded. Backend completion only updates the
     // desktop confirmation state and must not roll the wallet mutation back.
   } finally {

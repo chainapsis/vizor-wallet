@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show IOException;
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -36,6 +38,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   Timer? _timer;
   int _epoch = 0;
   int? _statusPollEpoch;
+  String? _lastStatusPollErrorLogKey;
   String? _remotePackageId;
 
   @override
@@ -73,8 +76,9 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         contactCount: upload.contactCount,
       );
       _startReadyLoop(epoch, upload.packageId, expiresAt);
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (epoch != _epoch) return;
+      log('WalletLinkController.start: ERROR: $error\n$stackTrace');
       state = WalletLinkState(
         phase: WalletLinkPhase.error,
         errorMessage: _friendlyError(error),
@@ -252,6 +256,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       }
       _timer?.cancel();
       _remotePackageId = null;
+      _lastStatusPollErrorLogKey = null;
       state = WalletLinkState(
         phase: WalletLinkPhase.linked,
         accountCount: state.accountCount,
@@ -261,9 +266,11 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       if (epoch != _epoch) return;
       if (error.statusCode == 404 || error.statusCode == 410) {
         _expire(deleteRemote: false);
+      } else {
+        _logStatusPollError(error);
       }
-    } catch (_) {
-      // Status polling is advisory; keep the QR visible until local expiry.
+    } catch (error, stackTrace) {
+      _logStatusPollError(error, stackTrace);
     } finally {
       if (_statusPollEpoch == epoch) {
         _statusPollEpoch = null;
@@ -275,6 +282,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _timer?.cancel();
     _epoch++;
     _statusPollEpoch = null;
+    _lastStatusPollErrorLogKey = null;
     final packageId = _remotePackageId;
     _remotePackageId = null;
     if (deleteRemote && packageId != null) {
@@ -290,7 +298,8 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   Future<void> _deletePackage(String packageId) async {
     try {
       await ref.read(walletLinkApiClientProvider).deletePackage(packageId);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      log('WalletLinkController.deletePackage: ERROR: $error\n$stackTrace');
       // Explicit replacement is best-effort. Backend TTL remains the fallback
       // if this cleanup cannot reach Lambda/DynamoDB.
     }
@@ -300,6 +309,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _timer?.cancel();
     _epoch++;
     _statusPollEpoch = null;
+    _lastStatusPollErrorLogKey = null;
     _remotePackageId = null;
   }
 
@@ -328,9 +338,19 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     return base64UrlEncode(digest.bytes).replaceAll('=', '');
   }
 
+  void _logStatusPollError(Object error, [StackTrace? stackTrace]) {
+    final key = error.toString();
+    if (_lastStatusPollErrorLogKey == key) return;
+    _lastStatusPollErrorLogKey = key;
+    final suffix = stackTrace == null ? '' : '\n$stackTrace';
+    log('WalletLinkController.statusPoll: ERROR: $error$suffix');
+  }
+
   static String _friendlyError(Object error) {
     if (error is StateError) return error.message;
-    if (error is WalletLinkApiException) {
+    if (error is WalletLinkApiException ||
+        error is IOException ||
+        error is TimeoutException) {
       return 'Could not reach the linking server. Try again.';
     }
     return 'Could not prepare the mobile link. Try again.';

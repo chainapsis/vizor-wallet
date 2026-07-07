@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../main.dart' show log;
 import '../../../features/address_book/models/address_book_contact.dart';
 import '../models/wallet_link_models.dart';
 import '../services/wallet_link_api_client.dart';
@@ -131,6 +132,7 @@ class MobileWalletLinkController extends Notifier<MobileWalletLinkState> {
         client.close(force: true);
       }
     } on WalletLinkApiException catch (error) {
+      log('MobileWalletLink.handleQrCode: API error: $error');
       final scanError = error.statusCode == 410
           ? MobileWalletLinkScanError.expired
           : MobileWalletLinkScanError.failed;
@@ -139,10 +141,14 @@ class MobileWalletLinkController extends Notifier<MobileWalletLinkState> {
     } on WalletLinkExpiredException {
       _markScanFailed(MobileWalletLinkScanError.expired);
       return false;
-    } on FormatException {
+    } on FormatException catch (error, stackTrace) {
+      log(
+        'MobileWalletLink.handleQrCode: invalid payload: $error\n$stackTrace',
+      );
       _markScanFailed(MobileWalletLinkScanError.invalid);
       return false;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      log('MobileWalletLink.handleQrCode: ERROR: $error\n$stackTrace');
       _markScanFailed(MobileWalletLinkScanError.failed);
       return false;
     }
