@@ -111,6 +111,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
+    LinkedWalletAccountsImportResult? walletLinkAccountImportResult;
+    var walletLinkImportedContactCount = 0;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -138,11 +140,12 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 birthdayHeight: args.importBirthdayHeight,
               );
             case SetPasswordFlow.importWalletLink:
-              await accountNotifier.importLinkedWalletAccounts(
-                network: args.requiredWalletLinkNetwork,
-                accountsToImport: args.walletLinkAccounts,
-              );
-              await ref
+              walletLinkAccountImportResult = await accountNotifier
+                  .importLinkedWalletAccounts(
+                    network: args.requiredWalletLinkNetwork,
+                    accountsToImport: args.walletLinkAccounts,
+                  );
+              walletLinkImportedContactCount = await ref
                   .read(addressBookProvider.notifier)
                   .importContacts(args.walletLinkContacts);
           }
@@ -157,9 +160,16 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           clearCreateOnboardingSecretState(ref.read);
         }
         if (args.flow == SetPasswordFlow.importWalletLink) {
+          final accountImportResult = walletLinkAccountImportResult;
+          if (accountImportResult == null) {
+            throw StateError('Wallet link import result is missing.');
+          }
           await completeWalletLinkPackageBestEffort(
             packageId: args.requiredWalletLinkPackageId,
             completionToken: args.requiredWalletLinkCompletionToken,
+            keyBytes: args.requiredWalletLinkKeyBytes,
+            importedAccountCount: accountImportResult.importedCount,
+            importedContactCount: walletLinkImportedContactCount,
           );
         }
         router.go('/onboarding/biometrics');

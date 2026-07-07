@@ -16,6 +16,7 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../address_book/providers/address_book_provider.dart';
 import '../models/wallet_link_models.dart';
 import '../services/wallet_link_api_client.dart';
+import '../services/wallet_link_completion_crypto.dart';
 
 final walletLinkLocalLifetimeProvider = Provider<Duration>((ref) {
   return const Duration(minutes: 1);
@@ -40,6 +41,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   int? _statusPollEpoch;
   String? _lastStatusPollErrorLogKey;
   String? _remotePackageId;
+  Uint8List? _activeKeyBytes;
 
   @override
   WalletLinkState build() {
@@ -53,6 +55,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _timer?.cancel();
     final previousPackageId = _remotePackageId;
     _remotePackageId = null;
+    _activeKeyBytes = null;
     if (previousPackageId != null) {
       unawaited(_deletePackage(previousPackageId));
     }
@@ -66,6 +69,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       final lifetime = ref.read(walletLinkLocalLifetimeProvider);
       final expiresAt = DateTime.now().add(lifetime);
       _remotePackageId = upload.packageId;
+      _activeKeyBytes = upload.keyBytes;
       state = WalletLinkState(
         phase: WalletLinkPhase.ready,
         qrPayload: upload.qrPayload,
@@ -99,6 +103,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       phase: WalletLinkPhase.linked,
       accountCount: accounts,
       contactCount: contacts,
+      actualImportCounts: true,
     );
   }
 
@@ -135,6 +140,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     return WalletLinkPackageUpload(
       packageId: id,
       qrPayload: qrPayload,
+      keyBytes: keyBytes,
       accountCount: accountCount,
       contactCount: contactCount,
     );
@@ -254,13 +260,19 @@ class WalletLinkController extends Notifier<WalletLinkState> {
           !status.isCompleted) {
         return;
       }
+      final importSummary = await _decryptCompletionSummary(status);
+      if (epoch != _epoch || state.phase != WalletLinkPhase.ready) {
+        return;
+      }
       _timer?.cancel();
       _remotePackageId = null;
+      _activeKeyBytes = null;
       _lastStatusPollErrorLogKey = null;
       state = WalletLinkState(
         phase: WalletLinkPhase.linked,
-        accountCount: state.accountCount,
-        contactCount: state.contactCount,
+        accountCount: importSummary?.importedAccountCount ?? state.accountCount,
+        contactCount: importSummary?.importedContactCount ?? state.contactCount,
+        actualImportCounts: importSummary != null,
       );
     } on WalletLinkApiException catch (error) {
       if (epoch != _epoch) return;
@@ -285,6 +297,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _lastStatusPollErrorLogKey = null;
     final packageId = _remotePackageId;
     _remotePackageId = null;
+    _activeKeyBytes = null;
     if (deleteRemote && packageId != null) {
       unawaited(_deletePackage(packageId));
     }
@@ -311,6 +324,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _statusPollEpoch = null;
     _lastStatusPollErrorLogKey = null;
     _remotePackageId = null;
+    _activeKeyBytes = null;
   }
 
   Uint8List _randomBytes(int length) {
@@ -344,6 +358,28 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _lastStatusPollErrorLogKey = key;
     final suffix = stackTrace == null ? '' : '\n$stackTrace';
     log('WalletLinkController.statusPoll: ERROR: $error$suffix');
+  }
+
+  Future<WalletLinkImportSummary?> _decryptCompletionSummary(
+    WalletLinkPackageStatus status,
+  ) async {
+    final envelope = status.completionEnvelope;
+    final keyBytes = _activeKeyBytes;
+    if (envelope == null || keyBytes == null) {
+      return null;
+    }
+    try {
+      return await decryptWalletLinkImportSummary(
+        envelope: envelope,
+        keyBytes: keyBytes,
+      );
+    } catch (error, stackTrace) {
+      log(
+        'WalletLinkController.completionSummary: ERROR: '
+        '$error\n$stackTrace',
+      );
+      return null;
+    }
   }
 
   static String _friendlyError(Object error) {

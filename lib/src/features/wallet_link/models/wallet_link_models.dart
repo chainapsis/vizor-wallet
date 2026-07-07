@@ -110,12 +110,14 @@ class WalletLinkPackageStatus {
     required this.status,
     required this.expiresAt,
     this.completedAt,
+    this.completionEnvelope,
   });
 
   final String id;
   final WalletLinkPackageCompletionStatus status;
   final int expiresAt;
   final int? completedAt;
+  final WalletLinkEnvelope? completionEnvelope;
 
   bool get isCompleted => status == WalletLinkPackageCompletionStatus.completed;
 
@@ -131,6 +133,44 @@ class WalletLinkPackageStatus {
       status: status,
       expiresAt: (json['expiresAt'] as num).toInt(),
       completedAt: (json['completedAt'] as num?)?.toInt(),
+      completionEnvelope: json['completionEnvelope'] is Map
+          ? WalletLinkEnvelope.fromJson(
+              Map<String, Object?>.from(json['completionEnvelope'] as Map),
+            )
+          : null,
+    );
+  }
+}
+
+class WalletLinkImportSummary {
+  const WalletLinkImportSummary({
+    required this.importedAccountCount,
+    required this.importedContactCount,
+  });
+
+  final int importedAccountCount;
+  final int importedContactCount;
+
+  Map<String, Object?> toJson() => {
+    'version': 1,
+    'importedAccountCount': importedAccountCount,
+    'importedContactCount': importedContactCount,
+  };
+
+  factory WalletLinkImportSummary.fromJson(Map<String, Object?> json) {
+    if (json['version'] != 1) {
+      throw const FormatException(
+        'Unsupported wallet link completion version.',
+      );
+    }
+    final importedAccountCount = (json['importedAccountCount'] as num).toInt();
+    final importedContactCount = (json['importedContactCount'] as num).toInt();
+    if (importedAccountCount < 0 || importedContactCount < 0) {
+      throw const FormatException('Wallet link completion counts are invalid.');
+    }
+    return WalletLinkImportSummary(
+      importedAccountCount: importedAccountCount,
+      importedContactCount: importedContactCount,
     );
   }
 }
@@ -139,12 +179,14 @@ class WalletLinkPackageUpload {
   const WalletLinkPackageUpload({
     required this.packageId,
     required this.qrPayload,
+    required this.keyBytes,
     required this.accountCount,
     required this.contactCount,
   });
 
   final String packageId;
   final String qrPayload;
+  final Uint8List keyBytes;
   final int accountCount;
   final int contactCount;
 }
@@ -341,6 +383,7 @@ class WalletLinkState {
     this.remaining = Duration.zero,
     this.accountCount = 0,
     this.contactCount = 0,
+    this.actualImportCounts = false,
     this.errorMessage,
   });
 
@@ -352,6 +395,7 @@ class WalletLinkState {
       remaining = Duration.zero,
       accountCount = 0,
       contactCount = 0,
+      actualImportCounts = false,
       errorMessage = null;
 
   final WalletLinkPhase phase;
@@ -361,6 +405,7 @@ class WalletLinkState {
   final Duration remaining;
   final int accountCount;
   final int contactCount;
+  final bool actualImportCounts;
   final String? errorMessage;
 
   bool get isPreparing => phase == WalletLinkPhase.preparing;
@@ -376,6 +421,7 @@ class WalletLinkState {
     Duration? remaining,
     int? accountCount,
     int? contactCount,
+    bool? actualImportCounts,
     String? errorMessage,
     bool clearErrorMessage = false,
   }) {
@@ -387,6 +433,7 @@ class WalletLinkState {
       remaining: remaining ?? this.remaining,
       accountCount: accountCount ?? this.accountCount,
       contactCount: contactCount ?? this.contactCount,
+      actualImportCounts: actualImportCounts ?? this.actualImportCounts,
       errorMessage: clearErrorMessage
           ? null
           : errorMessage ?? this.errorMessage,

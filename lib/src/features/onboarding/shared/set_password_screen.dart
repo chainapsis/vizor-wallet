@@ -86,6 +86,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
+    LinkedWalletAccountsImportResult? walletLinkAccountImportResult;
+    var walletLinkImportedContactCount = 0;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -116,11 +118,12 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   birthdayHeight: args.importBirthdayHeight,
                 );
               case SetPasswordFlow.importWalletLink:
-                await accountNotifier.importLinkedWalletAccounts(
-                  network: args.requiredWalletLinkNetwork,
-                  accountsToImport: args.walletLinkAccounts,
-                );
-                await ref
+                walletLinkAccountImportResult = await accountNotifier
+                    .importLinkedWalletAccounts(
+                      network: args.requiredWalletLinkNetwork,
+                      accountsToImport: args.walletLinkAccounts,
+                    );
+                walletLinkImportedContactCount = await ref
                     .read(addressBookProvider.notifier)
                     .importContacts(args.walletLinkContacts);
             }
@@ -148,9 +151,16 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           clearCreateOnboardingSecretState(ref.read);
         }
         if (args.flow == SetPasswordFlow.importWalletLink) {
+          final accountImportResult = walletLinkAccountImportResult;
+          if (accountImportResult == null) {
+            throw StateError('Wallet link import result is missing.');
+          }
           await completeWalletLinkPackageBestEffort(
             packageId: args.requiredWalletLinkPackageId,
             completionToken: args.requiredWalletLinkCompletionToken,
+            keyBytes: args.requiredWalletLinkKeyBytes,
+            importedAccountCount: accountImportResult.importedCount,
+            importedContactCount: walletLinkImportedContactCount,
           );
         }
         router.go('/home');

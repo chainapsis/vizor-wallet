@@ -573,7 +573,8 @@ Future<void> _continueToPasscodeOrImport(
   if (payload == null || state.selectedAccounts.isEmpty) return;
   final packageId = state.packageId;
   final completionToken = state.completionToken;
-  if (packageId == null || completionToken == null) return;
+  final keyBytes = state.keyBytes;
+  if (packageId == null || completionToken == null || keyBytes == null) return;
   final accounts = [
     for (final account in state.selectedAccounts) account.toAccountImport(),
   ];
@@ -588,6 +589,7 @@ Future<void> _continueToPasscodeOrImport(
         contacts: contacts,
         packageId: packageId,
         completionToken: completionToken,
+        keyBytes: keyBytes,
       ),
     );
     return;
@@ -595,7 +597,7 @@ Future<void> _continueToPasscodeOrImport(
 
   final router = GoRouter.of(context);
   try {
-    await runWithSyncPausedForAccountMutation(
+    final accountImportResult = await runWithSyncPausedForAccountMutation(
       ref,
       () => ref
           .read(accountProvider.notifier)
@@ -604,10 +606,15 @@ Future<void> _continueToPasscodeOrImport(
             accountsToImport: accounts,
           ),
     );
-    await ref.read(addressBookProvider.notifier).importContacts(contacts);
+    final importedContactCount = await ref
+        .read(addressBookProvider.notifier)
+        .importContacts(contacts);
     await completeWalletLinkPackageBestEffort(
       packageId: packageId,
       completionToken: completionToken,
+      keyBytes: keyBytes,
+      importedAccountCount: accountImportResult.importedCount,
+      importedContactCount: importedContactCount,
     );
   } catch (error) {
     if (!context.mounted) return;

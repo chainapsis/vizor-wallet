@@ -353,6 +353,7 @@ Widget buildSettingsWalletLinkSuccessUseCase(BuildContext context) {
       phase: WalletLinkPhase.linked,
       accountCount: 6,
       contactCount: 20,
+      actualImportCounts: true,
     ),
   );
 }

@@ -200,8 +200,7 @@ class _LinkedContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ResultContentColumn(
       title: 'Vizor Mobile linked successfully',
-      body:
-          '${state.accountCount} accounts and ${state.contactCount} contacts were linked to the mobile app.',
+      body: _linkedBody(state),
       visual: const SizedBox(
         width: 300,
         height: 200,
@@ -218,6 +217,16 @@ class _LinkedContent extends StatelessWidget {
         child: const Text('Continue'),
       ),
     );
+  }
+
+  String _linkedBody(WalletLinkState state) {
+    if (!state.actualImportCounts) {
+      return 'Vizor Mobile was linked to this wallet.';
+    }
+    final accountLabel = state.accountCount == 1 ? 'account' : 'accounts';
+    final contactLabel = state.contactCount == 1 ? 'contact' : 'contacts';
+    return '${state.accountCount} $accountLabel and '
+        '${state.contactCount} $contactLabel were imported on mobile.';
   }
 }
 

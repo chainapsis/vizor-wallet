@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,7 @@ class MobileWalletLinkState {
     this.payload,
     this.packageId,
     this.completionToken,
+    this.keyBytes,
     this.selectedAccountUuids = const <String>{},
     this.selectedContactIds = const <String>{},
     this.scanError,
@@ -33,6 +35,7 @@ class MobileWalletLinkState {
   final WalletLinkTransferPayload? payload;
   final String? packageId;
   final String? completionToken;
+  final List<int>? keyBytes;
   final Set<String> selectedAccountUuids;
   final Set<String> selectedContactIds;
   final MobileWalletLinkScanError? scanError;
@@ -66,6 +69,8 @@ class MobileWalletLinkState {
     bool clearPackageId = false,
     String? completionToken,
     bool clearCompletionToken = false,
+    List<int>? keyBytes,
+    bool clearKeyBytes = false,
     Set<String>? selectedAccountUuids,
     Set<String>? selectedContactIds,
     MobileWalletLinkScanError? scanError,
@@ -79,6 +84,7 @@ class MobileWalletLinkState {
       completionToken: clearCompletionToken
           ? null
           : completionToken ?? this.completionToken,
+      keyBytes: clearKeyBytes ? null : keyBytes ?? this.keyBytes,
       selectedAccountUuids: selectedAccountUuids ?? this.selectedAccountUuids,
       selectedContactIds: selectedContactIds ?? this.selectedContactIds,
       scanError: clearScanError ? null : scanError ?? this.scanError,
@@ -123,6 +129,7 @@ class MobileWalletLinkController extends Notifier<MobileWalletLinkState> {
           payload: payload,
           packageId: qr.packageId,
           completionToken: qr.completionToken,
+          keyBytes: Uint8List.fromList(qr.keyBytes),
           selectedAccountUuids: selectedAccounts,
           selectedContactIds: selectedContacts,
           scanResetToken: state.scanResetToken,

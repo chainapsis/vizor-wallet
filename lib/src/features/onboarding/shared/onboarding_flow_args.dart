@@ -42,6 +42,7 @@ class SetPasswordScreenArgs {
     this.walletLinkContacts = const [],
     this.walletLinkPackageId,
     this.walletLinkCompletionToken,
+    this.walletLinkKeyBytes = const [],
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -79,6 +80,7 @@ class SetPasswordScreenArgs {
     required List<AddressBookContact> contacts,
     required String packageId,
     required String completionToken,
+    required List<int> keyBytes,
   }) : this._(
          flow: SetPasswordFlow.importWalletLink,
          walletLinkNetwork: network,
@@ -86,6 +88,7 @@ class SetPasswordScreenArgs {
          walletLinkContacts: contacts,
          walletLinkPackageId: packageId,
          walletLinkCompletionToken: completionToken,
+         walletLinkKeyBytes: keyBytes,
        );
 
   final SetPasswordFlow flow;
@@ -101,6 +104,7 @@ class SetPasswordScreenArgs {
   final List<AddressBookContact> walletLinkContacts;
   final String? walletLinkPackageId;
   final String? walletLinkCompletionToken;
+  final List<int> walletLinkKeyBytes;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -114,6 +118,7 @@ class SetPasswordScreenArgs {
   String get requiredWalletLinkNetwork => walletLinkNetwork!;
   String get requiredWalletLinkPackageId => walletLinkPackageId!;
   String get requiredWalletLinkCompletionToken => walletLinkCompletionToken!;
+  List<int> get requiredWalletLinkKeyBytes => walletLinkKeyBytes;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',

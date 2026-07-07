@@ -87,13 +87,20 @@ class WalletLinkApiClient {
   Future<WalletLinkPackageStatus> completePackage({
     required String packageId,
     required String completionToken,
+    WalletLinkEnvelope? completionEnvelope,
   }) async {
     final request = await _client
         .postUrl(walletLinkPackageCompleteUri(_baseUri, packageId: packageId))
         .timeout(timeout);
     request.headers.contentType = ContentType.json;
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.write(jsonEncode({'completionToken': completionToken}));
+    request.write(
+      jsonEncode({
+        'completionToken': completionToken,
+        if (completionEnvelope != null)
+          'completionEnvelope': completionEnvelope.toJson(),
+      }),
+    );
 
     final response = await request.close().timeout(timeout);
     final body = await utf8.decoder.bind(response).join().timeout(timeout);

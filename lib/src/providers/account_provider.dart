@@ -86,6 +86,16 @@ class LinkedWalletAccountImport {
   final String? profilePictureId;
 }
 
+class LinkedWalletAccountsImportResult {
+  const LinkedWalletAccountsImportResult({
+    required this.importedCount,
+    required this.skippedDuplicateCount,
+  });
+
+  final int importedCount;
+  final int skippedDuplicateCount;
+}
+
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
 
@@ -787,7 +797,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
-  Future<void> importLinkedWalletAccounts({
+  Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
     required String network,
     required List<LinkedWalletAccountImport> accountsToImport,
   }) async {
@@ -912,6 +922,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'importLinkedWalletAccounts: success, '
         'imported=${importedAccounts.length}, '
         'duplicates=$skippedDuplicateCount, active=$activeAccountUuid',
+      );
+      return LinkedWalletAccountsImportResult(
+        importedCount: importedAccounts.length,
+        skippedDuplicateCount: skippedDuplicateCount,
       );
     } catch (e, st) {
       log('importLinkedWalletAccounts: ERROR: $e\n$st');

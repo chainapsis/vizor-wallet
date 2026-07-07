@@ -151,7 +151,7 @@ void main() {
     _expectNoCrash(errors);
     expect(find.text('Vizor Mobile linked successfully'), findsOneWidget);
     expect(
-      find.text('6 accounts and 20 contacts were linked to the mobile app.'),
+      find.text('6 accounts and 20 contacts were imported on mobile.'),
       findsOneWidget,
     );
   });
