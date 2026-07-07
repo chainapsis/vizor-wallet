@@ -73,34 +73,34 @@ url = "2.5.8"
 [dependencies.zcash_primitives]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_address]
 version = "0.12"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_keys]
 version = "0.14"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.9"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.8"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.zcash_client_backend]
 version = "0.23"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = [
     "orchard",
     "transparent-inputs",
@@ -113,31 +113,31 @@ features = [
 [dependencies.zcash_client_sqlite]
 version = "0.21"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "ff8c8c1f2da1acc0188260c03463e2f2440fe9be"
+rev = "ce08cba8ce8dc8b908435ca02527455675de2b7b"
 package = "zcash_voting"
 
 # Must match the orchard version used by zcash_client_sqlite / zcash_voting to
 # avoid type conflicts. The whole stack is on the published crates.io
 # 0.15.0-pre.1, so the graph resolves to a single orchard node.
 [dependencies.orchard]
-version = "0.15.0-pre.1"
+version = "0.15.0-pre.2"
 
 # Proofs
 [dependencies.zcash_proofs]
 version = "0.28"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 
 [dependencies.pczt]
 version = "0.7"
 git = "https://github.com/valargroup/librustzcash"
-rev = "79d18386461e6df08a1e132bb79f8d03aebe2438"
+rev = "3c5546bb35187d2b6202eb1e43957f88b5ddfb42"
 features = ["orchard", "io-finalizer", "signer", "zcp-builder"]
 
 [dependencies.ur-registry]
@@ -162,8 +162,15 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "ff8c8c1f2da1acc0188260c03463e2f2440fe9be"
+rev = "ce08cba8ce8dc8b908435ca02527455675de2b7b"
 package = "vote-commitment-tree"
+
+# Redirect every crates.io `orchard` requirement (this crate's direct dep plus
+# the transitive ones from zcash_voting / voting-circuits / librustzcash) onto
+# the pczt-recompute head so the graph resolves to a single orchard node,
+# matching the librustzcash and firmware pins.
+[patch.crates-io]
+orchard = { git = "https://github.com/zcash/orchard", rev = "4d32867fa2b403e474df907d74a7e2e1c4108ac3" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(zcash_unstable, values("nu6.3"))', 'cfg(ironwood_masquerade)'] }

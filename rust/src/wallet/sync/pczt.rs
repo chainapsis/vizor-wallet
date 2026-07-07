@@ -241,7 +241,8 @@ pub fn create_pczt_from_proposal(
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
-    Ok(pczt.serialize())
+    pczt.serialize()
+        .map_err(|e| format!("Serialize PCZT: {e:?}"))
 }
 
 /// Release a stored proposal without executing it. Called from the
@@ -309,7 +310,10 @@ pub fn add_proofs_to_pczt(
         }
     }
 
-    Ok(prover.finish().serialize())
+    prover
+        .finish()
+        .serialize()
+        .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
 }
 
 /// Redact information from a PCZT that the signer role doesn't need
@@ -390,11 +394,13 @@ fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Ve
         .finish();
 
     if *redacted.global().tx_version() == 5 {
-        redacted
-            .serialize_legacy_v1()
-            .map_err(|e| format!("Serialize legacy PCZT for signer: {e}"))
+        pczt::v1::Pczt::try_from(redacted)
+            .map_err(|e| format!("Serialize legacy PCZT for signer: {e:?}"))
+            .map(|v1| v1.serialize())
     } else {
-        Ok(redacted.serialize())
+        redacted
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT for signer: {e:?}"))
     }
 }
 
@@ -414,7 +420,7 @@ pub(crate) fn set_orchard_anchor_and_witness(
         .iter()
         .enumerate()
         .filter_map(|(index, action)| {
-            if *action.spend().nullifier() == spend_nullifier {
+            if *action.spend().nullifier() == Some(spend_nullifier) {
                 Some(index)
             } else {
                 None
@@ -440,7 +446,9 @@ pub(crate) fn set_orchard_anchor_and_witness(
         .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
         .finish();
 
-    Ok(updated.serialize())
+    updated
+        .serialize()
+        .map_err(|e| format!("Serialize updated PCZT: {e:?}"))
 }
 
 fn parse_32_byte_hex(value: &str, label: &str) -> Result<[u8; 32], String> {
@@ -502,15 +510,11 @@ fn finalize_and_extract(
         .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
 
     let consensus_branch_id = *finalized_pczt.global().consensus_branch_id();
+    // the Orchard and Ironwood bundles of a v6 transaction share the
+    // post-NU6.3 circuit (see `orchard_circuit_version_for_consensus_branch`).
     let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
-    #[cfg(zcash_unstable = "nu6.3")]
-    let ironwood_vk = orchard::circuit::VerifyingKey::build(ironwood_orchard_circuit_version());
 
     let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        extractor = extractor.with_ironwood(&ironwood_vk);
-    }
     if let Some((spend_vk, output_vk)) = sapling_vks {
         extractor = extractor.with_sapling(spend_vk, output_vk);
     }
@@ -1147,7 +1151,9 @@ mod tests {
                 .add_ironwood_output::<zip317::FeeRule>(
                     Some(orchard_ovk),
                     recipient,
-                    Zatoshis::const_from_u64(980_000),
+                    // 1_000_000 input - the 10_000 ZIP-317 fee (2 logical
+                    // actions: 1 unpadded Orchard + 1 unpadded Ironwood).
+                    Zatoshis::const_from_u64(990_000),
                     MemoBytes::empty(),
                 )
                 .unwrap();
@@ -1163,7 +1169,7 @@ mod tests {
             let base = IoFinalizer::new(base).finalize_io().unwrap();
             let spend_index = orchard_meta.spend_action_index(0).unwrap();
 
-            (base.serialize(), orchard_ask, spend_index)
+            (base.serialize().unwrap(), orchard_ask, spend_index)
         }
 
         /// Reads the Orchard spend-authorization signature back out of a signed
@@ -1196,7 +1202,7 @@ mod tests {
                 .create_ironwood_proof(pk)
                 .unwrap()
                 .finish();
-            let proofs_bytes = proofs_pczt.serialize();
+            let proofs_bytes = proofs_pczt.serialize().unwrap();
 
             // OLD path: sign the base PCZT to get a full signed PCZT, redact it
             // for transport the way the wallet does before combining, then
@@ -1205,8 +1211,9 @@ mod tests {
             signer.sign_orchard(spend_index, &orchard_ask).unwrap();
             let signed_pczt = signer.finish();
             let sig_bytes = orchard_spend_auth_sig_bytes(&signed_pczt, spend_index);
-            let redacted_signed_bytes = redact_pczt_for_signer(&signed_pczt.serialize())
-                .expect("redact signed PCZT for transport");
+            let redacted_signed_bytes =
+                redact_pczt_for_signer(&signed_pczt.clone().serialize().unwrap())
+                    .expect("redact signed PCZT for transport");
 
             let old =
                 extract_transaction_from_pczt(&proofs_bytes, &redacted_signed_bytes, None, None)
@@ -1228,8 +1235,9 @@ mod tests {
             // spend's signature plus the dummy-spend signatures the IO
             // Finalizer produced for padding actions. The real signature must
             // be among them at the spend's (pool, action index).
-            let extracted_sigs = extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize())
-                .expect("extract compact sigs from signed PCZT");
+            let extracted_sigs =
+                extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize().unwrap())
+                    .expect("extract compact sigs from signed PCZT");
             assert!(
                 extracted_sigs.contains(&DecodedActionSig {
                     pool: DECODED_SIG_POOL_ORCHARD,

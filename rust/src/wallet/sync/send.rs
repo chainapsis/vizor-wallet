@@ -452,7 +452,9 @@ pub(crate) fn create_reserved_pczt_batch(
             }
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
         })?;
-        let pczt_bytes = pczt.serialize();
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT {}: {e:?}", request.id))?;
         let spend_nullifiers = crate::wallet::keystone::pczt_spend_nullifiers(&pczt_bytes)?;
         let pczt_with_proofs =
             super::pczt::add_proofs_to_pczt(&pczt_bytes, spend_params_path, output_params_path)?;
@@ -609,7 +611,9 @@ pub(crate) fn create_shield_transparent_pczt(
             &proposal,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
-        let pczt_bytes = pczt.serialize();
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
         ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
 
         Ok(ShieldTransparentPcztResult {
@@ -2821,7 +2825,9 @@ fn pczt_from_build_result(
         .finish();
 
     Ok(BuiltPczt {
-        bytes: pczt.serialize(),
+        bytes: pczt
+            .serialize()
+            .map_err(|e| format!("Serialize built PCZT: {e:?}"))?,
         orchard_spend_action_indices,
     })
 }
@@ -2895,6 +2901,11 @@ fn create_orchard_denomination_split_pczt(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
+    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
+    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
+    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // recomputes the exact per-child fee from the real builder; this estimate
+    // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
         .fee_required(
             &network,
@@ -2903,7 +2914,7 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
+            2,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3062,6 +3073,11 @@ fn create_orchard_denomination_split_transaction(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
+    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
+    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
+    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // recomputes the exact per-child fee from the real builder; this estimate
+    // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
         .fee_required(
             &network,
@@ -3070,7 +3086,7 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
+            2,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3376,7 +3392,10 @@ fn sign_orchard_migration_pczt_with_usk(
             .sign_orchard(*index, &orchard_ask)
             .map_err(|e| format!("Sign migration PCZT action {index}: {e:?}"))?;
     }
-    Ok(signer.finish().serialize())
+    signer
+        .finish()
+        .serialize()
+        .map_err(|e| format!("Serialize signed migration PCZT: {e:?}"))
 }
 
 fn create_orchard_to_ironwood_transaction_from_note(
@@ -6482,7 +6501,7 @@ mod tests {
             for index in 0..action_count {
                 signer.sign_orchard(index, &ask).unwrap();
             }
-            signer.finish().serialize()
+            signer.finish().serialize().unwrap()
         };
         assert!(
             pczt::Pczt::parse(&request_bytes)
@@ -6529,6 +6548,7 @@ mod tests {
                 })
                 .finish()
                 .serialize()
+                .unwrap()
         };
         assert_eq!(batch, with_extra_clears(&standard));
 
@@ -6549,6 +6569,7 @@ mod tests {
                 })
                 .finish()
                 .serialize()
+                .unwrap()
         };
         assert_ne!(
             batch, sigs_only_cleared,
