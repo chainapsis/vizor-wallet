@@ -170,4 +170,87 @@ void main() {
       isNull,
     );
   });
+
+  test('EVM contact matches across EVM chains, ignoring case', () {
+    const evmAddress = '0x0cD7aD0301Bb0521Cc9d33Ab5D2951A9C0727181';
+    final contacts = [
+      _contact(
+        label: 'Rowan',
+        network: AddressBookNetwork.polygon,
+        address: evmAddress,
+      ),
+    ];
+
+    expect(
+      addressBookLabelFor(
+        contacts: contacts,
+        network: AddressBookNetwork.base,
+        address: evmAddress.toLowerCase(),
+      ),
+      'Rowan',
+    );
+  });
+
+  test('exact-network EVM contact wins over a family-wide match', () {
+    const evmAddress = '0x0cd7ad0301bb0521cc9d33ab5d2951a9c0727181';
+    final contacts = [
+      _contact(
+        label: 'Polygon Rowan',
+        network: AddressBookNetwork.polygon,
+        address: evmAddress,
+      ),
+      _contact(
+        label: 'Base Rowan',
+        network: AddressBookNetwork.base,
+        address: evmAddress,
+      ),
+    ];
+
+    expect(
+      addressBookLabelFor(
+        contacts: contacts,
+        network: AddressBookNetwork.base,
+        address: evmAddress,
+      ),
+      'Base Rowan',
+    );
+  });
+
+  test('non-EVM networks never match across networks', () {
+    final contacts = [
+      _contact(
+        label: 'Sol Alice',
+        network: AddressBookNetwork.solana,
+        address: zcashAddress,
+      ),
+    ];
+
+    expect(
+      addressBookLabelFor(
+        contacts: contacts,
+        network: AddressBookNetwork.zcash,
+        address: zcashAddress,
+      ),
+      isNull,
+    );
+  });
+
+  test('NEAR matching ignores case', () {
+    final contacts = [
+      _contact(
+        label: 'Near Bob',
+        network: AddressBookNetwork.near,
+        address: 'Bob.Near',
+      ),
+    ];
+
+    expect(
+      addressBookLabelFor(
+        contacts: contacts,
+        network: AddressBookNetwork.near,
+        address: 'bob.near',
+      ),
+      'Near Bob',
+    );
+  });
 }

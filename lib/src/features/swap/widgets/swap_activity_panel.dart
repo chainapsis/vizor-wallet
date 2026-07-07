@@ -11,9 +11,12 @@ import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
+import '../models/swap_address_book_helpers.dart';
 import '../models/swap_keystone_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
@@ -724,7 +727,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? 'To: ${_truncateHeaderAddress(recipient)}'
+              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts)}'
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -776,6 +779,24 @@ String _truncateHeaderAddress(String address) {
   if (address.length <= 14) return address;
   return '${address.substring(0, 6)} ... '
       '${address.substring(address.length - 5)}';
+}
+
+/// Header "To:" text — `"Rowan (0x0cd7 ... 27181)"` when the recipient
+/// matches a saved contact on the receive asset's chain, plain truncated
+/// address otherwise.
+String _headerRecipientText(
+  String recipient, {
+  required SwapActivityStatusPresentation presentation,
+  required Iterable<AddressBookContact> contacts,
+}) {
+  final label = addressBookContactForSwapAsset(
+    contacts: contacts,
+    asset: presentation.receiveAsset,
+    address: recipient,
+  )?.label.trim();
+  final compact = _truncateHeaderAddress(recipient);
+  if (label == null || label.isEmpty) return compact;
+  return contactAddressDisplayText(label: label, compactAddress: compact);
 }
 
 String? mobileSwapStatusRecipientFullAddress(SwapIntent intent) {

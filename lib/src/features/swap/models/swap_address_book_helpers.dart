@@ -1,4 +1,5 @@
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
 import 'swap_models.dart';
 
 /// Address-book helpers shared by the desktop and mobile swap screens:
@@ -7,6 +8,38 @@ import 'swap_models.dart';
 AddressBookNetwork? addressBookNetworkForSwapDestination(SwapState state) {
   final asset = state.externalAsset;
   return AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
+}
+
+/// Saved contact matching [address] on the chain of [asset], or `null` when
+/// the asset is unknown or its chain has no address-book network.
+AddressBookContact? addressBookContactForSwapAsset({
+  required Iterable<AddressBookContact> contacts,
+  required SwapAsset? asset,
+  required String address,
+}) {
+  if (asset == null) return null;
+  final network = AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
+  if (network == null) return null;
+  return addressBookContactFor(
+    contacts: contacts,
+    network: network,
+    address: address,
+  );
+}
+
+/// Saved contact matching the composer's destination/refund address on the
+/// current external asset's chain.
+AddressBookContact? swapDestinationContactFor(
+  SwapState state,
+  Iterable<AddressBookContact> contacts,
+) {
+  final network = addressBookNetworkForSwapDestination(state);
+  if (network == null) return null;
+  return addressBookContactFor(
+    contacts: contacts,
+    network: network,
+    address: state.destinationText,
+  );
 }
 
 List<AddressBookNetwork> swapContactPickerNetworks(SwapState state) {

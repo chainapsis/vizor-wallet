@@ -248,6 +248,42 @@ void main() {
     );
   });
 
+  testWidgets('review summary names a matched contact in the To: line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          onCopy: (_) {},
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text(
+          'To: Treasury (0x5290840 ... 4169ee7) on Ethereum',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('review summary shows the refund address line with copy', (
     tester,
   ) async {
@@ -1643,6 +1679,70 @@ void main() {
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
+  testWidgets('typed contact address shows the match line and names the chip', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const contactAddress = '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb';
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'usdc',
+            label: 'USDC Friend',
+            network: AddressBookNetwork.ethereum,
+            address: contactAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      contactAddress,
+    );
+    await tester.pumpAndSettle();
+
+    // Live match feedback under the field while typing/pasting.
+    expect(
+      find.byKey(const ValueKey('swap_destination_contact_match')),
+      findsOneWidget,
+    );
+    expect(find.text('USDC Friend'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xnope',
+    );
+    await tester.pumpAndSettle();
+    // Format errors take priority over the match line.
+    expect(
+      find.byKey(const ValueKey('swap_destination_contact_match')),
+      findsNothing,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      contactAddress,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    // The composer chip shows the contact name instead of the raw address.
+    expect(_destinationSummaryText(tester), 'USDC Friend');
+  });
+
   testWidgets('swap address modal ignores keyboard submit of a bad address', (
     tester,
   ) async {
@@ -1760,7 +1860,8 @@ void main() {
       find.byKey(const ValueKey('address_book_contact_picker_modal')),
       findsNothing,
     );
-    expect(_destinationSummaryText(tester), '0xd1220a...7b9adb');
+    // The chip shows the matched contact's name instead of the raw address.
+    expect(_destinationSummaryText(tester), 'USDC Friend');
   });
 
   testWidgets('swap contact picker cancel returns to address editor', (
@@ -7918,10 +8019,12 @@ Widget _reviewTestPage({
   required String sellAmountText,
   required String receiveAmountText,
   ValueChanged<String>? onCopy,
+  List<AddressBookContact> addressBookContacts = const [],
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
     onCopy: onCopy,
+    addressBookContacts: addressBookContacts,
     quote: SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
@@ -8465,7 +8568,17 @@ String _depositExpiryLabelPlainText(WidgetTester tester) {
 String _destinationSummaryText(WidgetTester tester) {
   final finder = find.byKey(const ValueKey('swap_destination_value'));
   if (finder.evaluate().isEmpty) return '';
-  final text = tester.widget<Text>(finder.first).data ?? '';
+  // The chip renders a plain Text for addresses and a ContactNameInline
+  // (with a Text descendant) for matched contacts.
+  final widget = finder.evaluate().first.widget;
+  final text = widget is Text
+      ? (widget.data ?? '')
+      : (tester
+                .widget<Text>(
+                  find.descendant(of: finder.first, matching: find.byType(Text)),
+                )
+                .data ??
+            '');
   return text.startsWith('Add ') ? '' : text;
 }
 
