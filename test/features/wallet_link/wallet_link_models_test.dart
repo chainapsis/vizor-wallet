@@ -62,6 +62,36 @@ void main() {
     },
   );
 
+  test(
+    'wallet link display lifetime keeps the local QR timeout as the cap',
+    () {
+      expect(
+        walletLinkDisplayLifetime(
+          localLifetime: const Duration(minutes: 1),
+          relayTtlSeconds: 15 * 60,
+        ),
+        const Duration(minutes: 1),
+      );
+    },
+  );
+
+  test('wallet link display lifetime does not outlive the relay ttl', () {
+    expect(
+      walletLinkDisplayLifetime(
+        localLifetime: const Duration(minutes: 1),
+        relayTtlSeconds: 30,
+      ),
+      const Duration(seconds: 30),
+    );
+    expect(
+      walletLinkDisplayLifetime(
+        localLifetime: const Duration(minutes: 1),
+        relayTtlSeconds: 0,
+      ),
+      Duration.zero,
+    );
+  });
+
   test('wallet link transfer filters hardware accounts by kind', () {
     final payload = WalletLinkTransferPayload.fromJson({
       'version': 1,

@@ -76,6 +76,15 @@ class WalletLinkCreatePackageResponse {
   }
 }
 
+Duration walletLinkDisplayLifetime({
+  required Duration localLifetime,
+  required int relayTtlSeconds,
+}) {
+  final relayLifetime = Duration(seconds: relayTtlSeconds);
+  if (relayLifetime <= Duration.zero) return Duration.zero;
+  return relayLifetime < localLifetime ? relayLifetime : localLifetime;
+}
+
 class WalletLinkPackageDownload {
   const WalletLinkPackageDownload({
     required this.id,
@@ -182,6 +191,7 @@ class WalletLinkPackageUpload {
     required this.packageId,
     required this.qrPayload,
     required this.keyBytes,
+    required this.relayTtlSeconds,
     required this.accountCount,
     required this.contactCount,
   });
@@ -189,6 +199,7 @@ class WalletLinkPackageUpload {
   final String packageId;
   final String qrPayload;
   final Uint8List keyBytes;
+  final int relayTtlSeconds;
   final int accountCount;
   final int contactCount;
 }

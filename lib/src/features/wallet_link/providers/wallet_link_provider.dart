@@ -66,7 +66,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       final upload = await _createUpload();
       if (epoch != _epoch) return;
 
-      final lifetime = ref.read(walletLinkLocalLifetimeProvider);
+      final lifetime = walletLinkDisplayLifetime(
+        localLifetime: ref.read(walletLinkLocalLifetimeProvider),
+        relayTtlSeconds: upload.relayTtlSeconds,
+      );
+      if (lifetime <= Duration.zero) {
+        throw StateError('The mobile link expired before it could be shown.');
+      }
       final expiresAt = DateTime.now().add(lifetime);
       _remotePackageId = upload.packageId;
       _activeKeyBytes = upload.keyBytes;
@@ -116,13 +122,16 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     final completionTokenHash = await _sha256Base64UrlNoPadding(
       completionToken,
     );
-    await _client.createPackage(
+    final createResponse = await _client.createPackage(
       WalletLinkCreatePackageRequest(
         id: id,
         envelope: envelope,
         completionTokenHash: completionTokenHash,
       ),
     );
+    if (createResponse.id != id) {
+      throw const FormatException('Wallet link package response id mismatch.');
+    }
 
     final qrPayload = Uri(
       scheme: 'vizor',
@@ -141,6 +150,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       packageId: id,
       qrPayload: qrPayload,
       keyBytes: keyBytes,
+      relayTtlSeconds: createResponse.ttlSeconds,
       accountCount: accountCount,
       contactCount: contactCount,
     );
