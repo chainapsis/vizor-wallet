@@ -5,14 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/review_list_row.dart';
+import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/multisig_account_material_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
@@ -20,6 +24,8 @@ import '../../../providers/multisig_realtime_provider.dart';
 import '../../../providers/multisig_signing_request_provider.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
+
+const _multisigSigningDetailContentMaxWidth = 560.0;
 
 class MultisigSigningDetailScreen extends ConsumerStatefulWidget {
   const MultisigSigningDetailScreen({
@@ -38,6 +44,7 @@ class _MultisigSigningDetailScreenState
     extends ConsumerState<MultisigSigningDetailScreen> {
   String? _busyAction;
   String? _error;
+  bool _refreshing = false;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPrompt;
   MultisigRealtimeLease? _realtimeLease;
@@ -64,23 +71,31 @@ class _MultisigSigningDetailScreenState
   }
 
   Future<void> _refresh() async {
+    if (_refreshing) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
+    setState(() {
+      _refreshing = true;
+      _error = null;
+    });
     try {
       await ref
           .read(multisigSigningRequestsProvider.notifier)
           .refreshForAccount(accountUuid);
-      if (!mounted) return;
-      setState(() {
-        _error = null;
-      });
     } catch (e, st) {
       log('MultisigSigningDetail.refresh: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
         _error = friendlyMultisigError(e);
       });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _refreshing = false;
+        });
+      }
     }
+    if (!mounted) return;
     // Coordinator-side round progress is advisory on top of the inbox
     // markers, so a failure here must not replace the refresh result.
     try {
@@ -252,31 +267,43 @@ class _MultisigSigningDetailScreenState
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+            AppPaneScrollScaffold(
+              toolbar: AppPaneToolbar(
+                leading: AppBackLink(
+                  label: 'Multisig',
+                  minWidth: 60,
+                  onTap: () => context.go('/multisig'),
+                ),
+              ),
+              padding: const EdgeInsets.only(bottom: 40),
               child: request == null
                   ? _MissingRequest(onBack: () => context.go('/multisig'))
                   : Builder(
                       builder: (_) {
                         final current = request!;
-                        return _SigningDetailContent(
-                          request: current,
-                          busyAction: _busyAction,
-                          error: _error,
-                          onRefresh: () => unawaited(_refresh()),
-                          onSubmitRequest: () =>
-                              unawaited(_submitPreparedRequest(current)),
-                          onRound1: () => unawaited(_submitRound1(current)),
-                          onRound2: () => unawaited(_submitRound2(current)),
-                          onBroadcast: () => unawaited(_broadcast(current)),
+                        return _CenteredDetailTrack(
+                          child: _SigningDetailContent(
+                            request: current,
+                            busyAction: _busyAction,
+                            refreshing: _refreshing,
+                            error: _error,
+                            onRefresh: () => unawaited(_refresh()),
+                            onSubmitRequest: () =>
+                                unawaited(_submitPreparedRequest(current)),
+                            onRound1: () => unawaited(_submitRound1(current)),
+                            onRound2: () => unawaited(_submitRound2(current)),
+                            onBroadcast: () => unawaited(_broadcast(current)),
+                          ),
                         );
                       },
                     ),
             ),
             if (_showSaplingParamsPrompt)
-              SaplingParamsPrompt(
-                onDownload: () => _resolveSaplingParamsDialog(true),
-                onCancel: () => _resolveSaplingParamsDialog(false),
+              Positioned.fill(
+                child: SaplingParamsPrompt(
+                  onDownload: () => _resolveSaplingParamsDialog(true),
+                  onCancel: () => _resolveSaplingParamsDialog(false),
+                ),
               ),
           ],
         ),
@@ -304,12 +331,14 @@ class _SigningDetailContent extends StatelessWidget {
     required this.onRound1,
     required this.onRound2,
     required this.onBroadcast,
+    this.refreshing = false,
     this.busyAction,
     this.error,
   });
 
   final MultisigSigningRequestRecord request;
   final String? busyAction;
+  final bool refreshing;
   final String? error;
   final VoidCallback onRefresh;
   final VoidCallback onSubmitRequest;
@@ -319,186 +348,121 @@ class _SigningDetailContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final localSelected = request.localParticipantSelected;
-    final reviewOnly = request.isReviewOnly;
-    final round1Done = request.localRound1Submitted;
-    final round2Done = request.localRound2Submitted;
-    final round1Complete = request.round1Complete;
-    final round2Complete = request.round2Complete;
-    final coordinatorSubmitted = request.coordinatorSubmitted;
-    final busy = busyAction != null;
+    final busy = busyAction != null || refreshing;
     final amount = ZecAmount.fromZatoshi(
       BigInt.tryParse(request.amountZatoshi) ?? BigInt.zero,
     ).receipt;
     final fee = ZecAmount.fromZatoshi(
       BigInt.tryParse(request.feeZatoshi) ?? BigInt.zero,
     ).fee;
+    final action = _detailActionForRequest(
+      request: request,
+      busyAction: busyAction,
+      onRefresh: onRefresh,
+      onSubmitRequest: onSubmitRequest,
+      onRound1: onRound1,
+      onRound2: onRound2,
+      onBroadcast: onBroadcast,
+      refreshing: refreshing,
+    );
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            AppBackLink(
-              label: 'Multisig',
-              onTap: () => context.go('/multisig'),
-            ),
-            const Spacer(),
-            AppButton(
-              onPressed: busy ? null : onRefresh,
-              variant: AppButtonVariant.secondary,
-              leading: const AppIcon(AppIcons.renew),
-              child: const Text('Refresh'),
-            ),
-          ],
+        _DetailHeader(
+          request: request,
+          refreshing: refreshing,
+          onRefresh: busy ? null : onRefresh,
         ),
-        const SizedBox(height: AppSpacing.xl),
-        Row(
-          children: [
-            const AppIcon(AppIcons.users, size: AppIconSize.large),
-            const SizedBox(width: AppSpacing.xs),
-            Text('Signature request', style: AppTypography.displaySmall),
-          ],
+        const SizedBox(height: AppSpacing.md),
+        _RequestSummaryCard(
+          amount: amount.toString(),
+          fee: fee.toString(),
+          recipient: request.recipientAddress,
+          txid: request.broadcastTxid,
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(
-          child: ListView(
+        const SizedBox(height: AppSpacing.md),
+        _NextActionPanel(action: action, request: request, busy: busy),
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _WarningPanel(message: error!),
+        ],
+      ],
+    );
+  }
+}
+
+class _CenteredDetailTrack extends StatelessWidget {
+  const _CenteredDetailTrack({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _multisigSigningDetailContentMaxWidth,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailHeader extends StatelessWidget {
+  const _DetailHeader({
+    required this.request,
+    required this.refreshing,
+    required this.onRefresh,
+  });
+
+  final MultisigSigningRequestRecord request;
+  final bool refreshing;
+  final VoidCallback? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 40,
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              _SummaryPanel(
-                amount: amount.toString(),
-                fee: fee.toString(),
-                recipient: request.recipientAddress,
-                requestId: request.shortSigningRequestId,
-                txid: request.broadcastTxid,
+              Text(
+                'Signature request',
+                textAlign: TextAlign.center,
+                style: AppTypography.displaySmall.copyWith(
+                  color: context.colors.text.accent,
+                  letterSpacing: 0,
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              if (reviewOnly) ...[
-                _StepPanel(
-                  title: 'Review',
-                  count: 'Review only',
-                  body:
-                      'This transaction was shared with every participant. You were not selected to sign it.',
-                  action: AppButton(
-                    onPressed: busy ? null : onRefresh,
-                    variant: AppButtonVariant.secondary,
-                    leading: const AppIcon(AppIcons.renew),
-                    child: const Text('Refresh'),
-                  ),
-                ),
-              ] else ...[
-                _StepPanel(
-                  title: 'Round 1',
-                  count:
-                      '${request.round1SelectedParticipantCount}/${request.selectedParticipantIds.length}',
-                  body: !coordinatorSubmitted
-                      ? 'Submit the request to the coordinator before signing.'
-                      : round1Done
-                      ? 'Your Round 1 commitment was submitted.'
-                      : 'Submit your nonce commitment for this transaction.',
-                  action: AppButton(
-                    onPressed: !busy && !request.isBroadcasted
-                        ? (!coordinatorSubmitted
-                              ? onSubmitRequest
-                              : localSelected && !round1Done
-                              ? onRound1
-                              : null)
-                        : null,
-                    leading: busyAction == 'round1' || busyAction == 'request'
-                        ? null
-                        : const AppIcon(AppIcons.sync),
-                    child: Text(
-                      busyAction == 'round1' || busyAction == 'request'
-                          ? 'Submitting...'
-                          : !coordinatorSubmitted
-                          ? 'Submit request'
-                          : 'Submit Round 1',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _StepPanel(
-                  title: 'Round 2',
-                  count:
-                      '${request.round2SelectedParticipantCount}/${request.selectedParticipantIds.length}',
-                  body: !coordinatorSubmitted
-                      ? 'Submit the request to the coordinator before signing.'
-                      : !round1Done
-                      ? 'Submit your Round 1 commitment before Round 2.'
-                      : !round1Complete
-                      ? 'Round 2 opens after every selected signer submits Round 1.'
-                      : round2Complete
-                      ? 'Every selected signer has submitted Round 2.'
-                      : round2Done
-                      ? 'Your signature share was submitted.'
-                      : 'Submit your signature share for this transaction.',
-                  action: AppButton(
-                    onPressed:
-                        !busy &&
-                            coordinatorSubmitted &&
-                            localSelected &&
-                            round1Done &&
-                            round1Complete &&
-                            !round2Complete &&
-                            !round2Done &&
-                            !request.isBroadcasted
-                        ? onRound2
-                        : null,
-                    leading: busyAction == 'round2'
-                        ? null
-                        : const AppIcon(AppIcons.sync),
-                    child: Text(
-                      busyAction == 'round2'
-                          ? 'Submitting...'
-                          : 'Submit Round 2',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _StepPanel(
-                  title: 'Broadcast',
-                  count: request.isBroadcasted
-                      ? 'Done'
-                      : request.hasBroadcastTxid
-                      ? 'Notify'
-                      : round2Complete
-                      ? 'Ready'
-                      : 'Waiting',
-                  body: request.isBroadcasted
-                      ? 'This transaction has been broadcast.'
-                      : request.hasBroadcastTxid
-                      ? 'Transaction was broadcast. Submit the result to the coordinator.'
-                      : round2Complete
-                      ? 'Any selected signer with all shares can combine and broadcast.'
-                      : 'Broadcast becomes available after every selected signer submits Round 2.',
-                  action: AppButton(
-                    onPressed:
-                        !busy &&
-                            localSelected &&
-                            round2Complete &&
-                            !request.isBroadcasted
-                        ? onBroadcast
-                        : null,
-                    leading: busyAction == 'broadcast'
-                        ? null
-                        : const AppIcon(AppIcons.plane),
-                    child: Text(
-                      busyAction == 'broadcast'
-                          ? 'Broadcasting...'
-                          : 'Broadcast',
-                    ),
-                  ),
-                ),
-              ],
-              if (error != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  error!,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.warning,
-                  ),
-                ),
-              ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: _StatusPill(label: _statusLabelForRequest(request)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          height: 24,
+          child: Row(
+            children: [
+              const Spacer(),
+              AppButton(
+                onPressed: onRefresh,
+                variant: AppButtonVariant.secondary,
+                size: AppButtonSize.small,
+                leading: const AppIcon(AppIcons.renew),
+                child: Text(refreshing ? 'Refreshing' : 'Refresh'),
+              ),
             ],
           ),
         ),
@@ -507,55 +471,113 @@ class _SigningDetailContent extends StatelessWidget {
   }
 }
 
-class _SummaryPanel extends StatelessWidget {
-  const _SummaryPanel({
+String _statusLabelForRequest(MultisigSigningRequestRecord request) {
+  if (request.isBroadcasted) return 'Sent';
+  if (request.hasBroadcastTxid) return 'Sharing result';
+  if (request.readyToBroadcast) return 'Ready to send';
+  if (request.isReviewOnly) return 'Review only';
+  if (!request.coordinatorSubmitted) return 'Preparing';
+  if (!request.localParticipantSelected) return 'Waiting';
+  if (!request.localRound1Submitted) return 'Action needed';
+  if (request.round1Complete && !request.localRound2Submitted) {
+    return 'Action needed';
+  }
+  return 'Waiting';
+}
+
+class _RequestSummaryCard extends StatelessWidget {
+  const _RequestSummaryCard({
     required this.amount,
     required this.fee,
     required this.recipient,
-    required this.requestId,
     this.txid,
   });
 
   final String amount;
   final String fee;
   final String recipient;
-  final String requestId;
   final String? txid;
 
   @override
   Widget build(BuildContext context) {
+    return ReviewWrapCard(
+      children: [
+        ReviewListRow(label: 'Amount', value: amount),
+        const ReviewWrapDivider(),
+        ReviewListRow(
+          label: 'Recipient',
+          value: truncatedAddress(recipient),
+          copyText: recipient,
+        ),
+        const ReviewWrapDivider(),
+        ReviewListRow(label: 'Tx fee', value: fee),
+        if (txid != null && txid!.isNotEmpty) ...[
+          const ReviewWrapDivider(),
+          ReviewListRow(
+            label: 'Tx ID',
+            value: truncatedAddress(txid!),
+            copyText: txid,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _NextActionPanel extends StatelessWidget {
+  const _NextActionPanel({
+    required this.action,
+    required this.request,
+    required this.busy,
+  });
+
+  final _DetailAction action;
+  final MultisigSigningRequestRecord request;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colors;
+
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surface.card,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _SummaryItem(label: 'Amount', value: amount),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: _SummaryItem(label: 'Fee', value: fee),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: _SummaryItem(label: 'Request', value: requestId),
-                ),
-              ],
+            Text(
+              'Next action',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            _SummaryItem(label: 'Recipient', value: recipient),
-            if (txid != null && txid!.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.xs),
-              _SummaryItem(label: 'Transaction ID', value: txid!),
-            ],
+            const SizedBox(height: AppSpacing.xxs),
+            Text(action.title, style: AppTypography.headlineSmall),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              action.body,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ApprovalProgressSummary(request: request),
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: AppButton(
+                onPressed: action.onPressed,
+                variant: action.variant,
+                minWidth: 184,
+                leading: busy ? null : AppIcon(action.iconName),
+                child: Text(action.buttonLabel),
+              ),
+            ),
           ],
         ),
       ),
@@ -563,8 +585,44 @@ class _SummaryPanel extends StatelessWidget {
   }
 }
 
-class _SummaryItem extends StatelessWidget {
-  const _SummaryItem({required this.label, required this.value});
+class _ApprovalProgressSummary extends StatelessWidget {
+  const _ApprovalProgressSummary({required this.request});
+
+  final MultisigSigningRequestRecord request;
+
+  @override
+  Widget build(BuildContext context) {
+    final signerCount = request.selectedParticipantIds.length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: _ProgressMetric(
+            label: 'Selected signers',
+            value: signerCount.toString(),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _ProgressMetric(
+            label: 'Ready',
+            value: '${request.round1SelectedParticipantCount}/$signerCount',
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _ProgressMetric(
+            label: 'Approved',
+            value: '${request.round2SelectedParticipantCount}/$signerCount',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProgressMetric extends StatelessWidget {
+  const _ProgressMetric({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -575,27 +633,26 @@ class _SummaryItem extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surface.input,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: AppTypography.labelMedium.copyWith(
                 color: colors.text.secondary,
               ),
             ),
             const SizedBox(height: AppSpacing.xxs),
-            Text(
-              value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge,
-            ),
+            Text(value, style: AppTypography.bodyMediumStrong),
           ],
         ),
       ),
@@ -603,63 +660,197 @@ class _SummaryItem extends StatelessWidget {
   }
 }
 
-class _StepPanel extends StatelessWidget {
-  const _StepPanel({
+class _DetailAction {
+  const _DetailAction({
     required this.title,
-    required this.count,
     required this.body,
-    required this.action,
+    required this.buttonLabel,
+    required this.iconName,
+    required this.variant,
+    required this.onPressed,
   });
 
   final String title;
-  final String count;
   final String body;
-  final Widget action;
+  final String buttonLabel;
+  final String iconName;
+  final AppButtonVariant variant;
+  final VoidCallback? onPressed;
+}
+
+_DetailAction _detailActionForRequest({
+  required MultisigSigningRequestRecord request,
+  required String? busyAction,
+  required VoidCallback onRefresh,
+  required VoidCallback onSubmitRequest,
+  required VoidCallback onRound1,
+  required VoidCallback onRound2,
+  required VoidCallback onBroadcast,
+  required bool refreshing,
+}) {
+  final busy = busyAction != null || refreshing;
+  final disabledRefresh = busy ? null : onRefresh;
+  final primaryVariant = AppButtonVariant.primary;
+  final secondaryVariant = AppButtonVariant.secondary;
+
+  if (request.isBroadcasted) {
+    return _DetailAction(
+      title: 'Sent',
+      body:
+          'This send is already on the network. You can review it in Activity.',
+      buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
+      iconName: AppIcons.renew,
+      variant: secondaryVariant,
+      onPressed: disabledRefresh,
+    );
+  }
+  if (request.hasBroadcastTxid) {
+    return _DetailAction(
+      title: 'Share send result',
+      body:
+          'The transaction was sent. Share the result so the group can stop tracking this request.',
+      buttonLabel: busyAction == 'broadcast' ? 'Sharing...' : 'Share result',
+      iconName: AppIcons.plane,
+      variant: primaryVariant,
+      onPressed: busy ? null : onBroadcast,
+    );
+  }
+  if (request.isReviewOnly || !request.localParticipantSelected) {
+    return _DetailAction(
+      title: 'Review only',
+      body:
+          'This send was shared with every participant, but you were not selected to approve it.',
+      buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
+      iconName: AppIcons.renew,
+      variant: secondaryVariant,
+      onPressed: disabledRefresh,
+    );
+  }
+  if (!request.coordinatorSubmitted) {
+    return _DetailAction(
+      title: 'Finish request setup',
+      body:
+          'Save this request with the coordinator so selected signers can approve it.',
+      buttonLabel: busyAction == 'request' ? 'Submitting...' : 'Submit request',
+      iconName: AppIcons.sync,
+      variant: primaryVariant,
+      onPressed: busy ? null : onSubmitRequest,
+    );
+  }
+  if (!request.localRound1Submitted) {
+    return _DetailAction(
+      title: 'Approve this send',
+      body:
+          'Start your approval for this send. The request will continue once the selected signers are ready.',
+      buttonLabel: busyAction == 'round1' ? 'Approving...' : 'Approve',
+      iconName: AppIcons.sync,
+      variant: primaryVariant,
+      onPressed: busy ? null : onRound1,
+    );
+  }
+  if (!request.round1Complete) {
+    return _DetailAction(
+      title: 'Waiting for other signers',
+      body:
+          'Your first approval step is complete. The request will continue after the other selected signers are ready.',
+      buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
+      iconName: AppIcons.renew,
+      variant: secondaryVariant,
+      onPressed: disabledRefresh,
+    );
+  }
+  if (!request.localRound2Submitted && !request.round2Complete) {
+    return _DetailAction(
+      title: 'Finish your approval',
+      body:
+          'The selected signers are ready. Finish your approval so the transaction can be sent.',
+      buttonLabel: busyAction == 'round2' ? 'Approving...' : 'Finish approval',
+      iconName: AppIcons.sync,
+      variant: primaryVariant,
+      onPressed: busy ? null : onRound2,
+    );
+  }
+  if (!request.round2Complete) {
+    return _DetailAction(
+      title: 'Waiting for final approvals',
+      body:
+          'Your approval is complete. The transaction can be sent after the other selected signers finish.',
+      buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
+      iconName: AppIcons.renew,
+      variant: secondaryVariant,
+      onPressed: disabledRefresh,
+    );
+  }
+
+  return _DetailAction(
+    title: 'Ready to send',
+    body:
+        'All required approvals are collected. Send this transaction to the network.',
+    buttonLabel: busyAction == 'broadcast' ? 'Sending...' : 'Send now',
+    iconName: AppIcons.plane,
+    variant: primaryVariant,
+    onPressed: busy ? null : onBroadcast,
+  );
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surface.card,
+        color: colors.surface.input,
         border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(title, style: AppTypography.headlineSmall),
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        count,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    body,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            action,
-          ],
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.text.secondary,
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _WarningPanel extends StatelessWidget {
+  const _WarningPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppIcon(
+          AppIcons.warning,
+          size: AppIconSize.medium,
+          color: colors.text.warning,
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Expanded(
+          child: Text(
+            message,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.warning,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

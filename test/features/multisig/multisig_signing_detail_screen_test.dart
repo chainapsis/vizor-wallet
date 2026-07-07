@@ -13,9 +13,7 @@ import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dar
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 void main() {
-  testWidgets('locks Round 2 submission once broadcast is ready', (
-    tester,
-  ) async {
+  testWidgets('shows send action once all approvals are ready', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -30,23 +28,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final round2Button = tester.widget<AppButton>(
+    expect(find.text('Finish approval'), findsNothing);
+    final sendButton = tester.widget<AppButton>(
       find.ancestor(
-        of: find.text('Submit Round 2'),
-        matching: find.byType(AppButton),
-      ),
-    );
-    final broadcastButton = tester.widget<AppButton>(
-      find.ancestor(
-        of: find.text('Broadcast'),
+        of: find.text('Send now'),
         matching: find.byType(AppButton),
       ),
     );
 
-    expect(round2Button.onPressed, isNull);
-    expect(broadcastButton.onPressed, isNotNull);
+    expect(sendButton.onPressed, isNotNull);
+    expect(find.text('Ready to send'), findsWidgets);
     expect(
-      find.text('Every selected signer has submitted Round 2.'),
+      find.text(
+        'All required approvals are collected. Send this transaction to the network.',
+      ),
       findsOneWidget,
     );
   });
@@ -118,6 +113,14 @@ class _FakeSigningRequestsNotifier extends MultisigSigningRequestsNotifier {
 
   @override
   Future<void> refreshForAccount(String accountUuid) async {}
+
+  @override
+  Future<MultisigSigningRequestRecord?> refreshRequestProgress({
+    required String accountUuid,
+    required String signingRequestId,
+  }) async => records.firstWhere(
+    (record) => record.signingRequestId == signingRequestId,
+  );
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
