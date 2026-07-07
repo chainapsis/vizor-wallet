@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../../../l10n/app_localizations.dart';
+
 import '../../../../../main.dart' show log;
 import '../../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
@@ -20,9 +22,6 @@ import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
-
-const _renewShieldedAddressErrorMessage =
-    "We couldn't refresh your shielded address. Try again, or use your current one.";
 
 bool _shouldRefreshTransparentAddressAfterSyncUpdate(
   SyncState previous,
@@ -177,7 +176,10 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     } catch (e) {
       log('MobileReceive: ERROR renewing shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, _renewShieldedAddressErrorMessage);
+      showAppToast(
+        context,
+        AppLocalizations.of(context).receiveRenewShieldedError,
+      );
     } finally {
       if (mounted) setState(() => _renewing = false);
     }
@@ -188,7 +190,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     if (address.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: address));
     if (!mounted) return;
-    showAppToast(context, 'Address copied');
+    showAppToast(context, AppLocalizations.of(context).toastAddressCopied);
   }
 
   void _shareAddress() {
@@ -213,9 +215,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     });
 
     final colors = context.colors;
+    final l10n = AppLocalizations.of(context);
     final accountName =
         ref.watch(accountProvider).value?.activeAccount?.name ?? '';
-    final poolLabel = _isShielded ? 'shielded' : 'transparent';
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -224,7 +226,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Receive $kZcashDefaultCurrencyTicker',
+                title: l10n.receiveTitle(kZcashDefaultCurrencyTicker),
                 titleStyle: AppTypography.headlineLarge,
                 height: _MobileReceiveMetrics.topNavHeight,
                 onBack: () => context.pop(),
@@ -312,7 +314,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                 size: _MobileReceiveMetrics.buttonIconSize,
                               ),
                               child: Text(
-                                'Share $poolLabel address',
+                                _isShielded
+                                    ? l10n.receiveShareShieldedAddress
+                                    : l10n.receiveShareTransparentAddress,
                                 style: AppTypography.labelMedium.copyWith(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -321,7 +325,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                             const SizedBox(height: AppSpacing.s),
                             _CopyAddressTextButton(
                               key: const ValueKey('mobile_receive_copy'),
-                              label: 'Copy $poolLabel address',
+                              label: _isShielded
+                                  ? l10n.sidebarCopyShieldedAddress
+                                  : l10n.receiveCopyTransparentAddress,
                               enabled: _selectedAddress.isNotEmpty,
                               onTap: () => unawaited(_copyAddress()),
                             ),

@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
@@ -11,6 +12,7 @@ void main() {
   // This mirrors that coverage in the mobile token lane, where the row exists.
   test('mobile adds a NEAR Intents explorer link to the tx id detail row', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: AppLocalizationsEn(),
       _state(),
       _intent(
         status: SwapIntentStatus.processing,

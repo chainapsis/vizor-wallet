@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -59,20 +60,22 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   String? get _passwordMessage {
     if (_passwordError != null) return _passwordError;
-    return validateWalletPassword(_passwordController.text);
+    return validateWalletPasswordLocalized(
+      _passwordController.text,
+      AppLocalizations.of(context),
+    );
   }
 
   String? get _swapRemovalBlockMessage {
+    final l10n = AppLocalizations.of(context);
     if (widget.checkingPendingSwaps) {
-      return 'Checking this account for active swaps before removal.';
+      return l10n.accountsCheckingSwaps;
     }
     if (widget.pendingSwapCheckFailed) {
-      return "Couldn't check this account for active swaps. Try again before removing it.";
+      return l10n.accountsSwapCheckFailed;
     }
     if (widget.pendingSwapCount <= 0) return null;
-    final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
-    return 'This account has ${widget.pendingSwapCount} active $plural. '
-        'Complete or remove them from swap activity before removing this account.';
+    return l10n.accountsActiveSwaps(widget.pendingSwapCount);
   }
 
   @override
@@ -85,8 +88,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   Future<void> _submit() async {
     if (_isSubmitting) return;
     if (_swapRemovalBlockMessage != null) return;
-    final passwordError = validateRequiredWalletPassword(
+    final passwordError = validateRequiredWalletPasswordLocalized(
       _passwordController.text,
+      AppLocalizations.of(context),
     );
     if (passwordError != null) {
       setState(() {
@@ -111,7 +115,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _passwordError = "Couldn't check your password. Please try again.";
+        _passwordError = AppLocalizations.of(context).settingsPasswordCheckFailed;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -121,7 +125,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (!mounted) return;
     if (!isPasswordValid) {
       setState(() {
-        _passwordError = 'Incorrect password. Please try again.';
+        _passwordError = AppLocalizations.of(
+          context,
+        ).accountsIncorrectPassword;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -139,8 +145,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       if (!mounted) return;
       setState(() {
         _submitError = widget.isLastAccount
-            ? "Couldn't reset Vizor."
-            : "Couldn't remove account.";
+            ? AppLocalizations.of(context).accountsResetVizorFailedDot
+            : AppLocalizations.of(context).accountsRemoveFailedDot;
       });
     } finally {
       if (mounted) {
@@ -203,8 +209,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
           SizedBox(
             height: _fieldHeight,
             child: PasswordTextField(
-              label: 'Password',
-              hintText: 'Enter your password',
+              label: AppLocalizations.of(context).settingsPassword,
+              hintText: AppLocalizations.of(context).accountsEnterPassword,
               leadingSlotWidth: 32,
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
@@ -253,28 +259,27 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   }
 
   String get _bodyText {
+    final l10n = AppLocalizations.of(context);
     if (widget.isLastAccount) {
-      return 'Removing this account will completely reset the Vizor app. '
-          'This means deleting all accounts and requiring you to import '
-          'accounts again.\n'
-          'This cannot be undone.';
+      return l10n.accountsRemoveResetWarning;
     }
-    return "Are you sure you want to remove this account? "
-        "This action can't be reverted.\n"
-        'You will have to re-import your account.';
+    return l10n.accountsRemoveWarning;
   }
 
   String get _submitButtonLabel {
+    final l10n = AppLocalizations.of(context);
     if (!_isSubmitting) {
-      return widget.isLastAccount ? 'Reset Vizor' : 'Remove';
+      return widget.isLastAccount ? l10n.accountsResetVizor : l10n.commonRemove;
     }
 
     return switch (_submitPhase) {
-      _AccountRemoveSubmitPhase.checkingPassword => 'Checking password...',
-      _AccountRemoveSubmitPhase.stoppingSync => 'Stopping sync...',
+      _AccountRemoveSubmitPhase.checkingPassword =>
+        l10n.accountsCheckingPassword,
+      _AccountRemoveSubmitPhase.stoppingSync => l10n.accountsStoppingSync,
       _AccountRemoveSubmitPhase.removingAccount =>
-        widget.isLastAccount ? 'Resetting...' : 'Removing account...',
-      null => widget.isLastAccount ? 'Resetting...' : 'Removing account...',
+        widget.isLastAccount ? l10n.accountsResetting : l10n.accountsRemoving,
+      null =>
+        widget.isLastAccount ? l10n.accountsResetting : l10n.accountsRemoving,
     };
   }
 }

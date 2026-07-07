@@ -6,6 +6,9 @@ import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import '../../../../l10n/app_localizations.dart';
+import '../../../../l10n/app_localizations_en.dart';
+import '../../../providers/locale_provider.dart';
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
@@ -13,6 +16,7 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
     swapProvider: ref.read(swapIntentProvider),
+    localizationsResolver: () => ref.read(appLocalizationsProvider),
     onRecordsChanged: () {
       ref.read(swapActivityRecordsRevisionProvider.notifier).bump();
     },
@@ -148,14 +152,20 @@ class SwapActivityTracker {
   const SwapActivityTracker({
     required SwapActivityStore activityStore,
     required SwapProvider swapProvider,
+    AppLocalizations Function()? localizationsResolver,
     void Function()? onRecordsChanged,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
+       _localizationsResolver = localizationsResolver,
        _onRecordsChanged = onRecordsChanged;
 
   final SwapActivityStore _activityStore;
   final SwapProvider _swapProvider;
+  final AppLocalizations Function()? _localizationsResolver;
   final void Function()? _onRecordsChanged;
+
+  AppLocalizations get _l10n =>
+      _localizationsResolver?.call() ?? AppLocalizationsEn();
 
   static String? normalizeAccountUuid(String? accountUuid) {
     final scopedAccountUuid = accountUuid?.trim();
@@ -269,6 +279,7 @@ class SwapActivityTracker {
         final message = swapFailureMessage(
           SwapFailureOperation.refreshStatus,
           e,
+          _l10n,
         );
         refreshError ??= message;
         updatedIntents = updatedIntents.replaceSwapIntent(

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
@@ -102,13 +103,15 @@ ActivityRowData buildSwapActivityRow({
 
   return ActivityRowData(
     stableId: 'swap:${item.intentId}',
-    title: _swapActivityTitle(item.status),
+    title: _swapActivityTitle(context, item.status),
     leadingIconName: AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
     subtitle: returnsFunds
-        ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
+        ? AppLocalizations.of(
+            context,
+          ).activitySymbolRefunded(sellAsset?.symbol ?? 'ZEC')
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
       _swapActivityAmountText(
@@ -120,10 +123,10 @@ ActivityRowData buildSwapActivityRow({
     amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
     amountColor: outgoingAmountColor(colors),
-    amountSubtitle: timedOut ? 'Timeout' : null,
+    amountSubtitle: timedOut ? AppLocalizations.of(context).activityTimeout : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: _swapActivityStatusText(item.status, progress),
+    statusText: _swapActivityStatusText(context, item.status, progress),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
@@ -141,6 +144,7 @@ ActivityRowData buildSwapActivityRow({
     timestampText: formatActivityTimestamp(
       item.activityTimestamp,
       dateOnly: dateOnlyTimestamp,
+      l10n: AppLocalizations.of(context),
     ),
     childRows: _swapActivityChildRows(
       context: context,
@@ -186,8 +190,12 @@ List<ActivityRowData> _swapActivityChildRows({
       stableId:
           'swap:${item.intentId}:${receivesZec ? 'received' : 'deposited'}',
       title: receivesZec
-          ? 'Received ${receiveAsset.symbol}'
-          : 'Deposited ${receiveAsset.symbol}',
+          ? AppLocalizations.of(
+              context,
+            ).activityReceivedSymbol(receiveAsset.symbol)
+          : AppLocalizations.of(
+              context,
+            ).activityDepositedSymbol(receiveAsset.symbol),
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
@@ -195,7 +203,11 @@ List<ActivityRowData> _swapActivityChildRows({
       amountColor: outgoingAmountColor(colors),
       statusText: '',
       timestampText: dateOnlyTimestamp
-          ? _swapActivityChildTimestamp(item, dateOnly: true)
+          ? _swapActivityChildTimestamp(
+              item,
+              dateOnly: true,
+              l10n: AppLocalizations.of(context),
+            )
           : '',
       onTap: receivesZec ? onReceivedLegTap : null,
     ),
@@ -238,21 +250,24 @@ String _swapActivityReceiveAmountText(
 }
 
 String _swapActivityStatusText(
+  BuildContext context,
   SwapIntentStatus status,
   _SwapActivityProgress? progress,
 ) {
+  final l10n = AppLocalizations.of(context);
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit =>
-      progress?.label ?? 'In progress',
-    SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
+      progress?.label(l10n) ?? l10n.activityInProgress,
+    SwapIntentStatus.incompleteDeposit => l10n.activityIncompleteDeposit,
     SwapIntentStatus.depositObserved ||
     SwapIntentStatus.processing ||
-    SwapIntentStatus.providerStatusUnknown => progress?.label ?? 'In progress',
-    SwapIntentStatus.complete => 'Completed',
-    SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Failed',
-    SwapIntentStatus.failed => 'Failed',
+    SwapIntentStatus.providerStatusUnknown =>
+      progress?.label(l10n) ?? l10n.activityInProgress,
+    SwapIntentStatus.complete => l10n.activityCompleted,
+    SwapIntentStatus.refunded => l10n.activityRefunded,
+    SwapIntentStatus.expired => l10n.activityFailed,
+    SwapIntentStatus.failed => l10n.activityFailed,
   };
 }
 
@@ -267,7 +282,8 @@ class _SwapActivityProgress {
 
   double get value => currentStep / totalSteps;
 
-  String get label => '$currentStep/$totalSteps In progress';
+  String label(AppLocalizations l10n) =>
+      '$currentStep/$totalSteps ${l10n.activityInProgress}';
 }
 
 bool _swapActivityFailed(SwapIntentStatus status) {
@@ -351,13 +367,14 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
   );
 }
 
-String _swapActivityTitle(SwapIntentStatus status) {
+String _swapActivityTitle(BuildContext context, SwapIntentStatus status) {
+  final l10n = AppLocalizations.of(context);
   return switch (status) {
-    SwapIntentStatus.complete => 'Swapped',
+    SwapIntentStatus.complete => l10n.activitySwapped,
     SwapIntentStatus.failed ||
     SwapIntentStatus.expired ||
-    SwapIntentStatus.refunded => 'Swap failed',
-    _ => 'Swapping...',
+    SwapIntentStatus.refunded => l10n.activitySwapFailed,
+    _ => l10n.activitySwapping,
   };
 }
 
@@ -384,20 +401,23 @@ String? _swapActivityAssetSubtitle(SwapAsset? asset) {
 String _swapActivityChildTimestamp(
   SwapActivityRowItem item, {
   bool dateOnly = false,
+  required AppLocalizations l10n,
 }) {
   final timestamp =
       item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
   if (timestamp == null) return '--';
-  if (dateOnly) return formatActivityTimestamp(timestamp, dateOnly: true);
-  return _relativeActivityTimestamp(timestamp) ??
-      formatActivityTimestamp(timestamp);
+  if (dateOnly) {
+    return formatActivityTimestamp(timestamp, dateOnly: true, l10n: l10n);
+  }
+  return _relativeActivityTimestamp(timestamp, l10n) ??
+      formatActivityTimestamp(timestamp, l10n: l10n);
 }
 
-String? _relativeActivityTimestamp(DateTime timestamp) {
+String? _relativeActivityTimestamp(DateTime timestamp, AppLocalizations l10n) {
   final elapsed = DateTime.now().difference(timestamp.toLocal());
   if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return 'just now';
-  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
+  if (elapsed.inMinutes < 1) return l10n.activityJustNow;
+  if (elapsed.inHours < 1) return l10n.activityMinutesAgo(elapsed.inMinutes);
   return null;
 }
 

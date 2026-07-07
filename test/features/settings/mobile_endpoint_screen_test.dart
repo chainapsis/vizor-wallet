@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _customEndpoint = RpcEndpointConfig(
   networkName: 'main',
@@ -47,6 +48,9 @@ Widget _app() {
       rpcEndpointChainNameGetterProvider.overrideWithValue((_) async => 'main'),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: const MobileEndpointScreen(),
     ),

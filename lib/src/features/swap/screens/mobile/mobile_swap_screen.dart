@@ -4,6 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
+import '../../../address_book/models/address_format_validator.dart'
+    show addressFormatFindingMessage;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -83,7 +86,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         context: context,
         useRootNavigator: true,
         barrierDismissible: true,
-        barrierLabel: 'Dismiss',
+        barrierLabel: AppLocalizations.of(context).commonDismiss,
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => _buildSwapModal(),
@@ -156,8 +159,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
+                    return MobileScanOutcome.rejected(
+                      AppLocalizations.of(context).swapQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -169,9 +172,15 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onClose: _closeSwapModal,
               ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
-                title: swapContactPickerTitle(swapState),
+                title: swapContactPickerTitle(
+                  swapState,
+                  AppLocalizations.of(context),
+                ),
                 networks: swapContactPickerNetworks(swapState),
-                emptyTitle: swapContactPickerEmptyTitle(swapState),
+                emptyTitle: swapContactPickerEmptyTitle(
+                  swapState,
+                  AppLocalizations.of(context),
+                ),
                 onSelected: _selectAddressBookContact,
                 onCancel: () => _openModal(_SwapModalSurface.addressEditor),
               ),
@@ -227,7 +236,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       if (alreadySaved) {
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your address book');
+          showAppToast(
+            toastContext,
+            AppLocalizations.of(toastContext).swapAlreadyInAddressBook,
+          );
         }
         return;
       }
@@ -301,7 +313,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           Column(
             children: [
               MobileTopNav.back(
-                title: 'Swap',
+                title: AppLocalizations.of(context).swapTitle,
                 // With the number-pad open the leading button is a close (X)
                 // that dismisses the keyboard; otherwise it's a back chevron
                 // that returns to the tab the user came from (the Swap tab is
@@ -439,6 +451,12 @@ class _MobileSwapReviewButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatErrorText = destinationFormatError == null
+        ? null
+        : addressFormatFindingMessage(
+            destinationFormatError,
+            AppLocalizations.of(context),
+          );
     final balanceExceeded = _balanceExceeded;
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
@@ -448,14 +466,14 @@ class _MobileSwapReviewButton extends StatelessWidget {
         : null;
     final label = needsDestinationAddress
         ? (state.direction.sendsZec
-              ? 'Add recipient address'
-              : 'Add refund address')
-        : destinationFormatError ??
+              ? AppLocalizations.of(context).swapAddRecipientAddressAction
+              : AppLocalizations.of(context).swapAddRefundAddressAction)
+        : destinationFormatErrorText ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? AppLocalizations.of(context).swapNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+                  ? AppLocalizations.of(context).swapGettingQuote
+                  : AppLocalizations.of(context).swapContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

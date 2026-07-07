@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -174,17 +175,18 @@ class _MobileKeystoneShieldScreenState
   }
 
   String _friendlyError(Object error) {
+    final l10n = AppLocalizations.of(context);
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return l10n.keystoneShieldParamsError;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return l10n.keystoneShieldSignatureError;
     }
     if (lower.contains('extract')) {
-      return 'Shield transaction could not be finalized.';
+      return l10n.keystoneShieldFinalizeError;
     }
-    return friendlyShieldBalanceError(error);
+    return friendlyShieldBalanceError(error, l10n);
   }
 
   void _startScanning() {
@@ -253,7 +255,7 @@ class _MobileKeystoneShieldScreenState
         setState(() {
           _decoding = false;
           _stage = _ShieldSignStage.failed;
-          _error ??= 'Keystone signing could not be prepared.';
+          _error ??= AppLocalizations.of(context).keystoneShieldPrepareError;
         });
         return;
       }
@@ -267,8 +269,7 @@ class _MobileKeystoneShieldScreenState
       if (!mounted) return;
       setState(() {
         _decoding = false;
-        _scanHint =
-            'This QR code could not be decoded as a Keystone signature.';
+        _scanHint = AppLocalizations.of(context).keystoneShieldQrDecodeError;
       });
     }
   }
@@ -276,8 +277,8 @@ class _MobileKeystoneShieldScreenState
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed shield QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+        ? AppLocalizations.of(context).keystoneShieldOpenSignedQr
+        : AppLocalizations.of(context).keystoneScanHoldSteady;
     if (_scanHint == message) return;
     setState(() => _scanHint = message);
   }
@@ -325,7 +326,10 @@ class _MobileKeystoneShieldScreenState
       if (result.status != 'broadcasted') {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;
-          _statusMessage = shieldPcztBroadcastStatusMessage(result);
+          _statusMessage = shieldPcztBroadcastStatusMessage(
+            result,
+            AppLocalizations.of(context),
+          );
         });
         return;
       }
@@ -408,7 +412,9 @@ class _MobileKeystoneShieldScreenState
                         if (scanning)
                           Semantics(
                             button: true,
-                            label: 'Toggle flashlight',
+                            label: AppLocalizations.of(
+                              context,
+                            ).keystoneToggleFlashlight,
                             excludeSemantics: true,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
@@ -428,7 +434,9 @@ class _MobileKeystoneShieldScreenState
                         const Spacer(),
                         Semantics(
                           button: true,
-                          label: 'Cancel signing',
+                          label: AppLocalizations.of(
+                            context,
+                          ).keystoneCancelSigning,
                           excludeSemantics: true,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -463,8 +471,7 @@ class _MobileKeystoneShieldScreenState
   Widget _buildQrStage() {
     final colors = context.colors;
     final error = _stage == _ShieldSignStage.broadcastWarning
-        ? _statusMessage ??
-              'The shield transaction status is uncertain. Check activity before trying again.'
+        ? _statusMessage ?? AppLocalizations.of(context).shieldTxUncertain
         : _error;
 
     return SafeArea(
@@ -475,16 +482,20 @@ class _MobileKeystoneShieldScreenState
             const SizedBox(height: 72),
             Text(
               _stage == _ShieldSignStage.broadcasting
-                  ? 'Broadcasting shield tx'
-                  : 'Shield transparent balance',
+                  ? AppLocalizations.of(context).keystoneShieldBroadcasting
+                  : AppLocalizations.of(
+                      context,
+                    ).keystoneShieldTransparentBalance,
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmall.copyWith(color: Colors.white),
             ),
             const SizedBox(height: AppSpacing.s),
             Text(
               _stage == _ShieldSignStage.broadcasting
-                  ? 'Keep Vizor open while the transaction is sent.'
-                  : 'Use your Keystone wallet to scan this shielding QR code. Follow the steps on your device.',
+                  ? AppLocalizations.of(context).keystoneShieldKeepOpen
+                  : AppLocalizations.of(
+                      context,
+                    ).keystoneShieldScanInstructions,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: const Color(0xCCFFFFFF),
@@ -587,9 +598,12 @@ class _MobileKeystoneShieldScreenState
         MobileScanCameraErrorOverlay(
           controller: scanController,
           maxWidth: viewfinderSize,
-          permissionDeniedMessage:
-              'Camera access is off. Allow it in Settings to scan Keystone signatures.',
-          unavailableMessage: 'The camera is unavailable right now.',
+          permissionDeniedMessage: AppLocalizations.of(
+            context,
+          ).keystoneCameraDenied,
+          unavailableMessage: AppLocalizations.of(
+            context,
+          ).keystoneCameraUnavailable,
           onOpenSettings: _openCameraSettings,
         ),
         Align(
@@ -598,11 +612,13 @@ class _MobileKeystoneShieldScreenState
             padding: const EdgeInsets.only(top: viewfinderSize + 96),
             child: Text(
               _decoding
-                  ? 'Reading signature...'
+                  ? AppLocalizations.of(context).keystoneReadingSignature
                   : _scanHint ??
                         (_scanProgress > 0
-                            ? 'Scanning... $_scanProgress%'
-                            : 'Scan the signed QR on your Keystone'),
+                            ? AppLocalizations.of(
+                                context,
+                              ).keystoneScanningProgress(_scanProgress)
+                            : AppLocalizations.of(context).keystoneScanSignedQr),
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(color: Colors.white),
             ),
@@ -628,7 +644,7 @@ class _MobileKeystoneShieldScreenState
         child: AppButton(
           expand: true,
           onPressed: _finishWarningOrFailure,
-          child: const Text('Back to wallet'),
+          child: Text(AppLocalizations.of(context).keystoneBackToWallet),
         ),
       );
     }
@@ -649,9 +665,9 @@ class _MobileKeystoneShieldScreenState
               onPressed: _stage == _ShieldSignStage.broadcasting
                   ? null
                   : _cancel,
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white),
+              child: Text(
+                AppLocalizations.of(context).commonCancel,
+                style: const TextStyle(color: Colors.white),
               ),
             ),
           ),
@@ -662,7 +678,7 @@ class _MobileKeystoneShieldScreenState
                     expand: true,
                     variant: AppButtonVariant.secondary,
                     onPressed: _decoding ? null : _backToQr,
-                    child: const Text('Show QR'),
+                    child: Text(AppLocalizations.of(context).keystoneShowQr),
                   )
                 : AppButton(
                     expand: true,
@@ -674,8 +690,10 @@ class _MobileKeystoneShieldScreenState
                         : const AppIcon(AppIcons.chevronForward),
                     child: Text(
                       _stage == _ShieldSignStage.broadcasting
-                          ? 'Broadcasting...'
-                          : 'Next step',
+                          ? AppLocalizations.of(
+                              context,
+                            ).keystoneBroadcastingEllipsis
+                          : AppLocalizations.of(context).keystoneNextStep,
                     ),
                   ),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('accounts other menu use case renders account actions', (
@@ -224,6 +225,9 @@ Future<void> _pumpAccountsUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       key: UniqueKey(),
       home: Builder(
         builder: (context) => MediaQuery(
@@ -253,6 +257,9 @@ Future<void> _pumpMobileAccountsUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       key: UniqueKey(),
       builder: (context, child) =>
           AppTheme(data: AppThemeData.light, child: child!),
@@ -273,6 +280,9 @@ Future<void> _pumpMobileHomeUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       key: UniqueKey(),
       builder: (context, child) =>
           AppTheme(data: AppThemeData.dark, child: child!),

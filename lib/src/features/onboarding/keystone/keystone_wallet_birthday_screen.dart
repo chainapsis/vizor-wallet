@@ -18,6 +18,8 @@ import '../import/import_birthday_unknown_height_modal.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'keystone_onboarding_flow.dart';
+import '../../../../l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 
 enum KeystoneBirthdayTab { date, blockHeight }
 
@@ -33,8 +35,8 @@ class KeystoneWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _KeystoneWalletBirthdayScreenState
     extends ConsumerState<KeystoneWalletBirthdayScreen> {
-  static const _manualHeightErrorText =
-      "That doesn't look like a valid block height.";
+  String get _manualHeightErrorText =>
+      AppLocalizations.of(context).onbInvalidBlockHeight;
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -106,7 +108,7 @@ class _KeystoneWalletBirthdayScreenState
       log('KeystoneWalletBirthdayScreen._loadMetadata: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _metadataError = 'Could not load wallet birthday metadata.';
+        _metadataError = AppLocalizations.of(context).onbBirthdayMetadataError;
       });
     }
   }
@@ -138,7 +140,7 @@ class _KeystoneWalletBirthdayScreenState
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
         _isEstimating = false;
-        _submitError = 'Could not estimate the wallet birthday height.';
+        _submitError = AppLocalizations.of(context).onbBirthdayEstimateError;
       });
     }
   }
@@ -307,7 +309,7 @@ class _KeystoneWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _KeystoneBirthdaySubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -370,17 +372,17 @@ class _KeystoneWalletBirthdayScreenState
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
-      _KeystoneBirthdaySubmitPhase.stoppingSync => 'Stop syncing...',
-      _KeystoneBirthdaySubmitPhase.importing => 'Importing...',
+      _KeystoneBirthdaySubmitPhase.stoppingSync => AppLocalizations.of(context).onbStopSyncing,
+      _KeystoneBirthdaySubmitPhase.importing => AppLocalizations.of(context).onbImporting,
       _KeystoneBirthdaySubmitPhase.idle =>
         activeTab == KeystoneBirthdayTab.date && _isEstimating
-            ? 'Estimating...'
-            : 'Continue',
+            ? AppLocalizations.of(context).onbEstimating
+            : AppLocalizations.of(context).commonContinue,
     };
 
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.selectAccount.label,
+        label: KeystoneOnboardingStep.selectAccount.label(context),
         routePath: KeystoneOnboardingStep.selectAccount.routePath,
       ),
       overlay: _isUnknownBirthdayConfirmOpen
@@ -415,7 +417,7 @@ class _KeystoneWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you create your wallet?',
+                              AppLocalizations.of(context).onbBirthdayTitle,
                               style: AppTypography.displayLarge.copyWith(
                                 fontFamily: 'Young Serif',
                                 fontWeight: FontWeight.w400,
@@ -451,7 +453,7 @@ class _KeystoneWalletBirthdayScreenState
                                     width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
-                                        : _formatDate(_selectedDate!),
+                                        : _formatDate(context, _selectedDate!),
                                     enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
@@ -513,7 +515,7 @@ class _KeystoneWalletBirthdayScreenState
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
-                        child: const Text('I can’t remember'),
+                        child: Text(AppLocalizations.of(context).onbCantRemember),
                       ),
                     ],
                   ),
@@ -543,7 +545,7 @@ class _BirthdayTabRow extends StatelessWidget {
         children: [
           _TabLabel(
             iconName: AppIcons.calendar,
-            label: 'Enter the date',
+            label: AppLocalizations.of(context).onbEnterDate,
             active: activeTab == KeystoneBirthdayTab.date,
             onTap: () => onTabSelected(KeystoneBirthdayTab.date),
             color: colors.text.accent,
@@ -551,7 +553,7 @@ class _BirthdayTabRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           _TabLabel(
             iconName: AppIcons.block,
-            label: 'Enter the block height',
+            label: AppLocalizations.of(context).onbEnterBlockHeight,
             active: activeTab == KeystoneBirthdayTab.blockHeight,
             onTap: () => onTabSelected(KeystoneBirthdayTab.blockHeight),
             color: colors.text.accent,
@@ -657,7 +659,7 @@ class _DatePickerField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    valueText ?? 'mm/dd/yyyy',
+                    valueText ?? AppLocalizations.of(context).onbDateHint,
                     style: AppTypography.labelLarge.copyWith(
                       color: valueColor,
                       fontWeight: FontWeight.w400,
@@ -744,7 +746,7 @@ class _BlockHeightField extends StatelessWidget {
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block height',
+                hintText: AppLocalizations.of(context).onbBlockHeightHint,
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
                   fontWeight: FontWeight.w400,
@@ -827,8 +829,7 @@ DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
 }
 
-String _formatDate(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '$month/$day/${date.year}';
+String _formatDate(BuildContext context, DateTime date) {
+  return DateFormat.yMd(Localizations.localeOf(context).toString())
+      .format(date);
 }

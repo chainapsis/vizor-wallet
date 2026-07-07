@@ -20,6 +20,7 @@ import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   const VotingSubmissionConfirmationScreen({
@@ -98,11 +99,15 @@ class _VotingSubmissionConfirmationScreenState
             }
             return _ConfirmationScaffold(
               confirmed: false,
-              title: 'Submission not complete',
-              pollTitle: 'Token holder voting',
-              message:
-                  "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
-              votingPower: 'Not available',
+              title: AppLocalizations.of(context).votingSubmissionNotComplete,
+              pollTitle: AppLocalizations.of(context).votingTokenHolderVoting,
+              message: AppLocalizations.of(context).votingLoadSubmissionError(
+                friendlyVotingErrorMessage(
+                  error,
+                  AppLocalizations.of(context),
+                ),
+              ),
+              votingPower: AppLocalizations.of(context).votingNotAvailable,
             );
           },
           data: (state) {
@@ -120,7 +125,7 @@ class _VotingSubmissionConfirmationScreenState
   }) {
     final pollTitle = state.round?.title.isNotEmpty == true
         ? state.round!.title
-        : 'Token holder voting';
+        : AppLocalizations.of(context).votingTokenHolderVoting;
     final hasCompletedSubmission = hasCompletedVoteForDisplay(state.roundPlan);
     if (hasCompletedSubmission) {
       _lastSubmissionState = state;
@@ -143,22 +148,22 @@ class _VotingSubmissionConfirmationScreenState
     if (!hasCompletedSubmission) {
       return _ConfirmationScaffold(
         confirmed: false,
-        title: 'Submission not complete',
+        title: AppLocalizations.of(context).votingSubmissionNotComplete,
         pollTitle: pollTitle,
         message:
-            'This account has not completed submission for this voting round.',
-        votingPower: 'Not available',
-        doneLabel: 'Done',
+            AppLocalizations.of(context).votingNotSubmittedBody,
+        votingPower: AppLocalizations.of(context).votingNotAvailable,
+        doneLabel: AppLocalizations.of(context).commonDone,
       );
     }
     if (!hasConfirmedVotingEligibility) {
       final storedEligibilityError = state.error;
       final storedEligibilityErrorMessage = storedEligibilityError == null
           ? null
-          : friendlyVotingErrorText(storedEligibilityError.message);
+          : friendlyVotingErrorText(storedEligibilityError.message, AppLocalizations.of(context));
       final loadErrorMessage = loadError == null
           ? null
-          : friendlyVotingErrorMessage(loadError);
+          : friendlyVotingErrorMessage(loadError, AppLocalizations.of(context));
       final latestRefreshMessage =
           _votingPowerRefreshErrorMessage ?? loadErrorMessage;
       final retryMessage = _refreshingVotingPower ? null : latestRefreshMessage;
@@ -168,17 +173,17 @@ class _VotingSubmissionConfirmationScreenState
           !isVotingEligibilityErrorText(latestRefreshMessage);
       return _ConfirmationScaffold(
         confirmed: false,
-        title: 'Submission not complete',
+        title: AppLocalizations.of(context).votingSubmissionNotComplete,
         pollTitle: pollTitle,
         message:
             retryMessage ??
             storedEligibilityErrorMessage ??
             (_refreshingVotingPower
-                ? 'Checking voting eligibility for this account.'
-                : 'Voting eligibility has not been confirmed for this account.'),
-        votingPower: 'Not available',
-        doneLabel: 'Done',
-        retryLabel: canRetry ? 'Retry' : null,
+                ? AppLocalizations.of(context).votingCheckingEligibility
+                : AppLocalizations.of(context).votingEligibilityNotConfirmed),
+        votingPower: AppLocalizations.of(context).votingNotAvailable,
+        doneLabel: AppLocalizations.of(context).commonDone,
+        retryLabel: canRetry ? AppLocalizations.of(context).commonRetry : null,
         onRetry: canRetry
             ? () => _retryVotingPowerRefresh(state, jobKey)
             : null,
@@ -186,15 +191,17 @@ class _VotingSubmissionConfirmationScreenState
     }
     return _ConfirmationScaffold(
       confirmed: true,
-      title: 'Submission confirmed!',
+      title: AppLocalizations.of(context).votingSubmissionConfirmed,
       pollTitle: pollTitle,
-      message: 'Your vote was successfully published and cannot be changed.',
+      message: AppLocalizations.of(context).votingSubmissionPublished,
       votingPower: _formatVotingPower(
         _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
       ),
       isReturningToPolls: _isReturningToPolls,
       doneEnabled: !_isReturningToPolls,
-      doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
+      doneLabel: _isReturningToPolls
+          ? AppLocalizations.of(context).commonUpdating
+          : AppLocalizations.of(context).commonDone,
       returnErrorMessage: _returnErrorMessage,
       onDone: () => unawaited(_returnToPolls(jobKey)),
     );
@@ -220,13 +227,15 @@ class _VotingSubmissionConfirmationScreenState
       );
       setState(() {
         _isReturningToPolls = false;
-        _returnErrorMessage = "Couldn't update voting rounds. Try again.";
+        _returnErrorMessage = AppLocalizations.of(
+          context,
+        ).votingRoundsRefreshError;
       });
     }
   }
 
   String _formatVotingPower(BigInt? zatoshi) {
-    if (zatoshi == null) return 'Not available';
+    if (zatoshi == null) return AppLocalizations.of(context).votingNotAvailable;
     return formatVotingPower(zatoshi);
   }
 
@@ -350,7 +359,7 @@ class _VotingSubmissionConfirmationScreenState
         _votingPowerRefreshErrorMessage =
             refreshedEligibilityConfirmed || refreshedError == null
             ? null
-            : friendlyVotingErrorText(refreshedError.message);
+            : friendlyVotingErrorText(refreshedError.message, AppLocalizations.of(context));
       });
     } catch (error) {
       debugPrint(
@@ -361,7 +370,7 @@ class _VotingSubmissionConfirmationScreenState
         setState(() {
           _refreshedVotingEligibilityConfirmed = false;
           _refreshedVotingPowerZatoshi = null;
-          _votingPowerRefreshErrorMessage = friendlyVotingErrorText('$error');
+          _votingPowerRefreshErrorMessage = friendlyVotingErrorText('$error', AppLocalizations.of(context));
         });
       }
     } finally {
@@ -384,7 +393,7 @@ class _ConfirmationScaffold extends StatelessWidget {
     this.onDone,
     this.isReturningToPolls = false,
     this.doneEnabled = true,
-    this.doneLabel = 'Done',
+    this.doneLabel,
     this.retryLabel,
     this.onRetry,
     this.returnErrorMessage,
@@ -398,7 +407,7 @@ class _ConfirmationScaffold extends StatelessWidget {
   final VoidCallback? onDone;
   final bool isReturningToPolls;
   final bool doneEnabled;
-  final String doneLabel;
+  final String? doneLabel;
   final String? retryLabel;
   final VoidCallback? onRetry;
   final String? returnErrorMessage;
@@ -498,11 +507,11 @@ class _ConfirmationScaffold extends StatelessWidget {
                         _ReceiptCard(
                           rows: [
                             _ReceiptRow(
-                              label: 'Voting round',
+                              label: AppLocalizations.of(context).votingRoundLabel,
                               value: pollTitle,
                             ),
                             _ReceiptRow(
-                              label: 'Voting power',
+                              label: AppLocalizations.of(context).votingPowerLabel,
                               value: votingPower,
                             ),
                           ],
@@ -515,7 +524,10 @@ class _ConfirmationScaffold extends StatelessWidget {
                                 ? onDone ?? () => context.go('/voting')
                                 : null,
                             variant: AppButtonVariant.primary,
-                            child: Text(doneLabel),
+                            child: Text(
+                              doneLabel ??
+                                  AppLocalizations.of(context).commonDone,
+                            ),
                           ),
                         ),
                         if (onRetry != null && retryLabel != null) ...[
@@ -564,7 +576,7 @@ class _ConfirmationScaffold extends StatelessWidget {
                         ),
                         const SizedBox(width: AppSpacing.xxs),
                         Text(
-                          'Updating voting rounds...',
+                          AppLocalizations.of(context).votingUpdatingRounds,
                           style: AppTypography.bodyMediumStrong.copyWith(
                             color: const Color(0xFFFFFFFF),
                           ),

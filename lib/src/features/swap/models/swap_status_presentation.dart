@@ -46,6 +46,31 @@ class SwapStatusStepData {
   }
 }
 
+/// Semantic category of a status detail row. Mobile row filtering and
+/// ordering used to sniff the English label text; labels are localized now,
+/// so the mapper tags each row instead.
+enum SwapStatusDetailRowKind {
+  generic,
+  recipient,
+  refundAddress,
+  depositAddress,
+  depositTx,
+  deliveryTx,
+  txId,
+  memo,
+  slippageTolerance,
+  guaranteedMinimum,
+  missingDeposit,
+  requiredDeposit,
+  detectedDeposit,
+  depositDeadline,
+  refundFee,
+  swapFee,
+  totalFees,
+  timestamp,
+  realizedSlippage,
+}
+
 class SwapStatusDetailRowData {
   const SwapStatusDetailRowData({
     required this.label,
@@ -58,6 +83,8 @@ class SwapStatusDetailRowData {
     this.accountProfilePictureId,
     this.addressBookLabel,
     this.addressNetwork,
+    this.scaleValueToFit = false,
+    this.kind = SwapStatusDetailRowKind.generic,
   });
 
   final String label;
@@ -66,6 +93,14 @@ class SwapStatusDetailRowData {
   final String? copyText;
   final bool help;
   final String? helpTooltip;
+
+  /// Whether a long copyable value (address / tx hash) should shrink to fit
+  /// its row. Set at construction; labels are localized so the widget cannot
+  /// infer this from label text.
+  final bool scaleValueToFit;
+
+  /// Semantic row category; see [SwapStatusDetailRowKind].
+  final SwapStatusDetailRowKind kind;
 
   /// Optional external URI opened from the row's trailing action, e.g. the
   /// completed swap's deposit tx row linking to the NEAR Intents explorer.

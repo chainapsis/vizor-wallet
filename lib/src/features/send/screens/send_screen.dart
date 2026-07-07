@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
@@ -159,8 +160,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
-  static const _hardwareTexUnsupportedText =
-      'Keystone does not support TEX sends yet.';
+  String get _hardwareTexUnsupportedText =>
+      AppLocalizations.of(context).sendKeystoneNoTex;
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -376,14 +377,22 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _isTransparentLikeAddress ? '' : _memoController.text.trim();
 
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
-  String get _insufficientBalanceText =>
-      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
-  String get _insufficientBalanceToCoverFeeText =>
-      '$_insufficientBalanceText to cover fee';
-  String get _insufficientBalanceIncludingFeeText =>
-      '$_insufficientBalanceText including fee';
-  String _insufficientBalanceWithFeeText(String feeText) =>
-      '$_insufficientBalanceText (fee: $feeText)';
+  String get _insufficientBalanceText => _isTexAddress
+      ? AppLocalizations.of(context).sendInsufficientBalance
+      : AppLocalizations.of(context).sendInsufficientShieldedBalance;
+  String get _insufficientBalanceToCoverFeeText => _isTexAddress
+      ? AppLocalizations.of(context).sendInsufficientBalanceCoverFee
+      : AppLocalizations.of(context).sendInsufficientShieldedBalanceCoverFee;
+  String get _insufficientBalanceIncludingFeeText => _isTexAddress
+      ? AppLocalizations.of(context).sendInsufficientBalanceIncludingFee
+      : AppLocalizations.of(
+          context,
+        ).sendInsufficientShieldedBalanceIncludingFee;
+  String _insufficientBalanceWithFeeText(String feeText) => _isTexAddress
+      ? AppLocalizations.of(context).sendInsufficientBalanceWithFee(feeText)
+      : AppLocalizations.of(
+          context,
+        ).sendInsufficientShieldedBalanceWithFee(feeText);
   bool get _isHardwareTexSend =>
       _isTexAddress && widget.activeAccountIsHardware;
 
@@ -407,9 +416,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? get _memoError {
     final memo = _effectiveMemo;
-    if (utf8.encode(memo).length > 512) return 'Message is too long';
+    if (utf8.encode(memo).length > 512) {
+      return AppLocalizations.of(context).sendMessageTooLong;
+    }
     if (memo.isNotEmpty && !_isShieldedAddress) {
-      return 'Message is only available for shielded addresses';
+      return AppLocalizations.of(context).sendMessageShieldedOnly;
     }
     return null;
   }
@@ -435,8 +446,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   String? _maxEstimatePreconditionError() {
-    if (widget.activeAccountUuid == null) return 'No active account';
-    if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    final l10n = AppLocalizations.of(context);
+    if (widget.activeAccountUuid == null) return l10n.sendNoActiveAccount;
+    if (!_hasValidAddress) return l10n.sendEnterValidAddressForMax;
     if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
   }
@@ -526,7 +538,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         if (msg.contains('insufficient')) {
           _amountError = _insufficientBalanceToCoverFeeText;
         } else {
-          _amountError = 'Max amount unavailable';
+          _amountError = AppLocalizations.of(context).sendMaxUnavailable;
         }
       });
     } finally {
@@ -546,7 +558,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     final zatoshi = parseZecAmount(text);
     if (zatoshi == null || zatoshi <= BigInt.zero) {
-      setState(() => _amountError = 'Invalid amount');
+      setState(
+        () => _amountError = AppLocalizations.of(context).sendInvalidAmount,
+      );
       return;
     }
 
@@ -627,7 +641,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       if (_isResolvingMax) {
         setState(() {
-          _error = 'Calculating max amount';
+          _error = AppLocalizations.of(context).sendCalculatingMax;
           _isSending = false;
         });
         return;
@@ -635,7 +649,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       if (!_hasValidAddress) {
         setState(() {
-          _error = 'Enter a valid address';
+          _error = AppLocalizations.of(context).sendEnterValidAddress;
           _isSending = false;
         });
         return;
@@ -650,7 +664,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
-          _error = 'Invalid amount';
+          _error = AppLocalizations.of(context).sendInvalidAmount;
           _isSending = false;
         });
         return;
@@ -681,7 +695,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() {
-          _error = 'No active account';
+          _error = AppLocalizations.of(context).sendNoActiveAccount;
           _isSending = false;
         });
         return;
@@ -708,7 +722,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       log('Send: review preparation error: $e');
       if (!mounted) return;
       setState(() {
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(
+          e.toString(),
+          AppLocalizations.of(context),
+        );
         _isSending = false;
       });
     } finally {
@@ -759,8 +776,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     }
     final addressMessage = switch (_addressType) {
-      'invalid' => 'Invalid address',
-      'error' => 'Address validation failed',
+      'invalid' => AppLocalizations.of(context).sendInvalidAddress,
+      'error' => AppLocalizations.of(context).sendAddressValidationFailed,
       _ => matchedRecipientName,
     };
     final addressMessageIcon = switch (_addressType) {
@@ -823,8 +840,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         const Center(child: CircularProgressIndicator()),
                     error: (err, _) => Center(
                       child: Text(
-                        'Something went wrong. Try again in a moment.\n\n'
-                        'Details: $err',
+                        AppLocalizations.of(context).homeErrorGeneric('$err'),
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.destructive,
                         ),
@@ -847,22 +863,26 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Review'),
+                            : Text(AppLocalizations.of(context).navReview),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           AppTextField(
                             key: const ValueKey('send_address_field'),
-                            label: 'Send to',
+                            label: AppLocalizations.of(context).sendSendTo,
                             rightSlot: _SendContactsLabelButton(
-                              label: 'Contacts',
+                              label: AppLocalizations.of(
+                                context,
+                              ).settingsContacts,
                               onTap: _openContactPicker,
                             ),
                             tone: addressTone,
                             focusNode: _addressFocusNode,
                             controller: _addressController,
-                            hintText: 'Zcash address',
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).sendZcashAddressHint,
                             leading: AppIcon(
                               addressLeadingIcon,
                               size: 20,
@@ -898,7 +918,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           const SizedBox(height: _singleLineFieldGap),
                           AppTextField(
                             key: const ValueKey('send_amount_field'),
-                            label: 'Amount',
+                            label: AppLocalizations.of(context).navAmount,
                             tone: _showAmountError
                                 ? AppTextFieldTone.destructive
                                 : AppTextFieldTone.neutral,
@@ -962,13 +982,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             ] else ...[
                               AppTextField(
                                 key: const ValueKey('send_memo_field'),
-                                label: 'Message',
+                                label: AppLocalizations.of(
+                                  context,
+                                ).activityMessage,
                                 tone: _memoError != null
                                     ? AppTextFieldTone.destructive
                                     : AppTextFieldTone.neutral,
                                 focusNode: _memoFocusNode,
                                 controller: _memoController,
-                                hintText: 'Add a message',
+                                hintText: AppLocalizations.of(
+                                  context,
+                                ).sendAddMessageHint,
                                 leading: AppIcon(
                                   AppIcons.scroll,
                                   size: 20,
@@ -1001,7 +1025,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 }),
                                 showClearButton: true,
                                 clearButtonRequiresText: false,
-                                clearButtonSemanticLabel: 'Close message',
+                                clearButtonSemanticLabel: AppLocalizations.of(
+                                  context,
+                                ).sendCloseMessage,
                                 onClear: () {
                                   setState(() {
                                     _messageExpanded = false;
@@ -1043,9 +1069,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                 child: Material(
                   type: MaterialType.transparency,
                   child: AddressBookContactPickerModal(
-                    title: 'Contacts Zcash',
+                    title: AppLocalizations.of(context).sendContactsZcashTitle,
                     networks: const [AddressBookNetwork.zcash],
-                    emptyTitle: 'No Zcash contacts',
+                    emptyTitle: AppLocalizations.of(context).sendNoZcashContacts,
                     onSelected: _selectContact,
                     onCancel: _closeContactPicker,
                   ),
@@ -1131,7 +1157,7 @@ class _SendTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Send $kZcashDefaultCurrencyTicker',
+      AppLocalizations.of(context).sendTitle(kZcashDefaultCurrencyTicker),
       style: AppTypography.headlineLarge.copyWith(
         color: context.colors.text.accent,
       ),
@@ -1160,7 +1186,7 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
     final color = _hovered ? colors.text.accent : colors.text.secondary;
     return Semantics(
       button: true,
-      label: 'Open contacts',
+      label: AppLocalizations.of(context).sendOpenContacts,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => _setHovered(true),
@@ -1200,13 +1226,6 @@ class _SendMaxBalanceControl extends StatelessWidget {
     required this.onMaxPressed,
   });
 
-  static const _tooltipTitle =
-      'Your spendable balance may be lower than your total balance.';
-  static const _tooltipBody =
-      'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 10 for funds received from others. Shielded notes also '
-      "need to be fully scanned. They'll become available shortly.";
-
   final String spendableText;
   final VoidCallback? onMaxPressed;
 
@@ -1214,7 +1233,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final maxLabel = Text(
-      'Max: $spendableText',
+      AppLocalizations.of(context).sendMaxLabel(spendableText),
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
     );
 
@@ -1223,7 +1242,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: 'Use maximum spendable balance',
+          label: AppLocalizations.of(context).sendUseMaxBalance,
           child: MouseRegion(
             cursor: onMaxPressed == null
                 ? SystemMouseCursors.basic
@@ -1240,10 +1259,13 @@ class _SendMaxBalanceControl extends StatelessWidget {
           richMessage: TextSpan(
             children: [
               TextSpan(
-                text: _tooltipTitle,
+                text: AppLocalizations.of(context).sendSpendableTooltipTitle,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              const TextSpan(text: '\n\n$_tooltipBody'),
+              TextSpan(
+                text:
+                    '\n\n${AppLocalizations.of(context).sendSpendableTooltipBody}',
+              ),
             ],
           ),
           child: SizedBox(
@@ -1254,7 +1276,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
                 AppIcons.help,
                 size: 14,
                 color: colors.icon.muted,
-                semanticLabel: 'Spendable balance info',
+                semanticLabel: AppLocalizations.of(context).sendSpendableInfo,
               ),
             ),
           ),
@@ -1291,7 +1313,7 @@ class _SendAddMessageCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a memo',
+                AppLocalizations.of(context).sendAddMemo,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -1300,7 +1322,7 @@ class _SendAddMessageCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Encrypted, for shielded addresses only.',
+            AppLocalizations.of(context).sendEncryptedShieldedOnly,
             style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
             textAlign: TextAlign.center,
           ),

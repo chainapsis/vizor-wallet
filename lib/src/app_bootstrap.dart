@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
-import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/material.dart' show Locale, ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,6 +55,7 @@ class AppBootstrapState {
     required this.network,
     required this.rpcEndpointConfig,
     required this.themeMode,
+    this.locale,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -71,6 +72,10 @@ class AppBootstrapState {
   final String network;
   final RpcEndpointConfig rpcEndpointConfig;
   final ThemeMode themeMode;
+
+  /// User-selected app locale, or null when none has been picked
+  /// (the app then renders English — see `MaterialApp.locale` in app.dart).
+  final Locale? locale;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
 
@@ -223,6 +228,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
+    final locale = await _readLocale(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
@@ -322,6 +328,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       network: network,
       rpcEndpointConfig: rpcEndpointConfig,
       themeMode: themeMode,
+      locale: locale,
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
@@ -456,6 +463,25 @@ ThemeMode _decodeThemeMode(String? raw) {
     'light' => ThemeMode.light,
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
+  };
+}
+
+Future<Locale?> _readLocale(AppSecureStore storage) async {
+  try {
+    return _decodeLocale(await storage.readString(kLocaleKey));
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } catch (e) {
+    log('bootstrap: failed to read locale: $e');
+    return null;
+  }
+}
+
+Locale? _decodeLocale(String? raw) {
+  return switch (raw) {
+    'en' => const Locale('en'),
+    'ko' => const Locale('ko'),
+    _ => null,
   };
 }
 

@@ -20,6 +20,7 @@ import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
   const VotingStatusScreen({
@@ -155,7 +156,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }
 
   String _messageFromError(Object error) {
-    return friendlyVotingErrorMessage(error);
+    return friendlyVotingErrorMessage(error, AppLocalizations.of(context));
   }
 
   @override
@@ -296,7 +297,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     bool fallbackForErrorPhase = true,
   }) {
     final error = state.error;
-    if (error != null) return friendlyVotingErrorText(error.message);
+    if (error != null) return friendlyVotingErrorText(error.message, AppLocalizations.of(context));
     final round = state.round;
     if (round != null && state.pirDiagnostics.isNotEmpty) {
       return _pirDiagnosticsErrorMessage(
@@ -307,12 +308,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     if (!fallbackForErrorPhase || state.phase != VotingSessionPhase.error) {
       return null;
     }
-    return _genericVotingStatusErrorMessage;
+    return AppLocalizations.of(context).votingGenericStatusError;
   }
-
-  static const _genericVotingStatusErrorMessage =
-      'Voting could not continue for this account. Retry, or switch to an '
-      'eligible account if this account cannot vote in this voting round.';
 
   String _pirDiagnosticsErrorMessage({
     required int expectedSnapshotHeight,
@@ -330,11 +327,9 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       final highest = formatBlockHeight(
         reportedHeights.reduce((left, right) => left > right ? left : right),
       );
-      return 'Voting PIR data is not ready for this voting round yet. Expected '
-          'snapshot block $expected; PIR endpoints report $highest.';
+      return AppLocalizations.of(context).votingPirNotReady(expected, highest);
     }
-    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-        'block $expected.';
+    return AppLocalizations.of(context).votingPirNoEndpoint(expected);
   }
 
   String? _shareSubmissionDetail(VotingSessionState state) {
@@ -360,7 +355,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     if (total > 0) {
       final completed = state.voteSubmissionCompletedCount.clamp(0, total);
       final current = completed >= total ? total : completed + 1;
-      return 'Question $current/$total';
+      return AppLocalizations.of(context).votingQuestionProgress(current, total);
     }
     return _shareSubmissionDetail(state);
   }
@@ -486,7 +481,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Use signed bundles only?',
+                      AppLocalizations.of(context).votingUseSignedBundlesOnly,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
                       ),
@@ -496,14 +491,14 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Vizor can submit now using only signatures already scanned from Keystone.',
+                AppLocalizations.of(context).votingSignedBundlesBody,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Unsigned bundles are skipped, which lowers voting power for this voting round.',
+                AppLocalizations.of(context).votingSignedBundlesWarning,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.warning,
                 ),
@@ -517,12 +512,12 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
                   AppButton(
                     onPressed: () => Navigator.of(context).pop(false),
                     variant: AppButtonVariant.secondary,
-                    child: const Text('Keep signing'),
+                    child: Text(AppLocalizations.of(context).votingKeepSigning),
                   ),
                   AppButton(
                     onPressed: () => Navigator.of(context).pop(true),
                     variant: AppButtonVariant.primary,
-                    child: const Text('Skip bundles'),
+                    child: Text(AppLocalizations.of(context).votingSkipBundles),
                   ),
                 ],
               ),
@@ -609,7 +604,7 @@ class _StatusContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Submitting votes',
+                AppLocalizations.of(context).votingSubmittingVotes,
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
                   color: context.colors.text.accent,
@@ -617,7 +612,7 @@ class _StatusContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+                AppLocalizations.of(context).votingDontCloseWindow,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
@@ -648,18 +643,18 @@ class _StatusContent extends StatelessWidget {
               ],
               if (isHardwareAccount)
                 _StepRow(
-                  label: 'Signing with Keystone',
+                  label: AppLocalizations.of(context).votingSigningWithKeystone,
                   active: phase == VotingSessionPhase.keystoneSigning,
                   complete: _after(VotingSessionPhase.keystoneSigning),
                 ),
               _StepRow(
-                label: 'Delegating voting authority',
+                label: AppLocalizations.of(context).votingDelegatingAuthority,
                 active: phase == VotingSessionPhase.delegating,
                 complete: _after(VotingSessionPhase.delegating),
                 progressValue: delegationProgress,
               ),
               _StepRow(
-                label: 'Casting votes and submitting shares',
+                label: AppLocalizations.of(context).votingCastingVotes,
                 active:
                     !voteStepComplete &&
                     (phase == VotingSessionPhase.syncingVoteTree ||
@@ -670,14 +665,14 @@ class _StatusContent extends StatelessWidget {
                 progressValue: voteStepComplete ? null : voteSubmissionProgress,
               ),
               _StepRow(
-                label: 'Finalizing submission',
+                label: AppLocalizations.of(context).votingFinalizingSubmission,
                 active: finalizingSubmission,
                 complete: submissionJobComplete,
               ),
               if (phase == VotingSessionPhase.error) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  errorMessage ?? 'Voting failed.',
+                  errorMessage ?? AppLocalizations.of(context).votingFailed,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.destructive,
@@ -696,12 +691,12 @@ class _StatusContent extends StatelessWidget {
                         ),
                         onPressed: onClear,
                         variant: AppButtonVariant.secondary,
-                        child: const Text('Clear'),
+                        child: Text(AppLocalizations.of(context).votingClear),
                       ),
                     AppButton(
                       onPressed: onRetry,
                       variant: AppButtonVariant.primary,
-                      child: const Text('Retry'),
+                      child: Text(AppLocalizations.of(context).commonRetry),
                     ),
                   ],
                 ),
@@ -743,9 +738,12 @@ class _WalletSyncProgressText extends StatelessWidget {
         ? rawRemaining
         : 0;
     final detail = [
-      if (scanned != null) 'Synced to block $scanned',
-      if (snapshot != null) 'snapshot block $snapshot',
-      if (chainTip != null) 'chain tip $chainTip',
+      if (scanned != null)
+        AppLocalizations.of(context).votingSyncedToBlock('$scanned'),
+      if (snapshot != null)
+        AppLocalizations.of(context).votingSnapshotBlockPart('$snapshot'),
+      if (chainTip != null)
+        AppLocalizations.of(context).votingChainTipPart('$chainTip'),
     ].join(' / ');
     final colors = context.colors;
     return DecoratedBox(
@@ -759,7 +757,7 @@ class _WalletSyncProgressText extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              'Waiting for wallet sync',
+              AppLocalizations.of(context).votingWaitingForSync,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -767,7 +765,7 @@ class _WalletSyncProgressText extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
+              AppLocalizations.of(context).votingWaitingForSyncBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -786,7 +784,7 @@ class _WalletSyncProgressText extends StatelessWidget {
             if (remaining != null && remaining > 0) ...[
               const SizedBox(height: AppSpacing.xxs),
               Text(
-                '$remaining blocks remaining',
+                AppLocalizations.of(context).votingBlocksRemaining('$remaining'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
@@ -922,7 +920,10 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                         ),
                         children: [
                           Text(
-                            'Sign bundle $currentBundle of ${request.bundleCount}',
+                            AppLocalizations.of(context).votingSignBundle(
+                              currentBundle,
+                              request.bundleCount,
+                            ),
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMediumStrong.copyWith(
                               color: colors.text.accent,
@@ -949,7 +950,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                             onPressed: onSkipRemainingBundles,
                             variant: AppButtonVariant.primary,
                             size: AppButtonSize.small,
-                            child: const Text('Skip'),
+                            child: Text(AppLocalizations.of(context).votingSkip),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -958,7 +959,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device\'s camera',
+              AppLocalizations.of(context).votingScanQrInstruction,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -967,7 +968,10 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
             if (_showTransitionCue && request.bundleCount > 1) ...[
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Now signing bundle $currentBundle of ${request.bundleCount}',
+                AppLocalizations.of(context).votingNowSigningBundle(
+                  currentBundle,
+                  request.bundleCount,
+                ),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.accent,
@@ -999,7 +1003,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
               onPressed: urParts.isEmpty ? null : onScan,
               variant: AppButtonVariant.primary,
               minWidth: 220,
-              child: const Text('Scan signature'),
+              child: Text(AppLocalizations.of(context).votingScanSignature),
             ),
           ],
         ),
@@ -1073,7 +1077,7 @@ class _KeystoneSigningMemo extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Memo',
+                AppLocalizations.of(context).swapMemoLabel,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1107,7 +1111,7 @@ class _SoftwareAccountRequiredContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Software account required',
+              AppLocalizations.of(context).votingSoftwareAccountRequired,
               textAlign: TextAlign.center,
               style: AppTypography.displaySmall.copyWith(
                 color: context.colors.text.accent,
@@ -1115,7 +1119,7 @@ class _SoftwareAccountRequiredContent extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Token holder voting requires a software account. Switch to a software account to vote in this round.',
+              AppLocalizations.of(context).votingSoftwareAccountBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,

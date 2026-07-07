@@ -29,6 +29,7 @@ import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Mobile create-flow passphrase step — Figma `Onboarding 4 Secret
 /// Phrase` (4394:81938 hidden / 4394:82007 revealed). Mirrors the
@@ -65,6 +66,7 @@ class _MobileSecretPassphraseScreenState
   bool _copied = false;
   bool _submitting = false;
   String? _error;
+  Object? _initError;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -104,7 +106,8 @@ class _MobileSecretPassphraseScreenState
       });
     } catch (e, st) {
       log('MobileSecretPassphrase: ERROR generating mnemonic: $e\n$st');
-      _error = onboardingSubmitErrorMessage(e);
+      // initState cannot resolve AppLocalizations; build() maps this.
+      _initError = e;
     }
   }
 
@@ -169,7 +172,7 @@ class _MobileSecretPassphraseScreenState
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -203,6 +206,14 @@ class _MobileSecretPassphraseScreenState
 
   @override
   Widget build(BuildContext context) {
+    final effectiveError =
+        _error ??
+        (_initError == null
+            ? null
+            : onboardingSubmitErrorMessage(
+                _initError!,
+                AppLocalizations.of(context),
+              ));
     final colors = context.colors;
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
@@ -212,15 +223,15 @@ class _MobileSecretPassphraseScreenState
       child: MobileOnboardingStepScaffold(
         progress: mobileCreateProgress(6),
         onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
-        title: 'Secret Passphrase',
-        subtitle: 'The Master Key to your wallet.',
+        title: AppLocalizations.of(context).onbSecretPassphrase,
+        subtitle: AppLocalizations.of(context).onbMasterKeySubtitleMobile,
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_error != null) ...[
+            if (effectiveError != null) ...[
               Text(
-                _error!,
+                effectiveError,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
@@ -231,14 +242,16 @@ class _MobileSecretPassphraseScreenState
             AppButton(
               key: const ValueKey('mobile_secret_passphrase_primary'),
               expand: true,
-              onPressed: _error != null || _submitting ? null : _continue,
+              onPressed: effectiveError != null || _submitting
+                ? null
+                : _continue,
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(
                 _submitting
-                    ? 'Creating wallet...'
+                    ? AppLocalizations.of(context).onbCreatingWallet
                     : _revealed
-                    ? 'Continue'
-                    : 'Reveal phrase',
+                    ? AppLocalizations.of(context).commonContinue
+                    : AppLocalizations.of(context).onbRevealPhraseMobile,
               ),
             ),
           ],
@@ -295,7 +308,7 @@ class _RevealWarningCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            'You are about to see your\nSecret Passphrase.',
+            AppLocalizations.of(context).onbAboutToSeeMobile,
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.homeCard,
@@ -305,9 +318,7 @@ class _RevealWarningCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Text(
-              'This phrase is the master key to your funds. Keep it safe, '
-              'keep it secret. If you lose it, no one can help you recover '
-              'your wallet. Not even us.',
+              AppLocalizations.of(context).onbPhraseWarning,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.homeCard.withValues(alpha: 0.7),

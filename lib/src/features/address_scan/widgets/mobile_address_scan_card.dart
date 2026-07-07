@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart'
@@ -40,10 +41,10 @@ class MobileQrScanCard extends StatefulWidget {
     this.controller,
     this.closeEnabled = true,
     this.forceActiveForTesting = false,
-    this.caption = 'Scan a Zcash QR code to continue',
-    this.permissionTitle = 'Scan the address QR code',
+    this.caption,
+    this.permissionTitle,
     this.error,
-    this.unavailableDescription = 'QR scanning needs a camera on this device.',
+    this.unavailableDescription,
     this.permissionBuilder,
     this.cameraHeight,
     super.key,
@@ -68,16 +69,17 @@ class MobileQrScanCard extends StatefulWidget {
   final bool forceActiveForTesting;
 
   /// Idle caption beneath the viewfinder.
-  final String caption;
+  final String? caption;
 
   /// Title shown in the permission/requesting card state.
-  final String permissionTitle;
+  final String? permissionTitle;
 
   /// Message shown beneath the viewfinder in active camera states.
   final String? error;
 
   /// Fallback description for no-camera / camera-open failures.
-  final String unavailableDescription;
+  /// Defaults to the localized generic scan copy when null.
+  final String? unavailableDescription;
 
   /// Optional override for permission/requesting/denied states. The active and
   /// loading scan chrome stays shared.
@@ -173,7 +175,8 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
   String _cameraUnavailableDescription(MobileScannerState state) {
     final message = state.error?.errorDetails?.message;
     if (message != null && message.isNotEmpty) return message;
-    return widget.unavailableDescription;
+    return widget.unavailableDescription ??
+        AppLocalizations.of(context).scanNeedsCamera;
   }
 
   @override
@@ -192,8 +195,8 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
           cameraView: QrScanner.isAvailable
               ? widget.cameraViewBuilder(context, _controller)
               : null,
-          caption: widget.caption,
-          permissionTitle: widget.permissionTitle,
+          caption: widget.caption ?? AppLocalizations.of(context).scanZcashQrCaption,
+          permissionTitle: widget.permissionTitle ?? AppLocalizations.of(context).scanAddressQrTitle,
           error: widget.error,
           unavailableDescription: status == AddressQrCameraStatus.unavailable
               ? _cameraUnavailableDescription(state)
@@ -234,9 +237,9 @@ class MobileAddressScanCard extends StatefulWidget {
     required this.onScanned,
     required this.onClose,
     this.controller,
-    this.caption = 'Scan a Zcash QR code to continue',
-    this.permissionTitle = 'Scan the address QR code',
-    this.steadyHint = 'Keep the QR code steady and fully visible.',
+    this.caption,
+    this.permissionTitle,
+    this.steadyHint,
     super.key,
   });
 
@@ -255,13 +258,13 @@ class MobileAddressScanCard extends StatefulWidget {
   final VoidCallback onClose;
 
   /// Idle caption beneath the viewfinder.
-  final String caption;
+  final String? caption;
 
   /// Title shown in the permission/requesting card state.
-  final String permissionTitle;
+  final String? permissionTitle;
 
   /// Fallback message when resolution throws.
-  final String steadyHint;
+  final String? steadyHint;
 
   @override
   State<MobileAddressScanCard> createState() => _MobileAddressScanCardState();
@@ -290,14 +293,19 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
         _validating = false;
         // Let PlainQrScannerView fire again for the next frame.
         _scanResetToken++;
-        _error = outcome.error ?? widget.steadyHint;
+        _error =
+            outcome.error ??
+            widget.steadyHint ??
+            AppLocalizations.of(context).keystoneScanHoldSteady;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _validating = false;
         _scanResetToken++;
-        _error = widget.steadyHint;
+        _error =
+            widget.steadyHint ??
+            AppLocalizations.of(context).keystoneScanHoldSteady;
       });
     }
   }
@@ -309,8 +317,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
       caption: widget.caption,
       permissionTitle: widget.permissionTitle,
       error: _error,
-      unavailableDescription:
-          'Address QR scanning needs a camera on this device.',
+      unavailableDescription: AppLocalizations.of(context).scanAddressNeedsCamera,
       onClose: widget.onClose,
       cameraViewBuilder: (context, controller) => PlainQrScannerView(
         key: const ValueKey('mobile_address_scan_card_camera'),
@@ -335,8 +342,8 @@ class MobileAddressScanCardContent extends StatelessWidget {
     required this.onClose,
     required this.onRetry,
     this.cameraView,
-    this.caption = 'Scan a Zcash QR code to continue',
-    this.permissionTitle = 'Scan the address QR code',
+    this.caption,
+    this.permissionTitle,
     this.error,
     this.unavailableDescription,
     this.permissionBuilder,
@@ -350,8 +357,8 @@ class MobileAddressScanCardContent extends StatelessWidget {
   /// The live camera preview (or a stub in widgetbook). Null when no camera is
   /// available — the card then only ever shows the permission states.
   final Widget? cameraView;
-  final String caption;
-  final String permissionTitle;
+  final String? caption;
+  final String? permissionTitle;
   final String? error;
   final String? unavailableDescription;
   final MobileQrPermissionBuilder? permissionBuilder;
@@ -393,13 +400,19 @@ class MobileAddressScanCardContent extends StatelessWidget {
             left: 0,
             right: 0,
             bottom: 110,
-            child: _ScanCaption(text: error ?? caption),
+            child: _ScanCaption(
+              text:
+                  error ??
+                  caption ??
+                  AppLocalizations.of(context).scanZcashQrCaption,
+            ),
           ),
           Positioned(
             top: AppSpacing.base,
             left: AppSpacing.base,
             child: _CameraGlyphButton(
-              semanticLabel: 'Toggle flashlight',
+              semanticLabel:
+                  AppLocalizations.of(context).keystoneToggleFlashlight,
               icon: const Icon(
                 Icons.flashlight_on_outlined,
                 color: Color(0xFFFFFFFF),
@@ -418,7 +431,7 @@ class MobileAddressScanCardContent extends StatelessWidget {
             top: AppSpacing.base,
             right: AppSpacing.base,
             child: _CameraGlyphButton(
-              semanticLabel: 'Close scanner',
+              semanticLabel: AppLocalizations.of(context).scanCloseScanner,
               enabled: closeEnabled,
               icon: AppIcon(
                 AppIcons.cross,
@@ -440,7 +453,9 @@ class MobileAddressScanCardContent extends StatelessWidget {
               ) ??
               _ScanPermissionCard(
                 status: status,
-                title: permissionTitle,
+                title:
+                    permissionTitle ??
+                    AppLocalizations.of(context).scanAddressQrTitle,
                 unavailableDescription: unavailableDescription,
                 onRetry: onRetry,
                 onClose: onClose,
@@ -597,7 +612,7 @@ class _ScanLoadingVeil extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  'Loading...',
+                  AppLocalizations.of(context).scanLoadingEllipsis,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: const Color(0xFFFFFFFF),
                   ),
@@ -647,14 +662,14 @@ class _ScanPermissionCard extends StatelessWidget {
           children: [
             // Figma `Camera Modal` height (4697:106416) — centers the message
             // so the card lands at the ~440 permission height.
-            SizedBox(height: 276, child: Center(child: _message(colors))),
+            SizedBox(height: 276, child: Center(child: _message(context, colors))),
             const SizedBox(height: AppSpacing.sm),
             AppButton(
               key: const ValueKey('mobile_address_scan_cancel_button'),
               variant: AppButtonVariant.ghost,
               expand: true,
               onPressed: onClose,
-              child: const Text('Cancel'),
+              child: Text(AppLocalizations.of(context).commonCancel),
             ),
           ],
         ),
@@ -662,15 +677,14 @@ class _ScanPermissionCard extends StatelessWidget {
     );
   }
 
-  Widget _message(AppColors colors) {
+  Widget _message(BuildContext context, AppColors colors) {
+    final l10n = AppLocalizations.of(context);
     switch (status) {
       case AddressQrCameraStatus.denied:
         return _ScanCameraMessage(
           iconName: AppIcons.camera,
-          title: "You've denied camera access",
-          description:
-              'Request again, or enable manually\n'
-              'in the System settings.',
+          title: l10n.scanCameraDeniedTitle,
+          description: l10n.cameraDeniedDesc,
           action: AppButton(
             key: const ValueKey('mobile_address_scan_retry_button'),
             variant: AppButtonVariant.secondary,
@@ -678,16 +692,14 @@ class _ScanPermissionCard extends StatelessWidget {
             minWidth: 96,
             leading: const AppIcon(AppIcons.renew),
             onPressed: onRetry,
-            child: const Text('Request again'),
+            child: Text(l10n.cameraRequestAgain),
           ),
         );
       case AddressQrCameraStatus.unavailable:
         return _ScanCameraMessage(
           iconName: AppIcons.cameraDenied,
-          title: 'Camera unavailable',
-          description:
-              unavailableDescription ??
-              'Address QR scanning needs a camera on this device.',
+          title: l10n.cameraUnavailableTitle,
+          description: unavailableDescription ?? l10n.scanAddressNeedsCamera,
           // A runtime open failure (camera busy / in use by another app) is
           // recoverable, so surface the same retry the desktop modal offers
           // instead of forcing a full close + reopen.
@@ -698,18 +710,16 @@ class _ScanPermissionCard extends StatelessWidget {
             minWidth: 96,
             leading: const AppIcon(AppIcons.renew),
             onPressed: onRetry,
-            child: const Text('Try again'),
+            child: Text(l10n.settingsUpdateActionTryAgain),
           ),
         );
       case AddressQrCameraStatus.requesting:
       case AddressQrCameraStatus.active:
       case AddressQrCameraStatus.loading:
-        return const _ScanCameraMessage(
+        return _ScanCameraMessage(
           iconName: AppIcons.camera,
-          title: 'Grant access to your camera',
-          description:
-              'Request again, or enable manually\n'
-              'in the System settings.',
+          title: l10n.scanGrantCameraAccess,
+          description: l10n.cameraDeniedDesc,
         );
     }
   }

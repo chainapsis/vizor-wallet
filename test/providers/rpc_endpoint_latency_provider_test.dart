@@ -2,7 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+import 'package:zcash_wallet/src/providers/locale_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
+
+final _l10n = lookupAppLocalizations(kEnglishLocale);
 
 void main() {
   group('measureRpcEndpointLatency', () {
@@ -22,7 +26,7 @@ void main() {
 
       expect(sample.status, RpcEndpointLatencyStatus.available);
       expect(sample.latency, const Duration(milliseconds: 123));
-      expect(sample.label, '123ms');
+      expect(sample.label(_l10n), '123ms');
     });
 
     test(
@@ -35,7 +39,7 @@ void main() {
         );
 
         expect(sample.status, RpcEndpointLatencyStatus.wrongNetwork);
-        expect(sample.label, 'Wrong network');
+        expect(sample.label(_l10n), 'Wrong network');
       },
     );
 
@@ -47,7 +51,7 @@ void main() {
       );
 
       expect(sample.status, RpcEndpointLatencyStatus.unavailable);
-      expect(sample.label, 'Unavailable');
+      expect(sample.label(_l10n), 'Unavailable');
     });
   });
 

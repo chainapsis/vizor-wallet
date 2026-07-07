@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
@@ -138,7 +139,9 @@ class _MobileTransactionStatusScreenState
     _activeAccountUuid = accountUuid;
     if (accountUuid == null) {
       if (!mounted) return;
-      setState(() => _error = 'No active account.');
+      setState(
+        () => _error = AppLocalizations.of(context).activityNoActiveAccount,
+      );
       return;
     }
 
@@ -167,7 +170,7 @@ class _MobileTransactionStatusScreenState
           _detail = detail;
           _error = null;
         } else if (_transaction == null) {
-          _error = 'Transaction could not be loaded.';
+          _error = AppLocalizations.of(context).activityTxLoadError;
         }
       });
     } catch (e, st) {
@@ -175,8 +178,8 @@ class _MobileTransactionStatusScreenState
       if (!mounted) return;
       setState(() {
         _error = _transaction == null
-            ? 'Transaction could not be loaded.'
-            : 'Latest transaction status could not be refreshed.';
+            ? AppLocalizations.of(context).activityTxLoadError
+            : AppLocalizations.of(context).activityTxRefreshError;
       });
     }
   }
@@ -230,14 +233,17 @@ class _MobileTransactionStatusScreenState
       (_transaction?.txKind ?? widget.args.txKind) == 'shielded';
 
   String get _title {
-    if (_isShielding) return 'Shielded';
+    final l10n = AppLocalizations.of(context);
+    if (_isShielding) return l10n.activityShielded;
     if (_isIncoming) {
-      return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
+      return _phase == _TxPhase.pending
+          ? l10n.activityReceivingEllipsis
+          : l10n.activityReceived;
     }
     return switch (_phase) {
-      _TxPhase.pending => 'Sending...',
-      _TxPhase.succeeded => 'Sent successfully',
-      _TxPhase.failed => 'Send failed',
+      _TxPhase.pending => l10n.activitySendingEllipsis,
+      _TxPhase.succeeded => l10n.activitySentSuccessfully,
+      _TxPhase.failed => l10n.activitySendFailed,
     };
   }
 
@@ -251,7 +257,7 @@ class _MobileTransactionStatusScreenState
     if (launched || !mounted) return;
     await Clipboard.setData(ClipboardData(text: widget.args.txidHex));
     if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    showAppToast(context, AppLocalizations.of(context).activityTxHashCopied);
   }
 
   Future<void> _showFullAddressSheet(String address) {
@@ -341,7 +347,7 @@ class _MobileTransactionStatusScreenState
           )
         : null;
     final amountRow = MobileReviewInfoRow(
-      label: 'Amount',
+      label: AppLocalizations.of(context).navAmount,
       value: amountText,
       leading: const MobileReviewZecBadge(),
       // With no counterparty row (shielded senders are unknown), the
@@ -352,7 +358,9 @@ class _MobileTransactionStatusScreenState
     final addressRow = (address == null || address.isEmpty)
         ? null
         : MobileReviewInfoRow(
-            label: _isIncoming ? 'From' : 'To',
+            label: _isIncoming
+                ? AppLocalizations.of(context).activityFrom
+                : AppLocalizations.of(context).activityTo,
             value: namedRecipient != null
                 ? namedRecipient.name
                 : _truncateAddress(address),
@@ -384,7 +392,7 @@ class _MobileTransactionStatusScreenState
               trailing: _GhostIconLabelButton(
                 key: const ValueKey('mobile_tx_status_show_full_address'),
                 iconName: AppIcons.eye,
-                label: 'Show full address',
+                label: AppLocalizations.of(context).activityShowFullAddress,
                 onTap: () => unawaited(_showFullAddressSheet(address)),
               ),
             ),
@@ -395,7 +403,7 @@ class _MobileTransactionStatusScreenState
     final unknownFromRow = unknownFromLabel == null
         ? null
         : MobileReviewInfoRow(
-            label: 'From',
+            label: AppLocalizations.of(context).activityFrom,
             value: unknownFromLabel,
             leading: MobileReviewIconBadge(
               child: AppIcon(
@@ -406,9 +414,9 @@ class _MobileTransactionStatusScreenState
             ),
             bottom: sourcePool == 'shielded'
                 ? _BottomInfoRow(
-                    iconName: _poolIconNameFor('Shielded'),
-                    iconColor: _poolIconColorFor(context, 'Shielded'),
-                    text: 'Shielded',
+                    iconName: AppIcons.shieldKeyhole,
+                    iconColor: context.colors.icon.brandCrimson,
+                    text: AppLocalizations.of(context).receiveShielded,
                   )
                 : null,
           );
@@ -425,19 +433,19 @@ class _MobileTransactionStatusScreenState
     final reviewChildren = _isShielding
         ? <Widget>[
             MobileReviewInfoRow(
-              label: 'Amount',
+              label: AppLocalizations.of(context).navAmount,
               value: amountText,
               leading: const MobileReviewZecBadge(),
               bottom: _BottomInfoRow(
                 iconName: AppIcons.transparentBalance,
                 iconColor: colors.icon.muted,
-                text: 'From transparent balance',
+                text: AppLocalizations.of(context).activityFromTransparentBalance,
               ),
             ),
             const MobileReviewFlowArrow(),
             MobileReviewInfoRow(
-              label: 'To',
-              value: 'Shielded balance',
+              label: AppLocalizations.of(context).activityTo,
+              value: AppLocalizations.of(context).homeShieldedBalance,
               leading: MobileReviewIconBadge(
                 child: AppIcon(
                   AppIcons.shieldKeyholeOutline,
@@ -448,7 +456,7 @@ class _MobileTransactionStatusScreenState
               bottom: _BottomInfoRow(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.brandCrimson,
-                text: 'Shielded',
+                text: AppLocalizations.of(context).receiveShielded,
               ),
             ),
           ]
@@ -553,6 +561,7 @@ class _MobileTransactionStatusScreenState
     if (seconds <= BigInt.zero) return '--';
     return formatActivityTimestamp(
       DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
+      l10n: AppLocalizations.of(context),
     );
   }
 
@@ -568,10 +577,11 @@ class _MobileTransactionStatusScreenState
   }
 
   String? _poolLabel(String? pool) {
+    final l10n = AppLocalizations.of(context);
     return switch (pool) {
-      'transparent' => 'Transparent',
-      'shielded' => 'Shielded',
-      'mixed' => 'Mixed',
+      'transparent' => l10n.receiveTransparent,
+      'shielded' => l10n.receiveShielded,
+      'mixed' => l10n.activityMixed,
       _ => null,
     };
   }
@@ -584,7 +594,7 @@ class _MobileTransactionStatusScreenState
 
   String _poolIconNameFor(String? poolLabel, {String? address}) {
     final isTransparent =
-        poolLabel == 'Transparent' ||
+        poolLabel == AppLocalizations.of(context).receiveTransparent ||
         (address != null &&
             zcashAddressDisplayKind(address) ==
                 ZcashAddressDisplayKind.transparent);
@@ -597,7 +607,7 @@ class _MobileTransactionStatusScreenState
     String? address,
   }) {
     final isTransparent =
-        poolLabel == 'Transparent' ||
+        poolLabel == AppLocalizations.of(context).receiveTransparent ||
         (address != null &&
             zcashAddressDisplayKind(address) ==
                 ZcashAddressDisplayKind.transparent);
@@ -624,15 +634,19 @@ class _MobileTransactionStatusScreenState
 
   String? _unknownFromLabelForSourcePool(String? pool) {
     if (pool == null || pool.isEmpty) return null;
-    return pool == 'shielded' ? 'Shielded sender' : 'Unknown sender';
+    final l10n = AppLocalizations.of(context);
+    return pool == 'shielded'
+        ? l10n.activityShieldedSender
+        : l10n.activityUnknownSender;
   }
 
   String _addressVerifyTitle(String address) {
+    final l10n = AppLocalizations.of(context);
     final lower = address.trim().toLowerCase();
-    if (lower.startsWith('u1')) return 'Unified address';
-    if (lower.startsWith('zs')) return 'Shielded address';
-    if (lower.startsWith('t')) return 'Transparent address';
-    return 'Zcash address';
+    if (lower.startsWith('u1')) return l10n.addressUnified;
+    if (lower.startsWith('zs')) return l10n.receiveShieldedAddressTitle;
+    if (lower.startsWith('t')) return l10n.receiveTransparentAddressTitle;
+    return l10n.addressZcash;
   }
 
   String _truncateAddress(String address) {
@@ -831,14 +845,14 @@ class _DetailCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ListRow(
-            label: 'Status',
+            label: AppLocalizations.of(context).navStatus,
             labelColor: failed ? colors.text.destructive : null,
             value: _StatusChip(phase: phase),
           ),
           const SizedBox(height: AppSpacing.sm),
           if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
-              label: 'Message',
+              label: AppLocalizations.of(context).activityMessage,
               value: _ValueWithIcon(
                 key: const ValueKey('mobile_tx_status_message_toggle'),
                 text: messageExpanded ? null : _previewMemo(memoText),
@@ -863,13 +877,13 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           ],
           _ListRow(
-            label: 'Timestamp',
+            label: AppLocalizations.of(context).activityTimestamp,
             value: _ValueWithIcon(text: timestampText),
           ),
           const SizedBox(height: AppSpacing.xs),
           _ListRow(
             key: const ValueKey('mobile_tx_status_txid'),
-            label: 'Tx ID',
+            label: AppLocalizations.of(context).activityTxId,
             value: _ValueWithIcon(
               text: txidText,
               iconName: AppIcons.arrowTopRight,
@@ -882,7 +896,7 @@ class _DetailCard extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
-              label: 'Tx fee',
+              label: AppLocalizations.of(context).txFeeSheetTitle,
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
@@ -1020,15 +1034,16 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = AppLocalizations.of(context);
     final (iconName, text, color) = switch (phase) {
       _TxPhase.pending => (
         AppIcons.loader,
-        'In progress',
+        l10n.activityInProgress,
         colors.text.secondary,
       ),
       _TxPhase.succeeded => (
         AppIcons.checkCircle,
-        'Completed',
+        l10n.activityCompleted,
         colors.text.positiveStrong,
       ),
       // The Figma frame says "Failed, refunded minus tx fee", but the
@@ -1036,7 +1051,7 @@ class _StatusChip extends StatelessWidget {
       // no fee is spent at all.
       _TxPhase.failed => (
         AppIcons.cross,
-        'Failed, funds returned',
+        l10n.activityFailedFundsReturned,
         colors.text.destructive,
       ),
     };

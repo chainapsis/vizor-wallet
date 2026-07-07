@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
@@ -26,6 +28,7 @@ import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
 import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
+import '../../../core/formatting/date_format.dart' show intlSafeLocale;
 
 /// Loads the full transaction history for one account; injectable so
 /// widget tests can avoid the Rust FFI.
@@ -139,7 +142,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       if (hasExistingTransactions && !clearExisting) return;
       setState(() {
         _transactionsAccountUuid = accountUuid;
-        _error = 'Activity could not be loaded.';
+        _error = AppLocalizations.of(context).activityLoadError;
         _isLoading = false;
       });
       _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
@@ -368,7 +371,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       );
     }
     entries.sort(_compareActivityEntries);
-    final sections = _activityFeedSections(entries);
+    final sections = _activityFeedSections(
+      entries,
+      AppLocalizations.of(context),
+    );
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -481,13 +487,14 @@ DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
 
 List<ActivityFeedSectionData> _activityFeedSections(
   List<_ActivityEntry> entries,
+  AppLocalizations l10n,
 ) {
   final sections = <ActivityFeedSectionData>[];
   List<ActivityRowData>? currentRows;
   String? currentTitle;
 
   for (final entry in entries) {
-    final title = activitySectionTitleForSortKey(entry.sortKey);
+    final title = activitySectionTitleForSortKey(entry.sortKey, l10n);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -501,50 +508,36 @@ List<ActivityFeedSectionData> _activityFeedSections(
 
 @visibleForTesting
 String activitySectionTitleForSortKey(
-  ActivityEntrySortKey sortKey, {
+  ActivityEntrySortKey sortKey,
+  AppLocalizations l10n, {
   DateTime? now,
 }) {
   if (sortKey.isPendingTransaction && sortKey.timestamp == null) {
-    return 'This week';
+    return l10n.activityThisWeek;
   }
-  return activitySectionTitleForTimestamp(sortKey.timestamp, now: now);
+  return activitySectionTitleForTimestamp(sortKey.timestamp, l10n, now: now);
 }
 
 @visibleForTesting
-String activitySectionTitleForTimestamp(DateTime? timestamp, {DateTime? now}) {
-  if (timestamp == null) return 'Earlier';
+String activitySectionTitleForTimestamp(
+  DateTime? timestamp,
+  AppLocalizations l10n, {
+  DateTime? now,
+}) {
+  if (timestamp == null) return l10n.activityEarlier;
 
   final local = timestamp.toLocal();
   final reference = now ?? DateTime.now();
   final weekStart = _startOfWeek(reference);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
+    return l10n.activityThisWeek;
   }
 
-  return '${_monthName(local.month)} ${local.year}';
+  return DateFormat.yMMMM(intlSafeLocale(l10n.localeName)).format(local);
 }
 
 DateTime _startOfWeek(DateTime date) {
   final localDate = DateTime(date.year, date.month, date.day);
   return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
 }

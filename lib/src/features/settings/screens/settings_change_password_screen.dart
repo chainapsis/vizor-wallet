@@ -15,6 +15,7 @@ import '../../../core/widgets/password_text_field.dart';
 import '../../../providers/app_security_provider.dart';
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SettingsChangePasswordScreen extends ConsumerStatefulWidget {
   const SettingsChangePasswordScreen({super.key});
@@ -38,18 +39,24 @@ class _SettingsChangePasswordScreenState
   bool _isSubmitting = false;
 
   String? get _currentPasswordPolicyMessage =>
-      validateWalletPassword(_currentPasswordController.text);
+      validateWalletPasswordLocalized(
+        _currentPasswordController.text,
+        AppLocalizations.of(context),
+      );
 
   bool get _canContinue =>
       !_isSubmitting && isWalletPasswordValid(_currentPasswordController.text);
 
   String? get _passwordMessage {
-    final policyError = validateWalletPassword(_passwordController.text);
+    final policyError = validateWalletPasswordLocalized(
+      _passwordController.text,
+      AppLocalizations.of(context),
+    );
     if (policyError != null) return policyError;
     if (_passwordController.text.isNotEmpty &&
         _verifiedCurrentPassword != null &&
         _passwordController.text == _verifiedCurrentPassword) {
-      return kWalletPasswordMustDifferMessage;
+      return AppLocalizations.of(context).passwordMustDiffer;
     }
     return null;
   }
@@ -67,7 +74,7 @@ class _SettingsChangePasswordScreenState
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordMessage != null || _matches) return null;
-    return 'Passwords do not match.';
+    return AppLocalizations.of(context).onbPasswordsDoNotMatch;
   }
 
   @override
@@ -129,7 +136,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _currentPasswordError = 'Incorrect password. Please try again.';
+          _currentPasswordError = AppLocalizations.of(context).accountsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -148,7 +155,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       setState(() {
         _currentPasswordError =
-            "Couldn't check your password. Please try again.";
+            AppLocalizations.of(context).settingsPasswordCheckFailed;
         _isSubmitting = false;
       });
     }
@@ -161,7 +168,8 @@ class _SettingsChangePasswordScreenState
     if (currentPassword == null) {
       setState(() {
         _stage = _ChangePasswordStage.currentPassword;
-        _currentPasswordError = 'Enter your current password again.';
+        _currentPasswordError =
+            AppLocalizations.of(context).settingsEnterCurrentPasswordAgain;
       });
       return;
     }
@@ -189,7 +197,7 @@ class _SettingsChangePasswordScreenState
           _passwordController.clear();
           _confirmController.clear();
           _stage = _ChangePasswordStage.currentPassword;
-          _currentPasswordError = 'Incorrect password. Please try again.';
+          _currentPasswordError = AppLocalizations.of(context).accountsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -201,8 +209,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       setState(() {
         _submitError =
-            "We couldn't verify the previous password change. "
-            'Please keep your secret passphrase available before trying again.';
+            AppLocalizations.of(context).settingsKeepPassphraseAvailable;
         _isSubmitting = false;
       });
     } catch (e, st) {
@@ -211,7 +218,7 @@ class _SettingsChangePasswordScreenState
       setState(() {
         _submitError = e is ArgumentError && e.message != null
             ? e.message.toString()
-            : "Couldn't update your password. Please try again.";
+            : AppLocalizations.of(context).settingsPasswordUpdateFailed;
         _isSubmitting = false;
       });
     }
@@ -227,7 +234,7 @@ class _SettingsChangePasswordScreenState
         child: switch (_stage) {
           _ChangePasswordStage.currentPassword => Center(
             child: ConfirmAccessCard(
-              subtitle: 'Enter your current password first.',
+              subtitle: AppLocalizations.of(context).settingsEnterCurrentPasswordFirst,
               controller: _currentPasswordController,
               errorText: _currentPasswordError ?? _currentPasswordPolicyMessage,
               isSubmitting: _isSubmitting,
@@ -327,7 +334,7 @@ class _NewPasswordView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Update password',
+            AppLocalizations.of(context).settingsUpdatePassword,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -337,8 +344,7 @@ class _NewPasswordView extends StatelessWidget {
           SizedBox(
             width: _subtitleWidth,
             child: Text(
-              'Minimum 8 characters. Add numbers and symbols, or make '
-              'it longer, for stronger security.',
+              AppLocalizations.of(context).settingsPasswordHintLong,
               textAlign: TextAlign.center,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
@@ -354,7 +360,7 @@ class _NewPasswordView extends StatelessWidget {
                 _PasswordFieldBlock(
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: PasswordTextField(
-                    label: 'Password',
+                    label: AppLocalizations.of(context).settingsPassword,
                     controller: passwordController,
                     messageText: passwordMessage,
                     tone: passwordMessage == null
@@ -373,7 +379,7 @@ class _NewPasswordView extends StatelessWidget {
                 _PasswordFieldBlock(
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: PasswordTextField(
-                    label: 'Confirm password',
+                    label: AppLocalizations.of(context).settingsConfirmPassword,
                     controller: confirmController,
                     messageText: confirmMessage,
                     tone: confirmMessage == null
@@ -410,7 +416,9 @@ class _NewPasswordView extends StatelessWidget {
             variant: AppButtonVariant.primary,
             minWidth: _buttonMinWidth,
             child: Text(
-              isSubmitting ? 'Updating password...' : 'Update password',
+              isSubmitting
+                  ? AppLocalizations.of(context).settingsUpdatingPassword
+                  : AppLocalizations.of(context).settingsUpdatePassword,
             ),
           ),
         ],

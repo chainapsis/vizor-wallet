@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/app_localizations.dart';
+
 class AppBackTarget {
   const AppBackTarget({
     required this.label,
@@ -29,58 +31,59 @@ class _RouteStackEntry {
 }
 
 abstract final class AppBackResolver {
-  static const _homeTarget = AppBackTarget(
-    label: 'Home',
+  static AppBackTarget _homeTarget(AppLocalizations l10n) => AppBackTarget(
+    label: l10n.navHome,
     fallbackPath: '/home',
     preferPop: false,
   );
 
-  static const _routeLabels = <String, String>{
-    '/home': 'Home',
-    '/send': 'Send',
-    '/send/amount': 'Amount',
-    '/send/review': 'Review',
+  static Map<String, String> _routeLabels(AppLocalizations l10n) => {
+    '/home': l10n.navHome,
+    '/send': l10n.navSend,
+    '/send/amount': l10n.navAmount,
+    '/send/review': l10n.navReview,
     '/send/keystone/scan': 'Keystone',
-    '/send/status': 'Status',
-    '/swap': 'Swap',
-    '/swap/review': 'Review',
-    '/receive': 'Receive',
-    '/address-book': 'Contacts',
-    '/activity': 'Activity',
-    '/activity/tx/:txid': 'Transaction',
-    '/accounts': 'Accounts',
-    '/settings': 'Settings',
-    '/settings/secret-passphrase': 'Secret passphrase',
-    '/settings/change-password': 'Change password',
-    '/settings/endpoint': 'Endpoint',
-    '/settings/uninstall': 'Uninstall Vizor',
-    '/onboarding/keystone': 'Connect Keystone',
-    '/voting': 'Vote',
-    '/voting/poll/:roundId': 'Voting round',
-    '/voting/poll/:roundId/review': 'Review',
-    '/voting/poll/:roundId/status': 'Status',
-    '/voting/poll/:roundId/submitted': 'Submitted',
-    '/voting/poll/:roundId/results': 'Results',
+    '/send/status': l10n.navStatus,
+    '/swap': l10n.navSwap,
+    '/swap/review': l10n.navReview,
+    '/receive': l10n.navReceive,
+    '/address-book': l10n.settingsContacts,
+    '/activity': l10n.navActivity,
+    '/activity/tx/:txid': l10n.navTransaction,
+    '/accounts': l10n.navAccounts,
+    '/settings': l10n.settingsTitle,
+    '/settings/secret-passphrase': l10n.settingsSecretPassphrase,
+    '/settings/change-password': l10n.navChangePassword,
+    '/settings/endpoint': l10n.settingsEndpoint,
+    '/settings/uninstall': l10n.settingsUninstallVizor,
+    '/onboarding/keystone': l10n.navConnectKeystone,
+    '/voting': l10n.navVote,
+    '/voting/poll/:roundId': l10n.navVotingRound,
+    '/voting/poll/:roundId/review': l10n.navReview,
+    '/voting/poll/:roundId/status': l10n.navStatus,
+    '/voting/poll/:roundId/submitted': l10n.navSubmitted,
+    '/voting/poll/:roundId/results': l10n.navResults,
     '/voting/keystone/scan': 'Keystone',
   };
 
   static AppBackTarget resolve(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final stack = _routeStackFor(context);
     final current = stack.isEmpty ? null : stack.last;
-    if (_forcesHome(current)) return _homeTarget;
-    if (!context.canPop()) return _homeTarget;
+    if (_forcesHome(current)) return _homeTarget(l10n);
+    if (!context.canPop()) return _homeTarget(l10n);
 
     final previous = stack.length >= 2 ? stack[stack.length - 2] : null;
     if (previous == null) {
-      return const AppBackTarget(
-        label: 'Back',
+      return AppBackTarget(
+        label: l10n.commonBack,
         fallbackPath: '/home',
         preferPop: true,
       );
     }
 
     return AppBackTarget(
-      label: _labelFor(previous) ?? 'Back',
+      label: _labelFor(previous, l10n) ?? l10n.commonBack,
       fallbackPath: previous.location,
       preferPop: true,
     );
@@ -132,30 +135,34 @@ abstract final class AppBackResolver {
     );
   }
 
-  static String? _labelFor(_RouteStackEntry entry) {
-    return _routeLabels[entry.routePath] ??
-        _routeLabels[entry.location] ??
-        _dynamicRouteLabel(entry.location);
+  static String? _labelFor(_RouteStackEntry entry, AppLocalizations l10n) {
+    final labels = _routeLabels(l10n);
+    return labels[entry.routePath] ??
+        labels[entry.location] ??
+        _dynamicRouteLabel(entry.location, labels);
   }
 
-  static String? _dynamicRouteLabel(String location) {
+  static String? _dynamicRouteLabel(
+    String location,
+    Map<String, String> labels,
+  ) {
     if (location.startsWith('/activity/tx/')) {
-      return _routeLabels['/activity/tx/:txid'];
+      return labels['/activity/tx/:txid'];
     }
     if (location.startsWith('/voting/poll/')) {
       if (location.endsWith('/review')) {
-        return _routeLabels['/voting/poll/:roundId/review'];
+        return labels['/voting/poll/:roundId/review'];
       }
       if (location.endsWith('/status')) {
-        return _routeLabels['/voting/poll/:roundId/status'];
+        return labels['/voting/poll/:roundId/status'];
       }
       if (location.endsWith('/submitted')) {
-        return _routeLabels['/voting/poll/:roundId/submitted'];
+        return labels['/voting/poll/:roundId/submitted'];
       }
       if (location.endsWith('/results')) {
-        return _routeLabels['/voting/poll/:roundId/results'];
+        return labels['/voting/poll/:roundId/results'];
       }
-      return _routeLabels['/voting/poll/:roundId'];
+      return labels['/voting/poll/:roundId'];
     }
     return null;
   }

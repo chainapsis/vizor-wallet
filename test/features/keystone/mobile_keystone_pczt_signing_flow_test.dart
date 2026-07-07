@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   Future<void> pumpPastScanCompleteHold(WidgetTester tester) async {
@@ -54,6 +55,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -130,6 +134,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -220,6 +227,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -280,6 +290,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -360,6 +373,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -419,6 +435,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -532,6 +551,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -619,6 +641,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -700,6 +725,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -773,6 +801,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp.router(
+            localizationsDelegates:
+                AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -870,6 +901,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -955,6 +989,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -1035,6 +1072,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),

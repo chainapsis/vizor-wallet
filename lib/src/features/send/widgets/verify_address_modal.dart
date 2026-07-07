@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -119,11 +120,11 @@ class VerifyAddressModal extends StatelessWidget {
         final (iconName, title) = switch (unknownAddressKind) {
           VerifyAddressModalAddressKind.shielded => (
             AppIcons.shieldKeyholeOutline,
-            'Unknown shielded address',
+            AppLocalizations.of(context).sendUnknownShieldedAddress,
           ),
           VerifyAddressModalAddressKind.transparent => (
             AppIcons.transparentBalance,
-            'Unknown transparent address',
+            AppLocalizations.of(context).sendUnknownTransparentAddress,
           ),
         };
         return Row(

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -8,9 +9,6 @@ import '../../../core/widgets/review_info_row.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
-
-const _receivedFeeHelpTooltip =
-    'Network fee paid by the sender to process this transaction.';
 
 /// Display status of a received transaction on the redesigned receipt.
 ///
@@ -109,27 +107,28 @@ class ReceivedReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = AppLocalizations.of(context);
     final memo = memoText?.trim();
     final fromRecipient = this.fromRecipient;
     final unknownFromKind = fromRecipient == null ? this.unknownFromKind : null;
     final title = switch (status) {
-      ReceivedReceiptStatus.inProgress => 'Receive in progress...',
-      ReceivedReceiptStatus.completed => 'Received successfully',
-      ReceivedReceiptStatus.failed => 'Receive failed',
+      ReceivedReceiptStatus.inProgress => l10n.receiveReceiptInProgress,
+      ReceivedReceiptStatus.completed => l10n.receiveReceiptCompleted,
+      ReceivedReceiptStatus.failed => l10n.receiveReceiptFailed,
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ReceivedReceiptStatus.inProgress => (
-        'In progress',
+        l10n.activityInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ReceivedReceiptStatus.completed => (
-        'Completed',
+        l10n.activityCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ReceivedReceiptStatus.failed => (
-        'Failed',
+        l10n.activityFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -162,7 +161,7 @@ class ReceivedReceiptView extends StatelessWidget {
                 const _ReceivedArrowSeparator(),
               ],
               ReviewInfoRow(
-                label: 'Amount',
+                label: l10n.navAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -189,7 +188,7 @@ class ReceivedReceiptView extends StatelessWidget {
         ReviewWrapCard(
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.navStatus,
               value: statusValue,
               valueColor: statusColor,
               leadingIconName: statusIconName,
@@ -206,9 +205,12 @@ class ReceivedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
-                  label: 'Tx ID',
+                  label: l10n.activityTimestamp,
+                  value: timestampText,
+                ),
+                ReviewListRow(
+                  label: l10n.activityTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -218,11 +220,11 @@ class ReceivedReceiptView extends StatelessWidget {
             if (feeText != null) ...[
               const ReviewWrapDivider(),
               ReviewListRow(
-                label: 'Network fee',
+                label: l10n.activityNetworkFee,
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: _receivedFeeHelpTooltip,
+                trailingIconTooltip: l10n.receivedFeeTooltip,
                 onPressed: onFeeHelpPressed,
               ),
             ],
@@ -239,15 +241,18 @@ class ReceivedReceiptView extends StatelessWidget {
       shielded ? context.colors.text.brandCrimson : null;
 
   Widget _fromRow(BuildContext context, SendReviewRecipient recipient) {
+    final l10n = AppLocalizations.of(context);
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
-        label: 'From',
+        label: l10n.activityFrom,
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         bottomLeftIconName: _poolIconName(isShieldedSource),
         bottomLeftIconColor: _poolIconColor(context, isShieldedSource),
-        bottomLeftText: isShieldedSource ? 'Shielded' : 'Transparent',
-        trailingActionLabel: 'Show full address',
+        bottomLeftText: isShieldedSource
+            ? l10n.receiveShielded
+            : l10n.receiveTransparent,
+        trailingActionLabel: l10n.activityShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -256,14 +261,14 @@ class ReceivedReceiptView extends StatelessWidget {
         :final profilePictureId,
       ) =>
         ReviewInfoRow(
-          label: 'From',
+          label: l10n.activityFrom,
           value: name,
           leading: AppProfilePicture(
             profilePictureId: profilePictureId,
             size: AppProfilePictureSize.large,
           ),
           bottomLeftText: truncatedAddress(address),
-          trailingActionLabel: 'Show full address',
+          trailingActionLabel: l10n.activityShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };
@@ -273,18 +278,21 @@ class ReceivedReceiptView extends StatelessWidget {
     BuildContext context,
     ReceivedReceiptUnknownFromKind kind,
   ) {
+    final l10n = AppLocalizations.of(context);
     final isShieldedSender =
         kind == ReceivedReceiptUnknownFromKind.shieldedSender;
 
     return ReviewInfoRow(
-      label: 'From',
-      value: isShieldedSender ? 'Shielded sender' : 'Unknown sender',
+      label: l10n.activityFrom,
+      value: isShieldedSender
+          ? l10n.activityShieldedSender
+          : l10n.activityUnknownSender,
       leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
       bottomLeftIconName: isShieldedSender ? _poolIconName(true) : null,
       bottomLeftIconColor: isShieldedSender
           ? _poolIconColor(context, true)
           : null,
-      bottomLeftText: isShieldedSender ? 'Shielded' : null,
+      bottomLeftText: isShieldedSender ? l10n.receiveShielded : null,
     );
   }
 }

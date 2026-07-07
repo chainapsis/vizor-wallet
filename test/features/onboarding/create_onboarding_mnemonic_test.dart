@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/intro_zcash_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/secret_passphrase_screen.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('reuses pending create mnemonic when returning to passphrase', (
@@ -117,6 +118,9 @@ Widget _harness(ProviderContainer container, Widget child) {
   return UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(data: AppThemeData.light, child: child),
     ),
   );

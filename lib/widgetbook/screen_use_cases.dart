@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/app_localizations.dart';
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/app_layout.dart';
@@ -803,9 +804,17 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    // Widgetbook's own MaterialApp lacks AppLocalizations, so merge the
+    // app delegates in for the settings screen.
+    return Localizations.override(
+      context: context,
+      delegates: AppLocalizations.localizationsDelegates,
+      child: Builder(
+        builder: (context) => ColoredBox(
+          color: context.colors.macosUtility.window,
+          child: Router.withConfig(config: _router),
+        ),
+      ),
     );
   }
 }

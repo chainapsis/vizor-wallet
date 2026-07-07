@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -196,7 +197,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       _closeModal();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _submitError = "Couldn't save contact. Try again.");
+      setState(() => _submitError = AppLocalizations.of(context).abSaveError);
     }
   }
 
@@ -209,7 +210,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       _closeModal();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _submitError = "Couldn't remove contact. Try again.");
+      setState(
+        () => _submitError = AppLocalizations.of(context).abRemoveError,
+      );
     }
   }
 
@@ -217,7 +220,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     copyTextWithToast(
       context,
       text: contact.address,
-      toastMessage: 'Address copied',
+      toastMessage: AppLocalizations.of(context).toastAddressCopied,
     );
   }
 
@@ -369,8 +372,7 @@ class _ContactDraft {
   final String profilePictureId;
 
   bool get isValid =>
-      validateAddressBookLabel(label) == null &&
-      validateAddressBookAddress(address) == null;
+      isAddressBookLabelValid(label) && isAddressBookAddressValid(address);
 
   _ContactDraft copyWith({
     String? label,
@@ -434,7 +436,7 @@ class _AddressBookPane extends StatelessWidget {
               // 4098:554201 shows only the back link above the empty block).
               if (state.hasContacts) ...[
                 Text(
-                  'Contacts',
+                  AppLocalizations.of(context).settingsContacts,
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -523,11 +525,11 @@ class _AddressBookSearchFieldState extends State<_AddressBookSearchField> {
   Widget build(BuildContext context) {
     return AppTextField(
       key: const ValueKey('address_book_search_field'),
-      label: 'Search',
+      label: AppLocalizations.of(context).abSearch,
       showLabel: false,
       controller: _controller,
       focusNode: _focusNode,
-      hintText: 'Search for label or network',
+      hintText: AppLocalizations.of(context).abSearchHint,
       leading: const AppIcon(AppIcons.search),
       // Figma: 32px icon slot + 12px text inset, and no idle trailing slot —
       // the clear button claims its slot only when shown, so the full
@@ -908,27 +910,27 @@ class _ContactContextMenu extends StatelessWidget {
       children: [
         AppContextMenuItem(
           iconName: AppIcons.copy,
-          label: 'Copy address',
+          label: AppLocalizations.of(context).accountsCopyAddress,
           onTap: onCopy,
         ),
         if (canSend) ...[
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.plane,
-            label: 'Send ZEC',
+            label: AppLocalizations.of(context).accountsSendZec,
             onTap: onSend,
           ),
         ],
         const SizedBox(height: AppSpacing.xxs),
         AppContextMenuItem(
           iconName: AppIcons.scroll,
-          label: 'Edit contact',
+          label: AppLocalizations.of(context).abEditContact,
           onTap: onEdit,
         ),
         const AppContextMenuDivider(),
         AppContextMenuItem(
           iconName: AppIcons.trash,
-          label: 'Remove contact',
+          label: AppLocalizations.of(context).abRemoveContact,
           destructive: true,
           onTap: onRemove,
         ),
@@ -957,7 +959,7 @@ class _AddressBookNoContacts extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          'No contacts yet',
+          AppLocalizations.of(context).abNoContactsYet,
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: context.colors.text.accent,
@@ -967,7 +969,7 @@ class _AddressBookNoContacts extends StatelessWidget {
         SizedBox(
           width: 236,
           child: Text(
-            'Add your first contact to get started.',
+            AppLocalizations.of(context).abAddFirstContact,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -1002,7 +1004,7 @@ class _EmptySearchResult extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          'No contacts were found',
+          AppLocalizations.of(context).abNoContactsFound,
           textAlign: TextAlign.center,
           style: AppTypography.headlineSmall.copyWith(
             color: context.colors.text.accent,
@@ -1012,7 +1014,7 @@ class _EmptySearchResult extends StatelessWidget {
         SizedBox(
           width: 236,
           child: Text(
-            'Try to modify your search',
+            AppLocalizations.of(context).abModifySearch,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -1046,7 +1048,7 @@ class _AddressBookAddButton extends StatelessWidget {
       height: 36,
       minWidth: 96,
       leading: AppIcon(iconName),
-      child: const Text('Add contact'),
+      child: Text(AppLocalizations.of(context).abAddContact),
     );
   }
 }
@@ -1124,8 +1126,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
 
   @override
   Widget build(BuildContext context) {
-    final labelError = validateAddressBookLabel(widget.draft.label);
-    final addressError = validateAddressBookAddress(widget.draft.address);
+    final l10n = AppLocalizations.of(context);
+    final labelError = validateAddressBookLabel(widget.draft.label, l10n);
+    final addressError = validateAddressBookAddress(widget.draft.address, l10n);
     final showLabelError =
         widget.draft.label.trim().length > 20 || widget.submitError != null;
     final showAddressError =
@@ -1140,7 +1143,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
     );
     final addressMessage = showAddressError
         ? addressError
-        : addressFormatFinding?.message;
+        : addressFormatFinding == null
+        ? null
+        : addressFormatFindingMessage(addressFormatFinding, l10n);
     final addressHasError =
         showAddressError ||
         addressFormatFinding?.severity == AddressFormatSeverity.error;
@@ -1158,12 +1163,14 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             height: 86,
             child: AppTextField(
               key: const ValueKey('address_book_contact_label_field'),
-              label: 'Address label',
+              label: AppLocalizations.of(context).abAddressLabel,
               controller: _labelController,
-              hintText: 'Add label 1-20 characters',
+              hintText: AppLocalizations.of(context).abAddLabelHint,
               trailing: widget.editing
                   ? AppTappable(
-                      semanticsLabel: 'Clear contact label',
+                      semanticsLabel: AppLocalizations.of(
+                        context,
+                      ).abClearContactLabel,
                       onTap: _clearLabel,
                       child: const AppIcon(AppIcons.cross),
                     )
@@ -1189,12 +1196,12 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             height: 66,
             child: AppTextField(
               key: const ValueKey('address_book_contact_address_field'),
-              label: 'Address',
+              label: AppLocalizations.of(context).abAddress,
               showLabel: false,
               controller: _addressController,
-              hintText: 'Add address',
+              hintText: AppLocalizations.of(context).abAddAddressHint,
               trailing: AppTappable(
-                semanticsLabel: 'Scan address QR',
+                semanticsLabel: AppLocalizations.of(context).abScanAddressQr,
                 onTap: widget.onScanAddress,
                 child: const AppIcon(AppIcons.qr),
               ),
@@ -1213,7 +1220,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             cancelKey: const ValueKey('address_book_modal_cancel_button'),
             actionKey: const ValueKey('address_book_contact_submit_button'),
             onCancel: widget.onCancel,
-            actionLabel: widget.editing ? 'Update' : 'Add contact',
+            actionLabel: widget.editing
+                ? AppLocalizations.of(context).commonUpdate
+                : AppLocalizations.of(context).abAddContact,
             onAction: widget.draft.isValid
                 ? () => unawaited(widget.onSubmit())
                 : null,
@@ -1236,7 +1245,7 @@ class _EditableContactAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppTappable(
-      semanticsLabel: 'Change contact picture',
+      semanticsLabel: AppLocalizations.of(context).abChangeContactPicture,
       onTap: onPressed,
       child: SizedBox(
         width: 62,
@@ -1292,7 +1301,7 @@ class _ChainAddressSelector extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Text(
-                'Chain & address',
+                AppLocalizations.of(context).abChainAndAddress,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1301,7 +1310,7 @@ class _ChainAddressSelector extends StatelessWidget {
           ),
           AppTappable(
             key: const ValueKey('address_book_network_selector_button'),
-            semanticsLabel: 'Select network',
+            semanticsLabel: AppLocalizations.of(context).abSelectNetwork,
             onTap: onPressed,
             child: Container(
               height: 26,
@@ -1356,7 +1365,7 @@ class _ContactAvatarPickerModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppProfilePicturePickerModal(
-      title: 'Select contact picture',
+      title: AppLocalizations.of(context).abSelectContactPicture,
       currentProfilePictureId: selectedProfilePictureId,
       onCancel: onCancel,
       onUpdate: (profilePictureId) async => onSelected(profilePictureId),
@@ -1422,7 +1431,7 @@ class _NetworkSelectorModalState extends State<_NetworkSelectorModal> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Select network',
+              AppLocalizations.of(context).abSelectNetwork,
               style: AppTypography.bodyLarge.copyWith(
                 color: context.colors.text.accent,
                 fontWeight: FontWeight.w600,
@@ -1432,11 +1441,11 @@ class _NetworkSelectorModalState extends State<_NetworkSelectorModal> {
           const SizedBox(height: AppSpacing.sm),
           AppTextField(
             key: const ValueKey('address_book_network_search_field'),
-            label: 'Search',
+            label: AppLocalizations.of(context).abSearch,
             showLabel: false,
             controller: _queryController,
             autofocus: true,
-            hintText: 'Search network',
+            hintText: AppLocalizations.of(context).abSearchNetworkHint,
             leading: const AppIcon(AppIcons.search),
             leadingSlotWidth: 40,
             trailingSlotWidth: 40,
@@ -1491,7 +1500,7 @@ class _NetworkSelectorModalState extends State<_NetworkSelectorModal> {
             onPressed: widget.onCancel,
             variant: AppButtonVariant.ghost,
             minWidth: 196,
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),
@@ -1508,7 +1517,7 @@ class _NetworkSelectorEmptyResult extends StatelessWidget {
       child: SizedBox(
         width: 112,
         child: Text(
-          'No networks found',
+          AppLocalizations.of(context).abNoNetworksFound,
           textAlign: TextAlign.center,
           style: AppTypography.labelLarge.copyWith(
             color: context.colors.text.secondary,
@@ -1590,7 +1599,7 @@ class _RemoveContactModal extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Remove contact',
+            AppLocalizations.of(context).abRemoveContact,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -1600,8 +1609,10 @@ class _RemoveContactModal extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             contact == null
-                ? 'This contact will be removed.'
-                : '${contact.label} will be removed from your contacts.',
+                ? AppLocalizations.of(context).abContactWillBeRemoved
+                : AppLocalizations.of(
+                    context,
+                  ).abNamedContactWillBeRemoved(contact.label),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -1622,7 +1633,7 @@ class _RemoveContactModal extends StatelessWidget {
             cancelKey: const ValueKey('address_book_remove_cancel_button'),
             actionKey: const ValueKey('address_book_remove_confirm_button'),
             onCancel: onCancel,
-            actionLabel: 'Remove',
+            actionLabel: AppLocalizations.of(context).commonRemove,
             actionVariant: AppButtonVariant.destructive,
             onAction: () => unawaited(onRemove()),
           ),
@@ -1651,8 +1662,7 @@ class _AddressBookError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Text(
-        "Couldn't load your contacts. "
-        'Try again, or contact support if this keeps happening.',
+        AppLocalizations.of(context).abLoadError,
         textAlign: TextAlign.center,
         style: AppTypography.bodyMedium.copyWith(
           color: context.colors.text.destructive,

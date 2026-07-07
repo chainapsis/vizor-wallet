@@ -23,7 +23,6 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
-import '../../../../providers/device_owner_auth_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -33,6 +32,8 @@ import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../../../l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 
 enum _SeedStage { confirmAccess, reveal }
 
@@ -126,7 +127,9 @@ class _MobileSeedPhraseScreenState
     try {
       readResult = await ref
           .read(biometricUnlockProvider.notifier)
-          .readPasscode(reason: 'Confirm access to your secret passphrase');
+          .readPasscode(
+            reason: AppLocalizations.of(context).settingsSeedBiometricReason,
+          );
     } finally {
       _privacyController.endAuthPrompt();
     }
@@ -137,7 +140,7 @@ class _MobileSeedPhraseScreenState
       if (wasEnabled && now != null && !now.enabled) {
         setState(() {
           _entry = '';
-          _gateError = biometric.availability.kind.changedMessage;
+          _gateError = biometric.availability.kind.changedMessage(AppLocalizations.of(context));
         });
       }
       return;
@@ -177,7 +180,7 @@ class _MobileSeedPhraseScreenState
         setState(() {
           _entry = '';
           _checking = false;
-          _gateError = 'Incorrect passcode';
+          _gateError = AppLocalizations.of(context).settingsIncorrectPasscode;
         });
         return;
       }
@@ -188,7 +191,7 @@ class _MobileSeedPhraseScreenState
       setState(() {
         _entry = '';
         _checking = false;
-        _gateError = "Couldn't verify the passcode. Try again.";
+        _gateError = AppLocalizations.of(context).settingsPasscodeVerifyFailed;
       });
     }
   }
@@ -228,8 +231,8 @@ class _MobileSeedPhraseScreenState
         _checking = false;
         _entry = '';
         _gateError = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
+            ? AppLocalizations.of(context).deviceAuthRequired
+            : AppLocalizations.of(context).deviceAuthFailed;
       });
       return;
     } catch (e, st) {
@@ -238,7 +241,7 @@ class _MobileSeedPhraseScreenState
       setState(() {
         _checking = false;
         _entry = '';
-        _gateError = "Couldn't reset the app. Please try again.";
+        _gateError = AppLocalizations.of(context).settingsAppResetFailed;
       });
       return;
     }
@@ -248,19 +251,20 @@ class _MobileSeedPhraseScreenState
   // ── Reveal ─────────────────────────────────────────────────────────
 
   Future<void> _reveal() async {
+    final l10n = AppLocalizations.of(context);
     final account = ref.read(accountProvider).value?.activeAccount;
     String? revealError;
     String? mnemonic;
     if (account == null) {
-      revealError = 'No active account is selected.';
+      revealError = l10n.settingsNoActiveAccount;
     } else if (account.isHardware) {
-      revealError = 'Secret passphrase is not available for hardware accounts.';
+      revealError = l10n.settingsSeedNotAvailableHardware;
     } else {
       mnemonic = await ref
           .read(accountProvider.notifier)
           .getMnemonicForAccount(account.uuid);
       if (mnemonic == null || mnemonic.isEmpty) {
-        revealError = 'Secret passphrase is not available for this account.';
+        revealError = l10n.settingsSeedNotAvailable;
       }
     }
     if (!mounted) return;
@@ -322,7 +326,12 @@ class _MobileSeedPhraseScreenState
     if (mnemonic == null || mnemonic.isEmpty) return;
     await SensitiveClipboard.copyText(mnemonic);
     unawaited(AppHaptics.copy());
-    if (mounted) showAppToast(context, 'Secret passphrase copied');
+    if (mounted) {
+      showAppToast(
+        context,
+        AppLocalizations.of(context).settingsSeedCopiedToast,
+      );
+    }
   }
 
   // ── Screenshot warning ─────────────────────────────────────────────
@@ -349,26 +358,16 @@ class _MobileSeedPhraseScreenState
 
   bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
-  static String _formatBirthdayDate(int blockTimeSeconds) {
-    const months = [
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
+  static String _formatBirthdayDate(
+    BuildContext context,
+    int blockTimeSeconds,
+  ) {
     final date = DateTime.fromMillisecondsSinceEpoch(
       blockTimeSeconds * 1000,
     ).toLocal();
-    return '${months[date.month]} ${date.day}, ${date.year}';
+    return DateFormat.yMMMMd(
+      AppLocalizations.of(context).localeName,
+    ).format(date);
   }
 
   @override
@@ -387,7 +386,7 @@ class _MobileSeedPhraseScreenState
                 MobileTopNav.back(
                   title: _stage == _SeedStage.confirmAccess
                       ? ''
-                      : 'Secret Passphrase',
+                      : AppLocalizations.of(context).onbSecretPassphrase,
                   onBack: () => context.pop(),
                 ),
                 Expanded(
@@ -417,7 +416,7 @@ class _MobileSeedPhraseScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Enter Passcode',
+                  AppLocalizations.of(context).settingsEnterPasscode,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -425,7 +424,7 @@ class _MobileSeedPhraseScreenState
                 ),
                 const SizedBox(height: AppSpacing.s),
                 Text(
-                  'Confirm your access',
+                  AppLocalizations.of(context).settingsConfirmYourAccess,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.primary,
@@ -459,7 +458,7 @@ class _MobileSeedPhraseScreenState
             height: 36,
             child: Center(
               child: PasscodeBiometricButton(
-                label: biometric.availability.kind.signInLabel,
+                label: biometric.availability.kind.signInLabel(AppLocalizations.of(context)),
                 icon: biometric.availability.kind == BiometricKind.face
                     ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
                     : const Icon(Icons.fingerprint, size: 16),
@@ -509,7 +508,7 @@ class _MobileSeedPhraseScreenState
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Secret Passphrase',
+                        AppLocalizations.of(context).onbSecretPassphrase,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           fontWeight: FontWeight.w600,
                           color: colors.text.accent,
@@ -525,7 +524,7 @@ class _MobileSeedPhraseScreenState
                   right: AppSpacing.s,
                   child: _CopyChip(
                     key: const ValueKey('mobile_seed_copy'),
-                    label: 'Copy',
+                    label: AppLocalizations.of(context).commonCopy,
                     onTap: _copyMnemonic,
                   ),
                 ),
@@ -544,29 +543,32 @@ class _MobileSeedPhraseScreenState
             child: Column(
               children: [
                 _BirthdayRow(
-                  label: 'Birthday date',
+                  label: AppLocalizations.of(context).settingsBirthdayDate,
                   value: _birthdayBlockTime != null
-                      ? _formatBirthdayDate(_birthdayBlockTime!)
+                      ? _formatBirthdayDate(context, _birthdayBlockTime!)
                       : _birthdayLoading
                       ? '…'
                       : '—',
                   onCopy: _birthdayBlockTime == null
                       ? null
                       : () => _copy(
-                          _formatBirthdayDate(_birthdayBlockTime!),
-                          'Birthday date copied',
+                          _formatBirthdayDate(context, _birthdayBlockTime!),
+                          AppLocalizations.of(context).settingsBirthdayDateCopied,
                         ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 _BirthdayRow(
-                  label: 'Birthday block height',
+                  label: AppLocalizations.of(context).settingsBirthdayBlockHeight,
                   value:
                       _birthdayHeight?.toString() ??
                       (_birthdayLoading ? '…' : '—'),
                   onCopy: _birthdayHeight == null
                       ? null
                       : () =>
-                            _copy('$_birthdayHeight', 'Birthday height copied'),
+                            _copy(
+                              '$_birthdayHeight',
+                              AppLocalizations.of(context).settingsBirthdayHeightCopied,
+                            ),
                 ),
               ],
             ),
@@ -589,7 +591,7 @@ class _CopyChip extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Copy secret passphrase',
+      label: AppLocalizations.of(context).onbCopySecretPassphrase,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -712,7 +714,7 @@ class _BirthdayRow extends StatelessWidget {
           if (onCopy != null) ...[
             Semantics(
               button: true,
-              label: 'Copy $label',
+              label: AppLocalizations.of(context).settingsCopyLabel(label),
               excludeSemantics: true,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -791,7 +793,7 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
                     width: titleWidth,
                     child: Text(
                       key: const ValueKey('mobile_seed_screenshot_title'),
-                      'Don’t take screenshots of your Secret Passphrase',
+                      AppLocalizations.of(context).settingsNoScreenshotsTitle,
                       textAlign: TextAlign.center,
                       softWrap: true,
                       textHeightBehavior: _textHeightBehavior,
@@ -811,17 +813,16 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.accent,
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'Screenshots are not reliable',
+                  text: AppLocalizations.of(
+                    context,
+                  ).settingsScreenshotsNotReliable,
                   style: AppTypography.bodyMediumStrong,
                 ),
                 TextSpan(
                   text:
-                      '. Anyone who has access to your phone or your photo '
-                      'library will be able to see your Secret Passphrase. '
-                      'Write down your Phrase on a '
-                      'piece of paper instead.',
+                      AppLocalizations.of(context).settingsNoScreenshotsBody,
                 ),
               ],
             ),
@@ -835,7 +836,7 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
             expand: true,
             height: AppButtonSizing.largeHeight,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('I understand', style: _buttonLabelStyle),
+            child: Text(AppLocalizations.of(context).settingsIUnderstand, style: _buttonLabelStyle),
           ),
         ],
       ),

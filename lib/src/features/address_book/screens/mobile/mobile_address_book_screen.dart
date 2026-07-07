@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
@@ -80,7 +81,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
     } catch (e, st) {
       log('MobileAddressBook: save error: $e\n$st');
       if (!context.mounted) return;
-      showAppToast(context, "Couldn't save the contact. Please try again.");
+      showAppToast(context, AppLocalizations.of(context).abSaveContactFailed);
     }
   }
 
@@ -99,7 +100,10 @@ class MobileAddressBookScreen extends ConsumerWidget {
     } catch (e, st) {
       log('MobileAddressBook: remove error: $e\n$st');
       if (!context.mounted) return;
-      showAppToast(context, "Couldn't remove the contact. Please try again.");
+      showAppToast(
+        context,
+        AppLocalizations.of(context).abRemoveContactFailed,
+      );
     }
   }
 
@@ -107,7 +111,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
     copyTextWithToast(
       context,
       text: contact.address,
-      toastMessage: 'Address copied',
+      toastMessage: AppLocalizations.of(context).toastAddressCopied,
     );
   }
 
@@ -138,7 +142,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MobileTopNav.back(
-                title: 'Contacts',
+                title: AppLocalizations.of(context).settingsContacts,
                 onBack: () => context.pop(),
                 // The Figma no-contacts frame has no top-nav add button (the
                 // centered "Add contact" CTA covers it); the + appears only
@@ -209,7 +213,7 @@ class _TopNavAddButton extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Add contact',
+      label: AppLocalizations.of(context).abAddContact,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
@@ -285,7 +289,7 @@ class _ContactsSearchFieldState extends State<_ContactsSearchField> {
       fieldKey: const ValueKey('mobile_contacts_search_field'),
       controller: _controller,
       focusNode: _focusNode,
-      hintText: 'Search for label or network',
+      hintText: AppLocalizations.of(context).abSearchHint,
       textInputAction: TextInputAction.search,
       onChanged: (value) {
         widget.onChanged(value);
@@ -307,7 +311,7 @@ class _ContactsSearchFieldState extends State<_ContactsSearchField> {
           : Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: AppIconHoverButton(
-                semanticLabel: 'Clear search',
+                semanticLabel: AppLocalizations.of(context).abClearSearch,
                 icon: AppIcons.cross,
                 onTap: _clear,
                 size: 32,
@@ -680,27 +684,27 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
       item(
         key: const ValueKey('mobile_contact_menu_copy'),
         iconName: AppIcons.copy,
-        label: 'Copy address',
+        label: AppLocalizations.of(context).abCopyAddress,
         action: _handleCopy,
       ),
       if (canSend)
         item(
           key: const ValueKey('mobile_contact_menu_send'),
           iconName: AppIcons.plane,
-          label: 'Send ZEC',
+          label: AppLocalizations.of(context).abSendZec,
           action: _handleSend,
         ),
       item(
         key: const ValueKey('mobile_contact_menu_edit'),
         iconName: AppIcons.edit,
-        label: 'Edit contact',
+        label: AppLocalizations.of(context).abEditContact,
         action: _handleEdit,
       ),
       const AppContextMenuDivider(),
       item(
         key: const ValueKey('mobile_contact_menu_remove'),
         iconName: AppIcons.trash,
-        label: 'Remove contact',
+        label: AppLocalizations.of(context).abRemoveContact,
         action: _handleRemove,
         textColor: colors.text.destructiveLight,
         iconColor: colors.icon.destructiveLight,
@@ -796,7 +800,7 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
       onTap: _toggleMenu,
       child: Semantics(
         button: true,
-        label: '${widget.contact.label} actions',
+        label: AppLocalizations.of(context).abContactActions(widget.contact.label),
         child: SizedBox(
           key: ValueKey('mobile_contact_menu_${widget.contact.id}'),
           width: 44,
@@ -860,7 +864,7 @@ class _NoContactsState extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.base),
               Text(
-                'No contacts yet',
+                AppLocalizations.of(context).abNoContactsYet,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: context.colors.text.accent,
@@ -870,7 +874,7 @@ class _NoContactsState extends StatelessWidget {
               SizedBox(
                 width: 236,
                 child: Text(
-                  'Add your first contact to get started.',
+                  AppLocalizations.of(context).abAddFirstContact,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
@@ -884,7 +888,7 @@ class _NoContactsState extends StatelessWidget {
                 variant: AppButtonVariant.secondary,
                 minWidth: 163,
                 leading: const AppIcon(AppIcons.users),
-                child: const Text('Add contact'),
+                child: Text(AppLocalizations.of(context).abAddContact),
               ),
             ],
           ),
@@ -918,7 +922,7 @@ class _EmptySearchState extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.base),
               Text(
-                'No contacts were found',
+                AppLocalizations.of(context).abNoContactsFound,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineSmall.copyWith(
                   color: context.colors.text.accent,
@@ -928,7 +932,7 @@ class _EmptySearchState extends StatelessWidget {
               SizedBox(
                 width: 236,
                 child: Text(
-                  'Try to modify your search',
+                  AppLocalizations.of(context).abModifySearch,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
@@ -1029,7 +1033,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   String? get _addressError {
     final address = _addressController.text.trim();
     if (address.isEmpty) return null;
-    return addressFormatIssue(_network, address);
+    final finding = addressFormatIssue(_network, address);
+    if (finding == null) return null;
+    return addressFormatFindingMessage(finding, AppLocalizations.of(context));
   }
 
   Future<void> _pickNetwork() async {
@@ -1051,7 +1057,10 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   }
 
   Future<void> _scanAddress() async {
-    final scanTitle = addressBookQrScanTitle(_network);
+    final scanTitle = addressBookQrScanTitle(
+      _network,
+      AppLocalizations.of(context),
+    );
     final scanned = await showAppMobileSheet<String>(
       context: context,
       builder: (sheetContext) => MobileAddressScanCard(
@@ -1060,8 +1069,8 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
         resolve: (raw) async {
           final address = normalizeAddressScanPayload(raw);
           if (address == null || address.isEmpty) {
-            return const MobileScanOutcome.rejected(
-              'QR code did not include an address.',
+            return MobileScanOutcome.rejected(
+              AppLocalizations.of(context).abQrNoAddress,
             );
           }
           return MobileScanOutcome.accepted(address);
@@ -1134,7 +1143,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     final nameClear = (_labelFocus.hasFocus && _labelController.text.isNotEmpty)
         ? _fieldIcon(
             AppIcons.cross,
-            'Clear name',
+            AppLocalizations.of(context).abClearName,
             _clearLabel,
             iconColor: colors.icon.muted,
           )
@@ -1143,7 +1152,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
         (_addressFocus.hasFocus && _addressController.text.isNotEmpty)
         ? _fieldIcon(
             AppIcons.cross,
-            'Clear address',
+            AppLocalizations.of(context).abClearAddress,
             _clearAddress,
             iconColor: colors.icon.muted,
           )
@@ -1152,7 +1161,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     return MobileModalScaffold(
       // The title sits below the avatar (like the account edit sheet), so the
       // scaffold renders only the pinned close; the heading lives in the body.
-      title: isEdit ? 'Edit contact' : 'Add contact',
+      title: isEdit ? AppLocalizations.of(context).abEditContact : AppLocalizations.of(context).abAddContact,
       showTitle: false,
       onClose: () => Navigator.of(context).pop(),
       child: ConstrainedBox(
@@ -1165,7 +1174,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               Center(
                 child: Semantics(
                   button: true,
-                  label: 'Change contact picture',
+                  label: AppLocalizations.of(context).abChangeContactPicture,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => _pickAvatar(),
@@ -1202,18 +1211,18 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                isEdit ? 'Edit contact' : 'Add contact',
+                isEdit ? AppLocalizations.of(context).abEditContact : AppLocalizations.of(context).abAddContact,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineSmall.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              _FieldLabel('Network'),
+              _FieldLabel(AppLocalizations.of(context).abNetwork),
               const SizedBox(height: AppSpacing.xxs),
               Semantics(
                 button: true,
-                label: 'Select network',
+                label: AppLocalizations.of(context).abSelectNetwork,
                 child: GestureDetector(
                   key: const ValueKey('mobile_address_book_network'),
                   behavior: HitTestBehavior.opaque,
@@ -1242,13 +1251,13 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 ),
               ),
               const SizedBox(height: AppSpacing.s),
-              _FieldLabel('Name'),
+              _FieldLabel(AppLocalizations.of(context).abName),
               const SizedBox(height: AppSpacing.xxs),
               MobileTextField(
                 fieldKey: const ValueKey('mobile_address_book_label'),
                 controller: _labelController,
                 focusNode: _labelFocus,
-                hintText: 'Add a name',
+                hintText: AppLocalizations.of(context).abAddNameHint,
                 textInputAction: TextInputAction.next,
                 onSubmitted: (_) => _addressFocus.requestFocus(),
                 trailing: nameClear == null
@@ -1259,13 +1268,13 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                       ),
               ),
               const SizedBox(height: AppSpacing.s),
-              _FieldLabel('Address'),
+              _FieldLabel(AppLocalizations.of(context).abAddress),
               const SizedBox(height: AppSpacing.xxs),
               MobileTextField(
                 fieldKey: const ValueKey('mobile_address_book_address'),
                 controller: _addressController,
                 focusNode: _addressFocus,
-                hintText: 'Add an address',
+                hintText: AppLocalizations.of(context).abAddAnAddressHint,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _save(),
                 trailing: Padding(
@@ -1279,7 +1288,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                       ],
                       _fieldIcon(
                         AppIcons.qr,
-                        'Scan address QR',
+                        AppLocalizations.of(context).abScanAddressQr,
                         () => unawaited(_scanAddress()),
                         iconColor: colors.icon.accent,
                       ),
@@ -1301,7 +1310,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 key: const ValueKey('mobile_address_book_save'),
                 expand: true,
                 onPressed: _canSave ? _save : null,
-                child: Text(isEdit ? 'Save contact' : 'Add contact'),
+                child: Text(isEdit ? AppLocalizations.of(context).abSaveContact : AppLocalizations.of(context).abAddContact),
               ),
               const SizedBox(height: AppSpacing.s),
               MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
@@ -1375,7 +1384,7 @@ class _NetworkPickerSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Select network',
+      title: AppLocalizations.of(context).abSelectNetwork,
       onClose: () => Navigator.of(context).pop(),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 420),
@@ -1431,15 +1440,15 @@ class _RemoveContactSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Remove contact?',
+      title: AppLocalizations.of(context).abRemoveContactQuestion,
       onClose: () => Navigator.of(context).pop(false),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '"${contact.label}" will be removed from your contacts. '
-            'This does not affect any past transactions.',
+            '${AppLocalizations.of(context).abNamedContactWillBeRemoved('"${contact.label}"')} '
+            '${AppLocalizations.of(context).abNoPastTxEffect}',
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -1450,7 +1459,7 @@ class _RemoveContactSheet extends StatelessWidget {
             expand: true,
             variant: AppButtonVariant.destructive,
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Remove'),
+            child: Text(AppLocalizations.of(context).commonRemove),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),

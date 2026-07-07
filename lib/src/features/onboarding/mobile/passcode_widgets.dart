@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Layout box of a single diamond dot (a rotated square → ~20 px diamond,
 /// matching the Figma index). [PasscodePromptField] uses it to centre the
@@ -223,7 +224,7 @@ class PasscodeNumpad extends StatelessWidget {
         unawaited(AppHaptics.digit());
         onDigit(digit);
       },
-      label: 'Digit $digit',
+      label: AppLocalizations.of(context).passcodeDigitLabel(digit),
     );
 
     final helpKey = onHelp == null
@@ -237,7 +238,7 @@ class PasscodeNumpad extends StatelessWidget {
               color: enabled ? colors.icon.muted : colors.icon.disabled,
             ),
             onTap: onHelp,
-            label: 'Passcode help',
+            label: AppLocalizations.of(context).passcodeHelpLabel,
           );
 
     final deleteKey = canDelete
@@ -249,7 +250,7 @@ class PasscodeNumpad extends StatelessWidget {
               unawaited(AppHaptics.auxiliaryKey());
               onBackspace();
             },
-            label: 'Delete digit',
+            label: AppLocalizations.of(context).passcodeDeleteDigit,
           )
         : keySlot(const SizedBox.shrink());
 

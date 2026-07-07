@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../layout/mobile/app_mobile_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
@@ -13,6 +14,7 @@ Future<void> showMobileTxFeeInfoSheet(BuildContext context) {
     context: context,
     builder: (sheetContext) {
       final colors = sheetContext.colors;
+      final l10n = AppLocalizations.of(sheetContext);
       return Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.sm,
@@ -25,15 +27,14 @@ Future<void> showMobileTxFeeInfoSheet(BuildContext context) {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Tx fee',
+              l10n.txFeeSheetTitle,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'The network fee is set by the Zcash protocol (ZIP 317) '
-              'based on the transaction size. Vizor adds no extra fee.',
+              l10n.txFeeSheetBody,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.primary,
               ),
@@ -43,7 +44,7 @@ Future<void> showMobileTxFeeInfoSheet(BuildContext context) {
               variant: AppButtonVariant.secondary,
               expand: true,
               onPressed: () => Navigator.of(sheetContext).pop(),
-              child: const Text('Close'),
+              child: Text(l10n.commonClose),
             ),
           ],
         ),

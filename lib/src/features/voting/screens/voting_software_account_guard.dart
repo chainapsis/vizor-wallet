@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -19,7 +20,7 @@ class VotingSoftwareAccountGuard extends ConsumerWidget {
       loading: () => const _VotingGuardScaffold(child: VotingPaneLoading()),
       error: (error, _) => _VotingGuardScaffold(
         child: _VotingGuardMessage(
-          title: "Couldn't load account",
+          title: AppLocalizations.of(context).votingAccountLoadError,
           message: error.toString(),
         ),
       ),

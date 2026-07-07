@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -9,6 +10,7 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   final ticker = kZcashDefaultCurrencyTicker;
@@ -473,9 +475,10 @@ void main() {
   });
 
   test('formatActivityTimestamp drops the clock time when dateOnly', () {
+    final l10n = AppLocalizationsEn();
     final dt = DateTime(2026, 5, 14, 17, 45);
-    expect(formatActivityTimestamp(dt), 'May 14, 17:45');
-    expect(formatActivityTimestamp(dt, dateOnly: true), 'May 14');
+    expect(formatActivityTimestamp(dt, l10n: l10n), 'May 14, 17:45');
+    expect(formatActivityTimestamp(dt, dateOnly: true, l10n: l10n), 'May 14');
   });
 }
 
@@ -487,6 +490,9 @@ Future<void> _pumpMappedTransactions(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: Builder(
@@ -514,6 +520,9 @@ Future<void> _pumpActivityFeed(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(data: AppThemeData.light, child: _feed(rows)),
     ),
   );
@@ -536,6 +545,9 @@ Future<void> _pumpActivityFeedSliver(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

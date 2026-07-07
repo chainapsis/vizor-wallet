@@ -24,6 +24,7 @@ import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
+import '../locale_provider.dart';
 
 final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
@@ -2385,8 +2386,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return next;
   }
 
-  static String _actionErrorMessage(Object error) {
-    return friendlyVotingErrorMessage(error);
+  String _actionErrorMessage(Object error) {
+    return friendlyVotingErrorMessage(
+      error,
+      ref.read(appLocalizationsProvider),
+    );
   }
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
@@ -2687,7 +2691,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
       );
     } catch (error) {
-      final message = friendlyVotingErrorMessage(error);
+      final message = friendlyVotingErrorMessage(error, ref.read(appLocalizationsProvider));
       final eligibilityError = isVotingEligibilityErrorText(message);
       _setStateForContext(
         context,

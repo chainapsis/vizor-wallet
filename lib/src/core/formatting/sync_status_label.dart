@@ -1,3 +1,4 @@
+import '../../../l10n/app_localizations.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 
@@ -16,14 +17,14 @@ class SyncStatusLabel {
   final String label;
   final String semanticsLabel;
 
-  factory SyncStatusLabel.from(SyncState sync) {
+  factory SyncStatusLabel.from(SyncState sync, AppLocalizations l10n) {
     final failure = sync.failure;
     if (failure != null) {
-      final reason = _syncFailureReason(failure.kind);
+      final reason = syncFailureReason(failure.kind, l10n);
       return SyncStatusLabel(
         kind: SyncStatusKind.failed,
-        label: 'Syncing failed. $reason...',
-        semanticsLabel: 'Syncing failed. $reason',
+        label: l10n.syncStatusFailedLabel(reason),
+        semanticsLabel: l10n.syncStatusFailedSemantics(reason),
       );
     }
 
@@ -36,15 +37,15 @@ class SyncStatusLabel {
       final pct = formatSyncStatusPercentage(sync.displayPercentage);
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
-        label: '$pct% Syncing...',
-        semanticsLabel: 'Syncing $pct percent',
+        label: l10n.syncStatusSyncingLabel(pct),
+        semanticsLabel: l10n.syncStatusSyncingSemantics(pct),
       );
     }
 
-    return const SyncStatusLabel(
+    return SyncStatusLabel(
       kind: SyncStatusKind.synced,
-      label: 'Vizor is synced',
-      semanticsLabel: 'Vizor is synced',
+      label: l10n.syncStatusSynced,
+      semanticsLabel: l10n.syncStatusSynced,
     );
   }
 }
@@ -56,14 +57,29 @@ String formatSyncStatusPercentage(double progress) {
   return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }
 
-String _syncFailureReason(SyncFailureKind kind) {
+/// Localized long-form guidance for a sync failure, shown by the home
+/// notice banner. `SyncFailure.userMessage` keeps the English original for
+/// logs; UI reads this instead.
+String syncFailureUserMessage(SyncFailureKind kind, AppLocalizations l10n) {
   return switch (kind) {
-    SyncFailureKind.network => 'Network error',
-    SyncFailureKind.endpoint => 'Endpoint error',
-    SyncFailureKind.databaseBusy => 'Wallet data busy',
-    SyncFailureKind.databaseFatal => 'Wallet data error',
-    SyncFailureKind.chainRecovery => 'Chain recovery',
-    SyncFailureKind.parseFatal => 'Data error',
-    SyncFailureKind.unknown => 'Unknown error',
+    SyncFailureKind.network => l10n.syncUserMessageNetwork,
+    SyncFailureKind.endpoint => l10n.syncUserMessageEndpoint,
+    SyncFailureKind.databaseBusy => l10n.syncUserMessageDatabaseBusy,
+    SyncFailureKind.databaseFatal => l10n.syncUserMessageDatabaseFatal,
+    SyncFailureKind.chainRecovery => l10n.syncUserMessageChainRecovery,
+    SyncFailureKind.parseFatal => l10n.syncUserMessageParse,
+    SyncFailureKind.unknown => l10n.syncUserMessageUnknown,
+  };
+}
+
+String syncFailureReason(SyncFailureKind kind, AppLocalizations l10n) {
+  return switch (kind) {
+    SyncFailureKind.network => l10n.syncFailureNetwork,
+    SyncFailureKind.endpoint => l10n.syncFailureEndpoint,
+    SyncFailureKind.databaseBusy => l10n.syncFailureDatabaseBusy,
+    SyncFailureKind.databaseFatal => l10n.syncFailureDatabaseFatal,
+    SyncFailureKind.chainRecovery => l10n.syncFailureChainRecovery,
+    SyncFailureKind.parseFatal => l10n.syncFailureParse,
+    SyncFailureKind.unknown => l10n.syncFailureUnknown,
   };
 }

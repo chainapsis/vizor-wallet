@@ -5,6 +5,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// One side of the [SwapReviewInfo] summary.
 class SwapReviewInfoSideData {
@@ -59,6 +60,7 @@ class SwapReviewInfo extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _side(
+            context: context,
             data: pay,
             key: const ValueKey('swap_review_info_pay'),
             copyButtonKey: const ValueKey('swap_review_info_pay_copy'),
@@ -74,6 +76,7 @@ class SwapReviewInfo extends StatelessWidget {
             ),
           ),
           _side(
+            context: context,
             data: receive,
             key: const ValueKey('swap_review_info_receive'),
             copyButtonKey: const ValueKey('swap_review_info_receive_copy'),
@@ -84,6 +87,7 @@ class SwapReviewInfo extends StatelessWidget {
   }
 
   Widget _side({
+    required BuildContext context,
     required SwapReviewInfoSideData data,
     required Key key,
     required Key copyButtonKey,
@@ -102,7 +106,7 @@ class SwapReviewInfo extends StatelessWidget {
         showChainBadge: data.asset != SwapAsset.zec,
       ),
       bottomLeftText: data.detailText,
-      trailingActionLabel: showCopy ? 'Copy' : null,
+      trailingActionLabel: showCopy ? AppLocalizations.of(context).commonCopy : null,
       trailingActionIconName: AppIcons.copy,
       trailingActionKey: showCopy ? copyButtonKey : null,
       onTrailingAction: showCopy ? () => onCopy!(copyText) : null,

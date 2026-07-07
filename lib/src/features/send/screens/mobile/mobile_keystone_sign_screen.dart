@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
@@ -25,16 +26,15 @@ class MobileKeystoneSignScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     return MobileKeystonePcztSigningFlow(
-      title: 'Confirm transaction',
-      description:
-          'Use your Keystone wallet to scan this transaction QR code. '
-          'Follow the steps on your device.',
+      title: l10n.sendConfirmTransaction,
+      description: l10n.keystoneSendScanInstructions,
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
-      friendlyError: _friendlyError,
+      friendlyError: (error) => _friendlyError(error, l10n),
       keyPrefix: 'mobile_keystone_sign',
-      scanCaption: 'Scan the QR code on your Keystone to finish sending',
+      scanCaption: l10n.keystoneScanCaptionFinishSending,
       logTag: 'MobileKeystoneSign',
     );
   }
@@ -115,15 +115,15 @@ class MobileKeystoneSignScreen extends ConsumerWidget {
     );
   }
 
-  String _friendlyError(Object error) {
+  String _friendlyError(Object error, AppLocalizations l10n) {
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
+      return l10n.sendTxExpired;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return l10n.keystoneShieldParamsError;
     }
-    return 'Keystone signing could not be prepared. Go back and try again.';
+    return l10n.sendKeystonePrepareErrorGoBack;
   }
 }

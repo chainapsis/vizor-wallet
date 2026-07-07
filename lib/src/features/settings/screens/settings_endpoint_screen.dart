@@ -15,6 +15,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SettingsEndpointScreen extends ConsumerStatefulWidget {
   const SettingsEndpointScreen({super.key});
@@ -113,7 +114,7 @@ class _SettingsEndpointScreenState
       normalizeRpcEndpointUrl(_customController.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return localizedRpcEndpointFormatMessage(e, AppLocalizations.of(context));
     }
   }
 
@@ -134,7 +135,7 @@ class _SettingsEndpointScreenState
           _selectedPresetId!,
         );
         if (preset == null) {
-          throw const FormatException('Select an endpoint.');
+          throw FormatException(AppLocalizations.of(context).endpointSelectAnEndpoint);
         }
         await notifier.setPreset(preset);
       } else {
@@ -154,7 +155,10 @@ class _SettingsEndpointScreenState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = localizedRpcEndpointFormatMessage(
+          e,
+          AppLocalizations.of(context),
+        );
         _isSubmitting = false;
       });
     } catch (e, st) {
@@ -162,7 +166,7 @@ class _SettingsEndpointScreenState
       if (!mounted) return;
       setState(() {
         _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+            AppLocalizations.of(context).endpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -273,7 +277,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Endpoint',
+                    AppLocalizations.of(context).settingsEndpoint,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
@@ -347,9 +351,9 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final text = [
-      'Current: ${current.hostPort}',
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      '${AppLocalizations.of(context).endpointCurrentPrefix}${current.hostPort}',
+      if (latency != null) latency.label(AppLocalizations.of(context)),
+      if (preset?.isDefault ?? false) AppLocalizations.of(context).endpointDefaultSuffix,
     ].join(' ');
 
     return Text(
@@ -381,14 +385,14 @@ class _EndpointTabs extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _EndpointTabButton(
-              label: 'Select from the list',
+              label: AppLocalizations.of(context).endpointSelectFromList,
               icon: AppIcons.endpoint,
               selected: activeTab == _EndpointTab.list,
               onTap: () => onSelect(_EndpointTab.list),
             ),
             const SizedBox(width: AppSpacing.xs),
             _EndpointTabButton(
-              label: 'Custom endpoint',
+              label: AppLocalizations.of(context).endpointCustomEndpoint,
               icon: AppIcons.edit,
               selected: activeTab == _EndpointTab.custom,
               onTap: () => onSelect(_EndpointTab.custom),
@@ -480,7 +484,10 @@ class _PresetList extends StatelessWidget {
       children: [
         for (var i = 0; i < entries.length; i++) ...[
           _PresetRegionSegment(
-            label: entries[i].key,
+            label: localizedRpcEndpointRegion(
+              entries[i].key,
+              AppLocalizations.of(context),
+            ),
             presets: entries[i].value,
             latencyState: latencyState,
             currentPresetId: currentPresetId,
@@ -626,7 +633,7 @@ class _PresetCard extends StatelessWidget {
                       if (latency != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          latency!.label,
+                          latency!.label(AppLocalizations.of(context)),
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
                             color: isCurrent
@@ -754,7 +761,11 @@ class _FloatingUpdateBar extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
+            child: Text(
+              isSubmitting
+                  ? AppLocalizations.of(context).endpointUpdating
+                  : AppLocalizations.of(context).endpointUpdateEndpoint,
+            ),
           ),
       ],
     );
@@ -811,7 +822,11 @@ class _CustomEndpointTab extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Customize endpoint'),
+            child: Text(
+              isSubmitting
+                  ? AppLocalizations.of(context).endpointUpdating
+                  : AppLocalizations.of(context).endpointCustomizeEndpoint,
+            ),
           ),
         ),
       ],
@@ -884,7 +899,7 @@ class _CustomEndpointHeroCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Custom endpoint',
+                    AppLocalizations.of(context).endpointCustomEndpoint,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.homeCard,
                     ),
@@ -929,9 +944,9 @@ class _CustomEndpointField extends StatelessWidget {
     return SizedBox(
       height: _height,
       child: AppTextField(
-        label: 'Custom endpoint',
+        label: AppLocalizations.of(context).endpointCustomEndpoint,
         showLabel: false,
-        hintText: '<hostname>:<port>',
+        hintText: AppLocalizations.of(context).endpointHostPortHint,
         hintStyle: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w400,
           color: colors.text.muted,
@@ -971,17 +986,14 @@ class _CustomEndpointInfo extends StatelessWidget {
           AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            "If the endpoint is configured wrong, your wallet won't be able "
-            'to sync with the Zcash network.',
+            AppLocalizations.of(context).endpointMisconfiguredNetwork,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'The wallet will show the balance from the last time it was '
-            "successfully connected. It won't show any "
-            '$kZcashDefaultCurrencyTicker you recently received.',
+            AppLocalizations.of(context).endpointStaleBalanceWarning(kZcashDefaultCurrencyTicker),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),

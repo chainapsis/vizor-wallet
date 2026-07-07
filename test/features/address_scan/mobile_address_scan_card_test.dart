@@ -7,13 +7,14 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 
 const _cameraKey = ValueKey('mobile_address_scan_card_camera');
 
 Widget _host(Widget child) {
-  return AppTheme(
+  return _localizedAppTheme(
     data: AppThemeData.dark,
     child: MediaQuery(
       data: const MediaQueryData(size: Size(393, 852)),
@@ -33,7 +34,7 @@ Widget _host(Widget child) {
 /// (set to 393×852 by [_useSwapViewport]) so the camera-card height clamp is
 /// measured against the same surface it's laid out in — an overflow would throw.
 Widget _swapHost(Widget child) {
-  return AppTheme(
+  return _localizedAppTheme(
     data: AppThemeData.dark,
     child: Directionality(
       textDirection: TextDirection.ltr,
@@ -255,4 +256,14 @@ void main() {
       isTrue,
     );
   });
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

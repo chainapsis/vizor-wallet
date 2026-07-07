@@ -16,6 +16,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Biometric unlock opt-in — Figma `Biometrics FaceID` /
 /// `Biometrics` (4394:83068 / 4394:83378). Enabling writes
@@ -55,8 +56,8 @@ class _MobileBiometricsScreenState
     context.go('/home');
   }
 
-  static String _methodLabel(BiometricKind kind) {
-    return kind.inlineLabel;
+  static String _methodLabel(BiometricKind kind, AppLocalizations l10n) {
+    return kind.inlineLabel(l10n);
   }
 
   static BiometricKind _fallbackKind() {
@@ -67,14 +68,20 @@ class _MobileBiometricsScreenState
   Future<void> _enable() async {
     if (_enabling) return;
     setState(() => _enabling = true);
-    var method = _methodLabel(_fallbackKind());
+    var method = _methodLabel(_fallbackKind(), AppLocalizations.of(context));
     try {
       final state = await ref.read(biometricUnlockProvider.future);
-      method = _methodLabel(state.availability.kind);
+      if (!mounted) return;
+      method = _methodLabel(
+        state.availability.kind,
+        AppLocalizations.of(context),
+      );
       if (!state.availability.usable) {
-        if (!mounted) return;
         setState(() => _enabling = false);
-        showAppToast(context, 'Set up $method in your device settings first.');
+        showAppToast(
+          context,
+          AppLocalizations.of(context).biometricSetUpFirst(method),
+        );
         return;
       }
       final passcode = ref
@@ -89,7 +96,7 @@ class _MobileBiometricsScreenState
       setState(() => _enabling = false);
       showAppToast(
         context,
-        "Couldn't enable $method. You can try again in settings.",
+        AppLocalizations.of(context).biometricEnableFailed(method),
       );
     }
   }
@@ -105,10 +112,10 @@ class _MobileBiometricsScreenState
       showBackButton: false,
       aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.
-      title: 'Unlock your wallet\nwith ${kind.onboardingTitleSuffix}',
-      subtitle:
-          'This is an easy and fast way to sign in.\n'
-          'You can switch back to passcode anytime.',
+      title: AppLocalizations.of(context).onbBiometricsTitle(
+        kind.onboardingTitleSuffix(AppLocalizations.of(context)),
+      ),
+      subtitle: AppLocalizations.of(context).onbBiometricsSubtitle,
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -120,7 +127,7 @@ class _MobileBiometricsScreenState
             leading: kind == BiometricKind.face
                 ? const AppIcon(AppIcons.faceId)
                 : const Icon(Icons.fingerprint),
-            child: Text(kind.enableLabel),
+            child: Text(kind.enableLabel(AppLocalizations.of(context))),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -129,7 +136,7 @@ class _MobileBiometricsScreenState
             expand: true,
             onPressed: _enabling ? null : () => context.go('/home'),
             child: Text(
-              'Not now',
+              AppLocalizations.of(context).onbNotNow,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.primary,
               ),

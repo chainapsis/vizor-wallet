@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 
+import '../../../l10n/app_localizations.dart';
 import 'network_config.dart';
 export 'network_config.dart';
 
@@ -412,4 +413,38 @@ String _formatRpcHost(String host) {
     return '[$host]';
   }
   return host;
+}
+
+/// Localized display name for a preset's `region` group header. Preset
+/// regions are stable English identifiers; only their display is localized.
+String localizedRpcEndpointRegion(String region, AppLocalizations l10n) {
+  return switch (region) {
+    'Default' => l10n.endpointRegionDefault,
+    'Americas' => l10n.endpointRegionAmericas,
+    'Europe' => l10n.endpointRegionEurope,
+    'Asia Pacific' => l10n.endpointRegionAsiaPacific,
+    'Global' => l10n.endpointRegionGlobal,
+    'Community' => l10n.endpointRegionCommunity,
+    'Testnet' => l10n.endpointRegionTestnet,
+    'Regtest' => l10n.endpointRegionRegtest,
+    _ => region,
+  };
+}
+
+/// Localized text for the [FormatException]s thrown by
+/// [normalizeRpcEndpointUrl]. The thrown messages stay English so they can
+/// be pattern-matched and logged; screens map them for display here.
+String localizedRpcEndpointFormatMessage(
+  FormatException exception,
+  AppLocalizations l10n,
+) {
+  return switch (exception.message) {
+    'Enter an endpoint.' => l10n.endpointErrEnter,
+    'Endpoint cannot contain spaces.' => l10n.endpointErrSpaces,
+    'Enter a valid hostname and port.' => l10n.endpointErrHostPort,
+    'Use an https:// endpoint.' => l10n.endpointErrHttps,
+    'Include a valid port, for example us.zec.stardust.rest:443.' =>
+      l10n.endpointErrPort,
+    _ => exception.message,
+  };
 }

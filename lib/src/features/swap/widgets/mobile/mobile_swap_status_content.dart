@@ -14,6 +14,7 @@ import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_status_presentation.dart';
 import '../swap_status_page_content.dart' show SwapAnimatedProgressRoute;
 import 'mobile_swap_review_header.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 const _mobileStatusDetailIconSize = 16.0;
 const _mobileStatusHeaderToBodyGap = AppSpacing.sm + AppSpacing.s;
@@ -130,14 +131,14 @@ class _MobileStatusTabs extends StatelessWidget {
           children: [
             _MobileStatusTabLabel(
               key: const ValueKey('mobile_swap_status_tab_progress'),
-              label: 'Swap progress',
+              label: AppLocalizations.of(context).swapProgressTab,
               selected: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged(SwapStatusTab.progress),
             ),
             const SizedBox(width: AppSpacing.sm),
             _MobileStatusTabLabel(
               key: const ValueKey('mobile_swap_status_tab_details'),
-              label: 'Transaction details',
+              label: AppLocalizations.of(context).swapTransactionDetailsTab,
               selected: activeTab == SwapStatusTab.details,
               onTap: () => onChanged(SwapStatusTab.details),
             ),
@@ -196,22 +197,22 @@ class _MobileStatusChipRow extends StatelessWidget {
     final (iconName, text, color) = switch (badgeKind) {
       SwapStatusBadgeKind.completed => (
         AppIcons.checkCircle,
-        'Completed',
+        AppLocalizations.of(context).swapBadgeCompleted,
         colors.text.positiveStrong,
       ),
       SwapStatusBadgeKind.failed => (
         AppIcons.cross,
-        'Failed',
+        AppLocalizations.of(context).swapStatusFailed,
         colors.text.destructive,
       ),
       SwapStatusBadgeKind.warning => (
         AppIcons.warning,
-        'Needs attention',
+        AppLocalizations.of(context).swapBadgeNeedsAttention,
         colors.text.warning,
       ),
       SwapStatusBadgeKind.liveQuote => (
         AppIcons.loader,
-        'In progress',
+        AppLocalizations.of(context).swapBadgeInProgress,
         colors.text.secondary,
       ),
     };
@@ -222,7 +223,7 @@ class _MobileStatusChipRow extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Status',
+              AppLocalizations.of(context).swapStatusRowLabel,
               style: AppTypography.labelMedium.copyWith(
                 color: badgeKind == SwapStatusBadgeKind.failed
                     ? colors.text.destructive
@@ -345,9 +346,7 @@ List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
             !_isMobileProgressTransactionDetailRow(row)) {
           return false;
         }
-        return row.label != 'Price protection' &&
-            row.label != 'Account' &&
-            (!hideSuccessAddressRows || !_isMobileSuccessAddressDetailRow(row));
+        return !hideSuccessAddressRows || !_isMobileSuccessAddressDetailRow(row);
       })
       .toList(growable: false);
   final nonFeeRows = visible
@@ -358,37 +357,38 @@ List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
 }
 
 bool _isMobileProgressTransactionDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return _isMobileDepositAddressDetailRow(row) ||
-      label == 'slippage tolerance' ||
-      label == 'guaranteed minimum' ||
-      label == 'memo' ||
-      label == 'missing deposit' ||
-      label == 'required deposit' ||
-      label == 'detected deposit' ||
-      label == 'deposit deadline' ||
-      label == 'refund fee' ||
-      label == 'timestamp' ||
-      label == 'tx id';
+  return switch (row.kind) {
+    SwapStatusDetailRowKind.depositAddress ||
+    SwapStatusDetailRowKind.slippageTolerance ||
+    SwapStatusDetailRowKind.guaranteedMinimum ||
+    SwapStatusDetailRowKind.memo ||
+    SwapStatusDetailRowKind.missingDeposit ||
+    SwapStatusDetailRowKind.requiredDeposit ||
+    SwapStatusDetailRowKind.detectedDeposit ||
+    SwapStatusDetailRowKind.depositDeadline ||
+    SwapStatusDetailRowKind.refundFee ||
+    SwapStatusDetailRowKind.timestamp ||
+    SwapStatusDetailRowKind.txId => true,
+    _ => false,
+  };
 }
 
 bool _isMobileDepositAddressDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label.contains(' deposit to') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return row.kind == SwapStatusDetailRowKind.depositAddress;
 }
 
 bool _isMobileSuccessAddressDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label.contains('recipient') || _isMobileDepositAddressDetailRow(row);
+  return row.kind == SwapStatusDetailRowKind.recipient ||
+      _isMobileDepositAddressDetailRow(row);
 }
 
 bool _isMobileFeeDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label == 'swap fee' ||
-      label == 'total fees' ||
-      label == 'tx fee' ||
-      label == 'refund fee';
+  return switch (row.kind) {
+    SwapStatusDetailRowKind.swapFee ||
+    SwapStatusDetailRowKind.totalFees ||
+    SwapStatusDetailRowKind.refundFee => true,
+    _ => false,
+  };
 }
 
 class _MobileFinalDetailRow extends StatelessWidget {
@@ -399,7 +399,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final displayLabel = _mobileStatusDetailLabel(row);
+    final displayLabel = _mobileStatusDetailLabel(context, row);
     final displayValue = _mobileStatusDetailDisplayValue(row);
     final linkUri = row.linkUri;
     final canTap = linkUri != null || row.copyable;
@@ -415,7 +415,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
                   copyTextWithToast(
                     context,
                     text: row.copyText ?? row.value,
-                    toastMessage: 'Copied',
+                    toastMessage: AppLocalizations.of(context).toastCopied,
                   );
                 }
               }
@@ -460,7 +460,10 @@ class _MobileFinalDetailRow extends StatelessWidget {
                             : AppIcons.help,
                         tooltipMessage: row.help
                             ? row.helpTooltip ??
-                                  _mobileStatusHelpTooltip(row.label)
+                                  _mobileStatusHelpTooltip(
+                                    context,
+                                    row.label,
+                                  )
                             : null,
                       ),
                     ],
@@ -508,10 +511,14 @@ Future<void> _launchExternalUri(Uri uri) async {
   }
 }
 
-String _mobileStatusDetailLabel(SwapStatusDetailRowData row) {
-  final label = row.label;
-  if (label == 'Total fees') return 'Swap fee';
-  return label;
+String _mobileStatusDetailLabel(
+  BuildContext context,
+  SwapStatusDetailRowData row,
+) {
+  if (row.kind == SwapStatusDetailRowKind.totalFees) {
+    return AppLocalizations.of(context).swapFeeLabel;
+  }
+  return row.label;
 }
 
 String _mobileStatusDetailDisplayValue(SwapStatusDetailRowData row) {
@@ -532,13 +539,15 @@ bool _shouldCompactMobileStatusDetailValue(
   String source,
 ) {
   if (source.length <= 18) return false;
-  final label = row.label.toLowerCase();
-  return label.contains('address') ||
-      label.contains('recipient') ||
-      label.contains('refund') ||
-      label == 'tx id' ||
-      label.contains(' tx') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return switch (row.kind) {
+    SwapStatusDetailRowKind.recipient ||
+    SwapStatusDetailRowKind.refundAddress ||
+    SwapStatusDetailRowKind.depositAddress ||
+    SwapStatusDetailRowKind.depositTx ||
+    SwapStatusDetailRowKind.deliveryTx ||
+    SwapStatusDetailRowKind.txId => true,
+    _ => row.scaleValueToFit,
+  };
 }
 
 class _MobileStatusDetailActionIcon extends StatelessWidget {
@@ -573,11 +582,12 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
   }
 }
 
-String _mobileStatusHelpTooltip(String label) {
-  return switch (label) {
-    'Swap fee' => swapFeeTooltip,
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
-    'Total fees' => swapTotalFeesTooltip,
-    _ => swapStatusDetailTooltip,
-  };
+String _mobileStatusHelpTooltip(BuildContext context, String label) {
+  final l10n = AppLocalizations.of(context);
+  if (label == l10n.swapFeeLabel) return swapFeeTooltip(l10n);
+  if (label == l10n.swapGuaranteedMinimumLabel) {
+    return swapGenericMinimumReceiveTooltip(l10n);
+  }
+  if (label == l10n.swapTotalFeesLabel) return swapTotalFeesTooltip(l10n);
+  return swapStatusDetailTooltip(l10n);
 }

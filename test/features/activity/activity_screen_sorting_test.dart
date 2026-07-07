@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_intent_status.dart';
@@ -29,7 +30,10 @@ void main() {
       final sorted = [confirmed, pending]..sort(compareActivityEntrySortKeys);
 
       expect(sorted.first, same(pending));
-      expect(activitySectionTitleForSortKey(pending), 'This week');
+      expect(
+        activitySectionTitleForSortKey(pending, AppLocalizationsEn()),
+        'This week',
+      );
     },
   );
 
@@ -60,6 +64,7 @@ void main() {
     expect(
       activitySectionTitleForSortKey(
         olderPending,
+        AppLocalizationsEn(),
         now: DateTime.utc(2026, 6, 16),
       ),
       'May 2026',
@@ -90,7 +95,10 @@ void main() {
 
     expect(expired.isPendingTransaction, isFalse);
     expect(sorted.first, same(confirmed));
-    expect(activitySectionTitleForSortKey(expired), 'Earlier');
+    expect(
+      activitySectionTitleForSortKey(expired, AppLocalizationsEn()),
+      'Earlier',
+    );
   });
 
   test(

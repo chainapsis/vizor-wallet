@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -95,20 +96,26 @@ class SendReviewInfoSection extends StatelessWidget {
         _ => isShieldedRecipient,
       };
 
-  String get _recipientBadgeText => _normalizedRecipientAddressType == 'tex'
+  String _recipientBadgeText(BuildContext context) =>
+      _normalizedRecipientAddressType == 'tex'
       ? 'TEX'
       : _recipientBadgeIsShielded
-      ? 'Shielded'
-      : 'Transparent';
+      ? AppLocalizations.of(context).receiveShielded
+      : AppLocalizations.of(context).receiveTransparent;
 
   bool get _recipientBadgeIsTex => _normalizedRecipientAddressType == 'tex';
 
   String? get _contactRecipientBottomLeftIconName =>
       _recipientBadgeIsTex ? AppIcons.transparentBalance : null;
 
-  String _contactRecipientBottomLeftText(String address) {
+  String _contactRecipientBottomLeftText(
+    BuildContext context,
+    String address,
+  ) {
     final displayAddress = truncatedAddress(address);
-    return _recipientBadgeIsTex ? 'TEX - $displayAddress' : displayAddress;
+    return _recipientBadgeIsTex
+        ? AppLocalizations.of(context).sendTexAddressLabel(displayAddress)
+        : displayAddress;
   }
 
   @override
@@ -119,7 +126,7 @@ class SendReviewInfoSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ReviewInfoRow(
-            label: 'Amount',
+            label: AppLocalizations.of(context).navAmount,
             value: amountText,
             leading: const _ZecCoinImage(),
             bottomLeftText: fiatText,
@@ -132,9 +139,10 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 
   Widget _recipientRow(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
-        label: 'To',
+        label: l10n.activityTo,
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         struckThrough: recipientStruckThrough,
@@ -144,8 +152,8 @@ class SendReviewInfoSection extends StatelessWidget {
         bottomLeftIconColor: _recipientBadgeIsShielded
             ? context.colors.text.brandCrimson
             : null,
-        bottomLeftText: _recipientBadgeText,
-        trailingActionLabel: 'Show full address',
+        bottomLeftText: _recipientBadgeText(context),
+        trailingActionLabel: l10n.activityShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -154,7 +162,7 @@ class SendReviewInfoSection extends StatelessWidget {
         :final address,
       ) =>
         ReviewInfoRow(
-          label: 'To',
+          label: l10n.activityTo,
           value: name,
           leading: AppProfilePicture(
             profilePictureId: profilePictureId,
@@ -162,8 +170,8 @@ class SendReviewInfoSection extends StatelessWidget {
           ),
           struckThrough: recipientStruckThrough,
           bottomLeftIconName: _contactRecipientBottomLeftIconName,
-          bottomLeftText: _contactRecipientBottomLeftText(address),
-          trailingActionLabel: 'Show full address',
+          bottomLeftText: _contactRecipientBottomLeftText(context, address),
+          trailingActionLabel: l10n.activityShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };
@@ -258,7 +266,7 @@ class ReviewMemoRows extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!expanded) {
       return ReviewListRow(
-        label: 'Message',
+        label: AppLocalizations.of(context).activityMessage,
         value: memoText,
         trailingIconName: AppIcons.expand,
         onPressed: onToggle,
@@ -269,8 +277,8 @@ class ReviewMemoRows extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ReviewListRow(
-          label: 'Message',
-          value: 'Collapse',
+          label: AppLocalizations.of(context).activityMessage,
+          value: AppLocalizations.of(context).sendCollapse,
           trailingIconName: AppIcons.collapsed,
           onPressed: onToggle,
         ),

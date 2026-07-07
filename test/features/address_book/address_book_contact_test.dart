@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 
 void main() {
@@ -69,15 +70,15 @@ void main() {
 
   test('address book QR scan title follows the selected network', () {
     expect(
-      addressBookQrScanTitle(AddressBookNetwork.zcash),
+      addressBookQrScanTitle(AddressBookNetwork.zcash, AppLocalizationsEn()),
       'Scan Zcash QR code',
     );
     expect(
-      addressBookQrScanTitle(AddressBookNetwork.ethereum),
+      addressBookQrScanTitle(AddressBookNetwork.ethereum, AppLocalizationsEn()),
       'Scan Ethereum QR code',
     );
     expect(
-      addressBookQrScanTitle(AddressBookNetwork.binanceSmartChain),
+      addressBookQrScanTitle(AddressBookNetwork.binanceSmartChain, AppLocalizationsEn()),
       'Scan Binance Smart Chain QR code',
     );
   });

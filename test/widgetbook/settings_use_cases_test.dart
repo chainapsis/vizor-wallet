@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
@@ -217,6 +218,9 @@ Future<List<FlutterErrorDetails>> _pumpSettingsUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       key: UniqueKey(),
       home: AppTheme(
         data: AppThemeData.light,

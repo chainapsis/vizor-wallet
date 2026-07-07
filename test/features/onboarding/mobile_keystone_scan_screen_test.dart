@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_scre
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 class _RustApiFake implements RustLibApi {
   List<KeystoneAccountInfo> decodedAccounts = const <KeystoneAccountInfo>[];
@@ -41,6 +42,9 @@ const _phoneViewPadding = EdgeInsets.only(top: 55);
 Widget _app({MobileScannerController? controller}) {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: MobileKeystoneScanScreen(scannerController: controller),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(
@@ -80,6 +84,9 @@ Widget _routerApp({
 
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(
@@ -100,6 +107,9 @@ Widget _routerApp({
 Widget _stackedRouteApp({MobileScannerController? controller}) {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       initialRoute: '/scan',
       routes: {
         '/': (_) => const SizedBox(key: ValueKey('previous-screen')),

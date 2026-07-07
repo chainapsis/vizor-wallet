@@ -7,6 +7,7 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
 /// 60px Young Serif value flanked by 60×50 minus/plus pills (0.1% steps within
@@ -100,7 +101,7 @@ class _MobileSwapSlippageStepperModalState
     final valueColor = invalid ? colors.text.destructive : colors.text.accent;
 
     return MobileModalScaffold(
-      title: 'Slippage',
+      title: AppLocalizations.of(context).swapSlippage,
       onClose: widget.onCancel,
       // _Modal Type slippage variant: pb-16 (vs the default 24).
       bottomPadding: AppSpacing.sm,
@@ -200,7 +201,7 @@ class _MobileSwapSlippageStepperModalState
                     height: 16,
                     child: invalid
                         ? Text(
-                            'Slippage must be 0.1 - 5%',
+                            AppLocalizations.of(context).swapSlippageRange,
                             key: const ValueKey('mobile_swap_slippage_error'),
                             textAlign: TextAlign.center,
                             style: AppTypography.labelMedium.copyWith(
@@ -220,7 +221,7 @@ class _MobileSwapSlippageStepperModalState
             key: const ValueKey('swap_slippage_update_button'),
             expand: true,
             onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
-            child: const Text('Update'),
+            child: Text(AppLocalizations.of(context).swapUpdateAction),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -228,7 +229,7 @@ class _MobileSwapSlippageStepperModalState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).commonCancel),
           ),
         ],
       ),

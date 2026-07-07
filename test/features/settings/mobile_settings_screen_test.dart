@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -106,6 +107,9 @@ Widget _app({
         ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: const MobileSettingsScreen(),
     ),
@@ -167,8 +171,13 @@ void main() {
     await tester.tap(find.text('Theme'));
     await tester.pumpAndSettle();
 
-    expect(find.text('System (Auto)'), findsOneWidget);
     final modal = find.byType(MobileModalScaffold);
+    // The Language row behind the sheet also shows "System (Auto)", so scope
+    // the option assertion to the sheet itself.
+    expect(
+      find.descendant(of: modal, matching: find.text('System (Auto)')),
+      findsOneWidget,
+    );
     final modalTitle = find.descendant(of: modal, matching: find.text('Theme'));
     final closeIcon = find.descendant(
       of: modal,
@@ -231,8 +240,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_theme_update')));
     await tester.pumpAndSettle();
 
-    // Sheet closed and the row value reflects the new mode.
-    expect(find.text('System (Auto)'), findsNothing);
+    // Sheet closed and the theme row value reflects the new mode. The
+    // Language row keeps its own "System (Auto)" value.
+    expect(find.byType(MobileModalScaffold), findsNothing);
     expect(find.text('Light'), findsOneWidget);
   });
 

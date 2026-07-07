@@ -14,6 +14,7 @@ import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 enum _EndpointTab { list, custom }
 
@@ -110,7 +111,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
       normalizeRpcEndpointUrl(_customController.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return localizedRpcEndpointFormatMessage(e, AppLocalizations.of(context));
     }
   }
 
@@ -131,7 +132,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
           _selectedPresetId!,
         );
         if (preset == null) {
-          throw const FormatException('Select an endpoint.');
+          throw FormatException(AppLocalizations.of(context).endpointSelectAnEndpoint);
         }
         await notifier.setPreset(preset);
       } else {
@@ -148,11 +149,14 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
         }
         _isSubmitting = false;
       });
-      showAppToast(context, 'Endpoint updated');
+      showAppToast(context, AppLocalizations.of(context).endpointUpdated);
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = localizedRpcEndpointFormatMessage(
+          e,
+          AppLocalizations.of(context),
+        );
         _isSubmitting = false;
       });
     } catch (e, st) {
@@ -160,7 +164,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
       if (!mounted) return;
       setState(() {
         _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+            AppLocalizations.of(context).endpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -179,7 +183,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Endpoints',
+                title: AppLocalizations.of(context).endpointsTitle,
                 onBack: _isSubmitting ? null : () => context.pop(),
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -195,7 +199,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                     child: _ModeTab(
                       key: const ValueKey('mobile_endpoint_tab_list'),
                       iconName: AppIcons.endpoint,
-                      label: 'Select from the list',
+                      label: AppLocalizations.of(context).endpointSelectFromList,
                       selected: _activeTab == _EndpointTab.list,
                       alignment: Alignment.centerRight,
                       onTap: () => _selectTab(_EndpointTab.list),
@@ -206,7 +210,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                     child: _ModeTab(
                       key: const ValueKey('mobile_endpoint_tab_custom'),
                       iconName: AppIcons.edit,
-                      label: 'Custom endpoint',
+                      label: AppLocalizations.of(context).endpointCustomEndpoint,
                       selected: _activeTab == _EndpointTab.custom,
                       alignment: Alignment.centerLeft,
                       onTap: () => _selectTab(_EndpointTab.custom),
@@ -266,7 +270,9 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                             key: const ValueKey('mobile_endpoint_update'),
                             onPressed: _canUpdate(current) ? _submit : null,
                             child: Text(
-                              _isSubmitting ? 'Updating...' : 'Update endpoint',
+                              _isSubmitting
+                                  ? AppLocalizations.of(context).endpointUpdating
+                                  : AppLocalizations.of(context).endpointUpdateEndpoint,
                             ),
                           ),
                         ),
@@ -308,7 +314,10 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               bottom: AppSpacing.xs,
             ),
             child: Text(
-              entry.key,
+              localizedRpcEndpointRegion(
+                entry.key,
+                AppLocalizations.of(context),
+              ),
               style: AppTypography.labelMedium.copyWith(
                 color: colors.text.secondary,
               ),
@@ -318,7 +327,9 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             _PresetCard(
               key: ValueKey('mobile_endpoint_preset_${preset.id}'),
               preset: preset,
-              latencyLabel: latencyState.sampleForUrl(preset.url)?.label,
+              latencyLabel: latencyState
+                  .sampleForUrl(preset.url)
+                  ?.label(AppLocalizations.of(context)),
               selected: preset.id == _selectedPresetId,
               onTap: _isSubmitting
                   ? null
@@ -374,7 +385,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Custom endpoint',
+                      AppLocalizations.of(context).endpointCustomEndpoint,
                       style: AppTypography.displaySmall.copyWith(
                         color: colors.text.homeCard,
                       ),
@@ -390,7 +401,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                           fieldKey: const ValueKey(
                             'mobile_endpoint_custom_field',
                           ),
-                          hintText: '<hostname>:<port>',
+                          hintText: AppLocalizations.of(context).endpointHostPortHint,
                           controller: _customController,
                           focusNode: _customFocusNode,
                           backgroundColor: colors.background.ground,
@@ -449,17 +460,14 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                "If the endpoint is configured wrong, your wallet won't be able "
-                'to sync with the Zcash blockchain.',
+                AppLocalizations.of(context).endpointMisconfiguredBlockchain,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'The wallet will show the balance from the last time it was '
-                "successfully connected. It won't show any ZEC you recently "
-                'received.',
+                AppLocalizations.of(context).endpointStaleBalanceWarning('ZEC'),
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -473,7 +481,11 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             key: const ValueKey('mobile_endpoint_update'),
             minWidth: 226,
             onPressed: _canUpdate(current) ? _submit : null,
-            child: Text(_isSubmitting ? 'Updating...' : 'Customise endpoint'),
+            child: Text(
+              _isSubmitting
+                  ? AppLocalizations.of(context).endpointUpdating
+                  : AppLocalizations.of(context).endpointCustomiseEndpoint,
+            ),
           ),
         ),
       ],
@@ -568,13 +580,13 @@ class _MobileCurrentEndpointText extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final suffix = [
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (latency != null) latency.label(AppLocalizations.of(context)),
+      if (preset?.isDefault ?? false) AppLocalizations.of(context).endpointDefaultSuffix,
     ].join(' ');
 
     return Text.rich(
       TextSpan(
-        text: 'Current: ',
+        text: AppLocalizations.of(context).endpointCurrentPrefix,
         style: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w500,
           color: colors.text.primary,

@@ -1,3 +1,4 @@
+import '../../../../l10n/app_localizations.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import 'swap_models.dart';
@@ -58,14 +59,18 @@ List<AddressBookNetwork> swapContactPickerNetworks(SwapState state) {
   return [network];
 }
 
-String swapContactPickerTitle(SwapState state) {
-  final role = state.direction.sendsZec ? 'recipients' : 'refunds';
-  return '${state.externalAsset.symbol} $role';
+String swapContactPickerTitle(SwapState state, AppLocalizations l10n) {
+  final symbol = state.externalAsset.symbol;
+  return state.direction.sendsZec
+      ? l10n.swapPickerRecipientsTitle(symbol)
+      : l10n.swapPickerRefundsTitle(symbol);
 }
 
-String swapContactPickerEmptyTitle(SwapState state) {
-  final role = state.direction.sendsZec ? 'recipients' : 'refunds';
-  return 'No saved ${state.externalAsset.symbol} $role';
+String swapContactPickerEmptyTitle(SwapState state, AppLocalizations l10n) {
+  final symbol = state.externalAsset.symbol;
+  return state.direction.sendsZec
+      ? l10n.swapPickerNoSavedRecipients(symbol)
+      : l10n.swapPickerNoSavedRefunds(symbol);
 }
 
 String swapAddressBookLabel(SwapState state) {

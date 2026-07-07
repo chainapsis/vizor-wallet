@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
+import '../../../../l10n/app_localizations.dart';
 
 enum SwapFailureOperation {
   tokenList,
@@ -28,9 +29,13 @@ enum SwapFailureCategory {
   unknown,
 }
 
-String swapFailureMessage(SwapFailureOperation operation, Object error) {
+String swapFailureMessage(
+  SwapFailureOperation operation,
+  Object error,
+  AppLocalizations l10n,
+) {
   final category = swapFailureCategory(operation, error);
-  return _messageFor(operation, category);
+  return _messageFor(l10n, operation, category);
 }
 
 SwapFailureCategory swapFailureCategory(
@@ -105,98 +110,97 @@ SwapFailureCategory _oneClickCategory(
 }
 
 String _messageFor(
+  AppLocalizations l10n,
   SwapFailureOperation operation,
   SwapFailureCategory category,
 ) {
   return switch (category) {
-    SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
-    SwapFailureCategory.amountTooLow =>
-      'Amount is too low for this swap.\nTry a larger amount.',
-    SwapFailureCategory.amountPrecision =>
-      'Amount has too many decimal places.\nUse fewer decimals and try again.',
-    SwapFailureCategory.invalidRouteOrAddress =>
-      'This route or address was rejected.\nEdit the details and request a new quote.',
-    SwapFailureCategory.noQuoteOrLiquidity =>
-      'No quote is available for this route or amount.\n'
-          'Adjust the amount, slippage, or asset and try again.',
+    SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(
+      l10n,
+      operation,
+    ),
+    SwapFailureCategory.amountTooLow => l10n.swapErrAmountTooLow,
+    SwapFailureCategory.amountPrecision => l10n.swapErrAmountPrecision,
+    SwapFailureCategory.invalidRouteOrAddress => l10n.swapErrInvalidRoute,
+    SwapFailureCategory.noQuoteOrLiquidity => l10n.swapErrNoQuote,
     SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
+      l10n,
       operation,
     ),
-    SwapFailureCategory.networkTimeout => _timeoutMessage(operation),
+    SwapFailureCategory.networkTimeout => _timeoutMessage(l10n, operation),
     SwapFailureCategory.unverifiedResponse => _unverifiedResponseMessage(
+      l10n,
       operation,
     ),
-    SwapFailureCategory.retryLater => _retryLaterMessage(operation),
-    SwapFailureCategory.zecDepositFunding =>
-      'Not enough spendable ZEC to cover this swap and its network fee.\n'
-          'Try a smaller amount or use Max.',
-    SwapFailureCategory.walletPreflight =>
-      'ZEC deposit could not be prepared.\nCheck your balance and try again.',
-    SwapFailureCategory.depositNotFound =>
-      'Deposit is not indexed yet.\nCheck again in a few minutes.',
-    SwapFailureCategory.depositRejected =>
-      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.',
-    SwapFailureCategory.unknown => _unknownMessage(operation),
+    SwapFailureCategory.retryLater => _retryLaterMessage(l10n, operation),
+    SwapFailureCategory.zecDepositFunding => l10n.swapErrZecDepositFunding,
+    SwapFailureCategory.walletPreflight => l10n.swapErrWalletPreflight,
+    SwapFailureCategory.depositNotFound => l10n.swapErrDepositNotFound,
+    SwapFailureCategory.depositRejected => l10n.swapErrDepositRejected,
+    SwapFailureCategory.unknown => _unknownMessage(l10n, operation),
   };
 }
 
-String _unsupportedAssetMessage(SwapFailureOperation operation) {
+String _unsupportedAssetMessage(
+  AppLocalizations l10n,
+  SwapFailureOperation operation,
+) {
   return switch (operation) {
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.',
-    _ =>
-      'This asset is not available for swap right now.\nChoose another asset or try again later.',
+      l10n.swapErrUnsupportedPairNoResend,
+    _ => l10n.swapErrAssetUnavailable,
   };
 }
 
-String _serviceUnavailableMessage(SwapFailureOperation operation) {
+String _serviceUnavailableMessage(
+  AppLocalizations l10n,
+  SwapFailureOperation operation,
+) {
   return switch (operation) {
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      'Swap service is temporarily unavailable.\nDo not resend funds. Try again later.',
-    _ => 'Swap service is temporarily unavailable.\nTry again later.',
+      l10n.swapErrServiceUnavailableNoResend,
+    _ => l10n.swapErrServiceUnavailable,
   };
 }
 
-String _timeoutMessage(SwapFailureOperation operation) {
+String _timeoutMessage(AppLocalizations l10n, SwapFailureOperation operation) {
   return switch (operation) {
-    SwapFailureOperation.quote =>
-      'Quote request timed out.\nCheck your connection and try again.',
+    SwapFailureOperation.quote => l10n.swapErrQuoteTimeout,
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      'Request timed out.\nDo not resend funds. Try again later.',
-    _ => 'Request timed out.\nCheck your connection and try again.',
+      l10n.swapErrTimeoutNoResend,
+    _ => l10n.swapErrTimeout,
   };
 }
 
-String _retryLaterMessage(SwapFailureOperation operation) {
+String _retryLaterMessage(
+  AppLocalizations l10n,
+  SwapFailureOperation operation,
+) {
   return switch (operation) {
     SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      'Swap service is still processing.\nDo not resend funds. Try again later.',
-    _ => 'Swap service is still processing.\nWait a moment and try again.',
+      l10n.swapErrProcessingNoResend,
+    _ => l10n.swapErrProcessing,
   };
 }
 
-String _unverifiedResponseMessage(SwapFailureOperation operation) {
+String _unverifiedResponseMessage(
+  AppLocalizations l10n,
+  SwapFailureOperation operation,
+) {
   return switch (operation) {
-    SwapFailureOperation.quote =>
-      'Quote response could not be verified.\nTry again later.',
-    _ => 'Swap response could not be verified.\nTry again later.',
+    SwapFailureOperation.quote => l10n.swapErrQuoteUnverified,
+    _ => l10n.swapErrResponseUnverified,
   };
 }
 
-String _unknownMessage(SwapFailureOperation operation) {
+String _unknownMessage(AppLocalizations l10n, SwapFailureOperation operation) {
   return switch (operation) {
-    SwapFailureOperation.tokenList =>
-      'Swap tokens could not be loaded.\nTry again later.',
-    SwapFailureOperation.quote =>
-      'Quote is unavailable right now.\nTry again later.',
-    SwapFailureOperation.start =>
-      'Swap could not be started.\nTry again later.',
-    SwapFailureOperation.refreshStatus =>
-      'Could not refresh swap status.\nTry again later.',
-    SwapFailureOperation.submitDeposit =>
-      'Deposit status could not be submitted.\nTry again later.',
-    SwapFailureOperation.sendZecDeposit =>
-      'ZEC deposit could not be sent.\nTry again later.',
+    SwapFailureOperation.tokenList => l10n.swapErrTokenList,
+    SwapFailureOperation.quote => l10n.swapErrQuoteUnavailable,
+    SwapFailureOperation.start => l10n.swapErrStartFailed,
+    SwapFailureOperation.refreshStatus => l10n.swapErrRefreshFailed,
+    SwapFailureOperation.submitDeposit => l10n.swapErrSubmitDepositFailed,
+    SwapFailureOperation.sendZecDeposit => l10n.swapErrSendZecDepositFailed,
   };
 }
 

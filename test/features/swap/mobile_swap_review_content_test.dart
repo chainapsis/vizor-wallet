@@ -5,6 +5,7 @@ import 'package:flutter/material.dart'
     show MaterialApp, SingleChildScrollView, Tooltip;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_address_plan.dart';
@@ -13,9 +14,13 @@ import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.da
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
@@ -135,10 +140,10 @@ void main() {
     await tester.pumpWidget(_harness(_content()));
 
     expect(
-      _tooltipWithMessage(swapMinimumReceiveTooltip('USDC')),
+      _tooltipWithMessage(swapMinimumReceiveTooltip(AppLocalizationsEn(), 'USDC')),
       findsOneWidget,
     );
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(AppLocalizationsEn())), findsOneWidget);
   });
 
   testWidgets('external address compact text keeps a single middle ellipsis', (

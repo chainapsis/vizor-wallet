@@ -11,6 +11,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
@@ -124,56 +125,53 @@ Future<void> discardSendProposal({
   }
 }
 
-String friendlyProposeSendError(String raw) {
+String friendlyProposeSendError(String raw, AppLocalizations l10n) {
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-    return 'Insufficient shielded balance to cover amount and fee.';
+    return l10n.sendErrorInsufficientForAmountFee;
   }
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return 'Network error. Check your connection and try again.';
+    return l10n.sendErrorNetwork;
   }
   // Partial broadcast must be checked before generic "broadcast rejected"
   if (lower.contains('broadcast failed after') && lower.contains('txs sent')) {
-    return 'Some parts of this transaction were sent. Open Activity to see '
-        'what went through before you try again.';
+    return l10n.sendErrorPartialBroadcast;
   }
   if (lower.contains('broadcast rejected')) {
-    return 'The network rejected this transaction. Try again.';
+    return l10n.sendErrorBroadcastRejected;
   }
   if (lower.contains('proposal not found') ||
       lower.contains('send flow mismatch')) {
-    return 'Transaction expired before it could be sent. Try again.';
+    return l10n.sendErrorExpiredTryAgain;
   }
-  return 'Send failed. Try again.';
+  return l10n.sendErrorGenericShort;
 }
 
-String friendlyBroadcastError(String raw) {
+String friendlyBroadcastError(String raw, AppLocalizations l10n) {
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-    return 'Insufficient shielded balance to cover amount and fee.';
+    return l10n.sendErrorInsufficientForAmountFee;
   }
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return 'Network error. Check your connection and try again.';
+    return l10n.sendErrorNetwork;
   }
   if (lower.contains('broadcast failed after') && lower.contains('txs sent')) {
-    return 'Some parts of this transaction were sent. Open Activity to see '
-        'what went through before you try again.';
+    return l10n.sendErrorPartialBroadcast;
   }
   if (lower.contains('broadcast rejected')) {
-    return 'The network rejected this transaction. Try again later.';
+    return l10n.sendErrorBroadcastRejectedLater;
   }
   if (lower.contains('proposal not found') ||
       lower.contains('send flow mismatch')) {
-    return 'Transaction expired before it could be sent.';
+    return l10n.sendErrorExpired;
   }
-  return "Transaction couldn't be sent. Go back to your wallet and check "
-      'the latest status.';
+  return l10n.sendErrorCheckStatus;
 }
 
 enum SendBroadcastPhase { succeeded, pendingBroadcast, failed, aborted }
@@ -206,35 +204,35 @@ String? _firstTxid(String txids) {
   return null;
 }
 
-String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
+String _broadcastStatusMessage(
+  rust_sync.ExecuteProposalResult result,
+  AppLocalizations l10n,
+) {
   if (result.status == 'partial_broadcast') {
-    return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+    return l10n.sendPartialBroadcast;
   }
   final rawMessage = result.message?.toLowerCase() ?? '';
   if (rawMessage.contains('broadcast rejected')) {
-    return "Transaction was created locally but didn't reach the network. "
-        'The wallet will keep retrying until it expires. '
-        "Don't send again unless this one expires.";
+    return l10n.sendBroadcastRejectedRetrying;
   }
-  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  return l10n.sendPendingBroadcastRetry;
 }
 
 String _pcztBroadcastStatusMessage(
   rust_sync.ExtractAndBroadcastPcztResult result,
+  AppLocalizations l10n,
 ) {
   if (result.status == 'broadcast_unknown') {
-    return result.message ??
-        'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+    return result.message ?? l10n.sendBroadcastUnknown;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ??
-        'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+    return result.message ?? l10n.sendBroadcastStorageFailed;
   }
   final rawMessage = result.message?.toLowerCase() ?? '';
   if (rawMessage.contains('broadcast rejected')) {
-    return 'Transaction was rejected by the network. Please try again later.';
+    return l10n.sendPcztRejected;
   }
-  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  return l10n.sendPendingBroadcastRetry;
 }
 
 /// Runs the full broadcast leg for a proposed send — Sapling params
@@ -249,6 +247,7 @@ String _pcztBroadcastStatusMessage(
 Future<SendBroadcastOutcome> runSendBroadcast({
   required WidgetRef ref,
   required SendReviewArgs args,
+  required AppLocalizations l10n,
   KeystoneBroadcastArgs? keystone,
   required Future<bool> Function() confirmSaplingParamsDownload,
   Future<bool> Function()? shouldAbort,
@@ -288,8 +287,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
             proposalConsumed: proposalConsumed,
-            error:
-                'Sending was cancelled before proving parameters were downloaded.',
+            error: l10n.sendCancelledParamsDownload,
           );
         }
 
@@ -334,7 +332,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       broadcastComplete = result.status == 'broadcasted';
       pendingStatusMessage = broadcastComplete
           ? null
-          : _pcztBroadcastStatusMessage(result);
+          : _pcztBroadcastStatusMessage(result, l10n);
       broadcastMessageForFallback = result.message;
     } else {
       late final rust_sync.ExecuteProposalResult result;
@@ -393,7 +391,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       broadcastComplete = result.status == 'broadcasted';
       pendingStatusMessage = broadcastComplete
           ? null
-          : _broadcastStatusMessage(result);
+          : _broadcastStatusMessage(result, l10n);
       broadcastMessageForFallback = result.message;
     }
 
@@ -429,7 +427,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
-    final message = friendlyBroadcastError(e.toString());
+    final message = friendlyBroadcastError(e.toString(), l10n);
     if (await abortRequested()) return aborted();
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,

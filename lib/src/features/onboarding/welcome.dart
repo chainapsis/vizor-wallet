@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -134,8 +135,8 @@ class _Pane extends StatelessWidget {
                         child: _WelcomeIconButton(
                           key: ValueKey('welcome_endpoint_settings_button'),
                           icon: AppIcons.cog,
-                          tooltip: 'Endpoint settings',
-                          semanticLabel: 'Endpoint settings',
+                          tooltip: AppLocalizations.of(context).onbEndpointSettings,
+                          semanticLabel: AppLocalizations.of(context).onbEndpointSettings,
                           onTap: onShowEndpointSettings,
                         ),
                       ),
@@ -221,7 +222,7 @@ class _WelcomeHeroPane extends StatelessWidget {
               right: 0,
               top: height - _textBottomInset,
               child: Text(
-                'Private money.\nBy default',
+                AppLocalizations.of(context).onbPrivateMoney,
                 textAlign: TextAlign.center,
                 style: AppTypography.displayMedium.copyWith(
                   color: _foregroundColor,
@@ -343,7 +344,7 @@ class _BackRow extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Back',
+                AppLocalizations.of(context).commonBack,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
                 ),
@@ -432,7 +433,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 218,
           child: Text(
-            'Get started\nwith Vizor',
+            AppLocalizations.of(context).onbGetStarted,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
               height: 33 / 32,
@@ -463,7 +464,7 @@ class _WelcomeButtonsWrap extends StatelessWidget {
           variant: AppButtonVariant.ghost,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.qrCodeFill, size: 18),
-          child: const Text('Connect Keystone'),
+          child: Text(AppLocalizations.of(context).navConnectKeystone),
         ),
       ],
     );
@@ -487,7 +488,7 @@ class _WalletButtonsStack extends StatelessWidget {
           variant: AppButtonVariant.primary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.addNew),
-          child: const Text('Create a wallet'),
+          child: Text(AppLocalizations.of(context).onbCreateAWallet),
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
@@ -496,7 +497,7 @@ class _WalletButtonsStack extends StatelessWidget {
           variant: AppButtonVariant.secondary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.importWallet),
-          child: const Text('Import a wallet'),
+          child: Text(AppLocalizations.of(context).onbImportAWallet),
         ),
       ],
     );
@@ -517,7 +518,7 @@ class _OrDivider extends StatelessWidget {
           Expanded(child: _OrDividerLine(color: colors.border.regular)),
           const SizedBox(width: AppSpacing.s),
           Text(
-            'OR',
+            AppLocalizations.of(context).onbOr,
             style: AppTypography.labelSmall.copyWith(
               color: colors.text.secondary,
             ),

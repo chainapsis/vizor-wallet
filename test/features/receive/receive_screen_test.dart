@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('shows shielded renew button for software accounts', (
@@ -649,8 +650,11 @@ Widget _receiveHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: themeData, child: child!),
+      builder: (_, child) => _localizedAppTheme(data: themeData, child: child!),
     ),
   );
 }
@@ -685,8 +689,11 @@ Widget _receiveRaceHarness({
       accountProvider.overrideWith(accountNotifier),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -884,4 +891,14 @@ class _FakeAccountNotifier extends AccountNotifier {
       ),
     );
   }
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

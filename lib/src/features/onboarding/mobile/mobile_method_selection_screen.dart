@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -50,7 +51,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Welcome to Vizor',
+                      AppLocalizations.of(context).onbWelcomeToVizor,
                       textAlign: TextAlign.center,
                       style: AppTypography.displayLarge.copyWith(
                         color: colors.text.accent,
@@ -58,7 +59,7 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Select the method you want.',
+                      AppLocalizations.of(context).onbSelectMethod,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.primary,
@@ -68,7 +69,8 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     _MethodCard(
                       buttonKey: const ValueKey('mobile_welcome_create'),
                       iconName: AppIcons.addNew,
-                      label: 'Create Wallet',
+                      label: AppLocalizations.of(context).onbCreateWallet,
+                      keySuffix: 'create_wallet',
                       illustration:
                           'assets/illustrations/method_create_card_bg.png',
                       onTap: () => context.push('/onboarding/intro'),
@@ -77,7 +79,8 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     _MethodCard(
                       buttonKey: const ValueKey('mobile_welcome_import'),
                       iconName: AppIcons.importWallet,
-                      label: 'Import Wallet',
+                      label: AppLocalizations.of(context).onbImportWallet,
+                      keySuffix: 'import_wallet',
                       illustration:
                           'assets/illustrations/method_import_card_bg.png',
                       onTap: () => context.push('/import'),
@@ -86,7 +89,8 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     _MethodCard(
                       buttonKey: const ValueKey('mobile_welcome_link_desktop'),
                       iconName: AppIcons.monitor,
-                      label: 'Link Vizor Desktop',
+                      label: AppLocalizations.of(context).onbLinkVizorDesktop,
+                      keySuffix: 'link_vizor_desktop',
                       illustration:
                           'assets/illustrations/method_link_desktop_card_bg.png',
                       onTap: () => context.push('/onboarding/link-desktop'),
@@ -95,7 +99,8 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                     _MethodCard(
                       buttonKey: const ValueKey('mobile_welcome_keystone'),
                       iconName: AppIcons.qr,
-                      label: 'Connect Keystone',
+                      label: AppLocalizations.of(context).navConnectKeystone,
+                      keySuffix: 'connect_keystone',
                       illustration:
                           'assets/illustrations/method_keystone_card_bg.png',
                       onTap: () => context.push('/onboarding/keystone'),
@@ -116,6 +121,7 @@ class _MethodCard extends StatelessWidget {
     required this.buttonKey,
     required this.iconName,
     required this.label,
+    required this.keySuffix,
     required this.illustration,
     required this.onTap,
   });
@@ -123,6 +129,10 @@ class _MethodCard extends StatelessWidget {
   final Key buttonKey;
   final String iconName;
   final String label;
+
+  /// Locale-independent suffix for the `mobile_method_*` widget keys — the
+  /// label is localized, so keys must not be derived from it.
+  final String keySuffix;
   final String illustration;
   final VoidCallback onTap;
 
@@ -130,7 +140,6 @@ class _MethodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final cardRadius = BorderRadius.circular(AppRadii.large);
-    final keySuffix = label.toLowerCase().replaceAll(' ', '_');
     return Semantics(
       button: true,
       label: label,

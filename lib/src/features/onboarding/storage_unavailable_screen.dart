@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../main.dart' show log;
 import '../../app_bootstrap.dart';
 import '../../core/layout/app_layout.dart';
@@ -52,8 +53,8 @@ class _StorageUnavailableScreenState
         setState(() {
           _retryError =
               failureKind == AppBootstrapFailureKind.walletDbMigrationFailed
-              ? 'The wallet database update still failed.'
-              : 'Secure storage is still unavailable.';
+              ? AppLocalizations.of(context).storageDbUpdateStillFailed
+              : AppLocalizations.of(context).storageStillUnavailable;
         });
       }
     } finally {
@@ -181,7 +182,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            _title(failureKind),
+            _title(context, failureKind),
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -189,7 +190,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            _body(failureKind),
+            _body(context, failureKind),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -211,7 +212,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
               isRetrying ? AppIcons.loader : AppIcons.renew,
               animated: isRetrying,
             ),
-            child: Text(isRetrying ? 'Retrying' : 'Retry'),
+            child: Text(isRetrying ? AppLocalizations.of(context).storageRetrying : AppLocalizations.of(context).commonRetry),
           ),
           if (isDesktopLayoutPlatform) ...[
             const SizedBox(height: AppSpacing.xs),
@@ -222,7 +223,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.medium,
               minWidth: 96,
-              child: const Text('Quit'),
+              child: Text(AppLocalizations.of(context).storageQuit),
             ),
           ],
         ],
@@ -230,26 +231,26 @@ class _StorageUnavailableContent extends ConsumerWidget {
     );
   }
 
-  String _title(AppBootstrapFailureKind? failureKind) {
+  String _title(BuildContext context, AppBootstrapFailureKind? failureKind) {
     if (failureKind == AppBootstrapFailureKind.walletDbMigrationFailed) {
-      return 'Unable to update wallet database';
+      return AppLocalizations.of(context).storageDbUpdateTitle;
     }
     if (failureKind == AppBootstrapFailureKind.startupFailure) {
-      return 'Unable to open Vizor';
+      return AppLocalizations.of(context).storageOpenFailedTitle;
     }
-    return _isLinux ? 'Unlock your keyring' : 'Secure storage is locked';
+    return _isLinux ? AppLocalizations.of(context).storageUnlockKeyring : AppLocalizations.of(context).storageLockedTitle;
   }
 
-  String _body(AppBootstrapFailureKind? failureKind) {
+  String _body(BuildContext context, AppBootstrapFailureKind? failureKind) {
     if (failureKind == AppBootstrapFailureKind.walletDbMigrationFailed) {
-      return 'Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.';
+      return AppLocalizations.of(context).storageDbUpdateBody;
     }
     if (failureKind == AppBootstrapFailureKind.startupFailure) {
-      return 'Vizor could not load the local startup state. Try again, or quit and restart Vizor.';
+      return AppLocalizations.of(context).storageStartupBody;
     }
     return _isLinux
-        ? 'Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.'
-        : 'Vizor needs access to secure storage before it can open your wallet. Unlock secure storage, then try again.';
+        ? AppLocalizations.of(context).storageKeyringBody
+        : AppLocalizations.of(context).storageSecureBody;
   }
 
   bool get _isLinux => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;

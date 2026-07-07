@@ -9,6 +9,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
 import 'swap_modal_controls.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapAssetSelectorModal extends StatefulWidget {
   const SwapAssetSelectorModal({
@@ -118,7 +119,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
             children: [
               Expanded(
                 child: Text(
-                  'Select asset',
+                  AppLocalizations.of(context).swapSelectAsset,
                   style: AppTypography.bodyLarge.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colors.text.accent,
@@ -164,7 +165,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       ),
                       cursorColor: colors.text.accent,
                       decoration: InputDecoration.collapsed(
-                        hintText: 'Search token or chain',
+                        hintText: AppLocalizations.of(context).swapSearchTokenOrChain,
                         hintStyle: AppTypography.labelLarge.copyWith(
                           fontWeight: FontWeight.w400,
                           color: colors.text.muted,
@@ -194,7 +195,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                     child: SizedBox(
                       width: 112,
                       child: Text(
-                        'No tokens or chains found',
+                        AppLocalizations.of(context).swapNoTokensFound,
                         textAlign: TextAlign.center,
                         // Spec: Label M Regular (Geist 14/16, weight 400).
                         style: AppTypography.labelLarge.copyWith(

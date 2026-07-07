@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -89,9 +90,15 @@ class SendStatusContentView extends StatelessWidget {
   Widget build(BuildContext context) {
     return SendReviewContentColumn(
       title: switch (phase) {
-        SendStatusPhase.inProgress => 'Send in progress...',
-        SendStatusPhase.completed => 'Sent successfully',
-        SendStatusPhase.failed => 'Send failed',
+        SendStatusPhase.inProgress => AppLocalizations.of(
+          context,
+        ).sendInProgressTitle,
+        SendStatusPhase.completed => AppLocalizations.of(
+          context,
+        ).activitySentSuccessfully,
+        SendStatusPhase.failed => AppLocalizations.of(
+          context,
+        ).activitySendFailed,
       },
       children: [
         SendReviewInfoSection(
@@ -126,19 +133,20 @@ class SendStatusContentView extends StatelessWidget {
     final card = Builder(
       builder: (context) {
         final colors = context.colors;
+        final l10n = AppLocalizations.of(context);
         final (statusValue, statusIconName, statusColor) = switch (phase) {
           SendStatusPhase.inProgress => (
-            'In progress',
+            l10n.activityInProgress,
             AppIcons.loader,
             colors.text.secondary,
           ),
           SendStatusPhase.completed => (
-            'Completed',
+            l10n.activityCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           ),
           SendStatusPhase.failed => (
-            'Failed',
+            l10n.activityFailed,
             AppIcons.cancel,
             colors.text.destructive,
           ),
@@ -148,7 +156,7 @@ class SendStatusContentView extends StatelessWidget {
           surfaceColor: _failed ? Primitives.p50Dark : null,
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.navStatus,
               value: statusValue,
               labelColor: _failed ? colors.text.destructive : null,
               valueColor: statusColor,
@@ -165,10 +173,13 @@ class SendStatusContentView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
+                ReviewListRow(
+                  label: l10n.activityTimestamp,
+                  value: timestampText,
+                ),
                 if (txIdText != null)
                   ReviewListRow(
-                    label: 'Tx ID',
+                    label: l10n.activityTxId,
                     value: txIdText!,
                     trailingIconName: AppIcons.arrowTopRight,
                     onPressed: onOpenExplorer,
@@ -177,11 +188,11 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: 'Tx fee',
+              label: l10n.txFeeSheetTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: kTxFeeHelpTooltip,
+              trailingIconTooltip: l10n.txFeeHelpTooltip,
               onPressed: onFeeHelp,
             ),
           ],

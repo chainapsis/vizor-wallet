@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -557,8 +558,11 @@ Widget _harness(
       syncProvider.overrideWith(_FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -790,4 +794,14 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

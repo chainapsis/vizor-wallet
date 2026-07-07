@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapNearIntentsAttribution extends StatelessWidget {
   const SwapNearIntentsAttribution({
@@ -45,7 +46,7 @@ class SwapNearIntentsAttribution extends StatelessWidget {
             width: 64.296,
             height: 10.32,
             colorFilter: colorFilter,
-            semanticsLabel: 'Powered by',
+            semanticsLabel: AppLocalizations.of(context).swapPoweredBy,
           ),
           const SizedBox(height: 6.2),
           SvgPicture.asset(

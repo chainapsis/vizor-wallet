@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -13,7 +14,7 @@ class ThingsToKnowScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: OnboardingStep.addressTypes.label,
+        label: OnboardingStep.addressTypes.label(context),
         routePath: OnboardingStep.addressTypes.routePath,
       ),
       bodyPadding: EdgeInsets.zero,
@@ -87,7 +88,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Things to know',
+            AppLocalizations.of(context).onbThingsToKnow,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -96,8 +97,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash has two address types.\n'
-          'One for privacy, one for transparency.',
+          AppLocalizations.of(context).onbTwoAddressTypes,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -143,25 +143,21 @@ class _ThingsToKnowPanel extends StatelessWidget {
           BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
         ],
       ),
-      child: const Column(
+      child: Column(
         children: [
           _InfoSection(
-            title: 'Time to sync',
+            title: AppLocalizations.of(context).onbTimeToSync,
             body:
-                'Your wallet syncs directly with the Zcash network instead '
-                'of relying on a server. This protects your privacy, but '
-                'takes a moment. Your funds are safe while the app catches up.',
+                AppLocalizations.of(context).onbTimeToSyncBody,
             iconName: AppIcons.time,
           ),
           SizedBox(height: AppSpacing.sm),
           _Divider(),
           SizedBox(height: AppSpacing.sm),
           _InfoSection(
-            title: 'How to keep privacy',
+            title: AppLocalizations.of(context).onbKeepPrivacy,
             body:
-                "Some exchanges can't send to shielded addresses. If you're "
-                'withdrawing from an exchange, use your transparent address. '
-                'You can shield your ZEC after it arrives.',
+                AppLocalizations.of(context).onbKeepPrivacyBody,
             iconName: AppIcons.shieldKeyholeOutline,
           ),
         ],
@@ -245,7 +241,7 @@ class _ButtonStack extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Tell me how Zcash works'),
+      child: Text(AppLocalizations.of(context).onbTellMeHow),
     );
   }
 }

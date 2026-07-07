@@ -28,6 +28,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -78,6 +79,9 @@ Widget _app({
     ),
   ],
   child: MaterialApp.router(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     routerConfig: GoRouter(
       initialLocation: '/home',
       routes: buildMobileRoutes(entryRoutes: const []),
@@ -90,6 +94,9 @@ void main() {
   testWidgets('review actions use the mobile button height', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -128,6 +135,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -158,6 +168,9 @@ void main() {
     var submittedBps = 0;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -481,6 +494,9 @@ void main() {
       'backIcon', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Builder(
           builder: (context) => MobileTopNav.back(

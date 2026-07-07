@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
@@ -90,7 +91,7 @@ class _AppProfilePicturePickerModalState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update profile picture.";
+        _submitError = AppLocalizations.of(context).profilePictureUpdateFailed;
       });
     } finally {
       if (mounted) {
@@ -160,7 +161,9 @@ class _AppProfilePicturePickerModalState
             cancelKey: widget.cancelKey,
             actionKey: widget.actionKey,
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            actionLabel: _isSubmitting
+                ? AppLocalizations.of(context).commonUpdating
+                : AppLocalizations.of(context).commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],

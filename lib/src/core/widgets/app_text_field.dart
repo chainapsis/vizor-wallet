@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
@@ -40,7 +41,7 @@ class AppTextField extends StatefulWidget {
     this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
-    this.clearButtonSemanticLabel = 'Clear text',
+    this.clearButtonSemanticLabel,
     this.onClear,
     this.onChanged,
     this.onSubmitted,
@@ -97,7 +98,8 @@ class AppTextField extends StatefulWidget {
   final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
-  final String clearButtonSemanticLabel;
+  /// Defaults to the localized "Clear text" when null.
+  final String? clearButtonSemanticLabel;
   final VoidCallback? onClear;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -384,7 +386,9 @@ class _AppTextFieldState extends State<AppTextField> {
         ? _AppTextFieldClearButton(
             onTap: _clear,
             iconColor: neutralIconColor,
-            semanticLabel: widget.clearButtonSemanticLabel,
+            semanticLabel:
+                widget.clearButtonSemanticLabel ??
+                AppLocalizations.of(context).inputClearText,
           )
         : null;
 

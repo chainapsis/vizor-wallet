@@ -18,6 +18,7 @@ import 'swap_max_amount_estimator.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
+import '../../../providers/locale_provider.dart';
 
 export 'swap_provider_config.dart';
 
@@ -291,7 +292,9 @@ class SwapNotifier extends Notifier<SwapState> {
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) {
-      state = state.copyWith(maxAmountError: 'No active account');
+      state = state.copyWith(
+        maxAmountError: ref.read(appLocalizationsProvider).swapErrNoActiveAccount,
+      );
       return;
     }
 
@@ -321,7 +324,8 @@ class SwapNotifier extends Notifier<SwapState> {
       if (maxZatoshi <= BigInt.zero) {
         state = state.copyWith(
           maxAmountLoading: false,
-          maxAmountError: 'Insufficient shielded balance to cover fee',
+          maxAmountError:
+              ref.read(appLocalizationsProvider).swapErrInsufficientShieldedForFee,
         );
         return;
       }
@@ -355,8 +359,8 @@ class SwapNotifier extends Notifier<SwapState> {
       state = state.copyWith(
         maxAmountLoading: false,
         maxAmountError: msg.contains('insufficient')
-            ? 'Insufficient shielded balance to cover fee'
-            : 'Max amount unavailable',
+            ? ref.read(appLocalizationsProvider).swapErrInsufficientShieldedForFee
+            : ref.read(appLocalizationsProvider).swapErrMaxUnavailable,
       );
       log('SwapMaxAmount: estimate failed error=$e');
     }
@@ -516,8 +520,7 @@ class SwapNotifier extends Notifier<SwapState> {
       _clearReviewState();
       state = state.copyWith(
         startSubmitting: false,
-        statusError:
-            'Active account changed. Review the quote again before starting.',
+        statusError: ref.read(appLocalizationsProvider).swapErrAccountChanged,
       );
       return null;
     }
@@ -533,7 +536,7 @@ class SwapNotifier extends Notifier<SwapState> {
       log('Swap: start blocked; no active account');
       state = state.copyWith(
         startSubmitting: false,
-        statusError: 'No active account',
+        statusError: ref.read(appLocalizationsProvider).swapErrNoActiveAccount,
       );
       return null;
     }
@@ -555,6 +558,7 @@ class SwapNotifier extends Notifier<SwapState> {
           statusError: swapFailureMessage(
             SwapFailureOperation.sendZecDeposit,
             e,
+            ref.read(appLocalizationsProvider),
           ),
         );
         return null;
@@ -572,7 +576,7 @@ class SwapNotifier extends Notifier<SwapState> {
       state = state.copyWith(
         startSubmitting: false,
         quoteLoading: false,
-        statusError: swapFailureMessage(SwapFailureOperation.start, e),
+        statusError: swapFailureMessage(SwapFailureOperation.start, e, ref.read(appLocalizationsProvider)),
       );
       return null;
     }
@@ -930,6 +934,7 @@ class SwapNotifier extends Notifier<SwapState> {
           statusError: swapFailureMessage(
             SwapFailureOperation.submitDeposit,
             e,
+            ref.read(appLocalizationsProvider),
           ),
         );
         await _persistIntentsForAccount(
@@ -997,7 +1002,11 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intent.id)} '
         'tx=${_shortSwapValue(normalizedTxHash)} error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = swapFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        e,
+        ref.read(appLocalizationsProvider),
+      );
       state = state.copyWith(depositSubmitting: false, statusError: message);
     }
   }
@@ -1096,7 +1105,7 @@ class SwapNotifier extends Notifier<SwapState> {
         'Swap: submit deposit failed intent=${_shortSwapValue(selected.id)} '
         'error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e, ref.read(appLocalizationsProvider));
       if (selected.accountUuid != null &&
           !_isAccountActive(selected.accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
@@ -1165,7 +1174,7 @@ class SwapNotifier extends Notifier<SwapState> {
       await _persistIntentsForAccount(accountUuid, updatedIntents);
     } catch (e) {
       final failed = checkpointed.copyWith(
-        statusError: swapFailureMessage(SwapFailureOperation.submitDeposit, e),
+        statusError: swapFailureMessage(SwapFailureOperation.submitDeposit, e, ref.read(appLocalizationsProvider)),
       );
       updatedIntents = updatedIntents.replaceSwapIntent(intentId, failed);
       await _persistIntentsForAccount(accountUuid, updatedIntents);
@@ -1226,6 +1235,7 @@ class SwapNotifier extends Notifier<SwapState> {
       final message = swapFailureMessage(
         SwapFailureOperation.sendZecDeposit,
         e,
+        ref.read(appLocalizationsProvider),
       );
       if (!_isAccountActive(accountUuid)) {
         return;
@@ -1259,7 +1269,7 @@ class SwapNotifier extends Notifier<SwapState> {
         depositTxHashText: broadcast.txHash,
         depositSubmitting: false,
         statusError: broadcast.isCertain
-            ? 'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.'
+            ? ref.read(appLocalizationsProvider).swapErrIntentMissing
             : broadcastNotice,
       );
       return;
@@ -1324,7 +1334,7 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intentId)} tx=${_shortSwapValue(broadcast.txHash)} '
         'error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e, ref.read(appLocalizationsProvider));
       if (!_isAccountActive(accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
           accountUuid: accountUuid,
@@ -1603,7 +1613,7 @@ class SwapNotifier extends Notifier<SwapState> {
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }
-    return swapFailureMessage(SwapFailureOperation.quote, error);
+    return swapFailureMessage(SwapFailureOperation.quote, error, ref.read(appLocalizationsProvider));
   }
 
   Future<SwapIntentSnapshot> _submitProviderDepositTransaction(
@@ -1657,20 +1667,21 @@ class SwapNotifier extends Notifier<SwapState> {
     if (trimmedMessage != null && trimmedMessage.isNotEmpty) {
       return trimmedMessage;
     }
+    final l10n = ref.read(appLocalizationsProvider);
     if (normalizedStatus == SwapDepositBroadcastStatus.partialBroadcast) {
-      return 'Some deposit transactions may have reached the network. Check activity before trying again.';
+      return l10n.swapDepositPartialBroadcast;
     }
     if (normalizedStatus == SwapDepositBroadcastStatus.pendingBroadcast) {
-      return 'The deposit was created locally but could not be broadcast. Check activity before trying again.';
+      return l10n.swapDepositPendingBroadcast;
     }
     if (normalizedStatus == SwapDepositBroadcastStatus.broadcastUnknown) {
-      return 'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+      return l10n.swapDepositBroadcastUnknown;
     }
     if (normalizedStatus ==
         SwapDepositBroadcastStatus.broadcastedStorageFailed) {
-      return 'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+      return l10n.swapDepositStorageFailed;
     }
-    return 'The deposit status is uncertain. Check activity before trying again.';
+    return l10n.swapDepositUncertain;
   }
 
   bool _shouldSubmitProviderDepositStatus(String? status) {

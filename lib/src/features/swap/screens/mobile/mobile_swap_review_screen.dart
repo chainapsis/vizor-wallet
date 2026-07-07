@@ -17,6 +17,7 @@ import '../../models/swap_activity_navigation.dart';
 import '../../models/swap_state.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
+import '../../../../../l10n/app_localizations.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import 'mobile_swap_keystone_sign_screen.dart';
@@ -209,7 +210,7 @@ class _MobileSwapReviewScreenState
     );
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        ? AppLocalizations.of(context).swapNotEnoughZecBody
         : null;
 
     return Scaffold(
@@ -217,7 +218,10 @@ class _MobileSwapReviewScreenState
       body: SafeArea(
         child: Column(
           children: [
-            MobileTopNav.back(title: 'Review quote', onBack: _returnToSwap),
+            MobileTopNav.back(
+              title: AppLocalizations.of(context).swapReviewQuote,
+              onBack: _returnToSwap,
+            ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
@@ -233,7 +237,9 @@ class _MobileSwapReviewScreenState
                   accountLabel: accountLabel,
                   accountProfilePictureId: accountProfilePictureId,
                   expired: swapState.quoteExpired,
-                  amountWarning: swapState.reviewAmountDifferenceWarning,
+                  amountWarning: swapState.reviewAmountDifferenceWarning(
+                    AppLocalizations.of(context),
+                  ),
                   startError: swapState.statusError,
                   startBlockedReason: startBlockedReason,
                   inactiveMessage: inactiveReview

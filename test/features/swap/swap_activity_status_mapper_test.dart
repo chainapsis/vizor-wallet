@@ -1,13 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 
+final _l10n = AppLocalizationsEn();
+
 void main() {
   test('maps in-progress status page data from the saved swap intent', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 70}),
       _intent(
         status: SwapIntentStatus.processing,
@@ -62,11 +66,11 @@ void main() {
     );
     expect(
       _detailRow(presentation.details, 'Swap fee').helpTooltip,
-      swapFeeTooltip,
+      swapFeeTooltip(_l10n),
     );
     expect(
       _detailRow(presentation.details, 'Guaranteed minimum').helpTooltip,
-      swapMinimumReceiveTooltip('USDC'),
+      swapMinimumReceiveTooltip(_l10n, 'USDC'),
     );
     expect(
       _detailRow(presentation.details, 'ZEC refund address').copyable,
@@ -83,6 +87,7 @@ void main() {
     // detail set. Mobile-lane coverage of the row lives in
     // mobile_swap_activity_tx_id_test.dart.
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.processing,
@@ -94,15 +99,13 @@ void main() {
       ),
     );
 
-    expect(
-      presentation.details.where((row) => row.label == 'Tx ID'),
-      isEmpty,
-    );
+    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
   });
 
   test('adds address book labels to matching address detail rows', () {
     const recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.processing,
@@ -151,6 +154,7 @@ void main() {
   test('adds a labeled recipient row to terminal swap details', () {
     const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.complete,
@@ -181,7 +185,7 @@ void main() {
     );
     expect(_detailRow(presentation.details, 'Timestamp').value, isNotEmpty);
     final fees = _detailRow(presentation.details, 'Total fees');
-    expect(fees.helpTooltip, swapTotalFeesTooltip);
+    expect(fees.helpTooltip, swapTotalFeesTooltip(_l10n));
     expect(presentation.details.last.label, 'Total fees');
   });
 
@@ -202,6 +206,7 @@ void main() {
           address: recipientAddress,
         ),
       ],
+      l10n: _l10n,
     );
     expect(sending.receiveDetailText, startsWith('To: Treasury ('));
     expect(sending.receiveDetailText, contains('on Ethereum'));
@@ -222,6 +227,7 @@ void main() {
           address: recipientAddress,
         ),
       ],
+      l10n: _l10n,
     );
     expect(depositing.payDetailText, startsWith('Refund to: Treasury ('));
     expect(depositing.payDetailCopyText, recipientAddress);
@@ -244,6 +250,7 @@ void main() {
           address: recipientAddress,
         ),
       ],
+      l10n: _l10n,
     );
 
     final recipient = _detailRow(presentation.details, 'USDC recipient');
@@ -256,6 +263,7 @@ void main() {
 
   test('terminal deposit tx row links to the NEAR Intents explorer', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.complete,
@@ -278,6 +286,7 @@ void main() {
     'uses captured fiat basis instead of current pricing for status summary',
     () {
       final presentation = swapActivityStatusPresentationForIntent(
+        l10n: _l10n,
         _state(indicativeExternalPerZec: {SwapAsset.usdc: 200}),
         _intent(
           status: SwapIntentStatus.complete,
@@ -300,6 +309,7 @@ void main() {
 
   test('does not recalculate missing captured fiat sides with live prices', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 200}),
       _intent(
         status: SwapIntentStatus.complete,
@@ -320,6 +330,7 @@ void main() {
 
   test('keeps terminal failure details compact and final', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.failed,
@@ -339,7 +350,7 @@ void main() {
     expect(_detailValue(presentation.details, 'Total fees'), '0.00002 ZEC');
     expect(
       _detailRow(presentation.details, 'Total fees').helpTooltip,
-      swapTotalFeesTooltip,
+      swapTotalFeesTooltip(_l10n),
     );
     expect(
       presentation.details.map((detail) => detail.label),
@@ -365,6 +376,7 @@ void main() {
 
   test('marks external source refund addresses copyable', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 70}),
       _intent(
         status: SwapIntentStatus.awaitingExternalDeposit,
@@ -385,6 +397,7 @@ void main() {
   test('separates incomplete deposits from terminal failures', () {
     final deadline = DateTime(2026, 5, 7, 12);
     final presentation = swapActivityStatusPresentationForIntent(
+      l10n: _l10n,
       _state(),
       _intent(
         status: SwapIntentStatus.incompleteDeposit,
@@ -447,6 +460,7 @@ void main() {
         depositAddress: 't1deposit-address',
         depositMemo: 'memo-1',
       ),
+      _l10n,
     );
 
     expect(zecInstruction?.sendLabel, 'Send ZEC');
@@ -462,6 +476,7 @@ void main() {
         externalAsset: SwapAsset.usdc,
         depositAddress: '0xdeposit-address',
       ),
+      _l10n,
     );
 
     expect(externalInstruction?.sendLabel, 'Send USDC from source chain');
@@ -527,7 +542,7 @@ void main() {
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
     );
-    expect(SwapActivityDepositInstruction.fromIntent(expired), isNull);
+    expect(SwapActivityDepositInstruction.fromIntent(expired, _l10n), isNull);
     expect(
       swapActivityShowsDepositPage(expired, intentIsHardware: false),
       isTrue,
@@ -568,6 +583,7 @@ void main() {
         swapActivityStatusPresentationForIntent(
           _state(),
           awaiting,
+          l10n: _l10n,
         ).progressIndex,
         0,
       );
@@ -579,6 +595,7 @@ void main() {
         swapActivityStatusPresentationForIntent(
           _state(),
           claimed,
+          l10n: _l10n,
         ).progressIndex,
         1,
       );
@@ -595,7 +612,11 @@ void main() {
       depositMemo: 'required-memo-123',
     ).copyWith(depositClaimedAt: DateTime.utc(2026, 5, 29, 12));
     final memo = _detailRow(
-      swapActivityStatusPresentationForIntent(_state(), claimed).details,
+      swapActivityStatusPresentationForIntent(
+        _state(),
+        claimed,
+        l10n: _l10n,
+      ).details,
       'Memo',
     );
     expect(memo.value, 'required-memo-123');

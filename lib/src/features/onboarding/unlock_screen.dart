@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../main.dart' show log;
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
@@ -28,7 +29,10 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   String? _errorText;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPasswordLocalized(
+        _passwordController.text,
+        AppLocalizations.of(context),
+      );
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
@@ -78,7 +82,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _errorText = "Couldn't open your wallet. Please try again.";
+        _errorText = AppLocalizations.of(context).onbUnlockFailed;
       });
       return;
     }
@@ -88,7 +92,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       log('UnlockScreen._submit: invalid password');
       setState(() {
         _isSubmitting = false;
-        _errorText = 'Incorrect password. Try again.';
+        _errorText = AppLocalizations.of(context).onbIncorrectPassword;
       });
     }
   }
@@ -146,7 +150,9 @@ class _UnlockContent extends StatelessWidget {
   final VoidCallback onForgotPassword;
 
   static const double cardWidth = 396;
-  static const double cardHeight = 509;
+  // 509 in Figma; +8 headroom for taller localized type (ko) so the
+  // forgot-password link never overflows the fixed card.
+  static const double cardHeight = 517;
   static const double _fieldWidth = 256;
   static const double _buttonWidth = 196;
   static const double _titleWidth = 364;
@@ -170,25 +176,37 @@ class _UnlockContent extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Welcome back',
-                style: AppTypography.displayMedium.copyWith(
-                  color: colors.text.accent,
-                  height: 48 / 45,
+              Padding(
+                // Keep side margins when a long localized title (ko) forces
+                // the FittedBox to scale down — matches the English layout's
+                // breathing room instead of running edge to edge.
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    AppLocalizations.of(context).onbWelcomeBack,
+                    style: AppTypography.displayMedium.copyWith(
+                      color: colors.text.accent,
+                      height: 48 / 45,
+                    ),
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Enter your password to open Vizor.',
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  AppLocalizations.of(context).onbEnterPasswordToOpen,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
                 ),
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -201,8 +219,8 @@ class _UnlockContent extends StatelessWidget {
               width: _fieldWidth,
               height: _fieldGroupHeight,
               child: PasswordTextField(
-                label: 'Password',
-                hintText: 'Enter password',
+                label: AppLocalizations.of(context).settingsPassword,
+                hintText: AppLocalizations.of(context).onbEnterPassword,
                 showLabel: false,
                 // Figma Field Type=Secondary on the auth card.
                 surface: AppTextFieldSurface.secondary,
@@ -227,14 +245,14 @@ class _UnlockContent extends StatelessWidget {
                   onPressed: canSubmit ? onSubmit : null,
                   variant: AppButtonVariant.primary,
                   minWidth: _buttonWidth,
-                  child: const Text('Unlock Vizor'),
+                  child: Text(AppLocalizations.of(context).onbUnlockVizor),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
                   onPressed: onForgotPassword,
                   variant: AppButtonVariant.ghost,
                   minWidth: _buttonWidth,
-                  child: const Text('Forgot password?'),
+                  child: Text(AppLocalizations.of(context).onbForgotPassword),
                 ),
               ],
             ),

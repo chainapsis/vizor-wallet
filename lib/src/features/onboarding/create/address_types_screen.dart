@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -13,7 +14,7 @@ class AddressTypesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: OnboardingStep.intro.label,
+        label: OnboardingStep.intro.label(context),
         routePath: OnboardingStep.intro.routePath,
       ),
       bodyPadding: EdgeInsets.zero,
@@ -87,7 +88,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Zcash Address Types',
+            AppLocalizations.of(context).onbZcashAddressTypes,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -96,8 +97,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash has two address types.\n'
-          'One for privacy, one for transparency.',
+          AppLocalizations.of(context).onbTwoAddressTypes,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),
@@ -221,7 +221,9 @@ class _AddressTypeHeader extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
-                  _isShielded ? 'Shielded address' : 'Transparent address',
+                  _isShielded
+                      ? AppLocalizations.of(context).receiveShieldedAddressTitle
+                      : AppLocalizations.of(context).receiveTransparentAddressTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyLarge.copyWith(
@@ -335,22 +337,18 @@ class _AddressTypeDescription extends StatelessWidget {
         TextSpan(
           style: bodyStyle,
           children: [
-            const TextSpan(text: 'Address starts with '),
+            TextSpan(text: AppLocalizations.of(context).onbAddressStartsWith),
             TextSpan(text: 'u1', style: emphasisStyle),
-            const TextSpan(text: ' (or '),
+            TextSpan(text: AppLocalizations.of(context).onbShieldedAddressOr),
             TextSpan(text: 'zs', style: emphasisStyle),
-            const TextSpan(
-              text:
-                  ' for legacy). Only you can see your account balance and transaction history.',
-            ),
+            TextSpan(text: AppLocalizations.of(context).onbShieldedAddressSuffix),
           ],
         ),
       );
     }
 
     return Text(
-      "Address starts with t, similar to Bitcoin, your address' balance "
-      'and transaction history are publicly visible.',
+      AppLocalizations.of(context).onbTransparentAddressBody,
       style: bodyStyle,
     );
   }
@@ -368,7 +366,7 @@ class _ButtonStack extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonMinWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Tell me how Zcash works'),
+      child: Text(AppLocalizations.of(context).onbTellMeHow),
     );
   }
 }

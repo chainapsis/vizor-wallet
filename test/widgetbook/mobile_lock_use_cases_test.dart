@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_auth_shell.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -205,6 +206,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Center(
@@ -346,7 +350,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: ForgotPasscodeLastWarningSheet(),
@@ -397,6 +404,9 @@ Future<void> _pumpMobileLockUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       key: UniqueKey(),
       home: AppTheme(
         data: theme,

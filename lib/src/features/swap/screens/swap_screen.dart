@@ -6,6 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
+import '../../address_book/models/address_format_validator.dart'
+    show addressFormatFindingMessage;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -131,7 +134,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         // otherwise the chosen label/avatar would vanish with no feedback.
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your contacts');
+          showAppToast(
+            toastContext,
+            AppLocalizations.of(toastContext).swapAlreadyInContacts,
+          );
         }
         return;
       }
@@ -352,9 +358,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.contactPicker =>
                         AddressBookContactPickerModal(
-                          title: swapContactPickerTitle(swapState),
+                          title: swapContactPickerTitle(
+                            swapState,
+                            AppLocalizations.of(context),
+                          ),
                           networks: swapContactPickerNetworks(swapState),
-                          emptyTitle: swapContactPickerEmptyTitle(swapState),
+                          emptyTitle: swapContactPickerEmptyTitle(
+                            swapState,
+                            AppLocalizations.of(context),
+                          ),
                           onSelected: _selectAddressBookContact,
                           onCancel: _openAddressEditor,
                         ),
@@ -409,7 +421,7 @@ class _SwapPageTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Text(
-      'Swap',
+      AppLocalizations.of(context).swapTitle,
       key: const ValueKey('swap_page_title'),
       textAlign: TextAlign.center,
       style: appSerifDisplayStyle(color: colors.text.accent),
@@ -438,6 +450,12 @@ class _SwapReviewFooter extends StatelessWidget {
     );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatErrorText = destinationFormatError == null
+        ? null
+        : addressFormatFindingMessage(
+            destinationFormatError,
+            AppLocalizations.of(context),
+          );
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
@@ -446,13 +464,13 @@ class _SwapReviewFooter extends StatelessWidget {
         : null;
     final loading = state.quoteLoading && !needsDestinationAddress;
     final label = needsDestinationAddress
-        ? _destinationAddressActionLabel(state)
-        : destinationFormatError ??
+        ? _destinationAddressActionLabel(context, state)
+        : destinationFormatErrorText ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? AppLocalizations.of(context).swapNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Review swap');
+                  ? AppLocalizations.of(context).swapGettingQuote
+                  : AppLocalizations.of(context).swapReviewSwap);
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
@@ -514,10 +532,13 @@ class _SwapReviewButtonLabel extends StatelessWidget {
   }
 }
 
-String _destinationAddressActionLabel(SwapState state) {
+String _destinationAddressActionLabel(
+  BuildContext context,
+  SwapState state,
+) {
   return state.direction.sendsZec
-      ? 'Add recipient address'
-      : 'Add refund address';
+      ? AppLocalizations.of(context).swapAddRecipientAddressAction
+      : AppLocalizations.of(context).swapAddRefundAddressAction;
 }
 
 bool _reviewAmountExceedsAvailableZec(

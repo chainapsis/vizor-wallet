@@ -1,3 +1,4 @@
+import '../../../../l10n/app_localizations.dart';
 import '../../../providers/account_provider.dart';
 
 const kDuplicateSecretPassphraseImportErrorMessage =
@@ -7,9 +8,9 @@ const kDuplicateKeystoneAccountImportErrorMessage =
 const kDuplicateAccountImportErrorMessage =
     'This account is already in your wallet.';
 
-String onboardingSubmitErrorMessage(Object error) {
+String onboardingSubmitErrorMessage(Object error, AppLocalizations l10n) {
   if (error is WalletCreationCurrentBlockHeightException) {
-    return kWalletCreationCurrentBlockHeightErrorMessage;
+    return l10n.onbErrorCurrentBlockHeight;
   }
 
   const exceptionPrefix = 'Exception: ';
@@ -21,8 +22,12 @@ String onboardingSubmitErrorMessage(Object error) {
   if (anyhowMatch != null) {
     message = anyhowMatch.group(1)!;
   }
-  if (_isAccountCollisionMessage(message)) {
-    return kDuplicateAccountImportErrorMessage;
+  if (message == kDuplicateKeystoneAccountImportErrorMessage) {
+    return l10n.onbErrorDuplicateKeystoneAccount;
+  }
+  if (message == kDuplicateSecretPassphraseImportErrorMessage ||
+      _isAccountCollisionMessage(message)) {
+    return l10n.onbErrorDuplicateAccount;
   }
   return message;
 }

@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Vizor는 Keystone QR 코드를 스캔하기 위해 카메라를 사용합니다.";
+"NSFaceIDUsageDescription" = "Vizor는 지갑 잠금 해제와 민감한 작업 확인을 위해 Face ID를 사용합니다.";

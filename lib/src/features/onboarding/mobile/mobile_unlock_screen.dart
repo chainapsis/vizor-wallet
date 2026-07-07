@@ -14,7 +14,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
-import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -22,6 +21,7 @@ import '../../../services/device_owner_auth.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
+import '../../../../l10n/app_localizations.dart';
 
 const mobileBiometricSignInBackgroundAsset =
     'assets/illustrations/mobile_onboarding_auth_background.png';
@@ -116,7 +116,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: 'Unlock your wallet');
+        .readPasscode(reason: AppLocalizations.of(context).onbUnlockBiometricReason);
     if (!mounted) return;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
@@ -124,7 +124,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (wasEnabled && now != null && !now.enabled) {
         // The escrow was invalidated (biometric data changed) — explain
         // why the prompt stopped appearing.
-        nextError = biometric.availability.kind.changedMessage;
+        nextError = biometric.availability.kind.changedMessage(AppLocalizations.of(context));
       }
       setState(() {
         _biometricFallback = true;
@@ -224,7 +224,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // A biometric-initiated submit that fails drops to the numpad + retry.
         if (fromBiometric) _biometricFallback = true;
         _entry = '';
-        _error = "Couldn't open your wallet. Please try again.";
+        _error = AppLocalizations.of(context).onbUnlockFailed;
       });
       return;
     }
@@ -236,7 +236,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         _biometricUnlocking = false;
         if (fromBiometric) _biometricFallback = true;
         _entry = '';
-        _error = 'Incorrect Passcode';
+        _error = AppLocalizations.of(context).onbIncorrectPasscode;
       });
     }
   }
@@ -275,8 +275,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       setState(() {
         _submitting = false;
         _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
+            ? AppLocalizations.of(context).deviceAuthRequired
+            : AppLocalizations.of(context).deviceAuthFailed;
       });
       return;
     } catch (e, st) {
@@ -284,7 +284,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = "Couldn't reset the app. Please try again.";
+        _error = AppLocalizations.of(context).settingsAppResetFailed;
       });
       return;
     }
@@ -332,7 +332,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'Welcome Back',
+                              AppLocalizations.of(context).onbWelcomeBackMobile,
                               textAlign: TextAlign.center,
                               style: AppTypography.displayLarge.copyWith(
                                 color: colors.text.accent,
@@ -341,8 +341,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                             const SizedBox(height: AppSpacing.s),
                             Text(
                               _submitting
-                                  ? 'Opening your wallet...'
-                                  : 'Enter your passcode to open Vizor',
+                                  ? AppLocalizations.of(context).onbOpeningWallet
+                                  : AppLocalizations.of(context).onbEnterPasscodeToOpen,
                               textAlign: TextAlign.center,
                               style: AppTypography.bodyMediumStrong.copyWith(
                                 color: colors.text.primary,
@@ -380,7 +380,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                               return const SizedBox.shrink();
                             }
                             return PasscodeBiometricButton(
-                              label: biometric.availability.kind.signInLabel,
+                              label: biometric.availability.kind.signInLabel(AppLocalizations.of(context)),
                               icon:
                                   biometric.availability.kind ==
                                       BiometricKind.face

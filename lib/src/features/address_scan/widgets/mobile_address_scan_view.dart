@@ -10,6 +10,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart' show QrScanner;
+import '../../../../l10n/app_localizations.dart';
 
 /// Result of resolving a scanned QR payload — either an accepted address
 /// string or a rejection message to surface under the viewfinder.
@@ -43,8 +44,8 @@ class MobileAddressScanView extends StatefulWidget {
     required this.resolve,
     required this.onScanned,
     required this.onClose,
-    this.caption = 'Scan a Zcash QR code to continue',
-    this.steadyHint = 'Keep the QR code steady and fully visible.',
+    this.caption,
+    this.steadyHint,
     super.key,
   });
 
@@ -57,11 +58,13 @@ class MobileAddressScanView extends StatefulWidget {
   /// Called when the user taps the close control.
   final VoidCallback onClose;
 
-  /// Idle caption beneath the viewfinder.
-  final String caption;
+  /// Idle caption beneath the viewfinder. Defaults to the localized
+  /// "Scan a Zcash QR code to continue".
+  final String? caption;
 
-  /// Fallback message when resolution throws.
-  final String steadyHint;
+  /// Fallback message when resolution throws. Defaults to the localized
+  /// "Keep the QR code steady and fully visible.".
+  final String? steadyHint;
 
   @override
   State<MobileAddressScanView> createState() => _MobileAddressScanViewState();
@@ -120,13 +123,18 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
       }
       setState(() {
         _validating = false;
-        _error = outcome.error ?? widget.steadyHint;
+        _error =
+            outcome.error ??
+            widget.steadyHint ??
+            AppLocalizations.of(context).keystoneScanHoldSteady;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _validating = false;
-        _error = widget.steadyHint;
+        _error =
+            widget.steadyHint ??
+            AppLocalizations.of(context).keystoneScanHoldSteady;
       });
     }
   }
@@ -211,9 +219,12 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
           MobileScanCameraErrorOverlay(
             controller: _controller,
             maxWidth: viewfinderSize,
-            permissionDeniedMessage:
-                'Camera access is off. Allow it in Settings to scan addresses.',
-            unavailableMessage: 'The camera is unavailable right now.',
+            permissionDeniedMessage: AppLocalizations.of(
+              context,
+            ).scanCameraPermissionOff,
+            unavailableMessage: AppLocalizations.of(
+              context,
+            ).keystoneCameraUnavailable,
             onOpenSettings: _openCameraSettings,
           ),
           SafeArea(
@@ -228,7 +239,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                     children: [
                       Semantics(
                         button: true,
-                        label: 'Toggle flashlight',
+                        label: AppLocalizations.of(context).keystoneToggleFlashlight,
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -247,7 +258,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                       const Spacer(),
                       Semantics(
                         button: true,
-                        label: 'Close scanner',
+                        label: AppLocalizations.of(context).scanCloseScanner,
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -278,7 +289,9 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                         64,
                   ),
                   child: Text(
-                    _error ?? widget.caption,
+                    _error ??
+                        widget.caption ??
+                        AppLocalizations.of(context).scanZcashQrCaption,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: Colors.white,
@@ -306,7 +319,7 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
     required this.unavailableMessage,
     this.maxWidth = 260,
     this.onOpenSettings,
-    this.openSettingsLabel = 'Open settings',
+    this.openSettingsLabel,
     super.key,
   });
 
@@ -315,7 +328,7 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
   final String unavailableMessage;
   final double maxWidth;
   final Future<void> Function()? onOpenSettings;
-  final String openSettingsLabel;
+  final String? openSettingsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -352,7 +365,14 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
                       size: AppButtonSize.medium,
                       minWidth: 128,
                       leading: const AppIcon(AppIcons.cog),
-                      child: Text(openSettingsLabel),
+                      child: Text(
+                        openSettingsLabel ??
+                            Localizations.of<AppLocalizations>(
+                              context,
+                              AppLocalizations,
+                            )?.cameraOpenSettings ??
+                            'Open settings',
+                      ),
                     ),
                   ],
                 ],

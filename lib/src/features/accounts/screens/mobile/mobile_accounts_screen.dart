@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
@@ -215,24 +216,25 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       );
     }
 
+    final l10n = AppLocalizations.of(context);
     final menuItems = [
       item(
         key: const ValueKey('mobile_account_menu_copy'),
         iconName: AppIcons.copy,
-        label: 'Copy address',
+        label: l10n.accountsCopyAddress,
         action: _AccountAction.copy,
       ),
       if (!isCurrentAccount)
         item(
           key: const ValueKey('mobile_account_menu_send'),
           iconName: AppIcons.plane,
-          label: 'Send ZEC',
+          label: l10n.accountsSendZec,
           action: _AccountAction.send,
         ),
       item(
         key: const ValueKey('mobile_account_menu_edit'),
         iconName: AppIcons.edit,
-        label: 'Edit account',
+        label: l10n.accountsEditAccount,
         action: _AccountAction.edit,
       ),
       if (canRemove) ...[
@@ -240,7 +242,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_remove'),
           iconName: AppIcons.trash,
-          label: 'Remove account',
+          label: l10n.accountsRemoveAccount,
           action: _AccountAction.remove,
           textColor: colors.text.destructiveLight,
           iconColor: colors.icon.destructiveLight,
@@ -341,13 +343,18 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     if (address == null) {
       showAppToast(
         context,
-        "Address couldn't be copied",
+        AppLocalizations.of(context).accountsAddressCopyFailed,
         iconName: AppIcons.cross,
       );
       return;
     }
     await Clipboard.setData(ClipboardData(text: address));
-    if (mounted) showAppToast(context, 'Shielded address copied');
+    if (mounted) {
+      showAppToast(
+        context,
+        AppLocalizations.of(context).toastShieldedAddressCopied,
+      );
+    }
   }
 
   Future<void> _sendToAccount(AccountInfo account) async {
@@ -356,7 +363,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     if (address == null) {
       showAppToast(
         context,
-        "Couldn't load the account address",
+        AppLocalizations.of(context).accountsAddressLoadFailed,
         iconName: AppIcons.cross,
       );
       return;
@@ -374,7 +381,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (!saved) {
         showAppToast(
           context,
-          "Couldn't save the account changes",
+          AppLocalizations.of(context).settingsAccountSaveFailed,
           iconName: AppIcons.cross,
         );
       }
@@ -427,8 +434,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         showAppToast(
           context,
           isLastAccount
-              ? "Couldn't reset Vizor"
-              : "Couldn't remove the account",
+              ? AppLocalizations.of(context).accountsResetVizorFailed
+              : AppLocalizations.of(context).accountsRemoveFailedShort,
           iconName: AppIcons.cross,
         );
       }
@@ -456,7 +463,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Accounts',
+                title: AppLocalizations.of(context).navAccounts,
                 titleStyle: AppTypography.headlineLarge,
                 onBack: _busy ? null : () => context.pop(),
               ),
@@ -471,14 +478,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                   children: [
                     if (active != null)
                       _AccountsGroupCard(
-                        title: 'Current',
+                        title: AppLocalizations.of(context).accountsCurrent,
                         titleGap: AppSpacing.s,
                         children: [_accountRow(active, enabled: !_busy)],
                       ),
                     if (others.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.sm),
                       _AccountsGroupCard(
-                        title: 'Other',
+                        title: AppLocalizations.of(context).accountsOther,
                         titleGap: AppSpacing.xs,
                         children: [
                           for (final account in others)
@@ -495,7 +502,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                           ? null
                           : () => context.push('/add-account'),
                       leading: const AppIcon(AppIcons.addNew),
-                      child: const Text('Add account'),
+                      child: Text(
+                        AppLocalizations.of(context).accountsAddAccount,
+                      ),
                     ),
                   ],
                 ),
@@ -527,7 +536,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       trailing: Builder(
         builder: (anchorContext) => Semantics(
           button: true,
-          label: 'Account options for ${account.name}',
+          label: AppLocalizations.of(context).accountsOptionsFor(account.name),
           excludeSemantics: true,
           child: GestureDetector(
             key: ValueKey('mobile_accounts_menu_${account.uuid}'),
@@ -649,7 +658,7 @@ class _RemoveAccountSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Remove account',
+      title: AppLocalizations.of(context).accountsRemoveAccount,
       onClose: () => Navigator.of(context).pop(false),
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
@@ -663,13 +672,8 @@ class _RemoveAccountSheet extends StatelessWidget {
         children: [
           Text(
             isLastAccount
-                ? 'Removing this account will completely reset the Vizor app. '
-                      'This means deleting all accounts and requiring you to '
-                      'import accounts again.\n'
-                      'This cannot be undone.'
-                : "Are you sure you want to remove this account? This action "
-                      "can't be reverted.\n"
-                      'You will have to re-import your account.',
+                ? AppLocalizations.of(context).accountsRemoveResetWarning
+                : AppLocalizations.of(context).accountsRemoveWarning,
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -680,7 +684,9 @@ class _RemoveAccountSheet extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(true),
             leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
             child: Text(
-              isLastAccount ? 'Reset Vizor' : 'Remove',
+              isLastAccount
+                  ? AppLocalizations.of(context).accountsResetVizor
+                  : AppLocalizations.of(context).commonRemove,
               style: _buttonLabelStyle.copyWith(
                 color: colors.button.destructive.label,
               ),

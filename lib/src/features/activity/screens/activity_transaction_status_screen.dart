@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
@@ -95,7 +96,7 @@ class _ActivityTransactionStatusScreenState
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = 'No active account.';
+        _error = AppLocalizations.of(context).activityNoActiveAccount;
       });
       return;
     }
@@ -147,8 +148,8 @@ class _ActivityTransactionStatusScreenState
         } else {
           _detail = null;
           _error = _transaction == null
-              ? 'Transaction could not be loaded.'
-              : 'Latest transaction status could not be refreshed.';
+              ? AppLocalizations.of(context).activityTxLoadError
+              : AppLocalizations.of(context).activityTxRefreshError;
         }
         _isLoading = false;
       });
@@ -158,8 +159,8 @@ class _ActivityTransactionStatusScreenState
       setState(() {
         _detail = null;
         _error = _transaction == null
-            ? 'Transaction could not be loaded.'
-            : 'Latest transaction status could not be refreshed.';
+            ? AppLocalizations.of(context).activityTxLoadError
+            : AppLocalizations.of(context).activityTxRefreshError;
         _isLoading = false;
       });
     }
@@ -238,7 +239,7 @@ class _ActivityTransactionStatusScreenState
     copyTextWithToast(
       context,
       text: widget.args.txidHex,
-      toastMessage: 'Transaction hash copied',
+      toastMessage: AppLocalizations.of(context).activityTxHashCopied,
     );
   }
 
@@ -295,6 +296,7 @@ class _ActivityTransactionStatusScreenState
     if (seconds <= BigInt.zero) return '--';
     return formatDayMonthTime(
       DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
+      locale: AppLocalizations.of(context).localeName,
     );
   }
 
@@ -493,8 +495,8 @@ class _ActivityTransactionStatusScreenState
           padding: const EdgeInsets.only(top: AppSpacing.xl),
           child: Text(
             _isLoading
-                ? 'Loading transaction…'
-                : (_error ?? 'Transaction could not be loaded.'),
+                ? AppLocalizations.of(context).activityLoadingTx
+                : (_error ?? AppLocalizations.of(context).activityTxLoadError),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -504,11 +506,16 @@ class _ActivityTransactionStatusScreenState
       );
     }
 
+    final l10n = AppLocalizations.of(context);
     final (statusValue, statusIconName, statusColor) = tx.expiredUnmined
-        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        ? (l10n.activityFailed, AppIcons.cancel, colors.text.destructive)
         : tx.minedHeight == BigInt.zero
-        ? ('In progress', AppIcons.loader, colors.text.secondary)
-        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+        ? (l10n.activityInProgress, AppIcons.loader, colors.text.secondary)
+        : (
+            l10n.activityCompleted,
+            AppIcons.checkCircle,
+            colors.text.positiveStrong,
+          );
     final feeText = tx.fee > BigInt.zero
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
@@ -519,7 +526,7 @@ class _ActivityTransactionStatusScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Transaction',
+            l10n.navTransaction,
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
@@ -530,7 +537,7 @@ class _ActivityTransactionStatusScreenState
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: ReviewInfoRow(
-              label: 'Amount',
+              label: l10n.navAmount,
               value: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
               leading: ClipOval(
                 child: Image.asset(
@@ -546,14 +553,17 @@ class _ActivityTransactionStatusScreenState
           ReviewWrapCard(
             children: [
               ReviewListRow(
-                label: 'Status',
+                label: l10n.navStatus,
                 value: statusValue,
                 valueColor: statusColor,
                 leadingIconName: statusIconName,
               ),
-              ReviewListRow(label: 'Timestamp', value: _timestampText(tx)),
               ReviewListRow(
-                label: 'Tx ID',
+                label: l10n.activityTimestamp,
+                value: _timestampText(tx),
+              ),
+              ReviewListRow(
+                label: l10n.activityTxId,
                 value: truncatedTxid(widget.args.txidHex),
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
@@ -561,11 +571,11 @@ class _ActivityTransactionStatusScreenState
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: l10n.txFeeSheetTitle,
                   value: feeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kTxFeeHelpTooltip,
+                  trailingIconTooltip: l10n.txFeeHelpTooltip,
                 ),
               ],
             ],

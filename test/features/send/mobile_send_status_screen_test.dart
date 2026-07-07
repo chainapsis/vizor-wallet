@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -33,6 +34,7 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
   return ({
     required ref,
     required args,
+    required l10n,
     keystone,
     required confirmSaplingParamsDownload,
     shouldAbort,
@@ -42,6 +44,8 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
 Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
@@ -419,6 +423,8 @@ void main() {
       ProviderScope(
         child: MaterialApp.router(
           routerConfig: router,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
         ),

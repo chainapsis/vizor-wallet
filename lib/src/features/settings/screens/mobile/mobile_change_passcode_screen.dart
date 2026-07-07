@@ -13,13 +13,13 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
-import '../../../../providers/device_owner_auth_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
 import '../../../../services/device_owner_auth.dart';
 import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../../../l10n/app_localizations.dart';
 
 enum _Phase { verify, create, confirm }
 
@@ -70,7 +70,7 @@ class _MobileChangePasscodeScreenState
         if (_entry == _currentPasscode) {
           setState(() {
             _entry = '';
-            _error = 'Your new passcode must be different.';
+            _error = AppLocalizations.of(context).settingsNewPasscodeMustDiffer;
           });
           return;
         }
@@ -87,7 +87,7 @@ class _MobileChangePasscodeScreenState
             _entry = '';
             _newPasscode = null;
             _phase = _Phase.create;
-            _error = "Passcodes didn't match. Try again.";
+            _error = AppLocalizations.of(context).settingsPasscodesDidntMatch;
           });
         }
     }
@@ -105,7 +105,7 @@ class _MobileChangePasscodeScreenState
         setState(() {
           _submitting = false;
           _entry = '';
-          _error = 'Incorrect Passcode';
+          _error = AppLocalizations.of(context).onbIncorrectPasscode;
         });
         return;
       }
@@ -121,7 +121,7 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _entry = '';
-        _error = "Couldn't check your passcode. Please try again.";
+        _error = AppLocalizations.of(context).settingsPasscodeCheckFailed;
       });
     }
   }
@@ -169,7 +169,7 @@ class _MobileChangePasscodeScreenState
           // — restart from scratch rather than trusting stale state.
           setState(() {
             _submitting = false;
-            _restartFlow('Incorrect Passcode');
+            _restartFlow(AppLocalizations.of(context).onbIncorrectPasscode);
           });
           return;
         }
@@ -190,8 +190,7 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _restartFlow(
-          "We couldn't verify the previous passcode change. Keep your "
-          'secret passphrase available before trying again.',
+          AppLocalizations.of(context).settingsPasscodeRotationRecoveryFailed,
         );
       });
     } catch (e, st) {
@@ -202,7 +201,7 @@ class _MobileChangePasscodeScreenState
         _entry = '';
         _newPasscode = null;
         _phase = _Phase.create;
-        _error = "Couldn't update your passcode. Please try again.";
+        _error = AppLocalizations.of(context).settingsPasscodeUpdateFailed;
       });
     }
   }
@@ -249,10 +248,9 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _entry = '';
-        _error =
-            e.kind == DeviceOwnerAuthErrorKind.unavailable
-                ? kWalletResetDeviceAuthRequiredMessage
-                : kWalletResetDeviceAuthFailedMessage;
+        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? AppLocalizations.of(context).deviceAuthRequired
+            : AppLocalizations.of(context).deviceAuthFailed;
       });
       return;
     } catch (e, st) {
@@ -261,7 +259,7 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _entry = '';
-        _error = "Couldn't reset the app. Please try again.";
+        _error = AppLocalizations.of(context).settingsAppResetFailed;
       });
       return;
     }
@@ -272,9 +270,18 @@ class _MobileChangePasscodeScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final (title, subtitle) = switch (_phase) {
-      _Phase.verify => ('Enter Passcode', 'Confirm your access'),
-      _Phase.create => ('Set New Passcode', '6 digits length'),
-      _Phase.confirm => ('Confirm Passcode', '6 digits length'),
+      _Phase.verify => (
+        AppLocalizations.of(context).settingsEnterPasscode,
+        AppLocalizations.of(context).settingsConfirmYourAccess,
+      ),
+      _Phase.create => (
+        AppLocalizations.of(context).settingsSetNewPasscode,
+        AppLocalizations.of(context).onbSixDigitsLength,
+      ),
+      _Phase.confirm => (
+        AppLocalizations.of(context).onbConfirmPasscode,
+        AppLocalizations.of(context).onbSixDigitsLength,
+      ),
     };
 
     return Scaffold(

@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -74,6 +75,9 @@ Widget _app(MobileActivityHistoryLoader loader) {
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: AppThemeData.dark,
         child: MobileActivityScreen(historyLoader: loader),

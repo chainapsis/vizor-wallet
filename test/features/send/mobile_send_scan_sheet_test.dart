@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_sc
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_scan_screen.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('scan sheet overlays the current page instead of replacing it', (
@@ -21,6 +22,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(

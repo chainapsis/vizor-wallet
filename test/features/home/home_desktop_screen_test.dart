@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -476,7 +477,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
-    expect(find.text('Network connection lost.'), findsOneWidget);
+    // The banner shows the localized per-kind guidance, not the raw
+    // English SyncFailure.userMessage (which is kept for logs).
+    expect(
+      find.text(AppLocalizationsEn().syncUserMessageNetwork),
+      findsOneWidget,
+    );
     expect(find.text('Retry'), findsOneWidget);
   });
 
@@ -540,7 +546,7 @@ SwapIntentRecord _swapActivityRecord({
     sellAmountText: '1.0000 ZEC',
     receiveEstimateText: '70.170000 USDC',
     status: status,
-    nextAction: status.label,
+    nextAction: status.label(AppLocalizationsEn()),
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1home-deposit',

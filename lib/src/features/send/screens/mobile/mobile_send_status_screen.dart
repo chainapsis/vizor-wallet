@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart'
@@ -41,6 +42,7 @@ typedef MobileSendBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
       required WidgetRef ref,
       required SendReviewArgs args,
+      required AppLocalizations l10n,
       KeystoneBroadcastArgs? keystone,
       required Future<bool> Function() confirmSaplingParamsDownload,
       Future<bool> Function()? shouldAbort,
@@ -113,9 +115,11 @@ class _MobileSendStatusScreenState
 
   Future<void> _startBroadcast() async {
     final runner = widget.broadcastRunner ?? runSendBroadcast;
+    final l10n = AppLocalizations.of(context);
     final outcome = await runner(
       ref: ref,
       args: widget.args,
+      l10n: l10n,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
@@ -158,38 +162,36 @@ class _MobileSendStatusScreenState
   bool get _routePopAllowed => _phase != _MobileSendStatusPhase.sending;
 
   String get _title {
+    final l10n = AppLocalizations.of(context);
     return switch (_phase) {
-      _MobileSendStatusPhase.sending => 'Sending...',
-      _MobileSendStatusPhase.pendingBroadcast => 'Queued to send',
-      _MobileSendStatusPhase.succeeded => 'Sent!',
-      _MobileSendStatusPhase.failed => 'Send failed',
+      _MobileSendStatusPhase.sending => l10n.activitySendingEllipsis,
+      _MobileSendStatusPhase.pendingBroadcast => l10n.sendStatusQueuedTitle,
+      _MobileSendStatusPhase.succeeded => l10n.sendStatusSentTitle,
+      _MobileSendStatusPhase.failed => l10n.activitySendFailed,
     };
   }
 
   String get _subtitle {
+    final l10n = AppLocalizations.of(context);
     final statusMessage = _statusMessage?.trim();
     return switch (_phase) {
-      _MobileSendStatusPhase.sending =>
-        'Submitting your transaction to the network...',
+      _MobileSendStatusPhase.sending => l10n.sendStatusSendingSubtitle,
       _MobileSendStatusPhase.pendingBroadcast =>
         statusMessage == null || statusMessage.isEmpty
-            ? 'Your transaction was created and will be submitted '
-                  'automatically. Check the Activity page before sending '
-                  'again.'
+            ? l10n.sendStatusQueuedSubtitle
             : statusMessage,
-      _MobileSendStatusPhase.succeeded =>
-        'It will confirm on-chain shortly. Track it in Activity.',
-      _MobileSendStatusPhase.failed =>
-        "Nothing was sent, your funds haven't moved. Try again.",
+      _MobileSendStatusPhase.succeeded => l10n.sendStatusSucceededSubtitle,
+      _MobileSendStatusPhase.failed => l10n.sendStatusFailedSubtitle,
     };
   }
 
   String? get _buttonLabel {
+    final l10n = AppLocalizations.of(context);
     return switch (_phase) {
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
-      _MobileSendStatusPhase.succeeded => 'Done',
-      _MobileSendStatusPhase.failed => 'Return home',
+      _MobileSendStatusPhase.succeeded => l10n.commonDone,
+      _MobileSendStatusPhase.failed => l10n.sendStatusReturnHome,
     };
   }
 

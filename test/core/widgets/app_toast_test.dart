@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('AppToast uses inverse neutral tokens in light mode', (
@@ -230,6 +231,9 @@ void main() {
     // host the sheet covers (which would render it behind the scrim).
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: const AppToastHost(
@@ -296,6 +300,9 @@ class _ThemedHarness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppTheme(
         data: theme,
         child: Directionality(textDirection: TextDirection.ltr, child: child),

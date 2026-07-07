@@ -3,9 +3,13 @@
 /// under "This week" / month-year / "Earlier" titles.
 library;
 
+import 'package:intl/intl.dart' show DateFormat;
+
+import '../../../l10n/app_localizations.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'models/activity_row_data.dart';
 import 'widgets/activity_feed.dart';
+import '../../core/formatting/date_format.dart' show intlSafeLocale;
 
 /// One activity row paired with the timestamp used for sorting and
 /// section grouping.
@@ -46,6 +50,7 @@ DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
 /// share a section title.
 List<ActivityFeedSectionData> buildActivityFeedSections(
   List<ActivityEntry> entries,
+  AppLocalizations l10n,
 ) {
   final sorted = [...entries]..sort(compareActivityEntries);
   final sections = <ActivityFeedSectionData>[];
@@ -53,7 +58,7 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
   String? currentTitle;
 
   for (final entry in sorted) {
-    final title = _activitySectionTitle(entry.timestamp);
+    final title = _activitySectionTitle(entry.timestamp, l10n);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -65,18 +70,18 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
   return sections;
 }
 
-String _activitySectionTitle(DateTime? timestamp) {
-  if (timestamp == null) return 'Earlier';
+String _activitySectionTitle(DateTime? timestamp, AppLocalizations l10n) {
+  if (timestamp == null) return l10n.activityEarlier;
 
   final local = timestamp.toLocal();
   final now = DateTime.now();
   final weekStart = _startOfWeek(now);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
+    return l10n.activityThisWeek;
   }
 
-  return '${_monthName(local.month)} ${local.year}';
+  return DateFormat.yMMMM(intlSafeLocale(l10n.localeName)).format(local);
 }
 
 DateTime _startOfWeek(DateTime date) {
@@ -84,21 +89,3 @@ DateTime _startOfWeek(DateTime date) {
   return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
 }
 
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
-}

@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -382,16 +383,26 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       final address = await _loadShieldedAddressForAccount(account);
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(
+          context,
+          AppLocalizations.of(context).toastAddressCopyFailed,
+        );
         return;
       }
 
       if (!mounted) return;
-      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: AppLocalizations.of(context).toastAddressCopied,
+      );
     } catch (e) {
       log('AccountsScreen: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(
+        context,
+        AppLocalizations.of(context).accountsAddressCopyFailed,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -412,7 +423,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       final address = (await _loadShieldedAddressForAccount(account)).trim();
       if (!mounted) return;
       if (address.isEmpty) {
-        showAppToast(context, "Send couldn't be started");
+        showAppToast(
+          context,
+          AppLocalizations.of(context).accountsSendStartFailed,
+        );
         return;
       }
 
@@ -428,7 +442,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     } catch (e) {
       log('AccountsScreen: ERROR opening send flow for account address: $e');
       if (!mounted) return;
-      showAppToast(context, "Send couldn't be started");
+      showAppToast(
+        context,
+        AppLocalizations.of(context).accountsSendStartFailed,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -533,7 +550,7 @@ class _AccountsPane extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Accounts',
+                AppLocalizations.of(context).navAccounts,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: context.colors.text.accent,
@@ -626,7 +643,7 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
           onTapCancel: () => _setPressed(false),
           child: Semantics(
             button: true,
-            label: 'Add account',
+            label: AppLocalizations.of(context).accountsAddAccount,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 96),
               child: AnimatedContainer(
@@ -642,17 +659,19 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
                   data: IconThemeData(color: labelColor, size: 16),
                   child: DefaultTextStyle.merge(
                     style: AppTypography.labelLarge.copyWith(color: labelColor),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        AppIcon(AppIcons.addNew),
-                        SizedBox(width: AppSpacing.xxs),
+                        const AppIcon(AppIcons.addNew),
+                        const SizedBox(width: AppSpacing.xxs),
                         Padding(
-                          padding: EdgeInsets.symmetric(
+                          padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.xxs,
                           ),
-                          child: Text('Add account'),
+                          child: Text(
+                            AppLocalizations.of(context).accountsAddAccount,
+                          ),
                         ),
                       ],
                     ),
@@ -707,7 +726,9 @@ class _AccountsList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _AccountsSectionLabel(label: 'Current'),
+                    _AccountsSectionLabel(
+                      label: AppLocalizations.of(context).accountsCurrent,
+                    ),
                     const SizedBox(height: _accountsRowGap),
                     _AccountRow(
                       key: ValueKey(
@@ -736,7 +757,9 @@ class _AccountsList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _AccountsSectionLabel(label: 'Other'),
+                    _AccountsSectionLabel(
+                      label: AppLocalizations.of(context).accountsOther,
+                    ),
                     const SizedBox(height: _accountsRowGap),
                     _OtherAccountsRows(
                       accounts: otherAccounts,
@@ -1190,7 +1213,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
           onTap: _toggleMenu,
           child: Semantics(
             button: true,
-            label: 'Account actions',
+            label: AppLocalizations.of(context).accountsAccountActions,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               curve: Curves.easeOut,
@@ -1258,31 +1281,31 @@ class _AccountContextMenu extends StatelessWidget {
         if (!showSendZec) ...[
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit account',
+            label: AppLocalizations.of(context).accountsEditAccount,
             onTap: onEditAccount,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.copy,
-            label: 'Copy address',
+            label: AppLocalizations.of(context).accountsCopyAddress,
             onTap: onCopyAddress,
           ),
         ] else ...[
           AppContextMenuItem(
             iconName: AppIcons.copy,
-            label: 'Copy address',
+            label: AppLocalizations.of(context).accountsCopyAddress,
             onTap: onCopyAddress,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.plane,
-            label: 'Send ZEC',
+            label: AppLocalizations.of(context).accountsSendZec,
             onTap: onSendZec,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit account',
+            label: AppLocalizations.of(context).accountsEditAccount,
             onTap: onEditAccount,
           ),
         ],
@@ -1290,7 +1313,7 @@ class _AccountContextMenu extends StatelessWidget {
           const AppContextMenuDivider(),
           AppContextMenuItem(
             iconName: AppIcons.trash,
-            label: 'Remove account',
+            label: AppLocalizations.of(context).accountsRemoveAccount,
             destructive: true,
             onTap: onRemove,
           ),

@@ -23,6 +23,7 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class VotingProposalDetailScreen extends ConsumerStatefulWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
@@ -71,18 +72,18 @@ class _VotingProposalDetailScreenState
           error: (error, _) => VotingPaneStateView(
             backLinkMinWidth: 60,
             child: _Message(
-              title: "Couldn't load voting round",
-              message: friendlyVotingErrorMessage(error),
+              title: AppLocalizations.of(context).votingRoundLoadFailedTitle,
+              message: friendlyVotingErrorMessage(error, AppLocalizations.of(context)),
             ),
           ),
           data: (state) {
             final round = state.round;
             if (round == null) {
-              return const VotingPaneStateView(
+              return VotingPaneStateView(
                 backLinkMinWidth: 60,
                 child: _Message(
-                  title: 'Voting round unavailable',
-                  message: 'The selected voting round could not be loaded.',
+                  title: AppLocalizations.of(context).votingRoundUnavailable,
+                  message: AppLocalizations.of(context).votingRoundLoadFailed,
                 ),
               );
             }
@@ -95,7 +96,10 @@ class _VotingProposalDetailScreenState
             final proposals = proposalsFromRound(round);
             final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
+            final pendingVote = _PendingVoteRecovery.fromPlan(
+              state.roundPlan,
+              AppLocalizations.of(context),
+            );
             final hasConfirmedVotingEligibility =
                 state.hasConfirmedVotingEligibility;
             final isVotingEligibilityPending = _isVotingEligibilityPending(
@@ -111,7 +115,7 @@ class _VotingProposalDetailScreenState
             if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
               return _PendingVoteContent(
                 roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
+                    ? AppLocalizations.of(context).votingTokenHolderVoting
                     : round.title,
                 snapshotHeight: round.snapshotHeight,
                 description: _roundDescription(round.rawJson),
@@ -124,7 +128,7 @@ class _VotingProposalDetailScreenState
                 (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
               return _VotedPollContent(
                 roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
+                    ? AppLocalizations.of(context).votingTokenHolderVoting
                     : round.title,
                 snapshotHeight: round.snapshotHeight,
                 description: _roundDescription(round.rawJson),
@@ -139,7 +143,7 @@ class _VotingProposalDetailScreenState
             if (pendingVote != null && hasConfirmedVotingEligibility) {
               return _PendingVoteContent(
                 roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
+                    ? AppLocalizations.of(context).votingTokenHolderVoting
                     : round.title,
                 snapshotHeight: round.snapshotHeight,
                 description: _roundDescription(round.rawJson),
@@ -169,6 +173,7 @@ class _VotingProposalDetailScreenState
                     state.error == null &&
                     _shouldPrepareVotingPower(state));
             final votingEligibilityMessage = _votingEligibilityMessage(
+              context,
               state,
               preparing: votingPowerPreparing,
             );
@@ -179,7 +184,7 @@ class _VotingProposalDetailScreenState
             _maybePrecomputeDelegationPir(state);
             return _ActivePollContent(
               roundId: roundId,
-              title: round.title.isEmpty ? 'Token holder voting' : round.title,
+              title: round.title.isEmpty ? AppLocalizations.of(context).votingTokenHolderVoting : round.title,
               snapshotHeight: round.snapshotHeight,
               description: _roundDescription(round.rawJson),
               forumUri: forumUri,
@@ -338,14 +343,18 @@ bool _isVotingEligibilityPending(VotingSessionState state) {
 }
 
 String? _votingEligibilityMessage(
+  BuildContext context,
   VotingSessionState state, {
   required bool preparing,
 }) {
+  final l10n = AppLocalizations.of(context);
   if (state.hasConfirmedVotingEligibility) return null;
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(error.message);
+  if (error != null) {
+    return friendlyVotingErrorText(error.message, l10n);
+  }
   if (preparing) return null;
-  return 'Voting power unavailable.';
+  return l10n.votingPowerUnavailable;
 }
 
 class _ActivePollContent extends StatefulWidget {
@@ -440,9 +449,9 @@ class _ActivePollContentState extends State<_ActivePollContent> {
         const AppPaneToolbar(backLinkMinWidth: 60),
         Expanded(
           child: widget.proposals.isEmpty
-              ? const _Message(
-                  title: 'No proposals',
-                  message: 'This voting round does not contain any proposals.',
+              ? _Message(
+                  title: AppLocalizations.of(context).votingNoProposals,
+                  message: AppLocalizations.of(context).votingNoProposalsBody,
                 )
               : VotingPaneListView.separated(
                   maxWidth: 560,
@@ -488,10 +497,10 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                             widget.votingEligibilityConfirmed &&
                                 !widget.draft.isEmpty,
                         label: canRetryEligibility
-                            ? 'Retry eligibility'
+                            ? AppLocalizations.of(context).votingRetryEligibility
                             : isIneligible
-                            ? 'Not eligible'
-                            : 'Review answers',
+                            ? AppLocalizations.of(context).votingNotEligible
+                            : AppLocalizations.of(context).votingReviewAnswers,
                         onPressed: _handleBottomActionPressed,
                       );
                     }
@@ -564,7 +573,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Skip unanswered questions?',
+                      AppLocalizations.of(context).votingSkipUnanswered,
                       style: AppTypography.bodyLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w600,
@@ -575,9 +584,10 @@ class _SkippedQuestionsDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'You have not answered $skippedCount of $totalCount '
-                'questions. The review screen will mark them as skipped, '
-                'and skipped questions will not be submitted.',
+                AppLocalizations.of(context).votingSkipUnansweredBody(
+                  skippedCount,
+                  totalCount,
+                ),
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -586,14 +596,14 @@ class _SkippedQuestionsDialog extends StatelessWidget {
               AppButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 minWidth: 312,
-                child: const Text('Continue to review'),
+                child: Text(AppLocalizations.of(context).votingContinueToReview),
               ),
               const SizedBox(height: AppSpacing.s),
               AppButton(
                 onPressed: () => Navigator.of(context).pop(false),
                 variant: AppButtonVariant.ghost,
                 minWidth: 312,
-                child: const Text('Keep voting'),
+                child: Text(AppLocalizations.of(context).votingKeepVoting),
               ),
             ],
           ),
@@ -644,7 +654,7 @@ class _IneligiblePollDialog extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Not eligible for this voting round',
+                      AppLocalizations.of(context).votingNotEligibleRound,
                       style: AppTypography.bodyLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w600,
@@ -664,7 +674,7 @@ class _IneligiblePollDialog extends StatelessWidget {
               AppButton(
                 onPressed: () => Navigator.of(context).pop(),
                 minWidth: 312,
-                child: const Text('Done'),
+                child: Text(AppLocalizations.of(context).commonDone),
               ),
             ],
           ),
@@ -750,8 +760,13 @@ class _PollSummary extends StatelessWidget {
           children: [
             _MetaText(
               endDate == null
-                  ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
+                  ? AppLocalizations.of(context).votingActive
+                  : AppLocalizations.of(context).votingEndsOn(
+                      formatMonthDayYear(
+                        endDate!,
+                        locale: AppLocalizations.of(context).localeName,
+                      ),
+                    ),
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -760,7 +775,9 @@ class _PollSummary extends StatelessWidget {
             ),
             if (endDate != null) ...[
               const _MetaText('·'),
-              _MetaText(_daysLeftLabel(endDate!)),
+              _MetaText(
+                _daysLeftLabel(endDate!, AppLocalizations.of(context)),
+              ),
             ],
           ],
         ),
@@ -867,9 +884,9 @@ class _VotedPollContent extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Expanded(
           child: proposals.isEmpty
-              ? const _Message(
-                  title: 'No proposals',
-                  message: 'This voting round does not contain any proposals.',
+              ? _Message(
+                  title: AppLocalizations.of(context).votingNoProposals,
+                  message: AppLocalizations.of(context).votingNoProposalsBody,
                 )
               : VotingPaneListView.separated(
                   maxWidth: 560,
@@ -890,7 +907,7 @@ class _VotedPollContent extends StatelessWidget {
                       fallbackForumUri: forumUri,
                       selectedChoice: choice,
                       readOnly: true,
-                      statusLabel: choice == null ? 'Skipped' : null,
+                      statusLabel: choice == null ? AppLocalizations.of(context).votingSkipped : null,
                     );
                   },
                 ),
@@ -987,15 +1004,14 @@ class _PendingVoteContent extends StatelessWidget {
                           ],
                           const SizedBox(height: AppSpacing.md),
                           Text(
-                            'Vote in progress',
+                            AppLocalizations.of(context).votingVoteInProgress,
                             style: AppTypography.headlineSmall.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            'You have an unfinished vote for this round. '
-                            'Resume to complete the submission.',
+                            AppLocalizations.of(context).votingUnfinishedVote,
                             style: AppTypography.bodyMedium.copyWith(
                               color: colors.text.secondary,
                             ),
@@ -1009,7 +1025,7 @@ class _PendingVoteContent extends StatelessWidget {
                               ),
                             ),
                             variant: AppButtonVariant.primary,
-                            child: const Text('Continue voting'),
+                            child: Text(AppLocalizations.of(context).votingContinueVoting),
                           ),
                         ],
                       ),
@@ -1077,8 +1093,13 @@ class _VotedPollHeader extends StatelessWidget {
           children: [
             _MetaText(
               votedAt == null
-                  ? 'Voted'
-                  : 'Voted ${formatMonthDayYear(votedAt!)}',
+                  ? AppLocalizations.of(context).votingStateVoted
+                  : AppLocalizations.of(context).votingVotedOn(
+                      formatMonthDayYear(
+                        votedAt!,
+                        locale: AppLocalizations.of(context).localeName,
+                      ),
+                    ),
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1086,7 +1107,7 @@ class _VotedPollHeader extends StatelessWidget {
               preparing: votingPowerPreparing,
             ),
             const _MetaText('·'),
-            const _MetaText('Vote locked'),
+            _MetaText(AppLocalizations.of(context).votingVoteLocked),
           ],
         ),
         if (description.isNotEmpty) ...[
@@ -1139,7 +1160,7 @@ class _VotingPowerMeta extends StatelessWidget {
     final votingPower = zatoshi;
     if (votingPower == null) {
       if (!preparing) {
-        return const _MetaText('Voting power unavailable');
+        return _MetaText(AppLocalizations.of(context).votingPowerUnavailableShort);
       }
       final colors = context.colors;
       return Row(
@@ -1154,11 +1175,13 @@ class _VotingPowerMeta extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.xxs),
-          const _MetaText('Preparing voting power'),
+          _MetaText(AppLocalizations.of(context).votingPreparingPowerShort),
         ],
       );
     }
-    return _MetaText('Voting power ${formatVotingPower(votingPower)}');
+    return _MetaText(
+      AppLocalizations.of(context).votingPowerMeta(formatVotingPower(votingPower)),
+    );
   }
 }
 
@@ -1191,7 +1214,10 @@ class _PendingVoteRecovery {
 
   final String message;
 
-  static _PendingVoteRecovery? fromPlan(rust_wire.RoundPlanView? roundPlan) {
+  static _PendingVoteRecovery? fromPlan(
+    rust_wire.RoundPlanView? roundPlan,
+    AppLocalizations l10n,
+  ) {
     if (roundPlan == null ||
         !roundPlan.blockingRecovery ||
         !roundPlan.completedVoteArtifact) {
@@ -1199,23 +1225,20 @@ class _PendingVoteRecovery {
     }
     if (roundPlan.primaryAction == 'delegate' ||
         roundPlan.recoveredDelegationWork.isNotEmpty) {
-      return const _PendingVoteRecovery(
-        message:
-            'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
+      return _PendingVoteRecovery(
+        message: l10n.votingRecoveryDelegationPending,
       );
     }
     if (roundPlan.primaryAction == 'vote' ||
         roundPlan.recoveredVoteWork.any(
           (work) => work.kind != 'submit_shares',
         )) {
-      return const _PendingVoteRecovery(
-        message:
-            'This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.',
+      return _PendingVoteRecovery(
+        message: l10n.votingRecoveryCommitmentPending,
       );
     }
-    return const _PendingVoteRecovery(
-      message:
-          'This vote was submitted, but some helper-server shares are still waiting for confirmation. Do not vote again from this account.',
+    return _PendingVoteRecovery(
+      message: l10n.votingRecoverySharesPending,
     );
   }
 }
@@ -1234,15 +1257,15 @@ DateTime? _roundEndDate(Map<String, dynamic> json) {
   return parseFlexibleDate(json['vote_end_time']);
 }
 
-String _daysLeftLabel(DateTime endDate) {
+String _daysLeftLabel(DateTime endDate, AppLocalizations l10n) {
   final now = DateTime.now();
   final localEnd = endDate.toLocal();
   final today = DateTime(now.year, now.month, now.day);
   final endDay = DateTime(localEnd.year, localEnd.month, localEnd.day);
   final days = endDay.difference(today).inDays;
-  if (days <= 0) return 'Ends today';
-  if (days == 1) return '1 day left';
-  return '$days days left';
+  if (days <= 0) return l10n.votingEndsToday;
+  if (days == 1) return l10n.votingOneDayLeft;
+  return l10n.votingDaysLeft(days);
 }
 
 class _Message extends StatelessWidget {

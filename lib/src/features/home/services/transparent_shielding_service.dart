@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -13,35 +14,33 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
-const shieldBalancePendingBroadcastMessage =
-    'Shielding queued for retry. Check Activity.';
-
 String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
+  AppLocalizations l10n,
 ) {
   if (result.status == 'broadcasted') return null;
-  return shieldBalancePendingBroadcastMessage;
+  return l10n.shieldQueuedRetry;
 }
 
-String friendlyShieldBalanceError(Object error) {
+String friendlyShieldBalanceError(Object error, AppLocalizations l10n) {
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
-    return "Secret Passphrase isn't available for this account.";
+    return l10n.shieldErrorNoPassphrase;
   }
   if (lower.contains('sync')) {
-    return 'Wait for sync to finish, then shield.';
+    return l10n.shieldErrorWaitForSync;
   }
   if (lower.contains('insufficient') ||
       lower.contains('threshold') ||
       lower.contains('too small') ||
       lower.contains('no transparent funds')) {
-    return 'Transparent balance is too small to shield after fees.';
+    return l10n.shieldErrorTooSmall;
   }
   if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-    return "Couldn't broadcast your shielding transaction. Try again.";
+    return l10n.shieldErrorBroadcast;
   }
-  return "Couldn't shield your balance. Try again.";
+  return l10n.shieldErrorGeneric;
 }
 
 String? shieldBalanceErrorDetails(Object error) {
@@ -115,9 +114,9 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
     );
 
-    final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(result);
+    final pendingBroadcastRetry = result.status != 'broadcasted';
     final broadcastDetailMessage = result.message?.trim();
-    if (broadcastStatusMessage != null &&
+    if (pendingBroadcastRetry &&
         broadcastDetailMessage != null &&
         broadcastDetailMessage.isNotEmpty) {
       final switched = await ref
@@ -157,17 +156,15 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
 
 String shieldPcztBroadcastStatusMessage(
   rust_sync.ExtractAndBroadcastPcztResult result,
+  AppLocalizations l10n,
 ) {
   if (result.status == 'broadcast_unknown') {
-    return result.message ??
-        'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+    return result.message ?? l10n.shieldTxBroadcastUnknown;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ??
-        'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+    return result.message ?? l10n.shieldTxStorageFailed;
   }
-  return result.message ??
-      'The shield transaction status is uncertain. Check activity before trying again.';
+  return result.message ?? l10n.shieldTxUncertain;
 }
 
 String? postBroadcastShieldErrorMessage(Object error) {

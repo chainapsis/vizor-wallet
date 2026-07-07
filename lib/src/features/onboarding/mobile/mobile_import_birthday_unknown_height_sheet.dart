@@ -4,6 +4,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../../l10n/app_localizations.dart';
 
 Future<bool> showMobileImportBirthdayUnknownHeightSheet(
   BuildContext context,
@@ -34,7 +35,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_import_birthday_unknown_height_sheet'),
-      title: 'Import from the earliest height?',
+      title: AppLocalizations.of(context).onbUnknownHeightTitle,
       titleMaxLines: 2,
       leading: Container(
         width: 32,
@@ -57,14 +58,12 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'If you continue without a wallet birthday, Vizor will scan from '
-            'the earliest supported shielded height. This is safe, but the '
-            'first sync can take a very long time.',
+            AppLocalizations.of(context).onbUnknownHeightBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Choosing even an approximate date will be much faster.',
+            AppLocalizations.of(context).onbUnknownHeightHint,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -76,7 +75,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             ),
             expand: true,
             onPressed: onConfirm,
-            child: const Text('Continue anyway'),
+            child: Text(AppLocalizations.of(context).onbContinueAnywayLower),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -84,7 +83,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: onCancel,
-            child: const Text('Go back'),
+            child: Text(AppLocalizations.of(context).onbGoBackLower),
           ),
         ],
       ),

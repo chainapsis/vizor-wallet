@@ -9,6 +9,9 @@ import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
+import 'package:intl/intl.dart';
+import '../../../../l10n/app_localizations.dart';
+import '../../../core/formatting/date_format.dart' show intlSafeLocale;
 
 class SwapActivityAccountDetail {
   const SwapActivityAccountDetail({required this.name, this.profilePictureId});
@@ -74,6 +77,7 @@ class SwapActivityStatusPresentation {
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapState state,
   SwapIntent intent, {
+  required AppLocalizations l10n,
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
 }) {
@@ -102,21 +106,31 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   String? receiveDetailCopyText;
   if (sendsZec) {
     if (recipientAddress != null && recipientAddress.isNotEmpty) {
-      receiveDetailText =
-          'To: ${_headerAddressText(recipientAddress, asset: receiveAsset, contacts: addressBookContacts)} '
-          'on ${receiveAsset.chainLabel}';
+      receiveDetailText = l10n.swapToAddressOnChain(
+        _headerAddressText(
+          recipientAddress,
+          asset: receiveAsset,
+          contacts: addressBookContacts,
+        ),
+        receiveAsset.chainLabel,
+      );
       receiveDetailCopyText = recipientAddress;
     }
   } else {
     if (refundAddress != null && refundAddress.isNotEmpty) {
-      payDetailText =
-          'Refund to: ${_headerAddressText(refundAddress, asset: sellAsset, contacts: addressBookContacts)}';
+      payDetailText = l10n.swapRefundToAddress(
+        _headerAddressText(
+          refundAddress,
+          asset: sellAsset,
+          contacts: addressBookContacts,
+        ),
+      );
       payDetailCopyText = refundAddress;
     }
   }
 
   return SwapActivityStatusPresentation(
-    title: _swapActivityStatusTitle(intent),
+    title: _swapActivityStatusTitle(intent, l10n),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
@@ -127,24 +141,25 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     payDetailCopyText: payDetailCopyText,
     receiveDetailText: receiveDetailText,
     receiveDetailCopyText: receiveDetailCopyText,
-    statusLabel: intent.status.label,
+    statusLabel: intent.status.label(l10n),
     badgeKind: _swapActivityStatusBadgeKind(intent.status),
     progressIndex: _swapActivityStatusProgressIndex(intent),
-    steps: _swapActivityProgressSteps(intent),
+    steps: _swapActivityProgressSteps(intent, l10n),
     details: _swapActivityStatusDetails(
       intent,
       addressBookContacts: addressBookContacts,
+      l10n: l10n,
     ),
     showTabs: !intent.status.isTerminal,
   );
 }
 
-String _swapActivityStatusTitle(SwapIntent intent) {
+String _swapActivityStatusTitle(SwapIntent intent, AppLocalizations l10n) {
   return switch (intent.status) {
-    SwapIntentStatus.complete => 'Swap completed',
-    SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
-    SwapIntentStatus.failed || SwapIntentStatus.refunded => 'Swap failed',
-    _ => 'Swap in progress...',
+    SwapIntentStatus.complete => l10n.swapTitleCompleted,
+    SwapIntentStatus.incompleteDeposit => l10n.swapStatusIncompleteDeposit,
+    SwapIntentStatus.failed || SwapIntentStatus.refunded => l10n.swapTitleFailed,
+    _ => l10n.swapTitleInProgress,
   };
 }
 
@@ -176,22 +191,28 @@ int _swapActivityStatusProgressIndex(SwapIntent intent) {
   };
 }
 
-List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
+List<SwapStatusStepData> _swapActivityProgressSteps(
+  SwapIntent intent,
+  AppLocalizations l10n,
+) {
   final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
   final sourceVerb = intent.direction == SwapDirection.zecToExternal
-      ? 'Sending'
-      : 'Depositing';
+      ? l10n.swapVerbSending
+      : l10n.swapVerbDepositing;
   final sourceDone = intent.direction == SwapDirection.zecToExternal
-      ? '$sourceSymbol sent'
-      : '$sourceSymbol Deposited';
+      ? l10n.swapSymbolSent(sourceSymbol)
+      : l10n.swapSymbolDeposited(sourceSymbol);
   final deliveryTitle = intent.direction == SwapDirection.zecToExternal
-      ? 'Deliver $receiveSymbol'
-      : 'Send $receiveSymbol';
+      ? l10n.swapDeliverSymbol(receiveSymbol)
+      : l10n.swapSendSymbol(receiveSymbol);
 
   final lastCheckedLabel =
-      _swapActivityLastRelativeStatusCheckedLabel(intent.lastStatusCheckedAt) ??
-      'Last check: just now';
+      _swapActivityLastRelativeStatusCheckedLabel(
+        intent.lastStatusCheckedAt,
+        l10n,
+      ) ??
+      l10n.swapLastCheckJustNow;
 
   return [
     SwapStatusStepData(
@@ -200,32 +221,31 @@ List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
       completeTitle: sourceDone,
       activeTitle: '$sourceVerb $sourceSymbol...',
       pendingTitle: intent.direction == SwapDirection.zecToExternal
-          ? 'Send $sourceSymbol'
-          : 'Deposit $sourceSymbol',
+          ? l10n.swapSendSymbol(sourceSymbol)
+          : l10n.swapDepositSymbol(sourceSymbol),
       lastCheckedLabel: lastCheckedLabel,
-      description:
-          'Confirm waiting for the source chain and provider to recognise the deposit',
+      description: l10n.swapStepSourceDesc,
     ),
     SwapStatusStepData(
-      title: 'Deposit confirmation',
+      title: l10n.swapStepDepositConfirmation,
       state: SwapStatusStepState.pending,
-      activeTitle: 'Deposit confirmation...',
+      activeTitle: l10n.swapStepDepositConfirmationActive,
       lastCheckedLabel: lastCheckedLabel,
-      description: 'Confirming the deposit before the swap route starts.',
+      description: l10n.swapStepConfirmingDesc,
     ),
     SwapStatusStepData(
-      title: 'Swap',
+      title: l10n.swapStepSwapTitle,
       state: SwapStatusStepState.pending,
-      activeTitle: 'Swap...',
+      activeTitle: l10n.swapStepSwapActive,
       lastCheckedLabel: lastCheckedLabel,
-      description: 'The provider is executing the swap route.',
+      description: l10n.swapStepSwapDesc,
     ),
     SwapStatusStepData(
       title: deliveryTitle,
       state: SwapStatusStepState.pending,
       activeTitle: '$deliveryTitle...',
       lastCheckedLabel: lastCheckedLabel,
-      description: 'Delivering the output asset to the recipient address.',
+      description: l10n.swapStepDeliveryDesc,
     ),
   ];
 }
@@ -233,6 +253,7 @@ List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
 List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   SwapIntent intent, {
   required Iterable<AddressBookContact> addressBookContacts,
+  required AppLocalizations l10n,
 }) {
   final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
@@ -252,6 +273,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           intent: intent,
           depositTxHash: depositTxHash,
           depositAddress: depositAddress,
+          l10n: l10n,
         )
       : null;
   final terminal = intent.status.isTerminal;
@@ -264,6 +286,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     // to the start time for records persisted before completion tracking.
     final timestamp = _swapActivityTimestampLabel(
       intent.completedAt ?? intent.createdAt,
+      l10n,
     );
     final explorerUri = nearIntentsExplorerUri(
       nearIntentHash: intent.nearIntentHash,
@@ -273,36 +296,45 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     return [
       if (!failed)
         SwapStatusDetailRowData(
-          label: 'Realized slippage',
-          value: intent.realisedSlippageText ?? 'Not reported',
+          label: l10n.swapRealizedSlippageLabel,
+          kind: SwapStatusDetailRowKind.realizedSlippage,
+          value: intent.realisedSlippageText ?? l10n.swapNotReported,
         ),
       if (timestamp != null)
-        SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+        SwapStatusDetailRowData(
+          label: l10n.swapTimestampLabel,
+          kind: SwapStatusDetailRowKind.timestamp,
+          value: timestamp,
+        ),
       if (depositTxHash != null && depositTxHash.isNotEmpty)
         SwapStatusDetailRowData(
-          label: '$sourceSymbol deposit tx',
+          label: l10n.swapDepositTxLabel(sourceSymbol),
+          kind: SwapStatusDetailRowKind.depositTx,
           value: compactSwapAddress(depositTxHash),
           copyable: true,
           copyText: depositTxHash,
+          scaleValueToFit: true,
           linkUri: explorerUri,
         ),
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
-          label: '$sourceSymbol refunded to',
+          label: l10n.swapRefundedToLabel(sourceSymbol),
+          kind: SwapStatusDetailRowKind.refundAddress,
           address: refundAddress,
           asset: sourceAsset,
           addressBookContacts: addressBookContacts,
         ),
       ?txIdRow,
       SwapStatusDetailRowData(
-        label: 'Total fees',
+        label: l10n.swapTotalFeesLabel,
+        kind: SwapStatusDetailRowKind.totalFees,
         value:
             intent.totalFeesText ??
             intent.swapFeeText ??
             intent.providerRefundInfo?.refundFeeText ??
-            'Included',
+            l10n.swapIncluded,
         help: true,
-        helpTooltip: swapTotalFeesTooltip,
+        helpTooltip: swapTotalFeesTooltip(l10n),
       ),
     ];
   }
@@ -310,6 +342,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   if (intent.status == SwapIntentStatus.incompleteDeposit) {
     return _swapActivityIncompleteDepositDetails(
       intent,
+      l10n: l10n,
       sourceSymbol: sourceSymbol,
       receiveSymbol: receiveSymbol,
       depositAddress: depositAddress,
@@ -324,26 +357,29 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
 
   // In-flight surfaces date the swap by when it was started; updatedAt
   // changes on every poll and would make the row jitter.
-  final timestamp = _swapActivityTimestampLabel(intent.createdAt);
+  final timestamp = _swapActivityTimestampLabel(intent.createdAt, l10n);
   final depositMemo = intent.depositMemo?.trim();
   return [
     if (sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$receiveSymbol recipient',
+        label: l10n.swapRecipientLabel(receiveSymbol),
+        kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$sourceSymbol refund address',
+        label: l10n.swapRefundAddressLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (depositAddress != null && depositAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: 'Deposit $sourceSymbol to',
+        label: l10n.swapDepositToLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -353,57 +389,71 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     // deposits cannot complete without it).
     if (!sendsZec && depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
-        label: 'Memo',
+        label: l10n.swapMemoLabel,
+        kind: SwapStatusDetailRowKind.memo,
         value: depositMemo,
         copyable: true,
         copyText: depositMemo,
       ),
     SwapStatusDetailRowData(
-      label: 'Slippage tolerance',
-      value: intent.slippageToleranceText ?? 'Configured quote',
+      label: l10n.swapSlippageToleranceLabel,
+      kind: SwapStatusDetailRowKind.slippageTolerance,
+      value: intent.slippageToleranceText ?? l10n.swapConfiguredQuote,
     ),
     SwapStatusDetailRowData(
-      label: 'Guaranteed minimum',
+      label: l10n.swapGuaranteedMinimumLabel,
+      kind: SwapStatusDetailRowKind.guaranteedMinimum,
       value: intent.minimumReceiveText ?? intent.receiveEstimate,
       help: true,
-      helpTooltip: swapMinimumReceiveTooltip(receiveSymbol),
+      helpTooltip: swapMinimumReceiveTooltip(l10n, receiveSymbol),
     ),
     if (timestamp != null)
-      SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+      SwapStatusDetailRowData(
+        label: l10n.swapTimestampLabel,
+        kind: SwapStatusDetailRowKind.timestamp,
+        value: timestamp,
+      ),
     ?txIdRow,
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$sourceSymbol refund address',
+        label: l10n.swapRefundAddressLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$receiveSymbol recipient',
+        label: l10n.swapRecipientLabel(receiveSymbol),
+        kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
-        label: '$sourceSymbol deposit tx',
+        label: l10n.swapDepositTxLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.depositTx,
         value: compactSwapAddress(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
+        scaleValueToFit: true,
       ),
     if (destinationChainTxHash != null && destinationChainTxHash.isNotEmpty)
       SwapStatusDetailRowData(
-        label: '$receiveSymbol delivery tx',
+        label: l10n.swapDeliveryTxLabel(receiveSymbol),
+        kind: SwapStatusDetailRowKind.deliveryTx,
         value: compactSwapAddress(destinationChainTxHash),
         copyable: true,
         copyText: destinationChainTxHash,
+        scaleValueToFit: true,
       ),
     SwapStatusDetailRowData(
-      label: 'Swap fee',
-      value: intent.swapFeeText ?? 'Included in shown rate',
+      label: l10n.swapFeeLabel,
+      kind: SwapStatusDetailRowKind.swapFee,
+      value: intent.swapFeeText ?? l10n.swapIncludedInRate,
       help: true,
-      helpTooltip: swapFeeTooltip,
+      helpTooltip: swapFeeTooltip(l10n),
     ),
   ];
 }
@@ -412,6 +462,7 @@ SwapStatusDetailRowData? _swapActivityTxIdRow({
   required SwapIntent intent,
   required String? depositTxHash,
   required String? depositAddress,
+  required AppLocalizations l10n,
 }) {
   final hasExplorerSource =
       (intent.nearIntentHash?.trim().isNotEmpty ?? false) ||
@@ -433,7 +484,8 @@ SwapStatusDetailRowData? _swapActivityTxIdRow({
   if (linkUri == null) return null;
 
   return SwapStatusDetailRowData(
-    label: 'Tx ID',
+    label: l10n.swapTxIdLabel,
+    kind: SwapStatusDetailRowKind.txId,
     value: compactSwapAddress(txId),
     linkUri: linkUri,
   );
@@ -441,6 +493,7 @@ SwapStatusDetailRowData? _swapActivityTxIdRow({
 
 List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   SwapIntent intent, {
+  required AppLocalizations l10n,
   required String sourceSymbol,
   required String receiveSymbol,
   required String? depositAddress,
@@ -457,64 +510,81 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   final missingDepositText = sourceAsset == null
       ? null
       : _swapActivityMissingDepositText(intent, sourceAsset);
-  final deadlineText = _swapActivityTimestampLabel(intent.depositDeadline);
+  final deadlineText = _swapActivityTimestampLabel(
+    intent.depositDeadline,
+    l10n,
+  );
 
   return [
     if (missingDepositText != null)
       SwapStatusDetailRowData(
-        label: 'Missing deposit',
+        label: l10n.swapMissingDepositLabel,
+        kind: SwapStatusDetailRowKind.missingDeposit,
         value: missingDepositText,
       ),
     if (depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
-        label: 'Memo',
+        label: l10n.swapMemoLabel,
+        kind: SwapStatusDetailRowKind.memo,
         value: depositMemo,
         copyable: true,
         copyText: depositMemo,
       ),
     if (depositAddress != null && depositAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: 'Deposit $sourceSymbol to',
+        label: l10n.swapDepositToLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
     SwapStatusDetailRowData(
-      label: 'Required deposit',
+      label: l10n.swapRequiredDepositLabel,
+      kind: SwapStatusDetailRowKind.requiredDeposit,
       value: intent.sellAmount,
     ),
     if (providerInfo?.depositedAmountText != null)
       SwapStatusDetailRowData(
-        label: 'Detected deposit',
+        label: l10n.swapDetectedDepositLabel,
+        kind: SwapStatusDetailRowKind.detectedDeposit,
         value: providerInfo!.depositedAmountText!,
       ),
     if (deadlineText != null)
-      SwapStatusDetailRowData(label: 'Deposit deadline', value: deadlineText),
+      SwapStatusDetailRowData(
+        label: l10n.swapDepositDeadlineRowLabel,
+        kind: SwapStatusDetailRowKind.depositDeadline,
+        value: deadlineText,
+      ),
     if (providerInfo?.refundFeeText != null)
       SwapStatusDetailRowData(
-        label: 'Refund fee',
+        label: l10n.swapRefundFeeLabel,
+        kind: SwapStatusDetailRowKind.refundFee,
         value: providerInfo!.refundFeeText!,
       ),
     if (refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$sourceSymbol refund address',
+        label: l10n.swapRefundAddressLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$receiveSymbol recipient',
+        label: l10n.swapRecipientLabel(receiveSymbol),
+        kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
       ),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
-        label: '$sourceSymbol deposit tx',
+        label: l10n.swapDepositTxLabel(sourceSymbol),
+        kind: SwapStatusDetailRowKind.depositTx,
         value: compactSwapAddress(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
+        scaleValueToFit: true,
       ),
   ];
 }
@@ -541,6 +611,7 @@ List<SwapStatusDetailRowData> _addressDetailRows({
   required String address,
   required SwapAsset? asset,
   required Iterable<AddressBookContact> addressBookContacts,
+  required SwapStatusDetailRowKind kind,
 }) {
   final addressBookLabel = addressBookContactForSwapAsset(
     contacts: addressBookContacts,
@@ -568,6 +639,8 @@ List<SwapStatusDetailRowData> _addressDetailRows({
       copyText: address,
       addressBookLabel: addressBookLabel,
       addressNetwork: addressNetwork,
+      scaleValueToFit: true,
+      kind: kind,
     ),
   ];
 }
@@ -627,38 +700,46 @@ String _swapActivityFiatTextForAsset({
 
 enum _SwapActivityAmountSide { sell, receive }
 
-String? swapDepositDeadlineLabel(SwapIntent intent) {
+String? swapDepositDeadlineLabel(
+  SwapIntent intent,
+  AppLocalizations l10n,
+) {
   final deadline = intent.depositDeadline;
   if (deadline == null) return null;
   final remaining = deadline.difference(DateTime.now());
   if (remaining.isNegative) return '00:00';
   if (remaining.inHours >= 1) {
     final hours = (remaining.inSeconds / Duration.secondsPerHour).ceil();
-    return hours == 1 ? '1hr' : '${hours}hrs';
+    return l10n.swapHoursShort(hours);
   }
   if (remaining.inMinutes >= 15) {
-    final minutes = remaining.inMinutes;
-    return minutes == 1 ? '1min' : '${minutes}mins';
+    return l10n.swapMinutesShort(remaining.inMinutes);
   }
   final minutes = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
   return '$minutes:$seconds';
 }
 
-String? _swapActivityLastRelativeStatusCheckedLabel(DateTime? checkedAt) {
+String? _swapActivityLastRelativeStatusCheckedLabel(
+  DateTime? checkedAt,
+  AppLocalizations l10n,
+) {
   if (checkedAt == null) return null;
   final elapsed = DateTime.now().difference(checkedAt.toLocal());
-  if (elapsed.inMinutes <= 0) return 'Last check: just now';
-  return 'Last check: ${elapsed.inMinutes}m ago';
+  if (elapsed.inMinutes <= 0) return l10n.swapLastCheckJustNow;
+  return l10n.swapLastCheckMinutesAgo(elapsed.inMinutes);
 }
 
-String? _swapActivityTimestampLabel(DateTime? timestamp) {
+String? _swapActivityTimestampLabel(
+  DateTime? timestamp,
+  AppLocalizations l10n,
+) {
   if (timestamp == null) return null;
   final local = timestamp.toLocal();
-  final month = _monthNames[local.month - 1];
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$month ${local.day}, ${local.year} $hour:$minute';
+  return DateFormat(
+    'MMM d, y HH:mm',
+    intlSafeLocale(l10n.localeName),
+  ).format(local);
 }
 
 class SwapActivityDepositInstruction {
@@ -674,7 +755,10 @@ class SwapActivityDepositInstruction {
     this.qr,
   });
 
-  static SwapActivityDepositInstruction? fromIntent(SwapIntent intent) {
+  static SwapActivityDepositInstruction? fromIntent(
+    SwapIntent intent,
+    AppLocalizations l10n,
+  ) {
     final direction = intent.direction;
     final externalAsset = intent.externalAsset;
     final depositAddress = intent.depositAddress;
@@ -684,25 +768,25 @@ class SwapActivityDepositInstruction {
 
     final depositSymbol = direction.fromSymbol(externalAsset);
     final depositAddressLabel = direction.sendsZec
-        ? '$depositSymbol deposit'
-        : '$depositSymbol source deposit';
+        ? l10n.swapDepositLabelShort(depositSymbol)
+        : l10n.swapSourceDepositLabel(depositSymbol);
 
     return SwapActivityDepositInstruction(
       sendLabel: direction.sendsZec
-          ? 'Send $depositSymbol'
-          : 'Send $depositSymbol from source chain',
+          ? l10n.swapSendSymbol(depositSymbol)
+          : l10n.swapSendFromSourceChain(depositSymbol),
       depositSymbol: depositSymbol,
       depositAddressLabel: depositAddressLabel,
       address: depositAddress,
       memo: intent.depositMemo,
-      txHashLabel: '$depositSymbol deposit tx hash',
-      txHashHint: '$depositSymbol source-chain transaction hash',
-      submitLabel: 'Submit $depositSymbol deposit',
+      txHashLabel: l10n.swapDepositTxHashLabel(depositSymbol),
+      txHashHint: l10n.swapDepositTxHashHint(depositSymbol),
+      submitLabel: l10n.swapSubmitDeposit(depositSymbol),
       qr: direction.sendsZec
           ? null
           : SwapActivityDepositQrInstruction(
               railLabel: externalAsset.railLabel,
-              reuseWarning: 'Do not reuse this address',
+              reuseWarning: l10n.swapDoNotReuseAddress,
             ),
     );
   }
@@ -732,11 +816,17 @@ bool canRefreshSwapIntentStatus(SwapIntentStatus status) {
   return status != SwapIntentStatus.complete;
 }
 
+bool _hasDepositInstruction(SwapIntent intent) {
+  return intent.direction != null &&
+      intent.externalAsset != null &&
+      intent.depositAddress != null;
+}
+
 bool swapActivityShowsExternalDepositPage(SwapIntent intent) {
   return intent.direction == SwapDirection.externalToZec &&
       intent.status == SwapIntentStatus.awaitingExternalDeposit &&
       intent.depositClaimedAt == null &&
-      SwapActivityDepositInstruction.fromIntent(intent) != null;
+      _hasDepositInstruction(intent);
 }
 
 bool swapActivityShowsHardwareZecDepositPage(
@@ -747,7 +837,7 @@ bool swapActivityShowsHardwareZecDepositPage(
       intent.direction == SwapDirection.zecToExternal &&
       intent.status == SwapIntentStatus.awaitingDeposit &&
       !(intent.depositTxHash?.trim().isNotEmpty ?? false) &&
-      SwapActivityDepositInstruction.fromIntent(intent) != null;
+      _hasDepositInstruction(intent);
 }
 
 bool swapActivityShowsDepositPage(
@@ -791,17 +881,3 @@ double? _numericAmount(String amountText) {
   return amount == null || !amount.isFinite ? null : amount;
 }
 
-const _monthNames = <String>[
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];

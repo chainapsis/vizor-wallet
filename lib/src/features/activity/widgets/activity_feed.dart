@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -44,7 +45,7 @@ class ActivityFeed extends StatelessWidget {
     required this.sections,
     this.isLoading = false,
     this.errorText,
-    this.emptyText = 'No activity yet',
+    this.emptyText,
     this.rowKeyPrefix,
     this.cardWidth = 396,
     this.showHeader = true,
@@ -54,7 +55,9 @@ class ActivityFeed extends StatelessWidget {
   final List<ActivityFeedSectionData> sections;
   final bool isLoading;
   final String? errorText;
-  final String emptyText;
+
+  /// Defaults to the localized "No activity yet" when null.
+  final String? emptyText;
   final String? rowKeyPrefix;
 
   /// Fixed card width. The 396px default matches the desktop pane;
@@ -87,7 +90,7 @@ class ActivityFeed extends StatelessWidget {
             sections: sections,
             isLoading: isLoading,
             errorText: errorText,
-            emptyText: emptyText,
+            emptyText: emptyText ?? AppLocalizations.of(context).activityNoActivityYet,
             rowKeyPrefix: rowKeyPrefix,
             cardWidth: cardWidth,
           ),
@@ -102,7 +105,7 @@ class ActivityFeedSliver extends StatelessWidget {
     required this.sections,
     this.isLoading = false,
     this.errorText,
-    this.emptyText = 'No activity yet',
+    this.emptyText,
     this.rowKeyPrefix,
     super.key,
   });
@@ -110,17 +113,21 @@ class ActivityFeedSliver extends StatelessWidget {
   final List<ActivityFeedSectionData> sections;
   final bool isLoading;
   final String? errorText;
-  final String emptyText;
+
+  /// Defaults to the localized "No activity yet" when null.
+  final String? emptyText;
   final String? rowKeyPrefix;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final items = _activityFeedSliverItems(
       sections: sections,
       isLoading: isLoading,
       errorText: errorText,
-      emptyText: emptyText,
+      emptyText: emptyText ?? l10n.activityNoActivityYet,
       rowKeyPrefix: rowKeyPrefix,
+      loadingText: l10n.homeLoadingActivity,
     );
     final childIndexByKey = <Key, int>{
       for (var index = 0; index < items.length; index++)
@@ -145,8 +152,9 @@ List<_ActivityFeedSliverItem> _activityFeedSliverItems({
   required String? errorText,
   required String emptyText,
   required String? rowKeyPrefix,
+  required String loadingText,
 }) {
-  final message = errorText ?? (isLoading ? 'Loading activity...' : null);
+  final message = errorText ?? (isLoading ? loadingText : null);
   final items = <_ActivityFeedSliverItem>[
     _ActivityFeedSliverItem.title(),
     _ActivityFeedSliverItem.gap(AppSpacing.base),
@@ -522,7 +530,7 @@ class _ActivityFeedTitleRow extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Activity',
+              AppLocalizations.of(context).navActivity,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
                 letterSpacing: 0,
@@ -554,7 +562,9 @@ class _ActivityFeedBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final message = errorText ?? (isLoading ? 'Loading activity...' : null);
+    final message =
+        errorText ??
+        (isLoading ? AppLocalizations.of(context).homeLoadingActivity : null);
     if (message != null && sections.isEmpty) {
       return _ActivityFeedMessageCard(
         text: message,
@@ -973,8 +983,9 @@ class _ActivityRowAmount extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final amountColor = row.amountColor ?? colors.text.primary;
-    final supporting = _supportingAmountText(row);
-    final supportingColor = _supportingAmountColor(row, colors);
+    final l10n = AppLocalizations.of(context);
+    final supporting = _supportingAmountText(row, l10n);
+    final supportingColor = _supportingAmountColor(row, colors, supporting);
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 128),
       child: Column(
@@ -995,21 +1006,32 @@ class _ActivityRowAmount extends StatelessWidget {
     );
   }
 
-  String? _supportingAmountText(ActivityRowData row) {
+  // Cached per localized "In progress" value; rows rebuild often while the
+  // locale rarely changes, so avoid re-escaping and recompiling per row.
+  static final _progressStatusPatterns = <String, RegExp>{};
+
+  String? _supportingAmountText(ActivityRowData row, AppLocalizations l10n) {
     if (childRow) return null;
     if (row.amountSubtitle != null) return row.amountSubtitle;
     final status = row.statusText.trim();
+    final progressPattern = _progressStatusPatterns.putIfAbsent(
+      l10n.activityInProgress,
+      () => RegExp('^\\d+/\\d+ ${RegExp.escape(l10n.activityInProgress)}\$'),
+    );
     final routineStatus =
-        status == 'Completed' ||
-        status == 'In progress' ||
-        RegExp(r'^\d+/\d+ In progress$').hasMatch(status);
+        status == l10n.activityCompleted ||
+        status == l10n.activityInProgress ||
+        progressPattern.hasMatch(status);
     if (status.isNotEmpty && !routineStatus) return status;
     return row.timestampText == '--' ? null : row.timestampText;
   }
 
-  Color _supportingAmountColor(ActivityRowData row, AppColors colors) {
+  Color _supportingAmountColor(
+    ActivityRowData row,
+    AppColors colors,
+    String? supporting,
+  ) {
     if (row.amountSubtitle != null) return colors.text.muted;
-    final supporting = _supportingAmountText(row);
     if (supporting != null && supporting == row.statusText.trim()) {
       return row.statusColor ?? colors.text.secondary;
     }

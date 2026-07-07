@@ -23,6 +23,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
 import 'passcode_widgets.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
 /// the wallet password verbatim (see the wallet password policy note in
@@ -88,7 +89,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             _entry = '';
             _firstPasscode = null;
             _phase = _PasscodePhase.create;
-            _error = "Passcodes didn't match. Try again.";
+            _error = AppLocalizations.of(context).settingsPasscodesDidntMatch;
           });
         }
       case _PasscodePhase.submitting:
@@ -191,7 +192,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         _phase = _PasscodePhase.create;
         _entry = '';
         _firstPasscode = null;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
     }
   }
@@ -202,10 +203,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final isConfirm = _phase == _PasscodePhase.confirm;
     final isSubmitting = _phase == _PasscodePhase.submitting;
     final subtitle = isSubmitting
-        ? 'Setting up your wallet...'
+        ? AppLocalizations.of(context).onbSettingUpWallet
         : isConfirm
-        ? 'Re-enter your passcode.'
-        : '6 digits length';
+        ? AppLocalizations.of(context).onbReenterPasscode
+        : AppLocalizations.of(context).onbSixDigitsLength;
 
     // A custom body rather than MobileOnboardingStepScaffold: the keypad is
     // pinned at the bottom and the dots + error are centred in the gap
@@ -237,8 +238,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                           children: [
                             Text(
                               isConfirm
-                                  ? 'Confirm Passcode'
-                                  : 'Create Passcode',
+                                  ? AppLocalizations.of(context).onbConfirmPasscode
+                                  : AppLocalizations.of(context).onbCreatePasscode,
                               textAlign: TextAlign.center,
                               style: AppTypography.displayLarge.copyWith(
                                 color: colors.text.accent,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -28,7 +29,7 @@ class MobileAboutScreen extends StatelessWidget {
         child: Column(
           children: [
             MobileTopNav.back(
-              title: 'About Vizor Wallet',
+              title: AppLocalizations.of(context).aboutVizorWallet,
               onBack: () => context.pop(),
             ),
             Expanded(
@@ -49,14 +50,18 @@ class MobileAboutScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    kVizorAboutVersionLabel,
+                    AppLocalizations.of(
+                      context,
+                    ).aboutVersionLabel(kVizorReleaseVersion),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  const _ParagraphCard(paragraphs: kAboutParagraphs),
+                  _ParagraphCard(
+                    paragraphs: aboutParagraphs(AppLocalizations.of(context)),
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -68,7 +73,7 @@ class MobileAboutScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.md),
                       _LinkButton(
-                        label: 'Website',
+                        label: AppLocalizations.of(context).aboutWebsite,
                         iconName: AppIcons.endpoint,
                         url: kVizorWebsiteUrl,
                       ),
@@ -102,7 +107,9 @@ class MobileLegalScreen extends StatelessWidget {
             MobileTopNav.back(title: title, onBack: () => context.pop()),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              kVizorAboutVersionLabel,
+              AppLocalizations.of(
+                context,
+              ).aboutVersionLabel(kVizorReleaseVersion),
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -117,7 +124,11 @@ class MobileLegalScreen extends StatelessWidget {
                   AppSpacing.sm,
                   AppSpacing.lg,
                 ),
-                children: const [_ParagraphCard(paragraphs: kLegalParagraphs)],
+                children: [
+                  _ParagraphCard(
+                    paragraphs: legalParagraphs(AppLocalizations.of(context)),
+                  ),
+                ],
               ),
             ),
           ],

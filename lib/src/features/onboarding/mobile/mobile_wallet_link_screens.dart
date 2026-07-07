@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
@@ -595,7 +596,11 @@ Future<void> _continueToPasscodeOrImport(
   } catch (error) {
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(onboardingSubmitErrorMessage(error))),
+      SnackBar(
+        content: Text(
+          onboardingSubmitErrorMessage(error, AppLocalizations.of(context)),
+        ),
+      ),
     );
     return;
   }

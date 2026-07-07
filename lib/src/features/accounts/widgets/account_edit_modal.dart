@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -77,7 +78,7 @@ class _AccountEditModalState extends State<AccountEditModal> {
     if (accountNameCharacterLength(_trimmedName) <= kAccountNameMaxCharacters) {
       return null;
     }
-    return kAccountNameLengthMessage;
+    return AppLocalizations.of(context).accountsNameLengthMessage;
   }
 
   @override
@@ -115,7 +116,7 @@ class _AccountEditModalState extends State<AccountEditModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update account.";
+        _submitError = AppLocalizations.of(context).accountsUpdateError;
       });
     } finally {
       if (mounted) {
@@ -149,8 +150,8 @@ class _AccountEditModalState extends State<AccountEditModal> {
                 ? _fieldHeight
                 : _fieldWithMessageHeight,
             child: AppTextField(
-              label: 'Account name',
-              hintText: '1-20 characters',
+              label: AppLocalizations.of(context).settingsAccountName,
+              hintText: AppLocalizations.of(context).accountsNameHint,
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
@@ -166,7 +167,9 @@ class _AccountEditModalState extends State<AccountEditModal> {
           const SizedBox(height: AppSpacing.md),
           AccountModalActions(
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            actionLabel: _isSubmitting
+                ? AppLocalizations.of(context).commonUpdating
+                : AppLocalizations.of(context).commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],
@@ -192,7 +195,7 @@ class _EditableAccountAvatar extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: 'Change profile picture',
+      label: AppLocalizations.of(context).accountsChangeProfilePicture,
       child: MouseRegion(
         cursor: onPressed == null
             ? SystemMouseCursors.basic

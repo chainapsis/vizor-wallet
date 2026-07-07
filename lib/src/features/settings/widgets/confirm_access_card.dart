@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Shared "Confirm access" password gate card.
 ///
@@ -77,7 +78,7 @@ class ConfirmAccessCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Confirm access',
+                      AppLocalizations.of(context).settingsConfirmAccess,
                       style: AppTypography.headlineLarge.copyWith(
                         color: cardTextColor,
                       ),
@@ -111,10 +112,10 @@ class ConfirmAccessCard extends StatelessWidget {
                 child: SizedBox(
                   height: _fieldBlockHeight,
                   child: AppTextField(
-                    label: 'Password',
+                    label: AppLocalizations.of(context).settingsPassword,
                     showLabel: false,
                     controller: controller,
-                    hintText: 'Your password...',
+                    hintText: AppLocalizations.of(context).settingsYourPasswordHint,
                     obscureText: true,
                     enableSuggestions: false,
                     autocorrect: false,
@@ -134,7 +135,7 @@ class ConfirmAccessCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Semantics(
                 button: true,
-                label: 'Confirm password',
+                label: AppLocalizations.of(context).settingsConfirmPassword,
                 child: AppButton(
                   onPressed: canSubmit && !isSubmitting ? onSubmit : null,
                   variant: AppButtonVariant.secondary,

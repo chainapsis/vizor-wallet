@@ -22,6 +22,7 @@ import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
 import '../widgets/swap_review_page_content.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
   const SwapReviewScreen({super.key});
@@ -52,7 +53,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     copyTextWithToast(
       toastContext,
       text: address,
-      toastMessage: 'Address copied',
+      toastMessage: AppLocalizations.of(context).toastAddressCopied,
     );
   }
 
@@ -134,7 +135,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     );
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? "You don't have enough ZEC for this swap. Try a smaller amount."
+        ? AppLocalizations.of(context).swapNotEnoughZecBody
         : null;
 
     return AppDesktopShell(
@@ -147,7 +148,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
             AppPaneScrollScaffold(
               toolbar: AppPaneToolbar(
                 leading: AppBackLink(
-                  label: 'Swap',
+                  label: AppLocalizations.of(context).swapTitle,
                   minWidth: 60,
                   onTap: _returnToSwap,
                 ),
@@ -168,7 +169,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                           ref.watch(addressBookProvider).value?.contacts ??
                           const [],
                       expired: swapState.quoteExpired,
-                      amountWarning: swapState.reviewAmountDifferenceWarning,
+                      amountWarning: swapState.reviewAmountDifferenceWarning(
+                        AppLocalizations.of(context),
+                      ),
                       startError: swapState.statusError,
                       startBlockedReason: startBlockedReason,
                       payFiatTextOverride: swapReviewFiatTextForAsset(

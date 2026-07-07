@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
@@ -122,6 +123,9 @@ Widget _app({
         ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileSeedPhraseScreen(
         screenshotStream: screenshotStream,
@@ -141,6 +145,9 @@ Widget _routerApp(GoRouter router) {
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

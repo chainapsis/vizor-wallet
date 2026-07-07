@@ -8,6 +8,8 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome, MobileScanResolver;
 
+import '../../../../../l10n/app_localizations.dart';
+
 /// Presents the mobile send scanner over the current send screen — Figma
 /// `QR Scan` (4484:61584): a card-contained back camera scanner over the
 /// dimmed app. Pops the scanned Zcash address string on success.
@@ -20,23 +22,26 @@ Future<String?> showMobileSendScanSheet(
     context: context,
     builder: (sheetContext) => MobileAddressScanCard(
       controller: controller,
-      resolve: resolve ?? _resolveZcashAddress,
+      resolve:
+          resolve ?? (raw) => _resolveZcashAddress(context, raw),
       onScanned: (address) => Navigator.of(sheetContext).pop(address),
       onClose: () => Navigator.of(sheetContext).pop(),
     ),
   );
 }
 
-Future<MobileScanOutcome> _resolveZcashAddress(String raw) async {
+Future<MobileScanOutcome> _resolveZcashAddress(
+  BuildContext context,
+  String raw,
+) async {
+  // Resolve the copy before any await: the sheet context can go stale while
+  // the Rust validation runs.
+  final notZcashMessage = AppLocalizations.of(context).sendQrNotZcash;
   final address = normalizeAddressScanPayload(raw);
   if (address == null || address.isEmpty) {
-    return const MobileScanOutcome.rejected(
-      "This QR code isn't a Zcash address.",
-    );
+    return MobileScanOutcome.rejected(notZcashMessage);
   }
   final result = await rust_sync.validateAddress(address: address);
   if (result.isValid) return MobileScanOutcome.accepted(address);
-  return const MobileScanOutcome.rejected(
-    "This QR code isn't a Zcash address.",
-  );
+  return MobileScanOutcome.rejected(notZcashMessage);
 }

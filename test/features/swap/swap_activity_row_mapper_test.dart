@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations_en.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
@@ -8,6 +9,7 @@ import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('maps swap records to shared activity feed rows', (tester) async {
@@ -15,6 +17,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -73,6 +78,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -114,6 +122,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -150,6 +161,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -186,6 +200,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -226,6 +243,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -267,6 +287,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -345,6 +368,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -370,7 +396,10 @@ void main() {
       ),
     );
 
-    expect(row!.timestampText, formatActivityTimestamp(createdAt));
+    expect(
+      row!.timestampText,
+      formatActivityTimestamp(createdAt, l10n: AppLocalizationsEn()),
+    );
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.title, 'Deposited USDC');
     expect(row!.childRows.single.amountText, '+0.21 USDC');
@@ -389,6 +418,9 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -440,6 +472,9 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -482,6 +517,9 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -529,6 +567,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -554,7 +595,7 @@ void main() {
     );
 
     expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'USDC Refunded');
+    expect(row!.subtitle, 'USDC refunded');
     expect(row!.amountIconName, AppIcons.uturnUp);
     expect(row!.statusText, 'Refunded');
     expect(row!.statusIconName, AppIcons.uturnUp);
@@ -569,6 +610,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates:
+            AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -594,7 +638,7 @@ void main() {
     );
 
     expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'ZEC Refunded');
+    expect(row!.subtitle, 'ZEC refunded');
     expect(row!.statusText, 'Refunded');
     expect(row!.childRows, isEmpty);
   });

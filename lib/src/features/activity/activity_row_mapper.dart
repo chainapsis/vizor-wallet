@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
+import '../../../l10n/app_localizations.dart';
 import '../../core/formatting/zec_amount.dart';
 import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
@@ -8,6 +10,7 @@ import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
 import 'models/activity_row_data.dart';
+import '../../core/formatting/date_format.dart' show intlSafeLocale;
 
 const _activityAmountPrivacyMaskLength = 3;
 
@@ -28,6 +31,7 @@ ActivityRowData buildTransactionActivityRow({
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
+  final l10n = AppLocalizations.of(context);
   final isPending =
       transaction.minedHeight == BigInt.zero && !transaction.expiredUnmined;
   final isFailed = transaction.expiredUnmined;
@@ -40,7 +44,7 @@ ActivityRowData buildTransactionActivityRow({
   final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
   final subtitle = isInbound || isSent
-      ? _poolLabel(transaction.displayPool)
+      ? _poolLabel(transaction.displayPool, l10n)
       : null;
 
   // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
@@ -51,10 +55,10 @@ ActivityRowData buildTransactionActivityRow({
   return ActivityRowData(
     stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
     title: isFailed && isSent
-        ? 'Send failed'
+        ? l10n.activitySendFailed
         : isInFlight
-        ? _pendingTxTitle(isSent ? 'Sending' : 'Receiving')
-        : _txTitle(kind),
+        ? _pendingTxTitle(isSent ? l10n.activitySending : l10n.activityReceiving)
+        : _txTitle(kind, l10n),
     leadingIconName: _txIcon(kind, isPending: isPending),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
@@ -79,12 +83,14 @@ ActivityRowData buildTransactionActivityRow({
         : isInbound
         ? colors.text.positiveStrong
         : outgoingAmountColor(colors),
-    amountSubtitle: isFailed && amount != BigInt.zero ? 'Refunded' : null,
+    amountSubtitle: isFailed && amount != BigInt.zero
+        ? l10n.activityRefunded
+        : null,
     statusText: isFailed
-        ? 'Failed'
+        ? l10n.activityFailed
         : isPending
-        ? 'In progress'
-        : 'Completed',
+        ? l10n.activityInProgress
+        : l10n.activityCompleted,
     statusIconName: isFailed
         ? AppIcons.skull
         : isPending
@@ -94,6 +100,7 @@ ActivityRowData buildTransactionActivityRow({
     timestampText: formatActivityTimestamp(
       _txTimestamp(transaction),
       dateOnly: dateOnlyTimestamp,
+      l10n: l10n,
     ),
     onTap: onTap,
   );
@@ -130,34 +137,42 @@ String _transactionAmountText({
 
 /// Desktop keeps the older relative "Today, 13:40" form. Mobile activity
 /// sections use absolute "May 29, 13:40" stamps, or date-only section labels.
-String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
+String formatActivityTimestamp(
+  DateTime? timestamp, {
+  bool dateOnly = false,
+  required AppLocalizations l10n,
+}) {
   if (timestamp == null) return '--';
   final local = timestamp.toLocal();
-  final date = '${_monthName(local.month)} ${local.day}';
+  final date = DateFormat.MMMd(
+    intlSafeLocale(l10n.localeName),
+  ).format(local);
   if (dateOnly) return date;
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  if (kAppFormFactor == AppFormFactor.mobile) return '$date, $time';
+  if (kAppFormFactor == AppFormFactor.mobile) {
+    return l10n.activityDateAt(date, time);
+  }
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final localDate = DateTime(local.year, local.month, local.day);
-  if (localDate == today) return 'Today, $time';
+  if (localDate == today) return l10n.activityTodayAt(time);
   if (localDate == today.subtract(const Duration(days: 1))) {
-    return 'Yesterday, $time';
+    return l10n.activityYesterdayAt(time);
   }
-  return '$date, $time';
+  return l10n.activityDateAt(date, time);
 }
 
 String _pendingTxTitle(String verb) =>
     kAppFormFactor == AppFormFactor.mobile ? '$verb...' : '$verb ...';
 
-String _txTitle(String kind) {
+String _txTitle(String kind, AppLocalizations l10n) {
   return switch (kind) {
-    'receiving' => 'Receiving',
-    'received' => 'Received',
-    'sent' => 'Sent',
-    'shielded' => 'Shielded',
-    _ => 'Transaction',
+    'receiving' => l10n.activityReceiving,
+    'received' => l10n.activityReceived,
+    'sent' => l10n.activitySent,
+    'shielded' => l10n.activityShielded,
+    _ => l10n.navTransaction,
   };
 }
 
@@ -177,11 +192,11 @@ String _txIcon(String kind, {required bool isPending}) {
   };
 }
 
-String? _poolLabel(String pool) {
+String? _poolLabel(String pool, AppLocalizations l10n) {
   return switch (pool) {
-    'transparent' => 'Transparent',
-    'shielded' => 'Shielded',
-    'mixed' => 'Mixed',
+    'transparent' => l10n.receiveTransparent,
+    'shielded' => l10n.receiveShielded,
+    'mixed' => l10n.activityMixed,
     _ => null,
   };
 }
@@ -200,21 +215,3 @@ DateTime? _txTimestamp(rust_sync.TransactionInfo tx) {
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
 }
 
-String _monthName(int month) {
-  const months = [
-    '',
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return months[month];
-}

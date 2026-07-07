@@ -1,3 +1,4 @@
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/profile_pictures.dart';
 
 enum AddressBookNetwork {
@@ -166,19 +167,29 @@ String previewAddress(String address) {
   return '${trimmed.substring(0, 6)} ... ${trimmed.substring(trimmed.length - 5)}';
 }
 
-String? validateAddressBookLabel(String label) {
+bool isAddressBookLabelValid(String label) {
   final trimmed = label.trim();
-  if (trimmed.isEmpty) return 'Add a label';
-  if (trimmed.length > 20) return 'Use 1-20 characters';
+  return trimmed.isNotEmpty && trimmed.length <= 20;
+}
+
+bool isAddressBookAddressValid(String address) => address.trim().isNotEmpty;
+
+String? validateAddressBookLabel(String label, AppLocalizations l10n) {
+  final trimmed = label.trim();
+  if (trimmed.isEmpty) return l10n.abAddLabelError;
+  if (trimmed.length > 20) return l10n.abLabelLength;
   return null;
 }
 
-String? validateAddressBookAddress(String address) {
+String? validateAddressBookAddress(String address, AppLocalizations l10n) {
   final trimmed = address.trim();
-  if (trimmed.isEmpty) return 'Add an address';
+  if (trimmed.isEmpty) return l10n.abAddAddressError;
   return null;
 }
 
-String addressBookQrScanTitle(AddressBookNetwork network) {
-  return 'Scan ${network.label} QR code';
+String addressBookQrScanTitle(
+  AddressBookNetwork network,
+  AppLocalizations l10n,
+) {
+  return l10n.abScanNetworkQr(network.label);
 }

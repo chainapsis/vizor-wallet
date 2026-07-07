@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_change_
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
   @override
@@ -76,6 +77,9 @@ void main() {
           appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
         ),

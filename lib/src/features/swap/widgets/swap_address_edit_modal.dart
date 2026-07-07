@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -107,7 +108,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   String? get _formatError {
     final finding = _formatFinding;
     return finding?.severity == AddressFormatSeverity.error
-        ? finding!.message
+        ? addressFormatFindingMessage(finding!, AppLocalizations.of(context))
         : null;
   }
 
@@ -132,17 +133,20 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final sendsZec = widget.state.direction.sendsZec;
     final asset = widget.state.externalAsset;
     final title = sendsZec
-        ? '${asset.symbol} recipient address'
-        : '${asset.symbol} refund address';
-    final fieldLabel = sendsZec ? 'Recipient' : 'Refund to';
-    final hint = widget.state.destinationFieldHint;
+        ? AppLocalizations.of(context).swapRecipientAddressTitle(asset.symbol)
+        : AppLocalizations.of(context).swapRefundAddressTitle(asset.symbol);
+    final fieldLabel = sendsZec
+        ? AppLocalizations.of(context).swapRecipientFieldLabel
+        : AppLocalizations.of(context).swapRefundToFieldLabel;
+    final hint = widget.state.destinationFieldHint(
+      AppLocalizations.of(context),
+    );
     final description = sendsZec
-        ? 'Your ${asset.symbol} will be delivered to this address.'
-        : "If the swap fails or the rate moves, you'll be refunded in "
-              '${asset.symbol} on ${asset.chainLabel}, minus the fee.';
+        ? AppLocalizations.of(context).swapDeliveredToAddress(asset.symbol)
+        : AppLocalizations.of(context).swapRefundsReturnedAs(asset.symbol, asset.chainLabel);
     final rememberLabel = sendsZec
-        ? 'Remember this address for recipients'
-        : 'Remember this address for refunds';
+        ? AppLocalizations.of(context).swapRememberRecipients
+        : AppLocalizations.of(context).swapRememberRefunds;
     final formatFinding = _formatFinding;
     final matchedContact = _matchedContact;
 
@@ -199,7 +203,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   height: 16,
                   child: formatFinding != null
                       ? Text(
-                          formatFinding.message,
+                          addressFormatFindingMessage(
+                            formatFinding,
+                            AppLocalizations.of(context),
+                          ),
                           key:
                               formatFinding.severity ==
                                   AddressFormatSeverity.error
@@ -252,7 +259,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
           AppModalActions(
             actionKey: const ValueKey('swap_address_update_button'),
             cancelKey: const ValueKey('swap_address_cancel_button'),
-            actionLabel: 'Update',
+            actionLabel: AppLocalizations.of(context).swapUpdateAction,
             onAction: _canSubmit ? _submit : null,
             onCancel: widget.onCancel,
           ),

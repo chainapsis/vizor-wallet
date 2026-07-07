@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   setUp(resetVotingPollListRecentRefreshForTests);
@@ -55,9 +56,12 @@ void main() {
           votingRoundsProvider.overrideWith(_TrackingVotingRoundsNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
+              _localizedAppTheme(data: AppThemeData.light, child: child!),
         ),
       ),
     );
@@ -140,9 +144,12 @@ void main() {
           }),
         ],
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
+              _localizedAppTheme(data: AppThemeData.light, child: child!),
         ),
       ),
     );
@@ -234,9 +241,12 @@ void main() {
             }),
           ],
           child: MaterialApp.router(
+            localizationsDelegates:
+                AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: router,
             builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
+                _localizedAppTheme(data: AppThemeData.light, child: child!),
           ),
         ),
       );
@@ -305,9 +315,12 @@ void main() {
           }),
         ],
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
+              _localizedAppTheme(data: AppThemeData.light, child: child!),
         ),
       ),
     );
@@ -365,9 +378,12 @@ void main() {
           votingRoundsProvider.overrideWith(_ForumLinkVotingRoundsNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates:
+              AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (_, child) =>
-              AppTheme(data: AppThemeData.light, child: child!),
+              _localizedAppTheme(data: AppThemeData.light, child: child!),
         ),
       ),
     );
@@ -425,9 +441,12 @@ void main() {
             }),
           ],
           child: MaterialApp.router(
+            localizationsDelegates:
+                AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: router,
             builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
+                _localizedAppTheme(data: AppThemeData.light, child: child!),
           ),
         ),
       );
@@ -688,4 +707,14 @@ class _SwitchingAccountNotifier extends AccountNotifier {
 class _NoopSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState();
+}
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
 }

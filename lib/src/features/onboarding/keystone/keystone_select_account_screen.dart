@@ -7,6 +7,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import 'keystone_onboarding_flow.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class KeystoneSelectAccountScreen extends ConsumerStatefulWidget {
   const KeystoneSelectAccountScreen({super.key});
@@ -30,7 +31,7 @@ class _KeystoneSelectAccountScreenState
 
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.scanQrCode.label,
+        label: KeystoneOnboardingStep.scanQrCode.label(context),
         routePath: KeystoneOnboardingStep.scanQrCode.routePath,
       ),
       bodyPadding: EdgeInsets.zero,
@@ -149,7 +150,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Select account',
+            AppLocalizations.of(context).keystoneSelectAccount,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,
@@ -165,7 +166,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 226,
           child: Text(
-            'Prepare your Keystone wallet',
+            AppLocalizations.of(context).keystonePrepareWallet,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -205,7 +206,7 @@ class _FloatingConfirmButton extends StatelessWidget {
           onPressed: enabled ? onPressed : null,
           variant: AppButtonVariant.primary,
           minWidth: 196,
-          child: const Text('Confirm selection'),
+          child: Text(AppLocalizations.of(context).keystoneConfirmSelection),
         ),
       ),
     );
@@ -243,7 +244,7 @@ class _AccountPickerState extends State<_AccountPicker> {
     final colors = context.colors;
     final accounts = widget.accounts;
     final countLabel =
-        '${accounts.length} ${accounts.length == 1 ? 'account' : 'accounts'} found';
+        AppLocalizations.of(context).keystoneAccountsFound(accounts.length);
 
     return SizedBox(
       width: double.infinity,
@@ -354,7 +355,7 @@ class _AccountRadioCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _accountName(account),
+                        _accountName(context, account),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
@@ -386,9 +387,13 @@ class _AccountRadioCard extends StatelessWidget {
     );
   }
 
-  String _accountName(KeystoneAccountInfo account) {
+  String _accountName(BuildContext context, KeystoneAccountInfo account) {
     final name = account.name.trim();
-    return name.isEmpty ? 'Account ${account.index + 1}' : name;
+    return name.isEmpty
+        ? AppLocalizations.of(context).keystoneAccountFallback(
+            account.index + 1,
+          )
+        : name;
   }
 
   String _shortUfvk(String ufvk) {

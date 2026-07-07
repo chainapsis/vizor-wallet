@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -164,7 +165,7 @@ class _SecretPassphraseScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _CreateWalletSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(e, AppLocalizations.of(context));
       });
       return;
     }
@@ -210,7 +211,7 @@ class _SecretPassphraseScreenState
         ),
         child: OnboardingPaneScaffold(
           backTarget: OnboardingBackTarget.route(
-            label: OnboardingStep.thingsToKnow.label,
+            label: OnboardingStep.thingsToKnow.label(context),
             routePath: OnboardingStep.thingsToKnow.routePath,
           ),
           bodyPadding: EdgeInsets.zero,
@@ -352,7 +353,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Secret Passphrase',
+            AppLocalizations.of(context).onbSecretPassphrase,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -361,7 +362,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'The master key to your wallet.',
+          AppLocalizations.of(context).onbMasterKeySubtitle,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -401,10 +402,10 @@ class _BottomActions extends StatelessWidget {
           minWidth: _buttonWidth,
           trailing: const AppIcon(AppIcons.chevronForward),
           child: Text(switch (submitPhase) {
-            _CreateWalletSubmitPhase.stoppingSync => 'Stop syncing...',
-            _CreateWalletSubmitPhase.creating => 'Creating wallet...',
+            _CreateWalletSubmitPhase.stoppingSync => AppLocalizations.of(context).onbStopSyncing,
+            _CreateWalletSubmitPhase.creating => AppLocalizations.of(context).onbCreatingWallet,
             _CreateWalletSubmitPhase.idle =>
-              revealed ? 'Continue' : 'Reveal the phrase',
+              revealed ? AppLocalizations.of(context).commonContinue : AppLocalizations.of(context).onbRevealPhrase,
           }),
         ),
         if (submitError != null) ...[
@@ -511,9 +512,9 @@ class _HiddenWarning extends StatelessWidget {
           child: Text.rich(
             TextSpan(
               style: AppTypography.headlineSmall.copyWith(color: textColor),
-              children: const [
-                TextSpan(text: 'You are about to see your '),
-                TextSpan(text: 'Secret Passphrase.'),
+              children: [
+                TextSpan(text: AppLocalizations.of(context).onbAboutToSeePrefix),
+                TextSpan(text: AppLocalizations.of(context).onbAboutToSeeSuffix),
               ],
             ),
             textAlign: TextAlign.center,
@@ -523,9 +524,7 @@ class _HiddenWarning extends StatelessWidget {
         SizedBox(
           width: 298,
           child: Text(
-            'This phrase is the master key to your funds. Keep it safe, keep '
-            'it secret. If you lose it, no one can help you recover your '
-            'wallet. Not even us.',
+            AppLocalizations.of(context).onbPhraseWarning,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: textColor.withValues(alpha: 0.7),
@@ -588,7 +587,7 @@ class _SeedGrid extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Secret Passphrase',
+                AppLocalizations.of(context).onbSecretPassphrase,
                 style: AppTypography.bodyLarge.copyWith(
                   color: textColor,
                   fontWeight: FontWeight.w600,
@@ -670,7 +669,7 @@ class _CopyButton extends StatelessWidget {
       variant: AppButtonVariant.primary,
       size: AppButtonSize.small,
       trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-      child: Text(copied ? 'Copied' : 'Copy'),
+      child: Text(copied ? AppLocalizations.of(context).onbCopied : AppLocalizations.of(context).commonCopy),
     );
   }
 }

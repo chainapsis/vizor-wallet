@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -534,8 +535,11 @@ Widget _sendHarness({
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => _localizedAppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -744,3 +748,13 @@ const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
+/// Wraps [AppTheme] in a [Localizations] scope so widgets under test can
+/// resolve [AppLocalizations] without a full MaterialApp harness.
+Widget _localizedAppTheme({required AppThemeData data, required Widget child}) {
+  return Localizations(
+    locale: const Locale('en'),
+    delegates: AppLocalizations.localizationsDelegates,
+    child: AppTheme(data: data, child: child),
+  );
+}

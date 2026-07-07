@@ -35,7 +35,7 @@ class AccountModalActions extends StatelessWidget {
     required this.onCancel,
     required this.actionLabel,
     required this.onAction,
-    this.cancelLabel = 'Cancel',
+    this.cancelLabel,
     this.actionVariant = AppButtonVariant.primary,
     this.actionMinWidth = kAccountModalButtonMinWidth,
     this.actionLeading,
@@ -43,7 +43,9 @@ class AccountModalActions extends StatelessWidget {
   });
 
   final VoidCallback? onCancel;
-  final String cancelLabel;
+
+  /// Defaults to the localized "Cancel" when null.
+  final String? cancelLabel;
   final String actionLabel;
   final VoidCallback? onAction;
   final AppButtonVariant actionVariant;

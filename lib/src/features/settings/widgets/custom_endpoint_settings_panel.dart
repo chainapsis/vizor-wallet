@@ -12,6 +12,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class CustomEndpointSettingsPanel extends ConsumerStatefulWidget {
   const CustomEndpointSettingsPanel({
@@ -72,7 +73,7 @@ class _CustomEndpointSettingsPanelState
       normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return localizedRpcEndpointFormatMessage(e, AppLocalizations.of(context));
     }
   }
 
@@ -100,7 +101,10 @@ class _CustomEndpointSettingsPanelState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = localizedRpcEndpointFormatMessage(
+          e,
+          AppLocalizations.of(context),
+        );
         _isSubmitting = false;
       });
     } catch (e, st) {
@@ -108,7 +112,7 @@ class _CustomEndpointSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+            AppLocalizations.of(context).endpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -167,7 +171,9 @@ class _CustomEndpointSettingsPanelState
                 variant: AppButtonVariant.primary,
                 minWidth: 256,
                 trailing: const AppIcon(AppIcons.chevronForward),
-                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+                child: Text(
+                  _isSubmitting ? AppLocalizations.of(context).endpointUpdating : AppLocalizations.of(context).commonUpdate,
+                ),
               ),
             ],
           ),
@@ -192,7 +198,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Endpoint',
+              AppLocalizations.of(context).settingsEndpoint,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -203,7 +209,7 @@ class _PanelHeader extends StatelessWidget {
               right: 0,
               child: AppIconHoverButton(
                 icon: AppIcons.cross,
-                semanticLabel: 'Close endpoint settings',
+                semanticLabel: AppLocalizations.of(context).endpointCloseSettings,
                 onTap: onClose!,
               ),
             ),
@@ -234,13 +240,13 @@ class CurrentEndpointText extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final suffix = [
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (latency != null) latency.label(AppLocalizations.of(context)),
+      if (preset?.isDefault ?? false) AppLocalizations.of(context).endpointDefaultSuffix,
     ].join(' ');
 
     return Text.rich(
       TextSpan(
-        text: 'Current: ',
+        text: AppLocalizations.of(context).endpointCurrentPrefix,
         children: [
           TextSpan(
             text: current.hostPort,
@@ -280,8 +286,8 @@ class CustomEndpointForm extends StatelessWidget {
           SizedBox(
             height: 86,
             child: AppTextField(
-              label: 'Custom Endpoint',
-              hintText: '<hostname>:<port>',
+              label: AppLocalizations.of(context).endpointCustomEndpointTitle,
+              hintText: AppLocalizations.of(context).endpointHostPortHint,
               controller: controller,
               autofocus: true,
               leading: const AppIcon(AppIcons.endpoint),
@@ -306,15 +312,12 @@ class CustomEndpointForm extends StatelessWidget {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    text:
-                        "If the endpoint is configured wrong, your wallet won't "
-                        'be able to sync with the Zcash network.\n',
+                    text: AppLocalizations.of(context).endpointMisconfiguredNetworkNewline,
                     children: [
                       TextSpan(
-                        text:
-                            "The wallet will show the balance from the last "
-                            "time it was successfully connected. It won't "
-                            'show any $kZcashDefaultCurrencyTicker you recently received.',
+                        text: AppLocalizations.of(context).endpointStaleBalanceWarning(
+                          kZcashDefaultCurrencyTicker,
+                        ),
                         style: TextStyle(color: colors.text.primary),
                       ),
                     ],

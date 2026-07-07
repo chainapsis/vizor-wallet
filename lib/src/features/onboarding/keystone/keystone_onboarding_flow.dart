@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import '../shared/onboarding_chrome.dart';
+import '../../../../l10n/app_localizations.dart';
 
 export '../shared/onboarding_chrome.dart' show OnboardingBackTarget;
 
@@ -21,12 +22,17 @@ enum KeystoneOnboardingStep {
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
-  String get label => switch (this) {
-    KeystoneOnboardingStep.howToConnect => 'How to Connect',
-    KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
-    KeystoneOnboardingStep.selectAccount => 'Select Account',
-    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    KeystoneOnboardingStep.setPassword => 'Set Password',
+  String label(BuildContext context) => switch (this) {
+    KeystoneOnboardingStep.howToConnect =>
+      AppLocalizations.of(context).onbStepHowToConnect,
+    KeystoneOnboardingStep.scanQrCode =>
+      AppLocalizations.of(context).onbStepScanQrCode,
+    KeystoneOnboardingStep.selectAccount =>
+      AppLocalizations.of(context).onbStepSelectAccount,
+    KeystoneOnboardingStep.walletBirthdayHeight =>
+      AppLocalizations.of(context).onbStepWalletBirthdayHeight,
+    KeystoneOnboardingStep.setPassword =>
+      AppLocalizations.of(context).onbSetPassword,
   };
 
   String get iconName => switch (this) {
@@ -246,7 +252,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.label,
+            label: step.label(context),
             iconName: step.iconName,
             active: step == activeStep,
           ),

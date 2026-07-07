@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 void main() {
   testWidgets('birthday tab labels show a click cursor', (tester) async {
@@ -282,6 +283,9 @@ Widget _birthdayHarness({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
         child: Material(
@@ -324,6 +328,9 @@ Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
@@ -346,6 +353,9 @@ Widget _modalHarness({
   required ValueChanged<List<int>> onConfirm,
 }) {
   return MaterialApp(
+    localizationsDelegates:
+        AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     home: MediaQuery(
       data: const MediaQueryData(textScaler: TextScaler.linear(1)),
       child: AppTheme(

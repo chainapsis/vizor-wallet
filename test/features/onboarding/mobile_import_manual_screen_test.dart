@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
 const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
@@ -17,6 +18,9 @@ const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
 Widget _app() {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: const MobileImportManualScreen(wordListOverride: _wordList),
     ),
@@ -43,6 +47,9 @@ Widget _routedApp() {
   );
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

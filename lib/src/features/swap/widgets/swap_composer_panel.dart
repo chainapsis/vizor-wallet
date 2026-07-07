@@ -11,6 +11,7 @@ import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
@@ -149,7 +150,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       payCard: _SwapAmountCard(
-        label: 'You pay',
+        label: AppLocalizations.of(context).swapYouPay,
         active: payActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_amount_field'),
@@ -165,7 +166,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               : state.direction.fromAsset(state.externalAsset).decimals,
         ),
         asset: sendsZec
-            ? const _TokenPill(asset: SwapAsset.zec, label: 'Zcash')
+            ? _TokenPill(asset: SwapAsset.zec, label: AppLocalizations.of(context).swapZcashLabel)
             : _ExternalAssetButton(
                 selected: state.externalAsset,
                 open: widget.assetSelectorOpen,
@@ -213,13 +214,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add refund address...',
+                  emptyText: AppLocalizations.of(context).swapAddRefundAddress,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               ),
       ),
       receiveCard: _SwapAmountCard(
-        label: 'You receive',
+        label: AppLocalizations.of(context).swapYouReceive,
         active: receiveActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_receive_amount_field'),
@@ -240,7 +241,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 open: widget.assetSelectorOpen,
                 onTap: widget.onOpenExternalAssetPicker,
               )
-            : const _TokenPill(asset: SwapAsset.zec, label: 'Zcash'),
+            : _TokenPill(asset: SwapAsset.zec, label: AppLocalizations.of(context).swapZcashLabel),
         footer: sendsZec
             ? _SwapCardFooter(
                 leading: _SwapFiatValueText(
@@ -258,7 +259,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add recipient address...',
+                  emptyText: AppLocalizations.of(context).swapAddRecipientAddress,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               )
@@ -736,7 +737,7 @@ class _MaxAmountTrigger extends StatelessWidget {
     final colors = context.colors;
     final hasError = errorText != null || balanceExceeded;
     final label =
-        errorText ?? (hasError ? 'Max: $availableText' : 'Max: $availableText');
+        errorText ?? AppLocalizations.of(context).swapMaxAvailable(availableText);
     return MouseRegion(
       cursor: loading ? SystemMouseCursors.basic : SystemMouseCursors.click,
       child: GestureDetector(

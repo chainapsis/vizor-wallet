@@ -6,6 +6,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Step 3 — Figma `Onboarding 1 Intro` (4394:78213).
 class MobileOnboardingIntroScreen extends StatelessWidget {
@@ -17,9 +18,9 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
     return MobileOnboardingStepScaffold(
       progress: mobileCreateProgress(3),
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'The Shielded World',
+      title: AppLocalizations.of(context).onbShieldedWorld,
       // Line break matches the Figma subtitle wrap.
-      subtitle: 'Zcash (ZEC) built around financial\nprivacy & self-custody.',
+      subtitle: AppLocalizations.of(context).onbZecIntroMobile,
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -29,12 +30,12 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
             expand: true,
             onPressed: () => context.push('/onboarding/address-types'),
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Tell me how Zcash works'),
+            child: Text(AppLocalizations.of(context).onbTellMeHow),
           ),
           const SizedBox(height: AppSpacing.s),
           _TextLinkButton(
             key: const ValueKey('mobile_intro_skip'),
-            label: 'I know how to use Zcash',
+            label: AppLocalizations.of(context).onbIKnowZcash,
             trailingIconName: AppIcons.skip,
             onTap: () => context.push('/onboarding/secret-passphrase'),
           ),
@@ -44,10 +45,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
         children: [
           _DarkInfoCard(
             iconName: AppIcons.shieldKeyhole,
-            text:
-                'Unlike Bitcoin or Ethereum, shielded Zcash transactions '
-                'hide the sender, recipient, and amount — verified by '
-                'cryptography, not trust.',
+            text: AppLocalizations.of(context).onbZecPrivacyBody,
           ),
           // 32 to the paragraph block (plus its own 24 inset) per the
           // intro frame's vertical rhythm.
@@ -55,8 +53,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Text(
-              "You're a few steps away from your first private wallet. "
-              "Let's get you set up.",
+              AppLocalizations.of(context).onbFewStepsAway,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.primary,
@@ -79,42 +76,37 @@ class MobileAddressTypesScreen extends StatelessWidget {
     return MobileOnboardingStepScaffold(
       progress: mobileCreateProgress(4),
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Zcash Address Types',
+      title: AppLocalizations.of(context).onbZcashAddressTypes,
       // Line break matches the Figma subtitle wrap.
-      subtitle:
-          'Zcash has two addresses types.\nOne for Privacy, one for Transparency.',
+      subtitle: AppLocalizations.of(context).onbTwoAddressTypesMobile,
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
         expand: true,
         onPressed: () => context.push('/onboarding/things-to-know'),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: const Text('Continue'),
+        child: Text(AppLocalizations.of(context).commonContinue),
       ),
       child: _SurfaceInfoCard(
         sections: [
           _InfoSection(
             iconName: AppIcons.shieldKeyhole,
             iconColor: colors.icon.brandCrimson,
-            title: 'Shielded Address',
+            title: AppLocalizations.of(context).onbShieldedAddress,
             trailing: const _AddressChip(
               prefix: 'u1',
               sample: 'vt42...',
               emphasized: true,
             ),
             // Line break after "legacy)." matches the frame's wrap.
-            body:
-                'Address starts with u1 (or zs for legacy).\nOnly you can '
-                'see your account balance and transaction history.',
+            body: AppLocalizations.of(context).onbShieldedAddressBodyMobile,
             boldRuns: const ['u1', 'zs'],
           ),
           _InfoSection(
             iconName: AppIcons.transparentBalance,
             iconColor: colors.icon.accent,
-            title: 'Transparent Address',
+            title: AppLocalizations.of(context).onbTransparentAddress,
             trailing: const _AddressChip(prefix: 't', sample: 'vxr2...'),
-            body:
-                "Address starts with t, similar to Bitcoin, your address' "
-                'balance and transaction history are publicly visible.',
+            body: AppLocalizations.of(context).onbTransparentAddressBody,
           ),
         ],
       ),
@@ -132,35 +124,28 @@ class MobileThingsToKnowScreen extends StatelessWidget {
     return MobileOnboardingStepScaffold(
       progress: mobileCreateProgress(5),
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Things to know',
-      subtitle: 'Before you dive in.',
+      title: AppLocalizations.of(context).onbThingsToKnow,
+      subtitle: AppLocalizations.of(context).onbBeforeYouDiveIn,
       bottomArea: AppButton(
         key: const ValueKey('mobile_things_to_know_continue'),
         expand: true,
         onPressed: () => context.push('/onboarding/secret-passphrase'),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: const Text('Continue'),
+        child: Text(AppLocalizations.of(context).commonContinue),
       ),
       child: _SurfaceInfoCard(
         sections: [
           _InfoSection(
             iconName: AppIcons.time,
             iconColor: colors.icon.accent,
-            title: 'Time to sync',
-            body:
-                'Your wallet syncs directly with the Zcash network instead '
-                'of relying on a server. This protects your privacy, but '
-                'takes a moment. Your funds are safe while the app catches '
-                'up.',
+            title: AppLocalizations.of(context).onbTimeToSync,
+            body: AppLocalizations.of(context).onbTimeToSyncBody,
           ),
           _InfoSection(
             iconName: AppIcons.shieldKeyhole,
             iconColor: colors.icon.accent,
-            title: 'How to keep privacy',
-            body:
-                "Some exchanges can't send to shielded addresses. If "
-                "you're withdrawing from an exchange, use your transparent "
-                'address. You can shield your ZEC after it arrives.',
+            title: AppLocalizations.of(context).onbKeepPrivacy,
+            body: AppLocalizations.of(context).onbKeepPrivacyBody,
           ),
         ],
       ),

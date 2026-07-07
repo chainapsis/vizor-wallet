@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 
 class _FakeBiometricUnlock extends BiometricUnlock {
   _FakeBiometricUnlock({required this.avail});
@@ -41,6 +42,9 @@ Widget _app(_FakeBiometricUnlock biometric) {
   return ProviderScope(
     overrides: [biometricUnlockServiceProvider.overrideWithValue(biometric)],
     child: MaterialApp.router(
+      localizationsDelegates:
+          AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

@@ -19,6 +19,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'import_split_view.dart';
+import '../../../../l10n/app_localizations.dart';
 
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
   const ImportSecretPassphraseScreen({
@@ -224,7 +225,7 @@ class _ImportSecretPassphraseScreenState
     if (_showValidationError && !_isMnemonicValid) {
       // Deliberately diverges from the Figma copy ('Some words are
       // incorrect'): the word-count guidance is more actionable.
-      return 'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.';
+      return AppLocalizations.of(context).onbInvalidPassphraseWordCount;
     }
     return null;
   }
@@ -357,7 +358,7 @@ class _ImportSecretPassphraseScreenState
 
     return ImportOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.callback(
-        label: 'Welcome',
+        label: AppLocalizations.of(context).onbWelcomeStep,
         onTap: _handleBack,
       ),
       overlay: SensitivePrivacyOverlay(
@@ -458,7 +459,7 @@ class _ImportSecretPassphraseScreenState
                         onPressed: _canSubmit ? _submit : null,
                         minWidth: _buttonWidth,
                         child: Text(
-                          _isSubmitting ? 'Importing...' : 'Continue',
+                          _isSubmitting ? AppLocalizations.of(context).onbImporting : AppLocalizations.of(context).commonContinue,
                         ),
                       ),
                     ),
@@ -501,7 +502,7 @@ class _ImportSecretTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Welcome, adventurer',
+            AppLocalizations.of(context).onbWelcomeAdventurer,
             style: AppTypography.displayLarge.copyWith(color: textColor),
             maxLines: 1,
             overflow: TextOverflow.visible,
@@ -513,7 +514,7 @@ class _ImportSecretTitle extends StatelessWidget {
         SizedBox(
           width: _ImportSecretPassphraseScreenState._subtitleWidth,
           child: Text(
-            'Import your wallet by entering your secret passphrase.',
+            AppLocalizations.of(context).onbImportByPassphrase,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
             ),
@@ -962,7 +963,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                   cursorColor: colors.text.accent,
                                   selectAllOnFocus: false,
                                   decoration: InputDecoration.collapsed(
-                                    hintText: 'Word',
+                                    hintText: AppLocalizations.of(context).onbWordHint,
                                     hintStyle: hintStyle,
                                   ),
                                   onChanged: (value) {

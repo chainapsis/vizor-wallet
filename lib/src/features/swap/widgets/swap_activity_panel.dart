@@ -27,6 +27,7 @@ import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'swap_status_page_content.dart';
+import '../../../../l10n/app_localizations.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
 /// selection, status refresh, deposit submission, Keystone signing)
@@ -309,7 +310,9 @@ class _SwapActivityDetailSurfaceState
     if (!toastContext.mounted) return;
     showAppToast(
       toastContext,
-      result.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+      result.isCertain
+          ? AppLocalizations.of(toastContext).swapZecDepositSent
+          : AppLocalizations.of(toastContext).swapCheckingZecDeposit,
     );
   }
 
@@ -588,6 +591,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
       intent,
+      AppLocalizations.of(context),
     );
     final statusError = intent.statusError ?? state.statusError;
     // The expired/failed layouts already tell the failure story; a stale
@@ -614,7 +618,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel: swapDepositDeadlineLabel(intent, AppLocalizations.of(context)) ??
+              AppLocalizations.of(context).swapHoursShort(2),
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           checking: depositChecking || state.statusRefreshing,
@@ -627,7 +632,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel: swapDepositDeadlineLabel(intent, AppLocalizations.of(context)) ??
+              AppLocalizations.of(context).swapHoursShort(2),
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
@@ -701,6 +707,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     final presentation = swapActivityStatusPresentationForIntent(
       state,
       intent,
+      l10n: AppLocalizations.of(context),
       accountDetail: accountInfo == null
           ? null
           : SwapActivityAccountDetail(
@@ -717,17 +724,25 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       return MobileSwapStatusContent(
         presentation: presentation,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: terminal ? 'You paid' : "You're paying",
+          label: terminal ? AppLocalizations.of(context).swapYouPaid : AppLocalizations.of(context).swapYourePaying,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payFiatText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: terminal ? 'You received' : "You're receiving",
+          label: terminal
+              ? AppLocalizations.of(context).swapYouReceived
+              : AppLocalizations.of(context).swapYoureReceiving,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts)}'
+              ? AppLocalizations.of(context).swapToTruncated(
+                  _headerRecipientText(
+                    recipient,
+                    presentation: presentation,
+                    contacts: addressBookContacts,
+                  ),
+                )
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -769,7 +784,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         });
       },
       onCopy: (text) =>
-          copyTextWithToast(context, text: text, toastMessage: 'Copied'),
+          copyTextWithToast(
+            context,
+            text: text,
+            toastMessage: AppLocalizations.of(context).toastCopied,
+          ),
     );
   }
 }
@@ -833,14 +852,14 @@ class _SwapActivityMissingPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Couldn't load this swap. Try again or pull to refresh.",
+            AppLocalizations.of(context).swapCouldntLoad,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Return to Activity and select a saved swap.',
+            AppLocalizations.of(context).swapReturnToActivity,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

@@ -20,8 +20,6 @@ class SyncFailure {
     required this.userMessage,
     required this.showSettingsAction,
   });
-
-  String get actionLabel => showSettingsAction ? 'Settings' : 'Retry';
 }
 
 SyncFailure classifySyncFailure(Object error) {

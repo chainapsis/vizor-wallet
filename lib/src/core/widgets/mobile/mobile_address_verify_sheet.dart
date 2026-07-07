@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../layout/mobile/app_mobile_sheet.dart';
 import '../../theme/app_theme.dart';
 
@@ -184,7 +185,7 @@ class _MobileAddressVerifyCancel extends StatelessWidget {
           height: AppButtonSizing.largeHeight,
           child: Center(
             child: Text(
-              'Cancel',
+              AppLocalizations.of(context).commonCancel,
               style: AppTypography.labelLarge.copyWith(
                 color: context.colors.text.primary,
               ),

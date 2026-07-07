@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' show Material, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
 
@@ -335,7 +336,7 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
         ? secondary.bgHover
         : secondary.bg;
     return Semantics(
-      label: 'Close',
+      label: AppLocalizations.of(context).commonClose,
       button: true,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,

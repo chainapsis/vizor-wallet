@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../navigation/app_back_resolver.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
@@ -44,7 +45,9 @@ class _AppBackLinkState extends State<AppBackLink> {
 
     return Semantics(
       button: true,
-      label: widget.semanticsLabel ?? 'Back to ${widget.label}',
+      label:
+          widget.semanticsLabel ??
+          AppLocalizations.of(context).backToLabel(widget.label),
       child: ExcludeSemantics(
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
