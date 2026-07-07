@@ -138,6 +138,40 @@ void main() {
     },
   );
 
+  testWidgets('method selection content scrolls on short screens', (
+    tester,
+  ) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.views.first.physicalSize = const Size(393, 568);
+
+    await tester.pumpWidget(_app(initialLocation: '/onboarding/method'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+
+    const keystoneKey = ValueKey('mobile_welcome_keystone');
+    final scrollable = find.byKey(
+      const ValueKey('mobile_method_selection_scroll'),
+    );
+    expect(scrollable, findsOneWidget);
+
+    final screenHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(
+      tester.getRect(find.byKey(keystoneKey)).bottom,
+      greaterThan(screenHeight),
+    );
+
+    await tester.drag(scrollable, const Offset(0, -160));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getRect(find.byKey(keystoneKey)).bottom,
+      lessThanOrEqualTo(screenHeight),
+    );
+  });
+
   testWidgets('method cards use full-card figma background assets', (
     tester,
   ) async {

@@ -38,7 +38,8 @@ class MobileMethodSelectionScreen extends StatelessWidget {
               onBack: () => context.pop(),
             ),
             Expanded(
-              child: Padding(
+              child: SingleChildScrollView(
+                key: const ValueKey('mobile_method_selection_scroll'),
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.sm,
                   AppSpacing.md,
