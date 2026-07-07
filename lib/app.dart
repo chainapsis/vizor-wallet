@@ -54,7 +54,6 @@ import 'src/features/multisig/screens/multisig_join_session_screen.dart';
 import 'src/features/multisig/screens/multisig_session_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_detail_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_home_screen.dart';
-import 'src/features/multisig/screens/multisig_signing_request_screen.dart';
 import 'src/features/multisig/widgets/multisig_onboarding_flow.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
@@ -828,14 +827,6 @@ List<RouteBase> _desktopRoutes() => [
     builder: (_, _) => const MultisigSigningHomeScreen(),
   ),
   GoRoute(path: '/multisig/setup', redirect: (_, _) => '/multisig/connect'),
-  GoRoute(
-    path: '/multisig/sign/request',
-    builder: (_, state) {
-      final args = state.extra;
-      if (args is! SendReviewArgs) return const SendScreen();
-      return MultisigSigningRequestScreen(args: args);
-    },
-  ),
   GoRoute(
     path: '/multisig/sign/:signingRequestId',
     builder: (_, state) {

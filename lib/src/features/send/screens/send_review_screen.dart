@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,6 +15,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/multisig_operation_error.dart';
+import '../../../providers/multisig_signing_request_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -22,6 +24,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
+import '../../multisig/widgets/multisig_signer_selection_modal.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
@@ -43,14 +46,20 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   bool _discardScheduled = false;
   bool _handoffToKeystone = false;
-  bool _handoffToMultisig = false;
+  bool _proposalReleasedToMultisig = false;
   bool _keystoneProposalConsumed = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
   bool _showVerifyAddress = false;
+  bool _showMultisigSignerModal = false;
+  bool _multisigDraftLoading = false;
+  bool _multisigSubmitting = false;
+  MultisigSigningDraft? _multisigDraft;
+  final Set<String> _selectedMultisigSigners = <String>{};
   Completer<bool>? _saplingParamsPromptCompleter;
   KeystoneSigningModalPhase? _keystonePhase;
   String? _keystoneError;
+  String? _multisigError;
   List<String> _keystoneUrParts = const [];
   List<int>? _keystonePcztWithProofs;
   SaplingParamsStatus? _keystoneSaplingParams;
@@ -71,7 +80,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    if (!_handoffToKeystone && !_handoffToMultisig) {
+    if (!_handoffToKeystone && !_proposalReleasedToMultisig) {
       _scheduleDiscard();
     }
     super.dispose();
@@ -108,13 +117,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         .read(accountProvider.notifier)
         .isMultisigAccount(widget.args.proposalAccountUuid);
     if (isMultisig) {
-      _handoffToMultisig = true;
-      await context.push('/multisig/sign/request', extra: widget.args);
-      // Popped back without submitting: this screen owns the proposal again
-      // so Send can be retried and dispose/cancel discard it as usual.
-      if (mounted) {
-        _handoffToMultisig = false;
-      }
+      _showMultisigRequestModal();
       return;
     }
 
@@ -130,7 +133,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   void _handleCancel() {
-    _scheduleDiscard();
+    if (!_proposalReleasedToMultisig) {
+      _scheduleDiscard();
+    }
     if (!mounted) return;
     context.go('/send');
   }
@@ -145,6 +150,134 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _keystoneSaplingParams = null;
     });
     unawaited(_prepareKeystonePczt());
+  }
+
+  void _showMultisigRequestModal() {
+    if (_showMultisigSignerModal) return;
+    setState(() {
+      _showMultisigSignerModal = true;
+      _multisigError = null;
+    });
+    if (_multisigDraft == null && !_multisigDraftLoading) {
+      unawaited(_loadMultisigDraft());
+    }
+  }
+
+  void _hideMultisigRequestModal() {
+    if (_multisigSubmitting) return;
+    setState(() {
+      _showMultisigSignerModal = false;
+      _multisigError = null;
+    });
+  }
+
+  Future<void> _loadMultisigDraft() async {
+    setState(() {
+      _multisigDraftLoading = true;
+      _multisigError = null;
+    });
+    try {
+      final draft = await ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .loadDraft(widget.args.proposalAccountUuid);
+      if (!mounted) return;
+      final selected = _selectedMultisigSigners.isEmpty
+          ? _defaultMultisigSigners(draft)
+          : {..._selectedMultisigSigners};
+      setState(() {
+        _multisigDraft = draft;
+        _selectedMultisigSigners
+          ..clear()
+          ..addAll(selected);
+        _multisigDraftLoading = false;
+        _multisigError = null;
+      });
+    } catch (e, st) {
+      log('SendReview._loadMultisigDraft: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _multisigDraftLoading = false;
+        _multisigError = friendlyMultisigError(e);
+      });
+    }
+  }
+
+  Set<String> _defaultMultisigSigners(MultisigSigningDraft draft) {
+    final localParticipantId = draft.material.participantId;
+    final selected = <String>{localParticipantId};
+    for (final participant in draft.participants) {
+      if (selected.length >= draft.threshold) break;
+      selected.add(participant.participantId);
+    }
+    return selected;
+  }
+
+  void _toggleMultisigSigner(String participantId, bool selected) {
+    final draft = _multisigDraft;
+    if (draft == null || _multisigSubmitting) return;
+    if (participantId == draft.material.participantId) return;
+
+    setState(() {
+      _multisigError = null;
+      if (selected) {
+        if (_selectedMultisigSigners.length >= draft.threshold) {
+          _multisigError = 'Select exactly ${draft.threshold} signers.';
+          return;
+        }
+        _selectedMultisigSigners.add(participantId);
+      } else {
+        _selectedMultisigSigners.remove(participantId);
+      }
+    });
+  }
+
+  Future<void> _submitMultisigRequest() async {
+    final draft = _multisigDraft;
+    if (draft == null || _multisigSubmitting) return;
+    if (!_selectedMultisigSigners.contains(draft.material.participantId)) {
+      setState(() {
+        _multisigError = 'Requester must be included.';
+      });
+      return;
+    }
+    if (_selectedMultisigSigners.length != draft.threshold) {
+      setState(() {
+        _multisigError = 'Select exactly ${draft.threshold} signers.';
+      });
+      return;
+    }
+
+    setState(() {
+      _multisigSubmitting = true;
+      _multisigError = null;
+    });
+    _proposalReleasedToMultisig = true;
+    try {
+      await ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .createRequest(
+            accountUuid: widget.args.proposalAccountUuid,
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+            recipientAddress: widget.args.address,
+            addressType: widget.args.addressType,
+            amountZatoshi: widget.args.amountZatoshi,
+            feeZatoshi: widget.args.feeZatoshi,
+            selectedParticipantIds: _selectedMultisigSigners.toList()..sort(),
+            needsSaplingParams: widget.args.needsSaplingParams,
+            memo: widget.args.memo,
+          );
+      if (!mounted) return;
+      context.go('/multisig');
+    } catch (e, st) {
+      log('SendReview._submitMultisigRequest: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _multisigSubmitting = false;
+        _showMultisigSignerModal = true;
+        _multisigError = friendlyMultisigError(e);
+      });
+    }
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -359,7 +492,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 onExpandMemo: _toggleMessageExpanded,
               ),
             ),
-            if (_showVerifyAddress && keystonePhase == null)
+            if (_showVerifyAddress &&
+                keystonePhase == null &&
+                !_showMultisigSignerModal)
               SendVerifyAddressOverlay(
                 accountUuid: widget.args.proposalAccountUuid,
                 address: widget.args.address.trim(),
@@ -388,6 +523,28 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       : null,
                   secondaryLabel: 'Cancel',
                   onSecondary: () => unawaited(_cancelKeystoneSigning()),
+                ),
+              ),
+            if (_showMultisigSignerModal)
+              AppPaneModalOverlay(
+                onDismiss: _multisigSubmitting
+                    ? () {}
+                    : _hideMultisigRequestModal,
+                child: MultisigSignerSelectionModal(
+                  loading: _multisigDraftLoading,
+                  draft: _multisigDraft,
+                  selected: _selectedMultisigSigners,
+                  error: _multisigError,
+                  submitting: _multisigSubmitting,
+                  onRetry: () => unawaited(_loadMultisigDraft()),
+                  onToggleSigner: _toggleMultisigSigner,
+                  onSubmit:
+                      _multisigDraft != null &&
+                          _selectedMultisigSigners.length ==
+                              _multisigDraft!.threshold
+                      ? () => unawaited(_submitMultisigRequest())
+                      : null,
+                  onCancel: _hideMultisigRequestModal,
                 ),
               ),
             if (_showSaplingParamsPrompt)

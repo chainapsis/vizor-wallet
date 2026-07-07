@@ -20,10 +20,13 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/multisig/widgets/multisig_signer_selection_modal.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -491,6 +494,63 @@ void main() {
       expect(rustApi.discardCalls, isEmpty);
     },
   );
+
+  testWidgets('multisig confirm opens signer modal and submits request', (
+    tester,
+  ) async {
+    final multisigRequests = _FakeMultisigSigningRequestsNotifier();
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(kind: AccountKind.multisig),
+        multisigSigningRequestsFactory: () => multisigRequests,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Request signatures'), findsOneWidget);
+
+    await tester.tap(find.text('Request signatures'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose signers'), findsOneWidget);
+    expect(find.text('alice'), findsOneWidget);
+    expect(find.text('bob'), findsOneWidget);
+    expect(find.text('2 of 2'), findsOneWidget);
+    final signerModal = find.byType(MultisigSignerSelectionModal);
+    expect(
+      tester
+          .getTopLeft(
+            find.descendant(of: signerModal, matching: find.text('bob')),
+          )
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.descendant(of: signerModal, matching: find.text('alice')),
+            )
+            .dy,
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('multisig_modal_send_request_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('multisig-route'), findsOneWidget);
+    expect(multisigRequests.createRequestCalls, 1);
+    expect(multisigRequests.lastSelectedParticipantIds, [
+      'part_alice',
+      'part_bob',
+    ]);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(rustApi.discardCalls, isEmpty);
+  });
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
@@ -519,11 +579,16 @@ Widget _harness(
   AppBootstrapState? bootstrap,
   AddressBookRepository? addressBookRepository,
   List<Object?>? statusExtras,
+  MultisigSigningRequestsNotifier Function()? multisigSigningRequestsFactory,
 }) {
   final router = GoRouter(
     initialLocation: '/send/review',
     routes: [
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
+      GoRoute(
+        path: '/multisig',
+        builder: (_, _) => const Text('multisig-route'),
+      ),
       GoRoute(
         path: '/send/review',
         builder: (_, _) => SendReviewScreen(args: args),
@@ -555,6 +620,10 @@ Widget _harness(
         addressBookRepository ?? _FakeAddressBookRepository(),
       ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      if (multisigSigningRequestsFactory != null)
+        multisigSigningRequestsProvider.overrideWith(
+          multisigSigningRequestsFactory,
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -563,7 +632,9 @@ Widget _harness(
   );
 }
 
-AppBootstrapState _bootstrap({bool isHardware = false}) {
+AppBootstrapState _bootstrap({bool isHardware = false, AccountKind? kind}) {
+  final accountKind =
+      kind ?? (isHardware ? AccountKind.hardware : AccountKind.software);
   return AppBootstrapState(
     initialLocation: '/send/review',
     initialAccountState: AccountState(
@@ -572,7 +643,7 @@ AppBootstrapState _bootstrap({bool isHardware = false}) {
           uuid: 'test-account',
           name: 'Account 1',
           order: 0,
-          isHardware: isHardware,
+          kind: accountKind,
         ),
       ],
       activeAccountUuid: 'test-account',
@@ -621,6 +692,101 @@ class _FakeAddressBookRepository implements AddressBookRepository {
       ..addAll(contacts);
   }
 }
+
+class _FakeMultisigSigningRequestsNotifier
+    extends MultisigSigningRequestsNotifier {
+  int createRequestCalls = 0;
+  List<String> lastSelectedParticipantIds = const [];
+
+  @override
+  Future<List<MultisigSigningRequestRecord>> build() async => const [];
+
+  @override
+  Future<MultisigSigningDraft> loadDraft(String accountUuid) async =>
+      MultisigSigningDraft(
+        material: _multisigMaterial,
+        threshold: 2,
+        participants: const [
+          MultisigSigningParticipant(
+            participantId: 'part_alice',
+            deliveryPublicKey: 'delivery-alice',
+            displayName: 'alice',
+          ),
+          MultisigSigningParticipant(
+            participantId: 'part_bob',
+            deliveryPublicKey: 'delivery-bob',
+            displayName: 'bob',
+          ),
+          MultisigSigningParticipant(
+            participantId: 'part_charlie',
+            deliveryPublicKey: 'delivery-charlie',
+            displayName: 'charlie',
+          ),
+        ],
+      );
+
+  @override
+  Future<MultisigSigningRequestRecord> createRequest({
+    required String accountUuid,
+    required BigInt proposalId,
+    required String sendFlowId,
+    required String recipientAddress,
+    required BigInt amountZatoshi,
+    required BigInt feeZatoshi,
+    required List<String> selectedParticipantIds,
+    required bool needsSaplingParams,
+    String? addressType,
+    String? memo,
+    String? dbPath,
+    String? network,
+  }) async {
+    createRequestCalls += 1;
+    lastSelectedParticipantIds = selectedParticipantIds;
+    return MultisigSigningRequestRecord(
+      signingRequestId: 'request-test',
+      accountUuid: accountUuid,
+      sessionId: _multisigMaterial.sessionId,
+      localParticipantId: _multisigMaterial.participantId,
+      requesterParticipantId: _multisigMaterial.participantId,
+      selectedParticipantIds: selectedParticipantIds,
+      pcztB64: 'AQID',
+      pcztHash: 'pczt-hash',
+      needsSaplingParams: needsSaplingParams,
+      amountZatoshi: amountZatoshi.toString(),
+      feeZatoshi: feeZatoshi.toString(),
+      recipientAddress: recipientAddress,
+      addressType: addressType ?? 'unified',
+      memo: memo,
+      state: 'requested',
+      createdAt: 1,
+      updatedAt: 1,
+    );
+  }
+}
+
+final _multisigMaterial = MultisigAccountMaterial(
+  accountUuid: 'test-account',
+  sessionId: 'sess_test',
+  participantId: 'part_bob',
+  coordinatorUrl: 'http://localhost:8080',
+  rosterHash: 'roster',
+  groupPublicPackageHash: 'group',
+  threshold: 2,
+  participantCount: 3,
+  identity: MultisigParticipantIdentity(
+    admissionSecretKey: 'admission-secret',
+    admissionPublicKey: 'admission-public',
+    deliverySecretKey: 'delivery-secret',
+    deliveryPublicKey: 'delivery-public',
+  ),
+  keyPackageB64: 'AQID',
+  groupPublicPackageJson: '{}',
+  vaultAddress: 'uregtest1vault',
+  accessToken: 'access',
+  refreshToken: 'refresh',
+  accessTokenExpiresAt: 9999999999,
+  refreshTokenExpiresAt: 9999999999,
+);
 
 SendReviewArgs _reviewArgs({
   required String addressType,
