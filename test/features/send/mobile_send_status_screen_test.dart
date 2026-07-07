@@ -75,10 +75,7 @@ void main() {
     expect(find.byKey(const ValueKey('mobile_send_status_sending')), findsOne);
     expect(find.text('Sending...'), findsOneWidget);
     expect(
-      find.text(
-        'Wait till your transaction got submitted to the '
-        'blockchain...',
-      ),
+      find.text('Submitting your transaction to the network...'),
       findsOneWidget,
     );
     expect(
@@ -92,15 +89,24 @@ void main() {
     expect(_statusRouteCanPop(tester), isFalse);
   });
 
-  testWidgets('broadcast success shows the complete state with ripple haptic', (
+  testWidgets('broadcast success shows the complete state with custom haptic', (
     tester,
   ) async {
-    final haptics = <Object?>[];
+    final platformHaptics = <Object?>[];
+    final nativeHaptics = <String>[];
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      hapticsChannel,
+      (call) async {
+        nativeHaptics.add(call.method);
+        return true;
+      },
+    );
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
         if (call.method == 'HapticFeedback.vibrate') {
-          haptics.add(call.arguments);
+          platformHaptics.add(call.arguments);
         }
         return null;
       },
@@ -108,6 +114,10 @@ void main() {
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
+        null,
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
         null,
       );
     });
@@ -130,25 +140,19 @@ void main() {
       find.byKey(const ValueKey('mobile_send_status_succeeded')),
       findsOne,
     );
-    expect(find.text('Send complete!'), findsOneWidget);
+    expect(find.text('Sent!'), findsOneWidget);
     expect(
-      find.text('You will find your transaction in the Activity page.'),
+      find.text('It will confirm on-chain shortly. Track it in Activity.'),
       findsOneWidget,
     );
     expect(find.text('Done'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
-    expect(haptics, contains('HapticFeedbackType.mediumImpact'));
+    expect(nativeHaptics, ['sendSuccess']);
+    expect(platformHaptics, isEmpty);
 
     // Ripple + icon crossfade are finite; the succeeded state settles.
     await tester.pumpAndSettle();
-    expect(
-      haptics,
-      containsAllInOrder([
-        'HapticFeedbackType.mediumImpact',
-        'HapticFeedbackType.lightImpact',
-        'HapticFeedbackType.selectionClick',
-      ]),
-    );
+    expect(platformHaptics, isEmpty);
     expect(
       find.byKey(const ValueKey('mobile_send_status_icon_success')),
       findsOneWidget,
@@ -216,15 +220,24 @@ void main() {
     expect(tester.getSize(subtitleFinder).width, greaterThan(300));
   });
 
-  testWidgets('broadcast failure shows the failed state with light haptic', (
+  testWidgets('broadcast failure shows the failed state with custom haptic', (
     tester,
   ) async {
-    final haptics = <Object?>[];
+    final platformHaptics = <Object?>[];
+    final nativeHaptics = <String>[];
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      hapticsChannel,
+      (call) async {
+        nativeHaptics.add(call.method);
+        return true;
+      },
+    );
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
         if (call.method == 'HapticFeedback.vibrate') {
-          haptics.add(call.arguments);
+          platformHaptics.add(call.arguments);
         }
         return null;
       },
@@ -232,6 +245,10 @@ void main() {
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
+        null,
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
         null,
       );
     });
@@ -255,15 +272,17 @@ void main() {
     expect(find.byKey(const ValueKey('mobile_send_status_failed')), findsOne);
     expect(find.text('Send failed'), findsOneWidget);
     expect(
-      find.text("Send didn't go through. No ZEC or fee was spent."),
+      find.text("Nothing was sent, your funds haven't moved. Try again."),
       findsOneWidget,
     );
-    expect(find.text('Return home'), findsOneWidget);
+    expect(find.text('Return Home'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
-    expect(haptics, contains('HapticFeedbackType.lightImpact'));
+    expect(nativeHaptics, ['sendFailure']);
+    expect(platformHaptics, isEmpty);
 
     // Shake + icon crossfade are finite; the failed state settles.
     await tester.pumpAndSettle();
+    expect(platformHaptics, isEmpty);
     expect(
       find.byKey(const ValueKey('mobile_send_status_icon_failed')),
       findsOneWidget,

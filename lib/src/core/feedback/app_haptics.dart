@@ -24,14 +24,28 @@ abstract final class AppHaptics {
   /// Copying sensitive values — a light confirmation tap.
   static Future<void> copy() => HapticFeedback.lightImpact();
 
-  /// Send success confirmation — a clear center pulse followed by a soft
-  /// trailing tick that lands while the success circle is still expanding.
-  static Future<void> successRipple() async {
-    await HapticFeedback.mediumImpact();
-    await Future<void>.delayed(const Duration(milliseconds: 160));
-    await HapticFeedback.lightImpact();
-    await Future<void>.delayed(const Duration(milliseconds: 110));
-    await HapticFeedback.selectionClick();
+  /// Send success confirmation — native-only custom haptic:
+  /// 30ms pulse, then 40ms full-intensity pulse after a 60ms delay.
+  static Future<void> sendSuccess() async {
+    try {
+      await _channel.invokeMethod<bool>('sendSuccess');
+    } on PlatformException {
+      // No fallback: keep send success free of system-style audio feedback.
+    } on MissingPluginException {
+      // Desktop/web hosts have no haptics channel.
+    }
+  }
+
+  /// Send failure confirmation — native-only custom haptic:
+  /// four short pulses over 290ms, matching the mobile send-fail design.
+  static Future<void> sendFailure() async {
+    try {
+      await _channel.invokeMethod<bool>('sendFailure');
+    } on PlatformException {
+      // No fallback: keep send failure on the authored haptic path only.
+    } on MissingPluginException {
+      // Desktop/web hosts have no haptics channel.
+    }
   }
 
   /// A rejected passcode. Native notification-error where the platform

@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart' show Scaffold;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -134,13 +133,13 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
     });
-    // Figma comments on 5497:22398 / 5498:22300: success = medium haptic
-    // with the circle-grow animation, failure = low haptic with the shake.
+    // Success and failure use custom native haptic patterns without system
+    // notification sounds.
     switch (_phase) {
       case _MobileSendStatusPhase.succeeded:
-        unawaited(AppHaptics.successRipple());
+        unawaited(AppHaptics.sendSuccess());
       case _MobileSendStatusPhase.failed:
-        unawaited(HapticFeedback.lightImpact());
+        unawaited(AppHaptics.sendFailure());
       case _MobileSendStatusPhase.sending:
       case _MobileSendStatusPhase.pendingBroadcast:
         break;
@@ -162,7 +161,7 @@ class _MobileSendStatusScreenState
     return switch (_phase) {
       _MobileSendStatusPhase.sending => 'Sending...',
       _MobileSendStatusPhase.pendingBroadcast => 'Queued to send',
-      _MobileSendStatusPhase.succeeded => 'Send complete!',
+      _MobileSendStatusPhase.succeeded => 'Sent!',
       _MobileSendStatusPhase.failed => 'Send failed',
     };
   }
@@ -171,7 +170,7 @@ class _MobileSendStatusScreenState
     final statusMessage = _statusMessage?.trim();
     return switch (_phase) {
       _MobileSendStatusPhase.sending =>
-        'Wait till your transaction got submitted to the blockchain...',
+        'Submitting your transaction to the network...',
       _MobileSendStatusPhase.pendingBroadcast =>
         statusMessage == null || statusMessage.isEmpty
             ? 'Your transaction was created and will be submitted '
@@ -179,9 +178,9 @@ class _MobileSendStatusScreenState
                   'again.'
             : statusMessage,
       _MobileSendStatusPhase.succeeded =>
-        'You will find your transaction in the Activity page.',
+        'It will confirm on-chain shortly. Track it in Activity.',
       _MobileSendStatusPhase.failed =>
-        "Send didn't go through. No ZEC or fee was spent.",
+        "Nothing was sent, your funds haven't moved. Try again.",
     };
   }
 
@@ -190,7 +189,7 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
       _MobileSendStatusPhase.succeeded => 'Done',
-      _MobileSendStatusPhase.failed => 'Return home',
+      _MobileSendStatusPhase.failed => 'Return Home',
     };
   }
 
@@ -335,7 +334,7 @@ class _StatusBadgeState extends State<_StatusBadge>
     with TickerProviderStateMixin {
   late final AnimationController _ripple = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1200),
+    duration: const Duration(milliseconds: 650),
   );
   late final AnimationController _shake = AnimationController(
     vsync: this,
@@ -417,7 +416,7 @@ class _StatusBadgeState extends State<_StatusBadge>
               final pulseSize = lerpDouble(
                 _statusCircleSize,
                 _pulseMaxSize,
-                Curves.easeOut.transform(t),
+                Curves.easeOutBack.transform(t),
               )!;
               return IgnorePointer(
                 child: _RippleCircle(

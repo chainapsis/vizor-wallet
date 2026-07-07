@@ -11,6 +11,8 @@ class TxTrackManager {
     private let trackQueue = DispatchQueue(label: "com.keplr.vizor.txtrack", qos: .utility)
     private let pollInterval: TimeInterval = 5.0
     private let resultDisplayDelay: TimeInterval = 5.0
+    private let defaults = UserDefaults(suiteName: "group.com.keplr.vizor")
+    private let requestArmedKey = "txTrackingRequestArmed"
     private var cancelled = false
 
     private init() {}
@@ -43,6 +45,7 @@ class TxTrackManager {
             presetId: presetId
         )
         print("[TxTrack] submitting task request")
+        defaults?.set(true, forKey: requestArmedKey)
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.taskIdentifier,
             title: "Tracking Transaction",
@@ -53,12 +56,27 @@ class TxTrackManager {
             print("[TxTrack] submitted OK")
             return true
         } catch {
+            defaults?.removeObject(forKey: requestArmedKey)
             print("[TxTrack] submit FAILED: \(error)")
             return false
         }
     }
 
+    func cancelPendingRequests() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+        defaults?.removeObject(forKey: requestArmedKey)
+        cancelled = true
+        print("[TxTrack] cancelled pending task requests")
+    }
+
     private func handleTask(_ task: BGContinuedProcessingTask) {
+        guard defaults?.bool(forKey: requestArmedKey) == true else {
+            print("[TxTrack] task ignored: request was not armed")
+            task.setTaskCompleted(success: true)
+            return
+        }
+        defaults?.removeObject(forKey: requestArmedKey)
+
         let semaphore = DispatchSemaphore(value: 0)
         var success = false
 

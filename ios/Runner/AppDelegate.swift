@@ -1,8 +1,11 @@
+import CoreHaptics
 import Flutter
 import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var customHapticEngine: CHHapticEngine?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -12,6 +15,7 @@ import UIKit
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
       TxTrackManager.shared.registerTask()
+      TxTrackManager.shared.cancelPendingRequests()
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -103,6 +107,10 @@ import UIKit
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
         result(true)
+      case "sendSuccess":
+        result(self.performSendSuccessHaptic())
+      case "sendFailure":
+        result(self.performSendFailureHaptic())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -200,6 +208,134 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+
+  private func performSendSuccessHaptic() -> Bool {
+    #if targetEnvironment(simulator)
+      return false
+    #else
+      guard #available(iOS 13.0, *) else {
+        return false
+      }
+      guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+        return false
+      }
+
+      do {
+        let engine: CHHapticEngine
+        if let existingEngine = customHapticEngine {
+          engine = existingEngine
+        } else {
+          engine = try CHHapticEngine()
+          customHapticEngine = engine
+          engine.stoppedHandler = { [weak self] _ in
+            self?.customHapticEngine = nil
+          }
+          engine.resetHandler = { [weak self] in
+            try? self?.customHapticEngine?.start()
+          }
+        }
+
+        try engine.start()
+        let pattern = try CHHapticPattern(
+          events: [
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [],
+              relativeTime: 0,
+              duration: 0.03
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00),
+              ],
+              relativeTime: 0.06,
+              duration: 0.04
+            ),
+          ],
+          parameters: []
+        )
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        return true
+      } catch {
+        return false
+      }
+    #endif
+  }
+
+  private func performSendFailureHaptic() -> Bool {
+    #if targetEnvironment(simulator)
+      return false
+    #else
+      guard #available(iOS 13.0, *) else {
+        return false
+      }
+      guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+        return false
+      }
+
+      do {
+        let engine: CHHapticEngine
+        if let existingEngine = customHapticEngine {
+          engine = existingEngine
+        } else {
+          engine = try CHHapticEngine()
+          customHapticEngine = engine
+          engine.stoppedHandler = { [weak self] _ in
+            self?.customHapticEngine = nil
+          }
+          engine.resetHandler = { [weak self] in
+            try? self?.customHapticEngine?.start()
+          }
+        }
+
+        try engine.start()
+        let pattern = try CHHapticPattern(
+          events: [
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+              ],
+              relativeTime: 0,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+              ],
+              relativeTime: 0.08,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90),
+              ],
+              relativeTime: 0.16,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60),
+              ],
+              relativeTime: 0.24,
+              duration: 0.05
+            ),
+          ],
+          parameters: []
+        )
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        return true
+      } catch {
+        return false
+      }
+    #endif
   }
 }
 
