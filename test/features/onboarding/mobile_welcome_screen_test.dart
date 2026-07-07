@@ -12,7 +12,6 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
 
 Widget _app({
@@ -58,20 +57,6 @@ BoxDecoration _cardBackgroundDecoration(WidgetTester tester, Key cardKey) {
       .firstWhere((decoration) => decoration.color != null);
 }
 
-Border _cardBorder(WidgetTester tester, Key cardKey) {
-  final decoration = tester
-      .widgetList<DecoratedBox>(
-        find.descendant(
-          of: find.byKey(cardKey),
-          matching: find.byType(DecoratedBox),
-        ),
-      )
-      .map((box) => box.decoration)
-      .whereType<BoxDecoration>()
-      .firstWhere((decoration) => decoration.border != null);
-  return decoration.border! as Border;
-}
-
 Color? _cardIconColor(WidgetTester tester, Key cardKey) {
   final icon = tester.widget<AppIcon>(
     find
@@ -110,7 +95,7 @@ void main() {
     );
     expect(find.text('Get started'), findsOneWidget);
     // The entry points moved to the method-selection step.
-    expect(find.text('Create wallet'), findsNothing);
+    expect(find.text('Create Wallet'), findsNothing);
   });
 
   testWidgets('hero illustration fills the whole screen', (tester) async {
@@ -135,38 +120,25 @@ void main() {
 
   testWidgets(
     'Get started opens method selection with the four entry points and '
-    'the hidden legal footer space',
+    'no legal footer',
     (tester) async {
       await tester.pumpWidget(_app());
       await tester.pumpAndSettle();
       await _openMethodSelection(tester);
 
       expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
-      expect(find.text('Create wallet'), findsOneWidget);
-      expect(find.text('Import wallet'), findsOneWidget);
+      expect(find.text('Create Wallet'), findsOneWidget);
+      expect(find.text('Import Wallet'), findsOneWidget);
       expect(find.text('Link Vizor Desktop'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
-      expect(_stepsProgress(tester), closeTo(mobileCreateProgress(2), 0.0001));
-      expect(find.textContaining('you agree to our'), findsOneWidget);
-      final hiddenFooter = find.byKey(
-        const ValueKey('mobile_method_legal_footer_hidden'),
-      );
-      expect(hiddenFooter, findsOneWidget);
-      expect(tester.widget<Opacity>(hiddenFooter).opacity, 0);
-      final semantics = find.byKey(
-        const ValueKey('mobile_method_legal_footer_semantics'),
-      );
-      final pointer = find.byKey(
-        const ValueKey('mobile_method_legal_footer_pointer'),
-      );
-      expect(semantics, findsOneWidget);
-      expect(tester.widget<ExcludeSemantics>(semantics).excluding, isTrue);
-      expect(pointer, findsOneWidget);
-      expect(tester.widget<IgnorePointer>(pointer).ignoring, isTrue);
+      expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
+      expect(find.textContaining('you agree to our'), findsNothing);
+      expect(find.text('Terms'), findsNothing);
+      expect(find.text('Privacy'), findsNothing);
     },
   );
 
-  testWidgets('create method text paints above the bleeding illustration', (
+  testWidgets('method cards use full-card figma background assets', (
     tester,
   ) async {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -176,44 +148,39 @@ void main() {
     await tester.pumpAndSettle();
     await _openMethodSelection(tester);
 
-    const artKey = ValueKey('mobile_method_create_wallet_art');
-    const artClipKey = ValueKey('mobile_method_create_wallet_art_clip');
-    const contentKey = ValueKey('mobile_method_create_wallet_content');
-    expect(find.byKey(artKey), findsOneWidget);
     expect(
-      find.descendant(of: find.byKey(artClipKey), matching: find.byKey(artKey)),
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_create_wallet_art'),
+      ),
+      'assets/illustrations/method_create_card_bg.png',
+    );
+    expect(
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_import_wallet_art'),
+      ),
+      'assets/illustrations/method_import_card_bg.png',
+    );
+    expect(
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_link_vizor_desktop_art'),
+      ),
+      'assets/illustrations/method_link_desktop_card_bg.png',
+    );
+    expect(
+      _assetNameForKey(
+        tester,
+        const ValueKey('mobile_method_connect_keystone_art'),
+      ),
+      'assets/illustrations/method_keystone_card_bg.png',
+    );
+
+    expect(
+      find.byKey(const ValueKey('mobile_method_create_wallet_content')),
       findsOneWidget,
     );
-    expect(
-      tester.widget<ClipPath>(find.byKey(artClipKey)).clipBehavior,
-      Clip.antiAlias,
-    );
-    expect(find.byKey(contentKey), findsOneWidget);
-
-    final createCardStack = tester
-        .widgetList<Stack>(find.byType(Stack))
-        .firstWhere((stack) {
-          final hasArtClip = stack.children.any(
-            (child) => child is Positioned && child.child.key == artClipKey,
-          );
-          final hasContent = stack.children.any(
-            (child) => child.key == contentKey,
-          );
-          return hasArtClip && hasContent;
-        });
-
-    final artClipIndex = createCardStack.children.indexWhere(
-      (child) => child is Positioned && child.child.key == artClipKey,
-    );
-    final borderIndex = createCardStack.children.indexWhere(
-      (child) => child is Positioned && child.child is IgnorePointer,
-    );
-    final contentIndex = createCardStack.children.indexWhere(
-      (child) => child.key == contentKey,
-    );
-
-    expect(borderIndex, lessThan(artClipIndex));
-    expect(contentIndex, greaterThan(artClipIndex));
   });
 
   testWidgets('method cards use figma light theme colors and assets', (
@@ -231,7 +198,7 @@ void main() {
       ).color,
       colors.background.homeCard,
     );
-    expect(_textColor(tester, 'Create wallet'), colors.text.homeCard);
+    expect(_textColor(tester, 'Create Wallet'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
       colors.text.homeCard,
@@ -242,32 +209,25 @@ void main() {
         tester,
         const ValueKey('mobile_welcome_import'),
       ).color,
-      colors.background.raised,
+      colors.background.homeCard,
     );
-    expect(_textColor(tester, 'Import wallet'), colors.text.accent);
+    expect(_textColor(tester, 'Import Wallet'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
-      colors.text.accent,
+      colors.text.homeCard,
     );
-    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.accent);
+    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
-      colors.text.accent,
+      colors.text.homeCard,
     );
-
-    final createBorder = _cardBorder(
-      tester,
-      const ValueKey('mobile_welcome_create'),
-    );
-    expect(createBorder.top.color, colors.border.subtle);
-    expect(createBorder.top.width, 1.5);
 
     expect(
       _assetNameForKey(
         tester,
         const ValueKey('mobile_method_connect_keystone_art'),
       ),
-      'assets/illustrations/method_keystone_light.png',
+      'assets/illustrations/method_keystone_card_bg.png',
     );
   });
 
@@ -286,9 +246,9 @@ void main() {
         tester,
         const ValueKey('mobile_welcome_create'),
       ).color,
-      colors.background.raised,
+      colors.background.homeCard,
     );
-    expect(_textColor(tester, 'Create wallet'), colors.text.homeCard);
+    expect(_textColor(tester, 'Create Wallet'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
       colors.text.homeCard,
@@ -299,32 +259,25 @@ void main() {
         tester,
         const ValueKey('mobile_welcome_import'),
       ).color,
-      colors.background.raised,
+      colors.background.homeCard,
     );
-    expect(_textColor(tester, 'Import wallet'), colors.text.accent);
+    expect(_textColor(tester, 'Import Wallet'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
-      colors.text.accent,
+      colors.text.homeCard,
     );
-    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.accent);
+    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.homeCard);
     expect(
       _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
-      colors.text.accent,
+      colors.text.homeCard,
     );
-
-    final createBorder = _cardBorder(
-      tester,
-      const ValueKey('mobile_welcome_create'),
-    );
-    expect(createBorder.top.color, colors.border.subtle);
-    expect(createBorder.top.width, 1.5);
 
     expect(
       _assetNameForKey(
         tester,
         const ValueKey('mobile_method_connect_keystone_art'),
       ),
-      'assets/illustrations/method_keystone_dark.png',
+      'assets/illustrations/method_keystone_card_bg.png',
     );
   });
 
