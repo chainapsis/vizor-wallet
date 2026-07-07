@@ -33,6 +33,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
 import '../../widgets/send_recipient_resolver.dart';
+import 'mobile_multisig_request_signers_screen.dart';
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -872,15 +873,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (accountUuid == null) return;
     final accountNotifier = ref.read(accountProvider.notifier);
     final isHardware = accountNotifier.isHardwareAccount(accountUuid);
-    if (accountNotifier.isMultisigAccount(accountUuid)) {
-      setState(() {
-        _phase = _SendPhase.failed;
-        _error = multisigSigningUnsupportedText;
-      });
-      return;
-    }
+    final isMultisig = accountNotifier.isMultisigAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
+
+    if (isMultisig) {
+      await context.push<void>(
+        '/send/request-signatures',
+        extra: MobileMultisigRequestSignersArgs(
+          accountUuid: accountUuid,
+          sendFlowId: _sendFlowId,
+          recipient: _addressController.text.trim(),
+          addressType: _addressType,
+          amountText: _amountText,
+          feeZatoshi: _feeZatoshi,
+          memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+          contactLabel: _contactLabel,
+          contactPictureId: _contactPictureId,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _isConfirmingSend = true;
@@ -1765,6 +1778,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       contacts: addressBookContacts,
       ownAccounts: ownAccounts,
     );
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final isMultisig =
+        accountUuid != null &&
+        ref.read(accountProvider.notifier).isMultisigAccount(accountUuid);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1854,9 +1871,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           (_isMaxMode && !_hasCurrentMaxQuote)
                       ? null
                       : () => unawaited(_confirmAndSend()),
-                  leading: const AppIcon(AppIcons.plane, size: 20),
+                  leading: AppIcon(
+                    isMultisig ? AppIcons.users : AppIcons.plane,
+                    size: 20,
+                  ),
                   child: Text(
-                    _isConfirmingSend ? 'Preparing...' : 'Confirm & Send',
+                    _isConfirmingSend
+                        ? 'Preparing...'
+                        : isMultisig
+                        ? 'Request signatures'
+                        : 'Confirm & Send',
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s),

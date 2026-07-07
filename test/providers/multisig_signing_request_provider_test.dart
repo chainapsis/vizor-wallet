@@ -169,7 +169,7 @@ void main() {
       );
 
       expect(proposalService.createCalls, ['7|flow-1|test|/tmp/wallet.db']);
-      expect(proposalService.discardCalls, isEmpty);
+      expect(proposalService.discardCalls, ['7|flow-1']);
       expect(coordinator.prepareCalls, hasLength(2));
       expect(coordinator.submitCalls, ['signing-request|idempotency']);
       expect(submitted.signingRequestId, 'signing-request');
@@ -588,8 +588,8 @@ void main() {
     );
 
     // The PCZT was created before the token refresh, so the record must
-    // survive the failure and the proposal must not be discarded — a
-    // retry continues from the stored record.
+    // survive the failure and the consumed proposal must not be discarded
+    // before the retry continues from the stored record.
     expect(proposalService.discardCalls, isEmpty);
     expect(requestStore.records.single.signingRequestId, 'local_flow-1');
 
@@ -608,6 +608,7 @@ void main() {
     );
 
     expect(proposalService.createCalls, hasLength(1));
+    expect(proposalService.discardCalls, ['7|flow-1']);
     expect(submitted.signingRequestId, 'signing-request');
     expect(submitted.coordinatorSubmitted, isTrue);
   });

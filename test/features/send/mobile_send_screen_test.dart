@@ -17,9 +17,11 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
-import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_multisig_request_signers_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -200,6 +202,24 @@ Widget _app({
         ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+      GoRoute(
+        path: '/send/request-signatures',
+        builder: (_, state) {
+          final extra = state.extra;
+          return extra is MobileMultisigRequestSignersArgs
+              ? MobileMultisigRequestSignersScreen(
+                  args: extra,
+                  loadWalletDbPath: () async => '/tmp/zcash-test',
+                )
+              : const MobileSendScreen();
+        },
+      ),
+      GoRoute(
+        path: '/multisig/sign/:signingRequestId',
+        builder: (_, state) => Text(
+          'Signature request ${state.pathParameters['signingRequestId']}',
+        ),
+      ),
     ],
   );
   return ProviderScope(
@@ -525,8 +545,11 @@ void main() {
     expect(continueButton.onPressed, isNotNull);
   });
 
-  testWidgets('multisig account is blocked on mobile send', (tester) async {
+  testWidgets('multisig account requests signatures from mobile send', (
+    tester,
+  ) async {
     _proposeSendSucceeds = true;
+    final notifier = _FakeSigningRequestsNotifier();
 
     await tester.pumpWidget(
       _app(
@@ -542,18 +565,37 @@ void main() {
           activeAccountUuid: 'account-1',
           activeAddress: 'u1activeaddress',
         ),
+        overrides: [
+          multisigSigningRequestsProvider.overrideWith(() => notifier),
+        ],
       ),
     );
     await tester.pumpAndSettle();
 
     await _toReviewStep(tester);
+    expect(find.text('Request signatures'), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Send failed'), findsNWidgets(2)); // nav title + headline
-    expect(find.text(multisigSigningUnsupportedText), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile_send_try_again')), findsOneWidget);
+    expect(find.text('Request signatures'), findsOneWidget);
+    expect(find.text('Approvers'), findsOneWidget);
+    expect(find.text('2 of 2'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsOneWidget);
     expect(_proposeSendCalls, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_multisig_create_request_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_proposeSendCalls, 1);
+    expect(notifier.createdSelectedParticipantIds, [
+      'participant-alice',
+      'participant-bob',
+    ]);
+    expect(find.textContaining('Signature request'), findsOneWidget);
   });
 
   testWidgets('route pop is allowed only on the first recipient step', (
@@ -1525,4 +1567,101 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
   });
+}
+
+class _FakeSigningRequestsNotifier extends MultisigSigningRequestsNotifier {
+  List<String>? createdSelectedParticipantIds;
+
+  @override
+  Future<List<MultisigSigningRequestRecord>> build() async =>
+      const <MultisigSigningRequestRecord>[];
+
+  @override
+  Future<MultisigSigningDraft> loadDraft(String accountUuid) async {
+    return MultisigSigningDraft(
+      material: _material(accountUuid),
+      threshold: 2,
+      participants: const [
+        MultisigSigningParticipant(
+          participantId: 'participant-alice',
+          deliveryPublicKey: 'delivery-alice',
+          displayName: 'Alice',
+        ),
+        MultisigSigningParticipant(
+          participantId: 'participant-bob',
+          deliveryPublicKey: 'delivery-bob',
+          displayName: 'Bob',
+        ),
+        MultisigSigningParticipant(
+          participantId: 'participant-carol',
+          deliveryPublicKey: 'delivery-carol',
+          displayName: 'Carol',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<MultisigSigningRequestRecord> createRequest({
+    required String accountUuid,
+    required BigInt proposalId,
+    required String sendFlowId,
+    required String recipientAddress,
+    required BigInt amountZatoshi,
+    required BigInt feeZatoshi,
+    required List<String> selectedParticipantIds,
+    required bool needsSaplingParams,
+    String? addressType,
+    String? memo,
+    String? dbPath,
+    String? network,
+  }) async {
+    createdSelectedParticipantIds = [...selectedParticipantIds]..sort();
+    return MultisigSigningRequestRecord(
+      signingRequestId: 'request-mobile',
+      accountUuid: accountUuid,
+      sessionId: 'session-1',
+      localParticipantId: 'participant-alice',
+      requesterParticipantId: 'participant-alice',
+      selectedParticipantIds: createdSelectedParticipantIds!,
+      pcztB64: 'AQID',
+      pcztHash: 'pczt-hash',
+      needsSaplingParams: needsSaplingParams,
+      amountZatoshi: amountZatoshi.toString(),
+      feeZatoshi: feeZatoshi.toString(),
+      recipientAddress: recipientAddress,
+      addressType: addressType ?? '',
+      state: 'open',
+      createdAt: 1,
+      updatedAt: 1,
+    );
+  }
+
+  MultisigAccountMaterial _material(String accountUuid) {
+    return MultisigAccountMaterial(
+      accountUuid: accountUuid,
+      sessionId: 'session-1',
+      participantId: 'participant-alice',
+      coordinatorUrl: 'http://localhost:8080',
+      rosterHash: 'roster',
+      groupPublicPackageHash: 'group',
+      threshold: 2,
+      participantCount: 3,
+      identity: const MultisigParticipantIdentity(
+        admissionSecretKey: 'admission-secret',
+        admissionPublicKey: 'admission-public',
+        deliverySecretKey: 'delivery-secret',
+        deliveryPublicKey: 'delivery-public',
+      ),
+      keyPackageB64: 'key-package',
+      groupPublicPackageJson: '{}',
+      vaultAddress: 'uregtest1vault',
+      accessToken: 'access',
+      refreshToken: 'refresh',
+      accessTokenExpiresAt: 4102444800,
+      refreshTokenExpiresAt: 4102444800,
+      localBackupCompletedAt: 1,
+      localBackupVerifiedAt: 1,
+    );
+  }
 }

@@ -554,6 +554,11 @@ class MultisigSigningRequestsNotifier
       final existing = await _recordForSendFlow(accountUuid, sendFlowId);
       if (existing != null) {
         proposalConsumed = true;
+        await _discardUnusedProposalBestEffort(
+          proposalId: proposalId,
+          sendFlowId: sendFlowId,
+          reason: 'reusing existing signing request',
+        );
         var record = existing;
         // A retry may carry a different signer selection. As long as nothing
         // was prepared or submitted yet, honor the latest selection instead
@@ -621,6 +626,21 @@ class MultisigSigningRequestsNotifier
           sendFlowId: sendFlowId,
         );
       }
+    }
+  }
+
+  Future<void> _discardUnusedProposalBestEffort({
+    required BigInt proposalId,
+    required String sendFlowId,
+    required String reason,
+  }) async {
+    try {
+      await _proposalService.discardProposal(
+        proposalId: proposalId,
+        sendFlowId: sendFlowId,
+      );
+    } catch (e) {
+      log('MultisigSigningRequests.$reason: discard proposal failed: $e');
     }
   }
 

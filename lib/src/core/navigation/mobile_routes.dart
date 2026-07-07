@@ -12,6 +12,8 @@ import '../../features/address_book/screens/mobile/mobile_address_book_screen.da
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import '../../features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
+import '../../features/send/screens/mobile/mobile_multisig_request_signers_screen.dart';
+import '../../features/multisig/screens/mobile/mobile_multisig_signing_detail_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
@@ -159,6 +161,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       },
     ),
     GoRoute(
+      path: '/send/request-signatures',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is MobileMultisigRequestSignersArgs
+            ? MobileMultisigRequestSignersScreen(args: extra)
+            : const MobileSendScreen(useRouteSteps: true);
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
+    ),
+    GoRoute(
       path: '/swap/review',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
@@ -207,6 +219,18 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         key: state.pageKey,
         child: MobileKeystoneSignScreen(args: state.extra! as SendReviewArgs),
       ),
+    ),
+    GoRoute(
+      path: '/multisig/sign/:signingRequestId',
+      pageBuilder: (context, state) {
+        final signingRequestId = state.pathParameters['signingRequestId'] ?? '';
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileMultisigSigningDetailScreen(
+            signingRequestId: Uri.decodeComponent(signingRequestId),
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/home/keystone-shield',
