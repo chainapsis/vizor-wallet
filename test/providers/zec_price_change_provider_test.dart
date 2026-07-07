@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
 
 class _FakeSource implements ZecMarketDataSource {
   _FakeSource(this.data);
@@ -24,12 +25,14 @@ void main() {
       );
 
       expect(data?.usdPrice, 33.45);
-      expect(data?.change24hPct, -0.25852);
+      expect(data?.change24hPctFor(kUsdFiatCurrency), -0.25852);
     });
 
     test('allows a missing or null 24h change when price is usable', () {
       expect(
-        parseZecMarketData('{"zcash":{"usd":33.45}}')?.change24hPct,
+        parseZecMarketData(
+          '{"zcash":{"usd":33.45}}',
+        )?.change24hPctFor(kUsdFiatCurrency),
         isNull,
       );
       expect(
@@ -56,12 +59,44 @@ void main() {
         Uri.parse('https://api.coingecko.com/api/v3/'),
       );
 
+      final expectedCodes = kSupportedFiatCurrencies
+          .map((currency) => currency.code)
+          .join(',');
       expect(
         uri.toString(),
         'https://api.coingecko.com/api/v3/simple/price?'
-        'ids=zcash&names=Zcash&symbols=zec&vs_currencies=usd&'
+        'ids=zcash&names=Zcash&symbols=zec&'
+        'vs_currencies=${Uri.encodeQueryComponent(expectedCodes)}&'
         'include_24hr_change=true',
       );
+    });
+
+    test('reads every supported currency from a batched response', () {
+      final data = parseZecMarketData(
+        '{"zcash":{"usd":33.45,"usd_24h_change":-0.25852,'
+        '"krw":45600.7,"krw_24h_change":-0.31}}',
+      );
+      final krw = fiatCurrencyForCode('krw');
+
+      expect(data?.usdPrice, 33.45);
+      expect(data?.priceFor(krw), 45600.7);
+      expect(data?.change24hPctFor(krw), -0.31);
+    });
+
+    test('falls back to the USD 24h change for currencies missing one', () {
+      final data = parseZecMarketData(
+        '{"zcash":{"usd":33.45,"usd_24h_change":-0.25852,"krw":45600.7}}',
+      );
+      final krw = fiatCurrencyForCode('krw');
+
+      expect(data?.priceFor(krw), 45600.7);
+      expect(data?.change24hPctFor(krw), -0.25852);
+    });
+
+    test('returns null for a currency absent from the response', () {
+      final data = parseZecMarketData('{"zcash":{"usd":33.45}}');
+
+      expect(data?.priceFor(fiatCurrencyForCode('krw')), isNull);
     });
   });
 
@@ -96,7 +131,10 @@ void main() {
 
     test('exposes the fetched market data after the first tick', () async {
       final source = _FakeSource(
-        const ZecMarketData(usdPrice: 33.45, change24hPct: -0.26),
+        const ZecMarketData(
+          pricesByCurrency: {'usd': 33.45},
+          change24hPctByCurrency: {'usd': -0.26},
+        ),
       );
       final container = makeContainer(swapEnabled: true, source: source);
       final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
@@ -104,7 +142,7 @@ void main() {
       expect(sub.read(), isNull);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read()?.usdPrice, 33.45);
-      expect(container.read(zecHomeUsdUnitPriceProvider), 33.45);
+      expect(container.read(zecHomeFiatUnitPriceProvider), 33.45);
       expect(container.read(zecPriceChange24hPctProvider), -0.26);
       expect(source.fetchCount, 1);
     });
@@ -121,7 +159,10 @@ void main() {
 
     test('does not fetch while market-price UI is disabled', () async {
       final source = _FakeSource(
-        const ZecMarketData(usdPrice: 33.45, change24hPct: 5.0),
+        const ZecMarketData(
+          pricesByCurrency: {'usd': 33.45},
+          change24hPctByCurrency: {'usd': 5.0},
+        ),
       );
       final container = makeContainer(swapEnabled: false, source: source);
       final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});

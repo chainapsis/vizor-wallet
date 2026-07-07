@@ -128,7 +128,7 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async {
-    return const ZecMarketData(usdPrice: 70);
+    return const ZecMarketData(pricesByCurrency: {'usd': 70});
   }
 }
 
@@ -231,7 +231,7 @@ Widget _amountStepWithPriceLoadingApp() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
-      zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+      zecHomeFiatUnitPriceProvider.overrideWithValue(null),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),

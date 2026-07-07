@@ -16,6 +16,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
@@ -237,7 +238,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       address: widget.args.address,
       ownAccounts: ownAccounts,
     );
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(fiatCurrencyProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
     final canOpenExplorer =
@@ -272,7 +274,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         amountText: _formatAmount(widget.args.amountZatoshi),
                         fiatText: fiatTextForZatoshi(
                           widget.args.amountZatoshi,
-                          zecUsdUnitPrice: zecUsdUnitPrice,
+                          zecUnitPrice: zecUnitPrice,
+                          currency: fiatCurrency,
                         ),
                         recipient: recipient,
                         timestampText: formatDayMonthTime(

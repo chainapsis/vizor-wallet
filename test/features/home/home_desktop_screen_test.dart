@@ -683,7 +683,12 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async {
-    return ZecMarketData(usdPrice: 70, change24hPct: change24hPct);
+    return ZecMarketData(
+      pricesByCurrency: const {'usd': 70},
+      change24hPctByCurrency: change24hPct == null
+          ? const {}
+          : {'usd': change24hPct!},
+    );
   }
 }
 

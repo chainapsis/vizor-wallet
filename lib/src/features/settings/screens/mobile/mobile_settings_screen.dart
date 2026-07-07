@@ -21,6 +21,8 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../core/config/fiat_currencies.dart';
+import '../../../../providers/fiat_currency_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
@@ -39,6 +41,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpoint = ref.watch(rpcEndpointProvider).hostPort;
     final themeMode = ref.watch(themeModeProvider);
+    final fiatCurrency = ref.watch(fiatCurrencyProvider);
     final profilePictureId =
         account?.profilePictureId ?? kDefaultProfilePictureId;
     final profilePictureLabel = _profilePictureDisplayLabel(profilePictureId);
@@ -198,6 +201,20 @@ class MobileSettingsScreen extends ConsumerWidget {
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
                     ),
+                    MobileListRow(
+                      key: const ValueKey('mobile_settings_currency_row'),
+                      leading: _RowIcon(AppIcons.coins),
+                      label: 'Currency',
+                      value: fiatCurrency.displayCode,
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: settingsValueColor,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      onTap: () =>
+                          _showCurrencySheet(context, ref, fiatCurrency),
+                    ),
                     // No Figma frame for this row yet — listed in
                     // design_suggestion. Hidden on devices without
                     // biometric hardware.
@@ -355,6 +372,20 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     if (selected != null && selected != current) {
       await ref.read(themeModeProvider.notifier).set(selected);
+    }
+  }
+
+  Future<void> _showCurrencySheet(
+    BuildContext context,
+    WidgetRef ref,
+    FiatCurrency current,
+  ) async {
+    final selected = await showAppMobileSheet<FiatCurrency>(
+      context: context,
+      builder: (sheetContext) => _CurrencySheet(current: current),
+    );
+    if (selected != null && selected.code != current.code) {
+      await ref.read(fiatCurrencyProvider.notifier).set(selected);
     }
   }
 }
@@ -537,6 +568,136 @@ class _ThemeSheetState extends State<_ThemeSheet> {
           const SizedBox(height: AppSpacing.xs),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
+      ),
+    );
+  }
+}
+
+class _CurrencySheet extends StatefulWidget {
+  const _CurrencySheet({required this.current});
+
+  final FiatCurrency current;
+
+  @override
+  State<_CurrencySheet> createState() => _CurrencySheetState();
+}
+
+class _CurrencySheetState extends State<_CurrencySheet> {
+  late FiatCurrency _selected = widget.current;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileModalScaffold(
+      title: 'Currency',
+      onClose: () => Navigator.of(context).pop(),
+      bodyGap: AppSpacing.md,
+      bottomPadding: AppSpacing.base,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Eleven options outgrow short phones, so the list scrolls inside
+          // the sheet while the Update/Cancel actions stay pinned below.
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: kSupportedFiatCurrencies.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xs),
+                itemBuilder: (context, index) {
+                  final currency = kSupportedFiatCurrencies[index];
+                  return _CurrencyOptionCard(
+                    key: ValueKey('mobile_currency_option_${currency.code}'),
+                    currency: currency,
+                    selected: currency.code == _selected.code,
+                    onTap: () => setState(() => _selected = currency),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            key: const ValueKey('mobile_currency_update'),
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(_selected),
+            child: const Text('Update'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
+      ),
+    );
+  }
+}
+
+/// Radio-style currency option — the theme option card with the currency
+/// symbol standing in for the leading icon.
+class _CurrencyOptionCard extends StatelessWidget {
+  const _CurrencyOptionCard({
+    required this.currency,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final FiatCurrency currency;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: currency.pickerLabel,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: selected ? colors.border.strong : colors.border.regular,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                child: Center(
+                  child: Text(
+                    currency.symbol,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  currency.displayCode,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              if (selected)
+                AppIcon(AppIcons.check, size: 20, color: colors.icon.accent),
+            ],
+          ),
+        ),
       ),
     );
   }

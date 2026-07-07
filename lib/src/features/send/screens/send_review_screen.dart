@@ -15,6 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -295,7 +296,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       address: widget.args.address,
       ownAccounts: ownAccounts,
     );
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(fiatCurrencyProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
 
@@ -316,7 +318,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 amountText: _formatAmount(widget.args.amountZatoshi),
                 fiatText: fiatTextForZatoshi(
                   widget.args.amountZatoshi,
-                  zecUsdUnitPrice: zecUsdUnitPrice,
+                  zecUnitPrice: zecUnitPrice,
+                  currency: fiatCurrency,
                 ),
                 recipient: recipient,
                 feeText: _formatFee(widget.args.feeZatoshi),

@@ -16,6 +16,8 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_setting
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
+import 'package:zcash_wallet/src/providers/fiat_currency_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
@@ -71,6 +73,18 @@ class _FakeThemeModeNotifier extends ThemeModeNotifier {
   }
 }
 
+/// Skips the secure-storage read/write so currency selection works without a
+/// platform channel in widget tests.
+class _FakeFiatCurrencyNotifier extends FiatCurrencyNotifier {
+  @override
+  FiatCurrency build() => kDefaultFiatCurrency;
+
+  @override
+  Future<void> set(FiatCurrency currency) async {
+    state = currency;
+  }
+}
+
 class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   _FakeBiometricNotifier(this.initialState);
 
@@ -98,6 +112,7 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      fiatCurrencyProvider.overrideWith(_FakeFiatCurrencyNotifier.new),
       if (biometricNotifier != null)
         biometricUnlockProvider.overrideWith(biometricNotifier)
       else if (biometric != null)
@@ -234,6 +249,49 @@ void main() {
     // Sheet closed and the row value reflects the new mode.
     expect(find.text('System (Auto)'), findsNothing);
     expect(find.text('Light'), findsOneWidget);
+  });
+
+  testWidgets('currency row opens the sheet and applies the selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_currency_row')),
+    );
+    await tester.pump();
+    expect(find.text('USD'), findsOneWidget);
+
+    await tester.tap(find.text('Currency'));
+    await tester.pumpAndSettle();
+
+    final krwOption = find.byKey(const ValueKey('mobile_currency_option_krw'));
+    await tester.scrollUntilVisible(
+      krwOption,
+      60,
+      scrollable: find
+          .descendant(
+            of: find.byType(MobileModalScaffold),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pump();
+
+    // Selection commits through Update, not on tap.
+    await tester.tap(krwOption);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_currency_update')));
+    await tester.pumpAndSettle();
+
+    // Sheet closed and the row value reflects the new currency.
+    expect(
+      find.byKey(const ValueKey('mobile_currency_option_krw')),
+      findsNothing,
+    );
+    expect(find.text('KRW'), findsOneWidget);
+    expect(find.text('USD'), findsNothing);
   });
 
   testWidgets('every settings row renders active', (tester) async {

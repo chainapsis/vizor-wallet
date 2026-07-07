@@ -24,6 +24,8 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/config/fiat_currencies.dart';
+import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -38,7 +40,6 @@ import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
-import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
@@ -78,20 +79,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String? _formatFiatBalance(
     BigInt zatoshi, {
-    required double? zecUsdUnitPrice,
+    required double? zecUnitPrice,
+    required FiatCurrency currency,
     required bool privacyModeEnabled,
   }) {
     if (zatoshi <= BigInt.zero ||
-        zecUsdUnitPrice == null ||
-        !zecUsdUnitPrice.isFinite ||
-        zecUsdUnitPrice <= 0) {
+        zecUnitPrice == null ||
+        !zecUnitPrice.isFinite ||
+        zecUnitPrice <= 0) {
       return null;
     }
     if (privacyModeEnabled) return fixedPrivacyMask();
 
     final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
     if (!zec.isFinite || zec <= 0) return null;
-    return swapFormatCompactFiatValue(zec * zecUsdUnitPrice);
+    return formatCompactFiatValueFor(currency, zec * zecUnitPrice);
   }
 
   void _dismissShieldBalanceError() {
@@ -189,10 +191,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardBalance +
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(fiatCurrencyProvider);
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
-      zecUsdUnitPrice: zecUsdUnitPrice,
+      zecUnitPrice: zecUnitPrice,
+      currency: fiatCurrency,
       privacyModeEnabled: privacyModeEnabled,
     );
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);

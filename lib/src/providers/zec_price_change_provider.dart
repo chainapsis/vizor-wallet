@@ -5,9 +5,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
+import '../core/config/fiat_currencies.dart';
 import '../core/config/swap_feature_config.dart';
 import '../core/formatting/zec_amount.dart';
-import '../features/swap/models/swap_fiat_value_formatting.dart';
+import 'fiat_currency_provider.dart';
 
 const kVizorCoinGeckoPriceBaseUrlEnvKey = 'VIZOR_COINGECKO_PRICE_BASE_URL';
 const kVizorCoinGeckoDefaultPriceBaseUrl = 'https://api.coingecko.com/api/v3';
@@ -17,10 +18,26 @@ const kVizorCoinGeckoPriceBaseUrl = String.fromEnvironment(
 );
 
 class ZecMarketData {
-  const ZecMarketData({required this.usdPrice, this.change24hPct});
+  const ZecMarketData({
+    required this.pricesByCurrency,
+    this.change24hPctByCurrency = const {},
+  });
 
-  final double usdPrice;
-  final double? change24hPct;
+  /// ZEC unit price per supported fiat currency code (CoinGecko
+  /// `vs_currency`). Always contains a valid `usd` entry; other currencies
+  /// are best-effort per response.
+  final Map<String, double> pricesByCurrency;
+
+  /// 24h change percentage points per currency code (e.g. `-0.26`).
+  final Map<String, double> change24hPctByCurrency;
+
+  double get usdPrice => pricesByCurrency[kUsdFiatCurrency.code]!;
+
+  double? priceFor(FiatCurrency currency) => pricesByCurrency[currency.code];
+
+  double? change24hPctFor(FiatCurrency currency) =>
+      change24hPctByCurrency[currency.code] ??
+      change24hPctByCurrency[kUsdFiatCurrency.code];
 }
 
 /// Non-swap ZEC market data source. Swap keeps using its provider-specific
@@ -68,11 +85,15 @@ Uri coinGeckoSimplePriceUri(Uri baseUri) {
   final basePath = baseUri.path.replaceFirst(RegExp(r'/+$'), '');
   return baseUri.replace(
     path: '$basePath/simple/price',
-    queryParameters: const {
+    queryParameters: {
       'ids': 'zcash',
       'names': 'Zcash',
       'symbols': 'zec',
-      'vs_currencies': 'usd',
+      // One batched call covers every currency the Settings picker offers,
+      // so switching currency is instant and needs no refetch.
+      'vs_currencies': kSupportedFiatCurrencies
+          .map((currency) => currency.code)
+          .join(','),
       'include_24hr_change': 'true',
     },
   );
@@ -87,24 +108,35 @@ ZecMarketData? parseZecMarketData(String body) {
     final zcash = decoded['zcash'];
     if (zcash is! Map<String, dynamic>) return null;
 
-    final usdRaw = zcash['usd'];
-    if (usdRaw is! num) return null;
-    final usdPrice = usdRaw.toDouble();
-    if (!usdPrice.isFinite || usdPrice <= 0) return null;
+    final prices = <String, double>{};
+    final changes = <String, double>{};
+    for (final currency in kSupportedFiatCurrencies) {
+      final priceRaw = zcash[currency.code];
+      if (priceRaw is num) {
+        final price = priceRaw.toDouble();
+        if (price.isFinite && price > 0) prices[currency.code] = price;
+      }
+      final changeRaw = zcash['${currency.code}_24h_change'];
+      if (changeRaw is num && changeRaw.toDouble().isFinite) {
+        changes[currency.code] = changeRaw.toDouble();
+      }
+    }
 
-    final changeRaw = zcash['usd_24h_change'];
-    final change24hPct = changeRaw is num && changeRaw.toDouble().isFinite
-        ? changeRaw.toDouble()
-        : null;
+    // USD stays the required anchor (pre-multi-currency behavior): a response
+    // without a usable USD price is treated as a failed fetch.
+    if (!prices.containsKey(kUsdFiatCurrency.code)) return null;
 
-    return ZecMarketData(usdPrice: usdPrice, change24hPct: change24hPct);
+    return ZecMarketData(
+      pricesByCurrency: prices,
+      change24hPctByCurrency: changes,
+    );
   } catch (_) {
     return null;
   }
 }
 
 double? parseZecPriceChange24hPct(String body) {
-  return parseZecMarketData(body)?.change24hPct;
+  return parseZecMarketData(body)?.change24hPctFor(kUsdFiatCurrency);
 }
 
 const zecMarketDataRefreshInterval = Duration(minutes: 3);
@@ -151,26 +183,36 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecMarketData?> {
   }
 }
 
-final zecHomeUsdUnitPriceProvider = Provider.autoDispose<double?>((ref) {
-  return ref.watch(zecHomeMarketDataProvider)?.usdPrice;
+/// ZEC unit price in the user's selected display currency, or null until the
+/// first successful fetch (or when the response lacked that currency).
+final zecHomeFiatUnitPriceProvider = Provider.autoDispose<double?>((ref) {
+  final currency = ref.watch(fiatCurrencyProvider);
+  return ref.watch(zecHomeMarketDataProvider)?.priceFor(currency);
 });
 
 final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
-  return ref.watch(zecHomeMarketDataProvider)?.change24hPct;
+  final currency = ref.watch(fiatCurrencyProvider);
+  return ref.watch(zecHomeMarketDataProvider)?.change24hPctFor(currency);
 });
 
-/// "$250.12"-style fiat text for a zatoshi amount, or null when the amount
-/// or [zecUsdUnitPrice] cannot be priced (callers hide the sub-label).
-String? fiatTextForZatoshi(BigInt zatoshi, {required double? zecUsdUnitPrice}) {
+/// "$250.12" / "₩340K"-style fiat text for a zatoshi amount in [currency],
+/// or null when the amount or [zecUnitPrice] cannot be priced (callers hide
+/// the sub-label). [zecUnitPrice] must already be denominated in [currency]
+/// (pair it with [zecHomeFiatUnitPriceProvider]).
+String? fiatTextForZatoshi(
+  BigInt zatoshi, {
+  required double? zecUnitPrice,
+  FiatCurrency currency = kUsdFiatCurrency,
+}) {
   if (zatoshi <= BigInt.zero ||
-      zecUsdUnitPrice == null ||
-      !zecUsdUnitPrice.isFinite ||
-      zecUsdUnitPrice <= 0) {
+      zecUnitPrice == null ||
+      !zecUnitPrice.isFinite ||
+      zecUnitPrice <= 0) {
     return null;
   }
   final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
   if (!zec.isFinite || zec <= 0) return null;
-  return swapFormatCompactFiatValue(zec * zecUsdUnitPrice);
+  return formatCompactFiatValueFor(currency, zec * zecUnitPrice);
 }
 
 /// Rounds to the displayed 2-decimal precision so text and color agree —

@@ -17,6 +17,8 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/config/fiat_currencies.dart';
+import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
@@ -36,7 +38,13 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-enum _SettingsModalType { accountName, profilePicture, theme, updates }
+enum _SettingsModalType {
+  accountName,
+  profilePicture,
+  theme,
+  currency,
+  updates,
+}
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
@@ -102,6 +110,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _closeModal();
   }
 
+  Future<void> _updateCurrency(FiatCurrency currency) async {
+    await ref.read(fiatCurrencyProvider.notifier).set(currency);
+    if (!mounted) return;
+    _closeModal();
+  }
+
   Future<void> _updateProfilePicture(String profilePictureId) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
@@ -140,6 +154,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
+    final fiatCurrency = ref.watch(fiatCurrencyProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
     final updateState = Platform.isWindows
         ? ref.watch(windowsUpdateProvider)
@@ -168,6 +183,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
+                currencyLabel: fiatCurrency.displayCode,
                 updateLabel: updateState == null
                     ? null
                     : _updateLabel(updateState),
@@ -184,6 +200,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onAddressBook: () => context.push('/address-book'),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
+                onCurrency: () => _showModal(_SettingsModalType.currency),
                 onUpdates: updateState == null
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
@@ -236,6 +253,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onCancel: _closeModal,
                     onUpdate: _updateTheme,
                   ),
+                  _SettingsModalType.currency => _CurrencyModal(
+                    current: fiatCurrency,
+                    onCancel: _closeModal,
+                    onUpdate: _updateCurrency,
+                  ),
                   _SettingsModalType.updates => _WindowsUpdateModal(
                     onCancel: _closeModal,
                   ),
@@ -282,6 +304,7 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.currencyLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -291,6 +314,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onCurrency,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -302,6 +326,7 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String currencyLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -311,6 +336,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback onCurrency;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -345,6 +371,7 @@ class _SettingsPane extends StatelessWidget {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: themeLabel,
+                currencyLabel: currencyLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onChangePassword: onChangePassword,
@@ -354,6 +381,7 @@ class _SettingsPane extends StatelessWidget {
                 onAddressBook: onAddressBook,
                 onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
+                onCurrency: onCurrency,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
                 onUninstall: onUninstall,
@@ -375,6 +403,7 @@ class _SettingsList extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.currencyLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -384,6 +413,7 @@ class _SettingsList extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onCurrency,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -395,6 +425,7 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String currencyLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -404,6 +435,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback onCurrency;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -469,6 +501,12 @@ class _SettingsList extends StatelessWidget {
               label: 'Theme',
               value: themeLabel,
               onTap: onTheme,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.coins,
+              label: 'Currency',
+              value: currencyLabel,
+              onTap: onCurrency,
             ),
             if (updateLabel != null && onUpdates != null)
               _SettingsRow(
@@ -613,6 +651,198 @@ class _ThemeModalState extends State<_ThemeModal> {
             onAction: _canUpdate ? _submit : null,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CurrencyModal extends StatefulWidget {
+  const _CurrencyModal({
+    required this.current,
+    required this.onCancel,
+    required this.onUpdate,
+  });
+
+  final FiatCurrency current;
+  final VoidCallback onCancel;
+  final Future<void> Function(FiatCurrency currency) onUpdate;
+
+  @override
+  State<_CurrencyModal> createState() => _CurrencyModalState();
+}
+
+class _CurrencyModalState extends State<_CurrencyModal> {
+  late FiatCurrency _selected = widget.current;
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  bool get _canUpdate =>
+      !_isSubmitting && _selected.code != widget.current.code;
+
+  void _select(FiatCurrency currency) {
+    setState(() {
+      _submitError = null;
+      _selected = currency;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_canUpdate) return;
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await widget.onUpdate(_selected);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submitError = "Couldn't update currency.";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AccountModalCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Currency',
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // The list outgrows short windows, so it scrolls inside the card.
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 308),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: kSupportedFiatCurrencies.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xs),
+                itemBuilder: (context, index) {
+                  final currency = kSupportedFiatCurrencies[index];
+                  return _CurrencyOptionCard(
+                    key: ValueKey('settings_currency_option_${currency.code}'),
+                    currency: currency,
+                    selected: currency.code == _selected.code,
+                    onTap: () => _select(currency),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (_submitError != null) ...[
+            Text(
+              _submitError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          AccountModalActions(
+            onCancel: _isSubmitting ? null : widget.onCancel,
+            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            onAction: _canUpdate ? _submit : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Radio-style currency option — the theme option card with the currency
+/// symbol standing in for the leading icon.
+class _CurrencyOptionCard extends StatelessWidget {
+  const _CurrencyOptionCard({
+    required this.currency,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final FiatCurrency currency;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.only(
+            left: AppSpacing.xs,
+            right: AppSpacing.s,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            boxShadow: _settingsSurfaceShadow(colors),
+          ),
+          foregroundDecoration: selected
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadii.medium),
+                  border: Border.all(
+                    color: colors.border.strong,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignInside,
+                  ),
+                )
+              : null,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: Text(
+                    currency.symbol,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: selected
+                          ? colors.text.accent
+                          : colors.text.accent.withValues(alpha: 0.5),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  currency.displayCode,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              _ThemeOptionIndicator(selected: selected),
+            ],
+          ),
+        ),
       ),
     );
   }

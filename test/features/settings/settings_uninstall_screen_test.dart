@@ -68,6 +68,8 @@ Future<void> _runUninstallFlow(
     await tester.pumpAndSettle();
 
     if (openFromSettings) {
+      await tester.ensureVisible(find.text('Uninstall Vizor'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Uninstall Vizor'));
       await tester.pumpAndSettle();
     }

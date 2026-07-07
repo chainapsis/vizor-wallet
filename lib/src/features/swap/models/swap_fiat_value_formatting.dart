@@ -1,3 +1,5 @@
+import '../../../core/config/fiat_currencies.dart';
+
 String swapFormatFiatValue(double value) {
   if (value <= 0) return '0';
   final digits = value >= 100
@@ -11,16 +13,11 @@ String swapFormatFiatValue(double value) {
   );
 }
 
-String swapFormatCompactFiatValue(double value) {
-  if (!value.isFinite || value <= 0) return r'$0.00';
-  if (value >= 1000000) {
-    return '\$${swapTrimFixed(value / 1000000, fractionDigits: 3)}M';
-  }
-  if (value >= 1000) {
-    return '\$${swapTrimFixed(value / 1000, fractionDigits: 2)}K';
-  }
-  return '\$${value.toStringAsFixed(2)}';
-}
+/// Swap quotes are provider-priced in USD, so this stays USD regardless of
+/// the Settings display currency; wallet-native surfaces use
+/// [formatCompactFiatValueFor] with the selected currency.
+String swapFormatCompactFiatValue(double value) =>
+    formatCompactFiatValueFor(kUsdFiatCurrency, value);
 
 String swapTrimFixed(double value, {required int fractionDigits}) {
   var text = value.toStringAsFixed(fractionDigits);
