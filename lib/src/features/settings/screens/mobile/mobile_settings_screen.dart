@@ -549,9 +549,13 @@ class _ThemeSheetState extends State<_ThemeSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final (mode, iconName, label) in _options) ...[
-            _ThemeOptionCard(
+            _SettingsOptionCard(
               key: ValueKey('mobile_theme_option_${mode.name}'),
-              iconName: iconName,
+              leading: AppIcon(
+                iconName,
+                size: 20,
+                color: context.colors.icon.accent,
+              ),
               label: label,
               selected: mode == _selected,
               onTap: () => setState(() => _selected = mode),
@@ -608,10 +612,17 @@ class _CurrencySheetState extends State<_CurrencySheet> {
                     const SizedBox(height: AppSpacing.xs),
                 itemBuilder: (context, index) {
                   final currency = kSupportedFiatCurrencies[index];
-                  return _CurrencyOptionCard(
+                  return _SettingsOptionCard(
                     key: ValueKey('mobile_currency_option_${currency.code}'),
-                    currency: currency,
-                    selected: currency.code == _selected.code,
+                    leading: Text(
+                      currency.symbol,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                    ),
+                    semanticLabel: currency.pickerLabel,
+                    label: currency.displayCode,
+                    selected: currency == _selected,
                     onTap: () => setState(() => _selected = currency),
                   );
                 },
@@ -633,97 +644,35 @@ class _CurrencySheetState extends State<_CurrencySheet> {
   }
 }
 
-/// Radio-style currency option — the theme option card with the currency
-/// symbol standing in for the leading icon.
-class _CurrencyOptionCard extends StatelessWidget {
-  const _CurrencyOptionCard({
-    required this.currency,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final FiatCurrency currency;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: currency.pickerLabel,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.regular,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                child: Center(
-                  child: Text(
-                    currency.symbol,
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  currency.displayCode,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              if (selected)
-                AppIcon(AppIcons.check, size: 20, color: colors.icon.accent),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeOptionCard extends StatelessWidget {
-  const _ThemeOptionCard({
-    required this.iconName,
+/// Radio-style option row shared by the settings sheets (Theme, Currency):
+/// a leading icon or currency symbol, the label, and the check/radio circle,
+/// with the selected border.
+class _SettingsOptionCard extends StatelessWidget {
+  const _SettingsOptionCard({
+    required this.leading,
     required this.label,
     required this.selected,
     required this.onTap,
+    this.semanticLabel,
     super.key,
   });
 
-  final String iconName;
+  final Widget leading;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
+  /// Screen-reader label when the visible [label] alone is ambiguous
+  /// (currency rows read "KRW (₩)").
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Semantics(
       button: true,
       selected: selected,
-      label: label,
+      label: semanticLabel ?? label,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -741,10 +690,7 @@ class _ThemeOptionCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Opacity(
-                opacity: selected ? 1 : 0.5,
-                child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-              ),
+              Opacity(opacity: selected ? 1 : 0.5, child: leading),
               const SizedBox(width: AppSpacing.s),
               Expanded(
                 child: Text(

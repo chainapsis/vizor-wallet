@@ -248,16 +248,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         await _updateProfilePicture(profilePictureId);
                       },
                     ),
-                  _SettingsModalType.theme => _ThemeModal(
-                    currentMode: themeMode,
+                  _SettingsModalType.theme => _SettingsChoiceModal<ThemeMode>(
+                    title: 'Theme',
+                    current: themeMode,
+                    updateErrorText: "Couldn't update theme.",
                     onCancel: _closeModal,
                     onUpdate: _updateTheme,
+                    optionsBuilder: _themeModalOptions,
                   ),
-                  _SettingsModalType.currency => _CurrencyModal(
-                    current: fiatCurrency,
-                    onCancel: _closeModal,
-                    onUpdate: _updateCurrency,
-                  ),
+                  _SettingsModalType.currency =>
+                    _SettingsChoiceModal<FiatCurrency>(
+                      title: 'Currency',
+                      current: fiatCurrency,
+                      updateErrorText: "Couldn't update currency.",
+                      onCancel: _closeModal,
+                      onUpdate: _updateCurrency,
+                      optionsBuilder: _currencyModalOptions,
+                    ),
                   _SettingsModalType.updates => _WindowsUpdateModal(
                     onCancel: _closeModal,
                   ),
@@ -547,142 +554,47 @@ class _SettingsList extends StatelessWidget {
   }
 }
 
-class _ThemeModal extends StatefulWidget {
-  const _ThemeModal({
-    required this.currentMode,
-    required this.onCancel,
-    required this.onUpdate,
-  });
-
-  final ThemeMode currentMode;
-  final VoidCallback onCancel;
-  final Future<void> Function(ThemeMode mode) onUpdate;
-
-  @override
-  State<_ThemeModal> createState() => _ThemeModalState();
-}
-
-class _ThemeModalState extends State<_ThemeModal> {
-  late ThemeMode _selectedMode = widget.currentMode;
-  bool _isSubmitting = false;
-  String? _submitError;
-
-  bool get _canUpdate => !_isSubmitting && _selectedMode != widget.currentMode;
-
-  void _select(ThemeMode mode) {
-    setState(() {
-      _submitError = null;
-      _selectedMode = mode;
-    });
-  }
-
-  Future<void> _submit() async {
-    if (!_canUpdate) return;
-    setState(() {
-      _isSubmitting = true;
-      _submitError = null;
-    });
-    try {
-      await widget.onUpdate(_selectedMode);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _submitError = "Couldn't update theme.";
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AccountModalCard(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Theme',
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _ThemeOptionCard(
-            iconName: AppIcons.monitor,
-            label: 'System (Auto)',
-            selected: _selectedMode == ThemeMode.system,
-            onTap: () => _select(ThemeMode.system),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          _ThemeOptionCard(
-            iconName: AppIcons.day,
-            label: 'Light',
-            selected: _selectedMode == ThemeMode.light,
-            onTap: () => _select(ThemeMode.light),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          _ThemeOptionCard(
-            iconName: AppIcons.night,
-            label: 'Dark',
-            selected: _selectedMode == ThemeMode.dark,
-            onTap: () => _select(ThemeMode.dark),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          if (_submitError != null) ...[
-            Text(
-              _submitError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          AccountModalActions(
-            onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
-            onAction: _canUpdate ? _submit : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CurrencyModal extends StatefulWidget {
-  const _CurrencyModal({
+/// Shared submit state machine for the single-choice settings modals
+/// (Theme, Currency): radio-style options, an Update action enabled once the
+/// selection differs, and an inline error on a failed update.
+class _SettingsChoiceModal<T> extends StatefulWidget {
+  const _SettingsChoiceModal({
+    required this.title,
     required this.current,
+    required this.updateErrorText,
     required this.onCancel,
     required this.onUpdate,
+    required this.optionsBuilder,
   });
 
-  final FiatCurrency current;
+  final String title;
+  final T current;
+  final String updateErrorText;
   final VoidCallback onCancel;
-  final Future<void> Function(FiatCurrency currency) onUpdate;
+  final Future<void> Function(T value) onUpdate;
+  final Widget Function(
+    BuildContext context,
+    T selected,
+    ValueChanged<T> select,
+  )
+  optionsBuilder;
 
   @override
-  State<_CurrencyModal> createState() => _CurrencyModalState();
+  State<_SettingsChoiceModal<T>> createState() =>
+      _SettingsChoiceModalState<T>();
 }
 
-class _CurrencyModalState extends State<_CurrencyModal> {
-  late FiatCurrency _selected = widget.current;
+class _SettingsChoiceModalState<T> extends State<_SettingsChoiceModal<T>> {
+  late T _selected = widget.current;
   bool _isSubmitting = false;
   String? _submitError;
 
-  bool get _canUpdate =>
-      !_isSubmitting && _selected.code != widget.current.code;
+  bool get _canUpdate => !_isSubmitting && _selected != widget.current;
 
-  void _select(FiatCurrency currency) {
+  void _select(T value) {
     setState(() {
       _submitError = null;
-      _selected = currency;
+      _selected = value;
     });
   }
 
@@ -697,7 +609,7 @@ class _CurrencyModalState extends State<_CurrencyModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update currency.";
+        _submitError = widget.updateErrorText;
       });
     } finally {
       if (mounted) {
@@ -716,7 +628,7 @@ class _CurrencyModalState extends State<_CurrencyModal> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Currency',
+            widget.title,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -724,27 +636,9 @@ class _CurrencyModalState extends State<_CurrencyModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          // The list outgrows short windows, so it scrolls inside the card.
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 308),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: kSupportedFiatCurrencies.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(height: AppSpacing.xs),
-                itemBuilder: (context, index) {
-                  final currency = kSupportedFiatCurrencies[index];
-                  return _CurrencyOptionCard(
-                    key: ValueKey('settings_currency_option_${currency.code}'),
-                    currency: currency,
-                    selected: currency.code == _selected.code,
-                    onTap: () => _select(currency),
-                  );
-                },
-              ),
-            ),
-          ),
+          // Option lists may outgrow short windows (eleven currencies), so
+          // they flex and scroll inside the card.
+          Flexible(child: widget.optionsBuilder(context, _selected, _select)),
           const SizedBox(height: AppSpacing.md),
           if (_submitError != null) ...[
             Text(
@@ -767,17 +661,90 @@ class _CurrencyModalState extends State<_CurrencyModal> {
   }
 }
 
-/// Radio-style currency option — the theme option card with the currency
-/// symbol standing in for the leading icon.
-class _CurrencyOptionCard extends StatelessWidget {
-  const _CurrencyOptionCard({
-    required this.currency,
+Widget _themeModalOptions(
+  BuildContext context,
+  ThemeMode selected,
+  ValueChanged<ThemeMode> select,
+) {
+  final colors = context.colors;
+  Widget option(ThemeMode mode, String iconName, String label) {
+    final isSelected = selected == mode;
+    return _SettingsOptionCard(
+      leading: AppIcon(
+        iconName,
+        size: 18,
+        color: isSelected
+            ? colors.icon.accent
+            : colors.icon.accent.withValues(alpha: 0.5),
+      ),
+      label: label,
+      selected: isSelected,
+      onTap: () => select(mode),
+    );
+  }
+
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      option(ThemeMode.system, AppIcons.monitor, 'System (Auto)'),
+      const SizedBox(height: AppSpacing.xs),
+      option(ThemeMode.light, AppIcons.day, 'Light'),
+      const SizedBox(height: AppSpacing.xs),
+      option(ThemeMode.dark, AppIcons.night, 'Dark'),
+    ],
+  );
+}
+
+Widget _currencyModalOptions(
+  BuildContext context,
+  FiatCurrency selected,
+  ValueChanged<FiatCurrency> select,
+) {
+  final colors = context.colors;
+  return ConstrainedBox(
+    constraints: const BoxConstraints(maxHeight: 308),
+    child: ListView.separated(
+      shrinkWrap: true,
+      itemCount: kSupportedFiatCurrencies.length,
+      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+      itemBuilder: (context, index) {
+        final currency = kSupportedFiatCurrencies[index];
+        final isSelected = currency == selected;
+        return _SettingsOptionCard(
+          key: ValueKey('settings_currency_option_${currency.code}'),
+          leading: Text(
+            currency.symbol,
+            style: AppTypography.labelMedium.copyWith(
+              color: isSelected
+                  ? colors.text.accent
+                  : colors.text.accent.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          label: currency.displayCode,
+          selected: isSelected,
+          onTap: () => select(currency),
+        );
+      },
+    ),
+  );
+}
+
+/// Radio-style option row shared by the settings choice modals: a 32px
+/// leading slot (icon or currency symbol), the label, and the selection
+/// indicator, with the selected border overlay.
+class _SettingsOptionCard extends StatelessWidget {
+  const _SettingsOptionCard({
+    required this.leading,
+    required this.label,
     required this.selected,
     required this.onTap,
     super.key,
   });
 
-  final FiatCurrency currency;
+  final Widget leading;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
 
@@ -813,25 +780,11 @@ class _CurrencyOptionCard extends StatelessWidget {
               : null,
           child: Row(
             children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: Text(
-                    currency.symbol,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: selected
-                          ? colors.text.accent
-                          : colors.text.accent.withValues(alpha: 0.5),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
+              SizedBox(width: 32, height: 32, child: Center(child: leading)),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
-                  currency.displayCode,
+                  label,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.accent,
@@ -839,7 +792,7 @@ class _CurrencyOptionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              _ThemeOptionIndicator(selected: selected),
+              _SettingsOptionIndicator(selected: selected),
             ],
           ),
         ),
@@ -1043,86 +996,8 @@ class _UpdateProgressBar extends StatelessWidget {
   }
 }
 
-class _ThemeOptionCard extends StatelessWidget {
-  const _ThemeOptionCard({
-    required this.iconName,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String iconName;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.only(
-            left: AppSpacing.xs,
-            right: AppSpacing.s,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            boxShadow: _settingsSurfaceShadow(colors),
-          ),
-          foregroundDecoration: selected
-              ? BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                  border: Border.all(
-                    color: colors.border.strong,
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignInside,
-                  ),
-                )
-              : null,
-          child: Row(
-            children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: AppIcon(
-                    iconName,
-                    size: 18,
-                    color: selected
-                        ? colors.icon.accent
-                        : colors.icon.accent.withValues(alpha: 0.5),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-              _ThemeOptionIndicator(selected: selected),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeOptionIndicator extends StatelessWidget {
-  const _ThemeOptionIndicator({required this.selected});
+class _SettingsOptionIndicator extends StatelessWidget {
+  const _SettingsOptionIndicator({required this.selected});
 
   final bool selected;
 

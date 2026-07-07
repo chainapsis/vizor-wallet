@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../../support/in_memory_fiat_currency_notifier.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
@@ -1304,7 +1305,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         extraOverrides: [
-          fiatCurrencyProvider.overrideWith(_InMemoryFiatCurrencyNotifier.new),
+          fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
         ],
       ),
     );
@@ -1877,14 +1878,4 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
   });
-}
-
-class _InMemoryFiatCurrencyNotifier extends FiatCurrencyNotifier {
-  @override
-  FiatCurrency build() => kDefaultFiatCurrency;
-
-  @override
-  Future<void> set(FiatCurrency currency) async {
-    state = currency;
-  }
 }

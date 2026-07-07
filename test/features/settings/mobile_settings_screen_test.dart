@@ -16,12 +16,12 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_setting
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
-import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
 import 'package:zcash_wallet/src/providers/fiat_currency_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/in_memory_fiat_currency_notifier.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -73,18 +73,6 @@ class _FakeThemeModeNotifier extends ThemeModeNotifier {
   }
 }
 
-/// Skips the secure-storage read/write so currency selection works without a
-/// platform channel in widget tests.
-class _FakeFiatCurrencyNotifier extends FiatCurrencyNotifier {
-  @override
-  FiatCurrency build() => kDefaultFiatCurrency;
-
-  @override
-  Future<void> set(FiatCurrency currency) async {
-    state = currency;
-  }
-}
-
 class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   _FakeBiometricNotifier(this.initialState);
 
@@ -112,7 +100,7 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
-      fiatCurrencyProvider.overrideWith(_FakeFiatCurrencyNotifier.new),
+      fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
       if (biometricNotifier != null)
         biometricUnlockProvider.overrideWith(biometricNotifier)
       else if (biometric != null)

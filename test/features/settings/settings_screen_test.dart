@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
 import 'package:zcash_wallet/src/providers/fiat_currency_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
@@ -17,6 +16,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/in_memory_fiat_currency_notifier.dart';
 
 void main() {
   test('uninstall setting is supported only on macOS and Linux', () {
@@ -181,7 +181,7 @@ Widget _settingsHarness() {
       syncProvider.overrideWith(FakeSyncNotifier.new),
       // Secure-storage platform channels never complete in widget tests, so
       // the currency preference runs in-memory here.
-      fiatCurrencyProvider.overrideWith(_InMemoryFiatCurrencyNotifier.new),
+      fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -235,14 +235,4 @@ bool _hasFocusRing(WidgetTester tester) {
         border.top.width == 2;
   });
   return focusRing.evaluate().isNotEmpty;
-}
-
-class _InMemoryFiatCurrencyNotifier extends FiatCurrencyNotifier {
-  @override
-  FiatCurrency build() => kDefaultFiatCurrency;
-
-  @override
-  Future<void> set(FiatCurrency currency) async {
-    state = currency;
-  }
 }

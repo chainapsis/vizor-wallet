@@ -26,6 +26,15 @@ class FiatCurrency {
 
   /// Picker label — "USD ($)", "KRW (₩)".
   String get pickerLabel => '$displayCode ($symbol)';
+
+  /// Codes are unique within [kSupportedFiatCurrencies], so identity is the
+  /// code — lets selections compare with `==` regardless of which const
+  /// instance they came from.
+  @override
+  bool operator ==(Object other) => other is FiatCurrency && other.code == code;
+
+  @override
+  int get hashCode => code.hashCode;
 }
 
 const kUsdFiatCurrency = FiatCurrency(
