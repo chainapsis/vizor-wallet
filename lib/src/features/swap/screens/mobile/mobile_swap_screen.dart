@@ -30,6 +30,7 @@ import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 
 enum _SwapModalSurface {
   assetSelector,
@@ -331,6 +332,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   child: Column(
                     children: [
                       MobileSwapComposerTicket(
+                        fiatDisplay: ref.watch(fiatDisplayProvider),
                         state: swapState,
                         onAmountChanged: swapNotifier.updateAmount,
                         onAmountFiatChanged: swapNotifier.updateAmountFiat,

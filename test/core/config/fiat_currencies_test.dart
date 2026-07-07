@@ -43,6 +43,24 @@ void main() {
       expect(formatCompactFiatValueFor(krw, 1234567), '₩1.235M');
     });
 
+    test('FiatDisplay converts USD values and falls back to USD', () {
+      const inr = FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1);
+      const display = FiatDisplay(currency: inr, usdToCurrencyRate: 83.2);
+      expect(display.displayCurrency.code, 'inr');
+      expect(display.formatCompactUsdValue(510), '₹42.43K');
+      expect(display.convertUsd(1).toStringAsFixed(1), '83.2');
+      expect(display.toUsd(83.2).toStringAsFixed(1), '1.0');
+      expect(display.placeholderText, '₹--');
+      expect(display.zeroText, '₹0');
+
+      const noRate = FiatDisplay(currency: inr);
+      expect(noRate.displayCurrency.code, 'usd');
+      expect(noRate.formatCompactUsdValue(510), r'$510.00');
+      expect(noRate.placeholderText, r'$--');
+
+      expect(kUsdFiatDisplay.formatCompactUsdValue(510), r'$510.00');
+    });
+
     test('picker label pairs code and symbol', () {
       expect(kUsdFiatCurrency.pickerLabel, r'USD ($)');
       expect(krw.pickerLabel, 'KRW (₩)');

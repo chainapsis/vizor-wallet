@@ -190,6 +190,21 @@ final zecHomeFiatUnitPriceProvider = Provider.autoDispose<double?>((ref) {
   return ref.watch(zecHomeMarketDataProvider)?.priceFor(currency);
 });
 
+/// How USD-denominated values (swap quotes, captured fiat bases) render in
+/// the selected display currency. The implied FX rate comes from the same
+/// batched CoinGecko response that prices ZEC, so no extra fetch is needed;
+/// while it is unavailable the display falls back to USD.
+final fiatDisplayProvider = Provider.autoDispose<FiatDisplay>((ref) {
+  final currency = ref.watch(fiatCurrencyProvider);
+  final data = ref.watch(zecHomeMarketDataProvider);
+  final usdPrice = data?.pricesByCurrency[kUsdFiatCurrency.code];
+  final selectedPrice = data?.pricesByCurrency[currency.code];
+  final rate = usdPrice != null && usdPrice > 0 && selectedPrice != null
+      ? selectedPrice / usdPrice
+      : null;
+  return FiatDisplay(currency: currency, usdToCurrencyRate: rate);
+});
+
 final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
   final currency = ref.watch(fiatCurrencyProvider);
   return ref.watch(zecHomeMarketDataProvider)?.change24hPctFor(currency);

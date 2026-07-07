@@ -27,6 +27,7 @@ import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'swap_status_page_content.dart';
+import '../../../providers/zec_price_change_provider.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
 /// selection, status refresh, deposit submission, Keystone signing)
@@ -708,6 +709,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               profilePictureId: accountInfo.profilePictureId,
             ),
       addressBookContacts: addressBookContacts,
+      fiatDisplay: ref.watch(fiatDisplayProvider),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       final terminal = !presentation.showTabs;

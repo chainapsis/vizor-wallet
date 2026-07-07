@@ -18,10 +18,11 @@ import '../../../providers/sync_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
-import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
 import '../widgets/swap_review_page_content.dart';
+import '../../../core/config/fiat_currencies.dart';
+import '../../../providers/zec_price_change_provider.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
   const SwapReviewScreen({super.key});
@@ -171,17 +172,20 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                       amountWarning: swapState.reviewAmountDifferenceWarning,
                       startError: swapState.statusError,
                       startBlockedReason: startBlockedReason,
+                      fiatDisplay: ref.watch(fiatDisplayProvider),
                       payFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,
                         quote: quote,
                         asset: quote.sellAsset,
                         amount: quote.sellAmount,
+                        fiatDisplay: ref.watch(fiatDisplayProvider),
                       ),
                       receiveFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,
                         quote: quote,
                         asset: quote.receiveAsset,
                         amount: quote.receiveAmount,
+                        fiatDisplay: ref.watch(fiatDisplayProvider),
                       ),
                       onCopy: _copyAddress,
                     ),
@@ -220,11 +224,12 @@ String? swapReviewFiatTextForAsset(
   required SwapQuote quote,
   required SwapAsset asset,
   required double amount,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final usdValue =
       _reviewQuoteUsdValueForAsset(quote, asset: asset, amount: amount) ??
       swapUsdValueForAsset(state, asset: asset, amount: amount);
-  return usdValue == null ? null : swapFormatCompactFiatValue(usdValue);
+  return usdValue == null ? null : fiatDisplay.formatCompactUsdValue(usdValue);
 }
 
 double? _reviewQuoteUsdValueForAsset(

@@ -86,3 +86,58 @@ String trimTrailingFiatZeros(double value, {required int fractionDigits}) {
   if (text.endsWith('.')) text = text.substring(0, text.length - 1);
   return text;
 }
+
+/// How to render fiat values that originate as USD amounts (swap quotes,
+/// captured intent fiat bases): the selected display currency plus the
+/// implied USD→currency rate derived from the batched CoinGecko response
+/// (`ZEC/<currency> ÷ ZEC/USD`).
+///
+/// When the selected currency's rate is unavailable (market data not loaded
+/// yet, or the response lacked that currency) the display falls back to USD
+/// so swap surfaces never go blank or lie about the unit.
+class FiatDisplay {
+  const FiatDisplay({required this.currency, this.usdToCurrencyRate});
+
+  final FiatCurrency currency;
+
+  /// Multiplier from a USD value to [currency]; null or non-positive means
+  /// "cannot convert" and USD is displayed instead.
+  final double? usdToCurrencyRate;
+
+  bool get _isUsd => currency.code == kUsdFiatCurrency.code;
+
+  bool get _convertible {
+    if (_isUsd) return true;
+    final rate = usdToCurrencyRate;
+    return rate != null && rate.isFinite && rate > 0;
+  }
+
+  /// The currency values are actually rendered in (falls back to USD).
+  FiatCurrency get displayCurrency =>
+      _convertible ? currency : kUsdFiatCurrency;
+
+  /// Converts a USD amount into [displayCurrency].
+  double convertUsd(double usdValue) =>
+      displayCurrency.code == kUsdFiatCurrency.code
+      ? usdValue
+      : usdValue * usdToCurrencyRate!;
+
+  /// Converts an amount typed in [displayCurrency] back to USD.
+  double toUsd(double displayValue) =>
+      displayCurrency.code == kUsdFiatCurrency.code
+      ? displayValue
+      : displayValue / usdToCurrencyRate!;
+
+  String get placeholderText => '${displayCurrency.symbol}--';
+
+  String get zeroText => '${displayCurrency.symbol}0';
+
+  /// "$1.23K" / "₹42.5K"-style compact text for a USD-denominated value.
+  String formatCompactUsdValue(double usdValue) =>
+      formatCompactFiatValueFor(displayCurrency, convertUsd(usdValue));
+}
+
+const kUsdFiatDisplay = FiatDisplay(
+  currency: kUsdFiatCurrency,
+  usdToCurrencyRate: 1,
+);

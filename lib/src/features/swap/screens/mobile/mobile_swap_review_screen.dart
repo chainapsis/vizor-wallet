@@ -20,6 +20,7 @@ import '../../widgets/mobile/mobile_swap_review_content.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import 'mobile_swap_keystone_sign_screen.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 
 const _keystoneSigningReviewInactiveDelay = Duration(milliseconds: 500);
 
@@ -244,12 +245,14 @@ class _MobileSwapReviewScreenState
                     quote: quote,
                     asset: quote.sellAsset,
                     amount: quote.sellAmount,
+                    fiatDisplay: ref.watch(fiatDisplayProvider),
                   ),
                   receiveFiatTextOverride: swapReviewFiatTextForAsset(
                     swapState,
                     quote: quote,
                     asset: quote.receiveAsset,
                     amount: quote.receiveAmount,
+                    fiatDisplay: ref.watch(fiatDisplayProvider),
                   ),
                 ),
               ),

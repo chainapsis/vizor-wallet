@@ -1,3 +1,4 @@
+import '../../../core/config/fiat_currencies.dart';
 import 'swap_models.dart';
 import 'swap_fiat_value_formatting.dart';
 
@@ -34,36 +35,40 @@ String swapFiatDisplayText(
   SwapState state, {
   required SwapAsset asset,
   required String tokenAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final amount = double.tryParse(tokenAmountText.trim());
-  if (amount == null || amount <= 0) return r'$0';
+  if (amount == null || amount <= 0) return fiatDisplay.zeroText;
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
-  if (usdValue == null) return r'$--';
-  return '\$${swapFormatFiatValue(usdValue)}';
+  if (usdValue == null) return fiatDisplay.placeholderText;
+  return '${fiatDisplay.displayCurrency.symbol}'
+      '${swapFormatFiatValue(fiatDisplay.convertUsd(usdValue))}';
 }
 
 String swapFiatInputTextFromTokenText(
   SwapState state, {
   required SwapAsset asset,
   required String tokenAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final amount = double.tryParse(tokenAmountText.trim());
   if (amount == null || amount <= 0) return '';
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
   if (usdValue == null) return '';
-  return swapFormatFiatValue(usdValue);
+  return swapFormatFiatValue(fiatDisplay.convertUsd(usdValue));
 }
 
 String? swapTokenAmountTextFromFiatText(
   SwapState state, {
   required SwapAsset asset,
   required String fiatAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final fiatAmount = double.tryParse(fiatAmountText.trim());
   if (fiatAmount == null || fiatAmount <= 0) return '';
   final usdUnitPrice = swapUsdUnitPriceForAsset(state, asset: asset);
   if (usdUnitPrice == null || usdUnitPrice <= 0) return null;
-  return asset.formatAmountDown(fiatAmount / usdUnitPrice);
+  return asset.formatAmountDown(fiatDisplay.toUsd(fiatAmount) / usdUnitPrice);
 }
 
 /// Token-equivalent meta line shown while the card is in fiat input mode.

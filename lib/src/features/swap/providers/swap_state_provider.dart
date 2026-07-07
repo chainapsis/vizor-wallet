@@ -18,6 +18,8 @@ import 'swap_max_amount_estimator.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
+import '../../../core/config/fiat_currencies.dart';
+import '../../../providers/zec_price_change_provider.dart';
 
 export 'swap_provider_config.dart';
 
@@ -40,6 +42,8 @@ final class SwapStartedKeystoneSigning extends SwapStartResult {
 }
 
 class SwapNotifier extends Notifier<SwapState> {
+  FiatDisplay get _fiatDisplay => ref.read(fiatDisplayProvider);
+
   var _quoteGeneration = 0;
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
@@ -109,6 +113,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void selectDirection(SwapDirection direction) {
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: direction,
@@ -133,6 +138,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: nextDirection,
@@ -153,6 +159,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void updateAmount(String value) {
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactInput,
@@ -166,8 +173,13 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void updateAmountFiat(String value) {
     _clearReviewState();
-    final tokenText = swapPayTokenTextFromFiatInput(state, value);
+    final tokenText = swapPayTokenTextFromFiatInput(
+      state,
+      value,
+      fiatDisplay: _fiatDisplay,
+    );
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactInput,
@@ -186,6 +198,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void updateReceiveAmount(String value) {
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactOutput,
@@ -199,8 +212,13 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void updateReceiveAmountFiat(String value) {
     _clearReviewState();
-    final tokenText = swapReceiveTokenTextFromFiatInput(state, value);
+    final tokenText = swapReceiveTokenTextFromFiatInput(
+      state,
+      value,
+      fiatDisplay: _fiatDisplay,
+    );
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactOutput,
@@ -218,7 +236,11 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void toggleFiatInputMode(SwapAmountInputSide side) {
     _clearReviewState();
-    final next = swapStateWithToggledFiatInputMode(state, side);
+    final next = swapStateWithToggledFiatInputMode(
+      state,
+      side,
+      fiatDisplay: _fiatDisplay,
+    );
     state = next.copyWith(reviewVisible: false, clearMaxAmountError: true);
   }
 
@@ -246,8 +268,10 @@ class SwapNotifier extends Notifier<SwapState> {
         supportedAsset.chainTicker != state.externalAsset.chainTicker;
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         swapStateWithTokenAmountsForFiatModes(
+          fiatDisplay: _fiatDisplay,
           state.copyWith(
             externalAsset: supportedAsset,
             reviewVisible: false,
@@ -273,6 +297,7 @@ class SwapNotifier extends Notifier<SwapState> {
       clearStatusError: true,
     );
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(state),
       preserveAmountFiatInput:
           state.amountInputMode == SwapAmountInputMode.fiat,
@@ -328,6 +353,7 @@ class SwapNotifier extends Notifier<SwapState> {
       final amountText = ZecAmount.fromZatoshi(maxZatoshi).pretty().amountText;
       log('SwapMaxAmount: applied amount=$amountText');
       state = swapStateWithDerivedFiatTexts(
+        fiatDisplay: _fiatDisplay,
         swapStateWithIndicativeCounterpart(
           state.copyWith(
             quoteMode: SwapQuoteMode.exactInput,
@@ -396,11 +422,15 @@ class SwapNotifier extends Notifier<SwapState> {
         clearReview: selectedChanged,
         clearQuoteError: true,
       );
-      nextState = swapStateWithTokenAmountsForFiatModes(nextState);
+      nextState = swapStateWithTokenAmountsForFiatModes(
+        nextState,
+        fiatDisplay: _fiatDisplay,
+      );
       if (nextState.reviewQuote == null) {
         nextState = swapStateWithIndicativeCounterpart(nextState);
       }
       state = swapStateWithDerivedFiatTexts(
+        fiatDisplay: _fiatDisplay,
         nextState,
         preserveAmountFiatInput:
             nextState.amountInputMode == SwapAmountInputMode.fiat,
@@ -780,6 +810,7 @@ class SwapNotifier extends Notifier<SwapState> {
       clearStatusError: true,
     );
     state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(state),
     );
   }

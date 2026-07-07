@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/config/fiat_currencies.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -31,6 +32,7 @@ class SwapComposerPanel extends StatefulWidget {
     required this.zecAvailableText,
     required this.zecAvailableZatoshi,
     this.destinationContactName,
+    this.fiatDisplay = kUsdFiatDisplay,
     super.key,
   });
 
@@ -57,6 +59,9 @@ class SwapComposerPanel extends StatefulWidget {
   final bool slippageSettingsOpen;
   final String zecAvailableText;
   final BigInt zecAvailableZatoshi;
+
+  /// Selected display currency + USD conversion for quote fiat values.
+  final FiatDisplay fiatDisplay;
 
   @override
   State<SwapComposerPanel> createState() => _SwapComposerPanelState();
@@ -159,7 +164,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               ? widget.onAmountFiatChanged
               : widget.onAmountChanged,
           hintText: payInputIsFiat ? '0.00' : '0',
-          prefixText: payInputIsFiat ? r'$' : null,
+          prefixText: payInputIsFiat
+              ? widget.fiatDisplay.displayCurrency.symbol
+              : null,
           maxFractionDigits: payInputIsFiat
               ? null
               : state.direction.fromAsset(state.externalAsset).decimals,
@@ -188,6 +195,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     asset: SwapAsset.zec,
                     tokenAmountText: state.amountText,
                     inputMode: state.amountInputMode,
+                    fiatDisplay: widget.fiatDisplay,
                   ),
                   showModeIcon: payActive,
                   active: payInputIsFiat,
@@ -203,6 +211,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     asset: state.externalAsset,
                     tokenAmountText: state.amountText,
                     inputMode: state.amountInputMode,
+                    fiatDisplay: widget.fiatDisplay,
                   ),
                   showModeIcon: payActive,
                   active: payInputIsFiat,
@@ -229,7 +238,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               ? widget.onReceiveAmountFiatChanged
               : widget.onReceiveAmountChanged,
           hintText: receiveInputIsFiat ? '0.00' : '0',
-          prefixText: receiveInputIsFiat ? r'$' : null,
+          prefixText: receiveInputIsFiat
+              ? widget.fiatDisplay.displayCurrency.symbol
+              : null,
           maxFractionDigits: receiveInputIsFiat
               ? null
               : state.direction.toAsset(state.externalAsset).decimals,
@@ -249,6 +260,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     asset: state.externalAsset,
                     tokenAmountText: state.receiveAmountText,
                     inputMode: state.receiveAmountInputMode,
+                    fiatDisplay: widget.fiatDisplay,
                   ),
                   showModeIcon: receiveActive,
                   active: receiveInputIsFiat,
@@ -269,6 +281,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     asset: SwapAsset.zec,
                     tokenAmountText: state.receiveAmountText,
                     inputMode: state.receiveAmountInputMode,
+                    fiatDisplay: widget.fiatDisplay,
                   ),
                   showModeIcon: receiveActive,
                   active: receiveInputIsFiat,
@@ -975,6 +988,7 @@ String _amountMetaText(
   required SwapAsset asset,
   required String tokenAmountText,
   required SwapAmountInputMode inputMode,
+  required FiatDisplay fiatDisplay,
 }) {
   if (inputMode == SwapAmountInputMode.fiat) {
     return swapTokenAmountDisplayText(tokenAmountText: tokenAmountText);
@@ -983,6 +997,7 @@ String _amountMetaText(
     state,
     asset: asset,
     tokenAmountText: tokenAmountText,
+    fiatDisplay: fiatDisplay,
   );
 }
 

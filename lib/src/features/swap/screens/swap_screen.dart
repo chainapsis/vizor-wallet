@@ -33,6 +33,7 @@ import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
+import '../../../providers/zec_price_change_provider.dart';
 
 class SwapScreen extends ConsumerStatefulWidget {
   const SwapScreen({super.key});
@@ -242,6 +243,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final panel = SwapComposerPanel(
+                      fiatDisplay: ref.watch(fiatDisplayProvider),
                       state: swapState,
                       onAmountChanged: swapNotifier.updateAmount,
                       onAmountFiatChanged: swapNotifier.updateAmountFiat,

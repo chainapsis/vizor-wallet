@@ -1,22 +1,30 @@
+import '../../../core/config/fiat_currencies.dart';
 import 'swap_fiat_amount.dart';
 import 'swap_models.dart';
 
-String? swapPayTokenTextFromFiatInput(SwapState state, String fiatAmountText) {
+String? swapPayTokenTextFromFiatInput(
+  SwapState state,
+  String fiatAmountText, {
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
+}) {
   return swapTokenAmountTextFromFiatText(
     state,
     asset: state.direction.fromAsset(state.externalAsset),
     fiatAmountText: fiatAmountText,
+    fiatDisplay: fiatDisplay,
   );
 }
 
 String? swapReceiveTokenTextFromFiatInput(
   SwapState state,
-  String fiatAmountText,
-) {
+  String fiatAmountText, {
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
+}) {
   return swapTokenAmountTextFromFiatText(
     state,
     asset: state.direction.toAsset(state.externalAsset),
     fiatAmountText: fiatAmountText,
+    fiatDisplay: fiatDisplay,
   );
 }
 
@@ -43,6 +51,7 @@ SwapState swapStateWithDerivedFiatTexts(
   SwapState next, {
   bool preserveAmountFiatInput = false,
   bool preserveReceiveFiatInput = false,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   return next.copyWith(
     amountFiatText: preserveAmountFiatInput
@@ -51,6 +60,7 @@ SwapState swapStateWithDerivedFiatTexts(
             next,
             asset: next.direction.fromAsset(next.externalAsset),
             tokenAmountText: next.amountText,
+            fiatDisplay: fiatDisplay,
           ),
     receiveFiatText: preserveReceiveFiatInput
         ? next.receiveFiatText
@@ -58,20 +68,29 @@ SwapState swapStateWithDerivedFiatTexts(
             next,
             asset: next.direction.toAsset(next.externalAsset),
             tokenAmountText: next.receiveAmountText,
+            fiatDisplay: fiatDisplay,
           ),
   );
 }
 
-SwapState swapStateWithTokenAmountsForFiatModes(SwapState current) {
+SwapState swapStateWithTokenAmountsForFiatModes(
+  SwapState current, {
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
+}) {
   var next = current;
   if (next.amountInputMode == SwapAmountInputMode.fiat) {
-    final tokenText = swapPayTokenTextFromFiatInput(next, next.amountFiatText);
+    final tokenText = swapPayTokenTextFromFiatInput(
+      next,
+      next.amountFiatText,
+      fiatDisplay: fiatDisplay,
+    );
     next = next.copyWith(amountText: tokenText ?? '');
   }
   if (next.receiveAmountInputMode == SwapAmountInputMode.fiat) {
     final tokenText = swapReceiveTokenTextFromFiatInput(
       next,
       next.receiveFiatText,
+      fiatDisplay: fiatDisplay,
     );
     next = next.copyWith(receiveAmountText: tokenText ?? '');
   }
@@ -80,32 +99,27 @@ SwapState swapStateWithTokenAmountsForFiatModes(SwapState current) {
 
 SwapState swapStateWithToggledFiatInputMode(
   SwapState current,
-  SwapAmountInputSide side,
-) {
-  return switch (side) {
-    SwapAmountInputSide.pay => _togglePayInputMode(current),
-    SwapAmountInputSide.receive => _toggleReceiveInputMode(current),
+  SwapAmountInputSide side, {
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
+}) {
+  final nextMode = switch (side) {
+    SwapAmountInputSide.pay =>
+      current.amountInputMode == SwapAmountInputMode.token
+          ? SwapAmountInputMode.fiat
+          : SwapAmountInputMode.token,
+    SwapAmountInputSide.receive =>
+      current.receiveAmountInputMode == SwapAmountInputMode.token
+          ? SwapAmountInputMode.fiat
+          : SwapAmountInputMode.token,
   };
-}
-
-SwapState _togglePayInputMode(SwapState current) {
-  final nextMode = current.amountInputMode == SwapAmountInputMode.token
-      ? SwapAmountInputMode.fiat
-      : SwapAmountInputMode.token;
-  return _swapStateWithInputMode(current, nextMode);
-}
-
-SwapState _toggleReceiveInputMode(SwapState current) {
-  final nextMode = current.receiveAmountInputMode == SwapAmountInputMode.token
-      ? SwapAmountInputMode.fiat
-      : SwapAmountInputMode.token;
-  return _swapStateWithInputMode(current, nextMode);
+  return _swapStateWithInputMode(current, nextMode, fiatDisplay: fiatDisplay);
 }
 
 SwapState _swapStateWithInputMode(
   SwapState current,
-  SwapAmountInputMode nextMode,
-) {
+  SwapAmountInputMode nextMode, {
+  required FiatDisplay fiatDisplay,
+}) {
   return current.copyWith(
     amountInputMode: nextMode,
     receiveAmountInputMode: nextMode,
@@ -114,6 +128,7 @@ SwapState _swapStateWithInputMode(
             current,
             asset: current.direction.fromAsset(current.externalAsset),
             tokenAmountText: current.amountText,
+            fiatDisplay: fiatDisplay,
           )
         : current.amountFiatText,
     receiveFiatText: nextMode == SwapAmountInputMode.fiat
@@ -121,6 +136,7 @@ SwapState _swapStateWithInputMode(
             current,
             asset: current.direction.toAsset(current.externalAsset),
             tokenAmountText: current.receiveAmountText,
+            fiatDisplay: fiatDisplay,
           )
         : current.receiveFiatText,
   );
