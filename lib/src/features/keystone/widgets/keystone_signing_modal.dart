@@ -116,18 +116,6 @@ class KeystoneSigningModal extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (phase == KeystoneSigningModalPhase.ready &&
-                    urParts.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  AppButton(
-                    onPressed: () =>
-                        showKeystoneFullscreenQr(context, urParts: urParts),
-                    variant: AppButtonVariant.ghost,
-                    size: AppButtonSize.mediumLarge,
-                    minWidth: 280,
-                    child: const Text('Full screen QR'),
-                  ),
-                ],
               ],
             ),
           ),

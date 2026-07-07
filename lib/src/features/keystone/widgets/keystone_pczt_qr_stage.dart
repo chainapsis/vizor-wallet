@@ -17,7 +17,7 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
-    this.frameInterval = const Duration(milliseconds: 200), // TEST (5fps): bracketing the sweet spot below 10fps. Frame up ~12 refreshes on 60Hz -> very stable capture, minimal torn frames (bad-camera experiment)
+    this.frameInterval = const Duration(milliseconds: 100),
     super.key,
   });
 
@@ -242,79 +242,5 @@ class _BullseyeFinderEyesPainter extends CustomPainter {
     return moduleCount != oldDelegate.moduleCount ||
         moduleColor != oldDelegate.moduleColor ||
         knockoutColor != oldDelegate.knockoutColor;
-  }
-}
-
-/// Pushes a full-screen view of the animated signing QR so a struggling
-/// Keystone camera can scan a physically larger (and denser) code. Tap anywhere
-/// to dismiss. Pairs with a larger UR fragment length so each frame carries more
-/// data and the carousel is shorter.
-Future<void> showKeystoneFullscreenQr(
-  BuildContext context, {
-  required List<String> urParts,
-  bool scanOptimized = true,
-  Duration frameInterval = const Duration(milliseconds: 200), // TEST: 5fps, matches the modal probe
-}) {
-  return Navigator.of(context, rootNavigator: true).push<void>(
-    PageRouteBuilder<void>(
-      opaque: true,
-      pageBuilder: (_, _, _) => _KeystoneFullscreenQr(
-        urParts: urParts,
-        scanOptimized: scanOptimized,
-        frameInterval: frameInterval,
-      ),
-    ),
-  );
-}
-
-class _KeystoneFullscreenQr extends StatelessWidget {
-  const _KeystoneFullscreenQr({
-    required this.urParts,
-    required this.scanOptimized,
-    required this.frameInterval,
-  });
-
-  final List<String> urParts;
-  final bool scanOptimized;
-  final Duration frameInterval;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    // Square QR at ~80% of the shorter window side: big modules for a poor camera,
-    // with clear room below for the close hint.
-    final qrSize =
-        (MediaQuery.of(context).size.shortestSide * 0.8).clamp(240.0, 1600.0);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context).maybePop(),
-      child: ColoredBox(
-        color: colors.surface.qrCode,
-        child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: qrSize,
-                height: qrSize,
-                child: _AnimatedKeystoneQr(
-                  urParts: urParts,
-                  size: qrSize,
-                  scanOptimized: scanOptimized,
-                  frameInterval: frameInterval,
-                ),
-              ),
-              const SizedBox(height: 40),
-              Text(
-                'Tap anywhere to close',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
