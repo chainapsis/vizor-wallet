@@ -125,6 +125,31 @@ importSoftwareWalletWithAccountDiscovery({
       additionalAccountIndices: additionalAccountIndices,
     );
 
+/// Import exactly one software ZIP32 account for encrypted wallet-link imports.
+///
+/// Account 0 remains a Derived seed-anchor when it is the first wallet account.
+/// If the first selected account is a higher ZIP32 index, the wallet is
+/// initialized without a seed and that selected account is imported by UFVK so
+/// the mobile import matches the user's selection instead of silently adding
+/// account 0.
+Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
+  required String mnemonic,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  required String name,
+  required int zip32AccountIndex,
+  required bool isFirstWalletAccount,
+}) => RustLib.instance.api.crateApiWalletImportSoftwareAccountAtIndex(
+  mnemonic: mnemonic,
+  birthdayHeight: birthdayHeight,
+  network: network,
+  dbPath: dbPath,
+  name: name,
+  zip32AccountIndex: zip32AccountIndex,
+  isFirstWalletAccount: isFirstWalletAccount,
+);
+
 /// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
 Future<AccountCreationResult> importHardwareAccount({
   required String dbPath,
@@ -151,6 +176,16 @@ Future<List<AccountInfo>> listAccounts({
 }) => RustLib.instance.api.crateApiWalletListAccounts(
   dbPath: dbPath,
   network: network,
+);
+
+Future<AccountExportMetadata> getAccountExportMetadata({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetAccountExportMetadata(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
 );
 
 /// Delete an account from the wallet database.
@@ -246,6 +281,34 @@ class AccountCreationResult {
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
           unifiedAddress == other.unifiedAddress;
+}
+
+/// Sensitive metadata for explicit encrypted wallet export flows.
+class AccountExportMetadata {
+  final int? zip32AccountIndex;
+  final String? hardwareUfvk;
+  final Uint8List? seedFingerprint;
+
+  const AccountExportMetadata({
+    this.zip32AccountIndex,
+    this.hardwareUfvk,
+    this.seedFingerprint,
+  });
+
+  @override
+  int get hashCode =>
+      zip32AccountIndex.hashCode ^
+      hardwareUfvk.hashCode ^
+      seedFingerprint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountExportMetadata &&
+          runtimeType == other.runtimeType &&
+          zip32AccountIndex == other.zip32AccountIndex &&
+          hardwareUfvk == other.hardwareUfvk &&
+          seedFingerprint == other.seedFingerprint;
 }
 
 /// Account info returned by list_accounts.

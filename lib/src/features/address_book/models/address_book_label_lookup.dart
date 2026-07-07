@@ -16,20 +16,23 @@ AddressBookContact? addressBookContactFor({
   required AddressBookNetwork network,
   required String address,
 }) {
-  final target = _normalizedAddress(network, address);
+  final target = normalizedAddressBookAddress(network, address);
   if (target.isEmpty) return null;
   AddressBookContact? evmFamilyMatch;
   for (final contact in contacts) {
     if (contact.network != network) {
       if (network.isEvm && contact.network.isEvm && evmFamilyMatch == null) {
-        if (_normalizedAddress(contact.network, contact.address) == target &&
+        if (normalizedAddressBookAddress(contact.network, contact.address) ==
+                target &&
             contact.label.trim().isNotEmpty) {
           evmFamilyMatch = contact;
         }
       }
       continue;
     }
-    if (_normalizedAddress(network, contact.address) != target) continue;
+    if (normalizedAddressBookAddress(network, contact.address) != target) {
+      continue;
+    }
     if (contact.label.trim().isEmpty) continue;
     return contact;
   }
@@ -52,7 +55,15 @@ String? addressBookLabelFor({
   )?.label.trim();
 }
 
-String _normalizedAddress(AddressBookNetwork network, String address) {
+/// Normalized address key for address-book comparisons.
+///
+/// EVM and NEAR addresses are compared case-insensitively. Other networks keep
+/// their exact trimmed address because many address families use case-sensitive
+/// encodings, including Zcash transparent and Solana base58 addresses.
+String normalizedAddressBookAddress(
+  AddressBookNetwork network,
+  String address,
+) {
   final trimmed = address.trim();
   return _addressBookNetworkIgnoresCase(network)
       ? trimmed.toLowerCase()

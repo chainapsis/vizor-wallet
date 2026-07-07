@@ -380,76 +380,81 @@ class MobileAddressScanCardContent extends StatelessWidget {
         status == AddressQrCameraStatus.active ||
         status == AddressQrCameraStatus.loading;
     final hasFixedHeight = showsCamera || permissionBuilder != null;
+    final content = Stack(
+      fit: hasFixedHeight ? StackFit.expand : StackFit.loose,
+      children: [
+        if (cameraView != null)
+          Positioned.fill(
+            child: Offstage(offstage: !showsCamera, child: cameraView!),
+          ),
+        if (status == AddressQrCameraStatus.active) ...[
+          const Positioned.fill(child: _ScanViewfinder()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 110,
+            child: _ScanCaption(text: error ?? caption),
+          ),
+          Positioned(
+            top: AppSpacing.base,
+            left: AppSpacing.base,
+            child: _CameraGlyphButton(
+              semanticLabel: 'Toggle flashlight',
+              icon: const Icon(
+                Icons.flashlight_on_outlined,
+                color: Color(0xFFFFFFFF),
+                size: 30,
+              ),
+              onTap: onTorch,
+            ),
+          ),
+        ],
+        if (status == AddressQrCameraStatus.loading)
+          const Positioned.fill(child: _ScanLoadingVeil()),
+        // Close (top-right) sits over the camera in both camera states; the
+        // permission card carries its own pinned close.
+        if (showsCamera)
+          Positioned(
+            top: AppSpacing.base,
+            right: AppSpacing.base,
+            child: _CameraGlyphButton(
+              semanticLabel: 'Close scanner',
+              enabled: closeEnabled,
+              icon: AppIcon(
+                AppIcons.cross,
+                size: 30,
+                color: closeEnabled
+                    ? const Color(0xFFFFFFFF)
+                    : const Color(0x61FFFFFF),
+              ),
+              onTap: onClose,
+            ),
+          ),
+        if (!showsCamera)
+          permissionBuilder?.call(
+                context,
+                status,
+                unavailableDescription,
+                onRetry,
+                onClose,
+              ) ??
+              _ScanPermissionCard(
+                status: status,
+                title: permissionTitle,
+                unavailableDescription: unavailableDescription,
+                onRetry: onRetry,
+                onClose: onClose,
+              ),
+      ],
+    );
     return SizedBox(
       height: hasFixedHeight
           ? (cameraHeight ?? modalCameraHeight(context))
           : null,
-      child: Stack(
-        fit: hasFixedHeight ? StackFit.expand : StackFit.loose,
-        children: [
-          if (cameraView != null)
-            Positioned.fill(
-              child: Offstage(offstage: !showsCamera, child: cameraView!),
-            ),
-          if (status == AddressQrCameraStatus.active) ...[
-            const Positioned.fill(child: _ScanViewfinder()),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 110,
-              child: _ScanCaption(text: error ?? caption),
-            ),
-            Positioned(
-              top: AppSpacing.base,
-              left: AppSpacing.base,
-              child: _CameraGlyphButton(
-                semanticLabel: 'Toggle flashlight',
-                icon: const Icon(
-                  Icons.flashlight_on_outlined,
-                  color: Color(0xFFFFFFFF),
-                  size: 30,
-                ),
-                onTap: onTorch,
-              ),
-            ),
-          ],
-          if (status == AddressQrCameraStatus.loading)
-            const Positioned.fill(child: _ScanLoadingVeil()),
-          // Close (top-right) sits over the camera in both camera states; the
-          // permission card carries its own pinned close.
-          if (showsCamera)
-            Positioned(
-              top: AppSpacing.base,
-              right: AppSpacing.base,
-              child: _CameraGlyphButton(
-                semanticLabel: 'Close scanner',
-                enabled: closeEnabled,
-                icon: AppIcon(
-                  AppIcons.cross,
-                  size: 30,
-                  color: closeEnabled
-                      ? const Color(0xFFFFFFFF)
-                      : const Color(0x61FFFFFF),
-                ),
-                onTap: onClose,
-              ),
-            ),
-          if (!showsCamera)
-            permissionBuilder?.call(
-                  context,
-                  status,
-                  unavailableDescription,
-                  onRetry,
-                  onClose,
-                ) ??
-                _ScanPermissionCard(
-                  status: status,
-                  title: permissionTitle,
-                  unavailableDescription: unavailableDescription,
-                  onRetry: onRetry,
-                  onClose: onClose,
-                ),
-        ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+        clipBehavior: showsCamera ? Clip.antiAliasWithSaveLayer : Clip.none,
+        child: content,
       ),
     );
   }

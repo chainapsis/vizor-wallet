@@ -1753,6 +1753,39 @@ void main() {
     expect(find.text('Add short encrypted message'), findsOneWidget);
   });
 
+  testWidgets('review uses Keystone CTA for a hardware account', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(find.text('Confirm & Send'), findsNothing);
+
+    final confirmButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_confirm')),
+    );
+    final leading = confirmButton.leading;
+    expect(leading, isA<AppIcon>());
+    expect((leading! as AppIcon).name, AppIcons.qr);
+  });
+
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
