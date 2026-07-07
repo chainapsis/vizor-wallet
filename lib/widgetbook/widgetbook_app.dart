@@ -187,6 +187,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileKeystonePcztQrOptimizedUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Signing loading',
+                      builder: buildMobileKeystoneSigningLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Signing QR ready',
+                      builder: buildMobileKeystoneSigningReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Signing scanner',
+                      builder: buildMobileKeystoneSigningScannerUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Select account',
                       builder: buildMobileKeystoneSelectAccountUseCase,
                     ),

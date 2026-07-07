@@ -2176,6 +2176,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       contacts: addressBookContacts,
       ownAccounts: ownAccounts,
     );
+    final isHardware = _activeAccountIsHardware;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -2265,9 +2266,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           (_isMaxMode && !_hasCurrentMaxQuote)
                       ? null
                       : () => unawaited(_confirmAndSend()),
-                  leading: const AppIcon(AppIcons.plane, size: 20),
+                  leading: AppIcon(
+                    isHardware ? AppIcons.qr : AppIcons.plane,
+                    size: 20,
+                  ),
                   child: Text(
-                    _isConfirmingSend ? 'Preparing...' : 'Confirm & Send',
+                    _isConfirmingSend
+                        ? 'Preparing...'
+                        : isHardware
+                        ? 'Confirm with Keystone'
+                        : 'Confirm & Send',
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s),

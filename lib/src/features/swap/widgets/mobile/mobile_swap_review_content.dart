@@ -29,6 +29,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     required this.amountWarning,
     required this.startError,
     this.startBlockedReason,
+    this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
     super.key,
@@ -43,6 +44,7 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? amountWarning;
   final String? startError;
   final String? startBlockedReason;
+  final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
 
@@ -100,6 +102,13 @@ class MobileSwapReviewContent extends StatelessWidget {
         if (startBlockedReason != null) ...[
           const SizedBox(height: AppSpacing.s),
           _MobileReviewNotice(message: startBlockedReason!),
+        ],
+        if (inactiveMessage != null) ...[
+          const SizedBox(height: AppSpacing.s),
+          _MobileReviewNotice(
+            key: const ValueKey('mobile_swap_review_inactive_notice'),
+            message: inactiveMessage!,
+          ),
         ],
       ],
     );
@@ -263,6 +272,7 @@ class MobileSwapReviewActions extends StatelessWidget {
   const MobileSwapReviewActions({
     required this.expired,
     required this.starting,
+    this.inactive = false,
     this.startBlockedReason,
     required this.sendsZec,
     required this.onCancelReview,
@@ -273,6 +283,7 @@ class MobileSwapReviewActions extends StatelessWidget {
 
   final bool expired;
   final bool starting;
+  final bool inactive;
   final String? startBlockedReason;
   final bool sendsZec;
   final VoidCallback onCancelReview;
@@ -283,7 +294,9 @@ class MobileSwapReviewActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
-    final primaryLabel = expired
+    final primaryLabel = inactive
+        ? 'Return to swap'
+        : expired
         ? 'Review again'
         : startBlockedReason != null
         ? 'Not enough ZEC'
@@ -295,42 +308,48 @@ class MobileSwapReviewActions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppButton(
-          key: expired
+          key: inactive
+              ? const ValueKey('swap_review_return_to_swap_button')
+              : expired
               ? const ValueKey('swap_review_again_button')
               : const ValueKey('swap_start_button'),
           expand: true,
-          onPressed: startBlockedReason != null
+          onPressed: inactive
+              ? onCancelReview
+              : startBlockedReason != null
               ? null
               : expired
               ? onReviewAgain
               : starting
               ? null
               : onStartIntent,
-          leading: expired || starting || startBlockedReason != null
+          leading: inactive || expired || starting || startBlockedReason != null
               ? null
               : const AppIcon(AppIcons.swapArrows, size: 20),
           child: Text(primaryLabel),
         ),
-        const SizedBox(height: AppSpacing.s),
-        Semantics(
-          button: true,
-          child: GestureDetector(
-            key: const ValueKey('swap_review_cancel_button'),
-            behavior: HitTestBehavior.opaque,
-            onTap: onCancelReview,
-            child: SizedBox(
-              height: AppButtonSizing.largeHeight,
-              child: Center(
-                child: Text(
-                  'Cancel',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.ghost.label,
+        if (!inactive) ...[
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('swap_review_cancel_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onCancelReview,
+              child: SizedBox(
+                height: AppButtonSizing.largeHeight,
+                child: Center(
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.button.ghost.label,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
