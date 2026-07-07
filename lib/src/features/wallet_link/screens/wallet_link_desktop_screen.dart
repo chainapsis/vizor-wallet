@@ -19,6 +19,13 @@ import '../../../core/widgets/dot_qr_shape.dart';
 import '../models/wallet_link_models.dart';
 import '../providers/wallet_link_provider.dart';
 
+const _walletLinkContentWidth = 420.0;
+const _walletLinkHorizontalInset = AppSpacing.s;
+const _walletLinkBodyWidth = 258.0;
+const _walletLinkResultWidth = 300.0;
+const _walletLinkExpiredBodyWidth = 270.0;
+const _walletLinkActionSlotHeight = 73.0;
+
 class WalletLinkDesktopScreen extends ConsumerWidget {
   const WalletLinkDesktopScreen({this.previewState, super.key});
 
@@ -107,20 +114,31 @@ class _WalletLinkPane extends StatelessWidget {
       ),
     };
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-          child: DefaultTextStyle(
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = math.max(0.0, constraints.minHeight);
+        return ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: _walletLinkContentWidth,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _walletLinkHorizontalInset,
+                ),
+                child: DefaultTextStyle(
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                  child: content,
+                ),
+              ),
             ),
-            child: content,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -180,8 +198,8 @@ class _ReadyContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Expires in ${_formatRemaining(state.remaining)}',
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.primary,
             ),
           ),
         ],
@@ -201,6 +219,8 @@ class _LinkedContent extends StatelessWidget {
     return _ResultContentColumn(
       title: 'Vizor Mobile linked successfully',
       body: _linkedBody(state),
+      titleMaxWidth: 264,
+      bodyMaxWidth: 212,
       visual: const SizedBox(
         width: 300,
         height: 200,
@@ -241,6 +261,7 @@ class _ExpiredContent extends StatelessWidget {
       title: 'Time’s up',
       body:
           'For your security the link is only valid for a minute. Generate a fresh code and scan it again.',
+      bodyMaxWidth: _walletLinkExpiredBodyWidth,
       visual: const SizedBox(
         width: 300,
         height: 200,
@@ -301,7 +322,6 @@ class _ContentColumn extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const SizedBox(height: AppSpacing.xs),
         Text(
           title,
           textAlign: TextAlign.center,
@@ -309,19 +329,24 @@ class _ContentColumn extends StatelessWidget {
             color: colors.text.accent,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          body,
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
+        const SizedBox(height: AppSpacing.sm),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _walletLinkBodyWidth),
+          child: Text(
+            body,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
           ),
         ),
+        const SizedBox(height: AppSpacing.base),
+        visual,
         const SizedBox(height: AppSpacing.md),
-        SizedBox(height: 340, child: Center(child: visual)),
-        const SizedBox(height: AppSpacing.md),
-        action,
-        const SizedBox(height: AppSpacing.lg),
+        SizedBox(
+          height: _walletLinkActionSlotHeight,
+          child: Align(alignment: Alignment.topCenter, child: action),
+        ),
       ],
     );
   }
@@ -333,12 +358,16 @@ class _ResultContentColumn extends StatelessWidget {
     required this.body,
     required this.visual,
     required this.action,
+    this.titleMaxWidth = _walletLinkResultWidth,
+    this.bodyMaxWidth = _walletLinkResultWidth,
   });
 
   final String title;
   final String body;
   final Widget visual;
   final Widget action;
+  final double titleMaxWidth;
+  final double bodyMaxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -347,30 +376,39 @@ class _ResultContentColumn extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const SizedBox(height: AppSpacing.xs),
         visual,
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: AppTypography.headlineLarge.copyWith(
-            color: colors.text.accent,
+        const SizedBox(height: AppSpacing.base),
+        SizedBox(
+          width: _walletLinkResultWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: titleMaxWidth),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: bodyMaxWidth),
+                child: Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 270),
-          child: Text(
-            body,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.primary,
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.base),
         action,
-        const SizedBox(height: AppSpacing.lg),
       ],
     );
   }
@@ -382,35 +420,43 @@ class _EncryptedPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+    );
     return CustomPaint(
       painter: _DashedRoundRectPainter(
-        color: colors.text.muted.withValues(alpha: 0.45),
-        radius: 16,
+        color: colors.text.muted.withValues(alpha: 0.65),
+        radius: 28,
       ),
       child: SizedBox(
         width: 260,
         height: 340,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _StatusIcon(
-                iconName: AppIcons.lock,
-                backgroundColor: colors.background.base,
-                foregroundColor: colors.icon.accent,
-                size: 48,
-                iconSize: 20,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'The code is encrypted with a one-time key and expires after a minute. Only your phone can decode it.',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
+        child: Center(
+          child: SizedBox(
+            width: 228,
+            height: 111,
+            child: Column(
+              children: [
+                AppIcon(AppIcons.lock, size: 24, color: colors.text.primary),
+                const SizedBox(height: AppSpacing.md),
+                Text.rich(
+                  TextSpan(
+                    text:
+                        'The code is encrypted with a one-time key and expires after a minute. ',
+                    children: [
+                      TextSpan(
+                        text: 'Only your phone can decode it.',
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                  style: bodyStyle,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -431,30 +477,31 @@ class _QrTransferCard extends StatelessWidget {
       width: 260,
       height: 340,
       decoration: BoxDecoration(
-        color: colors.background.inverse,
+        color: colors.background.ground,
+        border: Border.all(color: colors.border.subtle),
         borderRadius: BorderRadius.circular(28),
       ),
-      padding: const EdgeInsets.fromLTRB(28, 30, 28, 22),
+      padding: const EdgeInsets.fromLTRB(29, 32, 29, 0),
       child: Column(
         children: [
           SizedBox.square(
-            dimension: 204,
+            dimension: 202,
             child: PrettyQrView(
               qrImage: _qrImage(qrPayload),
               decoration: PrettyQrDecoration(
                 quietZone: PrettyQrQuietZone.zero,
-                shape: DotQrShape(color: colors.text.inverse),
+                shape: DotQrShape(color: colors.text.accent),
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
             '1/1 Ready to scan...',
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.inverse.withValues(alpha: 0.82),
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.accent.withValues(alpha: 0.82),
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.sm),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: SizedBox(
@@ -462,8 +509,8 @@ class _QrTransferCard extends StatelessWidget {
               height: 6,
               child: LinearProgressIndicator(
                 value: _progress(remaining),
-                backgroundColor: colors.text.inverse.withValues(alpha: 0.16),
-                color: colors.text.inverse,
+                backgroundColor: colors.text.accent.withValues(alpha: 0.35),
+                color: colors.text.accent,
               ),
             ),
           ),
@@ -513,36 +560,22 @@ class _Illustration extends StatelessWidget {
 }
 
 class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({
-    required this.iconName,
-    this.backgroundColor,
-    this.foregroundColor,
-    this.size = 64,
-    this.iconSize = 28,
-  });
+  const _StatusIcon({required this.iconName});
 
   final String iconName;
-  final Color? backgroundColor;
-  final Color? foregroundColor;
-  final double size;
-  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      width: size,
-      height: size,
+      width: 64,
+      height: 64,
       decoration: BoxDecoration(
-        color: backgroundColor ?? colors.background.base,
+        color: colors.background.base,
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
-      child: AppIcon(
-        iconName,
-        size: iconSize,
-        color: foregroundColor ?? colors.icon.accent,
-      ),
+      child: AppIcon(iconName, size: 28, color: colors.icon.accent),
     );
   }
 }
