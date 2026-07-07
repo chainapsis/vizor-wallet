@@ -255,7 +255,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       if (epoch != _epoch) return;
       final remaining = expiresAt.difference(DateTime.now());
       if (remaining <= Duration.zero) {
-        _expire(deleteRemote: false);
+        _expire(deleteRemote: true);
         return;
       }
       state = state.copyWith(remaining: remaining);
@@ -326,7 +326,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       await ref.read(walletLinkApiClientProvider).deletePackage(packageId);
     } catch (error, stackTrace) {
       log('WalletLinkController.deletePackage: ERROR: $error\n$stackTrace');
-      // Explicit replacement is best-effort. Backend TTL remains the fallback
+      // Explicit cleanup is best-effort. Backend TTL remains the fallback
       // if this cleanup cannot reach Lambda/DynamoDB.
     }
   }
