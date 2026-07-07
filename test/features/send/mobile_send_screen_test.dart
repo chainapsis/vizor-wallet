@@ -745,6 +745,46 @@ void main() {
     expect(find.text('Enter Amount'), findsOneWidget);
   });
 
+  testWidgets('recipient step names a matched saved contact', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+            profilePictureId: 'default',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _invalidAddress);
+    // The error owns the reserved line; no match indicator alongside it.
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_address_contact_match')),
+      findsNothing,
+    );
+
+    await _enterAddress(tester, _shieldedAddress);
+    expect(find.text('Invalid address'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_address_contact_match')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('scan result fills the recipient on the current send screen', (
     tester,
   ) async {
@@ -1721,6 +1761,39 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_memo_clear')));
     await tester.pumpAndSettle();
     expect(find.text('Add short encrypted message'), findsOneWidget);
+  });
+
+  testWidgets('review uses Keystone CTA for a hardware account', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(find.text('Confirm & Send'), findsNothing);
+
+    final confirmButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_confirm')),
+    );
+    final leading = confirmButton.leading;
+    expect(leading, isA<AppIcon>());
+    expect((leading! as AppIcon).name, AppIcons.qr);
   });
 
   testWidgets('a transparent recipient hides the memo entry', (tester) async {

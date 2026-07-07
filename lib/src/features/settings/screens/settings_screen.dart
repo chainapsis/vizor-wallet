@@ -203,6 +203,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? () => _showModal(_SettingsModalType.profilePicture)
                     : null,
                 onAddressBook: () => context.push('/address-book'),
+                onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
                 onLanguage: () => _showModal(_SettingsModalType.language),
                 onUpdates: updateState == null
@@ -328,6 +329,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
+    required this.onLinkMobile,
     required this.onTheme,
     required this.onLanguage,
     required this.onUpdates,
@@ -349,6 +351,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
+  final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
   final VoidCallback onLanguage;
   final VoidCallback? onUpdates;
@@ -393,6 +396,7 @@ class _SettingsPane extends StatelessWidget {
                 onAccountName: onAccountName,
                 onProfilePicture: onProfilePicture,
                 onAddressBook: onAddressBook,
+                onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
                 onLanguage: onLanguage,
                 onUpdates: onUpdates,
@@ -424,6 +428,7 @@ class _SettingsList extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
+    required this.onLinkMobile,
     required this.onTheme,
     required this.onLanguage,
     required this.onUpdates,
@@ -445,6 +450,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
+  final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
   final VoidCallback onLanguage;
   final VoidCallback? onUpdates;
@@ -491,6 +497,11 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.users,
               label: l10n.settingsContacts,
               onTap: onAddressBook,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.link,
+              label: 'Link mobile',
+              onTap: onLinkMobile,
             ),
           ],
         ),

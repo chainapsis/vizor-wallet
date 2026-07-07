@@ -197,6 +197,29 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
+  testWidgets('uses compact balance precision for long decimals', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.parse('1234512345678'),
+          transparentBalance: BigInt.from(12345678),
+          canShieldTransparentBalance: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('12345.12', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('12345.12345678', findRichText: true),
+      findsNothing,
+    );
+    expect(find.text('Transparent: 0.123456 ZEC'), findsOneWidget);
+  });
+
   testWidgets('shows transparent balance tray with shield action', (
     tester,
   ) async {

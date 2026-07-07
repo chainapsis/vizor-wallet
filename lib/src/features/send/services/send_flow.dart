@@ -9,7 +9,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../l10n/app_localizations.dart';
@@ -239,8 +238,7 @@ String _pcztBroadcastStatusMessage(
 /// Runs the full broadcast leg for a proposed send — Sapling params
 /// gate, software execute (macOS keychain or in-memory mnemonic) or
 /// hardware PCZT combine+broadcast, endpoint failover, post-send
-/// refresh, and iOS TX tracking. Extracted verbatim from the desktop
-/// status screen.
+/// refresh. Shared by the desktop and mobile status screens.
 ///
 /// [confirmSaplingParamsDownload] asks the user to approve the ~50MB
 /// download; [shouldAbort] is polled around the long awaits (the
@@ -403,7 +401,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           .switchToFallbackFor(
             broadcastMessageForFallback,
             endpoint: endpoint,
-            operation: isHardware ? 'keystone send broadcast' : 'send broadcast',
+            operation: isHardware
+                ? 'keystone send broadcast'
+                : 'send broadcast',
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -414,23 +414,6 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       await ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (e) {
       log('SendBroadcast: refreshAfterSend failed (non-critical): $e');
-    }
-
-    if (Platform.isIOS) {
-      try {
-        const channel = MethodChannel('com.zcash.wallet/background_sync');
-        final available =
-            await channel.invokeMethod<bool>('isAvailable') ?? false;
-        if (available) {
-          await channel.invokeMethod('startTxTracking', {
-            'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
-            'network': endpoint.networkName,
-            'presetId': endpoint.effectivePresetId,
-          });
-        }
-      } catch (e) {
-        log('SendBroadcast: iOS TX tracking failed (non-critical): $e');
-      }
     }
 
     if (await abortRequested()) return aborted();

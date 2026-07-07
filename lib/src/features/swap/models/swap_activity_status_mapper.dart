@@ -1,6 +1,8 @@
 import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/near_intents_explorer.dart';
+import 'swap_address_book_helpers.dart';
 import 'swap_address_formatting.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
@@ -16,29 +18,6 @@ class SwapActivityAccountDetail {
 
   final String name;
   final String? profilePictureId;
-}
-
-class _SwapActivityAddressBookLabels {
-  _SwapActivityAddressBookLabels(Iterable<AddressBookContact> contacts)
-    : _contacts = contacts.toList(growable: false);
-
-  final List<AddressBookContact> _contacts;
-
-  String? labelFor({required SwapAsset? asset, required String address}) {
-    if (asset == null) return null;
-    final network = AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
-    if (network == null) return null;
-
-    final target = _normalizedAddress(network, address);
-    if (target.isEmpty) return null;
-    for (final contact in _contacts) {
-      if (contact.network != network) continue;
-      if (_normalizedAddress(network, contact.address) != target) continue;
-      final label = contact.label.trim();
-      return label.isEmpty ? null : label;
-    }
-    return null;
-  }
 }
 
 class SwapActivityStatusPresentation {
@@ -128,7 +107,11 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   if (sendsZec) {
     if (recipientAddress != null && recipientAddress.isNotEmpty) {
       receiveDetailText = l10n.swapToAddressOnChain(
-        compactSwapAddress(recipientAddress),
+        _headerAddressText(
+          recipientAddress,
+          asset: receiveAsset,
+          contacts: addressBookContacts,
+        ),
         receiveAsset.chainLabel,
       );
       receiveDetailCopyText = recipientAddress;
@@ -136,7 +119,11 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   } else {
     if (refundAddress != null && refundAddress.isNotEmpty) {
       payDetailText = l10n.swapRefundToAddress(
-        compactSwapAddress(refundAddress),
+        _headerAddressText(
+          refundAddress,
+          asset: sellAsset,
+          contacts: addressBookContacts,
+        ),
       );
       payDetailCopyText = refundAddress;
     }
@@ -272,7 +259,6 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
-  final addressBookLabels = _SwapActivityAddressBookLabels(addressBookContacts);
   final refundAddress = intent.oneClickRefundTo?.trim();
   final recipientAddress = intent.oneClickRecipient?.trim();
   final depositAddress = intent.depositAddress?.trim();
@@ -336,7 +322,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           kind: SwapStatusDetailRowKind.refundAddress,
           address: refundAddress,
           asset: sourceAsset,
-          addressBookLabels: addressBookLabels,
+          addressBookContacts: addressBookContacts,
         ),
       ?txIdRow,
       SwapStatusDetailRowData(
@@ -365,7 +351,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       recipientAddress: recipientAddress,
       depositTxHash: depositTxHash,
       sendsZec: sendsZec,
-      addressBookLabels: addressBookLabels,
+      addressBookContacts: addressBookContacts,
     );
   }
 
@@ -380,7 +366,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
@@ -388,7 +374,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (depositAddress != null && depositAddress.isNotEmpty)
       ..._addressDetailRows(
@@ -396,7 +382,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailRowKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     // externalToZec deposits the user sends manually: keep a required memo
     // reachable after the optimistic claim hides the deposit page (memo/tag
@@ -434,7 +420,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
@@ -442,7 +428,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
@@ -516,7 +502,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   required String? recipientAddress,
   required String? depositTxHash,
   required bool sendsZec,
-  required _SwapActivityAddressBookLabels addressBookLabels,
+  required Iterable<AddressBookContact> addressBookContacts,
 }) {
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
@@ -550,7 +536,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
         kind: SwapStatusDetailRowKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     SwapStatusDetailRowData(
       label: l10n.swapRequiredDepositLabel,
@@ -581,7 +567,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
         kind: SwapStatusDetailRowKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
@@ -589,7 +575,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
         kind: SwapStatusDetailRowKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
-        addressBookLabels: addressBookLabels,
+        addressBookContacts: addressBookContacts,
       ),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
@@ -603,17 +589,35 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   ];
 }
 
+/// Header address text: `"Rowan (0x0cd7ad0 ... 0727181)"` when the address
+/// matches a saved contact, plain compact address otherwise.
+String _headerAddressText(
+  String address, {
+  required SwapAsset? asset,
+  required Iterable<AddressBookContact> contacts,
+}) {
+  final label = addressBookContactForSwapAsset(
+    contacts: contacts,
+    asset: asset,
+    address: address,
+  )?.label.trim();
+  final compact = compactSwapAddress(address);
+  if (label == null || label.isEmpty) return compact;
+  return contactAddressDisplayText(label: label, compactAddress: compact);
+}
+
 List<SwapStatusDetailRowData> _addressDetailRows({
   required String label,
   required String address,
   required SwapAsset? asset,
-  required _SwapActivityAddressBookLabels addressBookLabels,
+  required Iterable<AddressBookContact> addressBookContacts,
   required SwapStatusDetailRowKind kind,
 }) {
-  final addressBookLabel = addressBookLabels.labelFor(
+  final addressBookLabel = addressBookContactForSwapAsset(
+    contacts: addressBookContacts,
     asset: asset,
     address: address,
-  );
+  )?.label.trim();
   final addressNetwork = addressBookLabel == null || asset == null
       ? null
       : AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
@@ -869,34 +873,6 @@ String? _firstNonEmpty(Iterable<String?> values) {
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
   }
   return null;
-}
-
-String _normalizedAddress(AddressBookNetwork network, String address) {
-  final trimmed = address.trim();
-  return _addressBookNetworkIgnoresCase(network)
-      ? trimmed.toLowerCase()
-      : trimmed;
-}
-
-bool _addressBookNetworkIgnoresCase(AddressBookNetwork network) {
-  return switch (network) {
-    AddressBookNetwork.ethereum ||
-    AddressBookNetwork.base ||
-    AddressBookNetwork.arbitrum ||
-    AddressBookNetwork.binanceSmartChain ||
-    AddressBookNetwork.optimism ||
-    AddressBookNetwork.avalanche ||
-    AddressBookNetwork.gnosis ||
-    AddressBookNetwork.polygon ||
-    AddressBookNetwork.xLayer ||
-    AddressBookNetwork.plasma ||
-    AddressBookNetwork.abstractChain ||
-    AddressBookNetwork.bera ||
-    AddressBookNetwork.monad ||
-    AddressBookNetwork.scroll ||
-    AddressBookNetwork.near => true,
-    _ => false,
-  };
 }
 
 double? _numericAmount(String amountText) {

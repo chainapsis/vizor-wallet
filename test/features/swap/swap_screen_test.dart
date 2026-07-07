@@ -250,6 +250,42 @@ void main() {
     );
   });
 
+  testWidgets('review summary names a matched contact in the To: line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          onCopy: (_) {},
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text(
+          'To: Treasury (0x5290840 ... 4169ee7) on Ethereum',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('review summary shows the refund address line with copy', (
     tester,
   ) async {
@@ -1650,6 +1686,70 @@ void main() {
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
+  testWidgets('typed contact address shows the match line and names the chip', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const contactAddress = '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb';
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'usdc',
+            label: 'USDC Friend',
+            network: AddressBookNetwork.ethereum,
+            address: contactAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      contactAddress,
+    );
+    await tester.pumpAndSettle();
+
+    // Live match feedback under the field while typing/pasting.
+    expect(
+      find.byKey(const ValueKey('swap_destination_contact_match')),
+      findsOneWidget,
+    );
+    expect(find.text('USDC Friend'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xnope',
+    );
+    await tester.pumpAndSettle();
+    // Format errors take priority over the match line.
+    expect(
+      find.byKey(const ValueKey('swap_destination_contact_match')),
+      findsNothing,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      contactAddress,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    // The composer chip shows the contact name instead of the raw address.
+    expect(_destinationSummaryText(tester), 'USDC Friend');
+  });
+
   testWidgets('swap address modal ignores keyboard submit of a bad address', (
     tester,
   ) async {
@@ -1767,7 +1867,8 @@ void main() {
       find.byKey(const ValueKey('address_book_contact_picker_modal')),
       findsNothing,
     );
-    expect(_destinationSummaryText(tester), '0xd1220a...7b9adb');
+    // The chip shows the matched contact's name instead of the raw address.
+    expect(_destinationSummaryText(tester), 'USDC Friend');
   });
 
   testWidgets('swap contact picker cancel returns to address editor', (
@@ -5831,7 +5932,7 @@ void main() {
     final started = await notifier.startIntent();
     await tester.pumpAndSettle();
 
-    expect(started, isFalse);
+    expect(started, isNull);
     expect(swapProvider.startedQuotes, isEmpty);
     expect(
       find.text('Quote expired. Review again for an updated rate.'),
@@ -5880,7 +5981,7 @@ void main() {
     final started = await notifier.startIntent();
     await tester.pumpAndSettle();
 
-    expect(started, isFalse);
+    expect(started, isNull);
     expect(swapProvider.startedQuotes, isEmpty);
   });
 
@@ -5923,7 +6024,7 @@ void main() {
     final started = await notifier.startIntent();
     await tester.pumpAndSettle();
 
-    expect(started, isTrue);
+    expect(started, isA<SwapStartedActivity>());
     expect(swapProvider.startedQuotes, hasLength(1));
   });
 
@@ -6974,100 +7075,90 @@ void main() {
     expect(find.textContaining('Insufficient balance'), findsNothing);
   });
 
-  testWidgets('hardware ZEC swaps open deposit page before Keystone signing', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final swapProvider = _FakeSwapProvider();
-    final depositSender = _FakeSwapDepositSender();
-    final hardwareSigningService = _FakeSwapHardwareSigningService();
-    final sessionStore = _FakeSwapPersistenceStore();
+  testWidgets(
+    'hardware ZEC swaps open Keystone signing without a deposit tap',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final hardwareSigningService = _FakeSwapHardwareSigningService();
+      final sessionStore = _FakeSwapPersistenceStore();
 
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [_swapRoute(), _swapActivityRoute()],
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
         ),
-        bootstrap: _hardwareBootstrap,
-        swapProvider: swapProvider,
-        depositSender: depositSender,
-        hardwareSigningService: hardwareSigningService,
-        sessionStore: sessionStore,
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_amount_field')),
-      '0.003',
-    );
-    await _enterDestinationText(
-      tester,
-      '0x52908400098527886e0f7030069857d2e4169ee7',
-    );
-    await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
 
-    expect(depositSender.preflightRequests, hasLength(1));
-    expect(depositSender.requests, isEmpty);
-    expect(swapProvider.startedQuotes, hasLength(1));
-    expect(swapProvider.submittedDeposits, isEmpty);
-    expect(sessionStore.savedIntents, hasLength(1));
-    expect(
-      sessionStore.savedIntents.single.status,
-      SwapIntentStatus.awaitingDeposit,
-    );
-    expect(sessionStore.savedIntents.single.depositTxHash, isNull);
-    expect(hardwareSigningService.depositDrafts, isEmpty);
-    expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('swap_deposit_tokens_panel')),
-      findsOneWidget,
-    );
-    final detailRect = tester.getRect(
-      find.byKey(const ValueKey('swap_activity_detail_page')),
-    );
-    final depositRect = tester.getRect(
-      find.byKey(const ValueKey('swap_deposit_tokens_panel')),
-    );
-    expect(depositRect.center.dy, closeTo(detailRect.center.dy, 1));
-    expect(find.text('Deposit tokens'), findsOneWidget);
-    expect(find.text('0.0030 ZEC'), findsWidgets);
-    expect(find.text('t1live-deposit'), findsOneWidget);
-    expect(find.text('Deposit ZEC'), findsOneWidget);
-    expect(find.text("I've deposited"), findsNothing);
-    expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('swap_hardware_deposit_action_panel')),
-      findsNothing,
-    );
+      expect(depositSender.preflightRequests, hasLength(1));
+      expect(depositSender.requests, isEmpty);
+      expect(swapProvider.startedQuotes, hasLength(1));
+      expect(swapProvider.submittedDeposits, isEmpty);
+      expect(sessionStore.savedIntents, isEmpty);
+      expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('swap_deposit_tokens_panel')),
+        findsNothing,
+      );
+      expect(find.text("I've deposited"), findsNothing);
+      expect(
+        find.byKey(const ValueKey('swap_hardware_deposit_action_panel')),
+        findsNothing,
+      );
 
-    await tester.tap(find.byKey(const ValueKey('swap_deposit_confirm_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+      for (
+        var i = 0;
+        i < 20 && hardwareSigningService.depositDrafts.isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
 
-    expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
-    expect(find.text('Sign ZEC deposit on Keystone'), findsWidgets);
-    final paneRect = tester.getRect(
-      find.byKey(const ValueKey('swap_activity_detail_pane')),
-    );
-    final signingOverlayRect = tester.getRect(
-      find.byKey(const ValueKey('swap_keystone_signing_overlay_surface')),
-    );
-    expect(signingOverlayRect.left, closeTo(paneRect.left, 1));
-    expect(signingOverlayRect.top, closeTo(paneRect.top, 1));
-    expect(signingOverlayRect.right, closeTo(paneRect.right, 1));
-    expect(signingOverlayRect.bottom, closeTo(paneRect.bottom, 1));
-  });
+      expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
+      expect(sessionStore.savedIntents, isEmpty);
+      expect(find.text('Sign ZEC deposit on Keystone'), findsWidgets);
+      final paneRect = tester.getRect(
+        find.byKey(const ValueKey('swap_activity_detail_pane')),
+      );
+      final signingOverlayRect = tester.getRect(
+        find.byKey(const ValueKey('swap_keystone_signing_overlay_surface')),
+      );
+      expect(signingOverlayRect.left, closeTo(paneRect.left, 1));
+      expect(signingOverlayRect.top, closeTo(paneRect.top, 1));
+      expect(signingOverlayRect.right, closeTo(paneRect.right, 1));
+      expect(signingOverlayRect.bottom, closeTo(paneRect.bottom, 1));
+    },
+  );
 
   testWidgets(
     'hardware ZEC signing keeps the modal preparing until proofs are ready',
@@ -7113,10 +7204,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('swap_start_button')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('swap_deposit_confirm_button')),
-      );
       await tester.pump();
       for (
         var i = 0;
@@ -7127,6 +7214,7 @@ void main() {
       }
 
       expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(sessionStore.savedIntents, isEmpty);
       expect(find.text('Sign ZEC deposit on Keystone'), findsOneWidget);
       // Matches the home shielding overlay: the modal stays in the preparing
       // phase (no separate 'Preparing' button label) and 'Get signature'
@@ -7146,7 +7234,7 @@ void main() {
     },
   );
 
-  testWidgets('hardware ZEC signing cancel keeps the deposit page', (
+  testWidgets('hardware ZEC auto signing cancel drops the pending intent', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -7187,15 +7275,16 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
 
-    expect(sessionStore.savedIntents, hasLength(1));
-    expect(hardwareSigningService.depositDrafts, isEmpty);
-
-    await tester.tap(find.byKey(const ValueKey('swap_deposit_confirm_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump();
-
+    expect(sessionStore.savedIntents, isEmpty);
+    for (
+      var i = 0;
+      i < 20 && hardwareSigningService.depositDrafts.isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
+    expect(sessionStore.savedIntents, isEmpty);
 
     await tester.tap(
       find.descendant(
@@ -7206,10 +7295,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(sessionStore.savedIntents, hasLength(1));
+    expect(sessionStore.savedIntents, isEmpty);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
-    expect(find.text('Deposit tokens'), findsOneWidget);
-    expect(find.text('Deposit ZEC'), findsOneWidget);
+    expect(find.text('Deposit ZEC'), findsNothing);
   });
 
   testWidgets(
@@ -7264,10 +7352,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('swap_start_button')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('swap_deposit_confirm_button')),
-      );
-      await tester.pump();
       for (
         var i = 0;
         i < 20 && hardwareSigningService.proofDrafts.isEmpty;
@@ -7276,6 +7360,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(sessionStore.savedIntents, isEmpty);
       await tester.pump();
 
       await tester.tap(find.text('Get signature'));
@@ -7369,10 +7454,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('swap_start_button')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('swap_deposit_confirm_button')),
-      );
-      await tester.pump();
       for (
         var i = 0;
         i < 20 && hardwareSigningService.proofDrafts.isEmpty;
@@ -7381,6 +7462,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(sessionStore.savedIntents, isEmpty);
       await tester.pump();
 
       await tester.tap(find.text('Get signature'));
@@ -7489,10 +7571,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('swap_start_button')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('swap_deposit_confirm_button')),
-      );
-      await tester.pump();
       for (
         var i = 0;
         i < 20 && hardwareSigningService.proofDrafts.isEmpty;
@@ -7501,6 +7579,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(sessionStore.savedIntents, isEmpty);
       await tester.pump();
 
       await tester.tap(find.text('Get signature'));
@@ -7950,10 +8029,12 @@ Widget _reviewTestPage({
   required String sellAmountText,
   required String receiveAmountText,
   ValueChanged<String>? onCopy,
+  List<AddressBookContact> addressBookContacts = const [],
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
     onCopy: onCopy,
+    addressBookContacts: addressBookContacts,
     quote: SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
@@ -8497,7 +8578,17 @@ String _depositExpiryLabelPlainText(WidgetTester tester) {
 String _destinationSummaryText(WidgetTester tester) {
   final finder = find.byKey(const ValueKey('swap_destination_value'));
   if (finder.evaluate().isEmpty) return '';
-  final text = tester.widget<Text>(finder.first).data ?? '';
+  // The chip renders a plain Text for addresses and a ContactNameInline
+  // (with a Text descendant) for matched contacts.
+  final widget = finder.evaluate().first.widget;
+  final text = widget is Text
+      ? (widget.data ?? '')
+      : (tester
+                .widget<Text>(
+                  find.descendant(of: finder.first, matching: find.byType(Text)),
+                )
+                .data ??
+            '');
   return text.startsWith('Add ') ? '' : text;
 }
 

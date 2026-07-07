@@ -1,36 +1,42 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart' show Scaffold;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../l10n/app_localizations.dart';
-import '../../../../core/config/zcash_explorer.dart';
-import '../../../../core/formatting/address_display.dart';
-import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart'
+    show kMobileTopNavHeight;
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_profile_picture.dart';
-import '../../../../core/widgets/app_toast.dart';
-import '../../../../core/widgets/mobile/mobile_review_row.dart';
-import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
-import '../../../../providers/account_provider.dart';
-import '../../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../../providers/zec_price_change_provider.dart';
-import '../../../activity/activity_row_mapper.dart'
-    show formatActivityTimestamp;
-import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
-import '../../widgets/send_recipient_resolver.dart';
-import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _MobileSendStatusPhase { sending, pendingBroadcast, succeeded, failed }
+
+// Status circle fills — Figma "Tx Submitted/Complete" (5497:22241).
+// The circles keep the same color in both themes (the badge is its own
+// surface, not themed content), so these are deliberately one-off
+// constants rather than semantic tokens.
+const _sendingCircleColor = Color(0xFF2E3232);
+const _successCircleColor = Color(0xFF00A460);
+const _failureCircleColor = Color(0xFF9338A7);
+const _statusIconColor = Color(0xFFFFFFFF);
+
+const _statusCircleSize = 64.0;
+const _statusIconSize = 32.0;
+const _statusButtonWidth = 230.0;
+const _statusSubtitleWidth = 223.0;
+
+const _backgroundImage = AssetImage(
+  'assets/illustrations/mobile_send_status_background.png',
+);
 
 typedef MobileSendBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
@@ -66,12 +72,7 @@ class _MobileSendStatusScreenState
   var _phase = _MobileSendStatusPhase.sending;
   var _proposalConsumed = false;
   var _discardScheduled = false;
-  String? _displayTxid;
-  String? _protocolTxid;
   String? _statusMessage;
-  String? _error;
-  late final DateTime _startedAt = DateTime.now();
-  DateTime? _completedAt;
 
   @override
   void initState() {
@@ -126,7 +127,6 @@ class _MobileSendStatusScreenState
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
 
-    final displayTxid = outcome.txid?.trim();
     setState(() {
       _phase = switch (outcome.phase) {
         SendBroadcastPhase.succeeded => _MobileSendStatusPhase.succeeded,
@@ -135,18 +135,19 @@ class _MobileSendStatusScreenState
         SendBroadcastPhase.failed => _MobileSendStatusPhase.failed,
         SendBroadcastPhase.aborted => _MobileSendStatusPhase.failed,
       };
-      _displayTxid = displayTxid == null || displayTxid.isEmpty
-          ? null
-          : displayTxid;
-      _protocolTxid = _displayTxid == null
-          ? null
-          : _displayOrderToProtocolTxidHex(_displayTxid!);
       _statusMessage = outcome.statusMessage;
-      _error = outcome.error;
-      if (outcome.phase != SendBroadcastPhase.failed) {
-        _completedAt = DateTime.now();
-      }
     });
+    // Success and failure use custom native haptic patterns without system
+    // notification sounds.
+    switch (_phase) {
+      case _MobileSendStatusPhase.succeeded:
+        unawaited(AppHaptics.sendSuccess());
+      case _MobileSendStatusPhase.failed:
+        unawaited(AppHaptics.sendFailure());
+      case _MobileSendStatusPhase.sending:
+      case _MobileSendStatusPhase.pendingBroadcast:
+        break;
+    }
   }
 
   void _handleBack() {
@@ -160,57 +161,47 @@ class _MobileSendStatusScreenState
 
   bool get _routePopAllowed => _phase != _MobileSendStatusPhase.sending;
 
-  Future<void> _openExplorer() async {
-    final txid = _displayTxid;
-    if (txid == null) return;
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-    final launched = await launchZcashExplorerTransaction(
-      networkName: endpoint.networkName,
-      txidHex: txid,
-      txidOrder: ZcashExplorerTxidOrder.display,
-    );
-    if (launched || !mounted) return;
-    await Clipboard.setData(ClipboardData(text: _protocolTxid ?? txid));
-    if (!mounted) return;
-    showAppToast(context, AppLocalizations.of(context).activityTxHashCopied);
+  String get _title {
+    final l10n = AppLocalizations.of(context);
+    return switch (_phase) {
+      _MobileSendStatusPhase.sending => l10n.activitySendingEllipsis,
+      _MobileSendStatusPhase.pendingBroadcast => l10n.sendStatusQueuedTitle,
+      _MobileSendStatusPhase.succeeded => l10n.sendStatusSentTitle,
+      _MobileSendStatusPhase.failed => l10n.activitySendFailed,
+    };
+  }
+
+  String get _subtitle {
+    final l10n = AppLocalizations.of(context);
+    final statusMessage = _statusMessage?.trim();
+    return switch (_phase) {
+      _MobileSendStatusPhase.sending => l10n.sendStatusSendingSubtitle,
+      _MobileSendStatusPhase.pendingBroadcast =>
+        statusMessage == null || statusMessage.isEmpty
+            ? l10n.sendStatusQueuedSubtitle
+            : statusMessage,
+      _MobileSendStatusPhase.succeeded => l10n.sendStatusSucceededSubtitle,
+      _MobileSendStatusPhase.failed => l10n.sendStatusFailedSubtitle,
+    };
+  }
+
+  String? get _buttonLabel {
+    final l10n = AppLocalizations.of(context);
+    return switch (_phase) {
+      _MobileSendStatusPhase.sending => null,
+      _MobileSendStatusPhase.pendingBroadcast ||
+      _MobileSendStatusPhase.succeeded => l10n.commonDone,
+      _MobileSendStatusPhase.failed => l10n.sendStatusReturnHome,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final args = widget.args;
-    final statusMessage = _statusMessage?.trim();
-    final error = _phase == _MobileSendStatusPhase.failed
-        ? _error ?? AppLocalizations.of(context).sendTxCouldNotBeSent
-        : null;
-    final txid = _protocolTxid;
-    final amountFiatText = fiatTextForZatoshi(
-      args.amountZatoshi,
-      zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
-    );
-    final recipientPoolLabel = _recipientPoolLabel(
-      args.addressType,
-      isShielded: args.isShielded,
-      l10n: AppLocalizations.of(context),
-    );
-    // Resolve the recipient to a saved contact / own account so the To row
-    // shows a name + avatar — parity with desktop send status and the
-    // review step (a raw address right after "Alice" in review reads as a
-    // regression).
-    final namedRecipient = args.address.trim().isEmpty
-        ? null
-        : switch (sendReviewRecipientFor(
-            contacts:
-                ref.watch(addressBookProvider).value?.contacts ??
-                const <AddressBookContact>[],
-            address: args.address,
-            ownAccounts:
-                ref.watch(ownAccountAddressesProvider).value ??
-                const <String, AccountInfo>{},
-          )) {
-            SendReviewContactRecipient r => r,
-            _ => null,
-          };
+    final buttonLabel = _buttonLabel;
+    final titleColor = _phase == _MobileSendStatusPhase.failed
+        ? colors.text.destructive
+        : colors.text.accent;
 
     return PopScope<void>(
       canPop: _routePopAllowed,
@@ -219,428 +210,282 @@ class _MobileSendStatusScreenState
       },
       child: Scaffold(
         backgroundColor: colors.background.window,
-        body: AppToastHost(
-          child: SafeArea(
-            child: Column(
-              children: [
-                MobileTopNav.back(
-                  title: _title,
-                  onBack: _phase == _MobileSendStatusPhase.sending
-                      ? null
-                      : _handleBack,
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    key: ValueKey('mobile_send_status_${_phase.name}'),
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      AppSpacing.s,
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.md,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              MobileReviewInfoRow(
-                                label: AppLocalizations.of(context).navAmount,
-                                value: ZecAmount.fromZatoshi(
-                                  args.amountZatoshi,
-                                ).activityDetail.toString(),
-                                leading: const MobileReviewZecBadge(),
-                                bottom: amountFiatText == null
-                                    ? null
-                                    : Text(
-                                        amountFiatText,
-                                        key: const ValueKey(
-                                          'mobile_send_status_amount_fiat',
-                                        ),
-                                        style: AppTypography.labelMedium
-                                            .copyWith(
-                                              color: colors.text.secondary,
-                                            ),
-                                      ),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Castle backdrop — the 15% opacity and bottom fade are baked
+            // into the exported asset, so it renders as-is.
+            const Positioned.fill(
+              child: Image(
+                image: _backgroundImage,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                excludeFromSemantics: true,
+              ),
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  // The design keeps the top-nav slot but hides its content
+                  // (no back affordance while the tx is in flight).
+                  const SizedBox(height: kMobileTopNavHeight),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.s,
+                      ),
+                      child: Center(
+                        // No phase-derived key here: rekeying the column
+                        // would recreate _StatusBadge on every phase change
+                        // and skip its transition animations.
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _StatusBadge(phase: _phase),
+                            const SizedBox(height: AppSpacing.xl),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
                               ),
-                              const SizedBox(height: AppSpacing.xs),
-                              const MobileReviewFlowArrow(),
-                              const SizedBox(height: AppSpacing.xs),
-                              MobileReviewInfoRow(
-                                label: 'To',
-                                value: namedRecipient != null
-                                    ? namedRecipient.name
-                                    : _truncateAddress(args.address),
-                                strikethrough:
-                                    _phase == _MobileSendStatusPhase.failed,
-                                leading: namedRecipient != null
-                                    ? AppProfilePicture(
-                                        profilePictureId:
-                                            namedRecipient.profilePictureId,
-                                        size: AppProfilePictureSize.navLarge,
-                                      )
-                                    : MobileReviewIconBadge(
-                                        child: AppIcon(
-                                          AppIcons.wallet,
-                                          size: 18,
-                                          color: colors.icon.regular,
+                              child: Column(
+                                children: [
+                                  Text(
+                                    _title,
+                                    key: ValueKey(
+                                      'mobile_send_status_${_phase.name}',
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.displayLarge.copyWith(
+                                      color: titleColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.s),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final subtitleMaxWidth =
+                                          _phase ==
+                                              _MobileSendStatusPhase
+                                                  .pendingBroadcast
+                                          ? constraints.maxWidth
+                                          : math.min(
+                                              _statusSubtitleWidth,
+                                              constraints.maxWidth,
+                                            );
+                                      return ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: subtitleMaxWidth,
                                         ),
-                                      ),
-                                bottom: Row(
-                                  children: [
-                                    AppIcon(
-                                      args.isShielded
-                                          ? AppIcons.shieldKeyhole
-                                          : AppIcons.transparentBalance,
-                                      size: AppIconSize.medium,
-                                      color: args.isShielded
-                                          ? colors.icon.brandCrimson
-                                          : colors.icon.muted,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xxs),
-                                    Text(
-                                      namedRecipient != null
-                                          ? _truncateAddress(args.address)
-                                          : recipientPoolLabel,
-                                      style: AppTypography.labelMedium.copyWith(
-                                        color: colors.text.secondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                        child: Text(
+                                          _subtitle,
+                                          textAlign: TextAlign.center,
+                                          style: AppTypography.bodyMediumStrong
+                                              .copyWith(
+                                                color: colors.text.primary,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        _DetailCard(
-                          phase: _phase,
-                          memo: args.memo,
-                          timestampText: formatActivityTimestamp(
-                            _completedAt ?? _startedAt,
-                            l10n: AppLocalizations.of(context),
-                          ),
-                          txidText: txid == null ? null : truncatedTxid(txid),
-                          onOpenExplorer: txid == null
-                              ? null
-                              : () => unawaited(_openExplorer()),
-                          feeText: ZecAmount.fromZatoshi(
-                            args.feeZatoshi,
-                          ).fee.toString(),
-                        ),
-                        if (statusMessage != null &&
-                            statusMessage.isNotEmpty) ...[
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            statusMessage,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: colors.text.secondary,
                             ),
-                          ),
-                        ],
-                        if (error != null) ...[
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            error,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: colors.text.destructive,
+                            const SizedBox(height: AppSpacing.xl),
+                            SizedBox(
+                              width: _statusButtonWidth,
+                              height: AppButtonSizing.largeHeight,
+                              child: buttonLabel == null
+                                  ? null
+                                  : AppButton(
+                                      key: const ValueKey(
+                                        'mobile_send_status_button',
+                                      ),
+                                      onPressed: _handleBack,
+                                      expand: true,
+                                      child: Text(buttonLabel),
+                                    ),
                             ),
-                          ),
-                        ],
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
-
-  String get _title {
-    final l10n = AppLocalizations.of(context);
-    return switch (_phase) {
-      _MobileSendStatusPhase.sending => l10n.activitySendingEllipsis,
-      _MobileSendStatusPhase.pendingBroadcast => l10n.activitySendingEllipsis,
-      _MobileSendStatusPhase.succeeded => l10n.activitySentSuccessfully,
-      _MobileSendStatusPhase.failed => l10n.activitySendFailed,
-    };
-  }
-
-  String _displayOrderToProtocolTxidHex(String txidHex) {
-    final normalized = txidHex.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
-      return normalized;
-    }
-    final bytes = <String>[
-      for (var i = 0; i < normalized.length; i += 2)
-        normalized.substring(i, i + 2),
-    ];
-    return bytes.reversed.join();
-  }
-
-  String _truncateAddress(String address) {
-    if (address.length <= 14) return address;
-    return '${address.substring(0, 6)} ... '
-        '${address.substring(address.length - 5)}';
-  }
 }
 
-String _recipientPoolLabel(
-  String addressType, {
-  required bool isShielded,
-  required AppLocalizations l10n,
-}) {
-  return switch (addressType.trim().toLowerCase()) {
-    'tex' => 'TEX',
-    'unified' || 'sapling' => l10n.receiveShielded,
-    'transparent' => l10n.receiveTransparent,
-    _ => isShielded ? l10n.receiveShielded : l10n.receiveTransparent,
-  };
-}
-
-class _DetailCard extends StatelessWidget {
-  const _DetailCard({
-    required this.phase,
-    required this.memo,
-    required this.timestampText,
-    required this.txidText,
-    required this.onOpenExplorer,
-    required this.feeText,
-  });
+/// The 64px status circle plus its Figma-comment animations: a single
+/// expanding pulse on success ("circle grow smooth animation") and a
+/// damped left-right shake on failure.
+class _StatusBadge extends StatefulWidget {
+  const _StatusBadge({required this.phase});
 
   final _MobileSendStatusPhase phase;
-  final String? memo;
-  final String timestampText;
-  final String? txidText;
-  final VoidCallback? onOpenExplorer;
-  final String feeText;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final memoText = memo?.trim();
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.base,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ListRow(
-            label: AppLocalizations.of(context).navStatus,
-            labelColor: phase == _MobileSendStatusPhase.failed
-                ? colors.text.destructive
-                : null,
-            value: _StatusChip(phase: phase),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (memoText != null && memoText.isNotEmpty) ...[
-            _ListRow(
-              label: AppLocalizations.of(context).activityMessage,
-              value: _ValueWithIcon(text: _previewMemo(memoText)),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          _ListRow(
-            label: AppLocalizations.of(context).activityTimestamp,
-            value: _ValueWithIcon(text: timestampText),
-          ),
-          if (txidText != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            _ListRow(
-              key: const ValueKey('mobile_send_status_txid'),
-              label: AppLocalizations.of(context).activityTxId,
-              value: _ValueWithIcon(
-                text: txidText,
-                iconName: AppIcons.arrowTopRight,
-                onTap: onOpenExplorer,
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          Container(height: 1, color: colors.border.regular),
-          const SizedBox(height: AppSpacing.sm),
-          _ListRow(
-            label: AppLocalizations.of(context).txFeeSheetTitle,
-            labelStyle: AppTypography.labelLarge,
-            value: _ValueWithIcon(
-              text: feeText,
-              iconName: AppIcons.help,
-              iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
-              onTap: () => unawaited(showMobileTxFeeInfoSheet(context)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _previewMemo(String memoText) {
-    final collapsed = memoText.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (collapsed.length <= 18) return collapsed;
-    return '${collapsed.substring(0, 18).trimRight()}...';
-  }
+  State<_StatusBadge> createState() => _StatusBadgeState();
 }
 
-class _ListRow extends StatelessWidget {
-  const _ListRow({
-    required this.label,
-    required this.value,
-    this.labelColor,
-    this.labelStyle,
-    super.key,
-  });
+class _StatusBadgeState extends State<_StatusBadge>
+    with TickerProviderStateMixin {
+  late final AnimationController _ripple = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+  );
+  late final AnimationController _shake = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
 
-  final String label;
-  final Widget value;
-  final Color? labelColor;
-  final TextStyle? labelStyle;
+  // Pulse end diameter from the Figma keyframe frames (Status Animation
+  // at 839 / 1403).
+  static const _pulseMaxSize = 1440.0;
+  static const _shakeAmplitude = 20.0;
+
+  @override
+  void didUpdateWidget(covariant _StatusBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.phase == widget.phase) return;
+    switch (widget.phase) {
+      case _MobileSendStatusPhase.succeeded:
+        _ripple.forward(from: 0);
+      case _MobileSendStatusPhase.failed:
+        _shake.forward(from: 0);
+      case _MobileSendStatusPhase.sending:
+      case _MobileSendStatusPhase.pendingBroadcast:
+        break;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ripple.dispose();
+    _shake.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
+    final circleColor = switch (widget.phase) {
+      _MobileSendStatusPhase.sending ||
+      _MobileSendStatusPhase.pendingBroadcast => _sendingCircleColor,
+      _MobileSendStatusPhase.succeeded => _successCircleColor,
+      _MobileSendStatusPhase.failed => _failureCircleColor,
+    };
+    final icon = switch (widget.phase) {
+      _MobileSendStatusPhase.sending ||
+      _MobileSendStatusPhase.pendingBroadcast => const AppIcon(
+        AppIcons.loader,
+        key: ValueKey('mobile_send_status_icon_loader'),
+        size: _statusIconSize,
+        color: _statusIconColor,
+      ),
+      _MobileSendStatusPhase.succeeded => const AppIcon(
+        AppIcons.checkCircle,
+        key: ValueKey('mobile_send_status_icon_success'),
+        size: _statusIconSize,
+        color: _statusIconColor,
+      ),
+      _MobileSendStatusPhase.failed => const AppIcon(
+        AppIcons.warning,
+        key: ValueKey('mobile_send_status_icon_failed'),
+        size: _statusIconSize,
+        color: _statusIconColor,
+      ),
+    };
+
     return SizedBox(
-      height: 32,
-      child: Row(
+      width: _statusCircleSize,
+      height: _statusCircleSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              label,
-              style: (labelStyle ?? AppTypography.labelMedium).copyWith(
-                color: labelColor ?? colors.text.secondary,
+          AnimatedBuilder(
+            animation: _ripple,
+            builder: (context, _) {
+              final showPulse =
+                  widget.phase == _MobileSendStatusPhase.succeeded;
+              final t = _ripple.value;
+              final pulseVisible = showPulse && t > 0 && t < 1;
+              if (!pulseVisible) return const SizedBox.shrink();
+              final pulseSize = lerpDouble(
+                _statusCircleSize,
+                _pulseMaxSize,
+                Curves.easeOutBack.transform(t),
+              )!;
+              return IgnorePointer(
+                child: _RippleCircle(
+                  key: const ValueKey('mobile_send_status_success_ripple'),
+                  size: pulseSize,
+                  opacity: 1 - t,
+                ),
+              );
+            },
+          ),
+          AnimatedBuilder(
+            animation: _shake,
+            builder: (context, child) {
+              final t = _shake.value;
+              final dx = t <= 0 || t >= 1
+                  ? 0.0
+                  : math.sin(t * math.pi * 5) * _shakeAmplitude * (1 - t);
+              return Transform.translate(offset: Offset(dx, 0), child: child);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: _statusCircleSize,
+              height: _statusCircleSize,
+              decoration: BoxDecoration(
+                color: circleColor,
+                shape: BoxShape.circle,
               ),
-            ),
-          ),
-          Expanded(
-            child: Align(alignment: Alignment.centerRight, child: value),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ValueWithIcon extends StatelessWidget {
-  const _ValueWithIcon({this.text, this.iconName, this.onTap, this.iconColor});
-
-  final String? text;
-  final String? iconName;
-  final VoidCallback? onTap;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final content = Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xs,
-        AppSpacing.xxs,
-        AppSpacing.xxs,
-        AppSpacing.xxs,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (text != null)
-            Flexible(
-              child: Text(
-                text!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: icon,
                 ),
               ),
             ),
-          if (iconName != null) ...[
-            const SizedBox(width: AppSpacing.xxs),
-            AppIcon(
-              iconName!,
-              size: 20,
-              color: iconColor ?? colors.icon.accent,
-            ),
-          ],
+          ),
         ],
-      ),
-    );
-    if (onTap == null) return content;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: content,
       ),
     );
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.phase});
+/// One ripple layer: the Figma "Status Animation" ellipse — a radial
+/// gradient from transparent center to `#00A460` at the rim, drawn at
+/// 60% opacity.
+class _RippleCircle extends StatelessWidget {
+  const _RippleCircle({required this.size, required this.opacity, super.key});
 
-  final _MobileSendStatusPhase phase;
+  final double size;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final l10n = AppLocalizations.of(context);
-    final (iconName, text, color) = switch (phase) {
-      _MobileSendStatusPhase.sending ||
-      _MobileSendStatusPhase.pendingBroadcast => (
-        AppIcons.loader,
-        l10n.activityInProgress,
-        colors.text.secondary,
-      ),
-      _MobileSendStatusPhase.succeeded => (
-        AppIcons.checkCircle,
-        l10n.activityCompleted,
-        colors.text.positiveStrong,
-      ),
-      _MobileSendStatusPhase.failed => (
-        AppIcons.cross,
-        l10n.activityFailedFundsReturned,
-        colors.text.destructive,
-      ),
-    };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xs,
-        AppSpacing.xxs,
-        AppSpacing.xxs,
-        AppSpacing.xxs,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(iconName, size: 20, color: color),
-          const SizedBox(width: AppSpacing.xxs),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+    return Opacity(
+      opacity: (opacity * 0.6).clamp(0.0, 1.0),
+      child: OverflowBox(
+        minWidth: size,
+        maxWidth: size,
+        minHeight: size,
+        maxHeight: size,
+        child: const DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [Color(0x00FFFFFF), _successCircleColor],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

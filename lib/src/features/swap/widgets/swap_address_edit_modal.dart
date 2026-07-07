@@ -7,7 +7,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
+import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_models.dart';
 import 'swap_modal_controls.dart';
 
@@ -20,6 +22,7 @@ class SwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.contacts = const <AddressBookContact>[],
     super.key,
   });
 
@@ -28,6 +31,10 @@ class SwapAddressEditModal extends StatefulWidget {
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
   final VoidCallback onCancel;
+
+  /// Saved contacts; when the entered address matches one, its name is shown
+  /// under the field so the user knows the address is correct.
+  final Iterable<AddressBookContact> contacts;
 
   @override
   State<SwapAddressEditModal> createState() => _SwapAddressEditModalState();
@@ -105,6 +112,21 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         : null;
   }
 
+  /// Saved contact matching the entered address on the destination chain.
+  AddressBookContact? get _matchedContact {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty) return null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    if (network == null) return null;
+    return addressBookContactFor(
+      contacts: widget.contacts,
+      network: network,
+      address: trimmed,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -126,6 +148,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         ? AppLocalizations.of(context).swapRememberRecipients
         : AppLocalizations.of(context).swapRememberRefunds;
     final formatFinding = _formatFinding;
+    final matchedContact = _matchedContact;
 
     return AppModalCard(
       key: const ValueKey('swap_address_modal'),
@@ -173,13 +196,13 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                 const SizedBox(height: AppSpacing.xxs),
                 // The design reserves a 16dp message line under the field even
                 // while it is empty, so the field→description gap stays put
-                // when a format error (destructive) or advisory warning
-                // (secondary) appears.
+                // when a format error (destructive), advisory warning
+                // (secondary), or matched-contact confirmation appears.
+                // Findings take priority over the contact match.
                 SizedBox(
                   height: 16,
-                  child: formatFinding == null
-                      ? null
-                      : Text(
+                  child: formatFinding != null
+                      ? Text(
                           addressFormatFindingMessage(
                             formatFinding,
                             AppLocalizations.of(context),
@@ -200,6 +223,17 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                                     AddressFormatSeverity.error
                                 ? colors.text.destructive
                                 : colors.text.secondary,
+                          ),
+                        )
+                      : matchedContact == null
+                      ? null
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: ContactNameInline(
+                            key: const ValueKey(
+                              'swap_destination_contact_match',
+                            ),
+                            name: matchedContact.label,
                           ),
                         ),
                 ),

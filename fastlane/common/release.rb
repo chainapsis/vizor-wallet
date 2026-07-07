@@ -6,12 +6,19 @@ require "uri"
 module VizorRelease
   module_function
 
+  DEFAULT_WALLET_LINK_BACKEND_URL = "https://functions.vizor.cash".freeze
+
   def shell_escape(value)
     Shellwords.escape(value.to_s)
   end
 
   def workspace_root
     File.expand_path("../..", __dir__)
+  end
+
+  def wallet_link_backend_url
+    url = ENV["VIZOR_WALLET_LINK_BACKEND_URL"].to_s.strip
+    url.empty? ? DEFAULT_WALLET_LINK_BACKEND_URL : url
   end
 
   def release_tag_info(tag)

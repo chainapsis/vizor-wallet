@@ -14,11 +14,15 @@ import '../../../../providers/sync_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../models/swap_activity_navigation.dart';
+import '../../models/swap_state.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
 import '../../../../../l10n/app_localizations.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
+import 'mobile_swap_keystone_sign_screen.dart';
+
+const _keystoneSigningReviewInactiveDelay = Duration(milliseconds: 500);
 
 /// Mobile swap review — hosts the shared review content (a 400 pt
 /// surface that fits the phone; smaller devices scale down) with the
@@ -35,6 +39,8 @@ class _MobileSwapReviewScreenState
     extends ConsumerState<MobileSwapReviewScreen> {
   var _hadReviewState = false;
   var _startingIntent = false;
+  SwapState? _startingReviewSnapshot;
+  var _keystoneSigningReviewInactive = false;
 
   String? _accountLabelFor(AccountState? accountState, String? accountUuid) {
     if (accountUuid == null || accountUuid.trim().isEmpty) return null;
@@ -77,33 +83,101 @@ class _MobileSwapReviewScreenState
 
   void _startIntent() {
     unawaited(() async {
+      final reviewSnapshot = ref.read(swapStateProvider);
       if (!_startingIntent) {
-        setState(() => _startingIntent = true);
+        setState(() {
+          _startingIntent = true;
+          _startingReviewSnapshot = reviewSnapshot;
+          _keystoneSigningReviewInactive = false;
+        });
       }
-      final started = await ref.read(swapStateProvider.notifier).startIntent();
+      final result = await ref.read(swapStateProvider.notifier).startIntent();
       if (!mounted) return;
-      if (!started) {
-        setState(() => _startingIntent = false);
+      if (result == null) {
+        setState(() {
+          _startingIntent = false;
+          _startingReviewSnapshot = null;
+          _keystoneSigningReviewInactive = false;
+        });
         return;
       }
-      final startedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
-      if (startedIntent != null) {
-        context.go(
-          swapActivityDetailUri(
-            intentId: startedIntent.id,
-            returnTarget: SwapActivityReturnTarget.swap,
-          ).toString(),
-        );
+      switch (result) {
+        case SwapStartedActivity(:final intentId):
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+            ).toString(),
+          );
+        case SwapStartedKeystoneSigning(:final intentId):
+          final pendingIntent = ref
+              .read(swapStateProvider)
+              .pendingKeystoneSigningIntent;
+          if (pendingIntent != null && pendingIntent.id == intentId) {
+            final signingRoute = context.push<void>(
+              '/swap/keystone-sign',
+              extra: MobileSwapKeystoneSignArgs.fromReview(
+                intent: pendingIntent,
+              ),
+            );
+            _scheduleKeystoneSigningReviewInactive();
+            await signingRoute;
+            if (!mounted) return;
+            final path = GoRouter.of(
+              context,
+            ).routerDelegate.currentConfiguration.uri.path;
+            if (path == '/swap/review') {
+              ref
+                  .read(swapStateProvider.notifier)
+                  .clearPendingKeystoneSigningIntent(intentId);
+              setState(() {
+                _keystoneSigningReviewInactive = true;
+              });
+            }
+            return;
+          }
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+              autoSignZecDeposit: true,
+            ).toString(),
+          );
+      }
+    }());
+  }
+
+  void _scheduleKeystoneSigningReviewInactive() {
+    unawaited(() async {
+      await Future<void>.delayed(_keystoneSigningReviewInactiveDelay);
+      if (!mounted || !_startingIntent || _startingReviewSnapshot == null) {
         return;
       }
-      context.go('/activity');
+      setState(() => _keystoneSigningReviewInactive = true);
     }());
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final swapState = ref.watch(swapStateProvider);
+    final liveSwapState = ref.watch(swapStateProvider);
+    final reviewSnapshot = _startingIntent ? _startingReviewSnapshot : null;
+    final liveHasReview =
+        liveSwapState.reviewVisible &&
+        liveSwapState.reviewQuote != null &&
+        liveSwapState.reviewAddressPlan != null;
+    final snapshotHasReview =
+        reviewSnapshot != null &&
+        reviewSnapshot.reviewVisible &&
+        reviewSnapshot.reviewQuote != null &&
+        reviewSnapshot.reviewAddressPlan != null;
+    final inactiveReview =
+        _keystoneSigningReviewInactive && snapshotHasReview && !liveHasReview;
+    final swapState = liveHasReview
+        ? liveSwapState
+        : snapshotHasReview
+        ? reviewSnapshot
+        : liveSwapState;
     final quote = swapState.reviewQuote;
     final addressPlan = swapState.reviewAddressPlan;
     final addressBookContacts =
@@ -168,6 +242,9 @@ class _MobileSwapReviewScreenState
                   ),
                   startError: swapState.statusError,
                   startBlockedReason: startBlockedReason,
+                  inactiveMessage: inactiveReview
+                      ? 'This quote is no longer active.'
+                      : null,
                   payFiatTextOverride: swapReviewFiatTextForAsset(
                     swapState,
                     quote: quote,
@@ -194,7 +271,10 @@ class _MobileSwapReviewScreenState
                 ),
                 child: MobileSwapReviewActions(
                   expired: swapState.quoteExpired,
-                  starting: swapState.startSubmitting,
+                  starting:
+                      !inactiveReview &&
+                      (_startingIntent || liveSwapState.startSubmitting),
+                  inactive: inactiveReview,
                   startBlockedReason: startBlockedReason,
                   sendsZec: quote.direction.sendsZec,
                   onReviewAgain: _reviewAgain,

@@ -34,6 +34,7 @@ class MobileKeystoneSignScreen extends ConsumerWidget {
       onSigned: _handleSignedPczt,
       friendlyError: (error) => _friendlyError(error, l10n),
       keyPrefix: 'mobile_keystone_sign',
+      scanCaption: l10n.keystoneScanCaptionFinishSending,
       logTag: 'MobileKeystoneSign',
     );
   }

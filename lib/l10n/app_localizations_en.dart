@@ -959,6 +959,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendPreparingEllipsis => 'Preparing...';
 
   @override
+  String get sendStatusQueuedTitle => 'Queued to send';
+
+  @override
+  String get sendStatusSentTitle => 'Sent!';
+
+  @override
+  String get sendStatusSendingSubtitle =>
+      'Submitting your transaction to the network...';
+
+  @override
+  String get sendStatusQueuedSubtitle =>
+      'Your transaction was created and will be submitted automatically. Check the Activity page before sending again.';
+
+  @override
+  String get sendStatusSucceededSubtitle =>
+      'It will confirm on-chain shortly. Track it in Activity.';
+
+  @override
+  String get sendStatusFailedSubtitle =>
+      'Nothing was sent, your funds haven\'t moved. Try again.';
+
+  @override
+  String get sendStatusReturnHome => 'Return home';
+
+  @override
   String get sendGetSignature => 'Get signature';
 
   @override
@@ -1639,7 +1664,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanCameraDeniedTitle => 'You\'ve denied camera access';
 
   @override
-  String get keystoneLoadingQr => 'Loading the QR code ...';
+  String get keystoneLoadingQr => 'Loading QR code ...';
 
   @override
   String get keystoneSignQrDecodeError =>
@@ -1660,16 +1685,58 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneCloseSigning => 'Close Keystone signing';
 
   @override
+  String get keystoneSignStepOne => 'Step 1/2';
+
+  @override
+  String get keystoneSignStepTwo => 'Step 2/2';
+
+  @override
+  String get keystoneSignScanWithKeystone => 'Scan with Keystone';
+
+  @override
+  String get keystoneSignTryAgainWithKeystone => 'Try again with Keystone';
+
+  @override
+  String get keystoneShowTransactionQr => 'Show transaction QR';
+
+  @override
+  String get keystoneScanCaptionConfirm =>
+      'Scan the QR code on your Keystone to confirm';
+
+  @override
+  String get keystoneScanCaptionFinishSending =>
+      'Scan the QR code on your Keystone to finish sending';
+
+  @override
+  String get keystoneScanCaptionFinishZecDeposit =>
+      'Scan the QR code on your Keystone to finish the ZEC deposit';
+
+  @override
+  String get keystonePromptTapBeforeIcon => 'Tap';
+
+  @override
+  String get keystonePromptTapAfterIcon => 'on your Keystone,';
+
+  @override
+  String get keystonePromptThenScanQr => 'then scan this QR code';
+
+  @override
   String get onbWelcomeToVizor => 'Welcome to Vizor';
 
   @override
   String get onbSelectMethod => 'Select the method you want.';
 
   @override
-  String get onbCreateWallet => 'Create wallet';
+  String get onbCreateWallet => 'Create Wallet';
 
   @override
-  String get onbImportWallet => 'Import wallet';
+  String get onbImportWallet => 'Import Wallet';
+
+  @override
+  String get onbLinkVizorDesktop => 'Link Vizor Desktop';
+
+  @override
+  String get onbImportContacts => 'Import contacts';
 
   @override
   String get onbAgreePrefix => 'By using Vizor you agree to our ';
@@ -2714,6 +2781,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapReviewAgain => 'Review again';
+
+  @override
+  String get swapReturnToSwap => 'Return to swap';
 
   @override
   String get swapNotEnoughZec => 'Not enough ZEC';

@@ -32,6 +32,7 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../activity/activity_feed_sections.dart';
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -474,7 +475,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         for (final tx in widget.sync.recentTransactions)
           if (!absorption.absorbs(tx))
             _HomeActivityEntry(
-              timestamp: _transactionActivityTimestamp(tx),
+              timestamp: transactionActivityTimestamp(tx),
               row: buildTransactionActivityRow(
                 context: context,
                 transaction: tx,
@@ -588,12 +589,6 @@ int _compareHomeActivityEntries(_HomeActivityEntry a, _HomeActivityEntry b) {
   if (aTime == null) return 1;
   if (bTime == null) return -1;
   return bTime.compareTo(aTime);
-}
-
-DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
-  final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
-  if (seconds <= BigInt.zero) return null;
-  return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
 }
 
 class _HomeTransparentBalanceStrip extends StatelessWidget {

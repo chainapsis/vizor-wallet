@@ -11,9 +11,12 @@ import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
+import '../models/swap_address_book_helpers.dart';
 import '../models/swap_keystone_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
@@ -53,14 +56,18 @@ class SwapActivityDetailSurface extends ConsumerStatefulWidget {
 
 class _SwapKeystoneSigningRequest {
   const _SwapKeystoneSigningRequest({
+    required this.intent,
     required this.intentId,
     required this.accountUuid,
     this.removeUnsentIntentOnCancel = false,
+    this.clearPendingIntentOnCancel = false,
   });
 
+  final SwapIntent intent;
   final String intentId;
   final String accountUuid;
   final bool removeUnsentIntentOnCancel;
+  final bool clearPendingIntentOnCancel;
 }
 
 class _SwapActivityDetailSurfaceState
@@ -101,9 +108,16 @@ class _SwapActivityDetailSurfaceState
       _initialIntentApplied = true;
       return;
     }
-    final intent = _intentById(ref.read(swapStateProvider).intents, intentId);
+    final swapState = ref.read(swapStateProvider);
+    final persistedIntent = _intentById(swapState.intents, intentId);
+    final pendingIntent = widget.autoSignZecDeposit
+        ? _pendingKeystoneSigningIntentById(swapState, intentId)
+        : null;
+    final intent = persistedIntent ?? pendingIntent;
     if (intent == null) return;
-    ref.read(swapStateProvider.notifier).selectIntent(intentId);
+    if (persistedIntent != null) {
+      ref.read(swapStateProvider.notifier).selectIntent(intentId);
+    }
     final needsAutoSign =
         widget.autoSignZecDeposit &&
         _isHardwareIntent(intent) &&
@@ -111,9 +125,11 @@ class _SwapActivityDetailSurfaceState
         !(intent.depositTxHash?.trim().isNotEmpty ?? false);
     final request = needsAutoSign
         ? _SwapKeystoneSigningRequest(
+            intent: intent,
             intentId: intent.id,
             accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-            removeUnsentIntentOnCancel: true,
+            removeUnsentIntentOnCancel: persistedIntent != null,
+            clearPendingIntentOnCancel: pendingIntent != null,
           )
         : null;
     if (request != null && widget.layout == SwapActivityDetailLayout.mobile) {
@@ -188,6 +204,7 @@ class _SwapActivityDetailSurfaceState
 
   void _signZecDeposit(SwapIntent intent) {
     final request = _SwapKeystoneSigningRequest(
+      intent: intent,
       intentId: intent.id,
       accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
     );
@@ -204,9 +221,23 @@ class _SwapActivityDetailSurfaceState
   void _closeKeystoneSigning({bool cleanupCancelledRequest = false}) {
     final request = _keystoneSigningRequest;
     setState(() => _keystoneSigningRequest = null);
-    if (cleanupCancelledRequest &&
-        request != null &&
-        request.removeUnsentIntentOnCancel) {
+    if (!cleanupCancelledRequest || request == null) return;
+    _cleanupCancelledKeystoneSigningRequest(request);
+  }
+
+  void _cleanupCancelledKeystoneSigningRequest(
+    _SwapKeystoneSigningRequest request,
+  ) {
+    if (request.clearPendingIntentOnCancel) {
+      ref
+          .read(swapStateProvider.notifier)
+          .clearPendingKeystoneSigningIntent(request.intentId);
+      if (mounted) {
+        context.go((widget.returnTarget ?? SwapActivityReturnTarget.swap).path);
+      }
+      return;
+    }
+    if (request.removeUnsentIntentOnCancel) {
       unawaited(
         ref
             .read(swapStateProvider.notifier)
@@ -215,14 +246,15 @@ class _SwapActivityDetailSurfaceState
     }
   }
 
-  void _handleKeystoneDepositBroadcast(
+  Future<void> _handleKeystoneDepositBroadcast(
     BuildContext context,
     SwapKeystoneBroadcastResult result,
-  ) {
+  ) async {
     final request = _keystoneSigningRequest;
     if (request == null) return;
+    await _submitKeystoneDepositBroadcast(context, request, result);
+    if (!mounted) return;
     _closeKeystoneSigning();
-    _submitKeystoneDepositBroadcast(context, request, result);
   }
 
   Future<void> _openMobileKeystoneSigning(
@@ -235,34 +267,37 @@ class _SwapActivityDetailSurfaceState
     );
     if (!mounted) return;
     if (result == null) {
-      if (request.removeUnsentIntentOnCancel) {
-        unawaited(
-          ref
-              .read(swapStateProvider.notifier)
-              .removeUnsentHardwareDepositIntent(request.intentId),
-        );
-      }
+      _cleanupCancelledKeystoneSigningRequest(request);
       return;
     }
     switch (result) {
       case MobileSwapKeystoneSignSuccess(:final broadcast):
-        _submitKeystoneDepositBroadcast(context, request, broadcast);
+        await _submitKeystoneDepositBroadcast(context, request, broadcast);
       case MobileSwapKeystoneSignFailure(:final message):
         showAppToast(
           _toastContext(context),
           message,
           iconName: AppIcons.warning,
         );
+        _cleanupCancelledKeystoneSigningRequest(request);
     }
   }
 
-  void _submitKeystoneDepositBroadcast(
+  Future<void> _submitKeystoneDepositBroadcast(
     BuildContext context,
     _SwapKeystoneSigningRequest request,
     SwapKeystoneBroadcastResult result,
-  ) {
-    unawaited(
-      ref
+  ) async {
+    final toastContext = _toastContext(context);
+    if (request.clearPendingIntentOnCancel) {
+      await ref
+          .read(swapStateProvider.notifier)
+          .recordKeystoneDepositBroadcast(
+            intent: request.intent,
+            broadcast: result,
+          );
+    } else {
+      await ref
           .read(swapStateProvider.notifier)
           .submitDepositTransactionForIntent(
             intentId: request.intentId,
@@ -270,13 +305,14 @@ class _SwapActivityDetailSurfaceState
             txHash: result.txHash,
             broadcastStatus: result.status,
             broadcastMessage: result.message,
-          ),
-    );
+          );
+    }
+    if (!toastContext.mounted) return;
     showAppToast(
-      _toastContext(context),
+      toastContext,
       result.isCertain
-          ? AppLocalizations.of(context).swapZecDepositSent
-          : AppLocalizations.of(context).swapCheckingZecDeposit,
+          ? AppLocalizations.of(toastContext).swapZecDepositSent
+          : AppLocalizations.of(toastContext).swapCheckingZecDeposit,
     );
   }
 
@@ -301,15 +337,34 @@ class _SwapActivityDetailSurfaceState
         _applyInitialIntent();
       });
     }
-    final activityDetailIntent = _intentById(state.intents, initialIntentId);
+    final activityDetailIntent =
+        _intentById(state.intents, initialIntentId) ??
+        (widget.autoSignZecDeposit
+            ? _pendingKeystoneSigningIntentById(state, initialIntentId)
+            : null);
     final keystoneSigningRequest = _keystoneSigningRequest;
-    final keystoneSigningIntent = _intentById(
-      state.intents,
-      keystoneSigningRequest?.intentId,
-    );
+    final keystoneSigningIntent =
+        _intentById(state.intents, keystoneSigningRequest?.intentId) ??
+        _pendingKeystoneSigningIntentById(
+          state,
+          keystoneSigningRequest?.intentId,
+        ) ??
+        keystoneSigningRequest?.intent;
+    final holdInitialAutoSignContent =
+        !_initialIntentApplied &&
+        widget.autoSignZecDeposit &&
+        activityDetailIntent != null &&
+        _isHardwareIntent(activityDetailIntent) &&
+        activityDetailIntent.direction == SwapDirection.zecToExternal &&
+        !(activityDetailIntent.depositTxHash?.trim().isNotEmpty ?? false);
+    final hideTransientSigningContent =
+        keystoneSigningRequest?.clearPendingIntentOnCancel == true &&
+        activityDetailIntent?.id == keystoneSigningRequest?.intentId;
 
     final Widget pageContent = activityDetailIntent == null
         ? const _SwapActivityMissingPanel()
+        : holdInitialAutoSignContent || hideTransientSigningContent
+        ? const SizedBox.shrink()
         : SwapActivityDetailPagePanel(
             state: state,
             intent: activityDetailIntent,
@@ -408,6 +463,16 @@ SwapIntent? _intentById(List<SwapIntent> intents, String? intentId) {
     if (intent.id == intentId) return intent;
   }
   return null;
+}
+
+SwapIntent? _pendingKeystoneSigningIntentById(
+  SwapState state,
+  String? intentId,
+) {
+  if (intentId == null) return null;
+  final pending = state.pendingKeystoneSigningIntent;
+  if (pending == null || pending.id != intentId) return null;
+  return pending;
 }
 
 class SwapActivityDetailPagePanel extends StatelessWidget {
@@ -671,7 +736,13 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? AppLocalizations.of(context).swapToTruncated(_truncateHeaderAddress(recipient))
+              ? AppLocalizations.of(context).swapToTruncated(
+                  _headerRecipientText(
+                    recipient,
+                    presentation: presentation,
+                    contacts: addressBookContacts,
+                  ),
+                )
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -727,6 +798,24 @@ String _truncateHeaderAddress(String address) {
   if (address.length <= 14) return address;
   return '${address.substring(0, 6)} ... '
       '${address.substring(address.length - 5)}';
+}
+
+/// Header "To:" text — `"Rowan (0x0cd7 ... 27181)"` when the recipient
+/// matches a saved contact on the receive asset's chain, plain truncated
+/// address otherwise.
+String _headerRecipientText(
+  String recipient, {
+  required SwapActivityStatusPresentation presentation,
+  required Iterable<AddressBookContact> contacts,
+}) {
+  final label = addressBookContactForSwapAsset(
+    contacts: contacts,
+    asset: presentation.receiveAsset,
+    address: recipient,
+  )?.label.trim();
+  final compact = _truncateHeaderAddress(recipient);
+  if (label == null || label.isEmpty) return compact;
+  return contactAddressDisplayText(label: label, compactAddress: compact);
 }
 
 String? mobileSwapStatusRecipientFullAddress(SwapIntent intent) {

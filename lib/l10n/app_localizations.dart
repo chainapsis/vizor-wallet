@@ -1808,6 +1808,48 @@ abstract class AppLocalizations {
   /// **'Preparing...'**
   String get sendPreparingEllipsis;
 
+  /// No description provided for @sendStatusQueuedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued to send'**
+  String get sendStatusQueuedTitle;
+
+  /// No description provided for @sendStatusSentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent!'**
+  String get sendStatusSentTitle;
+
+  /// No description provided for @sendStatusSendingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting your transaction to the network...'**
+  String get sendStatusSendingSubtitle;
+
+  /// No description provided for @sendStatusQueuedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your transaction was created and will be submitted automatically. Check the Activity page before sending again.'**
+  String get sendStatusQueuedSubtitle;
+
+  /// No description provided for @sendStatusSucceededSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly. Track it in Activity.'**
+  String get sendStatusSucceededSubtitle;
+
+  /// No description provided for @sendStatusFailedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing was sent, your funds haven\'t moved. Try again.'**
+  String get sendStatusFailedSubtitle;
+
+  /// No description provided for @sendStatusReturnHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Return home'**
+  String get sendStatusReturnHome;
+
   /// No description provided for @sendGetSignature.
   ///
   /// In en, this message translates to:
@@ -3017,7 +3059,7 @@ abstract class AppLocalizations {
   /// No description provided for @keystoneLoadingQr.
   ///
   /// In en, this message translates to:
-  /// **'Loading the QR code ...'**
+  /// **'Loading QR code ...'**
   String get keystoneLoadingQr;
 
   /// No description provided for @keystoneSignQrDecodeError.
@@ -3050,6 +3092,72 @@ abstract class AppLocalizations {
   /// **'Close Keystone signing'**
   String get keystoneCloseSigning;
 
+  /// No description provided for @keystoneSignStepOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 1/2'**
+  String get keystoneSignStepOne;
+
+  /// No description provided for @keystoneSignStepTwo.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 2/2'**
+  String get keystoneSignStepTwo;
+
+  /// No description provided for @keystoneSignScanWithKeystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Keystone'**
+  String get keystoneSignScanWithKeystone;
+
+  /// No description provided for @keystoneSignTryAgainWithKeystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again with Keystone'**
+  String get keystoneSignTryAgainWithKeystone;
+
+  /// No description provided for @keystoneShowTransactionQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show transaction QR'**
+  String get keystoneShowTransactionQr;
+
+  /// No description provided for @keystoneScanCaptionConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to confirm'**
+  String get keystoneScanCaptionConfirm;
+
+  /// No description provided for @keystoneScanCaptionFinishSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish sending'**
+  String get keystoneScanCaptionFinishSending;
+
+  /// No description provided for @keystoneScanCaptionFinishZecDeposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish the ZEC deposit'**
+  String get keystoneScanCaptionFinishZecDeposit;
+
+  /// No description provided for @keystonePromptTapBeforeIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap'**
+  String get keystonePromptTapBeforeIcon;
+
+  /// No description provided for @keystonePromptTapAfterIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'on your Keystone,'**
+  String get keystonePromptTapAfterIcon;
+
+  /// No description provided for @keystonePromptThenScanQr.
+  ///
+  /// In en, this message translates to:
+  /// **'then scan this QR code'**
+  String get keystonePromptThenScanQr;
+
   /// No description provided for @onbWelcomeToVizor.
   ///
   /// In en, this message translates to:
@@ -3065,14 +3173,26 @@ abstract class AppLocalizations {
   /// No description provided for @onbCreateWallet.
   ///
   /// In en, this message translates to:
-  /// **'Create wallet'**
+  /// **'Create Wallet'**
   String get onbCreateWallet;
 
   /// No description provided for @onbImportWallet.
   ///
   /// In en, this message translates to:
-  /// **'Import wallet'**
+  /// **'Import Wallet'**
   String get onbImportWallet;
+
+  /// No description provided for @onbLinkVizorDesktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Link Vizor Desktop'**
+  String get onbLinkVizorDesktop;
+
+  /// No description provided for @onbImportContacts.
+  ///
+  /// In en, this message translates to:
+  /// **'Import contacts'**
+  String get onbImportContacts;
 
   /// No description provided for @onbAgreePrefix.
   ///
@@ -4855,6 +4975,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Review again'**
   String get swapReviewAgain;
+
+  /// No description provided for @swapReturnToSwap.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to swap'**
+  String get swapReturnToSwap;
 
   /// No description provided for @swapNotEnoughZec.
   ///

@@ -266,6 +266,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                       zecAvailableText: zecAvailableText,
                       zecAvailableZatoshi: sync.spendableBalance,
+                      destinationContactName: swapDestinationContactFor(
+                        swapState,
+                        ref.watch(addressBookProvider).value?.contacts ??
+                            const [],
+                      )?.label,
                     );
                     // Figma container (420×656, 16px vertical padding): the
                     // title is pinned under the toolbar, the attribution and
@@ -330,6 +335,9 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.addressEditor => SwapAddressEditModal(
                         state: swapState,
+                        contacts:
+                            ref.watch(addressBookProvider).value?.contacts ??
+                            const [],
                         onSubmitted: (value, remember) {
                           if (remember) {
                             unawaited(_rememberSwapAddress(value, swapState));

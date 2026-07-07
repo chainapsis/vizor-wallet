@@ -18,6 +18,7 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
+    this.quietZone,
     this.frameInterval = const Duration(milliseconds: 100),
     super.key,
   });
@@ -27,6 +28,7 @@ class KeystonePcztQrStage extends StatelessWidget {
   final String? error;
   final double size;
   final bool scanOptimized;
+  final PrettyQrQuietZone? quietZone;
   final Duration frameInterval;
 
   @override
@@ -40,6 +42,7 @@ class KeystonePcztQrStage extends StatelessWidget {
           urParts: urParts,
           size: size,
           scanOptimized: scanOptimized,
+          quietZone: quietZone,
           frameInterval: frameInterval,
         ),
         KeystonePcztQrStagePhase.failed => Center(
@@ -79,12 +82,14 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.urParts,
     required this.size,
     required this.scanOptimized,
+    required this.quietZone,
     required this.frameInterval,
   });
 
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
+  final PrettyQrQuietZone? quietZone;
   final Duration frameInterval;
 
   @override
@@ -107,6 +112,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.urParts != widget.urParts ||
         oldWidget.scanOptimized != widget.scanOptimized ||
+        oldWidget.quietZone != widget.quietZone ||
         oldWidget.frameInterval != widget.frameInterval) {
       _index = 0;
       _frames.clear();
@@ -163,9 +169,9 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
           color: colors.surface.qrCode,
           child: PrettyQrView(
             qrImage: frame,
-            decoration: const PrettyQrDecoration(
-              quietZone: PrettyQrQuietZone.modules(3),
-              shape: PrettyQrSquaresSymbol(color: _scanOptimizedQrInk),
+            decoration: PrettyQrDecoration(
+              quietZone: widget.quietZone ?? const PrettyQrQuietZone.modules(3),
+              shape: const PrettyQrSquaresSymbol(color: _scanOptimizedQrInk),
             ),
           ),
         ),

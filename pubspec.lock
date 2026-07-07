@@ -193,6 +193,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.7"
+  cryptography:
+    dependency: "direct main"
+    description:
+      name: cryptography
+      sha256: "3eda3029d34ec9095a27a198ac9785630fe525c0eb6a49f3d575272f8e792ef0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.9.0"
   cupertino_icons:
     dependency: "direct main"
     description:
@@ -601,8 +609,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "2a594fd6e592fd723cf03e02337a65d83cf8aa1a"
-      resolved-ref: "2a594fd6e592fd723cf03e02337a65d83cf8aa1a"
+      ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
+      resolved-ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
       url: "https://github.com/chainapsis/mobile_scanner.git"
     source: git
     version: "7.2.0"

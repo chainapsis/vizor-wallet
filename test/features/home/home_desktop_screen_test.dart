@@ -318,6 +318,34 @@ void main() {
     expect(find.byType(ActivityScreen), findsOneWidget);
   });
 
+  testWidgets('home recent activity keeps untimed pending receives visible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: false,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          recentTransactions: [
+            for (var i = 0; i < 5; i++)
+              _receivedZecTx(
+                txidHex: 'confirmed-$i',
+                amountZatoshi: (i + 1) * 10_000_000,
+                blockTime: 1_700_000_000 + i,
+              ),
+            _pendingReceivingTx(txidHex: 'pending-receive'),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Receiving ...'));
+
+    expect(find.text('Receiving ...'), findsOneWidget);
+    expect(find.text('Received'), findsNWidgets(4));
+  });
+
   testWidgets('home recent activity suppresses the swap-leg Sent duplicate', (
     tester,
   ) async {
@@ -543,6 +571,42 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     displayAmount: BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: BigInt.from(1800000000),
+  );
+}
+
+rust_sync.TransactionInfo _receivedZecTx({
+  required String txidHex,
+  required int amountZatoshi,
+  required int blockTime,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: amountZatoshi,
+    fee: BigInt.zero,
+    blockTime: BigInt.from(blockTime),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.from(amountZatoshi),
+    displayPool: 'shielded',
+    createdTime: BigInt.from(blockTime),
+  );
+}
+
+rust_sync.TransactionInfo _pendingReceivingTx({required String txidHex}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.zero,
+    expiredUnmined: false,
+    accountBalanceDelta: 123450000,
+    fee: BigInt.zero,
+    blockTime: BigInt.zero,
+    isTransparent: false,
+    txKind: 'receiving',
+    displayAmount: BigInt.from(123450000),
+    displayPool: 'shielded',
+    createdTime: BigInt.zero,
   );
 }
 

@@ -63,7 +63,7 @@ class AppPrimaryButtonColors {
     bg: Primitives.p800Dark,
     bgHover: CrimsonPrimitives.p300Dark,
     bgPressed: CrimsonPrimitives.p300Dark,
-    border: Primitives.p150Alpha15Dark,
+    border: Primitives.p900Alpha10Dark,
     borderHover: Primitives.p900Alpha10Dark,
     borderPressed: Primitives.p900Alpha10Dark,
     label: Primitives.p50Dark,

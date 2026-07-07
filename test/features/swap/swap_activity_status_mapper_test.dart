@@ -99,10 +99,7 @@ void main() {
       ),
     );
 
-    expect(
-      presentation.details.where((row) => row.label == 'Tx ID'),
-      isEmpty,
-    );
+    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
   });
 
   test('adds address book labels to matching address detail rows', () {
@@ -190,6 +187,78 @@ void main() {
     final fees = _detailRow(presentation.details, 'Total fees');
     expect(fees.helpTooltip, swapTotalFeesTooltip(_l10n));
     expect(presentation.details.last.label, 'Total fees');
+  });
+
+  test('summary header lines carry the matched contact name', () {
+    const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final sending = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress,
+        ),
+      ],
+      l10n: _l10n,
+    );
+    expect(sending.receiveDetailText, startsWith('To: Treasury ('));
+    expect(sending.receiveDetailText, contains('on Ethereum'));
+    expect(sending.receiveDetailCopyText, recipientAddress);
+
+    final depositing = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.awaitingExternalDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        oneClickRefundTo: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress,
+        ),
+      ],
+      l10n: _l10n,
+    );
+    expect(depositing.payDetailText, startsWith('Refund to: Treasury ('));
+    expect(depositing.payDetailCopyText, recipientAddress);
+  });
+
+  test('EVM contact saved on another chain labels the address row', () {
+    const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Polygon Treasury',
+          network: AddressBookNetwork.polygon,
+          address: recipientAddress,
+        ),
+      ],
+      l10n: _l10n,
+    );
+
+    final recipient = _detailRow(presentation.details, 'USDC recipient');
+    expect(recipient.addressBookLabel, 'Polygon Treasury');
+    expect(
+      presentation.receiveDetailText,
+      startsWith('To: Polygon Treasury ('),
+    );
   });
 
   test('terminal deposit tx row links to the NEAR Intents explorer', () {
@@ -473,10 +542,7 @@ void main() {
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
     );
-    expect(
-      SwapActivityDepositInstruction.fromIntent(expired, _l10n),
-      isNull,
-    );
+    expect(SwapActivityDepositInstruction.fromIntent(expired, _l10n), isNull);
     expect(
       swapActivityShowsDepositPage(expired, intentIsHardware: false),
       isTrue,

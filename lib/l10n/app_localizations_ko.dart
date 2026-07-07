@@ -929,6 +929,29 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendPreparingEllipsis => '준비 중...';
 
   @override
+  String get sendStatusQueuedTitle => '전송 대기 중';
+
+  @override
+  String get sendStatusSentTitle => '전송 완료!';
+
+  @override
+  String get sendStatusSendingSubtitle => '트랜잭션을 네트워크에 제출하고 있습니다...';
+
+  @override
+  String get sendStatusQueuedSubtitle =>
+      '트랜잭션이 생성되었으며 자동으로 제출됩니다. 다시 보내기 전에 활동 페이지를 확인하세요.';
+
+  @override
+  String get sendStatusSucceededSubtitle => '곧 온체인에서 확정됩니다. 활동에서 확인하세요.';
+
+  @override
+  String get sendStatusFailedSubtitle =>
+      '아무것도 전송되지 않았으며 자금은 이동하지 않았습니다. 다시 시도하세요.';
+
+  @override
+  String get sendStatusReturnHome => '홈으로 돌아가기';
+
+  @override
   String get sendGetSignature => '서명 가져오기';
 
   @override
@@ -1588,6 +1611,41 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneCloseSigning => 'Keystone 서명 닫기';
 
   @override
+  String get keystoneSignStepOne => '1/2단계';
+
+  @override
+  String get keystoneSignStepTwo => '2/2단계';
+
+  @override
+  String get keystoneSignScanWithKeystone => 'Keystone으로 스캔하세요';
+
+  @override
+  String get keystoneSignTryAgainWithKeystone => 'Keystone으로 다시 시도하세요';
+
+  @override
+  String get keystoneShowTransactionQr => '트랜잭션 QR 보기';
+
+  @override
+  String get keystoneScanCaptionConfirm => '확인하려면 Keystone의 QR 코드를 스캔하세요';
+
+  @override
+  String get keystoneScanCaptionFinishSending =>
+      '보내기를 완료하려면 Keystone의 QR 코드를 스캔하세요';
+
+  @override
+  String get keystoneScanCaptionFinishZecDeposit =>
+      'ZEC 입금을 완료하려면 Keystone의 QR 코드를 스캔하세요';
+
+  @override
+  String get keystonePromptTapBeforeIcon => 'Keystone에서';
+
+  @override
+  String get keystonePromptTapAfterIcon => '을 누른 다음,';
+
+  @override
+  String get keystonePromptThenScanQr => '이 QR 코드를 스캔하세요';
+
+  @override
   String get onbWelcomeToVizor => 'Vizor에 오신 것을 환영합니다';
 
   @override
@@ -1598,6 +1656,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onbImportWallet => '지갑 가져오기';
+
+  @override
+  String get onbLinkVizorDesktop => 'Vizor 데스크톱 연결';
+
+  @override
+  String get onbImportContacts => '연락처 가져오기';
 
   @override
   String get onbAgreePrefix => 'Vizor를 사용하면 다음에 동의하는 것입니다: ';
@@ -2614,6 +2678,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapReviewAgain => '다시 검토';
+
+  @override
+  String get swapReturnToSwap => '스왑으로 돌아가기';
 
   @override
   String get swapNotEnoughZec => 'ZEC 부족';

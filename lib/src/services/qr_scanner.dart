@@ -162,6 +162,7 @@ class AnimatedUrScannerView extends StatefulWidget {
     this.controller,
     this.facing,
     this.scanSessionResetToken,
+    this.scanWindow,
     super.key,
   });
 
@@ -173,6 +174,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   final MobileScannerController? controller;
   final CameraFacing? facing;
   final Object? scanSessionResetToken;
+  final Rect? scanWindow;
 
   @override
   State<AnimatedUrScannerView> createState() => _AnimatedUrScannerViewState();
@@ -297,7 +299,15 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
           controller: _controller,
           onDetect: _onDetect,
           errorBuilder: widget.errorBuilder,
-          scanWindow: QrScanner.scanWindowFor(constraints.biggest),
+          // Default to a centred, viewfinder-sized crop so detection matches
+          // the bounded viewfinder each caller draws (a QR aimed at the bracket,
+          // not one drifting elsewhere in frame, drives the flow). Callers whose
+          // viewfinder isn't centred — e.g. the full-screen Keystone signing
+          // scanner — pass their own rect. Either way this stays non-null, which
+          // also overwrites any stale region-of-interest the native plugin kept
+          // from a previous scanner (it never clears it on stop/dispose).
+          scanWindow:
+              widget.scanWindow ?? QrScanner.scanWindowFor(constraints.biggest),
           scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
         );
       },

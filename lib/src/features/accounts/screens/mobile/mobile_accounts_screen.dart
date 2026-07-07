@@ -103,7 +103,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (wasOpenForAccount) return;
     }
 
-    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final accountState = ref.read(accountProvider).value;
+    final accounts = accountState?.accounts ?? const [];
+    final isCurrentAccount = accountState?.activeAccountUuid == account.uuid;
     final canRemove = _canRemove(account, accounts);
 
     final overlay = Overlay.of(context, rootOverlay: true);
@@ -124,7 +126,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       horizontal: AppSpacing.xxs,
       vertical: AppSpacing.sm,
     );
-    final menuHeight = canRemove ? 173.0 : 126.0;
+    final menuHeight = switch ((isCurrentAccount, canRemove)) {
+      (true, true) => 139.0,
+      (true, false) => 92.0,
+      (false, true) => 173.0,
+      (false, false) => 126.0,
+    };
     const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
     final colors = context.colors;
     final menuMaxTop = math.max(
@@ -217,12 +224,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         label: l10n.accountsCopyAddress,
         action: _AccountAction.copy,
       ),
-      item(
-        key: const ValueKey('mobile_account_menu_send'),
-        iconName: AppIcons.plane,
-        label: l10n.accountsSendZec,
-        action: _AccountAction.send,
-      ),
+      if (!isCurrentAccount)
+        item(
+          key: const ValueKey('mobile_account_menu_send'),
+          iconName: AppIcons.plane,
+          label: l10n.accountsSendZec,
+          action: _AccountAction.send,
+        ),
       item(
         key: const ValueKey('mobile_account_menu_edit'),
         iconName: AppIcons.edit,

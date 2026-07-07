@@ -54,12 +54,13 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 2a594fd6e592fd723cf03e02337a65d83cf8aa1a
+      ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
       ref: 16b1b30e08004e91521cc511db098f9561dfeb0a
   crypto: ^3.0.7
+  cryptography: ^2.7.0
   window_manager: ^0.5.1
   url_launcher: ^6.3.2
   # Renders the Figma-exported icon SVGs under `assets/icons/`.

@@ -26,7 +26,7 @@ class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
 
   final SwapIntent intent;
   final VoidCallback onCancel;
-  final ValueChanged<SwapKeystoneBroadcastResult> onDepositBroadcast;
+  final Future<void> Function(SwapKeystoneBroadcastResult) onDepositBroadcast;
 
   @override
   ConsumerState<SwapKeystoneSigningOverlay> createState() =>
@@ -209,7 +209,7 @@ class _SwapKeystoneSigningOverlayState
         status: result.status,
         message: result.message,
       );
-      widget.onDepositBroadcast(broadcast);
+      await widget.onDepositBroadcast(broadcast);
     } catch (e, st) {
       log('SwapKeystoneSigning._broadcast: ERROR: $e\n$st');
       if (!mounted) return;

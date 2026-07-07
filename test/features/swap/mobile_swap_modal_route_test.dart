@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
@@ -54,9 +56,15 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app({_MobileDelayedQuoteSwapProvider? swapProvider}) => ProviderScope(
+Widget _app({
+  _MobileDelayedQuoteSwapProvider? swapProvider,
+  List<AddressBookContact> addressBookContacts = const [],
+}) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
+    addressBookRepositoryProvider.overrideWithValue(
+      _FakeAddressBookRepository(addressBookContacts),
+    ),
     if (swapProvider != null)
       swapIntentProvider.overrideWithValue(swapProvider),
     syncProvider.overrideWith(
@@ -262,6 +270,59 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
+  });
+
+  testWidgets('matched contact shows in the editor and names the chip', (
+    tester,
+  ) async {
+    const contactAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    await tester.pumpWidget(
+      _app(
+        addressBookContacts: const [
+          AddressBookContact(
+            id: 'treasury',
+            label: 'Treasury',
+            network: AddressBookNetwork.ethereum,
+            address: contactAddress,
+            profilePictureId: 'default',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      contactAddress,
+    );
+    await tester.pumpAndSettle();
+
+    // Live match feedback in the editor's reserved message line.
+    expect(
+      find.byKey(const ValueKey('swap_destination_contact_match')),
+      findsOneWidget,
+    );
+    expect(find.text('Treasury'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    // The composer chip shows the contact name instead of the address.
+    final chipText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_destination_value')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(chipText.data, 'Treasury');
   });
 
   testWidgets('cancel inside the address editor closes the modal route', (
@@ -520,5 +581,22 @@ class _MobileDelayedQuoteSwapProvider implements SwapProvider {
       providerLabel: providerLabel,
     );
     return SwapIntentSnapshot.fromQuote(quote, id: depositAddress);
+  }
+}
+
+class _FakeAddressBookRepository implements AddressBookRepository {
+  _FakeAddressBookRepository(List<AddressBookContact> contacts)
+    : contacts = [...contacts];
+
+  final List<AddressBookContact> contacts;
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {
+    this.contacts
+      ..clear()
+      ..addAll(contacts);
   }
 }

@@ -312,12 +312,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         _BalanceCard(
           balanceText: privacyModeEnabled
               ? fixedPrivacyMask()
-              : ZecAmount.fromZatoshi(shieldedBalance).balance.amountText,
+              : ZecAmount.fromZatoshi(
+                  shieldedBalance,
+                ).compactBalance.amountText,
           fiatBalanceText: shieldedFiatBalanceText,
           priceChange24hPct: priceChange24hPct,
           transparentBalanceText: ZecAmount.fromZatoshi(
             transparentBalance,
-          ).balance.amountText,
+          ).compactBalance.amountText,
           hasTransparentBalance: transparentBalance > BigInt.zero,
           canShieldBalance: sync.canShieldTransparentBalance,
           isShieldingBalance: _isShieldingBalance,

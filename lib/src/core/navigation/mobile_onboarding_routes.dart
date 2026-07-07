@@ -11,6 +11,7 @@ import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
+import '../../features/onboarding/mobile/mobile_wallet_link_screens.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as
@@ -110,6 +111,34 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: MobileImportBirthdayScreen(
         args: state.extra as ImportBirthdayArgs,
       ),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/link-desktop',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileWalletLinkIntroScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/link-desktop/scan',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileWalletLinkScanScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/link-desktop/accounts',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileWalletLinkSelectAccountsScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/link-desktop/contacts',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileWalletLinkSelectContactsScreen(),
     ),
   ),
   // Keystone onboarding — same route paths as the desktop flow so the

@@ -22,9 +22,7 @@ void main() {
         'assets/fonts/GeistMono-Regular.ttf',
         'assets/fonts/GeistMono-Medium.ttf',
       ],
-      'Young Serif': [
-        'assets/fonts/YoungSerif-Regular.ttf',
-      ],
+      'Young Serif': ['assets/fonts/YoungSerif-Regular.ttf'],
       'Inter': [
         'assets/fonts/Inter-Regular.ttf',
         'assets/fonts/Inter-Medium.ttf',
@@ -115,6 +113,74 @@ void main() {
 
     _expectNoCrash(errors);
     expect(find.text('Your data has been removed'), findsOneWidget);
+  });
+
+  testWidgets('settings wallet link initial use case renders the CTA', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkInitialUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Link Vizor Mobile'), findsOneWidget);
+    expect(find.text('Start linking'), findsOneWidget);
+  });
+
+  testWidgets('settings wallet link confirm access use case renders the gate', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkConfirmAccessUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Confirm access'), findsOneWidget);
+    expect(find.text('To link Vizor Mobile.'), findsOneWidget);
+  });
+
+  testWidgets('settings wallet link QR use case renders the timer', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkQrUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Scan with Vizor mobile'), findsOneWidget);
+    expect(find.text('Expires in 0:59'), findsOneWidget);
+  });
+
+  testWidgets('settings wallet link success use case renders summary', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkSuccessUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Vizor Mobile linked successfully'), findsOneWidget);
+    expect(
+      find.text('6 accounts and 20 contacts were imported on mobile.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('settings wallet link expired use case renders renewal CTA', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkExpiredUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Time’s up'), findsOneWidget);
+    expect(find.text('Generate new code'), findsOneWidget);
   });
 }
 

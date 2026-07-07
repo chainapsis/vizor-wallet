@@ -192,6 +192,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileKeystonePcztQrOptimizedUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Signing loading',
+                      builder: buildMobileKeystoneSigningLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Signing QR ready',
+                      builder: buildMobileKeystoneSigningReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Signing scanner',
+                      builder: buildMobileKeystoneSigningScannerUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Select account',
                       builder: buildMobileKeystoneSelectAccountUseCase,
                     ),
@@ -334,6 +346,26 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Uninstall done',
                       builder: buildSettingsUninstallDoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile confirm access',
+                      builder: buildSettingsWalletLinkConfirmAccessUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile initial',
+                      builder: buildSettingsWalletLinkInitialUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile QR',
+                      builder: buildSettingsWalletLinkQrUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile success',
+                      builder: buildSettingsWalletLinkSuccessUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile expired',
+                      builder: buildSettingsWalletLinkExpiredUseCase,
                     ),
                   ],
                 ),

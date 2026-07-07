@@ -15,6 +15,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -79,23 +80,29 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
       if (!_startingIntent) {
         setState(() => _startingIntent = true);
       }
-      final started = await ref.read(swapStateProvider.notifier).startIntent();
+      final result = await ref.read(swapStateProvider.notifier).startIntent();
       if (!mounted) return;
-      if (!started) {
+      if (result == null) {
         setState(() => _startingIntent = false);
         return;
       }
-      final startedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
-      if (startedIntent != null) {
-        context.go(
-          swapActivityDetailUri(
-            intentId: startedIntent.id,
-            returnTarget: SwapActivityReturnTarget.swap,
-          ).toString(),
-        );
-        return;
+      switch (result) {
+        case SwapStartedActivity(:final intentId):
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+            ).toString(),
+          );
+        case SwapStartedKeystoneSigning(:final intentId):
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+              autoSignZecDeposit: true,
+            ).toString(),
+          );
       }
-      context.go('/activity');
     }());
   }
 
@@ -158,6 +165,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                     SwapReviewPageContent(
                       quote: quote,
                       addressPlan: addressPlan,
+                      addressBookContacts:
+                          ref.watch(addressBookProvider).value?.contacts ??
+                          const [],
                       expired: swapState.quoteExpired,
                       amountWarning: swapState.reviewAmountDifferenceWarning(
                         AppLocalizations.of(context),

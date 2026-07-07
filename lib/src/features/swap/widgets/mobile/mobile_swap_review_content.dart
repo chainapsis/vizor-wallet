@@ -5,8 +5,10 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../domain/swap_address_plan.dart';
 import '../../domain/swap_contract.dart';
+import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
 import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
@@ -30,6 +32,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     required this.amountWarning,
     required this.startError,
     this.startBlockedReason,
+    this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
     super.key,
@@ -44,6 +47,7 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? amountWarning;
   final String? startError;
   final String? startBlockedReason;
+  final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
 
@@ -54,9 +58,25 @@ class MobileSwapReviewContent extends StatelessWidget {
     final externalLabel = sendsZec
         ? AppLocalizations.of(context).swapToPrefix
         : AppLocalizations.of(context).swapFromPrefix;
-    final externalBottom =
-        '$externalLabel: '
-        '${compactSwapAddress(externalAddress, prefixLength: 6, suffixLength: 5, separator: ' ... ')}';
+    final externalContactLabel = addressBookContactForSwapAsset(
+      contacts: addressBookContacts,
+      asset: sendsZec ? quote.receiveAsset : quote.sellAsset,
+      address: externalAddress,
+    )?.label.trim();
+    final externalCompact = compactSwapAddress(
+      externalAddress,
+      prefixLength: 6,
+      suffixLength: 5,
+      separator: ' ... ',
+    );
+    final externalAddressText =
+        externalContactLabel == null || externalContactLabel.isEmpty
+        ? externalCompact
+        : contactAddressDisplayText(
+            label: externalContactLabel,
+            compactAddress: externalCompact,
+          );
+    final externalBottom = '$externalLabel: $externalAddressText';
 
     final payRow = MobileSwapReviewHeaderRow(
       label: AppLocalizations.of(context).swapYourePaying,
@@ -103,6 +123,13 @@ class MobileSwapReviewContent extends StatelessWidget {
         if (startBlockedReason != null) ...[
           const SizedBox(height: AppSpacing.s),
           _MobileReviewNotice(message: startBlockedReason!),
+        ],
+        if (inactiveMessage != null) ...[
+          const SizedBox(height: AppSpacing.s),
+          _MobileReviewNotice(
+            key: const ValueKey('mobile_swap_review_inactive_notice'),
+            message: inactiveMessage!,
+          ),
         ],
       ],
     );
@@ -269,6 +296,7 @@ class MobileSwapReviewActions extends StatelessWidget {
   const MobileSwapReviewActions({
     required this.expired,
     required this.starting,
+    this.inactive = false,
     this.startBlockedReason,
     required this.sendsZec,
     required this.onCancelReview,
@@ -279,6 +307,7 @@ class MobileSwapReviewActions extends StatelessWidget {
 
   final bool expired;
   final bool starting;
+  final bool inactive;
   final String? startBlockedReason;
   final bool sendsZec;
   final VoidCallback onCancelReview;
@@ -292,7 +321,9 @@ class MobileSwapReviewActions extends StatelessWidget {
     final startingLabel = sendsZec
         ? l10n.swapVerbSending
         : l10n.swapVerbLockingQuote;
-    final primaryLabel = expired
+    final primaryLabel = inactive
+        ? l10n.swapReturnToSwap
+        : expired
         ? l10n.swapReviewAgain
         : startBlockedReason != null
         ? l10n.swapNotEnoughZec
@@ -304,42 +335,48 @@ class MobileSwapReviewActions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppButton(
-          key: expired
+          key: inactive
+              ? const ValueKey('swap_review_return_to_swap_button')
+              : expired
               ? const ValueKey('swap_review_again_button')
               : const ValueKey('swap_start_button'),
           expand: true,
-          onPressed: startBlockedReason != null
+          onPressed: inactive
+              ? onCancelReview
+              : startBlockedReason != null
               ? null
               : expired
               ? onReviewAgain
               : starting
               ? null
               : onStartIntent,
-          leading: expired || starting || startBlockedReason != null
+          leading: inactive || expired || starting || startBlockedReason != null
               ? null
               : const AppIcon(AppIcons.swapArrows, size: 20),
           child: Text(primaryLabel),
         ),
-        const SizedBox(height: AppSpacing.s),
-        Semantics(
-          button: true,
-          child: GestureDetector(
-            key: const ValueKey('swap_review_cancel_button'),
-            behavior: HitTestBehavior.opaque,
-            onTap: onCancelReview,
-            child: SizedBox(
-              height: AppButtonSizing.largeHeight,
-              child: Center(
-                child: Text(
-                  AppLocalizations.of(context).commonCancel,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.ghost.label,
+        if (!inactive) ...[
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('swap_review_cancel_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onCancelReview,
+              child: SizedBox(
+                height: AppButtonSizing.largeHeight,
+                child: Center(
+                  child: Text(
+                    AppLocalizations.of(context).commonCancel,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.button.ghost.label,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
