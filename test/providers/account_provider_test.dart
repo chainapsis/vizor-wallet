@@ -76,6 +76,48 @@ void main() {
   });
 
   test(
+    'wallet link import rejects cross-network links before fresh wallet import',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .importLinkedWalletAccounts(
+              network: 'test',
+              accountsToImport: const [
+                LinkedWalletAccountImport(
+                  name: 'Testnet account',
+                  birthdayHeight: 280000,
+                  zip32AccountIndex: 0,
+                  isHardware: false,
+                  isSeedAnchor: true,
+                  mnemonic: 'abandon abandon abandon abandon abandon abandon',
+                ),
+              ],
+            ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Linked wallet network does not match the current app network.',
+          ),
+        ),
+      );
+
+      expect(container.read(accountProvider).value?.accounts, isEmpty);
+    },
+  );
+
+  test(
     'next active account stays unchanged when removing a non-active account',
     () {
       const accounts = [

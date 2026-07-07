@@ -811,11 +811,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     try {
       final prev = state.value ?? const AccountState();
-      final dbPath = await _getDbPath();
       final normalizedNetwork = normalizeZcashNetworkName(network);
       if (prev.accounts.isEmpty) {
-        await _deleteExistingDb(dbPath);
-        await _storage.writeString(_networkKey, normalizedNetwork);
+        final currentNetwork = normalizeZcashNetworkName(
+          ref.read(rpcEndpointProvider).networkName,
+        );
+        if (currentNetwork != normalizedNetwork) {
+          throw StateError(
+            'Linked wallet network does not match the current app network.',
+          );
+        }
       } else {
         final storedNetwork = await _getNetwork();
         if (storedNetwork != normalizedNetwork) {
@@ -823,6 +828,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             'Linked wallet network does not match the current wallet.',
           );
         }
+      }
+
+      final dbPath = await _getDbPath();
+      if (prev.accounts.isEmpty) {
+        await _deleteExistingDb(dbPath);
+        await _storage.writeString(_networkKey, normalizedNetwork);
       }
 
       final importedAccounts = <AccountInfo>[];
