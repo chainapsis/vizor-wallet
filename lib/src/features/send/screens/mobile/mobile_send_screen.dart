@@ -30,7 +30,6 @@ import '../../../../core/config/fiat_currencies.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
-import '../../../../providers/fiat_currency_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
@@ -2216,7 +2215,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         : fiatTextForZatoshi(
             amountZatoshi,
             zecUnitPrice: ref.watch(zecHomeFiatUnitPriceProvider),
-            currency: ref.watch(fiatCurrencyProvider),
+            currency: ref.watch(zecHomeFiatDisplayCurrencyProvider),
           );
     final feeText = _feeZatoshi == null
         ? '—'

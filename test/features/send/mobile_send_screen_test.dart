@@ -136,6 +136,15 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   }
 }
 
+class _UsdOnlyMarketDataSource implements ZecMarketDataSource {
+  const _UsdOnlyMarketDataSource();
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    return const ZecMarketData(pricesByCurrency: {'usd': 70});
+  }
+}
+
 AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState:
@@ -185,6 +194,7 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  ZecMarketDataSource? marketDataSource,
   List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
@@ -204,18 +214,19 @@ Widget _app({
   );
   return ProviderScope(
     overrides: [
-      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
-        const _FakeMarketDataSource(),
+        marketDataSource ?? const _FakeMarketDataSource(),
       ),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      // Last wins for duplicated providers, so callers can replace defaults.
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -1341,6 +1352,39 @@ void main() {
     // 1.5 ZEC * ₩91,000 = ₩136,500 at KRW's zero decimals.
     expect(amountInput.controller?.text, '136500');
     expect(find.text('1.5 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('review fiat pairs the USD fallback price with the USD symbol', (
+    tester,
+  ) async {
+    // KRW selected but the response has no KRW rate: the unit price falls
+    // back to USD, so the review row must render \$ — not relabel as ₩.
+    await tester.pumpWidget(
+      _app(
+        marketDataSource: const _UsdOnlyMarketDataSource(),
+        extraOverrides: [
+          fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+      listen: false,
+    );
+    await container
+        .read(fiatCurrencyProvider.notifier)
+        .set(fiatCurrencyForCode('krw'));
+    await tester.pumpAndSettle();
+
+    await _toAmountStep(tester, _shieldedAddress);
+    await _enterAmount(tester, '1');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.textContaining(r'$70'), findsOneWidget);
+    expect(find.textContaining('₩'), findsNothing);
   });
 
   testWidgets('USD mode clears ZEC amounts that round to zero cents', (
