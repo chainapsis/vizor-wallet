@@ -3520,12 +3520,7 @@ mod tests {
             Some("u-my-receiver"),
             Some(0),
         );
-        set_cached_transparent_receiver_address(
-            &db,
-            account,
-            "u-my-receiver",
-            "t-my-receiver",
-        );
+        set_cached_transparent_receiver_address(&db, account, "u-my-receiver", "t-my-receiver");
 
         let got = get_transaction_detail(
             db.path().to_str().unwrap(),

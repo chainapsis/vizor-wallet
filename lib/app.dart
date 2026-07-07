@@ -61,6 +61,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
 import 'src/features/settings/settings_platform.dart';
+import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
@@ -766,6 +767,10 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(
     path: '/settings/endpoint',
     builder: (_, _) => const SettingsEndpointScreen(),
+  ),
+  GoRoute(
+    path: '/settings/link-mobile',
+    builder: (_, _) => const WalletLinkDesktopScreen(),
   ),
   GoRoute(
     path: '/settings/uninstall',

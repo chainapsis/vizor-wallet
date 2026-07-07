@@ -496,6 +496,12 @@ pub struct AccountInfo {
     pub is_hardware: bool,
 }
 
+pub struct AccountExportMetadata {
+    pub zip32_account_index: Option<u32>,
+    pub hardware_ufvk: Option<String>,
+    pub seed_fingerprint: Option<Vec<u8>>,
+}
+
 pub struct SoftwareSeedAccountState {
     pub account_indices: HashSet<u32>,
     pub has_derived_account: bool,
@@ -572,16 +578,52 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             None => (String::new(), false),
         };
 
+        let source = account.source();
         accounts.push(AccountInfo {
             uuid: id.expose_uuid().to_string(),
             name: account.name().unwrap_or("").to_string(),
             unified_address: address,
-            is_seed_anchor: matches!(account.source(), AccountSource::Derived { .. }),
+            is_seed_anchor: matches!(source, AccountSource::Derived { .. }),
             is_hardware,
         });
     }
 
     Ok(accounts)
+}
+
+pub fn get_account_export_metadata(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<AccountExportMetadata, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
+
+    let is_hardware = account.ufvk().is_some_and(is_keystone_style_ufvk);
+    let hardware_ufvk = if is_hardware {
+        account.ufvk().map(|ufvk| ufvk.encode(&network))
+    } else {
+        None
+    };
+    let (zip32_account_index, seed_fingerprint) =
+        if let Some(derivation) = account.source().key_derivation() {
+            (
+                Some(u32::from(derivation.account_index())),
+                is_hardware.then(|| derivation.seed_fingerprint().to_bytes().to_vec()),
+            )
+        } else {
+            (None, None)
+        };
+
+    Ok(AccountExportMetadata {
+        zip32_account_index,
+        hardware_ufvk,
+        seed_fingerprint,
+    })
 }
 
 pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> {
@@ -1268,6 +1310,11 @@ mod tests {
             .find(|account| account.uuid == uuid)
             .unwrap();
         assert!(listed_account.is_seed_anchor);
+        let export_metadata =
+            get_account_export_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(export_metadata.zip32_account_index, Some(2));
+        assert_eq!(export_metadata.hardware_ufvk, None);
+        assert_eq!(export_metadata.seed_fingerprint, None);
 
         let account_id = parse_account_uuid(&uuid).unwrap();
         let db = open_wallet_db_for_read(db_path_str, WalletNetwork::Main).unwrap();
@@ -1524,6 +1571,17 @@ mod tests {
             .find(|account| account.uuid == uuid)
             .unwrap();
         assert!(listed_account.is_hardware);
+        let export_metadata =
+            get_account_export_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(export_metadata.zip32_account_index, Some(0));
+        assert_eq!(
+            export_metadata.hardware_ufvk.as_deref(),
+            Some(keystone_style_ufvk.as_str())
+        );
+        assert_eq!(
+            export_metadata.seed_fingerprint,
+            Some(seed_fingerprint.to_vec())
+        );
 
         crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
         let shielded_error = crate::wallet::sync::get_next_available_address(

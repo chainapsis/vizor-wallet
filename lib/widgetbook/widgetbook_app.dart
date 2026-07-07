@@ -342,6 +342,26 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Uninstall done',
                       builder: buildSettingsUninstallDoneUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile confirm access',
+                      builder: buildSettingsWalletLinkConfirmAccessUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile initial',
+                      builder: buildSettingsWalletLinkInitialUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile QR',
+                      builder: buildSettingsWalletLinkQrUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile success',
+                      builder: buildSettingsWalletLinkSuccessUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link mobile expired',
+                      builder: buildSettingsWalletLinkExpiredUseCase,
+                    ),
                   ],
                 ),
               ],

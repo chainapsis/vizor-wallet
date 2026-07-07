@@ -77,6 +77,17 @@ MobileAddressScanCard _card(
   );
 }
 
+bool _hasRoundedCameraClip(WidgetTester tester) {
+  final cameraClips = tester.widgetList<ClipRRect>(
+    find.ancestor(of: find.byKey(_cameraKey), matching: find.byType(ClipRRect)),
+  );
+  return cameraClips.any(
+    (clip) =>
+        clip.borderRadius == BorderRadius.circular(AppRadii.xLarge) &&
+        clip.clipBehavior == Clip.antiAliasWithSaveLayer,
+  );
+}
+
 void main() {
   testWidgets('requesting access shows the permission card and Cancel', (
     tester,
@@ -219,6 +230,17 @@ void main() {
       identical(tester.element(find.byKey(_cameraKey)), cameraElement),
       isTrue,
     );
+    expect(_hasRoundedCameraClip(tester), isTrue);
+
+    // Running camera preview keeps the same rounded surface.
+    controller.value = controller.value.copyWith(isRunning: true);
+    await tester.pump();
+    expect(find.text('Scan a Zcash QR code to continue'), findsOneWidget);
+    expect(
+      identical(tester.element(find.byKey(_cameraKey)), cameraElement),
+      isTrue,
+    );
+    expect(_hasRoundedCameraClip(tester), isTrue);
 
     // Morph back; the permission card returns over the still-mounted camera.
     controller.value = controller.value.copyWith(isInitialized: false);

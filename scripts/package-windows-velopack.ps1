@@ -12,6 +12,7 @@ param(
   [string]$UpdateRepositoryUrl = $env:VIZOR_UPDATE_GITHUB_REPO_URL,
   [string]$UpdateReleaseBaseUrl = $env:VIZOR_UPDATE_RELEASE_BASE_URL,
   [string]$CoinGeckoPriceBaseUrl = $env:VIZOR_COINGECKO_PRICE_BASE_URL,
+  [string]$WalletLinkBackendUrl = $env:VIZOR_WALLET_LINK_BACKEND_URL,
   [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
@@ -23,6 +24,9 @@ $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($CoinGeckoPriceBaseUrl)) {
   $CoinGeckoPriceBaseUrl = "https://api.coingecko.com/api/v3"
+}
+if ([string]::IsNullOrWhiteSpace($WalletLinkBackendUrl)) {
+  $WalletLinkBackendUrl = "https://functions.vizor.cash"
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -353,7 +357,8 @@ $flutterBuildArgs = @(
   "--release",
   "--dart-define=ZCASH_DEFAULT_NETWORK=$NetworkDartDefine",
   "--dart-define=VIZOR_RELEASE_VERSION=$Version",
-  "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=$CoinGeckoPriceBaseUrl"
+  "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=$CoinGeckoPriceBaseUrl",
+  "--dart-define=VIZOR_WALLET_LINK_BACKEND_URL=$WalletLinkBackendUrl"
 )
 
 $cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"

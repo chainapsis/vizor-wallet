@@ -36,6 +36,8 @@ import '../src/features/settings/screens/settings_endpoint_screen.dart';
 import '../src/features/settings/screens/settings_screen.dart';
 import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
 import '../src/features/settings/screens/settings_uninstall_screen.dart';
+import '../src/features/wallet_link/models/wallet_link_models.dart';
+import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
@@ -325,6 +327,58 @@ Widget buildSettingsUninstallDoneUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/uninstall',
     const SettingsUninstallScreen(initialStage: SettingsUninstallStage.done),
+  );
+}
+
+Widget buildSettingsWalletLinkConfirmAccessUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/link-mobile',
+    const WalletLinkDesktopScreen(),
+  );
+}
+
+Widget buildSettingsWalletLinkInitialUseCase(BuildContext context) {
+  return _buildSettingsWalletLinkUseCase(const WalletLinkState.initial());
+}
+
+Widget buildSettingsWalletLinkQrUseCase(BuildContext context) {
+  return _buildSettingsWalletLinkUseCase(
+    const WalletLinkState(
+      phase: WalletLinkPhase.ready,
+      qrPayload:
+          'vizor://wallet-link/v1?id=7f28d351-2b4c-4cb8-ae15-93824cb4f8db&key=previewTransferKey123&endpoint=http%3A%2F%2Flocalhost%3A3000',
+      remaining: Duration(seconds: 59),
+      accountCount: 6,
+      contactCount: 20,
+    ),
+  );
+}
+
+Widget buildSettingsWalletLinkSuccessUseCase(BuildContext context) {
+  return _buildSettingsWalletLinkUseCase(
+    const WalletLinkState(
+      phase: WalletLinkPhase.linked,
+      accountCount: 6,
+      contactCount: 20,
+      actualImportCounts: true,
+    ),
+  );
+}
+
+Widget buildSettingsWalletLinkExpiredUseCase(BuildContext context) {
+  return _buildSettingsWalletLinkUseCase(
+    const WalletLinkState(
+      phase: WalletLinkPhase.expired,
+      accountCount: 6,
+      contactCount: 20,
+    ),
+  );
+}
+
+Widget _buildSettingsWalletLinkUseCase(WalletLinkState state) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/link-mobile',
+    WalletLinkDesktopScreen(previewState: state),
   );
 }
 
@@ -708,6 +762,12 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
       initialLocation: '/settings',
       routes: [
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(
+          path: '/settings/link-mobile',
+          builder: (_, _) => const WalletLinkDesktopScreen(
+            previewState: WalletLinkState.initial(),
+          ),
+        ),
         for (final path in const [
           '/settings/secret-passphrase',
           '/settings/change-password',
