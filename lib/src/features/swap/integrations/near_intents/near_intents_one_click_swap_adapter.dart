@@ -657,6 +657,9 @@ class NearIntentsOneClickSwapAdapter
   }) {
     final details = response.swapDetails;
     if (details == null) return null;
+    if (response.quoteResponse.quoteRequest.mode == SwapQuoteMode.flexInput) {
+      return null;
+    }
     final quote = response.quoteResponse.quote;
     if (response.quoteResponse.quoteRequest.mode == SwapQuoteMode.exactOutput) {
       final expected = _statusDecimalAmount(

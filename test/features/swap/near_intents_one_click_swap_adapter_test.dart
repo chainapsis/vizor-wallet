@@ -2123,6 +2123,48 @@ void main() {
     },
   );
 
+  test(
+    'flex-input realised slippage uses provider percent without amount delta',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountIn: '70000000',
+            amountInFormatted: '70',
+            amountOut: '100000000',
+            amountOutFormatted: '1',
+            minAmountOut: '99500000',
+            depositAddress: 'status-deposit',
+            status: 'SUCCESS',
+            swapDetails: {
+              'amountIn': '35000000',
+              'amountInFormatted': '35',
+              'amountOut': '50000000',
+              'amountOutFormatted': '0.5',
+              'slippage': 7,
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 27, 7, 25),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.status, SwapIntentStatus.complete);
+      expect(status.sellAmountText, '35 USDC');
+      expect(status.receiveEstimateText, '0.5 ZEC');
+      expect(status.realisedSlippageText, '0.07%');
+    },
+  );
+
   test('uses sell-asset delta for exact-output realised slippage', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokens),
