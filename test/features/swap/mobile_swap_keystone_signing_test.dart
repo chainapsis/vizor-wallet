@@ -193,15 +193,16 @@ void main() {
       find.byKey(const ValueKey('mobile_swap_activity_detail_route')),
       findsNothing,
     );
+    expect(
+      find.byType(MobileSwapReviewScreen, skipOffstage: false),
+      findsOneWidget,
+    );
     expect(capturedExtra, isA<MobileSwapKeystoneSignArgs>());
     final args = capturedExtra! as MobileSwapKeystoneSignArgs;
     expect(args.intent.id, _hardwareIntent.id);
     expect(args.startedFromReview, isTrue);
     expect(args.returnTarget, SwapActivityReturnTarget.swap);
-    expect(
-      router.routerDelegate.currentConfiguration.uri.toString(),
-      '/swap/keystone-sign',
-    );
+    expect(router.canPop(), isTrue);
   });
 
   testWidgets('review-start signing cancel clears pending intent and returns', (
@@ -241,6 +242,48 @@ void main() {
     expect(find.text('Cancel'), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(swapNotifier.pendingCleared, isTrue);
+    expect(find.byKey(const ValueKey('mobile_swap_route')), findsOneWidget);
+    expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
+  });
+
+  testWidgets('review-start signing back clears pending intent and returns', (
+    tester,
+  ) async {
+    late _PendingSigningSwapNotifier swapNotifier;
+    final router = GoRouter(
+      initialLocation: '/swap/keystone-sign',
+      routes: [
+        GoRoute(
+          path: '/swap/keystone-sign',
+          builder: (_, _) => MobileSwapKeystoneSignScreen(
+            args: MobileSwapKeystoneSignArgs.fromReview(
+              intent: _hardwareIntent,
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/swap',
+          builder: (_, _) => const SizedBox(key: ValueKey('mobile_swap_route')),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        router,
+        swapNotifier: () {
+          swapNotifier = _PendingSigningSwapNotifier(_hardwareIntent);
+          return swapNotifier;
+        },
+        hardwareSigningService: _FakeSwapHardwareSigningService(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     expect(swapNotifier.pendingCleared, isTrue);

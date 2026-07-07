@@ -438,8 +438,9 @@ class _MobileKeystonePcztSigningFlowState
     final child = _stage == _SignStage.scanning
         ? _buildScannerPage()
         : _buildQrPage();
+    final handlesRoutePop = widget.onCancel != null;
     return PopScope<void>(
-      canPop: !_decoding,
+      canPop: !handlesRoutePop && !_decoding,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
@@ -713,9 +714,7 @@ class _MobileKeystonePcztSigningFlowState
               )
               .toDouble();
           final minCaptionTop =
-              viewfinderTop +
-              viewfinderSize +
-              _mobileKeystoneScanMinCaptionGap;
+              viewfinderTop + viewfinderSize + _mobileKeystoneScanMinCaptionGap;
           final maxCaptionTop = math.max(
             minCaptionTop,
             maxActionTop -

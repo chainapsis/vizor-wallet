@@ -99,7 +99,7 @@ class _MobileSwapReviewScreenState
               .read(swapStateProvider)
               .pendingKeystoneSigningIntent;
           if (pendingIntent != null && pendingIntent.id == intentId) {
-            context.go(
+            await context.push<void>(
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
                 intent: pendingIntent,
