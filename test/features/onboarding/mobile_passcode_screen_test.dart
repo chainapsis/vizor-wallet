@@ -12,6 +12,8 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_scre
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 Widget _app() {
@@ -50,6 +52,41 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
       accountProvider.overrideWith(() => accountNotifier),
       appSecurityProvider.overrideWith(() => _RecordingAppSecurityNotifier()),
       syncProvider.overrideWith(() => _NoopSyncNotifier()),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _multisigCreateApp({
+  required _RecordingMultisigPendingSessionsNotifier multisigNotifier,
+}) {
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => const MobilePasscodeScreen(
+          args: SetPasswordScreenArgs.multisigCreateSession(
+            coordinatorUrl: 'http://coordinator.test',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/multisig/session/:sessionStorageId',
+        builder: (_, state) => Text(
+          'session ${Uri.decodeComponent(state.pathParameters['sessionStorageId']!)}',
+        ),
+      ),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      appSecurityProvider.overrideWith(() => _RecordingAppSecurityNotifier()),
+      syncProvider.overrideWith(() => _NoopSyncNotifier()),
+      multisigPendingSessionsProvider.overrideWith(() => multisigNotifier),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -123,6 +160,24 @@ void main() {
     expect(accountNotifier.importedAdditionalAccountIndices, [1, 2]);
     expect(find.text('biometrics route'), findsOneWidget);
   });
+
+  testWidgets('multisig create flow opens the pending session after passcode', (
+    tester,
+  ) async {
+    final multisigNotifier = _RecordingMultisigPendingSessionsNotifier();
+
+    await tester.pumpWidget(
+      _multisigCreateApp(multisigNotifier: multisigNotifier),
+    );
+    await tester.pump();
+
+    await _enter(tester, '123456');
+    await _enter(tester, '123456');
+    await tester.pumpAndSettle();
+
+    expect(multisigNotifier.createdCoordinatorUrl, 'http://coordinator.test');
+    expect(find.text('session session_123:participant_123'), findsOneWidget);
+  });
 }
 
 class _RecordingAccountNotifier extends AccountNotifier {
@@ -176,4 +231,48 @@ class _NoopSyncNotifier extends SyncNotifier {
 
   @override
   bool needsPauseForWalletMutation() => false;
+}
+
+class _RecordingMultisigPendingSessionsNotifier
+    extends MultisigPendingSessionsNotifier {
+  String? createdCoordinatorUrl;
+
+  @override
+  FutureOr<List<MultisigPendingSession>> build() => const [];
+
+  @override
+  Future<MultisigPendingSession> createSession({
+    String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    String? label,
+  }) async {
+    createdCoordinatorUrl = coordinatorUrl;
+    return _fakeMultisigSession();
+  }
+}
+
+MultisigPendingSession _fakeMultisigSession() {
+  const now = 1000;
+  return const MultisigPendingSession(
+    sessionId: 'session_123',
+    participantId: 'participant_123',
+    role: MultisigPendingRole.creator,
+    coordinatorUrl: 'http://coordinator.test',
+    state: 'collecting',
+    accessToken: 'access',
+    refreshToken: 'refresh',
+    identity: MultisigParticipantIdentity(
+      admissionSecretKey: 'admission-secret',
+      admissionPublicKey: 'admission-public',
+      deliverySecretKey: 'delivery-secret',
+      deliveryPublicKey: 'delivery-public',
+    ),
+    inviteSecret: 'invite',
+    accessTokenExpiresAt: now,
+    refreshTokenExpiresAt: now,
+    participants: [],
+    createdAt: now,
+    updatedAt: now,
+    createdLocallyAt: now,
+    updatedLocallyAt: now,
+  );
 }

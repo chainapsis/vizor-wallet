@@ -13,6 +13,7 @@ import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
+import '../../features/multisig/screens/mobile/mobile_multisig_onboarding_screens.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as
 /// [CupertinoPage]s (edge-swipe back) under the same route paths as the
@@ -88,6 +89,47 @@ List<RouteBase> mobileOnboardingRoutes() => [
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: const MobileBiometricsScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/connect',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileMultisigConnectScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/create',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileMultisigCreateSessionScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/join',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileMultisigJoinSessionScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/session/:sessionStorageId',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileMultisigSessionScreen(
+        sessionStorageId: Uri.decodeComponent(
+          state.pathParameters['sessionStorageId'] ?? '',
+        ),
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/multisig/set-password',
+    redirect: (_, state) =>
+        state.extra is SetPasswordScreenArgs ? null : '/multisig/connect',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobilePasscodeScreen(args: state.extra as SetPasswordScreenArgs),
     ),
   ),
   GoRoute(

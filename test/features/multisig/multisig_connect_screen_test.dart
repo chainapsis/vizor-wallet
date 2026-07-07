@@ -1,13 +1,14 @@
 import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show Material, MaterialApp;
-import 'package:flutter/widgets.dart' show ValueKey, Widget;
+import 'package:flutter/widgets.dart' show EditableText, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_connect_screen.dart';
 import 'package:zcash_wallet/src/features/multisig/services/multisig_backup_file_service.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 
@@ -58,6 +59,37 @@ void main() {
     expect(find.text('Restore account'), findsOneWidget);
   });
 
+  testWidgets('requires unlock before restoring with a locked password', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _screen(
+        securityNotifier: _LockedAppSecurityNotifier.new,
+        readBackup: () async => const MultisigBackupFileReadResult(
+          path: '/tmp/vizor-multisig-backup.vizorbackup',
+          artifactJson: '{"backup":true}',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('multisig_connect_restore_button')),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText).last, 'password123');
+    await tester.pump();
+    await tester.tap(find.text('Restore account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unlock secure storage'), findsOneWidget);
+    expect(
+      find.text('Enter your wallet password to restore this backup.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('shows pending multisig summaries', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
@@ -94,10 +126,13 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 Widget _screen({
   List<MultisigPendingSessionSummary> summaries = const [],
   MultisigBackupFileReader? readBackup,
+  AppSecurityNotifier Function()? securityNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      if (securityNotifier != null)
+        appSecurityProvider.overrideWith(securityNotifier),
       if (readBackup != null)
         multisigBackupFileReaderProvider.overrideWithValue(readBackup),
       multisigPendingSessionSummariesProvider.overrideWith(
@@ -114,4 +149,14 @@ Widget _screen({
       ),
     ),
   );
+}
+
+class _LockedAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: false,
+    );
+  }
 }

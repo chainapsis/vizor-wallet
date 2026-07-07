@@ -15,8 +15,8 @@ const double _bleedArtTopOverflow = 32.5;
 const double _methodCardBorderWidth = 1.5;
 
 /// Second onboarding step — Figma `Method Selection` (4752:26334): the
-/// "Welcome to Vizor" title over three illustrated cards (create /
-/// import / Keystone), reached from the Welcome screen's "Get started"
+/// "Welcome to Vizor" title over illustrated entry cards (create /
+/// import / Keystone / multisig), reached from the Welcome screen's "Get started"
 /// button. Keeps the `mobile_welcome_*` keys so the onboarding flow
 /// helpers route through here unchanged.
 ///
@@ -63,52 +63,83 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                         color: colors.text.primary,
                       ),
                     ),
-                    // Cards centred in the space between title and footer.
+                    // Cards centred in the space between title and footer,
+                    // but scrollable on shorter mobile windows.
                     Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _MethodCard(
-                              buttonKey: const ValueKey(
-                                'mobile_welcome_create',
-                              ),
-                              iconName: AppIcons.addNew,
-                              label: 'Create wallet',
-                              illustration:
-                                  'assets/illustrations/method_create_dark.png',
-                              // The create knight is taller than the card and
-                              // bleeds above its top edge in Figma (4752:26357).
-                              bleed: true,
-                              emphasized: true,
-                              onTap: () => context.push('/onboarding/intro'),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.sm,
                             ),
-                            const SizedBox(height: AppSpacing.sm),
-                            _MethodCard(
-                              buttonKey: const ValueKey(
-                                'mobile_welcome_import',
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: constraints.maxHeight,
                               ),
-                              iconName: AppIcons.importWallet,
-                              label: 'Import wallet',
-                              illustration:
-                                  'assets/illustrations/method_import_dark.png',
-                              onTap: () => context.push('/import'),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            _MethodCard(
-                              buttonKey: const ValueKey(
-                                'mobile_welcome_keystone',
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _MethodCard(
+                                      buttonKey: const ValueKey(
+                                        'mobile_welcome_create',
+                                      ),
+                                      iconName: AppIcons.addNew,
+                                      label: 'Create wallet',
+                                      illustration:
+                                          'assets/illustrations/method_create_dark.png',
+                                      // The create knight is taller than the card
+                                      // and bleeds above its top edge in Figma.
+                                      bleed: true,
+                                      emphasized: true,
+                                      onTap: () =>
+                                          context.push('/onboarding/intro'),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    _MethodCard(
+                                      buttonKey: const ValueKey(
+                                        'mobile_welcome_import',
+                                      ),
+                                      iconName: AppIcons.importWallet,
+                                      label: 'Import wallet',
+                                      illustration:
+                                          'assets/illustrations/method_import_dark.png',
+                                      onTap: () => context.push('/import'),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    _MethodCard(
+                                      buttonKey: const ValueKey(
+                                        'mobile_welcome_keystone',
+                                      ),
+                                      iconName: AppIcons.qr,
+                                      label: 'Connect Keystone',
+                                      illustration: isDark
+                                          ? 'assets/illustrations/method_keystone_dark.png'
+                                          : 'assets/illustrations/method_keystone_light.png',
+                                      onTap: () =>
+                                          context.push('/onboarding/keystone'),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    _MethodCard(
+                                      buttonKey: const ValueKey(
+                                        'mobile_welcome_multisig',
+                                      ),
+                                      iconName: AppIcons.users,
+                                      label: 'Connect multisig',
+                                      illustration: isDark
+                                          ? 'assets/illustrations/method_keystone_dark.png'
+                                          : 'assets/illustrations/method_keystone_light.png',
+                                      onTap: () =>
+                                          context.push('/multisig/connect'),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              iconName: AppIcons.qr,
-                              label: 'Connect Keystone',
-                              illustration: isDark
-                                  ? 'assets/illustrations/method_keystone_dark.png'
-                                  : 'assets/illustrations/method_keystone_light.png',
-                              onTap: () => context.push('/onboarding/keystone'),
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ),
                     const ExcludeSemantics(

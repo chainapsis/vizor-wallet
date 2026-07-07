@@ -12,6 +12,10 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
+import 'package:zcash_wallet/src/features/multisig/screens/mobile/mobile_multisig_onboarding_screens.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
@@ -25,6 +29,43 @@ Widget _app({
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
+    ),
+  );
+}
+
+Widget _freshMultisigCreateApp() {
+  final router = GoRouter(
+    initialLocation: '/multisig/create',
+    routes: mobileOnboardingRoutes(),
+  );
+  return ProviderScope(
+    overrides: [
+      appSecurityProvider.overrideWith(() => _FreshAppSecurityNotifier()),
+      accountProvider.overrideWith(() => _EmptyAccountNotifier()),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    ),
+  );
+}
+
+Widget _lockedMultisigSessionApp() {
+  final router = GoRouter(
+    initialLocation: '/multisig/session/session_123',
+    routes: mobileOnboardingRoutes(),
+  );
+  return ProviderScope(
+    overrides: [
+      appSecurityProvider.overrideWith(() => _LockedAppSecurityNotifier()),
+      accountProvider.overrideWith(() => _EmptyAccountNotifier()),
+      multisigPendingSessionSummariesProvider.overrideWith(
+        (_) async => const [],
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -125,7 +166,7 @@ void main() {
   });
 
   testWidgets(
-    'Get started opens method selection with the three entry points and '
+    'Get started opens method selection with the wallet entry points and '
     'the hidden legal footer space',
     (tester) async {
       await tester.pumpWidget(_app());
@@ -136,6 +177,7 @@ void main() {
       expect(find.text('Create wallet'), findsOneWidget);
       expect(find.text('Import wallet'), findsOneWidget);
       expect(find.text('Connect Keystone'), findsOneWidget);
+      expect(find.text('Connect multisig'), findsOneWidget);
       expect(find.textContaining('you agree to our'), findsOneWidget);
       final hiddenFooter = find.byKey(
         const ValueKey('mobile_method_legal_footer_hidden'),
@@ -340,6 +382,52 @@ void main() {
     expect(find.text('Connect Keystone'), findsOneWidget);
   });
 
+  testWidgets('multisig pushes the multisig connect step', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_multisig')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(MobileMultisigConnectScreen), findsOneWidget);
+    expect(find.text('Connect Multisig'), findsOneWidget);
+  });
+
+  testWidgets('fresh multisig create uses the mobile passcode setup', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_freshMultisigCreateApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Setup'), findsOneWidget);
+    expect(find.text('Set wallet password'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_multisig_create_submit_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Passcode'), findsOneWidget);
+  });
+
+  testWidgets('locked multisig session resume uses passcode unlock', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_lockedMultisigSessionApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unlock secure storage'), findsOneWidget);
+    expect(
+      find.text('Enter your passcode to continue this multisig setup.'),
+      findsOneWidget,
+    );
+    expect(find.text('Enter wallet password'), findsNothing);
+    expect(find.text('Password'), findsNothing);
+    expect(find.bySemanticsLabel('Digit 1'), findsOneWidget);
+  });
+
   testWidgets('add-account variant shows back to home affordance', (
     tester,
   ) async {
@@ -348,4 +436,29 @@ void main() {
 
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
   });
+}
+
+class _FreshAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(
+      isPasswordConfigured: false,
+      isUnlocked: true,
+    );
+  }
+}
+
+class _LockedAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: false,
+    );
+  }
+}
+
+class _EmptyAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState();
 }

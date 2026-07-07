@@ -11,6 +11,7 @@ import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/multisig_pending_session_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart'
@@ -109,6 +110,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
+    MultisigPendingSession? pendingMultisigSession;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -135,10 +137,52 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 zip32Index: args.requiredKeystoneZip32Index,
                 birthdayHeight: args.importBirthdayHeight,
               );
+            case SetPasswordFlow.multisigCreateSession:
+              pendingMultisigSession = await ref
+                  .read(multisigPendingSessionsProvider.notifier)
+                  .createSession(
+                    coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+                  );
+            case SetPasswordFlow.multisigJoinSession:
+              pendingMultisigSession = await ref
+                  .read(multisigPendingSessionsProvider.notifier)
+                  .joinSession(
+                    coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+                    inviteCode: args.requiredMultisigInviteCode,
+                  );
             case SetPasswordFlow.multisigFinalize:
-              throw StateError('Multisig setup is not available on mobile.');
+              final sessions = await ref.read(
+                multisigPendingSessionsProvider.future,
+              );
+              final session =
+                  multisigSessionByStorageId(
+                    sessions,
+                    args.requiredMultisigSessionStorageId,
+                  ) ??
+                  multisigSessionById(
+                    sessions,
+                    args.requiredMultisigSessionStorageId,
+                  );
+              if (session == null) {
+                throw StateError('Multisig session not found.');
+              }
+              if (!multisigLocalBackupCompleted(session)) {
+                throw StateError(
+                  'Confirm the local multisig backup before creating this account.',
+                );
+              }
+              await accountNotifier.finalizeMultisigAccount(
+                session.storageId,
+                backupArtifactJson: args.requiredMultisigBackupArtifactJson,
+                backupPassphrase: args.requiredMultisigBackupPassphrase,
+              );
             case SetPasswordFlow.multisigRestore:
-              throw StateError('Multisig restore is not available on mobile.');
+              await accountNotifier.restoreMultisigAccountFromBackup(
+                backupArtifactJson: args.requiredMultisigBackupArtifactJson,
+                backupPassphrase: args.requiredMultisigBackupPassphrase,
+                backupFilePath: args.multisigBackupFilePath,
+                coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+              );
           }
         });
 
@@ -149,6 +193,13 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         }
         if (args.flow == SetPasswordFlow.create) {
           clearCreateOnboardingSecretState(ref.read);
+        }
+        final pending = pendingMultisigSession;
+        if (pending != null) {
+          router.go(
+            '/multisig/session/${Uri.encodeComponent(pending.storageId)}',
+          );
+          return;
         }
         router.go('/onboarding/biometrics');
       });
