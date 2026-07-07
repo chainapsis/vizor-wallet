@@ -127,6 +127,19 @@ void main() {
     expect(find.text('Start linking'), findsOneWidget);
   });
 
+  testWidgets('settings wallet link confirm access use case renders the gate', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsWalletLinkConfirmAccessUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Confirm access'), findsOneWidget);
+    expect(find.text('To link Vizor Mobile.'), findsOneWidget);
+  });
+
   testWidgets('settings wallet link QR use case renders the timer', (
     tester,
   ) async {

@@ -330,6 +330,13 @@ Widget buildSettingsUninstallDoneUseCase(BuildContext context) {
   );
 }
 
+Widget buildSettingsWalletLinkConfirmAccessUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/link-mobile',
+    const WalletLinkDesktopScreen(),
+  );
+}
+
 Widget buildSettingsWalletLinkInitialUseCase(BuildContext context) {
   return _buildSettingsWalletLinkUseCase(const WalletLinkState.initial());
 }

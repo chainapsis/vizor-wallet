@@ -8,13 +8,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../../main.dart' show log;
+import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../settings/widgets/confirm_access_card.dart';
+import '../../settings/widgets/settings_pane_backdrop.dart';
 import '../../../core/widgets/dot_qr_shape.dart';
 import '../models/wallet_link_models.dart';
 import '../providers/wallet_link_provider.dart';
@@ -26,14 +32,118 @@ const _walletLinkResultWidth = 300.0;
 const _walletLinkExpiredBodyWidth = 270.0;
 const _walletLinkActionSlotHeight = 73.0;
 
-class WalletLinkDesktopScreen extends ConsumerWidget {
+class WalletLinkDesktopScreen extends ConsumerStatefulWidget {
   const WalletLinkDesktopScreen({this.previewState, super.key});
 
   final WalletLinkState? previewState;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewState;
+  ConsumerState<WalletLinkDesktopScreen> createState() =>
+      _WalletLinkDesktopScreenState();
+}
+
+class _WalletLinkDesktopScreenState
+    extends ConsumerState<WalletLinkDesktopScreen> {
+  final _passwordController = TextEditingController();
+  bool _accessConfirmed = false;
+  bool _isSubmittingPassword = false;
+  String? _passwordError;
+
+  String? get _passwordPolicyMessage =>
+      validateWalletPassword(_passwordController.text);
+
+  bool get _canSubmitPassword =>
+      !_isSubmittingPassword && isWalletPasswordValid(_passwordController.text);
+
+  bool get _requiresAccessConfirmation =>
+      widget.previewState == null && !_accessConfirmed;
+
+  @override
+  void dispose() {
+    _clearPasswordGate();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _clearPasswordGate() {
+    _passwordController.clear();
+    _isSubmittingPassword = false;
+    _passwordError = null;
+  }
+
+  void _handlePasswordChanged() {
+    if (_passwordError == null) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      _passwordError = null;
+    });
+  }
+
+  Future<void> _submitPassword() async {
+    final policyError = _passwordPolicyMessage;
+    if (_isSubmittingPassword) return;
+    if (!isWalletPasswordValid(_passwordController.text)) {
+      if (policyError == null) return;
+      setState(() {
+        _passwordError = policyError;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmittingPassword = true;
+      _passwordError = null;
+    });
+
+    try {
+      final isValid = await ref
+          .read(appSecurityProvider.notifier)
+          .confirmPassword(_passwordController.text);
+      if (!mounted) return;
+      if (!isValid) {
+        setState(() {
+          _passwordError = 'Incorrect password. Please try again.';
+          _isSubmittingPassword = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _accessConfirmed = true;
+        _clearPasswordGate();
+      });
+    } catch (e, st) {
+      log('WalletLinkDesktopScreen._submitPassword: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _passwordError = "Couldn't check your password. Please try again.";
+        _isSubmittingPassword = false;
+      });
+    }
+  }
+
+  void _handleGateBack() {
+    _clearPasswordGate();
+    context.go('/settings');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_requiresAccessConfirmation) {
+      return _WalletLinkConfirmAccessScreen(
+        controller: _passwordController,
+        errorText: _passwordError,
+        isSubmitting: _isSubmittingPassword,
+        canSubmit: _canSubmitPassword,
+        onChanged: _handlePasswordChanged,
+        onSubmit: _submitPassword,
+        onBack: _handleGateBack,
+      );
+    }
+
+    final preview = widget.previewState;
     final WalletLinkState state;
     final WalletLinkController? controller;
     if (preview == null) {
@@ -73,6 +183,87 @@ class WalletLinkDesktopScreen extends ConsumerWidget {
             onContinue: () => context.go('/settings'),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _WalletLinkConfirmAccessScreen extends StatelessWidget {
+  const _WalletLinkConfirmAccessScreen({
+    required this.controller,
+    required this.errorText,
+    required this.isSubmitting,
+    required this.canSubmit,
+    required this.onChanged,
+    required this.onSubmit,
+    required this.onBack,
+  });
+
+  final TextEditingController controller;
+  final String? errorText;
+  final bool isSubmitting;
+  final bool canSubmit;
+  final VoidCallback onChanged;
+  final VoidCallback onSubmit;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDesktopBackdropShell(
+      background: const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
+      sidebar: const AppMainSidebar(),
+      pane: _WalletLinkConfirmAccessPane(
+        onBack: onBack,
+        child: Center(
+          child: ConfirmAccessCard(
+            subtitle: 'To link Vizor Mobile.',
+            controller: controller,
+            errorText: errorText,
+            isSubmitting: isSubmitting,
+            canSubmit: canSubmit,
+            onChanged: onChanged,
+            onSubmit: onSubmit,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletLinkConfirmAccessPane extends StatelessWidget {
+  const _WalletLinkConfirmAccessPane({
+    required this.onBack,
+    required this.child,
+  });
+
+  final VoidCallback onBack;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppPaneToolbar(
+            leading: AppBackLink(
+              label: 'Settings',
+              minWidth: 60,
+              onTap: onBack,
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.md,
+              ),
+              child: child,
+            ),
+          ),
+        ],
       ),
     );
   }
