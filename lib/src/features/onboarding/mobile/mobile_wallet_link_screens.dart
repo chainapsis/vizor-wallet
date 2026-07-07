@@ -69,35 +69,25 @@ class _DesktopLinkNoticeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: colors.background.raised,
-              borderRadius: BorderRadius.circular(AppRadii.small),
-            ),
-            child: Center(
-              child: AppIcon(
-                AppIcons.monitor,
-                size: 24,
-                color: colors.icon.accent,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
+          AppIcon(AppIcons.monitor, size: 24, color: colors.icon.accent),
+          const SizedBox(height: AppSpacing.sm),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'This copies selected accounts onto the phone. Nothing on the computer changes.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
+              'This copies the wallet onto the phone - nothing on the computer changes. Keep it clearly distinct from the destructive wallet.dat migration flow.',
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
               ),
             ),
           ),
@@ -116,7 +106,7 @@ class _DesktopLinkSteps extends StatelessWidget {
     const steps = [
       'Open & unlock your Vizor desktop app',
       'Go to Settings -> Link Vizor Mobile',
-      'A moving QR code appears. Keep it on screen.',
+      'A moving QR code appears - keep it on screen. The code is encrypted. Your recovery phrase is never shown.',
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,31 +127,15 @@ class _DesktopLinkSteps extends StatelessWidget {
               Expanded(
                 child: Text(
                   step,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.primary,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
               ),
             ],
           ),
-          if (index != steps.length - 1) const SizedBox(height: AppSpacing.s),
+          if (index != steps.length - 1) const SizedBox(height: AppSpacing.sm),
         ],
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppIcon(AppIcons.lock, size: 18, color: colors.icon.accent),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                'The code is encrypted. Your recovery phrase is never shown.',
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -454,7 +428,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
 
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkAccountsProgress,
-      title: 'Select Accounts',
+      title: 'Select account',
       subtitle: const TextSpan(
         text: 'This copies the chosen accounts to your phone. ',
         children: [
@@ -519,10 +493,10 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
     final groups = _groupContactsByNetwork(state.contacts);
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkContactsProgress,
-      title: 'Select Contacts',
+      title: 'Import contacts',
       subtitle: const TextSpan(
         text:
-            "All contacts are selected by default. Uncheck any you'd rather leave behind.",
+            "All contacts are selected by default - uncheck any you'd rather leave behind.",
       ),
       listTitle:
           '${state.contacts.length} contact${state.contacts.length == 1 ? '' : 's'} found',
@@ -543,10 +517,10 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final entry in groups.entries) ...[
+          for (final (groupIndex, entry) in groups.entries.indexed) ...[
             _ContactGroupHeader(network: entry.key),
-            const SizedBox(height: AppSpacing.xs),
-            for (final contact in entry.value) ...[
+            const SizedBox(height: AppSpacing.s),
+            for (final (contactIndex, contact) in entry.value.indexed) ...[
               _WalletLinkContactRow(
                 contact: contact,
                 selected: state.selectedContactIds.contains(contact.id),
@@ -554,9 +528,11 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
                     .read(mobileWalletLinkControllerProvider.notifier)
                     .toggleContact(contact.id),
               ),
-              const SizedBox(height: AppSpacing.s),
+              if (contactIndex != entry.value.length - 1)
+                const SizedBox(height: AppSpacing.s),
             ],
-            const SizedBox(height: AppSpacing.xs),
+            if (groupIndex != groups.length - 1)
+              const SizedBox(height: AppSpacing.sm),
           ],
         ],
       ),
@@ -697,7 +673,7 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.base),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.xxs,
@@ -708,7 +684,7 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
                                 child: Text(
                                   listTitle,
                                   style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.secondary,
+                                    color: colors.text.accent,
                                   ),
                                 ),
                               ),
@@ -723,8 +699,8 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
                                   child: Text(
                                     actionLabel,
                                     style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.primary,
-                                      fontWeight: FontWeight.w600,
+                                      color: colors.text.secondary,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ),
@@ -783,7 +759,7 @@ class _SelectionBottomAction extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.sm,
-          AppSpacing.md,
+          AppSpacing.sm,
           AppSpacing.sm,
           AppSpacing.s,
         ),
@@ -815,49 +791,46 @@ class _WalletLinkAccountRow extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.5,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.only(
-            left: AppSpacing.xs,
-            right: AppSpacing.s,
-            top: AppSpacing.xxs,
-            bottom: AppSpacing.xxs,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: AppIcon(
-                    account.isHardware ? AppIcons.keystone : AppIcons.user,
-                    size: 20,
-                    color: colors.icon.accent,
-                  ),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 64),
+        padding: const EdgeInsets.only(
+          left: AppSpacing.xs,
+          right: AppSpacing.s,
+          top: AppSpacing.xxs,
+          bottom: AppSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Center(
+                child: AppIcon(
+                  account.isHardware ? AppIcons.keystone : AppIcons.user,
+                  size: 20,
+                  color: enabled ? colors.icon.accent : colors.icon.muted,
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  account.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                account.displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelLarge.copyWith(
+                  color: enabled ? colors.text.accent : colors.text.secondary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              _WalletLinkCheckbox(selected: selected && enabled),
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            _WalletLinkCheckbox(selected: selected && enabled),
+          ],
         ),
       ),
     );
@@ -895,8 +868,6 @@ class _WalletLinkContactRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AddressBookNetworkIcon(network: contact.network, size: 32),
-            const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -908,7 +879,7 @@ class _WalletLinkContactRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -917,7 +888,9 @@ class _WalletLinkContactRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.secondary,
+                      color: selected
+                          ? colors.text.accent
+                          : colors.text.secondary,
                       fontWeight: FontWeight.w400,
                     ),
                   ),
@@ -942,16 +915,16 @@ class _ContactGroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.xxs),
+      padding: const EdgeInsets.all(AppSpacing.xxs),
       child: Row(
         children: [
           AddressBookNetworkIcon(network: network, size: 20),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           Text(
             network.label,
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
