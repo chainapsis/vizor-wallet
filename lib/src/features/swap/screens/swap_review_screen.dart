@@ -133,6 +133,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
         ),
       ),
     );
+    final fiatDisplay = ref.watch(fiatDisplayProvider);
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
         ? "You don't have enough ZEC for this swap. Try a smaller amount."
@@ -172,20 +173,20 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                       amountWarning: swapState.reviewAmountDifferenceWarning,
                       startError: swapState.statusError,
                       startBlockedReason: startBlockedReason,
-                      fiatDisplay: ref.watch(fiatDisplayProvider),
+                      fiatDisplay: fiatDisplay,
                       payFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,
                         quote: quote,
                         asset: quote.sellAsset,
                         amount: quote.sellAmount,
-                        fiatDisplay: ref.watch(fiatDisplayProvider),
+                        fiatDisplay: fiatDisplay,
                       ),
                       receiveFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,
                         quote: quote,
                         asset: quote.receiveAsset,
                         amount: quote.receiveAmount,
-                        fiatDisplay: ref.watch(fiatDisplayProvider),
+                        fiatDisplay: fiatDisplay,
                       ),
                       onCopy: _copyAddress,
                     ),

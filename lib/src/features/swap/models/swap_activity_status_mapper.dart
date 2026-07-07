@@ -610,6 +610,10 @@ String swapActivityPairSymbol(String pair, int index) {
   return index == 0 ? 'deposit asset' : 'receive asset';
 }
 
+/// The persisted basis is USD captured at swap time; non-USD display uses
+/// the *current* implied FX rate, so historical rows re-price as FX moves.
+/// This is deliberate (display-only conversion, nothing persisted changes) —
+/// capturing per-currency values at swap time would require storing them.
 String _swapActivityFiatTextForAsset({
   required SwapIntent intent,
   required _SwapActivityAmountSide side,

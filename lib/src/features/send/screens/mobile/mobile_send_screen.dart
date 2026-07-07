@@ -620,7 +620,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return BigInt.from(zatoshi.floor());
   }
 
-  FiatCurrency get _fiatCurrency => ref.read(fiatCurrencyProvider);
+  /// The currency mobile fiat entry is actually denominated in — the
+  /// resolved display currency, so symbol/decimals always match the unit
+  /// price from [zecHomeFiatUnitPriceProvider] (USD fallback included).
+  FiatCurrency get _fiatCurrency =>
+      ref.read(zecHomeFiatDisplayCurrencyProvider);
 
   String _zeroFiatText(FiatCurrency currency) =>
       (0.0).toStringAsFixed(currency.maxDecimals);
@@ -634,6 +638,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String _sendableFiatInputTextForZatoshi(BigInt zatoshi, double zecUnitPrice) {
     final text = _fiatInputTextForZatoshi(zatoshi, zecUnitPrice);
     return text == _zeroFiatText(_fiatCurrency) ? '' : text;
+  }
+
+  void _reexpressFiatForCurrencyChange() {
+    if (!_amountInputIsUsd) {
+      // Token mode: symbols/decimals re-render via the provider watches; the
+      // typed ZEC amount is currency-independent.
+      return;
+    }
+    final zatoshi = parseZecAmount(_amountText.trim());
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    final fiatText = zatoshi == null || zecUnitPrice == null
+        ? ''
+        : _sendableFiatInputTextForZatoshi(zatoshi, zecUnitPrice);
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
   }
 
   String _fiatDisplayTextForZatoshi(BigInt zatoshi, double zecUnitPrice) {
@@ -1244,6 +1263,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fiat-mode state is denominated in the display currency it was typed
+    // under. When that currency changes (Settings pick, or the USD fallback
+    // resolving once market data loads), re-express the stored fiat text from
+    // the canonical ZEC amount — mirrors SwapNotifier's currency-change
+    // listener so send and swap degrade identically.
+    ref.listen<String>(
+      zecHomeFiatDisplayCurrencyProvider.select((currency) => currency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        _reexpressFiatForCurrencyChange();
+      },
+    );
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
     final showRecipientFieldLayer =
@@ -1973,7 +2004,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       const CommaToDotInputFormatter(),
       _DecimalAmountInputFormatter(
         maxFractionDigits: _amountInputIsUsd
-            ? ref.watch(fiatCurrencyProvider).maxDecimals
+            ? ref.watch(zecHomeFiatDisplayCurrencyProvider).maxDecimals
             : 8,
         maxLength: _amountInputIsUsd ? 12 : 17,
       ),
@@ -1985,7 +2016,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         builder: (context, constraints) {
           final affixWidth = _amountInputIsUsd
               ? _textWidth(
-                      ref.watch(fiatCurrencyProvider).symbol,
+                      ref.watch(zecHomeFiatDisplayCurrencyProvider).symbol,
                       usdPrefixStyle,
                       textScaler: textScaler,
                     ) +
@@ -2012,7 +2043,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     _kMobileSendAmountUsdPrefixOpticalOffsetY,
                   ),
                   child: Text(
-                    ref.watch(fiatCurrencyProvider).symbol,
+                    ref.watch(zecHomeFiatDisplayCurrencyProvider).symbol,
                     style: usdPrefixStyle,
                   ),
                 ),

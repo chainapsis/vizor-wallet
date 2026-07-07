@@ -83,14 +83,17 @@ void main() {
       expect(data?.change24hPctFor(krw), -0.31);
     });
 
-    test('falls back to the USD 24h change for currencies missing one', () {
+    test('reports no 24h change for a currency the response omitted', () {
+      // No cross-currency fallback: a USD percentage next to a KRW price
+      // would be wrong by that day's FX move, so the badge hides instead.
       final data = parseZecMarketData(
         '{"zcash":{"usd":33.45,"usd_24h_change":-0.25852,"krw":45600.7}}',
       );
       final krw = fiatCurrencyForCode('krw');
 
       expect(data?.priceFor(krw), 45600.7);
-      expect(data?.change24hPctFor(krw), -0.25852);
+      expect(data?.change24hPctFor(krw), isNull);
+      expect(data?.change24hPctFor(kUsdFiatCurrency), -0.25852);
     });
 
     test('returns null for a currency absent from the response', () {

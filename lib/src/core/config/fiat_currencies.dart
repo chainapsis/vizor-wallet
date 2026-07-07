@@ -135,6 +135,19 @@ class FiatDisplay {
   /// "$1.23K" / "₹42.5K"-style compact text for a USD-denominated value.
   String formatCompactUsdValue(double usdValue) =>
       formatCompactFiatValueFor(displayCurrency, convertUsd(usdValue));
+
+  /// Value equality so providers rebuilding this from a fresh market-data
+  /// snapshot do not notify watchers (whole swap screens) when nothing
+  /// user-visible changed — restores the dedup the old `double?` price
+  /// provider got for free.
+  @override
+  bool operator ==(Object other) =>
+      other is FiatDisplay &&
+      other.currency.code == currency.code &&
+      other.usdToCurrencyRate == usdToCurrencyRate;
+
+  @override
+  int get hashCode => Object.hash(currency.code, usdToCurrencyRate);
 }
 
 const kUsdFiatDisplay = FiatDisplay(

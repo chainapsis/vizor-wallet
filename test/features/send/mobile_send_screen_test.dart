@@ -8,6 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
+import 'package:zcash_wallet/src/providers/fiat_currency_provider.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -128,7 +131,7 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async {
-    return const ZecMarketData(pricesByCurrency: {'usd': 70});
+    return const ZecMarketData(pricesByCurrency: {'usd': 70, 'krw': 91000});
   }
 }
 
@@ -181,6 +184,7 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -199,6 +203,7 @@ Widget _app({
   );
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
@@ -1293,6 +1298,50 @@ void main() {
     expect(find.text('1.50 ZEC'), findsOneWidget);
   });
 
+  testWidgets('fiat entry re-expresses when the display currency changes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          fiatCurrencyProvider.overrideWith(_InMemoryFiatCurrencyNotifier.new),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+      '105',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+
+    // Currency changes while the fiat entry is live: the text re-expresses
+    // the canonical 1.5 ZEC in KRW instead of relabeling '105' as won.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+      listen: false,
+    );
+    await container
+        .read(fiatCurrencyProvider.notifier)
+        .set(fiatCurrencyForCode('krw'));
+    await tester.pumpAndSettle();
+
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    // 1.5 ZEC * ₩91,000 = ₩136,500 at KRW's zero decimals.
+    expect(amountInput.controller?.text, '136500');
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+  });
+
   testWidgets('USD mode clears ZEC amounts that round to zero cents', (
     tester,
   ) async {
@@ -1828,4 +1877,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
   });
+}
+
+class _InMemoryFiatCurrencyNotifier extends FiatCurrencyNotifier {
+  @override
+  FiatCurrency build() => kDefaultFiatCurrency;
+
+  @override
+  Future<void> set(FiatCurrency currency) async {
+    state = currency;
+  }
 }

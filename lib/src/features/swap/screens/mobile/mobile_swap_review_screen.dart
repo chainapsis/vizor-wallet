@@ -208,6 +208,7 @@ class _MobileSwapReviewScreenState
       accountState,
       swapState.reviewAccountUuid,
     );
+    final fiatDisplay = ref.watch(fiatDisplayProvider);
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
         ? "You don't have enough ZEC for this swap. Try a smaller amount."
@@ -245,14 +246,14 @@ class _MobileSwapReviewScreenState
                     quote: quote,
                     asset: quote.sellAsset,
                     amount: quote.sellAmount,
-                    fiatDisplay: ref.watch(fiatDisplayProvider),
+                    fiatDisplay: fiatDisplay,
                   ),
                   receiveFiatTextOverride: swapReviewFiatTextForAsset(
                     swapState,
                     quote: quote,
                     asset: quote.receiveAsset,
                     amount: quote.receiveAmount,
-                    fiatDisplay: ref.watch(fiatDisplayProvider),
+                    fiatDisplay: fiatDisplay,
                   ),
                 ),
               ),

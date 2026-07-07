@@ -19,7 +19,6 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
-import '../../../../providers/fiat_currency_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
@@ -237,7 +236,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final hasBalance =
         shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
     final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
-    final fiatCurrency = ref.watch(fiatCurrencyProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final fiatBalanceText = fiatTextForZatoshi(
       shieldedBalance,
       zecUnitPrice: zecUnitPrice,

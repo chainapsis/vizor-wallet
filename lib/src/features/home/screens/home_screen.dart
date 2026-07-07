@@ -25,7 +25,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/config/fiat_currencies.dart';
-import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -192,7 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.saplingPendingBalance +
         sync.orchardPendingBalance;
     final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
-    final fiatCurrency = ref.watch(fiatCurrencyProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final shieldedFiatBalanceText = _formatFiatBalance(
       shieldedBalance,
       zecUnitPrice: zecUnitPrice,

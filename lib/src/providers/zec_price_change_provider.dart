@@ -31,13 +31,16 @@ class ZecMarketData {
   /// 24h change percentage points per currency code (e.g. `-0.26`).
   final Map<String, double> change24hPctByCurrency;
 
-  double get usdPrice => pricesByCurrency[kUsdFiatCurrency.code]!;
+  double? get usdPrice => pricesByCurrency[kUsdFiatCurrency.code];
 
   double? priceFor(FiatCurrency currency) => pricesByCurrency[currency.code];
 
+  /// 24h change for exactly [currency] — no cross-currency fallback, so a
+  /// change badge can never disagree with the currency the price it sits
+  /// next to is shown in (USD and e.g. KRW changes differ by that day's FX
+  /// move).
   double? change24hPctFor(FiatCurrency currency) =>
-      change24hPctByCurrency[currency.code] ??
-      change24hPctByCurrency[kUsdFiatCurrency.code];
+      change24hPctByCurrency[currency.code];
 }
 
 /// Non-swap ZEC market data source. Swap keeps using its provider-specific
@@ -183,11 +186,25 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecMarketData?> {
   }
 }
 
-/// ZEC unit price in the user's selected display currency, or null until the
-/// first successful fetch (or when the response lacked that currency).
+/// ZEC unit price in the resolved display currency
+/// ([FiatDisplay.displayCurrency]), or null until the first successful fetch.
+/// Using the resolved currency gives home/send the same USD fallback as the
+/// swap surfaces: a response that carries USD but transiently lacks the
+/// selected currency keeps fiat labels rendered (in USD) instead of blanking
+/// them. Pair the value with [zecHomeFiatDisplayCurrencyProvider] so the
+/// symbol always matches the denomination.
 final zecHomeFiatUnitPriceProvider = Provider.autoDispose<double?>((ref) {
-  final currency = ref.watch(fiatCurrencyProvider);
-  return ref.watch(zecHomeMarketDataProvider)?.priceFor(currency);
+  final display = ref.watch(fiatDisplayProvider);
+  return ref
+      .watch(zecHomeMarketDataProvider)
+      ?.priceFor(display.displayCurrency);
+});
+
+/// The currency [zecHomeFiatUnitPriceProvider] is denominated in.
+final zecHomeFiatDisplayCurrencyProvider = Provider.autoDispose<FiatCurrency>((
+  ref,
+) {
+  return ref.watch(fiatDisplayProvider).displayCurrency;
 });
 
 /// How USD-denominated values (swap quotes, captured fiat bases) render in
@@ -206,8 +223,10 @@ final fiatDisplayProvider = Provider.autoDispose<FiatDisplay>((ref) {
 });
 
 final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
-  final currency = ref.watch(fiatCurrencyProvider);
-  return ref.watch(zecHomeMarketDataProvider)?.change24hPctFor(currency);
+  final display = ref.watch(fiatDisplayProvider);
+  return ref
+      .watch(zecHomeMarketDataProvider)
+      ?.change24hPctFor(display.displayCurrency);
 });
 
 /// "$250.12" / "₩340K"-style fiat text for a zatoshi amount in [currency],

@@ -15,7 +15,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -297,7 +296,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       ownAccounts: ownAccounts,
     );
     final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
-    final fiatCurrency = ref.watch(fiatCurrencyProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
 

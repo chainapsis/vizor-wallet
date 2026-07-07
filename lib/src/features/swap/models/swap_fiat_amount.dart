@@ -42,7 +42,7 @@ String swapFiatDisplayText(
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
   if (usdValue == null) return fiatDisplay.placeholderText;
   return '${fiatDisplay.displayCurrency.symbol}'
-      '${swapFormatFiatValue(fiatDisplay.convertUsd(usdValue))}';
+      '${_formatConvertedFiatValue(fiatDisplay, usdValue)}';
 }
 
 String swapFiatInputTextFromTokenText(
@@ -55,7 +55,7 @@ String swapFiatInputTextFromTokenText(
   if (amount == null || amount <= 0) return '';
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
   if (usdValue == null) return '';
-  return swapFormatFiatValue(fiatDisplay.convertUsd(usdValue));
+  return _formatConvertedFiatValue(fiatDisplay, usdValue);
 }
 
 String? swapTokenAmountTextFromFiatText(
@@ -81,4 +81,20 @@ String swapTokenAmountDisplayText({required String tokenAmountText}) {
 
 double? _usableUnitPrice(double? value) {
   return value != null && value.isFinite && value > 0 ? value : null;
+}
+
+/// [swapFormatFiatValue] with the fraction digits capped for low-decimal
+/// currencies: KRW/JPY (0) never show sub-unit digits and 1-decimal
+/// currencies show at most one. Currencies with >= 2 decimals keep the
+/// magnitude-based digits unchanged, preserving the pre-existing USD output
+/// byte-for-byte (including 4 digits for sub-unit values).
+String _formatConvertedFiatValue(FiatDisplay fiatDisplay, double usdValue) {
+  final value = fiatDisplay.convertUsd(usdValue);
+  final maxDecimals = fiatDisplay.displayCurrency.maxDecimals;
+  if (maxDecimals >= 2) return swapFormatFiatValue(value);
+  if (value <= 0) return '0';
+  return trimTrailingFiatZeros(
+    swapTruncateToFractionDigits(value, maxDecimals),
+    fractionDigits: maxDecimals,
+  );
 }
