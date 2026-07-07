@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -58,19 +60,6 @@ const _accountState = AccountState(
   activeAddress: 'u1homeaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
-  initialLocation: '/home',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
 Widget _app(
   SyncState syncState, {
   ZecMarketData? marketData = const ZecMarketData(
@@ -78,6 +67,8 @@ Widget _app(
     change24hPct: 13.12,
   ),
   FakeSyncNotifier? syncNotifier,
+  AccountState accountState = _accountState,
+  List<Override> overrides = const [],
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -87,6 +78,10 @@ Widget _app(
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
       GoRoute(
+        path: '/multisig',
+        builder: (_, _) => const Text('multisig route'),
+      ),
+      GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
       ),
@@ -95,12 +90,15 @@ Widget _app(
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
       ),
+      ...overrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -108,6 +106,34 @@ Widget _app(
     ),
   );
 }
+
+const _multisigAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Group account',
+      order: 0,
+      kind: AccountKind.multisig,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1homeaddress',
+);
+
+AppBootstrapState _bootstrap({AccountState accountState = _accountState}) =>
+    AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 SyncState _syncedState({
   BigInt? orchardBalance,
@@ -137,6 +163,44 @@ rust_sync.TransactionInfo _tx(int index) {
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: seconds,
+  );
+}
+
+class _FakeSigningRequestsNotifier extends MultisigSigningRequestsNotifier {
+  _FakeSigningRequestsNotifier(this.records);
+
+  final List<MultisigSigningRequestRecord> records;
+
+  @override
+  Future<List<MultisigSigningRequestRecord>> build() async => records;
+}
+
+MultisigSigningRequestRecord _multisigRequest({
+  String signingRequestId = 'sign-pending',
+  List<String> round1ParticipantIds = const <String>[],
+  List<String> round2ParticipantIds = const <String>[],
+  String? localStateJson,
+}) {
+  return MultisigSigningRequestRecord(
+    signingRequestId: signingRequestId,
+    accountUuid: 'account-1',
+    sessionId: 'session-1',
+    localParticipantId: 'participant-a',
+    requesterParticipantId: 'participant-b',
+    selectedParticipantIds: const ['participant-a', 'participant-b'],
+    pcztB64: 'AQID',
+    pcztHash: 'pczt-hash',
+    needsSaplingParams: false,
+    amountZatoshi: '100000',
+    feeZatoshi: '1000',
+    recipientAddress: 'uregtest1recipientaddress',
+    addressType: 'unified',
+    state: 'open',
+    createdAt: 1,
+    updatedAt: 1,
+    round1ParticipantIds: round1ParticipantIds,
+    round2ParticipantIds: round2ParticipantIds,
+    localStateJson: localStateJson,
   );
 }
 
@@ -191,6 +255,32 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Receive'), findsOneWidget);
     expect(find.text('No activity, yet...'), findsOneWidget);
+  });
+
+  testWidgets('shows a multisig inbox entry for multisig accounts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        accountState: _multisigAccountState,
+        overrides: [
+          multisigSigningRequestsProvider.overrideWith(
+            () => _FakeSigningRequestsNotifier([_multisigRequest()]),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('1 send needs your action'), findsOneWidget);
+    expect(find.text('Open multisig to continue.'), findsOneWidget);
+
+    await tester.tap(find.text('1 send needs your action'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('multisig route'), findsOneWidget);
   });
 
   testWidgets('shows transparent balance tray with shield action', (

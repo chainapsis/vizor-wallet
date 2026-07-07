@@ -14,6 +14,7 @@ import '../../features/activity/screens/mobile/mobile_transaction_status_screen.
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/send/screens/mobile/mobile_multisig_request_signers_screen.dart';
 import '../../features/multisig/screens/mobile/mobile_multisig_signing_detail_screen.dart';
+import '../../features/multisig/screens/mobile/mobile_multisig_inbox_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
@@ -218,6 +219,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileKeystoneSignScreen(args: state.extra! as SendReviewArgs),
+      ),
+    ),
+    GoRoute(
+      path: '/multisig',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileMultisigInboxScreen(),
       ),
     ),
     GoRoute(

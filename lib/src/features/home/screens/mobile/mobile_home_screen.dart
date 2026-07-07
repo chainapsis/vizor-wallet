@@ -16,7 +16,10 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/mobile_review_row.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/multisig_signing_request_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -27,6 +30,7 @@ import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../multisig/multisig_signing_request_summary.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
@@ -247,6 +251,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
 
     final uuid = activeAccountUuid;
+    final isMultisigAccount =
+        uuid != null &&
+        ref.read(accountProvider.notifier).isMultisigAccount(uuid);
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
@@ -364,6 +371,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             ),
           ),
         const SizedBox(height: AppSpacing.md),
+        if (isMultisigAccount) ...[
+          _MultisigInboxEntryCard(accountUuid: uuid),
+          const SizedBox(height: AppSpacing.md),
+        ],
         if (recentRows.isEmpty)
           const _EmptyActivity()
         else
@@ -388,6 +399,115 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _MultisigInboxEntryCard extends ConsumerWidget {
+  const _MultisigInboxEntryCard({required this.accountUuid});
+
+  final String accountUuid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final requestsAsync = ref.watch(multisigSigningRequestsProvider);
+    final activeRequests = activeMultisigSigningRequestsForAccount(
+      requestsAsync.value ?? const <MultisigSigningRequestRecord>[],
+      accountUuid,
+    );
+    final groups = groupMultisigSigningRequests(activeRequests);
+    final colors = context.colors;
+    final title = requestsAsync.isLoading && groups.isEmpty
+        ? 'Checking multisig sends'
+        : multisigSigningHomeTitle(groups);
+    final subtitle = requestsAsync.hasError
+        ? 'Open multisig to refresh.'
+        : multisigSigningHomeSubtitle(groups);
+    final count = groups.actionableCount;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.push('/multisig'),
+      child: MobileSurfaceCard(
+        child: Row(
+          children: [
+            const MobileReviewIconBadge(
+              child: AppIcon(AppIcons.users, size: AppIconSize.large),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.bodyLarge.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      if (count > 0) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        _MultisigActionBadge(count: count),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            AppIcon(
+              AppIcons.chevronForward,
+              size: AppIconSize.medium,
+              color: colors.icon.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MultisigActionBadge extends StatelessWidget {
+  const _MultisigActionBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.button.primary.bg,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
+        child: Text(
+          count.toString(),
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.button.primary.label,
+          ),
+        ),
+      ),
     );
   }
 }
