@@ -61,6 +61,21 @@ class SwapNotifier extends Notifier<SwapState> {
 
   @override
   SwapState build() {
+    // Fiat texts in state are denominated in the display currency they were
+    // derived with. When the display currency changes (user picks a new one,
+    // or the USD fallback resolves to the selected currency once market data
+    // loads), re-express them from the canonical token amounts so a "$10"
+    // fiat entry never silently relabels as "₩10" while the quote still uses
+    // the USD-derived token amount. Rate drift within the same currency is
+    // deliberately ignored — it would fight active typing without changing
+    // the unit.
+    ref.listen<String>(
+      fiatDisplayProvider.select((display) => display.displayCurrency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        state = swapStateWithDerivedFiatTexts(fiatDisplay: _fiatDisplay, state);
+      },
+    );
     ref.listen<String?>(
       accountProvider.select((value) => value.value?.activeAccountUuid),
       (previous, next) {

@@ -9,6 +9,8 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,8 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
@@ -276,9 +280,7 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text(
-          'To: Treasury (0x5290840 ... 4169ee7) on Ethereum',
-        ),
+        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
       ),
       findsOneWidget,
     );
@@ -3258,6 +3260,61 @@ void main() {
     expect(swapProvider.sawForcedRefresh, isTrue);
     expect(_fieldText(tester, 'swap_receive_amount_field'), '200.00');
     expect(find.text('1 ZEC = 200.00 USDC'), findsOneWidget);
+  });
+
+  testWidgets('fiat texts re-derive when the display currency changes', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+
+    // Fiat mode under the USD fallback: 1 ZEC @ $100.
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+
+    // Market data resolves the selected currency: the fiat text re-expresses
+    // the canonical token amount in the new unit instead of relabeling the
+    // old number.
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
   });
 
   testWidgets('price refresh keeps the review page open and warns on drift', (
@@ -7764,6 +7821,7 @@ Widget _routerHarness(
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
+  List<Override> extraOverrides = const [],
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7772,6 +7830,7 @@ Widget _routerHarness(
       sessionStore ?? _FakeSwapPersistenceStore(initialIntents: fixtureIntents);
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       addressBookRepositoryProvider.overrideWithValue(
         addressBookRepository ?? _FakeAddressBookRepository(),
@@ -8575,7 +8634,10 @@ String _destinationSummaryText(WidgetTester tester) {
       ? (widget.data ?? '')
       : (tester
                 .widget<Text>(
-                  find.descendant(of: finder.first, matching: find.byType(Text)),
+                  find.descendant(
+                    of: finder.first,
+                    matching: find.byType(Text),
+                  ),
                 )
                 .data ??
             '');
