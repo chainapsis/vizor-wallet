@@ -5,8 +5,10 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../domain/swap_address_plan.dart';
 import '../../domain/swap_contract.dart';
+import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
 import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
@@ -51,9 +53,25 @@ class MobileSwapReviewContent extends StatelessWidget {
     final sendsZec = quote.direction.sendsZec;
     final externalAddress = addressPlan.userExternalAddress.trim();
     final externalLabel = sendsZec ? 'To' : 'From';
-    final externalBottom =
-        '$externalLabel: '
-        '${compactSwapAddress(externalAddress, prefixLength: 6, suffixLength: 5, separator: ' ... ')}';
+    final externalContactLabel = addressBookContactForSwapAsset(
+      contacts: addressBookContacts,
+      asset: sendsZec ? quote.receiveAsset : quote.sellAsset,
+      address: externalAddress,
+    )?.label.trim();
+    final externalCompact = compactSwapAddress(
+      externalAddress,
+      prefixLength: 6,
+      suffixLength: 5,
+      separator: ' ... ',
+    );
+    final externalAddressText =
+        externalContactLabel == null || externalContactLabel.isEmpty
+        ? externalCompact
+        : contactAddressDisplayText(
+            label: externalContactLabel,
+            compactAddress: externalCompact,
+          );
+    final externalBottom = '$externalLabel: $externalAddressText';
 
     final payRow = MobileSwapReviewHeaderRow(
       label: "You're paying",

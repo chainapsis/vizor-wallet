@@ -27,9 +27,12 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_flow.dart';
+import '../widgets/send_recipient_resolver.dart';
+import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
@@ -737,10 +740,28 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       'invalid' || 'error' => AppTextFieldTone.destructive,
       _ => AppTextFieldTone.neutral,
     };
+    // Live contact-match feedback: when the entered address is valid and
+    // matches a saved contact (or one of the user's own accounts — the same
+    // resolution the review screen shows), surface the name under the field
+    // so the user knows the pasted/typed address is the intended one.
+    // Validation messages keep priority over the match line.
+    String? matchedRecipientName;
+    if (_hasValidAddress) {
+      final recipient = sendReviewRecipientFor(
+        contacts:
+            ref.watch(addressBookProvider).value?.contacts ??
+            const <AddressBookContact>[],
+        address: _addressController.text.trim(),
+        ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+      );
+      if (recipient is SendReviewContactRecipient) {
+        matchedRecipientName = recipient.name;
+      }
+    }
     final addressMessage = switch (_addressType) {
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
-      _ => null,
+      _ => matchedRecipientName,
     };
     final addressMessageIcon = switch (_addressType) {
       'invalid' || 'error' => AppIcon(
@@ -748,7 +769,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         size: 16,
         color: colors.text.destructive,
       ),
-      _ => null,
+      _ =>
+        matchedRecipientName == null
+            ? null
+            : AppIcon(
+                AppIcons.user,
+                size: 16,
+                color: colors.icon.brandCrimson,
+              ),
     };
     final addressHasText = _addressController.text.trim().isNotEmpty;
     final addressLeadingIcon = switch (_addressType) {

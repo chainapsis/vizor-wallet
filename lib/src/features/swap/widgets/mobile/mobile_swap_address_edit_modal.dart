@@ -7,7 +7,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../address_book/models/address_format_validator.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_models.dart';
 import '../swap_modal_controls.dart';
 
@@ -29,6 +31,7 @@ class MobileSwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.contacts = const <AddressBookContact>[],
     super.key,
   });
 
@@ -37,6 +40,10 @@ class MobileSwapAddressEditModal extends StatefulWidget {
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
   final VoidCallback onCancel;
+
+  /// Saved contacts; when the entered address matches one, its name is shown
+  /// under the field so the user knows the address is correct.
+  final Iterable<AddressBookContact> contacts;
 
   @override
   State<MobileSwapAddressEditModal> createState() =>
@@ -104,6 +111,21 @@ class _MobileSwapAddressEditModalState
     return addressFormatIssue(network, trimmed);
   }
 
+  /// Saved contact matching the entered address on the destination chain.
+  AddressBookContact? get _matchedContact {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty) return null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    if (network == null) return null;
+    return addressBookContactFor(
+      contacts: widget.contacts,
+      network: network,
+      address: trimmed,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -121,6 +143,7 @@ class _MobileSwapAddressEditModalState
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
     final formatError = _formatError;
+    final matchedContact = _matchedContact;
 
     // MobileModalScaffold supplies the title, the pinned close button and the
     // outer pt32/pb24/px16 padding, so this body owns only its vertical
@@ -174,9 +197,8 @@ class _MobileSwapAddressEditModalState
           // opacity-0 error line the Figma _Modal Type holds.
           SizedBox(
             height: 16,
-            child: formatError == null
-                ? null
-                : Align(
+            child: formatError != null
+                ? Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       formatError,
@@ -186,6 +208,15 @@ class _MobileSwapAddressEditModalState
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.destructive,
                       ),
+                    ),
+                  )
+                : matchedContact == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: ContactNameInline(
+                      key: const ValueKey('swap_destination_contact_match'),
+                      name: matchedContact.label,
                     ),
                   ),
           ),

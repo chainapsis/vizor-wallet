@@ -15,6 +15,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -157,6 +158,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                     SwapReviewPageContent(
                       quote: quote,
                       addressPlan: addressPlan,
+                      addressBookContacts:
+                          ref.watch(addressBookProvider).value?.contacts ??
+                          const [],
                       expired: swapState.quoteExpired,
                       amountWarning: swapState.reviewAmountDifferenceWarning,
                       startError: swapState.statusError,

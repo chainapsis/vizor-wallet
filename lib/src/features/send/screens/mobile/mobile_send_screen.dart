@@ -33,8 +33,11 @@ import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../services/send_flow.dart';
 import '../../widgets/send_recipient_resolver.dart';
+import '../../widgets/send_review_layout.dart'
+    show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -1174,7 +1177,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     required Iterable<AddressBookContact> contacts,
     required Map<String, AccountInfo> ownAccounts,
   }) {
-    final contact = _contactForAddress(contacts, address);
+    final contact = sendRecipientContactFor(
+      contacts: contacts,
+      address: address,
+    );
     if (contact != null) {
       final label = contact.label.trim();
       return _ReviewRecipientPresentation(
@@ -1218,21 +1224,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       'tex' => 'TEX address',
       _ => 'Zcash address',
     };
-  }
-
-  AddressBookContact? _contactForAddress(
-    Iterable<AddressBookContact> contacts,
-    String address,
-  ) {
-    final target = address.trim();
-    if (target.isEmpty) return null;
-    for (final contact in contacts) {
-      if (contact.network != AddressBookNetwork.zcash) continue;
-      if (contact.address.trim() != target) continue;
-      if (contact.label.trim().isEmpty) continue;
-      return contact;
-    }
-    return null;
   }
 
   AccountInfo? _ownAccountForAddress(
@@ -1605,26 +1596,48 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final hardwareTex = _isHardwareTexRecipient;
     final showError =
         _addressType == 'invalid' || _addressType == 'error' || hardwareTex;
+    // The reserved line shows the validation error, or — when the address is
+    // valid and matches a saved contact / own account — the resolved name so
+    // the user knows the pasted/typed address is the intended one.
+    Widget? line;
+    if (showError) {
+      line = Text(
+        hardwareTex
+            ? _hardwareTexUnsupportedText
+            : (_addressType == 'invalid'
+                  ? 'Invalid address'
+                  : 'Address validation failed'),
+        style: AppTypography.labelLarge.copyWith(
+          color: colors.text.destructive,
+        ),
+      );
+    } else if (_hasValidAddress) {
+      final recipient = sendReviewRecipientFor(
+        contacts:
+            ref.watch(addressBookProvider).value?.contacts ??
+            const <AddressBookContact>[],
+        address: _addressController.text.trim(),
+        ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+      );
+      if (recipient is SendReviewContactRecipient) {
+        line = ContactNameInline(
+          key: const ValueKey('mobile_send_address_contact_match'),
+          name: recipient.name,
+          textStyle: AppTypography.labelLarge.copyWith(
+            color: colors.text.secondary,
+          ),
+          iconSize: 16,
+        );
+      }
+    }
     return SizedBox(
       height: _kMobileSendAddressErrorGap + _kMobileSendRecipientLineHeight,
-      child: showError
-          ? Padding(
+      child: line == null
+          ? null
+          : Padding(
               padding: const EdgeInsets.only(top: _kMobileSendAddressErrorGap),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  hardwareTex
-                      ? _hardwareTexUnsupportedText
-                      : (_addressType == 'invalid'
-                            ? 'Invalid address'
-                            : 'Address validation failed'),
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.destructive,
-                  ),
-                ),
-              ),
-            )
-          : null,
+              child: Align(alignment: Alignment.topLeft, child: line),
+            ),
     );
   }
 

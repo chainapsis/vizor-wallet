@@ -735,6 +735,46 @@ void main() {
     expect(find.text('Enter Amount'), findsOneWidget);
   });
 
+  testWidgets('recipient step names a matched saved contact', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+            profilePictureId: 'default',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _invalidAddress);
+    // The error owns the reserved line; no match indicator alongside it.
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_address_contact_match')),
+      findsNothing,
+    );
+
+    await _enterAddress(tester, _shieldedAddress);
+    expect(find.text('Invalid address'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_address_contact_match')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('scan result fills the recipient on the current send screen', (
     tester,
   ) async {

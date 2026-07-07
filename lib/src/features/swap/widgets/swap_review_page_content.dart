@@ -5,8 +5,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
+import '../models/swap_address_book_helpers.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -29,11 +32,16 @@ class SwapReviewPageContent extends StatelessWidget {
     this.receiveFiatTextOverride,
     this.onCopy,
     this.showTitle = true,
+    this.addressBookContacts = const [],
     super.key,
   });
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
+
+  /// Saved contacts used to label the recipient/refund address lines when
+  /// they match an address-book entry.
+  final Iterable<AddressBookContact> addressBookContacts;
   final bool expired;
   final String? amountWarning;
   final String? startError;
@@ -125,7 +133,8 @@ class SwapReviewPageContent extends StatelessWidget {
       asset: quote.sellAsset,
       label: "You're paying",
       amountText: quote.sellAmountText,
-      detailText: 'Refund to: ${compactSwapAddress(refundAddress)}',
+      detailText:
+          'Refund to: ${_contactAwareAddressText(refundAddress, quote.sellAsset)}',
       detailCopyText: refundAddress,
     );
   }
@@ -148,10 +157,23 @@ class SwapReviewPageContent extends StatelessWidget {
       label: "You're receiving",
       amountText: quote.receiveEstimateText,
       detailText:
-          'To: ${compactSwapAddress(recipientAddress)} '
+          'To: ${_contactAwareAddressText(recipientAddress, quote.receiveAsset)} '
           'on ${quote.receiveAsset.chainLabel}',
       detailCopyText: recipientAddress,
     );
+  }
+
+  /// Compact address, prefixed by the saved contact's name when the address
+  /// matches an address-book entry on [asset]'s chain.
+  String _contactAwareAddressText(String address, SwapAsset asset) {
+    final label = addressBookContactForSwapAsset(
+      contacts: addressBookContacts,
+      asset: asset,
+      address: address,
+    )?.label.trim();
+    final compact = compactSwapAddress(address);
+    if (label == null || label.isEmpty) return compact;
+    return contactAddressDisplayText(label: label, compactAddress: compact);
   }
 }
 

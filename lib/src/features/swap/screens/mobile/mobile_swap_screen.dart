@@ -135,6 +135,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               ),
               _SwapModalSurface.addressEditor => MobileSwapAddressEditModal(
                 state: swapState,
+                contacts:
+                    ref.watch(addressBookProvider).value?.contacts ?? const [],
                 onSubmitted: (value, remember) {
                   if (remember) {
                     unawaited(_rememberSwapAddress(value, swapState));
@@ -344,6 +346,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             _openModal(_SwapModalSurface.addressEditor),
                         onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                         zecAvailableText: zecAvailableText,
+                        destinationContactName: swapDestinationContactFor(
+                          swapState,
+                          ref.watch(addressBookProvider).value?.contacts ??
+                              const [],
+                        )?.label,
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Row(
