@@ -38,21 +38,4 @@ void zcash_set_sync_mode(uint8_t mode);
 /// Check if a sync is currently running.
 bool zcash_is_sync_running(void);
 
-// ======================== TX Tracking ========================
-
-typedef struct {
-    uint8_t txid_hex[65]; // 64 hex chars + null
-    uint64_t expiry_height;
-} CPendingTx;
-
-/// Get number of pending (unmined, unexpired) transactions. Returns -1 on error.
-int32_t zcash_get_pending_tx_count(const char* db_path);
-
-/// Fill buffer with pending transactions. Returns count written, -1 on error.
-int32_t zcash_get_pending_txs(const char* db_path, CPendingTx* out_buf, int32_t buf_len);
-
-/// Check if a TX has been mined via lightwalletd gRPC.
-/// Returns: >0 = mined height, 0 = pending, -1 = error.
-int64_t zcash_check_tx_status(const char* lightwalletd_url, const char* txid_hex);
-
 #endif // ZCASH_SYNC_H

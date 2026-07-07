@@ -9,9 +9,6 @@
 //!   - Transaction list + on-chain enhancement requests
 //!     (`get_transaction_history`, `get_transaction_data_requests`,
 //!     `decrypt_and_store_transaction`, `set_transaction_status`).
-//!   - Pending-tx tracking for the iOS "tx track" Live Activity
-//!     (`get_pending_transactions`, `check_tx_mined`).
-//!
 //! None of these belong to the orchestration loop — the loop lives
 //! in `sync_engine/mod.rs`. They're one-shot lookups the UI drives
 //! directly, so extracting them into their own submodule keeps
@@ -1433,14 +1430,6 @@ impl TxBase {
     }
 }
 
-// ======================== Pending TX Tracking ========================
-
-pub(crate) struct PendingTxInfo {
-    pub txid_bytes: Vec<u8>,
-    pub txid_hex: String,
-    pub expiry_height: u64,
-}
-
 /// A wallet-created transaction that is eligible for automatic
 /// resubmit: unmined, not past its expiry height, and sending value
 /// out of the wallet.
@@ -1520,65 +1509,6 @@ pub(crate) fn get_resubmittable_txs(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))
-}
-
-/// Get all pending (unmined, unexpired) transactions that we
-/// created (have raw bytes).
-pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
-    let conn = open_readonly_conn(db_path)?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT txid, COALESCE(expiry_height, 0) \
-             FROM transactions \
-             WHERE mined_height IS NULL AND expired_unmined = 0 AND raw IS NOT NULL",
-        )
-        .map_err(|e| format!("SQL error: {e}"))?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            let txid_bytes: Vec<u8> = row.get(0)?;
-            let expiry_height: u64 = row.get::<_, i64>(1)?.unsigned_abs();
-            let txid_hex = hex::encode(&txid_bytes);
-            Ok(PendingTxInfo {
-                txid_bytes,
-                txid_hex,
-                expiry_height,
-            })
-        })
-        .map_err(|e| format!("Query error: {e}"))?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Row error: {e}"))
-}
-
-/// Check if a transaction has been mined by querying lightwalletd.
-/// Returns: `0` = still in mempool, `> 0` = mined at that height,
-/// `-1` = error / not found.
-pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(pair) => pair,
-        Err(e) => {
-            log::warn!("txtrack: {e}");
-            return -1;
-        }
-    };
-
-    match crate::wallet::sync_engine::get_transaction(&mut client, txid_bytes.to_vec()).await {
-        Ok(raw) => {
-            let height = raw.height;
-            // height 0 = mempool, 0xffffffffffffffff = fork, else = mined
-            if height == 0 || height == u64::MAX {
-                0 // still pending
-            } else {
-                height as i64
-            }
-        }
-        Err(e) => {
-            log::warn!("txtrack: GetTransaction failed: {e}");
-            -1
-        }
-    }
 }
 
 #[cfg(test)]
@@ -3520,12 +3450,7 @@ mod tests {
             Some("u-my-receiver"),
             Some(0),
         );
-        set_cached_transparent_receiver_address(
-            &db,
-            account,
-            "u-my-receiver",
-            "t-my-receiver",
-        );
+        set_cached_transparent_receiver_address(&db, account, "u-my-receiver", "t-my-receiver");
 
         let got = get_transaction_detail(
             db.path().to_str().unwrap(),

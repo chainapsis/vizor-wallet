@@ -1,3 +1,4 @@
+import BackgroundTasks
 import CoreHaptics
 import Flutter
 import UIKit
@@ -14,8 +15,9 @@ import UIKit
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
-      TxTrackManager.shared.registerTask()
-      TxTrackManager.shared.cancelPendingRequests()
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
+      )
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -75,21 +77,6 @@ import UIKit
           presetId: presetId
         )
         result(true)
-      case "startTxTracking":
-        if #available(iOS 26.0, *) {
-          let args = call.arguments as? [String: Any]
-          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-          let network = args?["network"] as? String
-          let presetId = args?["presetId"] as? String
-          let success = TxTrackManager.shared.startTxTracking(
-            lightwalletdUrl: lightwalletdUrl,
-            network: network,
-            presetId: presetId
-          )
-          result(success)
-        } else {
-          result(false)
-        }
       default:
         result(FlutterMethodNotImplemented)
       }
