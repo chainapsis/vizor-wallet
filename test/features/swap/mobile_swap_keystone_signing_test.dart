@@ -183,6 +183,23 @@ void main() {
     expect(find.text('Confirm & swap'), findsOneWidget);
 
     await tester.tap(find.text('Confirm & swap'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(
+        const ValueKey('mobile_swap_review_inactive_notice'),
+        skipOffstage: false,
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_swap_review_content'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -196,6 +213,31 @@ void main() {
     expect(
       find.byType(MobileSwapReviewScreen, skipOffstage: false),
       findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_swap_review_content'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_swap_review_inactive_notice'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('swap_review_return_to_swap_button'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_start_button'), skipOffstage: false),
+      findsNothing,
     );
     expect(capturedExtra, isA<MobileSwapKeystoneSignArgs>());
     final args = capturedExtra! as MobileSwapKeystoneSignArgs;
@@ -249,19 +291,22 @@ void main() {
     expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
   });
 
-  testWidgets('review-start signing back clears pending intent and returns', (
+  testWidgets('review-start pushed signing back clears pending intent', (
     tester,
   ) async {
-    late _PendingSigningSwapNotifier swapNotifier;
+    tester.view.physicalSize = const Size(430, 932);
+    late _ReviewStartSwapNotifier swapNotifier;
     final router = GoRouter(
-      initialLocation: '/swap/keystone-sign',
+      initialLocation: '/swap/review',
       routes: [
         GoRoute(
+          path: '/swap/review',
+          builder: (_, _) => const MobileSwapReviewScreen(),
+        ),
+        GoRoute(
           path: '/swap/keystone-sign',
-          builder: (_, _) => MobileSwapKeystoneSignScreen(
-            args: MobileSwapKeystoneSignArgs.fromReview(
-              intent: _hardwareIntent,
-            ),
+          builder: (_, state) => MobileSwapKeystoneSignScreen(
+            args: state.extra! as MobileSwapKeystoneSignArgs,
           ),
         ),
         GoRoute(
@@ -275,7 +320,7 @@ void main() {
       _app(
         router,
         swapNotifier: () {
-          swapNotifier = _PendingSigningSwapNotifier(_hardwareIntent);
+          swapNotifier = _ReviewStartSwapNotifier(_hardwareIntent);
           return swapNotifier;
         },
         hardwareSigningService: _FakeSwapHardwareSigningService(),
@@ -283,10 +328,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Confirm & swap'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSwapKeystoneSignScreen), findsOneWidget);
+    expect(router.canPop(), isTrue);
+
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     expect(swapNotifier.pendingCleared, isTrue);
+    expect(
+      find.byKey(const ValueKey('mobile_swap_review_inactive_notice')),
+      findsOneWidget,
+    );
+    expect(
+      router.routerDelegate.currentConfiguration.uri.toString(),
+      '/swap/review',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('swap_review_return_to_swap_button')),
+    );
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('mobile_swap_route')), findsOneWidget);
     expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
   });
@@ -488,6 +553,7 @@ class _ReviewStartSwapNotifier extends SwapNotifier {
   _ReviewStartSwapNotifier(this.intent);
 
   final SwapIntent intent;
+  bool pendingCleared = false;
 
   @override
   SwapState build() {
@@ -517,6 +583,12 @@ class _ReviewStartSwapNotifier extends SwapNotifier {
       clearSelectedIntent: true,
     );
     return SwapStartedKeystoneSigning(intent.id);
+  }
+
+  @override
+  void clearPendingKeystoneSigningIntent(String intentId) {
+    if (intentId == intent.id) pendingCleared = true;
+    state = state.copyWith(clearPendingKeystoneSigningIntent: true);
   }
 }
 

@@ -86,7 +86,7 @@ class _MobileSwapKeystoneSignScreenState
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
-      onCancel: widget.args.startedFromReview ? _handleCancel : null,
+      onCancel: _handleCancel,
       signedPcztDecoder: widget.signedPcztDecoder,
       scannerBuilder: widget.scannerBuilder,
       forceScannerActiveForTesting: widget.forceScannerActiveForTesting,

@@ -438,9 +438,8 @@ class _MobileKeystonePcztSigningFlowState
     final child = _stage == _SignStage.scanning
         ? _buildScannerPage()
         : _buildQrPage();
-    final handlesRoutePop = widget.onCancel != null;
     return PopScope<void>(
-      canPop: !handlesRoutePop && !_decoding,
+      canPop: !_decoding,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
