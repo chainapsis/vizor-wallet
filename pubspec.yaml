@@ -55,6 +55,10 @@ dependencies:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
       ref: 16b1b30e08004e91521cc511db098f9561dfeb0a
   crypto: ^3.0.7
+  # dart:ffi allocator for the on-device zwap hashbind prover bridge
+  # (zwap_hashbind_native.dart). Already transitive via flutter_rust_bridge;
+  # declared because we import it directly.
+  ffi: ^2.1.0
   window_manager: ^0.5.1
   url_launcher: ^6.3.2
   # Renders the Figma-exported icon SVGs under `assets/icons/`.
@@ -108,6 +112,10 @@ flutter:
     - assets/icons/
     - assets/swap/tokens/
     - assets/swap/chains/
+    # ProveKit hashbind proving key for on-device zwap b2z/z2b proofs. Must
+    # byte-match the solver's pallas.pkp (hash pinned in
+    # zwap_hashbind_native.dart; see native/hashbind_prover/README.md).
+    - assets/zwap/pallas.pkp
 
   fonts:
     - family: Inter

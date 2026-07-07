@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kReleaseMode, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'zwap_hashbind_native.dart';
 import 'zwap_swap_client.dart';
 
 /// Which swap backend the wallet uses. `near` = the existing NEAR Intents
@@ -48,9 +50,10 @@ const Map<int, String> kZwapEvmRpcByChainId = {
   31338: kZwapEvmRpcUrlBase,
 };
 
-/// HTTP hashbind-prover helper endpoint (regtest/testing). On-device ProveKit
-/// proving replaces this in production. Empty ⇒ proving unavailable (order
-/// creation will surface a clear error rather than silently fail).
+/// HTTP hashbind-prover helper endpoint (regtest/testing ONLY — the raw
+/// spend-auth scalar is POSTed to it). When unset (production default) the
+/// wallet proves on-device via ProveKit (`zwap_hashbind_native.dart`). Release builds refuse the HTTP
+/// path outright.
 const String kZwapHashbindProverUrl =
     String.fromEnvironment('ZWAP_HASHBIND_PROVER_URL', defaultValue: '');
 
@@ -63,22 +66,54 @@ final zwapSwapClientProvider = Provider<ZwapSwapClient>((ref) {
     network: kZwapNetwork,
     evmRpcUrl: kZwapEvmRpcUrl,
     evmRpcByChainId: kZwapEvmRpcByChainId,
-    hashbindProver: _httpHashbindProver,
+    hashbindProver: selectZwapHashbindProver(
+      releaseMode: kReleaseMode,
+      httpProverUrl: kZwapHashbindProverUrl,
+      native: ZwapNativeHashbindProver.instance.prove,
+      http: _httpHashbindProver,
+    ),
   );
   ref.onDispose(client.dispose);
   return client;
 });
 
-/// Default prover: POST the raw scalar hex to the configured helper
-/// (`hashbind-prove-server.mjs`), which returns `{ proofHex: <hex> }`. Returns
-/// the proof bytes. Throws if no prover URL is configured.
-Future<List<int>> _httpHashbindProver(String kBeHex) async {
-  if (kZwapHashbindProverUrl.isEmpty) {
-    throw StateError(
-      'zwap hashbind prover not configured: set ZWAP_HASHBIND_PROVER_URL '
-      '(or wire on-device ProveKit proving)',
-    );
+/// Picks the hashbind prover for this build:
+///
+/// - no `ZWAP_HASHBIND_PROVER_URL` (production default) → on-device ProveKit
+///   prover; the scalar never leaves the process.
+/// - URL set + debug/profile → the regtest HTTP helper (unchanged harness).
+/// - URL set + release → fail closed with a prover that always throws: a
+///   release binary must never be able to send the raw scalar off-device,
+///   and silently ignoring the define would hide a broken run configuration.
+@visibleForTesting
+Future<List<int>> Function(String kBeHex) selectZwapHashbindProver({
+  required bool releaseMode,
+  required String httpProverUrl,
+  required Future<List<int>> Function(String kBeHex) native,
+  required Future<List<int>> Function(String kBeHex) http,
+}) {
+  if (httpProverUrl.isEmpty) {
+    return native;
   }
+  if (releaseMode) {
+    return (_) async {
+      throw StateError(
+        'ZWAP_HASHBIND_PROVER_URL is set in a release build; refusing to '
+        'send the spend-auth scalar off-device. Unset the define — release '
+        'builds prove on-device.',
+      );
+    };
+  }
+  return http;
+}
+
+/// Regtest/dev prover: POST the raw scalar hex to the configured helper
+/// (`hashbind-prove-server.mjs`), which returns `{ proofHex: <hex> }`. Returns
+/// the proof bytes. Throws on a non-2xx response or a missing/empty
+/// `proofHex` so a prover error can never masquerade as a zero-length
+/// hashbind proof (which the orderbook would later reject as a malformed
+/// order, losing the failure's real cause).
+Future<List<int>> _httpHashbindProver(String kBeHex) async {
   final http = HttpClient();
   try {
     final req = await http.postUrl(Uri.parse(kZwapHashbindProverUrl));
@@ -86,7 +121,19 @@ Future<List<int>> _httpHashbindProver(String kBeHex) async {
     req.add(const Utf8Encoder().convert('{"scalar":"$kBeHex"}'));
     final res = await req.close();
     final body = await res.transform(const Utf8Decoder()).join();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError(
+        'zwap hashbind prover returned HTTP ${res.statusCode}: '
+        '${body.length > 200 ? '${body.substring(0, 200)}…' : body}',
+      );
+    }
     final proofHex = (jsonDecodeMap(body)['proofHex'] ?? '') as String;
+    if (proofHex.isEmpty) {
+      throw StateError(
+        'zwap hashbind prover returned no proofHex (body: '
+        '${body.length > 200 ? '${body.substring(0, 200)}…' : body})',
+      );
+    }
     return _hexToBytes(proofHex);
   } finally {
     http.close(force: true);

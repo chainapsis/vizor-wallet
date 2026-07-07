@@ -307,8 +307,10 @@ pub fn zwap_ob_sign_challenge_hex(seed_hex: String, challenge: String) -> Result
 /// the caller produces by feeding [`Self::k_be_hex`] to the ProveKit prover.
 ///
 /// `k_be_hex` is the raw spend-auth scalar `k_a` (BE) — the prover's input. It
-/// is the one secret that must reach the prover; on-device proving keeps it in
-/// Rust, while a regtest HTTP prover trades that for test convenience.
+/// is the one secret that must reach the prover. Production builds prove
+/// on-device (native/hashbind_prover via `zwap_hashbind_native.dart`) so it
+/// never leaves the process; debug builds may opt into the regtest HTTP
+/// prover (`ZWAP_HASHBIND_PROVER_URL`), trading that for test convenience.
 pub struct ZwapB2zOrderInputs {
     pub h_a: String,
     pub swap_hash: String,
