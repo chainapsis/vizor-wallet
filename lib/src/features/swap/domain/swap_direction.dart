@@ -4,12 +4,16 @@ enum SwapDirection { zecToExternal, externalToZec }
 
 enum SwapQuoteMode {
   exactInput,
-  exactOutput;
+  exactOutput,
+  flexInput;
 
   String get oneClickSwapType => switch (this) {
     SwapQuoteMode.exactInput => 'EXACT_INPUT',
     SwapQuoteMode.exactOutput => 'EXACT_OUTPUT',
+    SwapQuoteMode.flexInput => 'FLEX_INPUT',
   };
+
+  bool get usesInputAmount => this != SwapQuoteMode.exactOutput;
 }
 
 extension SwapDirectionLabels on SwapDirection {

@@ -148,8 +148,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
 
     final payActive =
         _amountFocusNode.hasFocus ||
-        (!_receiveAmountFocusNode.hasFocus &&
-            state.quoteMode == SwapQuoteMode.exactInput);
+        (!_receiveAmountFocusNode.hasFocus && state.quoteMode.usesInputAmount);
     final receiveActive = !payActive;
 
     final payCard = _SwapCard(

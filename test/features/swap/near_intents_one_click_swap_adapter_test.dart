@@ -221,6 +221,7 @@ void main() {
           _quoteResponse(
             originAsset: '1cs_v1:btc:native:coin',
             destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
             amountInFormatted: '0.001',
             amountOutFormatted: '1.5',
             minAmountOut: '149250000',
@@ -245,11 +246,99 @@ void main() {
       );
 
       final request = transport.requests.last;
+      expect(request.body?['swapType'], 'FLEX_INPUT');
       expect(request.body?['originAsset'], 'nep141:btc.omft.near');
       expect(quote.pairText, 'BTC -> ZEC');
       expect(quote.sellAmountText, '0.001 BTC');
     },
   );
+
+  test(
+    'status accepts response that echoes BTC(OMNI) for a BTC origin asset',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: '1cs_v1:btc:native:coin',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountInFormatted: '0.001',
+            amountOutFormatted: '1.5',
+            minAmountOut: '149250000',
+            depositAddress: 'btc-deposit',
+            quoteRequestRefundTo: 'bc1refund',
+            quoteRequestRecipient: 'u1recipient',
+            status: 'PROCESSING',
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final status = await provider.getStatus('btc-deposit');
+
+      expect(status.pairText, 'BTC -> ZEC');
+      expect(status.sellAmountText, '0.001 BTC');
+      expect(status.status, SwapIntentStatus.processing);
+    },
+  );
+
+  test('status accepts unique 1Click ticker fallback assets', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: '1cs_v1:btc:provider:echo',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '0.001',
+          amountOutFormatted: '1.5',
+          minAmountOut: '149250000',
+          depositAddress: 'btc-deposit',
+          quoteRequestRefundTo: 'bc1refund',
+          quoteRequestRecipient: 'u1recipient',
+          status: 'PROCESSING',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final status = await provider.getStatus('btc-deposit');
+
+    expect(status.pairText, 'BTC -> ZEC');
+    expect(status.sellAmountText, '0.001 BTC');
+    expect(status.status, SwapIntentStatus.processing);
+  });
+
+  test('status preserves exact 1Click BTC(OMNI) assets when listed', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithExactBtcOmniAsset),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: '1cs_v1:btc:native:coin',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '0.001',
+          amountOutFormatted: '1.5',
+          minAmountOut: '149250000',
+          depositAddress: 'btc-deposit',
+          quoteRequestRefundTo: 'bc1refund',
+          quoteRequestRecipient: 'u1recipient',
+          status: 'PROCESSING',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final status = await provider.getStatus('btc-deposit');
+
+    expect(status.pairText, 'BTC(OMNI) -> ZEC');
+    expect(status.sellAmountText, '0.001 BTC(OMNI)');
+    expect(status.status, SwapIntentStatus.processing);
+  });
 
   test('quote rejects response with a mismatched swap type', () async {
     final transport = _FakeOneClickTransport([
@@ -293,47 +382,119 @@ void main() {
     );
   });
 
-  test('quote rejects response with an unsupported swap type echo', () async {
+  test(
+    'quote rejects flex-input response for ZEC-to-external requests',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            swapType: 'FLEX_INPUT',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountOut: '104750000',
+            depositAddress: 't1deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      await expectLater(
+        provider.quote(
+          const SwapQuoteRequest(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            sellAmount: 1.5,
+            sellAmountText: '1.5',
+            destination: '0xrecipient',
+            refundAddress: 'u1refund',
+          ),
+        ),
+        throwsA(
+          isA<OneClickApiException>()
+              .having((error) => error.operation, 'operation', 'quote')
+              .having(
+                (error) => error.message,
+                'message',
+                contains('did not match the requested route'),
+              ),
+        ),
+      );
+    },
+  );
+
+  test('status accepts flex-input quote request echo', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokens),
-      _FakeResponse.post(
-        '/v0/quote',
+      _FakeResponse.get(
+        '/v0/status',
         _quoteResponse(
-          originAsset: 'nep141:zec.omft.near',
-          destinationAsset: 'nep141:usdc.example',
-          quoteRequestSwapType: 'FLEX_INPUT',
-          amountInFormatted: '1.5',
-          amountOutFormatted: '105.25',
-          minAmountOut: '104750000',
-          depositAddress: 't1deposit',
-          status: null,
+          originAsset: 'nep141:usdc.example',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '70',
+          amountOutFormatted: '1',
+          minAmountOut: '99500000',
+          depositAddress: 'status-deposit',
+          status: 'PROCESSING',
         ),
       ),
     ]);
     final provider = NearIntentsOneClickSwapAdapter(transport: transport);
 
-    await expectLater(
-      provider.quote(
+    final status = await provider.getStatus('status-deposit');
+
+    expect(status.pairText, 'USDC -> ZEC');
+    expect(status.sellAmountText, '70 USDC');
+    expect(status.receiveEstimateText, '1 ZEC');
+  });
+
+  test(
+    'quote accepts flex-input response for external assets into ZEC',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '0.021',
+            minAmountOut: '2089500',
+            depositAddress: '0xexternal-deposit',
+            quoteRequestRefundTo: '0xrefund',
+            quoteRequestRecipient: 'u1recipient',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(
         const SwapQuoteRequest(
-          direction: SwapDirection.zecToExternal,
+          direction: SwapDirection.externalToZec,
           externalAsset: SwapAsset.usdc,
           sellAmount: 1.5,
           sellAmountText: '1.5',
-          destination: '0xrecipient',
-          refundAddress: 'u1refund',
+          destination: 'u1recipient',
+          refundAddress: '0xrefund',
         ),
-      ),
-      throwsA(
-        isA<OneClickApiException>()
-            .having((error) => error.operation, 'operation', 'quote')
-            .having(
-              (error) => error.message,
-              'message',
-              contains('did not match the requested route'),
-            ),
-      ),
-    );
-  });
+      );
+
+      final request = transport.requests.last;
+      expect(request.body?['swapType'], 'FLEX_INPUT');
+      expect(request.body?['amount'], '1500000');
+      expect(quote.mode, SwapQuoteMode.flexInput);
+      expect(quote.sellAmountText, '1.5 USDC');
+      expect(quote.receiveEstimateText, '0.021 ZEC');
+    },
+  );
 
   test('quote accepts exact-input response without a swap type echo', () async {
     final transport = _FakeOneClickTransport([
@@ -399,6 +560,140 @@ void main() {
             sellAmountText: '1.5',
             destination: '0xrecipient',
             refundAddress: 'u1refund',
+          ),
+        ),
+        throwsA(
+          isA<OneClickApiException>().having(
+            (error) => error.message,
+            'message',
+            '1Click quote response did not match the requested amount',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'exact-input quote rejects response with a different provider amount',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountIn: '200000000',
+            amountInFormatted: '2',
+            amountOutFormatted: '140.5',
+            minAmountOut: '139797500',
+            depositAddress: 't1deposit',
+            quoteRequestAmount: '150000000',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      await expectLater(
+        provider.quote(
+          const SwapQuoteRequest(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            sellAmount: 1.5,
+            sellAmountText: '1.5',
+            destination: '0xrecipient',
+            refundAddress: 'u1refund',
+          ),
+        ),
+        throwsA(
+          isA<OneClickApiException>().having(
+            (error) => error.message,
+            'message',
+            '1Click quote response did not match the requested amount',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'flex-input quote accepts response with a different provider amount',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountIn: '2000000',
+            amountInFormatted: '2',
+            amountOutFormatted: '0.03',
+            minAmountOut: '2985000',
+            depositAddress: '0xexternal-deposit',
+            quoteRequestAmount: '1500000',
+            quoteRequestRefundTo: '0xrefund',
+            quoteRequestRecipient: 'u1recipient',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: 1.5,
+          sellAmountText: '1.5',
+          destination: 'u1recipient',
+          refundAddress: '0xrefund',
+        ),
+      );
+
+      expect(transport.requests.last.body?['amount'], '1500000');
+      expect(quote.mode, SwapQuoteMode.flexInput);
+      expect(quote.sellAmountText, '2 USDC');
+      expect(quote.sellAmountBaseUnits, BigInt.from(2000000));
+    },
+  );
+
+  test(
+    'flex-input quote rejects response with a different quote request amount',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountIn: '2000000',
+            amountInFormatted: '2',
+            amountOutFormatted: '0.03',
+            minAmountOut: '2985000',
+            depositAddress: '0xexternal-deposit',
+            quoteRequestAmount: '2000000',
+            quoteRequestRefundTo: '0xrefund',
+            quoteRequestRecipient: 'u1recipient',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      await expectLater(
+        provider.quote(
+          const SwapQuoteRequest(
+            direction: SwapDirection.externalToZec,
+            externalAsset: SwapAsset.usdc,
+            sellAmount: 1.5,
+            sellAmountText: '1.5',
+            destination: 'u1recipient',
+            refundAddress: '0xrefund',
           ),
         ),
         throwsA(
@@ -770,6 +1065,7 @@ void main() {
         _quoteResponse(
           originAsset: 'nep141:usdc.example',
           destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
           amountInFormatted: '140.35',
           amountOutFormatted: '2',
           minAmountOut: '199000000',
@@ -798,6 +1094,7 @@ void main() {
     final intent = await provider.startSwap(quote);
 
     final request = transport.requests.last;
+    expect(request.body?['swapType'], 'FLEX_INPUT');
     expect(request.body?['amount'], '140350000');
     expect(request.body?['originAsset'], 'nep141:usdc.example');
     expect(request.body?['destinationAsset'], 'nep141:zec.omft.near');
@@ -1153,6 +1450,7 @@ void main() {
           _quoteResponse(
             originAsset: 'nep141:wrap.near',
             destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
             amountInFormatted: '0.01',
             amountOutFormatted: '0.0002',
             minAmountOut: '19900',
@@ -1194,6 +1492,7 @@ void main() {
           _quoteResponse(
             originAsset: 'nep141:wrap.near',
             destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
             amountInFormatted: '0.123456789012345678901234',
             amountOutFormatted: '0.0002',
             minAmountOut: '19900',
@@ -1288,6 +1587,7 @@ void main() {
           _quoteResponse(
             originAsset: 'nep141:usdc.example',
             destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
             amountInFormatted: '140.35',
             amountOutFormatted: '2',
             minAmountOut: '199000000',
@@ -1511,6 +1811,76 @@ void main() {
     );
   });
 
+  test('status rejects ambiguous 1Click ticker fallback', () {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithNearUsdcFirst),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: '1cs_v1:usdc:native:coin',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '12',
+          amountOutFormatted: '1',
+          minAmountOut: '99500000',
+          depositAddress: 'ambiguous-deposit',
+          quoteRequestRefundTo: '0xrefund',
+          quoteRequestRecipient: 'u1recipient',
+          status: 'PROCESSING',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    expect(
+      provider.getStatus('ambiguous-deposit'),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'status')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('Unsupported 1Click status pair'),
+            ),
+      ),
+    );
+  });
+
+  test('status rejects duplicate 1Click ticker fallback market variants', () {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithDuplicateEthUsdc),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: '1cs_v1:usdc:native:coin',
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '12',
+          amountOutFormatted: '1',
+          minAmountOut: '99500000',
+          depositAddress: 'duplicate-market-deposit',
+          quoteRequestRefundTo: '0xrefund',
+          quoteRequestRecipient: 'u1recipient',
+          status: 'PROCESSING',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    expect(
+      provider.getStatus('duplicate-market-deposit'),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'status')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('Unsupported 1Click status pair'),
+            ),
+      ),
+    );
+  });
+
   test(
     'status derives minimum receive from swap details slippage when min amount is missing',
     () async {
@@ -1583,6 +1953,9 @@ void main() {
             _quoteResponse(
               originAsset: originAsset,
               destinationAsset: destinationAsset,
+              swapType: scenario.direction.sendsZec
+                  ? 'EXACT_INPUT'
+                  : 'FLEX_INPUT',
               amountInFormatted: scenario.direction.sendsZec ? '1' : '70',
               amountOutFormatted: scenario.direction.sendsZec ? '70' : '1',
               minAmountOut: scenario.direction.sendsZec
@@ -1747,6 +2120,48 @@ void main() {
       expect(status.receiveEstimateText, '1.142725 USDC');
       expect(status.totalFeesText, '0.0000134 ZEC');
       expect(status.realisedSlippageText, '0.000758 USDC (0.07%)');
+    },
+  );
+
+  test(
+    'flex-input realised slippage uses provider percent without amount delta',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountIn: '70000000',
+            amountInFormatted: '70',
+            amountOut: '100000000',
+            amountOutFormatted: '1',
+            minAmountOut: '99500000',
+            depositAddress: 'status-deposit',
+            status: 'SUCCESS',
+            swapDetails: {
+              'amountIn': '35000000',
+              'amountInFormatted': '35',
+              'amountOut': '50000000',
+              'amountOutFormatted': '0.5',
+              'slippage': 7,
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 27, 7, 25),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.status, SwapIntentStatus.complete);
+      expect(status.sellAmountText, '35 USDC');
+      expect(status.receiveEstimateText, '0.5 ZEC');
+      expect(status.realisedSlippageText, '0.07%');
     },
   );
 
@@ -2069,6 +2484,16 @@ const _tokensWithAdditionalAssets = [
     'decimals': 9,
     'blockchain': 'sol',
     'symbol': 'SOL',
+  },
+];
+
+const _tokensWithExactBtcOmniAsset = [
+  ..._tokensWithAdditionalAssets,
+  {
+    'assetId': '1cs_v1:btc:native:coin',
+    'decimals': 8,
+    'blockchain': 'btc',
+    'symbol': 'BTC(OMNI)',
   },
 ];
 
