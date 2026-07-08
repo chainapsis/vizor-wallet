@@ -361,6 +361,29 @@ void main() {
     );
   });
 
+  testWidgets('amount error appears before recipient is entered', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(4258463)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '111111');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('send_amount_error_text')),
+      findsOneWidget,
+    );
+    expect(_fieldText(tester, 'send_address_field'), isEmpty);
+    expect(find.text('Review'), findsOneWidget);
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -446,10 +469,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text(r'$ 70.00'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('USD amount error stays below the amount field', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(50000000), zecUsdPrice: 100),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
     expect(
-      find.text('Not enough $kZcashDefaultCurrencyTicker'),
+      find.byKey(const ValueKey('send_amount_error_text')),
       findsOneWidget,
     );
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();

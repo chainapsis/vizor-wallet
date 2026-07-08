@@ -143,9 +143,8 @@ Widget buildSendNotEnoughUseCase(BuildContext context) {
       amountInputIsUsd: true,
       amountConversionText: '651.12 ZEC',
       amountFocused: true,
-      amountError: 'Not enough ZEC',
+      amountError: 'Insufficient shielded balance',
       memoMode: SendMemoMode.expanded,
-      reviewLabel: 'Not enough ZEC',
     ),
   );
 }

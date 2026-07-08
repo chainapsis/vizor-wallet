@@ -127,6 +127,10 @@ class SendComposeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final amountErrorText =
+        amountError != null && amountError!.trim().isNotEmpty
+        ? amountError
+        : null;
 
     final fields = Column(
       mainAxisSize: MainAxisSize.min,
@@ -135,14 +139,12 @@ class SendComposeView extends StatelessWidget {
         const SizedBox(height: _overlayReserve),
         const SizedBox(height: _fieldGap),
         _amountField(context),
-        SizedBox(
-          height: _overlayReserve,
-          child: _AmountConversionRow(
-            text: amountConversionText,
-            loading: amountConversionLoading,
-            enabled: amountInputIsUsd || !amountConversionLoading,
-            enterUsdMode: !amountInputIsUsd,
-          ),
+        _AmountSubRows(
+          errorText: amountErrorText,
+          conversionText: amountConversionText,
+          conversionLoading: amountConversionLoading,
+          conversionEnabled: amountInputIsUsd || !amountConversionLoading,
+          enterUsdMode: !amountInputIsUsd,
         ),
         const SizedBox(height: _fieldGap),
         _memo(context),
@@ -385,6 +387,86 @@ class _SendRecipientLink extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: row,
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountSubRows extends StatelessWidget {
+  const _AmountSubRows({
+    required this.errorText,
+    required this.conversionText,
+    required this.conversionLoading,
+    required this.conversionEnabled,
+    required this.enterUsdMode,
+  });
+
+  static const _rowHeight = 20.0;
+
+  final String? errorText;
+  final String? conversionText;
+  final bool conversionLoading;
+  final bool conversionEnabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
+    return SizedBox(
+      height: hasError ? _rowHeight * 2 : _rowHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasError)
+            SizedBox(
+              height: _rowHeight,
+              child: _AmountErrorRow(text: errorText!),
+            ),
+          SizedBox(
+            height: _rowHeight,
+            child: _AmountConversionRow(
+              text: conversionText,
+              loading: conversionLoading,
+              enabled: conversionEnabled,
+              enterUsdMode: enterUsdMode,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AmountErrorRow extends StatelessWidget {
+  const _AmountErrorRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                text,
+                key: const ValueKey('send_amount_error_text'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

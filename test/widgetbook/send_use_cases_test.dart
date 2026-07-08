@@ -98,6 +98,10 @@ void main() {
       AppIcons.moneyBag,
       AppThemeData.light.colors.icon.destructive,
     );
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text('651.12 ZEC'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
   });
 }
 

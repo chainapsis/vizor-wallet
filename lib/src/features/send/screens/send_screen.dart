@@ -464,8 +464,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
   bool get _isHardwareTexSend =>
       _isTexAddress && widget.activeAccountIsHardware;
-  String get _notEnoughCurrencyText =>
-      'Not enough $kZcashDefaultCurrencyTicker';
+  String get _notEnoughCurrencyText => 'Insufficient shielded balance';
 
   bool get _showAmountError =>
       _amountError != null &&
@@ -504,15 +503,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
 
-  String get _reviewButtonLabel {
-    final error = _amountError;
-    if (error != null &&
-        error.trim().isNotEmpty &&
-        error != _hardwareTexUnsupportedText) {
-      return error;
-    }
-    return 'Review';
-  }
+  String get _reviewButtonLabel => 'Review';
 
   String? _amountConversionText({
     required BigInt? amountZatoshi,
@@ -674,6 +665,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
+    final available = _availableBalanceForCurrentAddress;
+    if (zatoshi > available) {
+      setState(() => _amountError = _notEnoughCurrencyText);
+      return;
+    }
+
     final address = _addressController.text.trim();
     if (address.isEmpty ||
         _addressType == 'invalid' ||
@@ -685,11 +682,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     if (_isHardwareTexSend) {
       setState(() => _amountError = _hardwareTexUnsupportedText);
-      return;
-    }
-    final available = _availableBalanceForCurrentAddress;
-    if (zatoshi > available) {
-      setState(() => _amountError = _notEnoughCurrencyText);
       return;
     }
     setState(() => _amountError = null);
@@ -1087,16 +1079,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               });
                             },
                           ),
-                          SizedBox(
-                            height: _singleLineFieldOverlayReserve,
-                            child: _SendAmountConversionRow(
-                              text: amountConversionText,
-                              loading: amountConversionLoading,
-                              onTap: _toggleAmountInputMode,
-                              enabled:
-                                  _amountInputIsUsd || zecUsdUnitPrice != null,
-                              enterUsdMode: !_amountInputIsUsd,
-                            ),
+                          _SendAmountSubRows(
+                            errorText: _showAmountError ? _amountError : null,
+                            conversionText: amountConversionText,
+                            conversionLoading: amountConversionLoading,
+                            onConversionTap: _toggleAmountInputMode,
+                            conversionEnabled:
+                                _amountInputIsUsd || zecUsdUnitPrice != null,
+                            enterUsdMode: !_amountInputIsUsd,
                           ),
                           const SizedBox(height: _singleLineFieldGap),
                           if (!hideMemoControls) ...[
@@ -1410,6 +1400,89 @@ class _SendMaxBalanceControl extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SendAmountSubRows extends StatelessWidget {
+  const _SendAmountSubRows({
+    required this.errorText,
+    required this.conversionText,
+    required this.conversionLoading,
+    required this.onConversionTap,
+    required this.conversionEnabled,
+    required this.enterUsdMode,
+  });
+
+  static const _rowHeight = 20.0;
+
+  final String? errorText;
+  final String? conversionText;
+  final bool conversionLoading;
+  final VoidCallback onConversionTap;
+  final bool conversionEnabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
+    return SizedBox(
+      height: hasError ? _rowHeight * 2 : _rowHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasError)
+            SizedBox(
+              height: _rowHeight,
+              child: _SendAmountErrorRow(text: errorText!),
+            ),
+          SizedBox(
+            height: _rowHeight,
+            child: _SendAmountConversionRow(
+              text: conversionText,
+              loading: conversionLoading,
+              onTap: onConversionTap,
+              enabled: conversionEnabled,
+              enterUsdMode: enterUsdMode,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SendAmountErrorRow extends StatelessWidget {
+  const _SendAmountErrorRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                text,
+                key: const ValueKey('send_amount_error_text'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

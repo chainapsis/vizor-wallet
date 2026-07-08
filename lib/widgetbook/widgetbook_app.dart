@@ -620,7 +620,7 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSendUsdInputUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Not enough ZEC',
+                      name: 'Insufficient shielded balance',
                       builder: buildSendNotEnoughUseCase,
                     ),
                     WidgetbookUseCase(
