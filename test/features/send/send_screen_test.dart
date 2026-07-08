@@ -469,13 +469,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text('Insufficient balance'), findsOneWidget);
+    expect(find.text('Insufficient shielded balance'), findsNothing);
     expect(find.text(r'$ 70.00'), findsOneWidget);
     expect(find.text('Review'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
 
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('fee-specific balance error copy is preserved', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(100000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '0.99995');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Insufficient shielded balance (fee:'),
+      findsOneWidget,
+    );
+    expect(find.text('Review'), findsOneWidget);
     expect(rustApi.proposeSendCalls, 0);
   });
 

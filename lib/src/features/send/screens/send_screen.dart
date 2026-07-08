@@ -462,9 +462,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _isTransparentLikeAddress ? '' : _memoController.text.trim();
 
   BigInt get _availableBalanceForCurrentAddress => widget.spendableBalance;
+  String get _insufficientBalanceText =>
+      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
+  String get _insufficientBalanceToCoverFeeText =>
+      '$_insufficientBalanceText to cover fee';
+  String get _insufficientBalanceIncludingFeeText =>
+      '$_insufficientBalanceText including fee';
+  String _insufficientBalanceWithFeeText(String feeText) =>
+      '$_insufficientBalanceText (fee: $feeText)';
   bool get _isHardwareTexSend =>
       _isTexAddress && widget.activeAccountIsHardware;
-  String get _notEnoughCurrencyText => 'Insufficient shielded balance';
 
   bool get _showAmountError =>
       _amountError != null &&
@@ -591,7 +598,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() {
           _isResolvingMax = false;
           _maxQuote = null;
-          _amountError = _notEnoughCurrencyText;
+          _amountError = _insufficientBalanceToCoverFeeText;
         });
         return;
       }
@@ -639,7 +646,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _isResolvingMax = false;
         _maxQuote = null;
         if (msg.contains('insufficient')) {
-          _amountError = _notEnoughCurrencyText;
+          _amountError = _insufficientBalanceToCoverFeeText;
         } else {
           _amountError = 'Max amount unavailable';
         }
@@ -661,13 +668,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     final zatoshi = parseZecAmount(text);
     if (zatoshi == null || zatoshi <= BigInt.zero) {
-      setState(() => _amountError = '');
+      setState(() => _amountError = 'Invalid amount');
       return;
     }
 
     final available = _availableBalanceForCurrentAddress;
-    if (zatoshi > available) {
-      setState(() => _amountError = _notEnoughCurrencyText);
+    if (zatoshi > available && !_hasValidAddress) {
+      setState(() => _amountError = _insufficientBalanceText);
       return;
     }
 
@@ -682,6 +689,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     if (_isHardwareTexSend) {
       setState(() => _amountError = _hardwareTexUnsupportedText);
+      return;
+    }
+    if (zatoshi > available) {
+      setState(() => _amountError = _insufficientBalanceText);
       return;
     }
     setState(() => _amountError = null);
@@ -709,7 +720,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > available) {
-        setState(() => _amountError = _notEnoughCurrencyText);
+        final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
+        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
         setState(() => _amountError = null);
       }
@@ -717,7 +729,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = _notEnoughCurrencyText);
+        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -783,7 +795,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final available = _availableBalanceForCurrentAddress;
       if (amountZatoshi > available) {
         setState(() {
-          _error = _notEnoughCurrencyText;
+          _error = '$_insufficientBalanceText.';
           _isSending = false;
         });
         return;
