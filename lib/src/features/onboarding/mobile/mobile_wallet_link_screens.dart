@@ -34,6 +34,15 @@ const _walletLinkScanProgress = 0.4;
 const _walletLinkAccountsProgress = 0.6;
 const _walletLinkContactsProgress = 0.8;
 
+typedef WalletLinkCompletionCallback =
+    Future<void> Function({
+      required String packageId,
+      required String completionToken,
+      required List<int> keyBytes,
+      required int importedAccountCount,
+      required int importedContactCount,
+    });
+
 class MobileWalletLinkIntroScreen extends StatelessWidget {
   const MobileWalletLinkIntroScreen({super.key});
 
@@ -415,7 +424,12 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
 }
 
 class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
-  const MobileWalletLinkSelectAccountsScreen({super.key});
+  const MobileWalletLinkSelectAccountsScreen({
+    this.completeWalletLinkPackage = completeWalletLinkPackageBestEffort,
+    super.key,
+  });
+
+  final WalletLinkCompletionCallback completeWalletLinkPackage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -468,7 +482,13 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       buttonLoading: submitting,
       onButtonPressed: () {
         if (hasNothingToImport) {
-          _goBackFromWalletLink(context);
+          unawaited(
+            _completeEmptyWalletLinkAndGoBack(
+              context,
+              ref,
+              completeWalletLinkPackage: completeWalletLinkPackage,
+            ),
+          );
           return;
         }
         if (state.contacts.isEmpty) {
@@ -683,6 +703,41 @@ void _goBackFromWalletLink(BuildContext context) {
     return;
   }
   GoRouter.maybeOf(context)?.go('/onboarding/link-desktop');
+}
+
+Future<void> _completeEmptyWalletLinkAndGoBack(
+  BuildContext context,
+  WidgetRef ref, {
+  required WalletLinkCompletionCallback completeWalletLinkPackage,
+}) async {
+  final state = ref.read(mobileWalletLinkControllerProvider);
+  if (state.submitting) return;
+  final packageId = state.packageId;
+  final completionToken = state.completionToken;
+  final keyBytes = state.keyBytes;
+  if (packageId == null || completionToken == null || keyBytes == null) {
+    _goBackFromWalletLink(context);
+    return;
+  }
+
+  final controller = ref.read(mobileWalletLinkControllerProvider.notifier);
+  controller.beginSubmit();
+  try {
+    await completeWalletLinkPackage(
+      packageId: packageId,
+      completionToken: completionToken,
+      keyBytes: keyBytes,
+      importedAccountCount: 0,
+      importedContactCount: 0,
+    );
+  } catch (_) {
+    // Completion is best-effort; the local no-op state should still exit.
+  }
+  if (!context.mounted) {
+    controller.endSubmit();
+    return;
+  }
+  _goBackFromWalletLink(context);
 }
 
 Future<void> _continueToPasscodeOrImport(

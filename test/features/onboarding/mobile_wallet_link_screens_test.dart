@@ -377,9 +377,13 @@ void main() {
   testWidgets('empty wallet link shows go back without imported sections', (
     tester,
   ) async {
+    final completion = _RecordingWalletLinkCompletion();
+
     await tester.pumpWidget(
       _routerApp(
-        const MobileWalletLinkSelectAccountsScreen(),
+        MobileWalletLinkSelectAccountsScreen(
+          completeWalletLinkPackage: completion.call,
+        ),
         state: _nothingToImportState(),
       ),
     );
@@ -397,6 +401,22 @@ void main() {
     expect(find.text('Continue'), findsNothing);
 
     await tester.tap(find.text('Go back'));
+    await tester.pump();
+
+    expect(find.text('Importing...'), findsOneWidget);
+    expect(completion.calls, hasLength(1));
+    expect(
+      completion.calls.single.packageId,
+      _nothingToImportState().packageId,
+    );
+    expect(
+      completion.calls.single.completionToken,
+      _nothingToImportState().completionToken,
+    );
+    expect(completion.calls.single.importedAccountCount, 0);
+    expect(completion.calls.single.importedContactCount, 0);
+
+    completion.complete();
     await tester.pumpAndSettle();
 
     expect(find.text('link intro route'), findsOneWidget);
@@ -474,6 +494,50 @@ class _RecordingAddressBookNotifier extends AddressBookNotifier {
     importCalls += 1;
     return imported.length;
   }
+}
+
+class _RecordingWalletLinkCompletion {
+  final _completer = Completer<void>();
+  final calls = <_WalletLinkCompletionCall>[];
+
+  Future<void> call({
+    required String packageId,
+    required String completionToken,
+    required List<int> keyBytes,
+    required int importedAccountCount,
+    required int importedContactCount,
+  }) {
+    calls.add(
+      _WalletLinkCompletionCall(
+        packageId: packageId,
+        completionToken: completionToken,
+        keyBytes: keyBytes,
+        importedAccountCount: importedAccountCount,
+        importedContactCount: importedContactCount,
+      ),
+    );
+    return _completer.future;
+  }
+
+  void complete() {
+    _completer.complete();
+  }
+}
+
+class _WalletLinkCompletionCall {
+  const _WalletLinkCompletionCall({
+    required this.packageId,
+    required this.completionToken,
+    required this.keyBytes,
+    required this.importedAccountCount,
+    required this.importedContactCount,
+  });
+
+  final String packageId;
+  final String completionToken;
+  final List<int> keyBytes;
+  final int importedAccountCount;
+  final int importedContactCount;
 }
 
 class _ConfiguredSecurityNotifier extends AppSecurityNotifier {
