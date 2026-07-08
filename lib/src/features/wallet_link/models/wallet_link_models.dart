@@ -400,6 +400,7 @@ class WalletLinkTransferAccount {
       ufvk: ufvk,
       seedFingerprint: seedFingerprint,
       profilePictureId: profilePictureId,
+      sourceAccountUuid: uuid,
     );
   }
 }

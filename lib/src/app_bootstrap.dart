@@ -400,6 +400,7 @@ AccountInfo mergeBootstrappedAccountInfo({
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
     ),
+    walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
   );
 }
 

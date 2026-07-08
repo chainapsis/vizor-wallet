@@ -427,6 +427,12 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
     }
 
     final submitting = state.submitting;
+    final allAccountsSelected =
+        state.importableAccountCount > 0 &&
+        state.selectedAccountCount == state.importableAccountCount;
+    final canContinueWithContactsOnly =
+        state.importableContactCount > 0 &&
+        ref.watch(appSecurityProvider).isPasswordConfigured;
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkAccountsProgress,
       title: 'Select account',
@@ -441,22 +447,22 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       ),
       listTitle:
           '${state.accounts.length} account${state.accounts.length == 1 ? '' : 's'} found',
-      actionLabel: state.selectedAccountCount == state.importableAccountCount
-          ? 'Deselect all'
-          : 'Select all',
-      onAction: submitting
+      actionLabel: allAccountsSelected ? 'Deselect all' : 'Select all',
+      onAction: submitting || state.importableAccountCount == 0
           ? null
-          : state.selectedAccountCount == state.importableAccountCount
+          : allAccountsSelected
           ? () => ref
                 .read(mobileWalletLinkControllerProvider.notifier)
                 .deselectAllAccounts()
           : () => ref
                 .read(mobileWalletLinkControllerProvider.notifier)
                 .selectAllImportableAccounts(),
-      buttonLabel:
-          'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
+      buttonLabel: state.selectedAccountCount == 0
+          ? 'Continue'
+          : 'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
       buttonLoadingLabel: 'Importing...',
-      buttonEnabled: state.selectedAccountCount > 0,
+      buttonEnabled:
+          state.selectedAccountCount > 0 || canContinueWithContactsOnly,
       buttonLoading: submitting,
       onButtonPressed: () {
         if (state.contacts.isEmpty) {
@@ -467,11 +473,12 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       },
       child: Column(
         children: [
-          for (final account in state.accounts) ...[
+          for (final account in state.sortedAccounts) ...[
             _WalletLinkAccountRow(
               account: account,
               selected: state.selectedAccountUuids.contains(account.uuid),
-              onTap: submitting
+              alreadyImported: state.isAccountAlreadyImported(account.uuid),
+              onTap: submitting || !state.isAccountSelectable(account)
                   ? null
                   : () => ref
                         .read(mobileWalletLinkControllerProvider.notifier)
@@ -499,6 +506,9 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
 
     final submitting = state.submitting;
     final groups = _groupContactsByNetwork(state.contacts);
+    final allContactsSelected =
+        state.importableContactCount > 0 &&
+        state.selectedContactCount == state.importableContactCount;
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkContactsProgress,
       title: 'Import contacts',
@@ -507,12 +517,10 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       ),
       listTitle:
           '${state.contacts.length} contact${state.contacts.length == 1 ? '' : 's'} found',
-      actionLabel: state.selectedContactCount == state.contacts.length
-          ? 'Deselect all'
-          : 'Select all',
-      onAction: submitting
+      actionLabel: allContactsSelected ? 'Deselect all' : 'Select all',
+      onAction: submitting || state.importableContactCount == 0
           ? null
-          : state.selectedContactCount == state.contacts.length
+          : allContactsSelected
           ? () => ref
                 .read(mobileWalletLinkControllerProvider.notifier)
                 .deselectAllContacts()
@@ -522,7 +530,8 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       buttonLabel:
           'Import ${state.selectedContactCount} contact${state.selectedContactCount == 1 ? '' : 's'}',
       buttonLoadingLabel: 'Importing...',
-      buttonEnabled: state.selectedAccountCount > 0,
+      buttonEnabled:
+          state.selectedAccountCount > 0 || state.selectedContactCount > 0,
       buttonLoading: submitting,
       onButtonPressed: () => _continueToPasscodeOrImport(context, ref),
       child: Column(
@@ -531,11 +540,15 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
           for (final (groupIndex, entry) in groups.entries.indexed) ...[
             _ContactGroupHeader(network: entry.key),
             const SizedBox(height: AppSpacing.s),
-            for (final (contactIndex, contact) in entry.value.indexed) ...[
+            for (final (contactIndex, contact) in _sortContactsForWalletLink(
+              state,
+              entry.value,
+            ).indexed) ...[
               _WalletLinkContactRow(
                 contact: contact,
                 selected: state.selectedContactIds.contains(contact.id),
-                onTap: submitting
+                alreadyImported: state.isContactAlreadyImported(contact.id),
+                onTap: submitting || !state.isContactSelectable(contact)
                     ? null
                     : () => ref
                           .read(mobileWalletLinkControllerProvider.notifier)
@@ -560,7 +573,10 @@ Future<void> _continueToPasscodeOrImport(
   final state = ref.read(mobileWalletLinkControllerProvider);
   if (state.submitting) return;
   final payload = state.payload;
-  if (payload == null || state.selectedAccounts.isEmpty) return;
+  if (payload == null ||
+      (state.selectedAccounts.isEmpty && state.selectedContacts.isEmpty)) {
+    return;
+  }
   final packageId = state.packageId;
   final completionToken = state.completionToken;
   final keyBytes = state.keyBytes;
@@ -571,6 +587,7 @@ Future<void> _continueToPasscodeOrImport(
   final contacts = state.selectedContacts;
   final security = ref.read(appSecurityProvider);
   if (!security.isPasswordConfigured) {
+    if (accounts.isEmpty) return;
     context.push(
       '/onboarding/set-passcode',
       extra: SetPasswordScreenArgs.importWalletLink(
@@ -589,18 +606,28 @@ Future<void> _continueToPasscodeOrImport(
   final controller = ref.read(mobileWalletLinkControllerProvider.notifier);
   controller.beginSubmit();
   try {
-    final accountImportResult = await runWithSyncPausedForAccountMutation(
-      ref,
-      () => ref
+    if (accounts.isEmpty) {
+      await ref
           .read(accountProvider.notifier)
-          .importLinkedWalletAccounts(
-            network: payload.network,
-            accountsToImport: accounts,
-          ),
-    );
-    final importedContactCount = await ref
-        .read(addressBookProvider.notifier)
-        .importContacts(contacts);
+          .validateLinkedWalletNetwork(payload.network);
+    }
+    final accountImportResult = accounts.isEmpty
+        ? const LinkedWalletAccountsImportResult(
+            importedCount: 0,
+            skippedDuplicateCount: 0,
+          )
+        : await runWithSyncPausedForAccountMutation(
+            ref,
+            () => ref
+                .read(accountProvider.notifier)
+                .importLinkedWalletAccounts(
+                  network: payload.network,
+                  accountsToImport: accounts,
+                ),
+          );
+    final importedContactCount = contacts.isEmpty
+        ? 0
+        : await ref.read(addressBookProvider.notifier).importContacts(contacts);
     await completeWalletLinkPackageBestEffort(
       packageId: packageId,
       completionToken: completionToken,
@@ -815,17 +842,19 @@ class _WalletLinkAccountRow extends StatelessWidget {
   const _WalletLinkAccountRow({
     required this.account,
     required this.selected,
+    required this.alreadyImported,
     required this.onTap,
   });
 
   final WalletLinkTransferAccount account;
   final bool selected;
+  final bool alreadyImported;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final enabled = account.isImportable && onTap != null;
+    final enabled = account.isImportable && !alreadyImported && onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
@@ -856,18 +885,40 @@ class _WalletLinkAccountRow extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
-              child: Text(
-                account.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: enabled ? colors.text.accent : colors.text.secondary,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: account.isImportable
+                          ? colors.text.accent
+                          : colors.text.secondary,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  if (alreadyImported) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Account already imported',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.destructive,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            _WalletLinkCheckbox(selected: selected && account.isImportable),
+            _WalletLinkCheckbox(
+              selected: selected && account.isImportable && !alreadyImported,
+            ),
           ],
         ),
       ),
@@ -879,20 +930,22 @@ class _WalletLinkContactRow extends StatelessWidget {
   const _WalletLinkContactRow({
     required this.contact,
     required this.selected,
+    required this.alreadyImported,
     required this.onTap,
   });
 
   final AddressBookContact contact;
   final bool selected;
+  final bool alreadyImported;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final enabled = onTap != null;
+    final enabled = !alreadyImported && onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Container(
         constraints: const BoxConstraints(minHeight: 64),
         padding: const EdgeInsets.only(
@@ -917,19 +970,21 @@ class _WalletLinkContactRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: enabled
-                          ? colors.text.accent
-                          : colors.text.secondary,
+                      color: colors.text.accent,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    contact.addressPreview,
+                    alreadyImported
+                        ? 'Contact already imported'
+                        : contact.addressPreview,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: enabled && selected
+                      color: alreadyImported
+                          ? colors.text.destructive
+                          : enabled && selected
                           ? colors.text.accent
                           : colors.text.secondary,
                       fontWeight: FontWeight.w400,
@@ -939,7 +994,7 @@ class _WalletLinkContactRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            _WalletLinkCheckbox(selected: selected),
+            _WalletLinkCheckbox(selected: selected && !alreadyImported),
           ],
         ),
       ),
@@ -1013,4 +1068,19 @@ Map<AddressBookNetwork, List<AddressBookContact>> _groupContactsByNetwork(
     grouped.putIfAbsent(contact.network, () => []).add(contact);
   }
   return grouped;
+}
+
+List<AddressBookContact> _sortContactsForWalletLink(
+  MobileWalletLinkState state,
+  List<AddressBookContact> contacts,
+) {
+  final indexed = contacts.indexed.toList();
+  indexed.sort((a, b) {
+    final rank = (state.isContactAlreadyImported(a.$2.id) ? 1 : 0).compareTo(
+      state.isContactAlreadyImported(b.$2.id) ? 1 : 0,
+    );
+    if (rank != 0) return rank;
+    return a.$1.compareTo(b.$1);
+  });
+  return [for (final entry in indexed) entry.$2];
 }

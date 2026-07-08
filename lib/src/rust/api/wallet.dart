@@ -150,6 +150,18 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
   isFirstWalletAccount: isFirstWalletAccount,
 );
 
+Future<bool> isSoftwareWalletLinkAccountImported({
+  required String mnemonic,
+  required String network,
+  required String dbPath,
+  required int zip32AccountIndex,
+}) => RustLib.instance.api.crateApiWalletIsSoftwareWalletLinkAccountImported(
+  mnemonic: mnemonic,
+  network: network,
+  dbPath: dbPath,
+  zip32AccountIndex: zip32AccountIndex,
+);
+
 /// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
 Future<AccountCreationResult> importHardwareAccount({
   required String dbPath,
