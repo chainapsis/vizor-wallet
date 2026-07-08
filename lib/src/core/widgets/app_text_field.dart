@@ -41,6 +41,7 @@ class AppTextField extends StatefulWidget {
     this.messageIcon,
     this.messageStyle,
     this.labelStyle,
+    this.borderColor,
     this.tone = AppTextFieldTone.neutral,
     this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
@@ -103,6 +104,7 @@ class AppTextField extends StatefulWidget {
   final Widget? messageIcon;
   final TextStyle? messageStyle;
   final TextStyle? labelStyle;
+  final Color? borderColor;
   final AppTextFieldTone tone;
   final AppTextFieldSurface surface;
   final bool showClearButton;
@@ -356,14 +358,17 @@ class _AppTextFieldState extends State<AppTextField> {
     final hoverBorderColor = widget.surface == AppTextFieldSurface.secondary
         ? Colors.transparent
         : colors.border.subtleOpacity;
-    final borderColor = switch (widget.tone) {
-      AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
-      AppTextFieldTone.neutral when _hovered => hoverBorderColor,
-      AppTextFieldTone.neutral => Colors.transparent,
-      AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
-      AppTextFieldTone.success => colors.border.utilitySuccess,
-      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
-    };
+    final borderColor =
+        widget.borderColor ??
+        switch (widget.tone) {
+          AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
+          AppTextFieldTone.neutral when _hovered => hoverBorderColor,
+          AppTextFieldTone.neutral => Colors.transparent,
+          AppTextFieldTone.destructive =>
+            colors.border.utilityDestructiveSubtle,
+          AppTextFieldTone.success => colors.border.utilitySuccess,
+          AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
+        };
     // The secondary shell is flat in the design (no effects on the Field
     // frame); the surface shadow belongs to the white primary input only.
     final boxShadow =
@@ -411,10 +416,8 @@ class _AppTextFieldState extends State<AppTextField> {
         : null;
     final inlinePrefixText = _multiline ? null : widget.inlinePrefixText;
     final inlineSuffixText = _multiline ? null : widget.inlineSuffixText;
-    final inlinePrefixStyle =
-        widget.inlinePrefixStyle ?? valueStyle;
-    final inlineSuffixStyle =
-        widget.inlineSuffixStyle ?? valueStyle;
+    final inlinePrefixStyle = widget.inlinePrefixStyle ?? valueStyle;
+    final inlineSuffixStyle = widget.inlineSuffixStyle ?? valueStyle;
     final inlinePrefixWidth = inlinePrefixText == null
         ? 0.0
         : measureInlineText(inlinePrefixText, inlinePrefixStyle);
@@ -429,7 +432,8 @@ class _AppTextFieldState extends State<AppTextField> {
       inlineMeasuredInputText,
       inlineMeasuredInputStyle,
     );
-    final inlineSuffixLeft = inlinePrefixOffset +
+    final inlineSuffixLeft =
+        inlinePrefixOffset +
         inlineInputWidth +
         (inlineMeasuredInputText.isEmpty ? 0.0 : widget.inlineAffixGap);
 
@@ -720,8 +724,7 @@ class _AppTextFieldState extends State<AppTextField> {
                                       child: widget.trailingFitsSlot
                                           ? trailingWidget
                                           : SizedBox(
-                                              width:
-                                                  _appTextFieldInputIconSize,
+                                              width: _appTextFieldInputIconSize,
                                               height:
                                                   _appTextFieldInputIconSize,
                                               child: trailingWidget,

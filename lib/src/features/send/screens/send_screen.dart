@@ -158,7 +158,7 @@ class _AddressTextEditingController extends TextEditingController {
 
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
-  static const _singleLineFieldGap = AppSpacing.xs;
+  static const _singleLineFieldGap = AppSpacing.s;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
   static const _hardwareTexUnsupportedText =
@@ -860,6 +860,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
     final colors = context.colors;
+    final sendFieldLabelStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.secondary,
+    );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     final amountConversionText = _amountConversionText(
@@ -993,11 +996,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           AppTextField(
                             key: const ValueKey('send_address_field'),
                             label: 'Send to',
+                            labelStyle: sendFieldLabelStyle,
                             rightSlot: _SendContactsLabelButton(
                               label: 'Contacts',
                               onTap: _openContactPicker,
                             ),
                             tone: addressTone,
+                            borderColor:
+                                addressTone == AppTextFieldTone.destructive
+                                ? colors.border.utilityDestructive
+                                : null,
                             focusNode: _addressFocusNode,
                             controller: _addressController,
                             hintText: 'Zcash address',
@@ -1037,9 +1045,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           AppTextField(
                             key: const ValueKey('send_amount_field'),
                             label: 'Amount',
+                            labelStyle: sendFieldLabelStyle,
                             tone: _showAmountError
                                 ? AppTextFieldTone.destructive
                                 : AppTextFieldTone.neutral,
+                            borderColor: _showAmountError
+                                ? colors.border.utilityDestructive
+                                : null,
                             focusNode: _amountFocusNode,
                             controller: _amountController,
                             hintText: '0',
@@ -1115,9 +1127,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               AppTextField(
                                 key: const ValueKey('send_memo_field'),
                                 label: 'Message',
+                                labelStyle: sendFieldLabelStyle,
                                 tone: _memoError != null
                                     ? AppTextFieldTone.destructive
                                     : AppTextFieldTone.neutral,
+                                borderColor: _memoError != null
+                                    ? colors.border.utilityDestructive
+                                    : null,
                                 focusNode: _memoFocusNode,
                                 controller: _memoController,
                                 hintText: 'Add a message',
@@ -1217,7 +1233,7 @@ class _SendComposeLayout extends StatelessWidget {
   static const fieldsWidth = 396.0;
   static const reviewButtonWidth = 196.0;
   static const _containerHorizontalPadding = AppSpacing.s;
-  static const _containerVerticalPadding = AppSpacing.md;
+  static const _containerVerticalPadding = AppSpacing.sm;
   static const _sectionGap = 32.0;
   static const _fieldsVerticalPadding = AppSpacing.xs;
 
@@ -1328,10 +1344,10 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
               children: [
                 Text(
                   widget.label,
-                  style: AppTypography.labelMedium.copyWith(color: color),
+                  style: AppTypography.labelLarge.copyWith(color: color),
                 ),
-                const SizedBox(width: 2),
-                AppIcon(AppIcons.chevronForward, size: 12, color: color),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(AppIcons.chevronForward, size: 16, color: color),
               ],
             ),
           ),
@@ -1367,7 +1383,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
     final colors = context.colors;
     final maxLabel = Text(
       'Use Max',
-      style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+      style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
     );
 
     return Row(
@@ -1399,12 +1415,12 @@ class _SendMaxBalanceControl extends StatelessWidget {
             ],
           ),
           child: SizedBox(
-            width: 18,
-            height: 18,
+            width: 16,
+            height: 16,
             child: Center(
               child: AppIcon(
                 AppIcons.help,
-                size: 14,
+                size: 16,
                 color: colors.icon.muted,
                 semanticLabel: 'Spendable balance info',
               ),
@@ -1426,7 +1442,8 @@ class _SendAmountSubRows extends StatelessWidget {
     required this.enterUsdMode,
   });
 
-  static const _rowHeight = 20.0;
+  static const _topGap = AppSpacing.xxs;
+  static const _rowHeight = 24.0;
 
   final String? errorText;
   final String? conversionText;
@@ -1439,10 +1456,11 @@ class _SendAmountSubRows extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasError = errorText != null && errorText!.trim().isNotEmpty;
     return SizedBox(
-      height: hasError ? _rowHeight * 2 : _rowHeight,
+      height: _topGap + (hasError ? _rowHeight * 2 : _rowHeight),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: _topGap),
           if (hasError)
             SizedBox(
               height: _rowHeight,
@@ -1662,7 +1680,8 @@ class _SendAddMessageCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 'Add a memo',
-                style: AppTypography.labelMedium.copyWith(
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
                   color: colors.text.accent,
                 ),
               ),
@@ -1671,7 +1690,10 @@ class _SendAddMessageCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Encrypted, for shielded addresses only.',
-            style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
+            style: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.muted,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
