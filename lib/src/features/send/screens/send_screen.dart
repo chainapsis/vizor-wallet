@@ -396,6 +396,52 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _validateAmount();
   }
 
+  void _handleZecUsdPriceChanged(double? zecUsdUnitPrice) {
+    if (!_amountInputIsUsd || _programmaticAmountEdit) return;
+
+    if (_isMaxMode) {
+      _refreshMaxFiatAmountText(zecUsdUnitPrice);
+      return;
+    }
+
+    final fiatText = _fiatAmountText.trim();
+    if (fiatText.isEmpty) return;
+
+    final zatoshi = sendZatoshiFromUsdText(fiatText, zecUsdUnitPrice);
+    final nextAmountText = zatoshi == null
+        ? ''
+        : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    if (nextAmountText == _amountText) return;
+
+    setState(() {
+      _amountText = nextAmountText;
+      if (nextAmountText.isEmpty) {
+        _amountError = '';
+      }
+    });
+    _validateAmount();
+  }
+
+  void _refreshMaxFiatAmountText(double? zecUsdUnitPrice) {
+    final zatoshi = parseZecAmount(_amountText.trim());
+    if (zatoshi == null ||
+        zatoshi <= BigInt.zero ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return;
+    }
+
+    final fiatText = sendSendableUsdInputTextForZatoshi(
+      zatoshi,
+      zecUsdUnitPrice,
+    );
+    if (fiatText.isEmpty || fiatText == _fiatAmountText) return;
+
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
+  }
+
   bool get _amountInputIsUsd =>
       _amountInputMode == _DesktopSendAmountInputMode.usd;
 
@@ -859,6 +905,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<double?>(zecHomeUsdUnitPriceProvider, (previous, next) {
+      if (previous == next || !mounted) return;
+      _handleZecUsdPriceChanged(next);
+    });
+
     final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
       available,
@@ -941,11 +992,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ =>
         matchedRecipientName == null
             ? null
-            : AppIcon(
-                AppIcons.user,
-                size: 16,
-                color: colors.icon.brandCrimson,
-              ),
+            : AppIcon(AppIcons.user, size: 16, color: colors.icon.brandCrimson),
     };
     final addressHasText = _addressController.text.trim().isNotEmpty;
     final addressLeadingIcon = switch (_addressType) {

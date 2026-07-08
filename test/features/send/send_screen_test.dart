@@ -618,6 +618,55 @@ void main() {
     expect(rustApi.lastProposeAmountZatoshi, BigInt.from(250000000));
   });
 
+  testWidgets('USD amount input recomputes when the ZEC price changes', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final zecUsdPriceProvider =
+        NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+          _TestZecUsdPriceNotifier.new,
+        );
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdPriceProvider: zecUsdPriceProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+      listen: false,
+    );
+    container.read(zecUsdPriceProvider.notifier).setPrice(200);
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('1.25 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
+  });
+
   testWidgets('native amount remains reviewable while USD price is loading', (
     tester,
   ) async {
@@ -730,6 +779,7 @@ Widget _sendHarness({
   BigInt? spendableBalance,
   BigInt? transparentBalance,
   double? zecUsdPrice = 70,
+  NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -746,7 +796,11 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
-      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
+      zecUsdPriceProvider == null
+          ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
+          : zecHomeUsdUnitPriceProvider.overrideWith(
+              (ref) => ref.watch(zecUsdPriceProvider),
+            ),
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
@@ -889,6 +943,15 @@ class _FakeSyncNotifier extends SyncNotifier {
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,
   );
+}
+
+class _TestZecUsdPriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 100;
+
+  void setPrice(double? price) {
+    state = price;
+  }
 }
 
 class _RustApiFake implements RustLibApi {
