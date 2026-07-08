@@ -524,6 +524,7 @@ class _AmountConversionRow extends StatelessWidget {
                   r'$',
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.muted,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xxs),
@@ -534,6 +535,7 @@ class _AmountConversionRow extends StatelessWidget {
                   key: const ValueKey('send_amount_conversion_text'),
                   style: AppTypography.labelLarge.copyWith(
                     color: enabled ? colors.text.muted : colors.text.disabled,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
             ],
