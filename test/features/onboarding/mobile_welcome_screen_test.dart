@@ -346,6 +346,18 @@ void main() {
 
     expect(find.byType(MobileWalletLinkIntroScreen), findsOneWidget);
     expect(find.text('Link with Desktop'), findsOneWidget);
+    expect(find.text('Copy your desktop wallet to this phone'), findsOneWidget);
+    expect(
+      find.text(
+        'This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Go to Settings → Link Vizor Mobile'), findsOneWidget);
+    expect(
+      find.text('Scan the QR code on your desktop from the next screen.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('keystone pushes the keystone intro step', (tester) async {

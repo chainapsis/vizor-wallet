@@ -150,6 +150,10 @@ void main() {
 
     _expectNoCrash(errors);
     expect(find.text('Scan with Vizor mobile'), findsOneWidget);
+    expect(
+      find.text('Open Vizor on your phone → Add a wallet → Link Vizor Desktop'),
+      findsOneWidget,
+    );
     expect(find.text('Expires in 0:59'), findsOneWidget);
   });
 

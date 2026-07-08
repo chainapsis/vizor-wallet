@@ -43,7 +43,7 @@ class MobileWalletLinkIntroScreen extends StatelessWidget {
       progress: _walletLinkIntroProgress,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Link with Desktop',
-      subtitle: 'Prepare your desktop app',
+      subtitle: 'Copy your desktop wallet to this phone',
       bottomArea: AppButton(
         key: const ValueKey('mobile_wallet_link_intro_scan'),
         expand: true,
@@ -85,7 +85,7 @@ class _DesktopLinkNoticeCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'This copies the wallet onto the phone - nothing on the computer changes. Keep it clearly distinct from the destructive wallet.dat migration flow.',
+              'This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.',
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
               ),
@@ -105,8 +105,8 @@ class _DesktopLinkSteps extends StatelessWidget {
     final colors = context.colors;
     const steps = [
       'Open & unlock your Vizor desktop app',
-      'Go to Settings -> Link Vizor Mobile',
-      'A moving QR code appears - keep it on screen. The code is encrypted. Your recovery phrase is never shown.',
+      'Go to Settings → Link Vizor Mobile',
+      'Scan the QR code on your desktop from the next screen.',
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,7 +177,7 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
         progress: _walletLinkScanProgress,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Scan QR Code',
-        subtitle: 'Scan the code on your desktop',
+        subtitle: 'Copy your desktop wallet to this phone',
         scrollable: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -333,14 +333,14 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
   final VoidCallback onScanAgain;
 
   String get _title => switch (error) {
-    MobileWalletLinkScanError.invalid => "This isn't a Vizor link",
+    MobileWalletLinkScanError.invalid => 'Invalid QR code',
     MobileWalletLinkScanError.expired => 'Link expired',
     MobileWalletLinkScanError.failed => "Couldn't open this link",
   };
 
   String get _body => switch (error) {
     MobileWalletLinkScanError.invalid =>
-      "The code you scanned isn't a Vizor desktop link. On your computer, open Settings -> Link Vizor Mobile.",
+      "The code you scanned isn't a Vizor desktop link. On your computer, open Settings → Link Vizor Mobile.",
     MobileWalletLinkScanError.expired =>
       'The code on your computer timed out. On desktop, choose Generate new code and scan it again.',
     MobileWalletLinkScanError.failed =>
@@ -430,7 +430,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       progress: _walletLinkAccountsProgress,
       title: 'Select account',
       subtitle: const TextSpan(
-        text: 'This copies the chosen accounts to your phone. ',
+        text: 'Choose which desktop accounts to copy to this phone. ',
         children: [
           TextSpan(
             text: 'Nothing on your computer changes.',
@@ -495,8 +495,7 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       progress: _walletLinkContactsProgress,
       title: 'Import contacts',
       subtitle: const TextSpan(
-        text:
-            "All contacts are selected by default - uncheck any you'd rather leave behind.",
+        text: 'Choose which desktop contacts to bring to this phone.',
       ),
       listTitle:
           '${state.contacts.length} contact${state.contacts.length == 1 ? '' : 's'} found',
