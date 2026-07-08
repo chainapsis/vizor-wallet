@@ -245,6 +245,8 @@ pub fn create_pczt_from_proposal(
                 stored.account_id,
                 OvkPolicy::Sender,
                 &stored.proposal,
+                // Keep the builder-derived expiry height.
+                None,
                 bundle_type,
             )
         }
@@ -660,7 +662,7 @@ pub(crate) fn set_orchard_anchor_and_witness(
         .iter()
         .enumerate()
         .filter_map(|(index, action)| {
-            if *action.spend().nullifier() == Some(spend_nullifier) {
+            if *action.spend().nullifier() == spend_nullifier {
                 Some(index)
             } else {
                 None

@@ -231,13 +231,7 @@ pub fn pczt_spend_nullifiers(pczt_bytes: &[u8]) -> Result<Vec<String>, String> {
         nullifiers.push(format!("sapling:{}", hex::encode(spend.nullifier())));
     }
     for action in pczt.orchard().actions() {
-        // `nullifier` is optional on the wire; the wallet's own base PCZTs
-        // always carry it (this runs pre-redaction).
-        let nullifier = action
-            .spend()
-            .nullifier()
-            .ok_or("Orchard PCZT spend is missing its nullifier")?;
-        nullifiers.push(format!("orchard:{}", hex::encode(nullifier)));
+        nullifiers.push(format!("orchard:{}", hex::encode(action.spend().nullifier())));
     }
 
     Ok(nullifiers)

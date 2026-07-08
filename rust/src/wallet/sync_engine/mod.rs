@@ -631,7 +631,11 @@ async fn repair_anchor_root_mismatch_if_needed(
     let canonical_ironwood = lwd::ironwood_sync_enabled(network)
         .then(|| anchor_chain_state.final_ironwood_tree().root());
     let ironwood_roots_match = match (&local_ironwood, &canonical_ironwood) {
-        (Some(local), Some(canonical)) => local.as_ref() == Some(canonical),
+        // `with_ironwood_tree_mut` reports `None` when the backend tracks no
+        // Ironwood tree; treat that like a missing root so repair kicks in.
+        (Some(local), Some(canonical)) => {
+            local.as_ref().and_then(|root| root.as_ref()) == Some(canonical)
+        }
         (None, None) => true,
         _ => false,
     };

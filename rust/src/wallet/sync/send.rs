@@ -48,7 +48,9 @@ use transparent::{
     address::TransparentAddress, builder::TransparentSigningSet, bundle::OutPoint,
     keys::TransparentKeyScope,
 };
-use zcash_client_backend::data_api::wallet::input_selection::{GreedyInputSelector, InputSelector};
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, InputSelector, TransparentSpendPolicy,
+};
 use zcash_client_backend::{
     data_api::{
         error::Error as WalletError,
@@ -56,9 +58,9 @@ use zcash_client_backend::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             ConfirmationsPolicy, TargetHeight,
         },
-        Account as _, AccountMeta, Balance, InputSource, MaxSpendMode, NoteFilter, NoteRetention,
-        ReceivedNotes, TargetValue, TransparentKeyOrigin, TransparentOutputFilter,
-        WalletCommitmentTrees, WalletRead,
+        Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
+        NoteRetention, ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletCommitmentTrees,
+        WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -247,6 +249,7 @@ impl FeeRule for ConservativeZip317FeeRule {
         sapling_input_count: usize,
         sapling_output_count: usize,
         orchard_action_count: usize,
+        ironwood_action_count: usize,
     ) -> Result<Zatoshis, Self::Error> {
         let transparent_input_sizes = transparent_input_sizes.into_iter().map(|size| match size {
             TransparentInputSize::Known(size) => {
@@ -263,6 +266,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            ironwood_action_count,
         )
     }
 }
@@ -457,6 +461,8 @@ pub(crate) fn create_reserved_pczt_batch(
                     account_id,
                     OvkPolicy::Sender,
                     &proposal,
+                    // Keep the builder-derived expiry height.
+                    None,
                     orchard::builder::BundleType::UNPADDED,
                 )
             }
@@ -546,26 +552,10 @@ pub(crate) fn estimate_send_max(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposed_tx_version =
-        proposed_tx_version_for_wallet_db(&db, network, "estimating max send")?;
-    // Deliberately NOT downgraded: send-max quotes at the pass-1 V6 ceiling so
-    // the returned max is always realizable by `propose_send`, whose own pass-1
-    // is hard-gated at V6. A V5-priced (cheaper-fee) max would quote more than
-    // `propose_send(quoted_max)` can build, failing with InsufficientFunds for
-    // V2-only wallets. Fixed-amount sends still get the V2->V5/V2-change
-    // downgrade (the primary goal).
-    //
-    // TODO: revisit once `propose_send` can retry V5 on InsufficientFunds; then
-    // send-max could quote the cheaper V5 max for V2-only spends. Same bucket as
-    // the deferred mixed-change split — for now send-max stays V6/Ironwood-change.
-    let proposal = build_send_max_proposal(
-        &mut db,
-        network,
-        account_id,
-        to_address,
-        memo_str,
-        proposed_tx_version,
-    )?;
+    // librustzcash's max-spend proposal path no longer takes a proposed tx
+    // version: the version (and its fee shape) is decided when the PCZT is
+    // created, so the quote stays aligned with what `propose_send` can build.
+    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -603,7 +593,10 @@ pub(crate) fn create_shield_transparent_pczt(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<ShieldTransparentPcztResult, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        create_pczt_from_proposal as zcb_create_pczt,
+        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
+    };
 
     let shielding_threshold = shielding_threshold()?;
 
@@ -615,14 +608,35 @@ pub(crate) fn create_shield_transparent_pczt(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
-        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-            &mut db,
-            &network,
-            account_id,
-            OvkPolicy::Sender,
-            &proposal,
-            orchard::builder::BundleType::DEFAULT,
-        )
+        // The version-less creator pins V5; shielding must request V6
+        // explicitly once NU6.3 is active so the shielded output lands in the
+        // Ironwood pool (the fork derived this from the target height). Use
+        // the proposal's own target height rather than the synced-wallet
+        // probe: the shielding flow works from the chain tip alone.
+        let proposed_tx_version =
+            proposed_tx_version_for_send(network, proposal.min_target_height());
+        let pczt = if let Some(tx_version) = proposed_tx_version {
+            zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                account_id,
+                OvkPolicy::Sender,
+                &proposal,
+                tx_version,
+                orchard::builder::BundleType::DEFAULT,
+            )
+        } else {
+            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                account_id,
+                OvkPolicy::Sender,
+                &proposal,
+                // Keep the builder-derived expiry height.
+                None,
+                orchard::builder::BundleType::DEFAULT,
+            )
+        }
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
         let pczt_bytes = pczt
             .serialize()
@@ -2927,7 +2941,8 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            2,
+            1,
+            1,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3099,7 +3114,8 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            2,
+            1,
+            1,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3812,7 +3828,7 @@ fn make_orchard_split_builder(
     recipient: orchard::Address,
     outputs: &[u64],
     memo: &MemoBytes,
-) -> Result<Builder<'static, WalletNetwork, ()>, String> {
+) -> Result<Builder<WalletNetwork, ()>, String> {
     let mut builder = Builder::new(
         network,
         BlockHeight::from(target_height),
@@ -3931,7 +3947,7 @@ fn build_shielding_proposal(
         &from_addrs,
         account_id,
         ConfirmationsPolicy::MIN,
-        TransparentOutputFilter::All,
+        CoinbaseFilter::AllTransparentOutputs,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
@@ -3998,6 +4014,8 @@ fn propose_send_with_reserved_notes(
             account_id,
             request,
             &change_strategy,
+            // Reserved-note sends never fall back to transparent UTXOs.
+            &TransparentSpendPolicy::ShieldedOnly,
             proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))
@@ -4255,7 +4273,7 @@ impl InputSource for ReservedInputSource<'_> {
         address: &TransparentAddress,
         target_height: wallet::TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
-        output_filter: TransparentOutputFilter,
+        output_filter: CoinbaseFilter,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         self.inner.get_spendable_transparent_outputs(
             address,
@@ -4272,7 +4290,6 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
-    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -4312,7 +4329,6 @@ fn build_send_max_proposal(
         memo_bytes,
         MaxSpendMode::MaxSpendable,
         ConfirmationsPolicy::default(),
-        proposed_tx_version,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
 }
@@ -4429,6 +4445,8 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            // Legacy/V5 path: no Ironwood bundle.
+            0,
         )
         .map_err(|e| format!("Max fee calculation failed: {e}"))?;
 
@@ -5832,6 +5850,9 @@ mod tests {
                 let (_, sapling_recipient) = esk.default_address();
                 Address::from(sapling_recipient).to_zcash_address(&network)
             }
+            PoolType::Shielded(ShieldedProtocol::Ironwood) => {
+                unreachable!("this fixture never requests Ironwood payments")
+            }
         };
 
         // No change: amount + fee must equal the single 100_000-zat input, or
@@ -6381,6 +6402,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_p2pkh_fee = StandardFeeRule::Zip317
@@ -6392,6 +6414,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_undersized_fee = StandardFeeRule::Zip317
@@ -6400,6 +6423,7 @@ mod tests {
                 height,
                 undersized_inputs,
                 std::iter::empty::<usize>(),
+                0,
                 0,
                 0,
                 0,
