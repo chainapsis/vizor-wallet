@@ -660,15 +660,20 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final seq = ++_validateSeq;
     final text = _amountText.trim();
 
-    // Empty or just "." — silently invalid (no error shown, button disabled)
+    // Empty, incomplete, or zero amounts are silently invalid: no error text,
+    // just keep Review disabled.
     if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
       return;
     }
 
     final zatoshi = parseZecAmount(text);
-    if (zatoshi == null || zatoshi <= BigInt.zero) {
+    if (zatoshi == null) {
       setState(() => _amountError = 'Invalid amount');
+      return;
+    }
+    if (zatoshi <= BigInt.zero) {
+      setState(() => _amountError = '');
       return;
     }
 

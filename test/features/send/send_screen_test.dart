@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -359,6 +360,38 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('zero amount disables review without showing amount error', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(1000000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '0');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid amount'), findsNothing);
+    expect(find.byKey(const ValueKey('send_amount_error_text')), findsNothing);
+    final reviewButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('send_review_button')),
+    );
+    expect(reviewButton.onPressed, isNull);
+
+    await tester.tap(
+      find.byKey(const ValueKey('send_review_button')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+    expect(find.text('Review Send'), findsNothing);
   });
 
   testWidgets('amount error appears before recipient is entered', (
