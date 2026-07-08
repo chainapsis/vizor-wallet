@@ -32,10 +32,16 @@ class AppTextField extends StatefulWidget {
     this.leading,
     this.trailing,
     this.trailingFitsSlot = false,
+    this.inlinePrefixText,
+    this.inlinePrefixStyle,
+    this.inlineSuffixText,
+    this.inlineSuffixStyle,
+    this.inlineAffixGap = AppSpacing.xxs,
     this.messageText,
     this.messageIcon,
     this.messageStyle,
     this.labelStyle,
+    this.borderColor,
     this.tone = AppTextFieldTone.neutral,
     this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
@@ -89,10 +95,16 @@ class AppTextField extends StatefulWidget {
   /// the fixed-slot layout. Defaults to false so every existing field is
   /// unaffected.
   final bool trailingFitsSlot;
+  final String? inlinePrefixText;
+  final TextStyle? inlinePrefixStyle;
+  final String? inlineSuffixText;
+  final TextStyle? inlineSuffixStyle;
+  final double inlineAffixGap;
   final String? messageText;
   final Widget? messageIcon;
   final TextStyle? messageStyle;
   final TextStyle? labelStyle;
+  final Color? borderColor;
   final AppTextFieldTone tone;
   final AppTextFieldSurface surface;
   final bool showClearButton;
@@ -315,6 +327,18 @@ class _AppTextFieldState extends State<AppTextField> {
       valueStyle,
       forceStrutHeight: true,
     );
+    final textDirection = Directionality.of(context);
+    double measureInlineText(String text, TextStyle style) {
+      if (text.isEmpty) return 0;
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: textDirection,
+        textScaler: MediaQuery.textScalerOf(context),
+        strutStyle: textStrutStyle,
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
 
     // Figma Field Type=Secondary: filled auth-screen input shell. Keep it
     // separate from both button and layout-depth tokens so unrelated token
@@ -334,14 +358,17 @@ class _AppTextFieldState extends State<AppTextField> {
     final hoverBorderColor = widget.surface == AppTextFieldSurface.secondary
         ? Colors.transparent
         : colors.border.subtleOpacity;
-    final borderColor = switch (widget.tone) {
-      AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
-      AppTextFieldTone.neutral when _hovered => hoverBorderColor,
-      AppTextFieldTone.neutral => Colors.transparent,
-      AppTextFieldTone.destructive => colors.border.utilityDestructiveSubtle,
-      AppTextFieldTone.success => colors.border.utilitySuccess,
-      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
-    };
+    final borderColor =
+        widget.borderColor ??
+        switch (widget.tone) {
+          AppTextFieldTone.neutral when _isFocused => colors.background.inverse,
+          AppTextFieldTone.neutral when _hovered => hoverBorderColor,
+          AppTextFieldTone.neutral => Colors.transparent,
+          AppTextFieldTone.destructive =>
+            colors.border.utilityDestructiveSubtle,
+          AppTextFieldTone.success => colors.border.utilitySuccess,
+          AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
+        };
     // The secondary shell is flat in the design (no effects on the Field
     // frame); the surface shadow belongs to the white primary input only.
     final boxShadow =
@@ -387,6 +414,28 @@ class _AppTextFieldState extends State<AppTextField> {
             semanticLabel: widget.clearButtonSemanticLabel,
           )
         : null;
+    final inlinePrefixText = _multiline ? null : widget.inlinePrefixText;
+    final inlineSuffixText = _multiline ? null : widget.inlineSuffixText;
+    final inlinePrefixStyle = widget.inlinePrefixStyle ?? valueStyle;
+    final inlineSuffixStyle = widget.inlineSuffixStyle ?? valueStyle;
+    final inlinePrefixWidth = inlinePrefixText == null
+        ? 0.0
+        : measureInlineText(inlinePrefixText, inlinePrefixStyle);
+    final inlinePrefixOffset = inlinePrefixText == null
+        ? 0.0
+        : inlinePrefixWidth + widget.inlineAffixGap;
+    final inlineMeasuredInputText = _hasText
+        ? _controller.text
+        : widget.hintText ?? '';
+    final inlineMeasuredInputStyle = _hasText ? valueStyle : resolvedHintStyle;
+    final inlineInputWidth = measureInlineText(
+      inlineMeasuredInputText,
+      inlineMeasuredInputStyle,
+    );
+    final inlineSuffixLeft =
+        inlinePrefixOffset +
+        inlineInputWidth +
+        (inlineMeasuredInputText.isEmpty ? 0.0 : widget.inlineAffixGap);
 
     final textField = TextField(
       key: _textFieldRegionKey,
@@ -441,8 +490,25 @@ class _AppTextFieldState extends State<AppTextField> {
         : MergeSemantics(
             child: Stack(
               children: [
+                if (inlinePrefixText != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          inlinePrefixText,
+                          style: inlinePrefixStyle,
+                          strutStyle: textStrutStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (widget.hintText != null && !_hasText)
                   Positioned.fill(
+                    left: inlinePrefixOffset,
                     child: IgnorePointer(
                       child: Align(
                         alignment: AlignmentDirectional.centerStart,
@@ -457,7 +523,31 @@ class _AppTextFieldState extends State<AppTextField> {
                       ),
                     ),
                   ),
-                textField,
+                Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    start: inlinePrefixOffset,
+                  ),
+                  child: textField,
+                ),
+                if (inlineSuffixText != null)
+                  PositionedDirectional(
+                    start: inlineSuffixLeft,
+                    top: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          inlineSuffixText,
+                          style: inlineSuffixStyle,
+                          strutStyle: textStrutStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );
@@ -634,8 +724,7 @@ class _AppTextFieldState extends State<AppTextField> {
                                       child: widget.trailingFitsSlot
                                           ? trailingWidget
                                           : SizedBox(
-                                              width:
-                                                  _appTextFieldInputIconSize,
+                                              width: _appTextFieldInputIconSize,
                                               height:
                                                   _appTextFieldInputIconSize,
                                               child: trailingWidget,

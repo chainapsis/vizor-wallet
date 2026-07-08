@@ -5,12 +5,15 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -327,7 +330,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.textContaining('Max:'));
+    await tester.tap(find.text('Use Max'));
     await tester.pump();
     await tester.pumpAndSettle();
 
@@ -336,6 +339,92 @@ void main() {
     expect(rustApi.lastEstimateSendMaxMemo, isNull);
     expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
     expect(find.text('Max amount unavailable'), findsNothing);
+  });
+
+  testWidgets('amount field keeps the native ticker suffix while editing', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    _expectAmountIcon(
+      tester,
+      AppIcons.zcash,
+      AppThemeData.light.colors.icon.regular,
+    );
+
+    await tester.enterText(_editableIn('send_amount_field'), '1.25');
+    await tester.pumpAndSettle();
+
+    _expectAmountIcon(
+      tester,
+      AppIcons.zcash,
+      AppThemeData.light.colors.icon.accent,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.text(kZcashDefaultCurrencyTicker),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('zero amount disables review without showing amount error', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(1000000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '0');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid amount'), findsNothing);
+    expect(find.byKey(const ValueKey('send_amount_error_text')), findsNothing);
+    final reviewButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('send_review_button')),
+    );
+    expect(reviewButton.onPressed, isNull);
+
+    await tester.tap(
+      find.byKey(const ValueKey('send_review_button')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+    expect(find.text('Review Send'), findsNothing);
+  });
+
+  testWidgets('amount error appears before recipient is entered', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(4258463)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '111111');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('send_amount_error_text')),
+      findsOneWidget,
+    );
+    expect(_fieldText(tester, 'send_address_field'), isEmpty);
+    expect(find.text('Review'), findsOneWidget);
+    expect(rustApi.proposeSendCalls, 0);
   });
 
   testWidgets('hides imported memo controls for TEX recipients', (
@@ -390,7 +479,7 @@ void main() {
     expect(find.text('Insufficient shielded balance'), findsNothing);
     expect(find.text('Insufficient balance'), findsNothing);
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
@@ -424,11 +513,192 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Insufficient balance'), findsOneWidget);
+    expect(find.text('Insufficient shielded balance'), findsNothing);
+    expect(find.text(r'$ 70.00'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
 
     expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('fee-specific balance error copy is preserved', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(100000000)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '0.99995');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Insufficient shielded balance (fee:'),
+      findsOneWidget,
+    );
+    expect(find.text('Review'), findsOneWidget);
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('USD amount error stays below the amount field', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(50000000), zecUsdPrice: 100),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_amount_error_text')),
+      findsOneWidget,
+    );
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
+  testWidgets('USD amount input proposes the converted canonical amount', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(1000000000), zecUsdPrice: 100),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.regular,
+    );
+
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.accent,
+    );
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(250000000));
+  });
+
+  testWidgets('USD amount input recomputes when the ZEC price changes', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final zecUsdPriceProvider =
+        NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+          _TestZecUsdPriceNotifier.new,
+        );
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdPriceProvider: zecUsdPriceProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+      listen: false,
+    );
+    container.read(zecUsdPriceProvider.notifier).setPrice(200);
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '250');
+    expect(find.text('1.25 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
+  });
+
+  testWidgets('native amount remains reviewable while USD price is loading', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdPrice: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '1.25');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_amount_price_loading')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Review'));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
   });
 
   testWidgets('hardware TEX sends are blocked inline before proposal', (
@@ -508,6 +778,8 @@ Widget _sendHarness({
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? transparentBalance,
+  double? zecUsdPrice = 70,
+  NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -524,6 +796,11 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      zecUsdPriceProvider == null
+          ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
+          : zecHomeUsdUnitPriceProvider.overrideWith(
+              (ref) => ref.watch(zecUsdPriceProvider),
+            ),
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
@@ -593,6 +870,21 @@ Finder _editableIn(String keyValue) {
   );
 }
 
+void _expectAmountIcon(WidgetTester tester, String name, Color color) {
+  final icon = tester.widget<AppIcon>(
+    find.descendant(
+      of: find.byKey(const ValueKey('send_amount_field')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == name,
+      ),
+    ),
+  );
+
+  expect(icon.name, name);
+  expect(icon.size, 20);
+  expect(icon.color, color);
+}
+
 final _bootstrap = AppBootstrapState(
   initialLocation: '/send',
   initialAccountState: const AccountState(
@@ -653,11 +945,21 @@ class _FakeSyncNotifier extends SyncNotifier {
   );
 }
 
+class _TestZecUsdPriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 100;
+
+  void setPrice(double? price) {
+    state = price;
+  }
+}
+
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
+  BigInt? lastProposeAmountZatoshi;
   String? lastEstimateSendMaxToAddress;
   String? lastEstimateSendMaxMemo;
 
@@ -666,6 +968,7 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
     lastProposeMemo = null;
+    lastProposeAmountZatoshi = null;
     lastEstimateSendMaxToAddress = null;
     lastEstimateSendMaxMemo = null;
   }
@@ -729,6 +1032,7 @@ class _RustApiFake implements RustLibApi {
     proposeSendCalls++;
     lastProposeToAddress = toAddress;
     lastProposeMemo = memo;
+    lastProposeAmountZatoshi = amountZatoshi;
     return ProposalResult(
       proposalId: BigInt.one,
       needsSaplingParams: false,

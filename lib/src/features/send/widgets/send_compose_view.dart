@@ -50,7 +50,10 @@ class SendComposeView extends StatelessWidget {
     this.route = SendPoolRoute.unknown,
     this.amountText = '',
     this.amountHint = '0.00',
-    this.maxLabel = 'Max: 150 ZEC',
+    this.maxLabel = 'Use Max',
+    this.amountInputIsUsd = false,
+    this.amountConversionText = r'$ 0',
+    this.amountConversionLoading = false,
     this.amountFocused = false,
     this.amountError,
     this.memoMode = SendMemoMode.prompt,
@@ -59,6 +62,7 @@ class SendComposeView extends StatelessWidget {
     this.memoCounter = '512/512',
     this.memoError,
     this.reviewEnabled = false,
+    this.reviewLabel = 'Review',
     this.onReview,
     this.onContactsPressed,
     this.onAddMemo,
@@ -80,6 +84,9 @@ class SendComposeView extends StatelessWidget {
   final String amountText;
   final String amountHint;
   final String maxLabel;
+  final bool amountInputIsUsd;
+  final String? amountConversionText;
+  final bool amountConversionLoading;
 
   /// Autofocuses the amount field so the focus ring is visible in static
   /// previews of the "amount entered" states.
@@ -95,6 +102,7 @@ class SendComposeView extends StatelessWidget {
 
   // Primary CTA.
   final bool reviewEnabled;
+  final String reviewLabel;
   final VoidCallback? onReview;
   final VoidCallback? onContactsPressed;
   final VoidCallback? onAddMemo;
@@ -107,10 +115,10 @@ class SendComposeView extends StatelessWidget {
   // each field. Mirrors the current send screen's spacing so the compose
   // layout stays vertically balanced.
   static const _overlayReserve = 20.0;
-  static const _fieldGap = AppSpacing.xs;
+  static const _fieldGap = AppSpacing.s;
   static const _multilineOverlayReserve = 24.0;
   static const _containerHorizontalPadding = AppSpacing.s;
-  static const _containerVerticalPadding = AppSpacing.md;
+  static const _containerVerticalPadding = AppSpacing.sm;
   static const _sectionGap = 32.0;
   static const _fieldsVerticalPadding = AppSpacing.xs;
 
@@ -119,6 +127,10 @@ class SendComposeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final amountErrorText =
+        amountError != null && amountError!.trim().isNotEmpty
+        ? amountError
+        : null;
 
     final fields = Column(
       mainAxisSize: MainAxisSize.min,
@@ -127,7 +139,13 @@ class SendComposeView extends StatelessWidget {
         const SizedBox(height: _overlayReserve),
         const SizedBox(height: _fieldGap),
         _amountField(context),
-        const SizedBox(height: _overlayReserve),
+        _AmountSubRows(
+          errorText: amountErrorText,
+          conversionText: amountConversionText,
+          conversionLoading: amountConversionLoading,
+          conversionEnabled: amountInputIsUsd || !amountConversionLoading,
+          enterUsdMode: !amountInputIsUsd,
+        ),
         const SizedBox(height: _fieldGap),
         _memo(context),
         if (_expanded) const SizedBox(height: _multilineOverlayReserve),
@@ -185,8 +203,13 @@ class SendComposeView extends StatelessWidget {
                           onPressed: reviewEnabled ? (onReview ?? _noop) : null,
                           variant: AppButtonVariant.primary,
                           minWidth: reviewButtonWidth,
+                          constrainContent: true,
                           trailing: const AppIcon(AppIcons.chevronForward),
-                          child: const Text('Review'),
+                          child: Text(
+                            reviewLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ],
@@ -218,6 +241,9 @@ class SendComposeView extends StatelessWidget {
     return AppTextField(
       key: const ValueKey('send_address_field'),
       label: 'Send to',
+      labelStyle: AppTypography.labelLarge.copyWith(
+        color: colors.text.secondary,
+      ),
       rightSlot: _SendRecipientLink(onTap: onContactsPressed),
       initialValue: recipientText,
       hintText: recipientHint,
@@ -231,21 +257,50 @@ class SendComposeView extends StatelessWidget {
     final colors = context.colors;
     final hasText = amountText.isNotEmpty;
     final isError = amountError != null && amountError!.trim().isNotEmpty;
+    final amountValueColor = isError
+        ? colors.text.destructive
+        : hasText
+        ? colors.text.accent
+        : colors.text.muted;
+    final amountAffixStyle = AppTypography.labelLarge.copyWith(
+      color: amountValueColor,
+    );
+    final amountIconColor = isError
+        ? colors.icon.destructive
+        : hasText
+        ? colors.icon.accent
+        : colors.icon.regular;
+    final amountIconName = amountInputIsUsd
+        ? AppIcons.moneyBag
+        : AppIcons.zcash;
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
       label: 'Amount',
-      rightLabel: maxLabel,
+      labelStyle: AppTypography.labelLarge.copyWith(
+        color: colors.text.secondary,
+      ),
+      rightLabel: null,
+      rightSlot: Text(
+        maxLabel,
+        style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
+      ),
       initialValue: amountText,
       hintText: amountHint,
       autofocus: amountFocused,
       tone: isError ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
-      leading: AppIcon(
-        AppIcons.zcash,
-        size: 20,
-        color: hasText ? colors.icon.accent : colors.icon.regular,
+      borderColor: isError ? colors.border.utilityDestructive : null,
+      textStyle: AppTypography.labelLarge.copyWith(
+        color: isError ? colors.text.destructive : colors.text.accent,
       ),
-      messageText: isError ? amountError : null,
+      hintStyle: AppTypography.labelLarge.copyWith(
+        color: isError ? colors.text.destructive : colors.text.muted,
+      ),
+      leading: AppIcon(amountIconName, size: 20, color: amountIconColor),
+      inlinePrefixText: amountInputIsUsd ? r'$' : null,
+      inlinePrefixStyle: amountAffixStyle,
+      inlineSuffixText: amountInputIsUsd ? null : 'ZEC',
+      inlineSuffixStyle: amountAffixStyle,
       showClearButton: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
     );
@@ -266,9 +321,12 @@ class SendComposeView extends StatelessWidget {
         return AppTextField(
           key: const ValueKey('send_memo_field'),
           label: 'Message',
+          labelStyle: AppTypography.labelLarge.copyWith(
+            color: colors.text.secondary,
+          ),
           rightSlot: Text(
             memoCounter,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: isError ? colors.text.destructive : colors.text.secondary,
             ),
           ),
@@ -277,6 +335,7 @@ class SendComposeView extends StatelessWidget {
           tone: isError
               ? AppTextFieldTone.destructive
               : AppTextFieldTone.neutral,
+          borderColor: isError ? colors.border.utilityDestructive : null,
           leading: AppIcon(
             AppIcons.users,
             size: 20,
@@ -314,14 +373,14 @@ class _SendRecipientLink extends StatelessWidget {
         children: [
           Text(
             'Contacts',
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
             ),
           ),
-          const SizedBox(width: 2),
+          const SizedBox(width: AppSpacing.xxs),
           AppIcon(
             AppIcons.chevronForward,
-            size: 12,
+            size: 16,
             color: colors.text.secondary,
           ),
         ],
@@ -340,6 +399,166 @@ class _SendRecipientLink extends StatelessWidget {
           onTap: onTap,
           child: row,
         ),
+      ),
+    );
+  }
+}
+
+class _AmountSubRows extends StatelessWidget {
+  const _AmountSubRows({
+    required this.errorText,
+    required this.conversionText,
+    required this.conversionLoading,
+    required this.conversionEnabled,
+    required this.enterUsdMode,
+  });
+
+  static const _topGap = AppSpacing.xxs;
+  static const _rowHeight = 24.0;
+
+  final String? errorText;
+  final String? conversionText;
+  final bool conversionLoading;
+  final bool conversionEnabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
+    return SizedBox(
+      height: _topGap + (hasError ? _rowHeight * 2 : _rowHeight),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: _topGap),
+          if (hasError)
+            SizedBox(
+              height: _rowHeight,
+              child: _AmountErrorRow(text: errorText!),
+            ),
+          SizedBox(
+            height: _rowHeight,
+            child: _AmountConversionRow(
+              text: conversionText,
+              loading: conversionLoading,
+              enabled: conversionEnabled,
+              enterUsdMode: enterUsdMode,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AmountErrorRow extends StatelessWidget {
+  const _AmountErrorRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                text,
+                key: const ValueKey('send_amount_error_text'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountConversionRow extends StatelessWidget {
+  const _AmountConversionRow({
+    required this.text,
+    required this.loading,
+    required this.enabled,
+    required this.enterUsdMode,
+  });
+
+  final String? text;
+  final bool loading;
+  final bool enabled;
+  final bool enterUsdMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Semantics(
+          button: true,
+          enabled: enabled,
+          label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(
+                AppIcons.doubleArrowVertical,
+                size: 16,
+                color: enabled ? colors.icon.muted : colors.icon.disabled,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              if (loading) ...[
+                Text(
+                  r'$',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.muted,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                const _AmountPriceLoadingBar(),
+              ] else
+                Text(
+                  text ?? r'$ 0',
+                  key: const ValueKey('send_amount_conversion_text'),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: enabled ? colors.text.muted : colors.text.disabled,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountPriceLoadingBar extends StatelessWidget {
+  const _AmountPriceLoadingBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('send_amount_price_loading'),
+      width: 48,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.background.overlay.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
     );
   }
@@ -376,7 +595,8 @@ class _SendAddMemoCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 'Add a memo',
-                style: AppTypography.labelMedium.copyWith(
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
                   color: colors.text.accent,
                 ),
               ),
@@ -386,7 +606,10 @@ class _SendAddMemoCard extends StatelessWidget {
           Text(
             'Encrypted, for shielded addresses only.',
             textAlign: TextAlign.center,
-            style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
+            style: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.muted,
+            ),
           ),
         ],
       ),

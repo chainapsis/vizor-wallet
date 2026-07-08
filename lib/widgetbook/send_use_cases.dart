@@ -47,6 +47,7 @@ Widget buildSendShieldedFilledUseCase(BuildContext context) {
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
       amountText: '125.12',
+      amountConversionText: r'$ 8,758.40',
       amountFocused: true,
       memoMode: SendMemoMode.expanded,
       reviewEnabled: true,
@@ -62,6 +63,7 @@ Widget buildSendMemoTooLongUseCase(BuildContext context) {
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
       amountText: '125.12',
+      amountConversionText: r'$ 8,758.40',
       amountFocused: true,
       memoMode: SendMemoMode.expanded,
       memoText: _longMemo,
@@ -78,6 +80,7 @@ Widget buildSendTransparentUseCase(BuildContext context) {
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToTransparent,
       amountText: '125.12',
+      amountConversionText: r'$ 8,758.40',
       amountFocused: true,
       memoMode: SendMemoMode.transparentUnavailable,
       reviewEnabled: true,
@@ -93,9 +96,55 @@ Widget buildSendContactSelectedUseCase(BuildContext context) {
       recipientText: _sampleUnifiedAddress,
       route: SendPoolRoute.shieldedToShielded,
       amountText: '125.12',
+      amountConversionText: r'$ 8,758.40',
       amountFocused: true,
       memoMode: SendMemoMode.expanded,
       reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendPriceLoadingUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '125.12',
+      amountConversionText: null,
+      amountConversionLoading: true,
+      amountFocused: true,
+      memoMode: SendMemoMode.expanded,
+      reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendUsdInputUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '512.24',
+      amountInputIsUsd: true,
+      amountConversionText: '125.12 ZEC',
+      amountFocused: true,
+      memoMode: SendMemoMode.expanded,
+      reviewEnabled: true,
+    ),
+  );
+}
+
+Widget buildSendNotEnoughUseCase(BuildContext context) {
+  return const _SendPageFrame(
+    child: SendComposeView(
+      recipientText: _sampleUnifiedAddress,
+      route: SendPoolRoute.shieldedToShielded,
+      amountText: '50,012.24',
+      amountInputIsUsd: true,
+      amountConversionText: '651.12 ZEC',
+      amountFocused: true,
+      amountError: 'Insufficient shielded balance',
+      memoMode: SendMemoMode.expanded,
     ),
   );
 }
