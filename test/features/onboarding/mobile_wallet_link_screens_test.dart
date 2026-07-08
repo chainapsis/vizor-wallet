@@ -287,7 +287,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Account already imported'), findsOneWidget);
+    expect(find.text('1 account found'), findsOneWidget);
+    expect(find.text('1 already imported'), findsOneWidget);
+    expect(find.text('Account already imported'), findsNothing);
     expect(find.text('Link 1 account'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('Fresh account')).dy,
@@ -311,7 +313,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Contact already imported'), findsOneWidget);
+    expect(find.text('1 contact found'), findsOneWidget);
+    expect(find.text('1 already imported'), findsOneWidget);
+    expect(find.text('Contact already imported'), findsNothing);
     expect(find.text('Import 1 contact'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('Fresh contact')).dy,
