@@ -54,6 +54,7 @@ import 'src/features/multisig/screens/multisig_join_session_screen.dart';
 import 'src/features/multisig/screens/multisig_session_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_detail_screen.dart';
 import 'src/features/multisig/screens/multisig_signing_home_screen.dart';
+import 'src/features/multisig/services/multisig_backup_file_service.dart';
 import 'src/features/multisig/widgets/multisig_onboarding_flow.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
@@ -182,6 +183,11 @@ class _BootstrappedZcashWalletAppState
 Future<void> runZcashWalletApp() async {
   log('runtime: starting');
   await initializeZcashWalletRuntime();
+  unawaited(
+    cleanupStaleMultisigBackupExportFiles().catchError((Object error) {
+      log('multisig backup export cleanup failed: $error');
+    }),
+  );
   final app = await buildBootstrappedZcashWalletApp();
   log('runtime: launching app');
   runApp(app);

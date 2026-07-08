@@ -19,6 +19,8 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/multisig_account_material_provider.dart';
+import '../../../../providers/multisig_realtime_provider.dart';
 import '../../../../providers/multisig_signing_request_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -403,17 +405,100 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 }
 
-class _MultisigInboxEntryCard extends ConsumerWidget {
+class _MultisigInboxEntryCard extends ConsumerStatefulWidget {
   const _MultisigInboxEntryCard({required this.accountUuid});
 
   final String accountUuid;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MultisigInboxEntryCard> createState() =>
+      _MultisigInboxEntryCardState();
+}
+
+class _MultisigInboxEntryCardState
+    extends ConsumerState<_MultisigInboxEntryCard> {
+  MultisigRealtimeLease? _realtimeLease;
+  String? _realtimeKey;
+  String? _refreshedAccountUuid;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshOnceForAccount();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MultisigInboxEntryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accountUuid != widget.accountUuid) {
+      _releaseRealtimeLease();
+      _refreshedAccountUuid = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refreshOnceForAccount();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _releaseRealtimeLease();
+    super.dispose();
+  }
+
+  void _refreshOnceForAccount() {
+    final accountUuid = widget.accountUuid;
+    if (_refreshedAccountUuid == accountUuid) return;
+    _refreshedAccountUuid = accountUuid;
+    unawaited(
+      ref
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshForAccount(accountUuid)
+          .catchError((Object _) {
+            // The card already renders the last cached inbox state. The full
+            // inbox screen owns explicit refresh errors and retry affordances.
+          }),
+    );
+  }
+
+  void _syncRealtimeLease(MultisigAccountMaterial? material) {
+    if (material == null) {
+      _releaseRealtimeLease();
+      return;
+    }
+
+    final target = MultisigRealtimeTarget.fromAccountMaterial(material);
+    final key = target.connectionKey;
+    final notifier = ref.read(multisigRealtimeProvider.notifier);
+    if (_realtimeKey == key && notifier.updateTarget(target)) {
+      return;
+    }
+
+    _releaseRealtimeLease();
+    _realtimeKey = key;
+    _realtimeLease = notifier.acquire(target, reason: 'mobile-home-inbox');
+  }
+
+  void _releaseRealtimeLease() {
+    _realtimeLease?.dispose();
+    _realtimeLease = null;
+    _realtimeKey = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final materials = ref.watch(multisigAccountMaterialsProvider).value;
+    final material = _materialForAccount(materials, widget.accountUuid);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncRealtimeLease(material);
+    });
+
     final requestsAsync = ref.watch(multisigSigningRequestsProvider);
     final activeRequests = activeMultisigSigningRequestsForAccount(
       requestsAsync.value ?? const <MultisigSigningRequestRecord>[],
-      accountUuid,
+      widget.accountUuid,
     );
     final groups = groupMultisigSigningRequests(activeRequests);
     final colors = context.colors;
@@ -481,6 +566,17 @@ class _MultisigInboxEntryCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+MultisigAccountMaterial? _materialForAccount(
+  List<MultisigAccountMaterial>? materials,
+  String accountUuid,
+) {
+  if (materials == null) return null;
+  for (final material in materials) {
+    if (material.accountUuid == accountUuid) return material;
+  }
+  return null;
 }
 
 class _MultisigActionBadge extends StatelessWidget {

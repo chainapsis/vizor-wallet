@@ -124,6 +124,14 @@ import UIKit
       DatePickerHandler.shared.handle(call, result: result)
     }
 
+    let documentExportChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/document_export",
+      binaryMessenger: messenger
+    )
+    documentExportChannel.setMethodCallHandler { (call, result) in
+      MultisigBackupDocumentExportHandler.shared.handle(call, result: result)
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger
@@ -157,6 +165,125 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+}
+
+class MultisigBackupDocumentExportHandler: NSObject, UIDocumentPickerDelegate {
+  static let shared = MultisigBackupDocumentExportHandler()
+
+  private var pendingResult: FlutterResult?
+  private var pendingFileName: String?
+  private var picker: UIDocumentPickerViewController?
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "exportBackupFile":
+      exportBackupFile(call, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func exportBackupFile(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    guard pendingResult == nil else {
+      result(FlutterError(
+        code: "in_progress",
+        message: "A backup export is already in progress.",
+        details: nil
+      ))
+      return
+    }
+    guard
+      let args = call.arguments as? [String: Any],
+      let fileName = args["fileName"] as? String,
+      let tempFilePath = args["tempFilePath"] as? String
+    else {
+      result(FlutterError(
+        code: "bad_args",
+        message: "Expected fileName and tempFilePath.",
+        details: nil
+      ))
+      return
+    }
+
+    let tempURL = URL(fileURLWithPath: tempFilePath)
+    guard FileManager.default.fileExists(atPath: tempURL.path) else {
+      result(FlutterError(
+        code: "missing_file",
+        message: "Backup export file does not exist.",
+        details: nil
+      ))
+      return
+    }
+
+    try? FileManager.default.setAttributes(
+      [.protectionKey: FileProtectionType.complete],
+      ofItemAtPath: tempURL.path
+    )
+
+    pendingResult = result
+    pendingFileName = fileName
+
+    DispatchQueue.main.async {
+      guard let presenter = self.topViewController() else {
+        self.finish(FlutterError(
+          code: "no_presenter",
+          message: "Could not present the backup export picker.",
+          details: nil
+        ))
+        return
+      }
+
+      let picker = UIDocumentPickerViewController(
+        forExporting: [tempURL],
+        asCopy: true
+      )
+      picker.delegate = self
+      self.picker = picker
+      presenter.present(picker, animated: true)
+    }
+  }
+
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    finish(nil)
+  }
+
+  func documentPicker(
+    _ controller: UIDocumentPickerViewController,
+    didPickDocumentsAt urls: [URL]
+  ) {
+    let fileName = pendingFileName ?? urls.first?.lastPathComponent ?? ""
+    finish(["destination": "ios-files:\(fileName)"])
+  }
+
+  private func finish(_ value: Any?) {
+    let result = pendingResult
+    pendingResult = nil
+    pendingFileName = nil
+    picker = nil
+    result?(value)
+  }
+
+  private func topViewController() -> UIViewController? {
+    var rootViewController: UIViewController?
+    if #available(iOS 13.0, *) {
+      rootViewController = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }?
+        .rootViewController
+    } else {
+      rootViewController = UIApplication.shared.keyWindow?.rootViewController
+    }
+
+    var top = rootViewController
+    while let presented = top?.presentedViewController {
+      top = presented
+    }
+    return top
   }
 }
 

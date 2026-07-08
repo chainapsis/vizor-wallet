@@ -53,7 +53,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
   rust_multisig.ApiMultisigBackupArtifact? _artifact;
   String? _verifiedPassphrase;
   String? _verifiedBackupHash;
-  String? _savedPath;
+  String? _savedDestination;
   String? _error;
 
   bool get _busy =>
@@ -89,7 +89,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
     _artifact = null;
     _verifiedPassphrase = null;
     _verifiedBackupHash = null;
-    _savedPath = null;
+    _savedDestination = null;
     _confirmPasswordController.clear();
   }
 
@@ -151,7 +151,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
       _error = null;
       _verifiedPassphrase = null;
       _verifiedBackupHash = null;
-      _savedPath = null;
+      _savedDestination = null;
     });
     try {
       final passphrase = rust_multisig.normalizeMultisigBackupPassword(
@@ -222,7 +222,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
       if (!mounted) return;
       setState(() {
         _verifiedBackupHash = verified.backupHash;
-        _savedPath = saved.path;
+        _savedDestination = saved.destination;
         _isSaving = false;
       });
     } catch (e) {
@@ -238,18 +238,18 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
     final artifact = _artifact;
     final passphrase = _verifiedPassphrase;
     final backupHash = _verifiedBackupHash;
-    final savedPath = _savedPath;
+    final savedDestination = _savedDestination;
     if (_busy ||
         artifact == null ||
         passphrase == null ||
         backupHash == null ||
-        savedPath == null) {
+        savedDestination == null) {
       return;
     }
     widget.onComplete(
       MultisigBackupCompletion(
         backupHash: backupHash,
-        destinations: ['file:$savedPath'],
+        destinations: [savedDestination],
         backupArtifactJson: artifact.artifactJson,
         backupPassphrase: passphrase,
       ),
@@ -347,7 +347,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                   setState(() {
                     _verifiedPassphrase = null;
                     _verifiedBackupHash = null;
-                    _savedPath = null;
+                    _savedDestination = null;
                     _error = null;
                   });
                 },
@@ -382,10 +382,10 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                 child: Text(_isSaving ? 'Saving' : 'Save backup file'),
               ),
             ],
-            if (_savedPath != null) ...[
+            if (_savedDestination != null) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
-                _savedPath!,
+                _backupDestinationLabel(_savedDestination!),
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
@@ -403,7 +403,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
             ],
             const SizedBox(height: AppSpacing.md),
             AppButton(
-              onPressed: _savedPath != null && !_busy ? _complete : null,
+              onPressed: _savedDestination != null && !_busy ? _complete : null,
               minWidth: 180,
               leading: widget.isCompleting
                   ? const _SmallSpinner()
@@ -463,6 +463,21 @@ String _requiredString(String? value, String label) {
     throw StateError('Missing multisig $label.');
   }
   return trimmed;
+}
+
+String _backupDestinationLabel(String destination) {
+  if (destination.startsWith('file:')) {
+    return destination.substring('file:'.length);
+  }
+  if (destination.startsWith('ios-files:')) {
+    final name = destination.substring('ios-files:'.length);
+    return 'Saved to Files${name.isEmpty ? '' : ' as $name'}';
+  }
+  if (destination.startsWith('android-documents:')) {
+    final name = destination.substring('android-documents:'.length);
+    return 'Saved to Documents${name.isEmpty ? '' : ' as $name'}';
+  }
+  return destination;
 }
 
 class _SmallSpinner extends StatelessWidget {

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_signing_request_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -98,6 +99,9 @@ Widget _app(
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
       ),
+      multisigAccountMaterialsProvider.overrideWith(
+        (_) async => const <MultisigAccountMaterial>[],
+      ),
       ...overrides,
     ],
     child: MaterialApp.router(
@@ -173,6 +177,23 @@ class _FakeSigningRequestsNotifier extends MultisigSigningRequestsNotifier {
 
   @override
   Future<List<MultisigSigningRequestRecord>> build() async => records;
+}
+
+class _RefreshingSigningRequestsNotifier
+    extends MultisigSigningRequestsNotifier {
+  _RefreshingSigningRequestsNotifier(this.records);
+
+  final List<MultisigSigningRequestRecord> records;
+  final refreshedAccounts = <String>[];
+
+  @override
+  Future<List<MultisigSigningRequestRecord>> build() async => records;
+
+  @override
+  Future<void> refreshForAccount(String accountUuid) async {
+    refreshedAccounts.add(accountUuid);
+    state = AsyncData(records);
+  }
 }
 
 MultisigSigningRequestRecord _multisigRequest({
@@ -281,6 +302,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('multisig route'), findsOneWidget);
+  });
+
+  testWidgets('refreshes the multisig inbox entry when home opens', (
+    tester,
+  ) async {
+    final signingRequests = _RefreshingSigningRequestsNotifier([
+      _multisigRequest(),
+    ]);
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        accountState: _multisigAccountState,
+        overrides: [
+          multisigSigningRequestsProvider.overrideWith(() => signingRequests),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(signingRequests.refreshedAccounts, ['account-1']);
   });
 
   testWidgets('shows transparent balance tray with shield action', (
