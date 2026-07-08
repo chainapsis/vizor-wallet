@@ -224,7 +224,7 @@ pub fn create_pczt_from_proposal(
         // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
         // builder's balance check matches the proposal's fee.
         let bundle_type = if stored.unpadded_orchard_pool_bundles {
-            ::orchard::builder::BundleType::DEFAULT_UNPADDED
+            ::orchard::builder::BundleType::UNPADDED
         } else {
             ::orchard::builder::BundleType::DEFAULT
         };
@@ -1397,7 +1397,7 @@ mod tests {
                     ironwood_anchor: Some(orchard::Anchor::empty_tree()),
                     // Migration-shaped fixture: 1 unpadded Orchard spend + 1
                     // unpadded Ironwood output, matching the pipeline.
-                    orchard_pool_bundle_type: ::orchard::builder::BundleType::DEFAULT_UNPADDED,
+                    orchard_pool_bundle_type: ::orchard::builder::BundleType::UNPADDED,
                 },
             );
             builder

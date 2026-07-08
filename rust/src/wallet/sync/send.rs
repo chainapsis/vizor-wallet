@@ -448,7 +448,7 @@ pub(crate) fn create_reserved_pczt_batch(
                     OvkPolicy::Sender,
                     &proposal,
                     tx_version,
-                    orchard::builder::BundleType::DEFAULT_UNPADDED,
+                    orchard::builder::BundleType::UNPADDED,
                 )
             } else {
                 zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
@@ -457,7 +457,7 @@ pub(crate) fn create_reserved_pczt_batch(
                     account_id,
                     OvkPolicy::Sender,
                     &proposal,
-                    orchard::builder::BundleType::DEFAULT_UNPADDED,
+                    orchard::builder::BundleType::UNPADDED,
                 )
             }
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
@@ -3316,7 +3316,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
                 #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
                 // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT_UNPADDED,
+                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
             },
         )
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
@@ -3503,7 +3503,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
                 #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
                 // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT_UNPADDED,
+                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
             },
         )
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
@@ -3671,7 +3671,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
                 #[cfg(zcash_unstable = "nu6.3")]
                 ironwood_anchor: Some(orchard::Anchor::empty_tree()),
                 // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT_UNPADDED,
+                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
             },
         )
         .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
