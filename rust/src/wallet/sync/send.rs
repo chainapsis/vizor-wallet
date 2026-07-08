@@ -6595,44 +6595,45 @@ mod tests {
             "batch redaction must clear every spend_auth_sig",
         );
 
-        // The batch redaction additionally elides the derived fields the device
-        // recomputes, so it must be meaningfully smaller than the standard signer
-        // redaction (this fixture's two actions each shed cv_net + cmx +
-        // ephemeral_key + enc_ciphertext).
+        // The batch redaction additionally applies the compact-format elisions
+        // (cv_net, decryptable ciphertexts as memo plaintext, bundle bsk and
+        // anchor), so it must be meaningfully smaller than the standard signer
+        // redaction.
         assert!(
             batch.len() + 1_000 < standard.len(),
-            "batch redaction should elide derived fields ({} vs {} bytes)",
+            "batch redaction should elide compact-format fields ({} vs {} bytes)",
             batch.len(),
             standard.len(),
         );
-        // Every action sheds its unconditionally recomputable derived fields. The
-        // `enc_ciphertext` is elided (with a memo tag) except on the zero-valued
-        // output the builder pairs with the real spend, whose ciphertext is
-        // randomized and can never reconstruct — the self-check keeps it.
+        // The v6 sighash does not commit to anchors.
+        assert!(batch_parsed.orchard().anchor().is_none());
+        // Every action sheds `cv_net`. A ciphertext rides as stripped memo
+        // plaintext whenever the wire note fields can decrypt it; only a
+        // dummy output's randomized ciphertext may fail that swap and stay
+        // encrypted on the wire.
         for action in batch_parsed.orchard().actions() {
             assert!(action.cv_net().is_none());
-            assert!(action.output().cmx().is_none());
-            assert!(action.output().ephemeral_key().is_none());
-            if action.output().enc_ciphertext().is_some() {
-                assert!(action.output().memo_kind().is_none());
+            if matches!(
+                action.output().enc_ciphertext(),
+                pczt::orchard::EncCiphertext::Encrypted(_)
+            ) {
                 assert_eq!(*action.output().value(), Some(0));
-            } else {
-                assert!(action.output().memo_kind().is_some());
             }
         }
         assert!(
-            batch_parsed
-                .orchard()
-                .actions()
-                .iter()
-                .any(|action| action.output().enc_ciphertext().is_none()),
-            "at least one enc_ciphertext must be elided in this fixture",
+            batch_parsed.orchard().actions().iter().any(|action| {
+                matches!(
+                    action.output().enc_ciphertext(),
+                    pczt::orchard::EncCiphertext::MemoPlaintext(_)
+                )
+            }),
+            "at least the real split output's ciphertext must ride as memo plaintext",
         );
 
-        // The self-check contract: refilling the elided fields reproduces the
-        // original values byte-identically.
+        // The compact-format contract: resolving the elided fields reproduces
+        // the original values byte-identically.
         let mut refilled = batch_parsed;
-        refilled.fill_derived_fields().unwrap();
+        refilled.resolve_fields().unwrap();
         for (reb, orig) in refilled
             .orchard()
             .actions()
@@ -6640,8 +6641,6 @@ mod tests {
             .zip(request.orchard().actions().iter())
         {
             assert_eq!(reb.cv_net(), orig.cv_net());
-            assert_eq!(reb.output().cmx(), orig.output().cmx());
-            assert_eq!(reb.output().ephemeral_key(), orig.output().ephemeral_key());
             assert_eq!(
                 reb.output().enc_ciphertext(),
                 orig.output().enc_ciphertext()
