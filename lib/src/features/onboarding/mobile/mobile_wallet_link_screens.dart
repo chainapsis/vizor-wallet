@@ -737,7 +737,8 @@ Future<void> _completeEmptyWalletLinkAndGoBack(
     controller.endSubmit();
     return;
   }
-  _goBackFromWalletLink(context);
+  controller.endSubmit();
+  GoRouter.maybeOf(context)?.go('/onboarding/link-desktop');
 }
 
 Future<void> _continueToPasscodeOrImport(

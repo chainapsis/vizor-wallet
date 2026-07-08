@@ -47,8 +47,11 @@ Widget _routerApp(
   Widget child, {
   required MobileWalletLinkState state,
   List<Override> overrides = const [],
+  String initialLocation = '/',
+  List<RouteBase> routes = const [],
 }) {
   final router = GoRouter(
+    initialLocation: initialLocation,
     routes: [
       GoRoute(path: '/', builder: (_, _) => child),
       GoRoute(
@@ -56,6 +59,7 @@ Widget _routerApp(
         builder: (_, _) => const Text('link intro route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ...routes,
     ],
   );
 
@@ -421,6 +425,52 @@ void main() {
 
     expect(find.text('link intro route'), findsOneWidget);
   });
+
+  testWidgets(
+    'empty wallet link completion exits when accounts route can pop',
+    (tester) async {
+      final completion = _RecordingWalletLinkCompletion();
+
+      await tester.pumpWidget(
+        _routerApp(
+          const Text('root route'),
+          state: _nothingToImportState(),
+          initialLocation: '/scan',
+          routes: [
+            GoRoute(
+              path: '/scan',
+              builder: (context, _) => TextButton(
+                onPressed: () =>
+                    context.push('/onboarding/link-desktop/accounts'),
+                child: const Text('open accounts'),
+              ),
+            ),
+            GoRoute(
+              path: '/onboarding/link-desktop/accounts',
+              builder: (_, _) => MobileWalletLinkSelectAccountsScreen(
+                completeWalletLinkPackage: completion.call,
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('open accounts'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Go back'));
+      await tester.pump();
+
+      expect(find.text('Importing...'), findsOneWidget);
+      expect(completion.calls, hasLength(1));
+
+      completion.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('link intro route'), findsOneWidget);
+      expect(find.text('Importing...'), findsNothing);
+    },
+  );
 
   testWidgets('contacts-only import validates the wallet link network', (
     tester,
