@@ -220,6 +220,14 @@ pub fn create_pczt_from_proposal(
 
     let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
         let mut db = open_wallet_db(db_path, network)?;
+        // Build with the bundle type the proposal was fee-counted against
+        // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
+        // builder's balance check matches the proposal's fee.
+        let bundle_type = if stored.unpadded_orchard_pool_bundles {
+            ::orchard::builder::BundleType::DEFAULT_UNPADDED
+        } else {
+            ::orchard::builder::BundleType::DEFAULT
+        };
         if let Some(proposed_tx_version) = stored.proposed_tx_version {
             zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
                 &mut db,
@@ -228,6 +236,7 @@ pub fn create_pczt_from_proposal(
                 OvkPolicy::Sender,
                 &stored.proposal,
                 proposed_tx_version,
+                bundle_type,
             )
         } else {
             zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
@@ -236,6 +245,7 @@ pub fn create_pczt_from_proposal(
                 stored.account_id,
                 OvkPolicy::Sender,
                 &stored.proposal,
+                bundle_type,
             )
         }
         .map_err(|e| format!("Create PCZT failed: {e}"))
@@ -1385,6 +1395,9 @@ mod tests {
                     sapling_anchor: None,
                     orchard_anchor: Some(anchor),
                     ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                    // Migration-shaped fixture: 1 unpadded Orchard spend + 1
+                    // unpadded Ironwood output, matching the pipeline.
+                    orchard_pool_bundle_type: ::orchard::builder::BundleType::DEFAULT_UNPADDED,
                 },
             );
             builder
