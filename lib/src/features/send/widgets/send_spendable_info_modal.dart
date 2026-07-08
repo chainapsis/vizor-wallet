@@ -77,7 +77,7 @@ class SendSpendableInfoModal extends StatelessWidget {
                 Text(
                   'Funds need confirmations before they can\n'
                   'be spent: 3 confirmations for change from\n'
-                  'your own wallet, 10 confirmation for funds\n'
+                  'your own wallet, 10 confirmations for funds\n'
                   'received from others.',
                   style: bodyStyle,
                   softWrap: false,
