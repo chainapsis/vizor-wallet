@@ -61,6 +61,7 @@ abstract final class AppIcons {
   static const importWallet = 'import_wallet';
   static const key = 'key';
   static const keystone = 'keystone';
+  static const keystoneScan = 'keystone_scan';
   static const link = 'link';
   static const loader = 'loader';
   static const lock = 'lock';

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../models/address_book_contact.dart';
+import '../models/address_book_label_lookup.dart';
 
 const kAddressBookContactsKey = 'zcash_address_book_contacts_v1';
 
@@ -182,6 +183,65 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
     state = AsyncData(current.copyWith(contacts: contacts));
   }
 
+  Future<int> importContacts(
+    Iterable<AddressBookContact> importedContacts,
+  ) async {
+    final current = await _loadedState();
+    final contacts = [...current.contacts];
+    final existingIds = {for (final contact in contacts) contact.id};
+    final existingKeys = {for (final contact in contacts) _contactKey(contact)};
+    var added = 0;
+
+    for (final imported in importedContacts) {
+      final label = _cleanLabel(imported.label);
+      final address = imported.address.trim();
+      if (label.isEmpty || address.isEmpty) continue;
+      final key = _contactKey(imported);
+      if (existingKeys.contains(key)) continue;
+
+      final id = imported.id.trim();
+      final nextId = id.isEmpty || existingIds.contains(id)
+          ? _newContactId()
+          : id;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final contact = AddressBookContact(
+        id: nextId,
+        label: label,
+        network: imported.network,
+        address: address,
+        profilePictureId: resolveProfilePictureOption(
+          imported.profilePictureId,
+        ).id,
+        createdAtMs: imported.createdAtMs > 0 ? imported.createdAtMs : now,
+        updatedAtMs: imported.updatedAtMs > 0 ? imported.updatedAtMs : now,
+      );
+      contacts.add(contact);
+      existingIds.add(nextId);
+      existingKeys.add(key);
+      added += 1;
+    }
+
+    final sorted = _sortedContacts(contacts);
+    await _persist(sorted);
+    state = AsyncData(current.copyWith(contacts: sorted));
+    return added;
+  }
+
+  Future<Set<String>> alreadyImportedContactIds(
+    Iterable<AddressBookContact> importedContacts,
+  ) async {
+    final current = await _loadedState();
+    if (current.contacts.isEmpty) return const <String>{};
+
+    final existingKeys = {
+      for (final contact in current.contacts) _contactKey(contact),
+    };
+    return {
+      for (final imported in importedContacts)
+        if (existingKeys.contains(_contactKey(imported))) imported.id,
+    };
+  }
+
   Future<void> _persist(List<AddressBookContact> contacts) async {
     await ref.read(addressBookRepositoryProvider).saveContacts(contacts);
   }
@@ -210,6 +270,11 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
       if (networkOrder != 0) return networkOrder;
       return a.createdAtMs.compareTo(b.createdAtMs);
     });
+  }
+
+  static String _contactKey(AddressBookContact contact) {
+    return '${contact.network.id}:'
+        '${normalizedAddressBookAddress(contact.network, contact.address)}';
   }
 }
 

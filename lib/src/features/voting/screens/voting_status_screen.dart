@@ -1063,7 +1063,7 @@ class _KeystoneSigningMemo extends StatelessWidget {
       width: double.infinity,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colors.surface.input,
+          color: colors.surface.input.primary,
           border: Border.all(color: colors.border.subtle),
           borderRadius: BorderRadius.circular(AppRadii.small),
         ),

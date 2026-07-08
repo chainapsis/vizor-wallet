@@ -73,4 +73,28 @@ void main() {
       expect(receiveZecQuote.slippageToleranceText, '0.0005 USDC (0.5%)');
     },
   );
+
+  test('warns when flex-input live quote changes the sell amount', () {
+    final state = SwapState(
+      direction: SwapDirection.externalToZec,
+      amountText: '1.5',
+      receiveAmountText: '',
+      destinationText: validEvmRecipient,
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: true,
+      intents: const [],
+      quoteMode: SwapQuoteMode.flexInput,
+      reviewQuote: SwapQuote.estimate(
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        mode: SwapQuoteMode.flexInput,
+        amount: 2,
+      ),
+    );
+
+    expect(
+      state.reviewAmountDifferenceWarning,
+      'Live quote uses 2.00 USDC instead of 1.50 USDC. Check the guaranteed minimum before you continue.',
+    );
+  });
 }

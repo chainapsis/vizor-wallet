@@ -56,6 +56,48 @@ void main() {
       );
     });
 
+    test('formats compact balances with adaptive precision', () {
+      String compact(String value) =>
+          ZecAmount.tryParse(value)!.compactBalance.amountText;
+
+      expect(compact('0'), '0');
+      expect(compact('0.00000001'), '<0.000001');
+      expect(compact('0.00000099'), '<0.000001');
+      expect(compact('0.000001'), '0.000001');
+      expect(compact('0.00000123'), '0.000001');
+      expect(compact('0.00012345'), '0.000123');
+      expect(compact('0.00123456'), '0.001234');
+      expect(compact('0.01'), '0.01');
+      expect(compact('0.01000001'), '0.01');
+      expect(compact('0.12345678'), '0.123456');
+      expect(compact('0.99999999'), '0.999999');
+      expect(compact('1'), '1');
+      expect(compact('1.00000001'), '1');
+      expect(compact('1.00000123'), '1.000001');
+      expect(compact('1.20000000'), '1.20');
+      expect(compact('1.23450000'), '1.2345');
+      expect(compact('1.23456789'), '1.234567');
+      expect(compact('9.99999999'), '9.999999');
+      expect(compact('10.12345678'), '10.12345');
+      expect(compact('99.99999999'), '99.99999');
+      expect(compact('100.12345678'), '100.1234');
+      expect(compact('999.99999999'), '999.9999');
+      expect(compact('1000.12345678'), '1000.123');
+      expect(compact('1000.00012345'), '1000');
+      expect(compact('9999.99999999'), '9999.999');
+      expect(compact('10000.12345678'), '10000.12');
+      expect(compact('99999.99999999'), '99999.99');
+      expect(compact('123456.12345678'), '123456.12');
+      expect(compact('1234567.12345678'), '1234567.12');
+      expect(compact('123456789123'), '123456789123');
+      expect(
+        ZecAmount.tryParse(
+          '1',
+        )!.compactBalancePretty(hideZeroFraction: false).amountText,
+        '1.00',
+      );
+    });
+
     test('formats fee preset with upper-case denom', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).fee.toString(),

@@ -13,13 +13,15 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../address_book/providers/address_book_provider.dart';
+import '../../wallet_link/services/wallet_link_completion.dart';
 import '../create/onboarding_split_view.dart'
     show clearCreateOnboardingSecretState;
 import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
-import 'mobile_create_steps.dart';
+import 'mobile_onboarding_progress.dart';
 import 'passcode_widgets.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
@@ -109,6 +111,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
+    LinkedWalletAccountsImportResult? walletLinkAccountImportResult;
+    var walletLinkImportedContactCount = 0;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -135,6 +139,15 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 zip32Index: args.requiredKeystoneZip32Index,
                 birthdayHeight: args.importBirthdayHeight,
               );
+            case SetPasswordFlow.importWalletLink:
+              walletLinkAccountImportResult = await accountNotifier
+                  .importLinkedWalletAccounts(
+                    network: args.requiredWalletLinkNetwork,
+                    accountsToImport: args.walletLinkAccounts,
+                  );
+              walletLinkImportedContactCount = await ref
+                  .read(addressBookProvider.notifier)
+                  .importContacts(args.walletLinkContacts);
           }
         });
 
@@ -145,6 +158,19 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         }
         if (args.flow == SetPasswordFlow.create) {
           clearCreateOnboardingSecretState(ref.read);
+        }
+        if (args.flow == SetPasswordFlow.importWalletLink) {
+          final accountImportResult = walletLinkAccountImportResult;
+          if (accountImportResult == null) {
+            throw StateError('Wallet link import result is missing.');
+          }
+          await completeWalletLinkPackageBestEffort(
+            packageId: args.requiredWalletLinkPackageId,
+            completionToken: args.requiredWalletLinkCompletionToken,
+            keyBytes: args.requiredWalletLinkKeyBytes,
+            importedAccountCount: accountImportResult.importedCount,
+            importedContactCount: walletLinkImportedContactCount,
+          );
         }
         router.go('/onboarding/biometrics');
       });
@@ -191,7 +217,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: mobileCreateProgress(5),
+              progress: _progressForFlow(widget.args.flow),
               onBack: isSubmitting
                   ? null
                   : () => Navigator.of(context).maybePop(),
@@ -260,3 +286,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     );
   }
 }
+
+double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
+  SetPasswordFlow.create => mobileCreateProgress(7),
+  SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
+  SetPasswordFlow.importWallet => mobileImportProgress(3),
+  SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,
+};

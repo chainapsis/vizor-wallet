@@ -210,6 +210,118 @@ void main() {
     expect(contacts.single.profilePictureId, 'pfp-06');
     expect(repo.savedLists, hasLength(2));
   });
+
+  test(
+    'importContacts dedupes only case-insensitive address families',
+    () async {
+      const evmAddress = '0xAbC0000000000000000000000000000000000123';
+      final repo = _FakeAddressBookRepository([
+        _contact(
+          id: 'eth-existing',
+          label: 'ETH existing',
+          network: AddressBookNetwork.ethereum,
+          address: evmAddress,
+        ),
+        _contact(
+          id: 'near-existing',
+          label: 'NEAR existing',
+          network: AddressBookNetwork.near,
+          address: 'alice.near',
+        ),
+        _contact(
+          id: 'zec-existing',
+          label: 'ZEC existing',
+          network: AddressBookNetwork.zcash,
+          address: 'u1CaseSensitive',
+        ),
+        _contact(
+          id: 'sol-existing',
+          label: 'SOL existing',
+          network: AddressBookNetwork.solana,
+          address: 'So11111111111111111111111111111111111111112',
+        ),
+      ]);
+      final container = _container(repo);
+      addTearDown(container.dispose);
+
+      await container.read(addressBookProvider.future);
+
+      final added = await container
+          .read(addressBookProvider.notifier)
+          .importContacts([
+            _contact(
+              id: 'eth-duplicate',
+              label: 'ETH duplicate',
+              network: AddressBookNetwork.ethereum,
+              address: evmAddress.toLowerCase(),
+            ),
+            _contact(
+              id: 'near-duplicate',
+              label: 'NEAR duplicate',
+              network: AddressBookNetwork.near,
+              address: 'ALICE.NEAR',
+            ),
+            _contact(
+              id: 'zec-variant',
+              label: 'ZEC variant',
+              network: AddressBookNetwork.zcash,
+              address: 'u1casesensitive',
+            ),
+            _contact(
+              id: 'sol-variant',
+              label: 'SOL variant',
+              network: AddressBookNetwork.solana,
+              address: 'so11111111111111111111111111111111111111112',
+            ),
+          ]);
+
+      expect(added, 2);
+      final labels = container
+          .read(addressBookProvider)
+          .value!
+          .contacts
+          .map((contact) => contact.label);
+      expect(labels, containsAll(['ZEC variant', 'SOL variant']));
+      expect(labels, isNot(contains('ETH duplicate')));
+      expect(labels, isNot(contains('NEAR duplicate')));
+      expect(repo.savedLists, hasLength(1));
+    },
+  );
+
+  test('alreadyImportedContactIds uses the import dedupe key', () async {
+    const evmAddress = '0xAbC0000000000000000000000000000000000123';
+    final repo = _FakeAddressBookRepository([
+      _contact(
+        id: 'eth-existing',
+        label: 'ETH existing',
+        network: AddressBookNetwork.ethereum,
+        address: evmAddress,
+      ),
+    ]);
+    final container = _container(repo);
+    addTearDown(container.dispose);
+
+    await container.read(addressBookProvider.future);
+
+    final alreadyImported = await container
+        .read(addressBookProvider.notifier)
+        .alreadyImportedContactIds([
+          _contact(
+            id: 'eth-duplicate',
+            label: 'ETH duplicate',
+            network: AddressBookNetwork.ethereum,
+            address: evmAddress.toLowerCase(),
+          ),
+          _contact(
+            id: 'near-new',
+            label: 'NEAR new',
+            network: AddressBookNetwork.near,
+            address: 'alice.near',
+          ),
+        ]);
+
+    expect(alreadyImported, {'eth-duplicate'});
+  });
 }
 
 ProviderContainer _container(AddressBookRepository repo) {

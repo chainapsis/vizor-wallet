@@ -43,6 +43,7 @@ const _iconNames = <String>[
   AppIcons.home,
   AppIcons.importWallet,
   AppIcons.key,
+  AppIcons.keystoneScan,
   AppIcons.link,
   AppIcons.loader,
   AppIcons.lock,

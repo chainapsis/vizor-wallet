@@ -94,10 +94,7 @@ void main() {
       ),
     );
 
-    expect(
-      presentation.details.where((row) => row.label == 'Tx ID'),
-      isEmpty,
-    );
+    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
   });
 
   test('adds address book labels to matching address detail rows', () {
@@ -183,6 +180,75 @@ void main() {
     final fees = _detailRow(presentation.details, 'Total fees');
     expect(fees.helpTooltip, swapTotalFeesTooltip);
     expect(presentation.details.last.label, 'Total fees');
+  });
+
+  test('summary header lines carry the matched contact name', () {
+    const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final sending = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress,
+        ),
+      ],
+    );
+    expect(sending.receiveDetailText, startsWith('To: Treasury ('));
+    expect(sending.receiveDetailText, contains('on Ethereum'));
+    expect(sending.receiveDetailCopyText, recipientAddress);
+
+    final depositing = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.awaitingExternalDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        oneClickRefundTo: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress,
+        ),
+      ],
+    );
+    expect(depositing.payDetailText, startsWith('Refund to: Treasury ('));
+    expect(depositing.payDetailCopyText, recipientAddress);
+  });
+
+  test('EVM contact saved on another chain labels the address row', () {
+    const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Polygon Treasury',
+          network: AddressBookNetwork.polygon,
+          address: recipientAddress,
+        ),
+      ],
+    );
+
+    final recipient = _detailRow(presentation.details, 'USDC recipient');
+    expect(recipient.addressBookLabel, 'Polygon Treasury');
+    expect(
+      presentation.receiveDetailText,
+      startsWith('To: Polygon Treasury ('),
+    );
   });
 
   test('terminal deposit tx row links to the NEAR Intents explorer', () {
@@ -367,6 +433,38 @@ void main() {
       presentation.details.map((detail) => detail.label),
       isNot(contains('Swap fee')),
     );
+  });
+
+  test('uses provider minimum deposit for flex-input incomplete deposits', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.incompleteDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        sellAmount: '140.35 USDC',
+        receiveEstimate: '2 ZEC',
+        depositAddress: '0xdeposit-address',
+        oneClickRecipient: 'u1recipient-address',
+        oneClickRefundTo: '0xrefund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          minimumDepositText: '139.65 USDC',
+          depositedAmountText: '139.00 USDC',
+        ),
+        nextAction: 'Deposit is below the minimum amount',
+      ),
+    );
+
+    expect(
+      _detailValue(presentation.details, 'Required deposit'),
+      '139.65 USDC',
+    );
+    expect(
+      _detailValue(presentation.details, 'Detected deposit'),
+      '139.00 USDC',
+    );
+    expect(_detailValue(presentation.details, 'Missing deposit'), '0.65 USDC');
   });
 
   test('maps deposit instructions by swap direction', () {

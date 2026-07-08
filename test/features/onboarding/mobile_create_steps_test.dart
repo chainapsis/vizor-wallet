@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
@@ -20,6 +21,13 @@ Widget _app(String initialLocation) {
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+double _stepsProgress(WidgetTester tester) {
+  final fill = tester.widget<FractionallySizedBox>(
+    find.byType(FractionallySizedBox).first,
+  );
+  return fill.widthFactor!;
 }
 
 void main() {
@@ -48,6 +56,22 @@ void main() {
     await tester.pumpAndSettle();
     // Secret passphrase is still the placeholder until OB-4.
     expect(find.byType(MobileAddressTypesScreen), findsNothing);
+  });
+
+  testWidgets('create education screens count welcome in progress', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app('/onboarding/intro'));
+    await tester.pumpAndSettle();
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(3), 0.0001));
+
+    await tester.pumpWidget(_app('/onboarding/address-types'));
+    await tester.pumpAndSettle();
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(4), 0.0001));
+
+    await tester.pumpWidget(_app('/onboarding/things-to-know'));
+    await tester.pumpAndSettle();
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(5), 0.0001));
   });
 
   testWidgets('address types lists both pools and continues', (tester) async {

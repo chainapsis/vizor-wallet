@@ -7,7 +7,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_screens.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 /// Manual word-by-word import — Figma `Enter your Secret Passphrase`
@@ -72,7 +74,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   int get _pendingCount => _accepted.length + (_hasTyped ? 1 : 0);
 
   /// A valid-length phrase (12/15/18/21/24) is reachable, so offer
-  /// "Finish & review" beside "Next word" (Figma 4746:83516).
+  /// "Confirm & import" beside "Next word" (Figma 4746:83516).
   bool get _showFinish => kMnemonicWordCounts.contains(_pendingCount);
 
   /// Accept the typed word and advance to the next slot.
@@ -97,7 +99,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   }
 
   /// Accept the typed word (if any), then validate the full phrase and
-  /// move to review. Validation happens here so review stays read-only.
+  /// move to the birthday step.
   void _finish() {
     if (_hasTyped) {
       final tokens = tokenizeMnemonicWords(_typed);
@@ -108,20 +110,20 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
         return;
       }
       if (!_addAcceptedWord(word)) {
-        _review();
+        _continueToBirthday();
         return;
       }
     }
-    _review();
+    _continueToBirthday();
   }
 
   void _acceptWord(String word) {
     if (!_addAcceptedWord(word)) {
-      _review();
+      _continueToBirthday();
       return;
     }
     if (_accepted.length >= kMnemonicMaxWords) {
-      _review();
+      _continueToBirthday();
     }
   }
 
@@ -146,7 +148,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   /// Fill consecutive slots from the current position with [tokens] (each
   /// already normalised to a–z). Stops at the first token that isn't a
   /// BIP39 word — that token and everything after it are ignored — and at
-  /// the 24-word ceiling. Auto-advances to review when the phrase fills.
+  /// the 24-word ceiling. Auto-advances to birthday when the phrase fills.
   void _distributePaste(List<String> tokens) {
     String? stoppedAt;
     setState(() {
@@ -166,7 +168,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           : "Stopped at '$stoppedAt' — it isn't in the passphrase word list.";
     });
     if (_accepted.length >= kMnemonicMaxWords) {
-      _review();
+      _continueToBirthday();
     } else {
       _focusNode.requestFocus();
     }
@@ -180,7 +182,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     }
     final word = tokens.isEmpty ? '' : tokens.first;
     if (word.isEmpty) {
-      if (kMnemonicWordCounts.contains(_accepted.length)) _review();
+      if (kMnemonicWordCounts.contains(_accepted.length)) {
+        _continueToBirthday();
+      }
       return;
     }
     if (_wordList.contains(word)) {
@@ -209,7 +213,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     );
   }
 
-  void _editLastWordAfterReviewBack() {
+  void _editLastWordAfterBirthdayBack() {
     if (_accepted.isEmpty) return;
     setState(() {
       _restoreLastWordToField();
@@ -218,33 +222,25 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     _focusNode.requestFocus();
   }
 
-  void _review() {
+  void _continueToBirthday() {
     final words = [..._accepted];
     final error = validateImportedMnemonic(words);
     if (error != null) {
       setState(() => _error = error);
       return;
     }
-    final navigator = Navigator.of(context);
     context
         .push<Object?>(
-          '/import/review',
-          extra: MobileImportReviewArgs(words: words),
+          '/import/birthday',
+          extra: ImportBirthdayArgs(mnemonic: words.join(' ')),
         )
         .then((result) {
-          // "Clear secret phrase" on review — pop back to the import entry
-          // and forward the clear so the entry also drops any stale pasted
-          // phrase/error (manual can be opened from a rejected paste).
-          if (result == ImportReviewResult.cleared && mounted) {
-            navigator.pop(ImportReviewResult.cleared);
-          } else if (mounted) {
-            _editLastWordAfterReviewBack();
-          }
+          if (mounted) _editLastWordAfterBirthdayBack();
         });
   }
 
   /// The CTA block: a single "Next word" until a valid-length phrase is
-  /// reachable, then a full-width "Finish & review" primary action plus a
+  /// reachable, then a full-width "Confirm & import" primary action plus a
   /// secondary "Next word" to continue toward longer standard phrases.
   Widget _buildButtonRow() {
     final nextEnabled = _hasTyped && !_atMax;
@@ -268,7 +264,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           expand: true,
           onPressed: _finish,
           trailing: const AppIcon(AppIcons.chevronForward),
-          child: const Text('Finish & review'),
+          child: const Text('Confirm & import'),
         ),
         const SizedBox(height: AppSpacing.xs),
         nextButton,
@@ -282,7 +278,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     final position = (_accepted.length + 1).clamp(1, kMnemonicMaxWords);
 
     return MobileOnboardingStepScaffold(
-      progress: 0.4,
+      progress: mobileImportProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Enter your Secret Passphrase',
       subtitle: 'Accept 12, 15, 18, 21 or 24 words',

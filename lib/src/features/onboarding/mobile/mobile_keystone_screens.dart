@@ -37,7 +37,6 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return MobileOnboardingStepScaffold(
       progress: 0.2,
       onBack: () => Navigator.of(context).maybePop(),
@@ -64,31 +63,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
                   title: '1. Check Keystone firmware',
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Check if your Keystone device has the latest version of '
-                  'the Cypherpunk firmware, update or install if needed.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Semantics(
-                  button: true,
-                  link: true,
-                  label: 'Keystone firmware link',
-                  child: AppButton(
-                    variant: AppButtonVariant.ghost,
-                    size: AppButtonSize.medium,
-                    height: 36,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    leading: const AppIcon(AppIcons.link),
-                    onPressed: () =>
-                        unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
-                    child: const Text('Keystone firmware'),
-                  ),
-                ),
+                const _FirmwareBodyWithLink(),
               ],
             ),
           ),
@@ -103,37 +78,25 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
                   title: '2. Prepare to connect',
                 ),
                 const SizedBox(height: AppSpacing.sm),
+                const _StepGroupHeading('On your Keystone'),
+                const SizedBox(height: AppSpacing.xxs),
                 for (final (i, step) in const [
-                  'Unlock your Keystone.',
-                  'Tap the ... menu, then go to Sync.',
-                  'Open the Zcash QR code in order to connect.',
-                  'Allow camera access when prompted and scan the QR code '
-                      'with your phone.',
-                ].indexed) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.xxs),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        child: Text(
-                          '${i + 1}.',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.primary,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          step,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.primary,
-                          ),
-                        ),
-                      ),
-                    ],
+                  'Tap ••• (top right), then Connect software wallet.',
+                  'Select Vizor (or ZODL)',
+                ].indexed)
+                  _NumberedStep(
+                    index: i + 1,
+                    text: step,
+                    isFirstInGroup: i == 0,
                   ),
-                ],
+                const SizedBox(height: AppSpacing.sm),
+                const _StepGroupHeading('On Vizor'),
+                const SizedBox(height: AppSpacing.xxs),
+                const _NumberedStep(
+                  index: 3,
+                  text: 'Scan the dynamic QR code on your Keystone.',
+                  isFirstInGroup: true,
+                ),
               ],
             ),
           ),
@@ -161,6 +124,99 @@ class _KeystoneIntroCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: child,
+      ),
+    );
+  }
+}
+
+class _FirmwareBodyWithLink extends StatelessWidget {
+  const _FirmwareBodyWithLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.primary,
+    );
+    return Text.rich(
+      TextSpan(
+        style: bodyStyle,
+        children: const [
+          TextSpan(
+            text:
+                'Make sure your Keystone is on the latest Cypherpunk firmware. ',
+          ),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _FirmwareInlineLink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FirmwareInlineLink extends StatelessWidget {
+  const _FirmwareInlineLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      link: true,
+      label: 'Download Keystone firmware',
+      child: AppButton(
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.small,
+        height: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        iconGap: AppSpacing.xxs,
+        leading: const AppIcon(AppIcons.link),
+        onPressed: () => unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
+        child: const Text('link'),
+      ),
+    );
+  }
+}
+
+class _StepGroupHeading extends StatelessWidget {
+  const _StepGroupHeading(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: AppTypography.bodyMediumStrong.copyWith(
+        color: context.colors.text.accent,
+      ),
+    );
+  }
+}
+
+class _NumberedStep extends StatelessWidget {
+  const _NumberedStep({
+    required this.index,
+    required this.text,
+    required this.isFirstInGroup,
+  });
+
+  final int index;
+  final String text;
+  final bool isFirstInGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final style = AppTypography.bodyMedium.copyWith(color: colors.text.primary);
+    return Padding(
+      padding: EdgeInsets.only(top: isFirstInGroup ? 0 : AppSpacing.xxs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 20, child: Text('$index.', style: style)),
+          Expanded(child: Text(text, style: style)),
+        ],
       ),
     );
   }
@@ -613,6 +669,7 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileImportBirthdayScreen(
       args: const ImportBirthdayArgs(mnemonic: ''),
+      progress: 0.8,
       onHeightConfirmed: (height) => _confirm(context, ref, height),
     );
   }

@@ -185,6 +185,14 @@ void main() {
     expect(addressText, findsOneWidget);
     expect(tester.getSize(addressRight).width, greaterThanOrEqualTo(190));
     expect(tester.getSize(copyButton), const Size(20, 20));
+    expect(
+      tester.getRect(addressText).right,
+      lessThanOrEqualTo(tester.getRect(copyButton).left - AppSpacing.xxs),
+    );
+    expect(
+      tester.getRect(copyButton).right,
+      lessThanOrEqualTo(tester.getRect(addressRight).right),
+    );
     expect(tester.widget<Text>(addressText).overflow, TextOverflow.visible);
     expect(
       find.ancestor(of: addressText, matching: find.byType(FittedBox)),

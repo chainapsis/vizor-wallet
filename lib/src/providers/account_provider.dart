@@ -38,6 +38,10 @@ const _sqliteCompanionSuffixes = ['', '-journal', '-wal', '-shm'];
 const kWalletCreationCurrentBlockHeightErrorMessage =
     'We need the current Zcash block height to create your wallet. '
     'Check your network connection and try again.';
+const _duplicateSoftwareAccountImportMessage =
+    'This account is already in your wallet.';
+const _duplicateKeystoneAccountImportMessage =
+    'This Keystone account is already in your wallet.';
 
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
@@ -56,6 +60,42 @@ class WalletResetException implements Exception {
 
   @override
   String toString() => cause.toString();
+}
+
+class LinkedWalletAccountImport {
+  const LinkedWalletAccountImport({
+    required this.name,
+    required this.birthdayHeight,
+    required this.zip32AccountIndex,
+    required this.isHardware,
+    required this.isSeedAnchor,
+    this.mnemonic,
+    this.ufvk,
+    this.seedFingerprint,
+    this.profilePictureId,
+    this.sourceAccountUuid,
+  });
+
+  final String name;
+  final int birthdayHeight;
+  final int zip32AccountIndex;
+  final bool isHardware;
+  final bool isSeedAnchor;
+  final String? mnemonic;
+  final String? ufvk;
+  final List<int>? seedFingerprint;
+  final String? profilePictureId;
+  final String? sourceAccountUuid;
+}
+
+class LinkedWalletAccountsImportResult {
+  const LinkedWalletAccountsImportResult({
+    required this.importedCount,
+    required this.skippedDuplicateCount,
+  });
+
+  final int importedCount;
+  final int skippedDuplicateCount;
 }
 
 class AccountNotifier extends AsyncNotifier<AccountState> {
@@ -454,15 +494,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
     ];
-    final seedAnchorCount = prev.accounts
-        .where((account) => account.isSeedAnchor)
-        .length;
-    if (target.isSeedAnchor && seedAnchorCount <= 1 && remaining.isNotEmpty) {
-      throw StateError(
-        'The last seed anchor account cannot be removed while other accounts remain.',
-      );
-    }
-
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
@@ -768,6 +799,202 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
+  Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
+    required String network,
+    required List<LinkedWalletAccountImport> accountsToImport,
+  }) async {
+    if (accountsToImport.isEmpty) {
+      throw ArgumentError.value(
+        accountsToImport,
+        'accountsToImport',
+        'Select at least one wallet link account.',
+      );
+    }
+
+    try {
+      final prev = state.value ?? const AccountState();
+      final normalizedNetwork = await _validateLinkedWalletNetwork(
+        network: network,
+        current: prev,
+      );
+
+      final dbPath = await _getDbPath();
+      if (prev.accounts.isEmpty) {
+        await _deleteExistingDb(dbPath);
+        await _storage.writeString(_networkKey, normalizedNetwork);
+      }
+
+      final importedAccounts = <AccountInfo>[];
+      String? firstImportedUuid;
+      String? firstImportedAddress;
+      var nextOrder = prev.accounts.length;
+      var skippedDuplicateCount = 0;
+
+      for (final input in accountsToImport) {
+        late final String accountUuid;
+        late final String unifiedAddress;
+        late final bool isSeedAnchor;
+        try {
+          if (input.isHardware) {
+            final result = await rust_wallet.importHardwareAccount(
+              dbPath: dbPath,
+              network: normalizedNetwork,
+              name: input.name,
+              ufvkString: input.ufvk ?? '',
+              seedFingerprint: input.seedFingerprint ?? const [],
+              zip32Index: input.zip32AccountIndex,
+              birthdayHeight: BigInt.from(input.birthdayHeight),
+            );
+            accountUuid = result.accountUuid;
+            unifiedAddress = result.unifiedAddress;
+            isSeedAnchor = false;
+          } else {
+            final result = await rust_wallet.importSoftwareAccountAtIndex(
+              mnemonic: input.mnemonic ?? '',
+              birthdayHeight: BigInt.from(input.birthdayHeight),
+              network: normalizedNetwork,
+              dbPath: dbPath,
+              name: input.name,
+              zip32AccountIndex: input.zip32AccountIndex,
+              isFirstWalletAccount:
+                  prev.accounts.isEmpty && importedAccounts.isEmpty,
+            );
+            accountUuid = result.accountUuid;
+            unifiedAddress = result.unifiedAddress;
+            isSeedAnchor = result.isSeedAnchor;
+          }
+        } catch (error) {
+          if (isWalletLinkDuplicateImportError(error)) {
+            skippedDuplicateCount += 1;
+            log(
+              'importLinkedWalletAccounts: skipped duplicate '
+              '${input.isHardware ? 'hardware' : 'software'} account '
+              '"${input.name}"',
+            );
+            continue;
+          }
+          rethrow;
+        }
+        if (!input.isHardware) {
+          await _storage.writeAccountMnemonic(
+            accountUuid,
+            input.mnemonic ?? '',
+          );
+        }
+        firstImportedUuid ??= accountUuid;
+        firstImportedAddress ??= unifiedAddress;
+        importedAccounts.add(
+          AccountInfo(
+            uuid: accountUuid,
+            name: input.name,
+            order: nextOrder,
+            isHardware: input.isHardware,
+            isSeedAnchor: isSeedAnchor,
+            profilePictureId: normalizeProfilePictureId(
+              input.profilePictureId ?? kDefaultProfilePictureId,
+            ),
+            walletLinkSourceAccountUuid: _normalizedOptionalString(
+              input.sourceAccountUuid,
+            ),
+          ),
+        );
+        nextOrder += 1;
+      }
+
+      final updated = [...prev.accounts, ...importedAccounts];
+      final activeAccountUuid = prev.activeAccountUuid ?? firstImportedUuid;
+      final activeAddress = prev.activeAccountUuid == null
+          ? firstImportedAddress
+          : prev.activeAddress;
+      await _saveAccounts(updated);
+      if (activeAccountUuid == null) {
+        await _storage.delete(_activeAccountKey);
+      } else {
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
+      }
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: activeAccountUuid,
+          activeAddress: activeAddress,
+        ),
+      );
+      log(
+        'importLinkedWalletAccounts: success, '
+        'imported=${importedAccounts.length}, '
+        'duplicates=$skippedDuplicateCount, active=$activeAccountUuid',
+      );
+      return LinkedWalletAccountsImportResult(
+        importedCount: importedAccounts.length,
+        skippedDuplicateCount: skippedDuplicateCount,
+      );
+    } catch (e, st) {
+      log('importLinkedWalletAccounts: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  Future<void> validateLinkedWalletNetwork(String network) async {
+    final current = state.value ?? await future;
+    await _validateLinkedWalletNetwork(network: network, current: current);
+  }
+
+  Future<Set<String>> alreadyImportedWalletLinkSourceAccountUuids({
+    required String network,
+    required Iterable<LinkedWalletAccountImport> accountsToCheck,
+  }) async {
+    final inputs = accountsToCheck.toList(growable: false);
+    if (inputs.isEmpty) return const <String>{};
+
+    final prev = await future;
+    if (prev.accounts.isEmpty) return const <String>{};
+
+    final normalizedNetwork = normalizeZcashNetworkName(network);
+    final storedNetwork = await _getNetwork();
+    if (storedNetwork != normalizedNetwork) return const <String>{};
+
+    final importedSourceUuids = <String>{};
+    for (final account in prev.accounts) {
+      final sourceUuid = _normalizedOptionalString(
+        account.walletLinkSourceAccountUuid,
+      );
+      if (sourceUuid != null) importedSourceUuids.add(sourceUuid);
+    }
+    final alreadyImported = <String>{};
+    final dbPath = await _getDbPath();
+
+    for (final input in inputs) {
+      final sourceUuid = _normalizedOptionalString(input.sourceAccountUuid);
+      if (sourceUuid == null) continue;
+      if (importedSourceUuids.contains(sourceUuid)) {
+        alreadyImported.add(sourceUuid);
+        continue;
+      }
+      if (input.isHardware) continue;
+
+      final mnemonic = input.mnemonic?.trim();
+      if (mnemonic == null || mnemonic.isEmpty) continue;
+      try {
+        final isImported = await rust_wallet
+            .isSoftwareWalletLinkAccountImported(
+              mnemonic: mnemonic,
+              network: normalizedNetwork,
+              dbPath: dbPath,
+              zip32AccountIndex: input.zip32AccountIndex,
+            );
+        if (isImported) alreadyImported.add(sourceUuid);
+      } catch (error, stackTrace) {
+        log(
+          'alreadyImportedWalletLinkSourceAccountUuids: '
+          'software preflight failed for "${input.name}": $error\n$stackTrace',
+        );
+      }
+    }
+
+    return alreadyImported;
+  }
+
   /// Check if the active account is a hardware wallet account.
   bool get isActiveAccountHardware {
     final active = state.value?.activeAccount;
@@ -864,6 +1091,31 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     );
   }
 
+  Future<String> _validateLinkedWalletNetwork({
+    required String network,
+    required AccountState current,
+  }) async {
+    final normalizedNetwork = normalizeZcashNetworkName(network);
+    if (current.accounts.isEmpty) {
+      final currentNetwork = normalizeZcashNetworkName(
+        ref.read(rpcEndpointProvider).networkName,
+      );
+      if (currentNetwork != normalizedNetwork) {
+        throw StateError(
+          'Linked wallet network does not match the current app network.',
+        );
+      }
+    } else {
+      final storedNetwork = await _getNetwork();
+      if (storedNetwork != normalizedNetwork) {
+        throw StateError(
+          'Linked wallet network does not match the current wallet.',
+        );
+      }
+    }
+    return normalizedNetwork;
+  }
+
   Future<void> _deleteExistingDb(String dbPath) async {
     for (final path in walletDbCleanupPaths(dbPath)) {
       final file = File(path);
@@ -872,6 +1124,33 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
     }
   }
+}
+
+@visibleForTesting
+bool isWalletLinkDuplicateImportError(Object error) {
+  final message = _normalizedExceptionMessage(error);
+  return message == _duplicateSoftwareAccountImportMessage ||
+      message == _duplicateKeystoneAccountImportMessage ||
+      (message.contains('account corresponding to the data provided') &&
+          message.contains('already exists in the wallet'));
+}
+
+String? _normalizedOptionalString(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+String _normalizedExceptionMessage(Object error) {
+  const exceptionPrefix = 'Exception: ';
+  var message = error.toString();
+  if (message.startsWith(exceptionPrefix)) {
+    message = message.substring(exceptionPrefix.length);
+  }
+  final anyhowMatch = RegExp(r'^AnyhowException\((.*)\)$').firstMatch(message);
+  if (anyhowMatch != null) {
+    message = anyhowMatch.group(1)!;
+  }
+  return message;
 }
 
 final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(

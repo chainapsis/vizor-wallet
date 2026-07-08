@@ -1,8 +1,12 @@
+import BackgroundTasks
+import CoreHaptics
 import Flutter
 import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var customHapticEngine: CHHapticEngine?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -11,7 +15,9 @@ import UIKit
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
-      TxTrackManager.shared.registerTask()
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
+      )
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -71,21 +77,6 @@ import UIKit
           presetId: presetId
         )
         result(true)
-      case "startTxTracking":
-        if #available(iOS 26.0, *) {
-          let args = call.arguments as? [String: Any]
-          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-          let network = args?["network"] as? String
-          let presetId = args?["presetId"] as? String
-          let success = TxTrackManager.shared.startTxTracking(
-            lightwalletdUrl: lightwalletdUrl,
-            network: network,
-            presetId: presetId
-          )
-          result(success)
-        } else {
-          result(false)
-        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -103,9 +94,21 @@ import UIKit
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
         result(true)
+      case "sendSuccess":
+        result(self.performSendSuccessHaptic())
+      case "sendFailure":
+        result(self.performSendFailureHaptic())
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+
+    let sensitiveClipboardChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/sensitive_clipboard",
+      binaryMessenger: messenger
+    )
+    sensitiveClipboardChannel.setMethodCallHandler { (call, result) in
+      SensitiveClipboardHandler.handle(call, result: result)
     }
 
     let biometricUnlockChannel = FlutterMethodChannel(
@@ -130,6 +133,33 @@ import UIKit
     )
     datePickerChannel.setMethodCallHandler { (call, result) in
       DatePickerHandler.shared.handle(call, result: result)
+    }
+
+    let windowAppearanceChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/window_appearance",
+      binaryMessenger: messenger
+    )
+    windowAppearanceChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setBrightness":
+        guard
+          let args = call.arguments as? [String: Any],
+          let brightness = args["brightness"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "bad_args",
+              message: "Expected brightness argument.",
+              details: nil
+            )
+          )
+          return
+        }
+        WindowAppearanceHandler.setBrightness(brightness)
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
     }
 
     let cameraPermissionChannel = FlutterMethodChannel(
@@ -165,6 +195,204 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+
+  private func performSendSuccessHaptic() -> Bool {
+    #if targetEnvironment(simulator)
+      return false
+    #else
+      guard #available(iOS 13.0, *) else {
+        return false
+      }
+      guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+        return false
+      }
+
+      do {
+        let engine: CHHapticEngine
+        if let existingEngine = customHapticEngine {
+          engine = existingEngine
+        } else {
+          engine = try CHHapticEngine()
+          customHapticEngine = engine
+          engine.stoppedHandler = { [weak self] _ in
+            self?.customHapticEngine = nil
+          }
+          engine.resetHandler = { [weak self] in
+            try? self?.customHapticEngine?.start()
+          }
+        }
+
+        try engine.start()
+        let pattern = try CHHapticPattern(
+          events: [
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [],
+              relativeTime: 0,
+              duration: 0.03
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00),
+              ],
+              relativeTime: 0.06,
+              duration: 0.04
+            ),
+          ],
+          parameters: []
+        )
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        return true
+      } catch {
+        return false
+      }
+    #endif
+  }
+
+  private func performSendFailureHaptic() -> Bool {
+    #if targetEnvironment(simulator)
+      return false
+    #else
+      guard #available(iOS 13.0, *) else {
+        return false
+      }
+      guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+        return false
+      }
+
+      do {
+        let engine: CHHapticEngine
+        if let existingEngine = customHapticEngine {
+          engine = existingEngine
+        } else {
+          engine = try CHHapticEngine()
+          customHapticEngine = engine
+          engine.stoppedHandler = { [weak self] _ in
+            self?.customHapticEngine = nil
+          }
+          engine.resetHandler = { [weak self] in
+            try? self?.customHapticEngine?.start()
+          }
+        }
+
+        try engine.start()
+        let pattern = try CHHapticPattern(
+          events: [
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+              ],
+              relativeTime: 0,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+              ],
+              relativeTime: 0.08,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90),
+              ],
+              relativeTime: 0.16,
+              duration: 0.04
+            ),
+            CHHapticEvent(
+              eventType: .hapticContinuous,
+              parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60),
+              ],
+              relativeTime: 0.24,
+              duration: 0.05
+            ),
+          ],
+          parameters: []
+        )
+        let player = try engine.makePlayer(with: pattern)
+        try player.start(atTime: 0)
+        return true
+      } catch {
+        return false
+      }
+    #endif
+  }
+}
+
+private enum SensitiveClipboardHandler {
+  private static let plainTextType = "public.utf8-plain-text"
+
+  static func handle(_ call: FlutterMethodCall, result: FlutterResult) {
+    switch call.method {
+    case "copyText":
+      guard
+        let args = call.arguments as? [String: Any],
+        let text = args["text"] as? String
+      else {
+        result(
+          FlutterError(
+            code: "bad_args",
+            message: "Expected text argument.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let expirationSeconds = max(1, seconds(from: args["expirationSeconds"]) ?? 60)
+      UIPasteboard.general.setItems(
+        [[plainTextType: text]],
+        options: [
+          .expirationDate: Date().addingTimeInterval(expirationSeconds),
+          .localOnly: true,
+        ]
+      )
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private static func seconds(from value: Any?) -> TimeInterval? {
+    if let number = value as? NSNumber {
+      return number.doubleValue
+    }
+    if let int = value as? Int {
+      return TimeInterval(int)
+    }
+    if let double = value as? Double {
+      return double
+    }
+    return nil
+  }
+}
+
+private enum WindowAppearanceHandler {
+  static func setBrightness(_ brightness: String) {
+    let style: UIUserInterfaceStyle
+    switch brightness {
+    case "dark":
+      style = .dark
+    case "system":
+      style = .unspecified
+    default:
+      style = .light
+    }
+
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .forEach { window in
+        window.overrideUserInterfaceStyle = style
+        window.rootViewController?.overrideUserInterfaceStyle = style
+      }
   }
 }
 

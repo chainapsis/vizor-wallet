@@ -56,7 +56,7 @@ void main() {
         tester,
         const ValueKey('mobile_welcome_import'),
       );
-      await _pasteAndReview(tester);
+      await _pasteAndContinueToBirthday(tester);
       await tapWidget(
         tester,
         const ValueKey('mobile_import_birthday_mode_height'),
@@ -97,11 +97,10 @@ void main() {
   );
 }
 
-Future<void> _pasteAndReview(WidgetTester tester) async {
+Future<void> _pasteAndContinueToBirthday(WidgetTester tester) async {
   await Clipboard.setData(const ClipboardData(text: _mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
   await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
-  await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
 }
 
 Future<void> _configureProxyPresetPrimary() async {

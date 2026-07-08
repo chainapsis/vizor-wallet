@@ -6,6 +6,30 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 
 void main() {
+  testWidgets('secondary surface keeps its input shell in light mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 352,
+          child: AppTextField(
+            label: 'Password',
+            hintText: 'Enter password',
+            surface: AppTextFieldSurface.secondary,
+          ),
+        ),
+      ),
+    );
+
+    final decoration = _fieldShellDecoration(tester);
+    expect(decoration.color, AppThemeData.light.colors.surface.input.secondary);
+    expect(
+      decoration.color,
+      isNot(AppThemeData.light.colors.button.secondary.bg),
+    );
+  });
+
   testWidgets('single-line padded input area wins over root unfocus', (
     tester,
   ) async {
@@ -581,4 +605,21 @@ class _SizedTextArea extends StatelessWidget {
       ),
     );
   }
+}
+
+BoxDecoration _fieldShellDecoration(WidgetTester tester) {
+  final decorations = tester
+      .widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byType(AppTextField),
+          matching: find.byType(DecoratedBox),
+        ),
+      )
+      .map((box) => box.decoration)
+      .whereType<BoxDecoration>()
+      .where((decoration) => decoration.border is Border)
+      .toList();
+
+  expect(decorations, hasLength(1));
+  return decorations.single;
 }

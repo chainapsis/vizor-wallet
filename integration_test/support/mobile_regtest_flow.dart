@@ -294,8 +294,8 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('wallet created');
 }
 
-/// Welcome → import (clipboard paste) → review → birthday height →
-/// passcode (first wallet only) → home.
+/// Welcome → import (clipboard paste) → birthday height → passcode
+/// (first wallet only) → home.
 Future<void> importWalletViaPaste(
   WidgetTester tester, {
   required String mnemonic,
@@ -307,9 +307,8 @@ Future<void> importWalletViaPaste(
   await tapWidget(tester, const ValueKey('mobile_welcome_import'));
   await Clipboard.setData(ClipboardData(text: mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-  // Paste fills the slots in place; confirm moves to the review screen.
+  // Paste fills the slots in place; confirm moves to the birthday screen.
   await tapAppButton(tester, const ValueKey('mobile_import_confirm'));
-  await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
   // Block height is a real text field on the system keyboard.
   await tapWidget(
     tester,

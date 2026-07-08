@@ -580,7 +580,7 @@ class _SendAddMemoCard extends StatelessWidget {
       width: double.infinity,
       height: 128,
       decoration: BoxDecoration(
-        color: colors.surface.input,
+        color: colors.surface.input.primary,
         borderRadius: BorderRadius.circular(AppRadii.medium),
         boxShadow: _sendInputSurfaceShadow(colors),
       ),

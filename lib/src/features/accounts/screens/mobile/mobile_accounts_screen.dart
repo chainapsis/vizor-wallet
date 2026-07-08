@@ -86,13 +86,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  /// Mirrors the desktop eligibility rule: the last remaining account
-  /// is removable because removal becomes a full app reset.
+  /// Mirrors the desktop eligibility rule: account removal is available for
+  /// every listed account. The last remaining account becomes a full app reset.
   bool _canRemove(AccountInfo account, List<AccountInfo> accounts) {
-    if (accounts.length == 1) return true;
-    if (!account.isSeedAnchor) return true;
-    final seedAnchorCount = accounts.where((a) => a.isSeedAnchor).length;
-    return seedAnchorCount > 1;
+    return accounts.any((candidate) => candidate.uuid == account.uuid);
   }
 
   /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
@@ -105,7 +102,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (wasOpenForAccount) return;
     }
 
-    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final accountState = ref.read(accountProvider).value;
+    final accounts = accountState?.accounts ?? const [];
+    final isCurrentAccount = accountState?.activeAccountUuid == account.uuid;
     final canRemove = _canRemove(account, accounts);
 
     final overlay = Overlay.of(context, rootOverlay: true);
@@ -126,7 +125,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       horizontal: AppSpacing.xxs,
       vertical: AppSpacing.sm,
     );
-    final menuHeight = canRemove ? 173.0 : 126.0;
+    final menuHeight = switch ((isCurrentAccount, canRemove)) {
+      (true, true) => 139.0,
+      (true, false) => 92.0,
+      (false, true) => 173.0,
+      (false, false) => 126.0,
+    };
     const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
     final colors = context.colors;
     final menuMaxTop = math.max(
@@ -218,12 +222,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         label: 'Copy address',
         action: _AccountAction.copy,
       ),
-      item(
-        key: const ValueKey('mobile_account_menu_send'),
-        iconName: AppIcons.plane,
-        label: 'Send ZEC',
-        action: _AccountAction.send,
-      ),
+      if (!isCurrentAccount)
+        item(
+          key: const ValueKey('mobile_account_menu_send'),
+          iconName: AppIcons.plane,
+          label: 'Send ZEC',
+          action: _AccountAction.send,
+        ),
       item(
         key: const ValueKey('mobile_account_menu_edit'),
         iconName: AppIcons.edit,

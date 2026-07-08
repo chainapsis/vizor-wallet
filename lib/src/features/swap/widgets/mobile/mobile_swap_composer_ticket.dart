@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
@@ -33,10 +34,15 @@ class MobileSwapComposerTicket extends StatefulWidget {
     required this.onOpenDestinationAddress,
     required this.onUseMaxZecAmount,
     required this.zecAvailableText,
+    this.destinationContactName,
     super.key,
   });
 
   final SwapState state;
+
+  /// Address-book label for the current destination address, shown in the
+  /// address chip instead of the truncated address when set.
+  final String? destinationContactName;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
@@ -142,8 +148,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
 
     final payActive =
         _amountFocusNode.hasFocus ||
-        (!_receiveAmountFocusNode.hasFocus &&
-            state.quoteMode == SwapQuoteMode.exactInput);
+        (!_receiveAmountFocusNode.hasFocus && state.quoteMode.usesInputAmount);
     final receiveActive = !payActive;
 
     final payCard = _SwapCard(
@@ -203,6 +208,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           ? null
           : _AddressChip(
               value: state.destinationText,
+              contactName: widget.destinationContactName,
               emptyText: 'Add refund address...',
               onTap: widget.onOpenDestinationAddress,
             ),
@@ -248,6 +254,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       addressChip: sendsZec
           ? _AddressChip(
               value: state.destinationText,
+              contactName: widget.destinationContactName,
               emptyText: 'Add recipient address...',
               onTap: widget.onOpenDestinationAddress,
             )
@@ -599,17 +606,24 @@ class _AddressChip extends StatelessWidget {
     required this.value,
     required this.emptyText,
     required this.onTap,
+    this.contactName,
   });
 
   final String value;
   final String emptyText;
   final VoidCallback onTap;
 
+  /// Saved-contact label for [value]; when set, the chip shows the name
+  /// (with the matched-contact user icon) instead of the truncated address.
+  final String? contactName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final trimmed = value.trim();
     final hasValue = trimmed.isNotEmpty;
+    final name = contactName?.trim();
+    final hasContact = hasValue && name != null && name.isNotEmpty;
     return GestureDetector(
       key: const ValueKey('swap_address_summary'),
       behavior: HitTestBehavior.opaque,
@@ -620,31 +634,41 @@ class _AddressChip extends StatelessWidget {
           horizontal: AppSpacing.xs,
           vertical: AppSpacing.xxs,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(AppIcons.wallet, size: 20, color: colors.icon.accent),
-            const SizedBox(width: AppSpacing.xxs),
-            Flexible(
-              child: Text(
-                hasValue
-                    ? compactSwapAddress(
-                        trimmed,
-                        prefixLength: 6,
-                        suffixLength: 4,
-                        separator: ' … ',
-                      )
-                    : emptyText,
-                key: const ValueKey('swap_destination_value'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: hasValue ? colors.text.accent : colors.text.primary,
+        child: hasContact
+            ? ContactNameInline(
+                name: name,
+                textStyle: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
                 ),
+                key: const ValueKey('swap_destination_value'),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(AppIcons.wallet, size: 20, color: colors.icon.accent),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Flexible(
+                    child: Text(
+                      hasValue
+                          ? compactSwapAddress(
+                              trimmed,
+                              prefixLength: 6,
+                              suffixLength: 4,
+                              separator: ' … ',
+                            )
+                          : emptyText,
+                      key: const ValueKey('swap_destination_value'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: hasValue
+                            ? colors.text.accent
+                            : colors.text.primary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

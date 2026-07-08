@@ -163,7 +163,16 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsNothing);
+    // The matched contact's name stays visible under the field so the user
+    // knows the filled address is the intended one.
+    expect(find.text('Alice'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('app-text-field-message-row')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Contacts'), findsOneWidget);
   });
 
@@ -193,7 +202,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
-    expect(find.text('Alice'), findsNothing);
+    // Prefilled address matches the saved contact, so the match line names it.
+    expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Contacts'), findsOneWidget);
 
     await tester.enterText(

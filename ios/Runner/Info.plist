@@ -9,8 +9,7 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-			<string>com.keplr.vizor.sync</string>
-			<string>com.keplr.vizor.txtrack</string>
+		<string>com.keplr.vizor.sync</string>
 		<string>com.pravera.flutter_foreground_task.refresh</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>

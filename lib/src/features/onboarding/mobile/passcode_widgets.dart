@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -179,11 +180,18 @@ class PasscodeNumpad extends StatelessWidget {
       final effectiveTap = enabled ? onTap : null;
       return Semantics(
         button: effectiveTap != null,
+        enabled: effectiveTap != null,
         label: label,
+        onTap: effectiveTap,
         excludeSemantics: true,
-        child: GestureDetector(
+        child: Listener(
           behavior: HitTestBehavior.opaque,
-          onTap: effectiveTap,
+          onPointerDown: effectiveTap == null
+              ? null
+              : (event) {
+                  if (event.buttons != kPrimaryButton) return;
+                  effectiveTap();
+                },
           child: SizedBox.square(
             dimension: kPasscodeKeySize,
             child: Center(child: child),

@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
@@ -26,7 +26,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
-import 'mobile_create_steps.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
 
@@ -120,7 +120,7 @@ class _MobileSecretPassphraseScreenState
   Future<void> _copy() async {
     final mnemonic = _mnemonic;
     if (mnemonic == null || !_revealed) return;
-    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await SensitiveClipboard.copyText(mnemonic);
     unawaited(AppHaptics.copy());
     if (!mounted) return;
     _copyResetTimer?.cancel();
@@ -210,7 +210,7 @@ class _MobileSecretPassphraseScreenState
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileCreateProgress(4),
+        progress: mobileCreateProgress(6),
         onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',

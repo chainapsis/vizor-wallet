@@ -18,7 +18,7 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
   });
 
-  testWidgets('accounts current menu use case renders edit actions and copy', (
+  testWidgets('accounts current menu use case renders account actions', (
     tester,
   ) async {
     await _pumpAccountsUseCase(tester, buildAccountsCurrentMenuUseCase);
@@ -27,7 +27,7 @@ void main() {
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
-    expect(find.text('Remove account'), findsNothing);
+    expect(find.text('Remove account'), findsOneWidget);
   });
 
   testWidgets('accounts modal use cases render each modal state', (

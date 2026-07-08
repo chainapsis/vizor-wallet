@@ -280,7 +280,7 @@ class _ContactsSearchFieldState extends State<_ContactsSearchField> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     // The shared mobile input — same shell the swap modals and the contact
-    // picker use (surface.input box, search glyph, inline clear button).
+    // picker use (surface.input.primary box, search glyph, inline clear button).
     return MobileTextField(
       fieldKey: const ValueKey('mobile_contacts_search_field'),
       controller: _controller,
@@ -1337,14 +1337,14 @@ class _FieldShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Mirror the resting MobileTextField surface (surface.input fill, radius
+    // Mirror the resting MobileTextField surface (surface.input.primary fill, radius
     // 16, 60px tall, the layered subtle shadow) so the network selector
     // matches the Name / Address fields in the same form.
     return Container(
       height: AppInputSizing.height,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: colors.surface.input,
+        color: colors.surface.input.primary,
         borderRadius: BorderRadius.circular(AppInputSizing.radius),
         boxShadow: [
           BoxShadow(color: colors.shadows.subtle, blurRadius: 1),

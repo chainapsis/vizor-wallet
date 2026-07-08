@@ -253,8 +253,9 @@ void main() {
     expect(safeArea.bottom, isFalse);
   });
 
-  testWidgets('imported accounts offer removal; the last seed anchor with '
-      'other accounts does not', (tester) async {
+  testWidgets('imported accounts and seed anchors offer removal', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -268,9 +269,10 @@ void main() {
     );
     await tester.pump();
 
-    // Imported account: edit + remove.
+    // Other imported account: send + edit + remove.
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
     await tester.pumpAndSettle();
+    expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     final openMenuButton = tester.widget<DecoratedBox>(
@@ -291,11 +293,16 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    // Last seed anchor with another account: edit only.
+    // Current seed anchor with another account: edit + remove, but no send.
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
     await tester.pumpAndSettle();
+    expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
-    expect(find.text('Remove account'), findsNothing);
+    expect(find.text('Remove account'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
+      const Size(173, 139),
+    );
   });
 
   testWidgets('the last remaining seed account resets the app on removal', (

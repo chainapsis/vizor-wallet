@@ -36,18 +36,16 @@ class SwapQuoteRequest {
 
   SwapAsset get sellAsset => direction.fromAsset(externalAsset);
   SwapAsset get receiveAsset => direction.toAsset(externalAsset);
-  SwapAsset get amountAsset =>
-      mode == SwapQuoteMode.exactInput ? sellAsset : receiveAsset;
+  SwapAsset get amountAsset => mode.usesInputAmount ? sellAsset : receiveAsset;
 
   double get sellAmount {
-    if (mode != SwapQuoteMode.exactInput) {
+    if (!mode.usesInputAmount) {
       throw StateError('Exact-output quote requests do not carry sellAmount');
     }
     return amount;
   }
 
-  String? get sellAmountText =>
-      mode == SwapQuoteMode.exactInput ? amountText : null;
+  String? get sellAmountText => mode.usesInputAmount ? amountText : null;
 }
 
 class SwapDepositInstruction {
@@ -151,12 +149,12 @@ class SwapQuote {
     final receiveAsset = direction.toAsset(externalAsset);
     final rate = externalPerZec ?? externalAsset.fallbackExternalPerZec;
     final estimatedSellAmount = switch (mode) {
-      SwapQuoteMode.exactInput => quoteAmount,
+      SwapQuoteMode.exactInput || SwapQuoteMode.flexInput => quoteAmount,
       SwapQuoteMode.exactOutput =>
         direction.sendsZec ? quoteAmount / rate : quoteAmount * rate,
     };
     final receiveAmount = switch (mode) {
-      SwapQuoteMode.exactInput =>
+      SwapQuoteMode.exactInput || SwapQuoteMode.flexInput =>
         direction.sendsZec ? quoteAmount * rate : quoteAmount / rate,
       SwapQuoteMode.exactOutput => quoteAmount,
     };
@@ -218,7 +216,7 @@ class SwapQuote {
       '${mode == SwapQuoteMode.exactOutput ? sellAsset.formatAmountUp(sellAmount) : sellAsset.formatAmount(sellAmount)} ${sellAsset.symbol}';
   String get receiveEstimateText =>
       receiveEstimateTextOverride ??
-      '${mode == SwapQuoteMode.exactInput ? receiveAsset.formatAmountDown(receiveAmount) : receiveAsset.formatAmount(receiveAmount)} ${receiveAsset.symbol}';
+      '${mode.usesInputAmount ? receiveAsset.formatAmountDown(receiveAmount) : receiveAsset.formatAmount(receiveAmount)} ${receiveAsset.symbol}';
   String get minimumReceiveText =>
       minimumReceiveTextOverride ??
       '${receiveAsset.formatAmountDown(minimumReceiveAmount)} ${receiveAsset.symbol}';

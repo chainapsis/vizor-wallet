@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
@@ -226,10 +227,9 @@ class _MobileSeedPhraseScreenState
       setState(() {
         _checking = false;
         _entry = '';
-        _gateError =
-            e.kind == DeviceOwnerAuthErrorKind.unavailable
-                ? kWalletResetDeviceAuthRequiredMessage
-                : kWalletResetDeviceAuthFailedMessage;
+        _gateError = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? kWalletResetDeviceAuthRequiredMessage
+            : kWalletResetDeviceAuthFailedMessage;
       });
       return;
     } catch (e, st) {
@@ -315,6 +315,14 @@ class _MobileSeedPhraseScreenState
     await Clipboard.setData(ClipboardData(text: text));
     unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, toast);
+  }
+
+  Future<void> _copyMnemonic() async {
+    final mnemonic = _mnemonic;
+    if (mnemonic == null || mnemonic.isEmpty) return;
+    await SensitiveClipboard.copyText(mnemonic);
+    unawaited(AppHaptics.copy());
+    if (mounted) showAppToast(context, 'Secret passphrase copied');
   }
 
   // ── Screenshot warning ─────────────────────────────────────────────
@@ -518,7 +526,7 @@ class _MobileSeedPhraseScreenState
                   child: _CopyChip(
                     key: const ValueKey('mobile_seed_copy'),
                     label: 'Copy',
-                    onTap: () => _copy(_mnemonic, 'Secret passphrase copied'),
+                    onTap: _copyMnemonic,
                   ),
                 ),
               ],

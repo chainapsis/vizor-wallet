@@ -31,6 +31,7 @@ Environment:
   VIZOR_RELEASE_REPOSITORY       owner/name repository for update metadata.
   VIZOR_UPDATE_CHECK_ENABLED     true only for builds that should check updates.
   VIZOR_COINGECKO_PRICE_BASE_URL Home price API base URL.
+  VIZOR_WALLET_LINK_BACKEND_URL  Wallet link relay API base URL.
   FVM_BIN                        fvm executable path. Default: fvm.
 
 Default flavors: mainnet,testnet
@@ -190,6 +191,7 @@ build_flavor() {
       --dart-define="VIZOR_RELEASE_REPOSITORY=${VIZOR_RELEASE_REPOSITORY:-}"
       --dart-define="VIZOR_UPDATE_CHECK_ENABLED=${VIZOR_UPDATE_CHECK_ENABLED:-false}"
       --dart-define="VIZOR_COINGECKO_PRICE_BASE_URL=${VIZOR_COINGECKO_PRICE_BASE_URL:-https://api.coingecko.com/api/v3}"
+      --dart-define="VIZOR_WALLET_LINK_BACKEND_URL=${VIZOR_WALLET_LINK_BACKEND_URL:-https://functions.vizor.cash}"
     )
     if [[ -n "${VIZOR_RELEASE_VERSION:-}" ]]; then
       release_build_name="${VIZOR_RELEASE_BUILD_NAME:-$VIZOR_RELEASE_VERSION}"

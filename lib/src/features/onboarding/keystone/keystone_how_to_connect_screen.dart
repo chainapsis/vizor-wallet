@@ -141,7 +141,7 @@ class _TitleBlock extends StatelessWidget {
 class _KeystoneInstructionsPanel extends StatelessWidget {
   const _KeystoneInstructionsPanel();
 
-  static const double _height = 392;
+  static const double _minHeight = 392;
   static const _radius = BorderRadius.all(Radius.circular(24));
 
   @override
@@ -152,7 +152,7 @@ class _KeystoneInstructionsPanel extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: _height,
+      constraints: const BoxConstraints(minHeight: _minHeight),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
         vertical: AppSpacing.md,
@@ -181,10 +181,8 @@ class _KeystoneInstructionsPanel extends StatelessWidget {
             iconName: AppIcons.importWallet,
             stepNumber: 1,
             title: 'Check Keystone firmware',
-            body:
-                'Check if your Keystone device has the latest version of '
-                'the Cypherpunk firmware, update or install if needed.',
-            action: _FirmwareButton(),
+            body: null,
+            action: _FirmwareBodyWithLink(),
           ),
           SizedBox(height: AppSpacing.md),
           _Divider(),
@@ -296,21 +294,50 @@ class _InstructionHeader extends StatelessWidget {
   }
 }
 
-class _FirmwareButton extends StatelessWidget {
-  const _FirmwareButton();
+class _FirmwareBodyWithLink extends StatelessWidget {
+  const _FirmwareBodyWithLink();
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.primary,
+    );
+    return Text.rich(
+      TextSpan(
+        style: bodyStyle,
+        children: const [
+          TextSpan(
+            text:
+                'Make sure your Keystone is on the latest Cypherpunk firmware. ',
+          ),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _FirmwareInlineLink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FirmwareInlineLink extends StatelessWidget {
+  const _FirmwareInlineLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      link: true,
+      label: 'Download Keystone firmware',
       child: AppButton(
         onPressed: _openKeystoneFirmware,
         variant: AppButtonVariant.ghost,
-        size: AppButtonSize.medium,
-        minWidth: 96,
-        iconGap: 0,
+        size: AppButtonSize.small,
+        height: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        iconGap: AppSpacing.xxs,
         leading: const AppIcon(AppIcons.link),
-        child: const Text('Keystone Firmware'),
+        child: const Text('link'),
       ),
     );
   }
@@ -319,48 +346,98 @@ class _FirmwareButton extends StatelessWidget {
 class _ConnectionSteps extends StatelessWidget {
   const _ConnectionSteps();
 
-  static const _steps = [
-    'Unlock your Keystone.',
-    'Tap the ... Menu, then go to Sync',
-    'Open the Zcash QR Code in order to connect.',
-    'Grant camera access in your laptop settings and proceed with QR code '
-        'import to Vizor.',
+  static const _keystoneSteps = [
+    'Tap ••• (top right), then Connect software wallet.',
+    'Select Vizor (or ZODL)',
   ];
+  static const _vizorSteps = ['Scan the dynamic QR code on your Keystone.'];
 
   static const _markerWidth = 15.0;
   static const _markerGap = 6.0;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < _steps.length; i++)
-          _ConnectionStepRow(index: i + 1, text: _steps[i]),
+        _ConnectionStepGroup(
+          title: 'On your Keystone',
+          startIndex: 1,
+          steps: _keystoneSteps,
+        ),
+        SizedBox(height: AppSpacing.sm),
+        _ConnectionStepGroup(
+          title: 'On Vizor',
+          startIndex: 3,
+          steps: _vizorSteps,
+        ),
+      ],
+    );
+  }
+}
+
+class _ConnectionStepGroup extends StatelessWidget {
+  const _ConnectionStepGroup({
+    required this.title,
+    required this.startIndex,
+    required this.steps,
+  });
+
+  final String title;
+  final int startIndex;
+  final List<String> steps;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: context.colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        for (var i = 0; i < steps.length; i++)
+          _ConnectionStepRow(
+            index: startIndex + i,
+            text: steps[i],
+            isFirstInGroup: i == 0,
+          ),
       ],
     );
   }
 }
 
 class _ConnectionStepRow extends StatelessWidget {
-  const _ConnectionStepRow({required this.index, required this.text});
+  const _ConnectionStepRow({
+    required this.index,
+    required this.text,
+    required this.isFirstInGroup,
+  });
 
   final int index;
   final String text;
+  final bool isFirstInGroup;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final style = AppTypography.bodyMedium.copyWith(color: colors.text.primary);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: _ConnectionSteps._markerWidth,
-          child: Text('$index.', style: style, textAlign: TextAlign.right),
-        ),
-        const SizedBox(width: _ConnectionSteps._markerGap),
-        Expanded(child: Text(text, style: style)),
-      ],
+    return Padding(
+      padding: EdgeInsets.only(top: isFirstInGroup ? 0 : AppSpacing.xxs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: _ConnectionSteps._markerWidth,
+            child: Text('$index.', style: style, textAlign: TextAlign.right),
+          ),
+          const SizedBox(width: _ConnectionSteps._markerGap),
+          Expanded(child: Text(text, style: style)),
+        ],
+      ),
     );
   }
 }

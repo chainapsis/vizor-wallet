@@ -427,7 +427,9 @@ pub fn import_hardware_account(
     Ok((uuid_str, addr_str))
 }
 
-/// Init DB + create first account as Derived (so seed relevance checks pass on future migrations).
+/// Init DB + create the bootstrap software account as Derived.
+/// This pins the DB seed fingerprint for seed-aware initialization, but the
+/// account may later be deleted like any other non-final account.
 /// Returns (account_uuid, unified_address).
 pub fn init_db_and_create_account(
     db_path: &str,
@@ -443,8 +445,8 @@ pub fn init_db_and_create_account(
     let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
-        // First account uses create_account (Derived) — ensures at least one Derived account
-        // exists for future init_wallet_db seed relevance checks.
+        // The bootstrap account uses create_account (Derived) so initial
+        // seed-aware DB setup records the seed fingerprint.
         db.create_account(name, seed, &birthday, None)
             .map_err(|e| format!("Failed to create account: {e}"))
     })?;
@@ -492,6 +494,12 @@ pub struct AccountInfo {
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+}
+
+pub struct AccountExportMetadata {
+    pub zip32_account_index: Option<u32>,
+    pub hardware_ufvk: Option<String>,
+    pub seed_fingerprint: Option<Vec<u8>>,
 }
 
 pub struct SoftwareSeedAccountState {
@@ -570,16 +578,52 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             None => (String::new(), false),
         };
 
+        let source = account.source();
         accounts.push(AccountInfo {
             uuid: id.expose_uuid().to_string(),
             name: account.name().unwrap_or("").to_string(),
             unified_address: address,
-            is_seed_anchor: matches!(account.source(), AccountSource::Derived { .. }),
+            is_seed_anchor: matches!(source, AccountSource::Derived { .. }),
             is_hardware,
         });
     }
 
     Ok(accounts)
+}
+
+pub fn get_account_export_metadata(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<AccountExportMetadata, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
+
+    let is_hardware = account.ufvk().is_some_and(is_keystone_style_ufvk);
+    let hardware_ufvk = if is_hardware {
+        account.ufvk().map(|ufvk| ufvk.encode(&network))
+    } else {
+        None
+    };
+    let (zip32_account_index, seed_fingerprint) =
+        if let Some(derivation) = account.source().key_derivation() {
+            (
+                Some(u32::from(derivation.account_index())),
+                is_hardware.then(|| derivation.seed_fingerprint().to_bytes().to_vec()),
+            )
+        } else {
+            (None, None)
+        };
+
+    Ok(AccountExportMetadata {
+        zip32_account_index,
+        hardware_ufvk,
+        seed_fingerprint,
+    })
 }
 
 pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> {
@@ -610,39 +654,9 @@ pub fn delete_account(
     let account_id = parse_account_uuid(account_uuid)?;
     with_wallet_db_write_lock("keys.delete_account", || {
         let db = open_wallet_db_for_mutation(db_path, network)?;
-        let target = db
-            .get_account(account_id)
+        db.get_account(account_id)
             .map_err(|e| format!("Failed to load account: {e}"))?
             .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
-        let account_ids = db
-            .get_account_ids()
-            .map_err(|e| format!("Failed to list accounts: {e}"))?;
-
-        if matches!(target.source(), AccountSource::Derived { .. }) {
-            let mut has_remaining_accounts = false;
-            let mut has_other_seed_anchor = false;
-            for id in &account_ids {
-                if *id == account_id {
-                    continue;
-                }
-                has_remaining_accounts = true;
-                let account = db
-                    .get_account(*id)
-                    .map_err(|e| format!("Failed to load account: {e}"))?
-                    .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
-                if matches!(account.source(), AccountSource::Derived { .. }) {
-                    has_other_seed_anchor = true;
-                    break;
-                }
-            }
-
-            if has_remaining_accounts && !has_other_seed_anchor {
-                return Err(
-                    "The last seed anchor account cannot be removed while other accounts remain."
-                        .into(),
-                );
-            }
-        }
 
         // zcash_client_sqlite 0.19.5 has a named-parameter bug in
         // wallet::delete_account: the sent_notes rewrite binds `:address`
@@ -1296,6 +1310,11 @@ mod tests {
             .find(|account| account.uuid == uuid)
             .unwrap();
         assert!(listed_account.is_seed_anchor);
+        let export_metadata =
+            get_account_export_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(export_metadata.zip32_account_index, Some(2));
+        assert_eq!(export_metadata.hardware_ufvk, None);
+        assert_eq!(export_metadata.seed_fingerprint, None);
 
         let account_id = parse_account_uuid(&uuid).unwrap();
         let db = open_wallet_db_for_read(db_path_str, WalletNetwork::Main).unwrap();
@@ -1552,6 +1571,17 @@ mod tests {
             .find(|account| account.uuid == uuid)
             .unwrap();
         assert!(listed_account.is_hardware);
+        let export_metadata =
+            get_account_export_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(export_metadata.zip32_account_index, Some(0));
+        assert_eq!(
+            export_metadata.hardware_ufvk.as_deref(),
+            Some(keystone_style_ufvk.as_str())
+        );
+        assert_eq!(
+            export_metadata.seed_fingerprint,
+            Some(seed_fingerprint.to_vec())
+        );
 
         crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
         let shielded_error = crate::wallet::sync::get_next_available_address(
@@ -2293,7 +2323,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_account_rejects_last_seed_anchor_with_remaining_accounts() {
+    fn test_delete_account_allows_last_seed_anchor_with_remaining_accounts() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -2320,12 +2350,12 @@ mod tests {
         )
         .unwrap();
 
-        let error = delete_account(db_path_str, WalletNetwork::Main, &first_uuid).unwrap_err();
-        assert!(error.contains("last seed anchor account cannot be removed"));
+        delete_account(db_path_str, WalletNetwork::Main, &first_uuid).unwrap();
 
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
-        assert_eq!(accounts.len(), 2);
-        assert!(accounts.iter().any(|account| account.uuid == first_uuid));
+        assert_eq!(accounts.len(), 1);
+        assert!(accounts.iter().all(|account| account.uuid != first_uuid));
+        assert!(accounts.iter().all(|account| !account.is_seed_anchor));
     }
 
     fn seed_internal_sent_note_to_account(db_path: &str, from_uuid: &str, to_uuid: &str) {

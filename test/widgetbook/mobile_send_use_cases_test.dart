@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
 
@@ -39,6 +40,37 @@ void main() {
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_scan_row'))).height,
       44,
+    );
+    final scanRowFinder = find.byKey(const ValueKey('mobile_send_scan_row'));
+    final scanIconFrameFinder = find.byKey(
+      const ValueKey('mobile_send_scan_icon_frame'),
+    );
+    expect(
+      tester.getSize(scanIconFrameFinder),
+      const Size(AppAssetSizeMobile.size, AppAssetSizeMobile.size),
+    );
+    final scanIconFinder = find.descendant(
+      of: scanIconFrameFinder,
+      matching: find.byType(AppIcon),
+    );
+    final scanIcon = tester.widget<AppIcon>(scanIconFinder);
+    expect(scanIcon.size, AppAssetSizeMobile.icon);
+    final scanIconDecoration =
+        tester.widget<Container>(scanIconFrameFinder).decoration!
+            as BoxDecoration;
+    expect(
+      scanIconDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.full),
+    );
+    expect(
+      tester.getTopLeft(scanIconFrameFinder).dx -
+          tester.getTopLeft(scanRowFinder).dx,
+      AppAssetSizeMobile.padding,
+    );
+    expect(
+      tester.getTopLeft(find.text('Scan a QR Code')).dx -
+          tester.getTopRight(scanIconFrameFinder).dx,
+      AppSpacing.s,
     );
     _expectVerticalGap(
       tester,
@@ -325,15 +357,15 @@ void main() {
     expect(inputRect.right, lessThanOrEqualTo(zecRect.left - AppSpacing.xs));
   });
 
-  testWidgets('mobile send amount error use case renders visual error state', (
+  testWidgets('mobile send amount error use case renders CTA error state', (
     tester,
   ) async {
     await _pumpMobileSendUseCase(tester, buildMobileSendAmountErrorUseCase);
 
     expect(tester.takeException(), isNull);
     expect(find.text('243.12'), findsOneWidget);
-    expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Enter amount to continue'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Enter amount to continue'), findsNothing);
   });
 
   testWidgets('mobile send amount ready use case renders review CTA', (

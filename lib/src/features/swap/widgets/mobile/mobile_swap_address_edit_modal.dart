@@ -7,7 +7,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../address_book/models/address_format_validator.dart';
+import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_models.dart';
 import '../swap_modal_controls.dart';
 
@@ -29,14 +31,23 @@ class MobileSwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.contacts = const <AddressBookContact>[],
+    this.initialAddress,
+    this.initialRememberAddress = false,
     super.key,
   });
 
   final SwapState state;
   final void Function(String value, bool remember) onSubmitted;
-  final VoidCallback onScan;
-  final VoidCallback onOpenContacts;
+  final void Function(String value, bool remember) onScan;
+  final void Function(String value, bool remember) onOpenContacts;
   final VoidCallback onCancel;
+  final String? initialAddress;
+  final bool initialRememberAddress;
+
+  /// Saved contacts; when the entered address matches one, its name is shown
+  /// under the field so the user knows the address is correct.
+  final Iterable<AddressBookContact> contacts;
 
   @override
   State<MobileSwapAddressEditModal> createState() =>
@@ -52,7 +63,8 @@ class _MobileSwapAddressEditModalState
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.state.destinationText);
+    _controller = TextEditingController(text: _initialAddressText);
+    _rememberAddress = widget.initialRememberAddress;
     _focusNode = FocusNode(debugLabel: 'SwapAddressModalField');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -63,15 +75,18 @@ class _MobileSwapAddressEditModalState
   @override
   void didUpdateWidget(covariant MobileSwapAddressEditModal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state.destinationText == widget.state.destinationText) {
-      return;
+    final oldAddressText =
+        oldWidget.initialAddress ?? oldWidget.state.destinationText;
+    final nextAddressText = _initialAddressText;
+    if (oldAddressText != nextAddressText) {
+      _controller.value = TextEditingValue(
+        text: nextAddressText,
+        selection: TextSelection.collapsed(offset: nextAddressText.length),
+      );
     }
-    _controller.value = TextEditingValue(
-      text: widget.state.destinationText,
-      selection: TextSelection.collapsed(
-        offset: widget.state.destinationText.length,
-      ),
-    );
+    if (oldWidget.initialRememberAddress != widget.initialRememberAddress) {
+      _rememberAddress = widget.initialRememberAddress;
+    }
   }
 
   @override
@@ -88,6 +103,9 @@ class _MobileSwapAddressEditModalState
     widget.onSubmitted(_controller.text.trim(), _rememberAddress);
   }
 
+  String get _initialAddressText =>
+      widget.initialAddress ?? widget.state.destinationText;
+
   void _toggleRemember() {
     setState(() => _rememberAddress = !_rememberAddress);
   }
@@ -102,6 +120,21 @@ class _MobileSwapAddressEditModalState
     );
     if (network == null) return null;
     return addressFormatIssue(network, trimmed);
+  }
+
+  /// Saved contact matching the entered address on the destination chain.
+  AddressBookContact? get _matchedContact {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty) return null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    if (network == null) return null;
+    return addressBookContactFor(
+      contacts: widget.contacts,
+      network: network,
+      address: trimmed,
+    );
   }
 
   @override
@@ -121,6 +154,7 @@ class _MobileSwapAddressEditModalState
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
     final formatError = _formatError;
+    final matchedContact = _matchedContact;
 
     // MobileModalScaffold supplies the title, the pinned close button and the
     // outer pt32/pb24/px16 padding, so this body owns only its vertical
@@ -154,14 +188,20 @@ class _MobileSwapAddressEditModalState
                   SwapInlineIconButton(
                     key: const ValueKey('swap_address_contacts_button'),
                     iconName: AppIcons.users,
-                    onTap: widget.onOpenContacts,
+                    onTap: () => widget.onOpenContacts(
+                      _controller.text.trim(),
+                      _rememberAddress,
+                    ),
                     size: AppInputSizing.iconSize,
                   ),
                   const SizedBox(width: 8),
                   SwapInlineIconButton(
                     key: const ValueKey('swap_address_scan_button'),
                     iconName: AppIcons.qr,
-                    onTap: widget.onScan,
+                    onTap: () => widget.onScan(
+                      _controller.text.trim(),
+                      _rememberAddress,
+                    ),
                     size: AppInputSizing.iconSize,
                   ),
                 ],
@@ -174,9 +214,8 @@ class _MobileSwapAddressEditModalState
           // opacity-0 error line the Figma _Modal Type holds.
           SizedBox(
             height: 16,
-            child: formatError == null
-                ? null
-                : Align(
+            child: formatError != null
+                ? Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       formatError,
@@ -186,6 +225,15 @@ class _MobileSwapAddressEditModalState
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.destructive,
                       ),
+                    ),
+                  )
+                : matchedContact == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: ContactNameInline(
+                      key: const ValueKey('swap_destination_contact_match'),
+                      name: matchedContact.label,
                     ),
                   ),
           ),
