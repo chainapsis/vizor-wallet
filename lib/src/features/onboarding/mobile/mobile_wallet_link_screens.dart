@@ -426,6 +426,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       });
     }
 
+    final submitting = state.submitting;
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkAccountsProgress,
       title: 'Select account',
@@ -443,7 +444,9 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       actionLabel: state.selectedAccountCount == state.importableAccountCount
           ? 'Deselect all'
           : 'Select all',
-      onAction: state.selectedAccountCount == state.importableAccountCount
+      onAction: submitting
+          ? null
+          : state.selectedAccountCount == state.importableAccountCount
           ? () => ref
                 .read(mobileWalletLinkControllerProvider.notifier)
                 .deselectAllAccounts()
@@ -452,7 +455,9 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
                 .selectAllImportableAccounts(),
       buttonLabel:
           'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
+      buttonLoadingLabel: 'Importing...',
       buttonEnabled: state.selectedAccountCount > 0,
+      buttonLoading: submitting,
       onButtonPressed: () {
         if (state.contacts.isEmpty) {
           _continueToPasscodeOrImport(context, ref);
@@ -466,9 +471,11 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
             _WalletLinkAccountRow(
               account: account,
               selected: state.selectedAccountUuids.contains(account.uuid),
-              onTap: () => ref
-                  .read(mobileWalletLinkControllerProvider.notifier)
-                  .toggleAccount(account.uuid),
+              onTap: submitting
+                  ? null
+                  : () => ref
+                        .read(mobileWalletLinkControllerProvider.notifier)
+                        .toggleAccount(account.uuid),
             ),
             const SizedBox(height: AppSpacing.s),
           ],
@@ -490,6 +497,7 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       });
     }
 
+    final submitting = state.submitting;
     final groups = _groupContactsByNetwork(state.contacts);
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkContactsProgress,
@@ -502,7 +510,9 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       actionLabel: state.selectedContactCount == state.contacts.length
           ? 'Deselect all'
           : 'Select all',
-      onAction: state.selectedContactCount == state.contacts.length
+      onAction: submitting
+          ? null
+          : state.selectedContactCount == state.contacts.length
           ? () => ref
                 .read(mobileWalletLinkControllerProvider.notifier)
                 .deselectAllContacts()
@@ -511,7 +521,9 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
                 .selectAllContacts(),
       buttonLabel:
           'Import ${state.selectedContactCount} contact${state.selectedContactCount == 1 ? '' : 's'}',
+      buttonLoadingLabel: 'Importing...',
       buttonEnabled: state.selectedAccountCount > 0,
+      buttonLoading: submitting,
       onButtonPressed: () => _continueToPasscodeOrImport(context, ref),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -523,9 +535,11 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
               _WalletLinkContactRow(
                 contact: contact,
                 selected: state.selectedContactIds.contains(contact.id),
-                onTap: () => ref
-                    .read(mobileWalletLinkControllerProvider.notifier)
-                    .toggleContact(contact.id),
+                onTap: submitting
+                    ? null
+                    : () => ref
+                          .read(mobileWalletLinkControllerProvider.notifier)
+                          .toggleContact(contact.id),
               ),
               if (contactIndex != entry.value.length - 1)
                 const SizedBox(height: AppSpacing.s),
@@ -544,6 +558,7 @@ Future<void> _continueToPasscodeOrImport(
   WidgetRef ref,
 ) async {
   final state = ref.read(mobileWalletLinkControllerProvider);
+  if (state.submitting) return;
   final payload = state.payload;
   if (payload == null || state.selectedAccounts.isEmpty) return;
   final packageId = state.packageId;
@@ -571,6 +586,8 @@ Future<void> _continueToPasscodeOrImport(
   }
 
   final router = GoRouter.of(context);
+  final controller = ref.read(mobileWalletLinkControllerProvider.notifier);
+  controller.beginSubmit();
   try {
     final accountImportResult = await runWithSyncPausedForAccountMutation(
       ref,
@@ -592,10 +609,15 @@ Future<void> _continueToPasscodeOrImport(
       importedContactCount: importedContactCount,
     );
   } catch (error) {
+    controller.endSubmit();
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(content: Text(onboardingSubmitErrorMessage(error))),
     );
+    return;
+  }
+  if (!context.mounted) {
+    controller.endSubmit();
     return;
   }
   router.go('/home');
@@ -610,7 +632,9 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
     required this.actionLabel,
     required this.onAction,
     required this.buttonLabel,
+    required this.buttonLoadingLabel,
     required this.buttonEnabled,
+    required this.buttonLoading,
     required this.onButtonPressed,
     required this.child,
   });
@@ -620,112 +644,122 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
   final TextSpan subtitle;
   final String listTitle;
   final String actionLabel;
-  final VoidCallback onAction;
+  final VoidCallback? onAction;
   final String buttonLabel;
+  final String buttonLoadingLabel;
   final bool buttonEnabled;
+  final bool buttonLoading;
   final VoidCallback onButtonPressed;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            MobileTopNav.steps(
-              progress: progress,
-              onBack: () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(
-              child: Stack(
-                children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      132,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.displayLarge.copyWith(
-                            color: colors.text.accent,
+    return PopScope(
+      canPop: !buttonLoading,
+      child: Scaffold(
+        backgroundColor: colors.background.window,
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MobileTopNav.steps(
+                progress: progress,
+                showBackButton: !buttonLoading,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.sm,
+                        AppSpacing.md,
+                        AppSpacing.sm,
+                        132,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.displayLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 320),
-                            child: Text.rich(
-                              subtitle,
-                              textAlign: TextAlign.center,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.primary,
+                          const SizedBox(height: AppSpacing.sm),
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 320),
+                              child: Text.rich(
+                                subtitle,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.primary,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.base),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xxs,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  listTitle,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: onAction,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xxs,
-                                    vertical: AppSpacing.xxs,
-                                  ),
+                          const SizedBox(height: AppSpacing.base),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xxs,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    actionLabel,
+                                    listTitle,
                                     style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.secondary,
-                                      fontWeight: FontWeight.w500,
+                                      color: colors.text.accent,
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: onAction,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.xxs,
+                                      vertical: AppSpacing.xxs,
+                                    ),
+                                    child: Text(
+                                      actionLabel,
+                                      style: AppTypography.labelLarge.copyWith(
+                                        color: onAction == null
+                                            ? colors.text.disabled
+                                            : colors.text.secondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        child,
-                      ],
+                          const SizedBox(height: AppSpacing.s),
+                          child,
+                        ],
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _SelectionBottomAction(
-                      label: buttonLabel,
-                      enabled: buttonEnabled,
-                      onPressed: onButtonPressed,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _SelectionBottomAction(
+                        label: buttonLabel,
+                        loadingLabel: buttonLoadingLabel,
+                        enabled: buttonEnabled,
+                        loading: buttonLoading,
+                        onPressed: onButtonPressed,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -735,12 +769,16 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
 class _SelectionBottomAction extends StatelessWidget {
   const _SelectionBottomAction({
     required this.label,
+    required this.loadingLabel,
     required this.enabled,
+    required this.loading,
     required this.onPressed,
   });
 
   final String label;
+  final String loadingLabel;
   final bool enabled;
+  final bool loading;
   final VoidCallback onPressed;
 
   @override
@@ -764,8 +802,9 @@ class _SelectionBottomAction extends StatelessWidget {
         ),
         child: AppButton(
           expand: true,
-          onPressed: enabled ? onPressed : null,
-          child: Text(label),
+          leading: loading ? const AppIcon(AppIcons.loader) : null,
+          onPressed: !loading && enabled ? onPressed : null,
+          child: Text(loading ? loadingLabel : label),
         ),
       ),
     );
@@ -781,12 +820,12 @@ class _WalletLinkAccountRow extends StatelessWidget {
 
   final WalletLinkTransferAccount account;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final enabled = account.isImportable;
+    final enabled = account.isImportable && onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
@@ -828,7 +867,7 @@ class _WalletLinkAccountRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            _WalletLinkCheckbox(selected: selected && enabled),
+            _WalletLinkCheckbox(selected: selected && account.isImportable),
           ],
         ),
       ),
@@ -845,11 +884,12 @@ class _WalletLinkContactRow extends StatelessWidget {
 
   final AddressBookContact contact;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final enabled = onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -877,7 +917,9 @@ class _WalletLinkContactRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
+                      color: enabled
+                          ? colors.text.accent
+                          : colors.text.secondary,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
@@ -887,7 +929,7 @@ class _WalletLinkContactRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: selected
+                      color: enabled && selected
                           ? colors.text.accent
                           : colors.text.secondary,
                       fontWeight: FontWeight.w400,

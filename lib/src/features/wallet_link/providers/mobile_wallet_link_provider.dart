@@ -27,6 +27,7 @@ class MobileWalletLinkState {
     this.selectedContactIds = const <String>{},
     this.scanError,
     this.loading = false,
+    this.submitting = false,
     this.scanResetToken = 0,
   });
 
@@ -40,6 +41,7 @@ class MobileWalletLinkState {
   final Set<String> selectedContactIds;
   final MobileWalletLinkScanError? scanError;
   final bool loading;
+  final bool submitting;
   final int scanResetToken;
 
   List<WalletLinkTransferAccount> get accounts =>
@@ -77,6 +79,7 @@ class MobileWalletLinkState {
     MobileWalletLinkScanError? scanError,
     bool clearScanError = false,
     bool? loading,
+    bool? submitting,
     int? scanResetToken,
   }) {
     return MobileWalletLinkState(
@@ -90,6 +93,7 @@ class MobileWalletLinkState {
       selectedContactIds: selectedContactIds ?? this.selectedContactIds,
       scanError: clearScanError ? null : scanError ?? this.scanError,
       loading: loading ?? this.loading,
+      submitting: submitting ?? this.submitting,
       scanResetToken: scanResetToken ?? this.scanResetToken,
     );
   }
@@ -172,6 +176,16 @@ class MobileWalletLinkController extends Notifier<MobileWalletLinkState> {
 
   void reset() {
     state = MobileWalletLinkState(scanResetToken: state.scanResetToken + 1);
+  }
+
+  void beginSubmit() {
+    if (state.submitting) return;
+    state = state.copyWith(submitting: true);
+  }
+
+  void endSubmit() {
+    if (!state.submitting) return;
+    state = state.copyWith(submitting: false);
   }
 
   void toggleAccount(String uuid) {
