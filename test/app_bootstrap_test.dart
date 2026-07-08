@@ -14,6 +14,20 @@ void main() {
     expect(account.profilePictureId, 'pfp-03');
   });
 
+  test('AccountInfo.fromJson keeps wallet link source account uuid', () {
+    final account = AccountInfo.fromJson({
+      'uuid': 'account-1',
+      'name': 'Linked',
+      'order': 0,
+      'walletLinkSourceAccountUuid': ' 550e8400-e29b-41d4-a716-446655440000 ',
+    });
+
+    expect(
+      account.walletLinkSourceAccountUuid,
+      '550e8400-e29b-41d4-a716-446655440000',
+    );
+  });
+
   test('mergeBootstrappedAccountInfo keeps stored UI metadata', () {
     const rustAccount = AccountInfo(
       uuid: 'account-1',
@@ -28,6 +42,7 @@ void main() {
       isHardware: true,
       isSeedAnchor: false,
       profilePictureId: 'pfp-04',
+      walletLinkSourceAccountUuid: 'desktop-account-1',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -42,6 +57,7 @@ void main() {
     expect(merged.isHardware, isTrue);
     expect(merged.isSeedAnchor, isTrue);
     expect(merged.profilePictureId, 'pfp-04');
+    expect(merged.walletLinkSourceAccountUuid, 'desktop-account-1');
   });
 
   test(

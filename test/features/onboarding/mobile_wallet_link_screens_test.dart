@@ -1,15 +1,23 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
 import 'package:zcash_wallet/src/features/wallet_link/models/wallet_link_models.dart';
 import 'package:zcash_wallet/src/features/wallet_link/providers/mobile_wallet_link_provider.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 class _WalletLinkController extends MobileWalletLinkController {
   _WalletLinkController(this.initialState);
@@ -23,6 +31,7 @@ class _WalletLinkController extends MobileWalletLinkController {
 Widget _app(Widget child, {required MobileWalletLinkState state}) {
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       mobileWalletLinkControllerProvider.overrideWith(
         () => _WalletLinkController(state),
       ),
@@ -30,6 +39,41 @@ Widget _app(Widget child, {required MobileWalletLinkState state}) {
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: child,
+    ),
+  );
+}
+
+Widget _routerApp(
+  Widget child, {
+  required MobileWalletLinkState state,
+  List<Override> overrides = const [],
+  String initialLocation = '/',
+  List<RouteBase> routes = const [],
+}) {
+  final router = GoRouter(
+    initialLocation: initialLocation,
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => child),
+      GoRoute(
+        path: '/onboarding/link-desktop',
+        builder: (_, _) => const Text('link intro route'),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ...routes,
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      mobileWalletLinkControllerProvider.overrideWith(
+        () => _WalletLinkController(state),
+      ),
+      ...overrides,
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
   );
 }
@@ -77,6 +121,142 @@ MobileWalletLinkState _state({
     selectedAccountUuids: const {'software-account'},
     selectedContactIds: contacts ? const {'contact-1'} : const {},
     submitting: submitting,
+  );
+}
+
+MobileWalletLinkState _contactsOnlyState() {
+  const contact = AddressBookContact(
+    id: 'contact-1',
+    label: 'Desktop contact',
+    network: AddressBookNetwork.zcash,
+    address: 'u1desktopcontactaddress',
+    profilePictureId: 'profile_1',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  );
+  final payload = WalletLinkTransferPayload(
+    version: 1,
+    exportedAt: DateTime.utc(2026, 7, 8),
+    network: 'test',
+    activeAccountUuid: null,
+    accounts: const [],
+    contacts: const [contact],
+  );
+  return MobileWalletLinkState(
+    payload: payload,
+    packageId: '550e8400-e29b-41d4-a716-446655440000',
+    completionToken: 'completion-token',
+    keyBytes: List<int>.filled(32, 1),
+    selectedContactIds: const {'contact-1'},
+  );
+}
+
+MobileWalletLinkState _alreadyImportedState() {
+  const importedAccount = WalletLinkTransferAccount(
+    uuid: 'imported-account',
+    name: 'Imported account',
+    order: 0,
+    isHardware: false,
+    isSeedAnchor: true,
+    hardwareKind: null,
+    profilePictureId: null,
+    birthdayHeight: 120000,
+    zip32AccountIndex: 0,
+    ufvk: null,
+    seedFingerprint: null,
+    mnemonic: 'abandon ability able about above absent absorb abstract',
+  );
+  const freshAccount = WalletLinkTransferAccount(
+    uuid: 'fresh-account',
+    name: 'Fresh account',
+    order: 1,
+    isHardware: false,
+    isSeedAnchor: false,
+    hardwareKind: null,
+    profilePictureId: null,
+    birthdayHeight: 120000,
+    zip32AccountIndex: 1,
+    ufvk: null,
+    seedFingerprint: null,
+    mnemonic: 'abandon ability able about above absent absorb abstract',
+  );
+  const importedContact = AddressBookContact(
+    id: 'imported-contact',
+    label: 'Imported contact',
+    network: AddressBookNetwork.zcash,
+    address: 'u1importedcontactaddress',
+    profilePictureId: 'profile_1',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  );
+  const freshContact = AddressBookContact(
+    id: 'fresh-contact',
+    label: 'Fresh contact',
+    network: AddressBookNetwork.zcash,
+    address: 'u1freshcontactaddress',
+    profilePictureId: 'profile_2',
+    createdAtMs: 2,
+    updatedAtMs: 2,
+  );
+  final payload = WalletLinkTransferPayload(
+    version: 1,
+    exportedAt: DateTime.utc(2026, 7, 8),
+    network: 'main',
+    activeAccountUuid: importedAccount.uuid,
+    accounts: const [importedAccount, freshAccount],
+    contacts: const [importedContact, freshContact],
+  );
+  return MobileWalletLinkState(
+    payload: payload,
+    packageId: '550e8400-e29b-41d4-a716-446655440000',
+    completionToken: 'completion-token',
+    keyBytes: List<int>.filled(32, 1),
+    selectedAccountUuids: const {'fresh-account'},
+    selectedContactIds: const {'fresh-contact'},
+    alreadyImportedAccountUuids: const {'imported-account'},
+    alreadyImportedContactIds: const {'imported-contact'},
+  );
+}
+
+MobileWalletLinkState _nothingToImportState() {
+  const importedAccount = WalletLinkTransferAccount(
+    uuid: 'imported-account',
+    name: 'Imported account',
+    order: 0,
+    isHardware: false,
+    isSeedAnchor: true,
+    hardwareKind: null,
+    profilePictureId: null,
+    birthdayHeight: 120000,
+    zip32AccountIndex: 0,
+    ufvk: null,
+    seedFingerprint: null,
+    mnemonic: 'abandon ability able about above absent absorb abstract',
+  );
+  const importedContact = AddressBookContact(
+    id: 'imported-contact',
+    label: 'Imported contact',
+    network: AddressBookNetwork.zcash,
+    address: 'u1importedcontactaddress',
+    profilePictureId: 'profile_1',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  );
+  final payload = WalletLinkTransferPayload(
+    version: 1,
+    exportedAt: DateTime.utc(2026, 7, 8),
+    network: 'main',
+    activeAccountUuid: importedAccount.uuid,
+    accounts: const [importedAccount],
+    contacts: const [importedContact],
+  );
+  return MobileWalletLinkState(
+    payload: payload,
+    packageId: '550e8400-e29b-41d4-a716-446655440000',
+    completionToken: 'completion-token',
+    keyBytes: List<int>.filled(32, 1),
+    alreadyImportedAccountUuids: const {'imported-account'},
+    alreadyImportedContactIds: const {'imported-contact'},
   );
 }
 
@@ -145,4 +325,274 @@ void main() {
     expect(find.text('Deselect all'), findsOneWidget);
     expect(find.text('Select all'), findsNothing);
   });
+
+  testWidgets('already imported accounts are disabled and sorted last', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileWalletLinkSelectAccountsScreen(),
+        state: _alreadyImportedState(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('1 account found'), findsOneWidget);
+    expect(find.text('1 already imported'), findsOneWidget);
+    expect(find.text('Account already imported'), findsNothing);
+    expect(find.text('Link 1 account'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Fresh account')).dy,
+      lessThan(tester.getTopLeft(find.text('Imported account')).dy),
+    );
+
+    await tester.tap(find.text('Imported account'));
+    await tester.pump();
+
+    expect(find.text('Link 1 account'), findsOneWidget);
+  });
+
+  testWidgets('already imported contacts are disabled and sorted last', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileWalletLinkSelectContactsScreen(),
+        state: _alreadyImportedState(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('1 contact found'), findsOneWidget);
+    expect(find.text('1 already imported'), findsOneWidget);
+    expect(find.text('Contact already imported'), findsNothing);
+    expect(find.text('Import 1 contact'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Fresh contact')).dy,
+      lessThan(tester.getTopLeft(find.text('Imported contact')).dy),
+    );
+
+    await tester.tap(find.text('Imported contact'));
+    await tester.pump();
+
+    expect(find.text('Import 1 contact'), findsOneWidget);
+  });
+
+  testWidgets('empty wallet link shows go back without imported sections', (
+    tester,
+  ) async {
+    final completion = _RecordingWalletLinkCompletion();
+
+    await tester.pumpWidget(
+      _routerApp(
+        MobileWalletLinkSelectAccountsScreen(
+          completeWalletLinkPackage: completion.call,
+        ),
+        state: _nothingToImportState(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Nothing to import'), findsOneWidget);
+    expect(
+      find.text('Everything in this desktop link is already on this phone.'),
+      findsOneWidget,
+    );
+    expect(find.text('Go back'), findsOneWidget);
+    expect(find.text('1 already imported'), findsNothing);
+    expect(find.text('Imported account'), findsNothing);
+    expect(find.text('Imported contact'), findsNothing);
+    expect(find.text('Continue'), findsNothing);
+
+    await tester.tap(find.text('Go back'));
+    await tester.pump();
+
+    expect(find.text('Importing...'), findsOneWidget);
+    expect(completion.calls, hasLength(1));
+    expect(
+      completion.calls.single.packageId,
+      _nothingToImportState().packageId,
+    );
+    expect(
+      completion.calls.single.completionToken,
+      _nothingToImportState().completionToken,
+    );
+    expect(completion.calls.single.importedAccountCount, 0);
+    expect(completion.calls.single.importedContactCount, 0);
+
+    completion.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('link intro route'), findsOneWidget);
+  });
+
+  testWidgets(
+    'empty wallet link completion exits when accounts route can pop',
+    (tester) async {
+      final completion = _RecordingWalletLinkCompletion();
+
+      await tester.pumpWidget(
+        _routerApp(
+          const Text('root route'),
+          state: _nothingToImportState(),
+          initialLocation: '/scan',
+          routes: [
+            GoRoute(
+              path: '/scan',
+              builder: (context, _) => TextButton(
+                onPressed: () =>
+                    context.push('/onboarding/link-desktop/accounts'),
+                child: const Text('open accounts'),
+              ),
+            ),
+            GoRoute(
+              path: '/onboarding/link-desktop/accounts',
+              builder: (_, _) => MobileWalletLinkSelectAccountsScreen(
+                completeWalletLinkPackage: completion.call,
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('open accounts'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Go back'));
+      await tester.pump();
+
+      expect(find.text('Importing...'), findsOneWidget);
+      expect(completion.calls, hasLength(1));
+
+      completion.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('link intro route'), findsOneWidget);
+      expect(find.text('Importing...'), findsNothing);
+    },
+  );
+
+  testWidgets('contacts-only import validates the wallet link network', (
+    tester,
+  ) async {
+    final accountNotifier = _ValidatingAccountNotifier(
+      validationError: StateError(
+        'Linked wallet network does not match the current wallet.',
+      ),
+    );
+    final addressBookNotifier = _RecordingAddressBookNotifier();
+
+    await tester.pumpWidget(
+      _routerApp(
+        const MobileWalletLinkSelectContactsScreen(),
+        state: _contactsOnlyState(),
+        overrides: [
+          accountProvider.overrideWith(() => accountNotifier),
+          addressBookProvider.overrideWith(() => addressBookNotifier),
+          appSecurityProvider.overrideWith(_ConfiguredSecurityNotifier.new),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Import 1 contact'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.validatedNetworks, ['test']);
+    expect(addressBookNotifier.importCalls, 0);
+    expect(
+      find.textContaining('Linked wallet network does not match'),
+      findsOneWidget,
+    );
+    expect(find.text('home route'), findsNothing);
+  });
+}
+
+class _ValidatingAccountNotifier extends AccountNotifier {
+  _ValidatingAccountNotifier({this.validationError});
+
+  final Object? validationError;
+  final validatedNetworks = <String>[];
+
+  @override
+  FutureOr<AccountState> build() => const AccountState();
+
+  @override
+  Future<void> validateLinkedWalletNetwork(String network) async {
+    validatedNetworks.add(network);
+    final error = validationError;
+    if (error != null) throw error;
+  }
+
+  @override
+  Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
+    required String network,
+    required List<LinkedWalletAccountImport> accountsToImport,
+  }) async {
+    throw StateError('Account import should not run for contacts-only import.');
+  }
+}
+
+class _RecordingAddressBookNotifier extends AddressBookNotifier {
+  int importCalls = 0;
+
+  @override
+  FutureOr<AddressBookState> build() => const AddressBookState();
+
+  @override
+  Future<int> importContacts(Iterable<AddressBookContact> imported) async {
+    importCalls += 1;
+    return imported.length;
+  }
+}
+
+class _RecordingWalletLinkCompletion {
+  final _completer = Completer<void>();
+  final calls = <_WalletLinkCompletionCall>[];
+
+  Future<void> call({
+    required String packageId,
+    required String completionToken,
+    required List<int> keyBytes,
+    required int importedAccountCount,
+    required int importedContactCount,
+  }) {
+    calls.add(
+      _WalletLinkCompletionCall(
+        packageId: packageId,
+        completionToken: completionToken,
+        keyBytes: keyBytes,
+        importedAccountCount: importedAccountCount,
+        importedContactCount: importedContactCount,
+      ),
+    );
+    return _completer.future;
+  }
+
+  void complete() {
+    _completer.complete();
+  }
+}
+
+class _WalletLinkCompletionCall {
+  const _WalletLinkCompletionCall({
+    required this.packageId,
+    required this.completionToken,
+    required this.keyBytes,
+    required this.importedAccountCount,
+    required this.importedContactCount,
+  });
+
+  final String packageId;
+  final String completionToken;
+  final List<int> keyBytes;
+  final int importedAccountCount;
+  final int importedContactCount;
+}
+
+class _ConfiguredSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
 }

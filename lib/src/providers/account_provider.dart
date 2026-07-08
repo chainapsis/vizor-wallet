@@ -73,6 +73,7 @@ class LinkedWalletAccountImport {
     this.ufvk,
     this.seedFingerprint,
     this.profilePictureId,
+    this.sourceAccountUuid,
   });
 
   final String name;
@@ -84,6 +85,7 @@ class LinkedWalletAccountImport {
   final String? ufvk;
   final List<int>? seedFingerprint;
   final String? profilePictureId;
+  final String? sourceAccountUuid;
 }
 
 class LinkedWalletAccountsImportResult {
@@ -811,24 +813,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     try {
       final prev = state.value ?? const AccountState();
-      final normalizedNetwork = normalizeZcashNetworkName(network);
-      if (prev.accounts.isEmpty) {
-        final currentNetwork = normalizeZcashNetworkName(
-          ref.read(rpcEndpointProvider).networkName,
-        );
-        if (currentNetwork != normalizedNetwork) {
-          throw StateError(
-            'Linked wallet network does not match the current app network.',
-          );
-        }
-      } else {
-        final storedNetwork = await _getNetwork();
-        if (storedNetwork != normalizedNetwork) {
-          throw StateError(
-            'Linked wallet network does not match the current wallet.',
-          );
-        }
-      }
+      final normalizedNetwork = await _validateLinkedWalletNetwork(
+        network: network,
+        current: prev,
+      );
 
       final dbPath = await _getDbPath();
       if (prev.accounts.isEmpty) {
@@ -905,6 +893,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             profilePictureId: normalizeProfilePictureId(
               input.profilePictureId ?? kDefaultProfilePictureId,
             ),
+            walletLinkSourceAccountUuid: _normalizedOptionalString(
+              input.sourceAccountUuid,
+            ),
           ),
         );
         nextOrder += 1;
@@ -942,6 +933,66 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('importLinkedWalletAccounts: ERROR: $e\n$st');
       rethrow;
     }
+  }
+
+  Future<void> validateLinkedWalletNetwork(String network) async {
+    final current = state.value ?? await future;
+    await _validateLinkedWalletNetwork(network: network, current: current);
+  }
+
+  Future<Set<String>> alreadyImportedWalletLinkSourceAccountUuids({
+    required String network,
+    required Iterable<LinkedWalletAccountImport> accountsToCheck,
+  }) async {
+    final inputs = accountsToCheck.toList(growable: false);
+    if (inputs.isEmpty) return const <String>{};
+
+    final prev = await future;
+    if (prev.accounts.isEmpty) return const <String>{};
+
+    final normalizedNetwork = normalizeZcashNetworkName(network);
+    final storedNetwork = await _getNetwork();
+    if (storedNetwork != normalizedNetwork) return const <String>{};
+
+    final importedSourceUuids = <String>{};
+    for (final account in prev.accounts) {
+      final sourceUuid = _normalizedOptionalString(
+        account.walletLinkSourceAccountUuid,
+      );
+      if (sourceUuid != null) importedSourceUuids.add(sourceUuid);
+    }
+    final alreadyImported = <String>{};
+    final dbPath = await _getDbPath();
+
+    for (final input in inputs) {
+      final sourceUuid = _normalizedOptionalString(input.sourceAccountUuid);
+      if (sourceUuid == null) continue;
+      if (importedSourceUuids.contains(sourceUuid)) {
+        alreadyImported.add(sourceUuid);
+        continue;
+      }
+      if (input.isHardware) continue;
+
+      final mnemonic = input.mnemonic?.trim();
+      if (mnemonic == null || mnemonic.isEmpty) continue;
+      try {
+        final isImported = await rust_wallet
+            .isSoftwareWalletLinkAccountImported(
+              mnemonic: mnemonic,
+              network: normalizedNetwork,
+              dbPath: dbPath,
+              zip32AccountIndex: input.zip32AccountIndex,
+            );
+        if (isImported) alreadyImported.add(sourceUuid);
+      } catch (error, stackTrace) {
+        log(
+          'alreadyImportedWalletLinkSourceAccountUuids: '
+          'software preflight failed for "${input.name}": $error\n$stackTrace',
+        );
+      }
+    }
+
+    return alreadyImported;
   }
 
   /// Check if the active account is a hardware wallet account.
@@ -1040,6 +1091,31 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     );
   }
 
+  Future<String> _validateLinkedWalletNetwork({
+    required String network,
+    required AccountState current,
+  }) async {
+    final normalizedNetwork = normalizeZcashNetworkName(network);
+    if (current.accounts.isEmpty) {
+      final currentNetwork = normalizeZcashNetworkName(
+        ref.read(rpcEndpointProvider).networkName,
+      );
+      if (currentNetwork != normalizedNetwork) {
+        throw StateError(
+          'Linked wallet network does not match the current app network.',
+        );
+      }
+    } else {
+      final storedNetwork = await _getNetwork();
+      if (storedNetwork != normalizedNetwork) {
+        throw StateError(
+          'Linked wallet network does not match the current wallet.',
+        );
+      }
+    }
+    return normalizedNetwork;
+  }
+
   Future<void> _deleteExistingDb(String dbPath) async {
     for (final path in walletDbCleanupPaths(dbPath)) {
       final file = File(path);
@@ -1057,6 +1133,11 @@ bool isWalletLinkDuplicateImportError(Object error) {
       message == _duplicateKeystoneAccountImportMessage ||
       (message.contains('account corresponding to the data provided') &&
           message.contains('already exists in the wallet'));
+}
+
+String? _normalizedOptionalString(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
 }
 
 String _normalizedExceptionMessage(Object error) {

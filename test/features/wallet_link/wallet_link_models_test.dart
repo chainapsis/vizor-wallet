@@ -198,5 +198,62 @@ void main() {
       'keystone',
       'legacy-keystone',
     ]);
+
+    final linkedImport = keystone.toAccountImport();
+    expect(linkedImport.sourceAccountUuid, 'keystone');
+  });
+
+  test('mobile wallet link state excludes already imported accounts', () {
+    const account1 = WalletLinkTransferAccount(
+      uuid: 'desktop-account-1',
+      name: 'Account 1',
+      order: 0,
+      isHardware: false,
+      isSeedAnchor: true,
+      hardwareKind: null,
+      profilePictureId: null,
+      birthdayHeight: 100,
+      zip32AccountIndex: 0,
+      ufvk: null,
+      seedFingerprint: null,
+      mnemonic: 'abandon abandon abandon abandon abandon abandon',
+    );
+    const account2 = WalletLinkTransferAccount(
+      uuid: 'desktop-account-2',
+      name: 'Account 2',
+      order: 1,
+      isHardware: false,
+      isSeedAnchor: false,
+      hardwareKind: null,
+      profilePictureId: null,
+      birthdayHeight: 100,
+      zip32AccountIndex: 1,
+      ufvk: null,
+      seedFingerprint: null,
+      mnemonic: 'abandon abandon abandon abandon abandon abandon',
+    );
+    final payload = WalletLinkTransferPayload(
+      version: 1,
+      exportedAt: DateTime.utc(2026, 7, 8),
+      network: 'main',
+      activeAccountUuid: account1.uuid,
+      accounts: const [account1, account2],
+      contacts: const [],
+    );
+
+    final state = MobileWalletLinkState(
+      payload: payload,
+      selectedAccountUuids: const {'desktop-account-1', 'desktop-account-2'},
+      alreadyImportedAccountUuids: const {'desktop-account-1'},
+    );
+
+    expect(state.importableAccountCount, 1);
+    expect(state.selectedAccounts.map((account) => account.uuid), [
+      'desktop-account-2',
+    ]);
+    expect(state.sortedAccounts.map((account) => account.uuid), [
+      'desktop-account-2',
+      'desktop-account-1',
+    ]);
   });
 }

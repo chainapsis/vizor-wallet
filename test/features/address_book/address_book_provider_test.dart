@@ -287,6 +287,41 @@ void main() {
       expect(repo.savedLists, hasLength(1));
     },
   );
+
+  test('alreadyImportedContactIds uses the import dedupe key', () async {
+    const evmAddress = '0xAbC0000000000000000000000000000000000123';
+    final repo = _FakeAddressBookRepository([
+      _contact(
+        id: 'eth-existing',
+        label: 'ETH existing',
+        network: AddressBookNetwork.ethereum,
+        address: evmAddress,
+      ),
+    ]);
+    final container = _container(repo);
+    addTearDown(container.dispose);
+
+    await container.read(addressBookProvider.future);
+
+    final alreadyImported = await container
+        .read(addressBookProvider.notifier)
+        .alreadyImportedContactIds([
+          _contact(
+            id: 'eth-duplicate',
+            label: 'ETH duplicate',
+            network: AddressBookNetwork.ethereum,
+            address: evmAddress.toLowerCase(),
+          ),
+          _contact(
+            id: 'near-new',
+            label: 'NEAR new',
+            network: AddressBookNetwork.near,
+            address: 'alice.near',
+          ),
+        ]);
+
+    expect(alreadyImported, {'eth-duplicate'});
+  });
 }
 
 ProviderContainer _container(AddressBookRepository repo) {
