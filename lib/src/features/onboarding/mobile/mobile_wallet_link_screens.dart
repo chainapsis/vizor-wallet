@@ -433,6 +433,8 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
     final canContinueWithContactsOnly =
         state.importableContactCount > 0 &&
         ref.watch(appSecurityProvider).isPasswordConfigured;
+    final hasNothingToImport =
+        state.importableAccountCount == 0 && state.importableContactCount == 0;
     final pendingAccounts = [
       for (final account in state.sortedAccounts)
         if (!state.isAccountAlreadyImported(account.uuid)) account,
@@ -444,87 +446,108 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkAccountsProgress,
       title: 'Select account',
-      subtitle: TextSpan(
-        text:
-            '${_walletLinkCountLabel(state.importableAccountCount, 'account', 'accounts')} ready to import, '
-            '${alreadyImportedAccounts.length} already imported.',
-      ),
-      buttonLabel: state.selectedAccountCount == 0
+      subtitle: hasNothingToImport
+          ? const TextSpan(
+              text: 'There is nothing new to import from this desktop link.',
+            )
+          : TextSpan(
+              text:
+                  '${_walletLinkCountLabel(state.importableAccountCount, 'account', 'accounts')} ready to import, '
+                  '${alreadyImportedAccounts.length} already imported.',
+            ),
+      buttonLabel: hasNothingToImport
+          ? 'Go back'
+          : state.selectedAccountCount == 0
           ? 'Continue'
           : 'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
       buttonLoadingLabel: 'Importing...',
       buttonEnabled:
-          state.selectedAccountCount > 0 || canContinueWithContactsOnly,
+          hasNothingToImport ||
+          state.selectedAccountCount > 0 ||
+          canContinueWithContactsOnly,
       buttonLoading: submitting,
       onButtonPressed: () {
+        if (hasNothingToImport) {
+          _goBackFromWalletLink(context);
+          return;
+        }
         if (state.contacts.isEmpty) {
           _continueToPasscodeOrImport(context, ref);
           return;
         }
         context.push('/onboarding/link-desktop/contacts');
       },
-      child: Column(
-        children: [
-          if (pendingAccounts.isNotEmpty)
-            _WalletLinkListSection(
-              title:
-                  '${_walletLinkCountLabel(pendingAccounts.length, 'account', 'accounts')} found',
-              actionLabel: allAccountsSelected ? 'Deselect all' : 'Select all',
-              onAction: submitting || state.importableAccountCount == 0
-                  ? null
-                  : allAccountsSelected
-                  ? () => ref
-                        .read(mobileWalletLinkControllerProvider.notifier)
-                        .deselectAllAccounts()
-                  : () => ref
-                        .read(mobileWalletLinkControllerProvider.notifier)
-                        .selectAllImportableAccounts(),
-              child: Column(
-                children: [
-                  for (final (index, account) in pendingAccounts.indexed) ...[
-                    _WalletLinkAccountRow(
-                      account: account,
-                      selected: state.selectedAccountUuids.contains(
-                        account.uuid,
-                      ),
-                      alreadyImported: false,
-                      onTap: submitting || !state.isAccountSelectable(account)
-                          ? null
-                          : () => ref
-                                .read(
-                                  mobileWalletLinkControllerProvider.notifier,
-                                )
-                                .toggleAccount(account.uuid),
+      child: hasNothingToImport
+          ? const _WalletLinkNothingToImportCard()
+          : Column(
+              children: [
+                if (pendingAccounts.isNotEmpty)
+                  _WalletLinkListSection(
+                    title:
+                        '${_walletLinkCountLabel(pendingAccounts.length, 'account', 'accounts')} found',
+                    actionLabel: allAccountsSelected
+                        ? 'Deselect all'
+                        : 'Select all',
+                    onAction: submitting || state.importableAccountCount == 0
+                        ? null
+                        : allAccountsSelected
+                        ? () => ref
+                              .read(mobileWalletLinkControllerProvider.notifier)
+                              .deselectAllAccounts()
+                        : () => ref
+                              .read(mobileWalletLinkControllerProvider.notifier)
+                              .selectAllImportableAccounts(),
+                    child: Column(
+                      children: [
+                        for (final (index, account)
+                            in pendingAccounts.indexed) ...[
+                          _WalletLinkAccountRow(
+                            account: account,
+                            selected: state.selectedAccountUuids.contains(
+                              account.uuid,
+                            ),
+                            alreadyImported: false,
+                            onTap:
+                                submitting ||
+                                    !state.isAccountSelectable(account)
+                                ? null
+                                : () => ref
+                                      .read(
+                                        mobileWalletLinkControllerProvider
+                                            .notifier,
+                                      )
+                                      .toggleAccount(account.uuid),
+                          ),
+                          if (index != pendingAccounts.length - 1)
+                            const SizedBox(height: AppSpacing.s),
+                        ],
+                      ],
                     ),
-                    if (index != pendingAccounts.length - 1)
-                      const SizedBox(height: AppSpacing.s),
-                  ],
-                ],
-              ),
-            ),
-          if (pendingAccounts.isNotEmpty && alreadyImportedAccounts.isNotEmpty)
-            const SizedBox(height: AppSpacing.base),
-          if (alreadyImportedAccounts.isNotEmpty)
-            _WalletLinkListSection(
-              title: '${alreadyImportedAccounts.length} already imported',
-              child: Column(
-                children: [
-                  for (final (index, account)
-                      in alreadyImportedAccounts.indexed) ...[
-                    _WalletLinkAccountRow(
-                      account: account,
-                      selected: false,
-                      alreadyImported: true,
-                      onTap: null,
+                  ),
+                if (pendingAccounts.isNotEmpty &&
+                    alreadyImportedAccounts.isNotEmpty)
+                  const SizedBox(height: AppSpacing.base),
+                if (alreadyImportedAccounts.isNotEmpty)
+                  _WalletLinkListSection(
+                    title: '${alreadyImportedAccounts.length} already imported',
+                    child: Column(
+                      children: [
+                        for (final (index, account)
+                            in alreadyImportedAccounts.indexed) ...[
+                          _WalletLinkAccountRow(
+                            account: account,
+                            selected: false,
+                            alreadyImported: true,
+                            onTap: null,
+                          ),
+                          if (index != alreadyImportedAccounts.length - 1)
+                            const SizedBox(height: AppSpacing.s),
+                        ],
+                      ],
                     ),
-                    if (index != alreadyImportedAccounts.length - 1)
-                      const SizedBox(height: AppSpacing.s),
-                  ],
-                ],
-              ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 }
@@ -651,6 +674,15 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _goBackFromWalletLink(BuildContext context) {
+  final navigator = Navigator.of(context);
+  if (navigator.canPop()) {
+    navigator.maybePop();
+    return;
+  }
+  GoRouter.maybeOf(context)?.go('/onboarding/link-desktop');
 }
 
 Future<void> _continueToPasscodeOrImport(
@@ -894,6 +926,60 @@ class _WalletLinkListSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         child,
       ],
+    );
+  }
+}
+
+class _WalletLinkNothingToImportCard extends StatelessWidget {
+  const _WalletLinkNothingToImportCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 156),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+            ),
+            child: Center(
+              child: AppIcon(
+                AppIcons.checkCircle,
+                size: 24,
+                color: colors.icon.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Nothing to import',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Everything in this desktop link is already on this phone.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -51,6 +51,10 @@ Widget _routerApp(
   final router = GoRouter(
     routes: [
       GoRoute(path: '/', builder: (_, _) => child),
+      GoRoute(
+        path: '/onboarding/link-desktop',
+        builder: (_, _) => const Text('link intro route'),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
     ],
   );
@@ -210,6 +214,48 @@ MobileWalletLinkState _alreadyImportedState() {
   );
 }
 
+MobileWalletLinkState _nothingToImportState() {
+  const importedAccount = WalletLinkTransferAccount(
+    uuid: 'imported-account',
+    name: 'Imported account',
+    order: 0,
+    isHardware: false,
+    isSeedAnchor: true,
+    hardwareKind: null,
+    profilePictureId: null,
+    birthdayHeight: 120000,
+    zip32AccountIndex: 0,
+    ufvk: null,
+    seedFingerprint: null,
+    mnemonic: 'abandon ability able about above absent absorb abstract',
+  );
+  const importedContact = AddressBookContact(
+    id: 'imported-contact',
+    label: 'Imported contact',
+    network: AddressBookNetwork.zcash,
+    address: 'u1importedcontactaddress',
+    profilePictureId: 'profile_1',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  );
+  final payload = WalletLinkTransferPayload(
+    version: 1,
+    exportedAt: DateTime.utc(2026, 7, 8),
+    network: 'main',
+    activeAccountUuid: importedAccount.uuid,
+    accounts: const [importedAccount],
+    contacts: const [importedContact],
+  );
+  return MobileWalletLinkState(
+    payload: payload,
+    packageId: '550e8400-e29b-41d4-a716-446655440000',
+    completionToken: 'completion-token',
+    keyBytes: List<int>.filled(32, 1),
+    alreadyImportedAccountUuids: const {'imported-account'},
+    alreadyImportedContactIds: const {'imported-contact'},
+  );
+}
+
 bool _hasIcon(WidgetTester tester, String name) {
   return tester
       .widgetList<AppIcon>(find.byType(AppIcon))
@@ -326,6 +372,34 @@ void main() {
     await tester.pump();
 
     expect(find.text('Import 1 contact'), findsOneWidget);
+  });
+
+  testWidgets('empty wallet link shows go back without imported sections', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _routerApp(
+        const MobileWalletLinkSelectAccountsScreen(),
+        state: _nothingToImportState(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Nothing to import'), findsOneWidget);
+    expect(
+      find.text('Everything in this desktop link is already on this phone.'),
+      findsOneWidget,
+    );
+    expect(find.text('Go back'), findsOneWidget);
+    expect(find.text('1 already imported'), findsNothing);
+    expect(find.text('Imported account'), findsNothing);
+    expect(find.text('Imported contact'), findsNothing);
+    expect(find.text('Continue'), findsNothing);
+
+    await tester.tap(find.text('Go back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('link intro route'), findsOneWidget);
   });
 
   testWidgets('contacts-only import validates the wallet link network', (
