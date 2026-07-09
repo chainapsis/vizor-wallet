@@ -71,7 +71,7 @@ class MultisigBackupFileSaveException implements Exception {
   final Object? cause;
 
   static const message =
-      'Could not save the backup file. Choose a writable location and try again.';
+      'Could not save the recovery share file. Choose a writable location and try again.';
 
   @override
   String toString() => message;
@@ -83,7 +83,7 @@ class MultisigBackupFileReadException implements Exception {
   final Object? cause;
 
   static const message =
-      'Could not read the backup file. Choose a valid backup and try again.';
+      'Could not read the recovery share file. Choose a valid file and try again.';
 
   @override
   String toString() => message;

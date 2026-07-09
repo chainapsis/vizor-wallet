@@ -177,7 +177,7 @@ class _MultisigConnectScreenState extends ConsumerState<MultisigConnectScreen> {
                 const MultisigOnboardingTitle(
                   title: 'Connect multisig',
                   subtitle:
-                      'Continue a setup, start a new session, or restore from backup.',
+                      'Continue a setup, start a new session, or restore a recovery share.',
                   iconName: AppIcons.users,
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -297,7 +297,7 @@ class _RestoreBackupEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ConnectSection(
       title: 'Recover account',
-      subtitle: 'Restore this participant from a saved multisig backup file.',
+      subtitle: 'Restore this signer from a saved recovery share file.',
       child: Align(
         alignment: Alignment.centerLeft,
         child: AppButton(
@@ -312,7 +312,9 @@ class _RestoreBackupEntry extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const AppIcon(AppIcons.importWallet),
-          child: Text(isPickingBackup ? 'Choosing backup' : 'Restore backup'),
+          child: Text(
+            isPickingBackup ? 'Choosing file' : 'Restore recovery share',
+          ),
         ),
       ),
     );
@@ -421,7 +423,7 @@ class _RestoreBackupPanel extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Backup file',
+                        'Recovery share file',
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.primary,
                         ),
@@ -429,7 +431,7 @@ class _RestoreBackupPanel extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
                         backup == null
-                            ? 'No backup selected'
+                            ? 'No recovery share selected'
                             : _backupFileName(backup.path),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.bodySmall.copyWith(
@@ -451,7 +453,7 @@ class _RestoreBackupPanel extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordTextField(
-              label: 'Backup password',
+              label: 'Recovery share password',
               controller: passwordController,
               enabled: !busy,
               hintText: 'Min. $kWalletPasswordMinLength characters and symbols',
@@ -574,7 +576,7 @@ class _RestoreUnlockGateState extends ConsumerState<_RestoreUnlockGate> {
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
-          'Enter your wallet password to restore this backup.',
+          'Enter your wallet password to restore this recovery share.',
           style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
         ),
         const SizedBox(height: AppSpacing.sm),

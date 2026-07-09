@@ -64,10 +64,10 @@ String friendlyMultisigError(Object error) {
     return 'This multisig account is not ready for signing requests.';
   }
   if (lower.contains('waiting for round 1')) {
-    return 'Waiting for every selected signer to submit Round 1.';
+    return 'Waiting for every selected signer to start approval.';
   }
   if (lower.contains('waiting for round 2')) {
-    return 'Waiting for every selected signer to submit Round 2.';
+    return 'Waiting for every selected signer to finish approval.';
   }
   if (lower.contains('local participant is not selected')) {
     return 'This account is not one of the requested signers.';
@@ -76,7 +76,7 @@ String friendlyMultisigError(Object error) {
     return 'Broadcast status is unknown. Refresh before trying again.';
   }
   if (lower.contains('confirm the local multisig backup')) {
-    return 'Confirm the local multisig backup before signing.';
+    return 'Confirm the local recovery share before signing.';
   }
 
   return switch (parsed.kind) {

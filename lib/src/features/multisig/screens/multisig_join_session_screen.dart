@@ -24,7 +24,6 @@ class MultisigJoinSessionScreen extends ConsumerStatefulWidget {
 class _MultisigJoinSessionScreenState
     extends ConsumerState<MultisigJoinSessionScreen> {
   late final TextEditingController _sessionController;
-  late final TextEditingController _coordinatorController;
   late final TextEditingController _labelController;
   final _securityGateController = MultisigSetupSecurityGateController();
   bool _showError = false;
@@ -35,16 +34,12 @@ class _MultisigJoinSessionScreenState
   void initState() {
     super.initState();
     _sessionController = TextEditingController();
-    _coordinatorController = TextEditingController(
-      text: kDefaultMultisigCoordinatorUrl,
-    );
     _labelController = TextEditingController();
   }
 
   @override
   void dispose() {
     _sessionController.dispose();
-    _coordinatorController.dispose();
     _labelController.dispose();
     _securityGateController.dispose();
     super.dispose();
@@ -53,11 +48,20 @@ class _MultisigJoinSessionScreenState
   Future<void> _join() async {
     if (_isSubmitting) return;
     final inviteCode = _sessionController.text.trim();
-    final coordinatorUrl = _coordinatorController.text.trim();
     final security = ref.read(appSecurityProvider);
-    if (inviteCode.isEmpty ||
-        coordinatorUrl.isEmpty ||
-        !_securityGateController.isValid(security)) {
+    String? normalizedInviteCode;
+    if (inviteCode.isNotEmpty) {
+      try {
+        normalizedInviteCode = normalizeMultisigInviteCode(inviteCode);
+      } catch (e) {
+        setState(() {
+          _showError = true;
+          _submitError = friendlyMultisigError(e);
+        });
+        return;
+      }
+    }
+    if (inviteCode.isEmpty || !_securityGateController.isValid(security)) {
       setState(() {
         _showError = true;
         _submitError = null;
@@ -77,8 +81,8 @@ class _MultisigJoinSessionScreenState
         action: () => ref
             .read(multisigPendingSessionsProvider.notifier)
             .joinSession(
-              coordinatorUrl: coordinatorUrl,
-              inviteCode: inviteCode,
+              coordinatorUrl: kDefaultMultisigCoordinatorUrl,
+              inviteCode: normalizedInviteCode!,
               label: _labelController.text,
             ),
       );
@@ -137,34 +141,15 @@ class _MultisigJoinSessionScreenState
                             messageText:
                                 _showError &&
                                     _sessionController.text.trim().isEmpty
-                                ? 'Enter a session ID.'
+                                ? 'Enter an invite code.'
                                 : null,
                             onSubmitted: (_) => _join(),
                           ),
                           const SizedBox(height: AppSpacing.sm),
                           AppTextField(
-                            label: 'Coordinator',
-                            controller: _coordinatorController,
-                            hintText: kDefaultMultisigCoordinatorUrl,
-                            leading: const AppIcon(AppIcons.endpoint),
-                            showClearButton: true,
-                            tone:
-                                _showError &&
-                                    _coordinatorController.text.trim().isEmpty
-                                ? AppTextFieldTone.destructive
-                                : AppTextFieldTone.neutral,
-                            messageText:
-                                _showError &&
-                                    _coordinatorController.text.trim().isEmpty
-                                ? 'Enter a coordinator URL.'
-                                : null,
-                            onSubmitted: (_) => _join(),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          AppTextField(
-                            label: 'Your label',
+                            label: 'Signer label',
                             controller: _labelController,
-                            hintText: 'Optional',
+                            hintText: 'Shown to your co-signers',
                             leading: const AppIcon(AppIcons.user),
                             showClearButton: true,
                             onSubmitted: (_) => _join(),

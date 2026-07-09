@@ -122,6 +122,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                       coordinatorUrl: args.requiredMultisigCoordinatorUrl,
                       participantCount: args.requiredMultisigParticipantCount,
                       threshold: args.requiredMultisigThreshold,
+                      label: args.multisigLabel,
                     );
               case SetPasswordFlow.multisigJoinSession:
                 pendingMultisigSession = await ref
@@ -129,6 +130,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                     .joinSession(
                       coordinatorUrl: args.requiredMultisigCoordinatorUrl,
                       inviteCode: args.requiredMultisigInviteCode,
+                      label: args.multisigLabel,
                     );
               case SetPasswordFlow.multisigFinalize:
                 final sessions = await ref.read(
@@ -148,7 +150,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                 }
                 if (!multisigLocalBackupCompleted(session)) {
                   throw StateError(
-                    'Confirm the local multisig backup before creating this account.',
+                    'Confirm the local recovery share before creating this account.',
                   );
                 }
                 await accountNotifier.finalizeMultisigAccount(
@@ -277,10 +279,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       ImportOnboardingStep.walletBirthdayHeight.label,
     SetPasswordFlow.importKeystone =>
       KeystoneOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.multisigCreateSession => 'Create Setup',
-    SetPasswordFlow.multisigJoinSession => 'Join Setup',
-    SetPasswordFlow.multisigFinalize => 'Backup',
-    SetPasswordFlow.multisigRestore => 'Connect Multisig',
+    SetPasswordFlow.multisigCreateSession => 'Create setup',
+    SetPasswordFlow.multisigJoinSession => 'Join setup',
+    SetPasswordFlow.multisigFinalize => 'Recovery share',
+    SetPasswordFlow.multisigRestore => 'Connect multisig',
   };
 }
 

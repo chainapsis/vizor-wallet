@@ -152,19 +152,9 @@ class _MultisigSigningDetailScreenState
     });
   }
 
-  Future<void> _submitRound1(MultisigSigningRequestRecord request) async {
-    await _run('round1', () async {
-      await ref
-          .read(multisigSigningRequestsProvider.notifier)
-          .submitRound1(request);
-    });
-  }
-
-  Future<void> _submitRound2(MultisigSigningRequestRecord request) async {
-    await _run('round2', () async {
-      await ref
-          .read(multisigSigningRequestsProvider.notifier)
-          .submitRound2(request);
+  Future<void> _approve(MultisigSigningRequestRecord request) async {
+    await _run('approve', () async {
+      await ref.read(multisigSigningRequestsProvider.notifier).approve(request);
     });
   }
 
@@ -290,8 +280,7 @@ class _MultisigSigningDetailScreenState
                             onRefresh: () => unawaited(_refresh()),
                             onSubmitRequest: () =>
                                 unawaited(_submitPreparedRequest(current)),
-                            onRound1: () => unawaited(_submitRound1(current)),
-                            onRound2: () => unawaited(_submitRound2(current)),
+                            onApprove: () => unawaited(_approve(current)),
                             onBroadcast: () => unawaited(_broadcast(current)),
                           ),
                         );
@@ -328,8 +317,7 @@ class _SigningDetailContent extends StatelessWidget {
     required this.request,
     required this.onRefresh,
     required this.onSubmitRequest,
-    required this.onRound1,
-    required this.onRound2,
+    required this.onApprove,
     required this.onBroadcast,
     this.refreshing = false,
     this.busyAction,
@@ -342,8 +330,7 @@ class _SigningDetailContent extends StatelessWidget {
   final String? error;
   final VoidCallback onRefresh;
   final VoidCallback onSubmitRequest;
-  final VoidCallback onRound1;
-  final VoidCallback onRound2;
+  final VoidCallback onApprove;
   final VoidCallback onBroadcast;
 
   @override
@@ -360,8 +347,7 @@ class _SigningDetailContent extends StatelessWidget {
       busyAction: busyAction,
       onRefresh: onRefresh,
       onSubmitRequest: onSubmitRequest,
-      onRound1: onRound1,
-      onRound2: onRound2,
+      onApprove: onApprove,
       onBroadcast: onBroadcast,
       refreshing: refreshing,
     );
@@ -683,8 +669,7 @@ _DetailAction _detailActionForRequest({
   required String? busyAction,
   required VoidCallback onRefresh,
   required VoidCallback onSubmitRequest,
-  required VoidCallback onRound1,
-  required VoidCallback onRound2,
+  required VoidCallback onApprove,
   required VoidCallback onBroadcast,
   required bool refreshing,
 }) {
@@ -719,7 +704,7 @@ _DetailAction _detailActionForRequest({
     return _DetailAction(
       title: 'Review only',
       body:
-          'This send was shared with every participant, but you were not selected to approve it.',
+          'This send was shared with every signer, but you were not selected to approve it.',
       buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
       iconName: AppIcons.renew,
       variant: secondaryVariant,
@@ -741,18 +726,18 @@ _DetailAction _detailActionForRequest({
     return _DetailAction(
       title: 'Approve this send',
       body:
-          'Start your approval for this send. The request will continue once the selected signers are ready.',
-      buttonLabel: busyAction == 'round1' ? 'Approving...' : 'Approve',
+          'Vizor will complete every available approval step. If another signer is needed, this request will wait until they are ready.',
+      buttonLabel: busyAction == 'approve' ? 'Approving...' : 'Approve send',
       iconName: AppIcons.sync,
       variant: primaryVariant,
-      onPressed: busy ? null : onRound1,
+      onPressed: busy ? null : onApprove,
     );
   }
   if (!request.round1Complete) {
     return _DetailAction(
-      title: 'Waiting for other signers',
+      title: 'Waiting for signers',
       body:
-          'Your first approval step is complete. The request will continue after the other selected signers are ready.',
+          'Your approval has started. Keep Vizor open or refresh when the other selected signers are ready.',
       buttonLabel: refreshing ? 'Refreshing' : 'Refresh',
       iconName: AppIcons.renew,
       variant: secondaryVariant,
@@ -761,13 +746,15 @@ _DetailAction _detailActionForRequest({
   }
   if (!request.localRound2Submitted && !request.round2Complete) {
     return _DetailAction(
-      title: 'Finish your approval',
+      title: 'Continue approval',
       body:
-          'The selected signers are ready. Finish your approval so the transaction can be sent.',
-      buttonLabel: busyAction == 'round2' ? 'Approving...' : 'Finish approval',
+          'The selected signers are ready. Continue your approval so this send can move forward.',
+      buttonLabel: busyAction == 'approve'
+          ? 'Approving...'
+          : 'Continue approval',
       iconName: AppIcons.sync,
       variant: primaryVariant,
-      onPressed: busy ? null : onRound2,
+      onPressed: busy ? null : onApprove,
     );
   }
   if (!request.round2Complete) {

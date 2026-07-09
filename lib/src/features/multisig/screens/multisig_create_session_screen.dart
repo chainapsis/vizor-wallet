@@ -108,7 +108,7 @@ class _MultisigCreateSessionScreenState
               const MultisigOnboardingTitle(
                 title: 'Create multisig setup',
                 subtitle:
-                    'Choose the signer policy before sharing the invite code.',
+                    'Choose who can approve sends before sharing the invite code.',
                 iconName: AppIcons.users,
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -141,9 +141,9 @@ class _MultisigCreateSessionScreenState
                           ),
                           const SizedBox(height: AppSpacing.sm),
                           AppTextField(
-                            label: 'Your label',
+                            label: 'Signer label',
                             controller: _labelController,
-                            hintText: 'Optional',
+                            hintText: 'Shown to your co-signers',
                             leading: const AppIcon(AppIcons.user),
                             showClearButton: true,
                             onSubmitted: (_) => _submit(),
@@ -249,7 +249,7 @@ class _PolicySelector extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Any $threshold of $participantCount participants can approve a send.',
+              'Any $threshold of $participantCount signers can approve a send.',
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
               ),

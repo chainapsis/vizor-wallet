@@ -49,6 +49,7 @@ class SetPasswordScreenArgs {
     this.multisigBackupFilePath,
     this.multisigCoordinatorUrl,
     this.multisigInviteCode,
+    this.multisigLabel,
     this.multisigParticipantCount,
     this.multisigThreshold,
   });
@@ -99,9 +100,11 @@ class SetPasswordScreenArgs {
     required String coordinatorUrl,
     required int participantCount,
     required int threshold,
+    String? label,
   }) : this._(
          flow: SetPasswordFlow.multisigCreateSession,
          multisigCoordinatorUrl: coordinatorUrl,
+         multisigLabel: label,
          multisigParticipantCount: participantCount,
          multisigThreshold: threshold,
        );
@@ -109,10 +112,12 @@ class SetPasswordScreenArgs {
   const SetPasswordScreenArgs.multisigJoinSession({
     required String coordinatorUrl,
     required String inviteCode,
+    String? label,
   }) : this._(
          flow: SetPasswordFlow.multisigJoinSession,
          multisigCoordinatorUrl: coordinatorUrl,
          multisigInviteCode: inviteCode,
+         multisigLabel: label,
        );
 
   const SetPasswordScreenArgs.multisigRestore({
@@ -143,6 +148,7 @@ class SetPasswordScreenArgs {
   final String? multisigBackupFilePath;
   final String? multisigCoordinatorUrl;
   final String? multisigInviteCode;
+  final String? multisigLabel;
   final int? multisigParticipantCount;
   final int? multisigThreshold;
 

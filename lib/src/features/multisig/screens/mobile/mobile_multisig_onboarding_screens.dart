@@ -177,8 +177,9 @@ class _MobileMultisigConnectScreenState
 
     return MobileOnboardingStepScaffold(
       progress: _connectProgress,
-      title: 'Connect Multisig',
-      subtitle: 'Start a shared wallet, continue setup, or restore a backup.',
+      title: 'Connect multisig',
+      subtitle:
+          'Start a shared wallet, continue setup, or restore a recovery share.',
       onBack: () => context.go('/onboarding/method'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -223,7 +224,7 @@ class _MobileMultisigConnectScreenState
           _MobileSectionCard(
             iconName: AppIcons.link,
             title: 'Join setup',
-            body: 'Use an invite code from another participant.',
+            body: 'Use an invite code from another signer.',
             child: AppButton(
               key: const ValueKey('mobile_multisig_connect_join_button'),
               expand: true,
@@ -236,8 +237,8 @@ class _MobileMultisigConnectScreenState
           const SizedBox(height: AppSpacing.sm),
           _MobileSectionCard(
             iconName: AppIcons.importWallet,
-            title: 'Restore backup',
-            body: 'Recover this participant from a saved backup file.',
+            title: 'Restore recovery share',
+            body: 'Recover this signer from a saved recovery share file.',
             child: AppButton(
               key: const ValueKey('mobile_multisig_connect_restore_button'),
               expand: true,
@@ -246,7 +247,7 @@ class _MobileMultisigConnectScreenState
               leading: _isPickingBackup
                   ? const _SmallSpinner()
                   : const AppIcon(AppIcons.importWallet),
-              child: Text(_isPickingBackup ? 'Choosing backup' : 'Choose file'),
+              child: Text(_isPickingBackup ? 'Choosing...' : 'Choose file'),
             ),
           ),
           if (_selectedBackup != null || _restoreError != null) ...[
@@ -261,7 +262,8 @@ class _MobileMultisigConnectScreenState
               unlockContent: _restoreNeedsUnlock
                   ? _MobilePasscodeUnlockCard(
                       title: 'Unlock secure storage',
-                      body: 'Enter your passcode to restore this backup.',
+                      body:
+                          'Enter your passcode to restore this recovery share.',
                       onUnlocked: _restoreBackup,
                     )
                   : null,
@@ -291,33 +293,30 @@ class MobileMultisigCreateSessionScreen extends ConsumerStatefulWidget {
 
 class _MobileMultisigCreateSessionScreenState
     extends ConsumerState<MobileMultisigCreateSessionScreen> {
-  late final TextEditingController _coordinatorController;
-  late final FocusNode _coordinatorFocus;
+  late final TextEditingController _labelController;
+  late final FocusNode _labelFocus;
   int _participantCount = 3;
   int _threshold = 2;
   bool _isSubmitting = false;
-  bool _showValidation = false;
   String? _submitError;
 
   @override
   void initState() {
     super.initState();
-    _coordinatorController = TextEditingController(
-      text: kDefaultMultisigCoordinatorUrl,
-    );
-    _coordinatorFocus = FocusNode();
+    _labelController = TextEditingController();
+    _labelFocus = FocusNode();
   }
 
   @override
   void dispose() {
-    _coordinatorController.dispose();
-    _coordinatorFocus.dispose();
+    _labelController.dispose();
+    _labelFocus.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
-    final coordinatorUrl = _coordinatorController.text.trim();
+    const coordinatorUrl = kDefaultMultisigCoordinatorUrl;
     final security = ref.read(appSecurityProvider);
     final hasAccounts =
         ref.read(accountProvider).value?.accounts.isNotEmpty ?? false;
@@ -327,9 +326,8 @@ class _MobileMultisigCreateSessionScreenState
     );
     final needsPasscodeUnlock =
         !needsInitialPasscode && security.requiresUnlock;
-    if (coordinatorUrl.isEmpty || needsPasscodeUnlock) {
+    if (needsPasscodeUnlock) {
       setState(() {
-        _showValidation = true;
         _submitError = null;
       });
       return;
@@ -342,6 +340,7 @@ class _MobileMultisigCreateSessionScreenState
           coordinatorUrl: coordinatorUrl,
           participantCount: _participantCount,
           threshold: _threshold,
+          label: _labelController.text,
         ),
       );
       return;
@@ -359,6 +358,7 @@ class _MobileMultisigCreateSessionScreenState
             coordinatorUrl: coordinatorUrl,
             participantCount: _participantCount,
             threshold: _threshold,
+            label: _labelController.text,
           );
       if (!mounted) return;
       context.go('/multisig/session/${Uri.encodeComponent(pending.storageId)}');
@@ -384,8 +384,8 @@ class _MobileMultisigCreateSessionScreenState
         !needsInitialPasscode && security.requiresUnlock;
     return MobileOnboardingStepScaffold(
       progress: _sessionSetupProgress,
-      title: 'Create Setup',
-      subtitle: 'Choose the signer policy before sharing the invite code.',
+      title: 'Create setup',
+      subtitle: 'Choose who can approve sends before sharing the invite code.',
       titleStyle: AppTypography.displaySmall,
       onBack: () => context.go('/multisig/connect'),
       bottomArea: AppButton(
@@ -402,15 +402,12 @@ class _MobileMultisigCreateSessionScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _MobileFieldLabel(
-            label: 'Coordinator',
-            error: _showValidation && _coordinatorController.text.trim().isEmpty
-                ? 'Enter a coordinator URL.'
-                : null,
+            label: 'Signer label',
             child: MobileTextField(
-              controller: _coordinatorController,
-              focusNode: _coordinatorFocus,
-              hintText: kDefaultMultisigCoordinatorUrl,
-              leading: const _FieldLeadingIcon(AppIcons.endpoint),
+              controller: _labelController,
+              focusNode: _labelFocus,
+              hintText: 'Shown to your co-signers',
+              leading: const _FieldLeadingIcon(AppIcons.user),
               textInputAction: TextInputAction.done,
               onChanged: (_) => setState(() => _submitError = null),
               onSubmitted: (_) => _submit(),
@@ -472,8 +469,7 @@ class _MobileSessionPolicyCard extends StatelessWidget {
     return _MobileSectionCard(
       iconName: AppIcons.users,
       title: 'Wallet policy',
-      body:
-          'Any $threshold of $participantCount participants can approve a send.',
+      body: 'Any $threshold of $participantCount signers can approve a send.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -555,9 +551,9 @@ class MobileMultisigJoinSessionScreen extends ConsumerStatefulWidget {
 class _MobileMultisigJoinSessionScreenState
     extends ConsumerState<MobileMultisigJoinSessionScreen> {
   late final TextEditingController _sessionController;
-  late final TextEditingController _coordinatorController;
+  late final TextEditingController _labelController;
   late final FocusNode _sessionFocus;
-  late final FocusNode _coordinatorFocus;
+  late final FocusNode _labelFocus;
   bool _showError = false;
   bool _isSubmitting = false;
   String? _submitError;
@@ -566,26 +562,24 @@ class _MobileMultisigJoinSessionScreenState
   void initState() {
     super.initState();
     _sessionController = TextEditingController();
-    _coordinatorController = TextEditingController(
-      text: kDefaultMultisigCoordinatorUrl,
-    );
+    _labelController = TextEditingController();
     _sessionFocus = FocusNode();
-    _coordinatorFocus = FocusNode();
+    _labelFocus = FocusNode();
   }
 
   @override
   void dispose() {
     _sessionController.dispose();
-    _coordinatorController.dispose();
+    _labelController.dispose();
     _sessionFocus.dispose();
-    _coordinatorFocus.dispose();
+    _labelFocus.dispose();
     super.dispose();
   }
 
   Future<void> _join() async {
     if (_isSubmitting) return;
     final inviteCode = _sessionController.text.trim();
-    final coordinatorUrl = _coordinatorController.text.trim();
+    const coordinatorUrl = kDefaultMultisigCoordinatorUrl;
     final security = ref.read(appSecurityProvider);
     String? normalizedInviteCode;
     if (inviteCode.isNotEmpty) {
@@ -607,7 +601,7 @@ class _MobileMultisigJoinSessionScreenState
     );
     final needsPasscodeUnlock =
         !needsInitialPasscode && security.requiresUnlock;
-    if (inviteCode.isEmpty || coordinatorUrl.isEmpty || needsPasscodeUnlock) {
+    if (inviteCode.isEmpty || needsPasscodeUnlock) {
       setState(() {
         _showError = true;
         _submitError = null;
@@ -621,6 +615,7 @@ class _MobileMultisigJoinSessionScreenState
         extra: SetPasswordScreenArgs.multisigJoinSession(
           coordinatorUrl: coordinatorUrl,
           inviteCode: normalizedInviteCode!,
+          label: _labelController.text,
         ),
       );
       return;
@@ -637,6 +632,7 @@ class _MobileMultisigJoinSessionScreenState
           .joinSession(
             coordinatorUrl: coordinatorUrl,
             inviteCode: normalizedInviteCode!,
+            label: _labelController.text,
           );
       if (!mounted) return;
       context.go('/multisig/session/${Uri.encodeComponent(pending.storageId)}');
@@ -662,7 +658,7 @@ class _MobileMultisigJoinSessionScreenState
         !needsInitialPasscode && security.requiresUnlock;
     return MobileOnboardingStepScaffold(
       progress: _sessionSetupProgress,
-      title: 'Join Setup',
+      title: 'Join setup',
       subtitle: 'Enter the invite code shared by the creator.',
       titleStyle: AppTypography.displaySmall,
       onBack: () => context.go('/multisig/connect'),
@@ -682,7 +678,7 @@ class _MobileMultisigJoinSessionScreenState
           _MobileFieldLabel(
             label: 'Invite code',
             error: _showError && _sessionController.text.trim().isEmpty
-                ? 'Enter a session ID.'
+                ? 'Enter an invite code.'
                 : null,
             child: MobileTextField(
               controller: _sessionController,
@@ -691,20 +687,17 @@ class _MobileMultisigJoinSessionScreenState
               leading: const _FieldLeadingIcon(AppIcons.link),
               textInputAction: TextInputAction.next,
               onChanged: (_) => setState(() => _submitError = null),
-              onSubmitted: (_) => _coordinatorFocus.requestFocus(),
+              onSubmitted: (_) => _labelFocus.requestFocus(),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           _MobileFieldLabel(
-            label: 'Coordinator',
-            error: _showError && _coordinatorController.text.trim().isEmpty
-                ? 'Enter a coordinator URL.'
-                : null,
+            label: 'Signer label',
             child: MobileTextField(
-              controller: _coordinatorController,
-              focusNode: _coordinatorFocus,
-              hintText: kDefaultMultisigCoordinatorUrl,
-              leading: const _FieldLeadingIcon(AppIcons.endpoint),
+              controller: _labelController,
+              focusNode: _labelFocus,
+              hintText: 'Shown to your co-signers',
+              leading: const _FieldLeadingIcon(AppIcons.user),
               textInputAction: TextInputAction.done,
               onChanged: (_) => setState(() => _submitError = null),
               onSubmitted: (_) => _join(),
@@ -1247,9 +1240,9 @@ class _RestoreBackupPanel extends StatelessWidget {
     final backup = selectedBackup;
     return _MobileSectionCard(
       iconName: AppIcons.key,
-      title: 'Backup file',
+      title: 'Recovery share file',
       body: backup == null
-          ? 'No backup selected'
+          ? 'No recovery share selected'
           : _backupFileName(backup.path),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1263,7 +1256,7 @@ class _RestoreBackupPanel extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           PasswordTextField(
-            label: 'Backup password',
+            label: 'Recovery share password',
             controller: passwordController,
             enabled: !busy,
             hintText: 'Min. $kWalletPasswordMinLength characters and symbols',
@@ -1449,6 +1442,10 @@ class _SessionContent extends StatelessWidget {
         session.isCreator &&
         session.state == 'collecting' &&
         session.participants.length == targetParticipantCount;
+    final waitingForCreator =
+        !session.isCreator &&
+        session.state == 'collecting' &&
+        session.participants.length == targetParticipantCount;
     final showBackupPanel = session.state == 'ready';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1462,9 +1459,9 @@ class _SessionContent extends StatelessWidget {
         if (session.state == 'collecting') ...[
           _MobileSectionCard(
             iconName: AppIcons.lock,
-            title: canLock ? 'Ready to start' : 'Waiting for participants',
+            title: canLock ? 'Ready for ceremony' : 'Waiting for signers',
             body:
-                '${session.participants.length} of $targetParticipantCount participants joined. '
+                '${session.participants.length} of $targetParticipantCount signers joined. '
                 '${session.policyLabel} approvals will be required to send.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1475,7 +1472,11 @@ class _SessionContent extends StatelessWidget {
                   leading: isLocking
                       ? const _SmallSpinner()
                       : const AppIcon(AppIcons.lock),
-                  child: const Text('Start key generation'),
+                  child: Text(
+                    waitingForCreator
+                        ? 'Waiting for creator'
+                        : 'Start ceremony',
+                  ),
                 ),
               ],
             ),
@@ -1516,7 +1517,7 @@ class _InviteCodePanel extends StatelessWidget {
     return _MobileSectionCard(
       iconName: AppIcons.link,
       title: 'Invite code',
-      body: 'Share this code with the other participants.',
+      body: 'Share this code with the other signers.',
       child: Row(
         children: [
           Expanded(
@@ -1550,9 +1551,9 @@ class _ProgressPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final states = const [
-      ('collecting', 'People'),
-      ('request_create', 'Create'),
-      ('local_backup', 'Backup'),
+      ('collecting', 'Signers'),
+      ('request_create', 'Ceremony'),
+      ('local_backup', 'Recovery'),
       ('ready', 'Ready'),
     ];
     final activeState =
@@ -1622,18 +1623,24 @@ class _ParticipantsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MobileSectionCard(
       iconName: AppIcons.users,
-      title: 'Participants',
+      title: 'Signers',
       body:
           '${session.participants.length} of ${session.targetParticipantCount} joined',
       child: Column(
         children: [
-          for (final participant in session.participants)
-            _ParticipantRow(
-              participant: participant,
-              creator:
-                  participant.participantId == session.creatorParticipantId,
-              local: participant.participantId == session.participantId,
-            ),
+          for (var index = 0; index < session.targetParticipantCount; index++)
+            if (index < session.participants.length)
+              _ParticipantRow(
+                participant: session.participants[index],
+                creator:
+                    session.participants[index].participantId ==
+                    session.creatorParticipantId,
+                local:
+                    session.participants[index].participantId ==
+                    session.participantId,
+              )
+            else
+              _EmptyParticipantRow(index: index + 1),
         ],
       ),
     );
@@ -1661,7 +1668,7 @@ class _CreatePanel extends StatelessWidget {
         .length;
     return _MobileSectionCard(
       iconName: AppIcons.sync,
-      title: 'Create account',
+      title: 'Creating shared key',
       body: progress?.detail ?? 'Ready to continue local setup.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1670,7 +1677,7 @@ class _CreatePanel extends StatelessWidget {
             children: [
               Expanded(
                 child: _ProtocolCounter(
-                  label: 'Round 1',
+                  label: 'Share',
                   value: progress?.round1Count ?? 0,
                   total: total,
                 ),
@@ -1678,7 +1685,7 @@ class _CreatePanel extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: _ProtocolCounter(
-                  label: 'Round 2',
+                  label: 'Confirm',
                   value: progress?.round2Count ?? 0,
                   total: total > 0 ? total - 1 : 0,
                 ),
@@ -1686,7 +1693,7 @@ class _CreatePanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          _MiniBadge(label: '$backendDone of $total done'),
+          _MiniBadge(label: '$backendDone of $total signers ready'),
           const SizedBox(height: AppSpacing.sm),
           AppButton(
             onPressed: isAdvancing ? null : onAdvance,
@@ -1694,7 +1701,9 @@ class _CreatePanel extends StatelessWidget {
             leading: isAdvancing
                 ? const _SmallSpinner()
                 : const AppIcon(AppIcons.sync),
-            child: Text(progress == null ? 'Start create' : 'Continue'),
+            child: Text(
+              progress == null ? 'Start ceremony' : 'Continue ceremony',
+            ),
           ),
         ],
       ),
@@ -1793,6 +1802,35 @@ class _ParticipantRow extends StatelessWidget {
             ),
           ),
           if (badges.isNotEmpty) _MiniBadge(label: badges.join(' · ')),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyParticipantRow extends StatelessWidget {
+  const _EmptyParticipantRow({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: [
+          _CardIcon(AppIcons.user),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              'Waiting for signer $index',
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
         ],
       ),
     );

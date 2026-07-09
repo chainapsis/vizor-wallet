@@ -749,6 +749,27 @@ class MultisigSigningRequestsNotifier
     });
   }
 
+  Future<MultisigSigningRequestRecord> approve(
+    MultisigSigningRequestRecord record,
+  ) async {
+    var current = record;
+    if (!current.coordinatorSubmitted) {
+      current = await submitPreparedRequest(current);
+    }
+    if (current.isReviewOnly || !current.localParticipantSelected) {
+      return current;
+    }
+    if (!current.localRound1Submitted) {
+      current = await submitRound1(current);
+    }
+    if (current.round1Complete &&
+        !current.localRound2Submitted &&
+        !current.round2Complete) {
+      current = await submitRound2(current);
+    }
+    return current;
+  }
+
   Future<MultisigSigningRequestRecord> aggregateSignedPczt(
     MultisigSigningRequestRecord record,
   ) async {

@@ -108,7 +108,7 @@ String multisigSigningRequestStatusLabel(MultisigSigningRequestRecord request) {
   if (!request.coordinatorSubmitted) return 'Setup needed';
   if (!request.localRound1Submitted) return 'Needs approval';
   if (request.round1Complete && !request.localRound2Submitted) {
-    return 'Finish approval';
+    return 'Continue approval';
   }
   return 'Waiting';
 }
@@ -124,7 +124,7 @@ String multisigSigningRequestStatusBody(MultisigSigningRequestRecord request) {
   }
   if (!request.localRound1Submitted) return 'Your approval is needed.';
   if (request.round1Complete && !request.localRound2Submitted) {
-    return 'Finish your approval.';
+    return 'Continue your approval.';
   }
   return 'Waiting for the group.';
 }

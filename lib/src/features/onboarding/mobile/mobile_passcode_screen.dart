@@ -144,6 +144,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     coordinatorUrl: args.requiredMultisigCoordinatorUrl,
                     participantCount: args.requiredMultisigParticipantCount,
                     threshold: args.requiredMultisigThreshold,
+                    label: args.multisigLabel,
                   );
             case SetPasswordFlow.multisigJoinSession:
               pendingMultisigSession = await ref
@@ -151,6 +152,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                   .joinSession(
                     coordinatorUrl: args.requiredMultisigCoordinatorUrl,
                     inviteCode: args.requiredMultisigInviteCode,
+                    label: args.multisigLabel,
                   );
             case SetPasswordFlow.multisigFinalize:
               final sessions = await ref.read(
@@ -170,7 +172,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
               }
               if (!multisigLocalBackupCompleted(session)) {
                 throw StateError(
-                  'Confirm the local multisig backup before creating this account.',
+                  'Confirm the local recovery share before creating this account.',
                 );
               }
               await accountNotifier.finalizeMultisigAccount(

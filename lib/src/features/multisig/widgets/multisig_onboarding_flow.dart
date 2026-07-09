@@ -16,7 +16,7 @@ extension MultisigOnboardingStepX on MultisigOnboardingStep {
   String get label => switch (this) {
     MultisigOnboardingStep.connect => 'Connect Multisig',
     MultisigOnboardingStep.sessionSetup => 'Session Setup',
-    MultisigOnboardingStep.backup => 'Backup',
+    MultisigOnboardingStep.backup => 'Recovery share',
     MultisigOnboardingStep.setPassword => 'Set Password',
   };
 

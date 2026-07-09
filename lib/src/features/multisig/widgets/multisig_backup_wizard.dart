@@ -280,7 +280,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
             Row(
               children: [
                 Text(
-                  'Backup',
+                  'Recovery share',
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.primary,
                   ),
@@ -296,14 +296,14 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Save and verify this participant backup before creating the local account.',
+              'Save and verify this encrypted recovery share before creating the local account.',
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordTextField(
-              label: 'Backup password',
+              label: 'Recovery share password',
               controller: _customPasswordController,
               hintText: 'Min. $kWalletPasswordMinLength characters and symbols',
               messageText: _backupPasswordMessage,
@@ -329,12 +329,14 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
               leading: _isEncrypting
                   ? const _SmallSpinner()
                   : const AppIcon(AppIcons.lock),
-              child: Text(_isEncrypting ? 'Encrypting' : 'Encrypt backup'),
+              child: Text(
+                _isEncrypting ? 'Encrypting' : 'Encrypt recovery share',
+              ),
             ),
             if (_artifact != null) ...[
               const SizedBox(height: AppSpacing.sm),
               PasswordTextField(
-                label: 'Confirm backup password',
+                label: 'Confirm recovery share password',
                 controller: _confirmPasswordController,
                 hintText: 'Re-enter the password',
                 messageText: _confirmPasswordMessage,
@@ -379,7 +381,7 @@ class _MultisigBackupWizardState extends ConsumerState<MultisigBackupWizard> {
                 leading: _isSaving
                     ? const _SmallSpinner()
                     : const AppIcon(AppIcons.scroll),
-                child: Text(_isSaving ? 'Saving' : 'Save backup file'),
+                child: Text(_isSaving ? 'Saving' : 'Save recovery share'),
               ),
             ],
             if (_savedDestination != null) ...[

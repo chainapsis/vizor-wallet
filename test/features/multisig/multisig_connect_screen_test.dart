@@ -34,7 +34,7 @@ void main() {
     );
   });
 
-  testWidgets('shows restore backup controls after choosing a file', (
+  testWidgets('shows recovery share controls after choosing a file', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -53,9 +53,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Backup file'), findsOneWidget);
+    expect(find.text('Recovery share file'), findsOneWidget);
     expect(find.text('vizor-multisig-backup.vizorbackup'), findsOneWidget);
-    expect(find.text('Backup password'), findsOneWidget);
+    expect(find.text('Recovery share password'), findsOneWidget);
     expect(find.text('Restore account'), findsOneWidget);
   });
 
@@ -85,7 +85,7 @@ void main() {
 
     expect(find.text('Unlock secure storage'), findsOneWidget);
     expect(
-      find.text('Enter your wallet password to restore this backup.'),
+      find.text('Enter your wallet password to restore this recovery share.'),
       findsOneWidget,
     );
   });

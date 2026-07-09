@@ -536,6 +536,10 @@ class _SessionContent extends StatelessWidget {
         session.isCreator &&
         session.state == 'collecting' &&
         session.participants.length == targetParticipantCount;
+    final waitingForCreator =
+        !session.isCreator &&
+        session.state == 'collecting' &&
+        session.participants.length == targetParticipantCount;
     final showBackupPanel = session.state == 'ready';
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: AppSpacing.xl),
@@ -560,14 +564,14 @@ class _SessionContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      canLock ? 'Ready to start' : 'Waiting for participants',
+                      canLock ? 'Ready for ceremony' : 'Waiting for signers',
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.primary,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      '${session.participants.length} of $targetParticipantCount participants joined. '
+                      '${session.participants.length} of $targetParticipantCount signers joined. '
                       '${session.policyLabel} approvals will be required to send.',
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
@@ -584,7 +588,11 @@ class _SessionContent extends StatelessWidget {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const AppIcon(AppIcons.lock),
-                      child: const Text('Start key generation'),
+                      child: Text(
+                        waitingForCreator
+                            ? 'Waiting for creator'
+                            : 'Start ceremony',
+                      ),
                     ),
                   ],
                 ),
@@ -682,9 +690,9 @@ class _ProgressPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final states = const [
-      ('collecting', 'Participants'),
-      ('request_create', 'Create'),
-      ('local_backup', 'Backup'),
+      ('collecting', 'Signers'),
+      ('request_create', 'Ceremony'),
+      ('local_backup', 'Recovery'),
       ('ready', 'Ready'),
     ];
     final activeState =
@@ -785,7 +793,7 @@ class _ParticipantsPanel extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  'Participants',
+                  'Signers',
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.primary,
                   ),
@@ -800,15 +808,22 @@ class _ParticipantsPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            for (final participant in session.participants) ...[
-              _ParticipantRow(
-                participant: participant,
-                creator:
-                    participant.participantId == session.creatorParticipantId,
-                local: participant.participantId == session.participantId,
-              ),
-              if (participant != session.participants.last) const Divider(),
-            ],
+            for (var index = 0; index < session.targetParticipantCount; index++)
+              if (index < session.participants.length) ...[
+                _ParticipantRow(
+                  participant: session.participants[index],
+                  creator:
+                      session.participants[index].participantId ==
+                      session.creatorParticipantId,
+                  local:
+                      session.participants[index].participantId ==
+                      session.participantId,
+                ),
+                if (index < session.targetParticipantCount - 1) const Divider(),
+              ] else ...[
+                _EmptyParticipantRow(index: index + 1),
+                if (index < session.targetParticipantCount - 1) const Divider(),
+              ],
           ],
         ),
       ),
@@ -850,13 +865,13 @@ class _CreatePanel extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  'Create account',
+                  'Creating shared key',
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.primary,
                   ),
                 ),
                 const Spacer(),
-                _MiniBadge(label: '$backendDone of $total done'),
+                _MiniBadge(label: '$backendDone of $total signers ready'),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -870,7 +885,7 @@ class _CreatePanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: _ProtocolCounter(
-                    label: 'Round 1',
+                    label: 'Share',
                     value: progress?.round1Count ?? 0,
                     total: total,
                   ),
@@ -878,7 +893,7 @@ class _CreatePanel extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: _ProtocolCounter(
-                    label: 'Round 2',
+                    label: 'Confirm',
                     value: progress?.round2Count ?? 0,
                     total: total > 0 ? total - 1 : 0,
                   ),
@@ -907,7 +922,9 @@ class _CreatePanel extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const AppIcon(AppIcons.sync),
-              child: Text(progress == null ? 'Start create' : 'Continue'),
+              child: Text(
+                progress == null ? 'Start ceremony' : 'Continue ceremony',
+              ),
             ),
           ],
         ),
@@ -1045,17 +1062,46 @@ class _ParticipantRow extends StatelessWidget {
   }
 }
 
+class _EmptyParticipantRow extends StatelessWidget {
+  const _EmptyParticipantRow({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          AppIcon(AppIcons.user, color: colors.icon.muted),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Waiting for signer $index',
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 String _phaseLabel(String? phase) {
   return switch (phase) {
-    'waiting_for_seed' => 'Waiting for seed',
-    'waiting_for_round1' => 'Waiting for round 1',
-    'waiting_for_round2' => 'Waiting for round 2',
-    'finalized' => 'Finalized',
-    'dkg_complete' => 'Create complete',
-    'local_backup' => 'Backup required',
+    'waiting_for_seed' => 'Preparing this signer',
+    'waiting_for_round1' => 'Waiting for signers to share',
+    'waiting_for_round2' => 'Confirming shared key',
+    'finalized' => 'Shared key created',
+    'dkg_complete' => 'Shared key created',
+    'local_backup' => 'Recovery share required',
     'ready' => 'Ready',
-    'in_progress' => 'Creating',
-    _ => 'Ready',
+    'in_progress' => 'Creating shared key',
+    _ => 'Ready to continue',
   };
 }
 
