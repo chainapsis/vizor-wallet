@@ -44,6 +44,25 @@ void main() {
     expect(reset.displayPercentage, 0.25);
   });
 
+  test('display target defaults to actual percentage', () {
+    final state = SyncState(percentage: 0.25);
+
+    expect(state.displayTargetPercentage, 0.25);
+    expect(state.displayTargetBlocks, 0);
+  });
+
+  test('copyWith can update display target independently', () {
+    final state = SyncState(percentage: 0.25);
+    final next = state.copyWith(
+      displayTargetPercentage: 0.40,
+      displayTargetBlocks: 150,
+    );
+
+    expect(next.percentage, 0.25);
+    expect(next.displayTargetPercentage, 0.40);
+    expect(next.displayTargetBlocks, 150);
+  });
+
   test('scopedToAccount preserves data for the owning account', () {
     final tx = _tx('a' * 64);
     final state = SyncState(
@@ -76,6 +95,8 @@ void main() {
       isSyncing: true,
       percentage: 0.75,
       displayPercentage: 0.50,
+      displayTargetPercentage: 0.80,
+      displayTargetBlocks: 120,
       scannedHeight: 10,
       chainTipHeight: 20,
       totalBalance: BigInt.from(123),
@@ -94,6 +115,8 @@ void main() {
     expect(scoped.isSyncing, isTrue);
     expect(scoped.percentage, 0.75);
     expect(scoped.displayPercentage, 0.50);
+    expect(scoped.displayTargetPercentage, 0.80);
+    expect(scoped.displayTargetBlocks, 120);
     expect(scoped.scannedHeight, 10);
     expect(scoped.chainTipHeight, 20);
   });
