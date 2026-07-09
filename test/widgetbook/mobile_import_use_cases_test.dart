@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -42,6 +43,10 @@ void main() {
       );
       expect(editIcon.name, AppIcons.edit);
       expect(editIcon.size, AppIconSize.large);
+      expect(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_blur')),
+        findsNothing,
+      );
       final firstIndex = tester.widget<Text>(find.text('01'));
       expect(firstIndex.style?.fontSize, 15);
       expect(firstIndex.style?.height, 21 / 15);
@@ -67,13 +72,94 @@ void main() {
       expect(index3.dx, greaterThan(index2.dx));
       expect(index4.dy, greaterThan(index1.dy));
       expect(index4.dx, closeTo(index1.dx, 0.01));
+      final cell1Top = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_cell_1')),
+      );
+      final line1Top = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_line_1')),
+      );
+      expect(line1Top.dx, greaterThan(index1.dx));
+      expect(line1Top.dy - cell1Top.dy, closeTo(23, 0.01));
       final pasteButton = tester.widget<AppButton>(
         find.byKey(const ValueKey('mobile_import_paste')),
       );
       expect(pasteButton.variant, AppButtonVariant.primary);
       expect(pasteButton.expand, isTrue);
+      final pasteIcon = tester.widget<AppIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_import_paste')),
+          matching: find.byType(AppIcon),
+        ),
+      );
+      expect(pasteIcon.name, AppIcons.paste);
+      expect(pasteIcon.size, 20);
     },
   );
+
+  testWidgets('mobile import cards fill available width on wide phones', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(440, 956)
+      ..devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view
+        ..resetPhysicalSize()
+        ..resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppTheme(data: AppThemeData.dark, child: MobileImportScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_import_manual_card'))),
+      const Size(408, 385),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Center(
+            child: SizedBox(
+              width: 408,
+              child: MobileImportReviewSeedCard(
+                words: [
+                  'caution',
+                  'dream',
+                  'solar',
+                  'agent',
+                  'witness',
+                  'logic',
+                  'hurdle',
+                  'focus',
+                  'benefit',
+                  'rough',
+                  'index',
+                  'genuine',
+                  'puzzle',
+                  'sudden',
+                  'modify',
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_import_review_seed_card')),
+      ),
+      const Size(408, 385),
+    );
+  });
 
   testWidgets('mobile import paste use case opens manual entry', (
     tester,
@@ -263,6 +349,26 @@ void main() {
     );
   });
 
+  testWidgets('mobile import review action aligns with paste action bottom', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileImportPasteUseCase);
+    final pasteBottom = tester
+        .getBottomRight(find.byKey(const ValueKey('mobile_import_paste')))
+        .dy;
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await _pumpUseCase(tester, buildMobileImportReview15UseCase);
+    final reviewContinueBottom = tester
+        .getBottomRight(
+          find.byKey(const ValueKey('mobile_import_review_continue')),
+        )
+        .dy;
+
+    expect(reviewContinueBottom, closeTo(pasteBottom, 0.01));
+  });
+
   testWidgets('mobile import review 18-word use case renders all words', (
     tester,
   ) async {
@@ -400,9 +506,13 @@ double _stepsProgress(WidgetTester tester) {
   return fill.widthFactor!;
 }
 
-Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
+Future<void> _pumpUseCase(
+  WidgetTester tester,
+  WidgetBuilder builder, {
+  Size size = const Size(393, 852),
+}) async {
   tester.view
-    ..physicalSize = const Size(393, 852)
+    ..physicalSize = size
     ..devicePixelRatio = 1.0;
   addTearDown(() {
     tester.view
@@ -412,7 +522,10 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
-      home: AppTheme(data: AppThemeData.dark, child: Builder(builder: builder)),
+      home: AppTheme(
+        data: AppThemeData.dark,
+        child: Builder(builder: builder),
+      ),
     ),
   );
   await tester.pump();

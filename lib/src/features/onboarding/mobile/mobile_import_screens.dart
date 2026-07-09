@@ -21,12 +21,11 @@ const kMnemonicMaxWords = 24;
 /// Split arbitrary pasted/typed text into candidate BIP39 words. English
 /// BIP39 words are pure lowercase a-z, so quotes, numbering, and punctuation
 /// can all be treated as separators.
-List<String> tokenizeMnemonicWords(String raw) =>
-    raw
-        .toLowerCase()
-        .split(RegExp(r'[^a-z]+'))
-        .where((word) => word.isNotEmpty)
-        .toList();
+List<String> tokenizeMnemonicWords(String raw) => raw
+    .toLowerCase()
+    .split(RegExp(r'[^a-z]+'))
+    .where((word) => word.isNotEmpty)
+    .toList();
 
 /// Validates a candidate phrase; returns an error message or null.
 const _kMnemonicCheckFailedMessage =
@@ -221,6 +220,7 @@ class _ImportManualSeedCard extends StatelessWidget {
         onTap: onTap,
         child: Container(
           key: const ValueKey('mobile_import_manual_card'),
+          width: double.infinity,
           height: _kImportManualCardHeight,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
@@ -235,14 +235,13 @@ class _ImportManualSeedCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
                       center: Alignment.center,
-                      radius: 0.52,
+                      radius: 0.51,
                       colors: [
                         colors.background.homeCard,
-                        colors.background.homeCard.withValues(alpha: 0.84),
-                        colors.background.homeCard.withValues(alpha: 0.12),
+                        colors.background.homeCard,
                         colors.background.homeCard.withValues(alpha: 0),
                       ],
-                      stops: const [0, 0.32, 0.74, 1],
+                      stops: const [0, 0.1827, 1],
                     ),
                   ),
                 ),
@@ -317,25 +316,37 @@ class _ImportManualWordPlaceholders extends StatelessWidget {
                 wordIndex++
               )
                 SizedBox(
+                  key: ValueKey(
+                    'mobile_import_manual_placeholder_cell_$wordIndex',
+                  ),
                   width: itemWidth,
                   height: _kImportManualWordLineHeight,
-                  child: Row(
+                  child: Stack(
                     children: [
-                      SizedBox(
-                        width: _kImportManualWordIndexWidth,
-                        child: Text(
-                          key: ValueKey(
-                            'mobile_import_manual_placeholder_index_$wordIndex',
-                          ),
-                          wordIndex.toString().padLeft(2, '0'),
-                          style: _kImportManualWordIndexStyle.copyWith(
-                            color: labelColor,
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        child: SizedBox(
+                          width: _kImportManualWordIndexWidth,
+                          child: Text(
+                            key: ValueKey(
+                              'mobile_import_manual_placeholder_index_$wordIndex',
+                            ),
+                            wordIndex.toString().padLeft(2, '0'),
+                            style: _kImportManualWordIndexStyle.copyWith(
+                              color: labelColor,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
+                      Positioned(
+                        left: _kImportManualWordIndexWidth + AppSpacing.xs,
+                        right: 0,
+                        bottom: 0,
                         child: DecoratedBox(
+                          key: ValueKey(
+                            'mobile_import_manual_placeholder_line_$wordIndex',
+                          ),
                           decoration: BoxDecoration(color: lineColor),
                           child: const SizedBox(height: 1),
                         ),
@@ -365,7 +376,7 @@ class _ImportPasteButton extends StatelessWidget {
       expand: true,
       constrainContent: true,
       onPressed: isReading ? null : onPaste,
-      leading: AppIcon(isReading ? AppIcons.loader : AppIcons.copy),
+      leading: AppIcon(isReading ? AppIcons.loader : AppIcons.paste, size: 20),
       child: Text(
         isReading ? 'Reading clipboard data...' : 'Or paste from clipboard',
         maxLines: 1,

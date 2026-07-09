@@ -64,12 +64,11 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   late final SensitivePrivacyOverlayController _privacyController;
   bool _screenshotSheetShowing = false;
 
-  List<String> get _words =>
-      widget.args.mnemonic
-          .trim()
-          .split(RegExp(r'\s+'))
-          .where((word) => word.isNotEmpty)
-          .toList();
+  List<String> get _words => widget.args.mnemonic
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .toList();
 
   @override
   void initState() {
@@ -132,12 +131,6 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Review Import',
         subtitle: 'Review your secret passphrase\nbefore import starts.',
-        bottomAreaPadding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          0,
-          AppSpacing.sm,
-          AppSpacing.md,
-        ),
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -178,10 +171,9 @@ class MobileImportReviewSeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final cardPadding =
-        words.length > 18
-            ? _kImportReviewDenseSeedCardPadding
-            : _kImportReviewSeedCardPadding;
+    final cardPadding = words.length > 18
+        ? _kImportReviewDenseSeedCardPadding
+        : _kImportReviewSeedCardPadding;
     return Container(
       key: const ValueKey('mobile_import_review_seed_card'),
       width: double.infinity,
