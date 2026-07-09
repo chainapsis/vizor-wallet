@@ -4,11 +4,16 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../features/onboarding/mobile/mobile_passcode_screen.dart';
+import '../../../features/onboarding/mobile/passcode_widgets.dart';
 import '../../../features/onboarding/shared/onboarding_welcome_art.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../feedback/app_haptics.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../layout/app_form_factor.dart';
+import '../../layout/mobile/mobile_top_nav.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
 import '../app_icon.dart';
@@ -115,7 +120,7 @@ class _SyncKeepAwakePrivacyLockHostState
   }
 }
 
-class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
+class SyncKeepAwakePrivacyLockScreen extends ConsumerStatefulWidget {
   const SyncKeepAwakePrivacyLockScreen({
     this.mode = SyncKeepAwakePrivacyLockMode.syncing,
     super.key,
@@ -140,6 +145,129 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
   static const _minimumDoneStatusToButtonGap = 48.0;
   static const _bodyWidth = 130.0;
   static const _doneBodyWidth = 200.0;
+
+  @override
+  ConsumerState<SyncKeepAwakePrivacyLockScreen> createState() =>
+      _SyncKeepAwakePrivacyLockScreenState();
+}
+
+class _SyncKeepAwakePrivacyLockScreenState
+    extends ConsumerState<SyncKeepAwakePrivacyLockScreen> {
+  var _showPasscode = false;
+  var _passcodeEntry = '';
+  var _submittingPasscode = false;
+  String? _passcodeError;
+
+  @override
+  void didUpdateWidget(SyncKeepAwakePrivacyLockScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.mode == SyncKeepAwakePrivacyLockMode.hidden && _showPasscode) {
+      _resetPasscodePrompt();
+    }
+  }
+
+  void _openPasscodePrompt() {
+    setState(() {
+      _showPasscode = true;
+      _passcodeEntry = '';
+      _passcodeError = null;
+      _submittingPasscode = false;
+    });
+  }
+
+  void _returnToStatusScreen() {
+    if (_submittingPasscode) return;
+    setState(_resetPasscodePrompt);
+  }
+
+  void _resetPasscodePrompt() {
+    _showPasscode = false;
+    _passcodeEntry = '';
+    _passcodeError = null;
+    _submittingPasscode = false;
+  }
+
+  void _onPasscodeDigit(int digit) {
+    if (_submittingPasscode || _passcodeEntry.length >= kMobilePasscodeLength) {
+      return;
+    }
+    setState(() {
+      _passcodeEntry += '$digit';
+      _passcodeError = null;
+    });
+    if (_passcodeEntry.length == kMobilePasscodeLength) {
+      unawaited(_submitPasscode());
+    }
+  }
+
+  void _onPasscodeBackspace() {
+    if (_submittingPasscode || _passcodeEntry.isEmpty) return;
+    setState(() {
+      _passcodeEntry = _passcodeEntry.substring(0, _passcodeEntry.length - 1);
+      _passcodeError = null;
+    });
+  }
+
+  Future<void> _submitPasscode() async {
+    if (_submittingPasscode) return;
+    final passcode = _passcodeEntry;
+    setState(() {
+      _submittingPasscode = true;
+      _passcodeError = null;
+    });
+
+    var confirmed = false;
+    try {
+      confirmed = await ref
+          .read(appSecurityProvider.notifier)
+          .confirmPassword(passcode);
+    } catch (_) {
+      confirmed = false;
+    }
+    if (!mounted) return;
+
+    if (confirmed) {
+      ref.read(syncKeepAwakePrivacyLockProvider.notifier).unlock();
+      return;
+    }
+
+    unawaited(AppHaptics.error());
+    setState(() {
+      _submittingPasscode = false;
+      _passcodeEntry = '';
+      _passcodeError = 'Incorrect Passcode';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showPasscode) {
+      return _SyncKeepAwakePasscodeConfirmScreen(
+        mode: widget.mode,
+        entryLength: _passcodeEntry.length,
+        error: _passcodeError,
+        submitting: _submittingPasscode,
+        onBack: _returnToStatusScreen,
+        onDigit: _onPasscodeDigit,
+        onBackspace: _onPasscodeBackspace,
+      );
+    }
+
+    return _SyncKeepAwakeStatusScreen(
+      mode: widget.mode,
+      onUnlockPressed: _openPasscodePrompt,
+    );
+  }
+}
+
+class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
+  const _SyncKeepAwakeStatusScreen({
+    required this.mode,
+    required this.onUnlockPressed,
+  });
+
+  final SyncKeepAwakePrivacyLockMode mode;
+  final VoidCallback onUnlockPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -199,8 +327,8 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
                   SizedBox(height: layout.topGap),
                   const VizorWordmark(
                     key: ValueKey('sync_keep_awake_privacy_logo'),
-                    width: _logoWidth,
-                    height: _logoHeight,
+                    width: SyncKeepAwakePrivacyLockScreen._logoWidth,
+                    height: SyncKeepAwakePrivacyLockScreen._logoHeight,
                   ),
                   SizedBox(height: layout.logoToMainGap),
                   main,
@@ -209,9 +337,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
                     key: const ValueKey(
                       'sync_keep_awake_privacy_unlock_button',
                     ),
-                    onPressed: () => ref
-                        .read(syncKeepAwakePrivacyLockProvider.notifier)
-                        .unlock(),
+                    onPressed: onUnlockPressed,
                     leading: AppIcon(done ? AppIcons.faceId : AppIcons.unlock),
                     minWidth: 165,
                     child: const Text('Unlock Vizor'),
@@ -231,9 +357,9 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
     required SyncKeepAwakePrivacyLockMode mode,
   }) {
     final spec = _SyncKeepAwakeLayoutSpec.forMode(mode);
-    if (screenHeight >= _figmaReferenceHeight) {
+    if (screenHeight >= SyncKeepAwakePrivacyLockScreen._figmaReferenceHeight) {
       return _SyncKeepAwakeVerticalLayout(
-        topGap: _logoTopGap,
+        topGap: SyncKeepAwakePrivacyLockScreen._logoTopGap,
         logoToMainGap: spec.logoToMainGap,
         mainToButtonGap: spec.mainToButtonGap,
       );
@@ -243,7 +369,8 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
     var mainToButtonGap = spec.mainToButtonGap;
     final targetStackHeight = math.max(
       spec.minimumStackHeight,
-      availableHeight - (_shortScreenOuterMargin * 2),
+      availableHeight -
+          (SyncKeepAwakePrivacyLockScreen._shortScreenOuterMargin * 2),
     );
     final reduction = math.min(
       spec.stackHeight - targetStackHeight,
@@ -261,7 +388,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
     }
 
     final stackHeight =
-        _logoHeight +
+        SyncKeepAwakePrivacyLockScreen._logoHeight +
         logoToMainGap +
         spec.mainHeight +
         mainToButtonGap +
@@ -339,6 +466,139 @@ class _SyncKeepAwakeVerticalLayout {
   final double topGap;
   final double logoToMainGap;
   final double mainToButtonGap;
+}
+
+class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
+  const _SyncKeepAwakePasscodeConfirmScreen({
+    required this.mode,
+    required this.entryLength,
+    required this.submitting,
+    required this.onBack,
+    required this.onDigit,
+    required this.onBackspace,
+    this.error,
+  });
+
+  final SyncKeepAwakePrivacyLockMode mode;
+  final int entryLength;
+  final bool submitting;
+  final VoidCallback onBack;
+  final ValueChanged<int> onDigit;
+  final VoidCallback onBackspace;
+  final String? error;
+
+  static const _topNavHeight = 74.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final sync = ref.watch(syncProvider).asData?.value;
+    final progress = sync?.displayPercentage ?? sync?.percentage ?? 0.0;
+    return Material(
+      key: const ValueKey('sync_keep_awake_privacy_passcode_screen'),
+      color: colors.background.window,
+      child: Semantics(
+        scopesRoute: true,
+        namesRoute: true,
+        explicitChildNodes: true,
+        label: 'Confirm passcode to unlock Vizor',
+        child: SafeArea(
+          child: Column(
+            children: [
+              MobileTopNav.back(
+                title: _titleForMode(progress),
+                titleStyle: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+                height: _topNavHeight,
+                onBack: submitting ? null : onBack,
+              ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxHeight < 640;
+                    final verticalPadding = compact
+                        ? AppSpacing.s
+                        : AppSpacing.md;
+                    final topGap = compact ? 0.0 : AppSpacing.md;
+                    final sectionGap = compact ? AppSpacing.xs : AppSpacing.md;
+
+                    return Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: verticalPadding,
+                      ),
+                      child: Column(
+                        children: [
+                          SizedBox(height: topGap),
+                          Text(
+                            'Welcome Back',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.displayLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.s),
+                          Text(
+                            _bodyForMode(),
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.primary,
+                            ),
+                          ),
+                          SizedBox(height: sectionGap),
+                          SizedBox(
+                            height: kPasscodePromptDigitsHeight,
+                            child: PasscodePromptField(
+                              length: kMobilePasscodeLength,
+                              filled: entryLength,
+                              error: error,
+                              minGap: 0,
+                            ),
+                          ),
+                          SizedBox(height: sectionGap),
+                          PasscodeNumpad(
+                            onDigit: onDigit,
+                            onBackspace: onBackspace,
+                            canDelete: entryLength > 0,
+                            enabled: !submitting,
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _titleForMode(double progress) {
+    return switch (mode) {
+      SyncKeepAwakePrivacyLockMode.done => 'Synced',
+      SyncKeepAwakePrivacyLockMode.interrupted => 'Sync paused',
+      SyncKeepAwakePrivacyLockMode.hidden ||
+      SyncKeepAwakePrivacyLockMode.syncing =>
+        '${formatSyncStatusPercentage(progress)}% Syncing...',
+    };
+  }
+
+  String _bodyForMode() {
+    if (submitting) return 'Checking passcode...';
+    return switch (mode) {
+      SyncKeepAwakePrivacyLockMode.done =>
+        'Synced successfully. Unlock Vizor to continue.',
+      SyncKeepAwakePrivacyLockMode.interrupted =>
+        'Sync paused. Unlock Vizor to continue.',
+      SyncKeepAwakePrivacyLockMode.hidden ||
+      SyncKeepAwakePrivacyLockMode.syncing =>
+        'Vizor is syncing, stick around ...',
+    };
+  }
 }
 
 class _SyncKeepAwakeStatusLockup extends StatelessWidget {

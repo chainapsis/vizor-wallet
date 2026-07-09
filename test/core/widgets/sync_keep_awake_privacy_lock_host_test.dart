@@ -9,11 +9,26 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+
+class _FakeSecurityNotifier extends AppSecurityNotifier {
+  _FakeSecurityNotifier({this.confirmResult = true});
+
+  final bool confirmResult;
+  final confirmedWith = <String>[];
+
+  @override
+  Future<bool> confirmPassword(String password) async {
+    confirmedWith.add(password);
+    return confirmResult;
+  }
+}
 
 void main() {
   testWidgets('shows the privacy screen after keep-awake idle timeout', (
@@ -85,11 +100,15 @@ void main() {
     expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
   });
 
-  testWidgets('unlock button clears the virtual privacy lock', (tester) async {
+  testWidgets('passcode confirmation clears the virtual privacy lock', (
+    tester,
+  ) async {
     _setMobileViewport(tester);
+    final security = _FakeSecurityNotifier();
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
@@ -111,8 +130,53 @@ void main() {
     await tester.tap(find.text('Unlock Vizor'));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('25% Syncing...'), findsOneWidget);
+    expect(find.text('Vizor is syncing, stick around ...'), findsOneWidget);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+
+    await _enterPasscode(tester, '123456');
+
+    expect(security.confirmedWith, ['123456']);
+    expect(find.text('Welcome Back'), findsNothing);
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
+  });
+
+  testWidgets('wrong passcode keeps the virtual privacy lock visible', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final security = _FakeSecurityNotifier(confirmResult: false);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    await _enterPasscode(tester, '999999');
+
+    expect(security.confirmedWith, ['999999']);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+    expect(find.text('Incorrect Passcode'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
   });
 
   testWidgets('keeps the privacy screen and shows done after sync completes', (
@@ -455,6 +519,7 @@ Widget _app({required FakeSyncNotifier syncNotifier}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       syncProvider.overrideWith(() => syncNotifier),
     ],
     child: _themedApp(),
@@ -466,6 +531,8 @@ Widget _privacyScreenApp({
 }) {
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           _sync(percentage: 0.63, lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
@@ -499,6 +566,15 @@ Widget _themedApp() {
 }
 
 Future<void> _settleInitialSync(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump();
+}
+
+Future<void> _enterPasscode(WidgetTester tester, String digits) async {
+  for (final digit in digits.split('')) {
+    await tester.tap(find.bySemanticsLabel('Digit $digit'));
+    await tester.pump();
+  }
   await tester.pump();
   await tester.pump();
 }
