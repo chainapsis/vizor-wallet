@@ -1,19 +1,24 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -29,6 +34,56 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
     return confirmResult;
   }
 }
+
+class _FakeBiometricUnlockNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricUnlockNotifier(
+    this.initialState, {
+    this.passcode,
+    this.stateAfterRead,
+    this.buildCompleter,
+  });
+
+  final BiometricUnlockState initialState;
+  final String? passcode;
+  final BiometricUnlockState? stateAfterRead;
+  final Completer<BiometricUnlockState>? buildCompleter;
+  var reads = 0;
+
+  @override
+  Future<BiometricUnlockState> build() async =>
+      buildCompleter?.future ?? initialState;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    reads += 1;
+    final nextState = stateAfterRead;
+    if (nextState != null) state = AsyncData(nextState);
+    return passcode;
+  }
+}
+
+const _disabledBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability.unavailable,
+  enabled: false,
+);
+
+const _faceBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.face,
+  ),
+  enabled: true,
+);
+
+const _fingerprintBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.fingerprint,
+  ),
+  enabled: true,
+);
 
 void main() {
   testWidgets('shows the privacy screen after keep-awake idle timeout', (
@@ -109,6 +164,9 @@ void main() {
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap()),
         appSecurityProvider.overrideWith(() => security),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
@@ -144,6 +202,184 @@ void main() {
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
   });
 
+  testWidgets(
+    'biometric confirmation clears the virtual lock without passcode UI',
+    (tester) async {
+      _setMobileViewport(tester);
+      final security = _FakeSecurityNotifier();
+      final biometric = _FakeBiometricUnlockNotifier(
+        _faceBiometricState,
+        passcode: '123456',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          appSecurityProvider.overrideWith(() => security),
+          biometricUnlockProvider.overrideWith(() => biometric),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: container, child: _themedApp()),
+      );
+      await _settleInitialSync(tester);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+
+      expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+      expect(_findAppIcon(AppIcons.faceId), findsOneWidget);
+
+      await tester.tap(find.text('Unlock Vizor'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(biometric.reads, 1);
+      expect(security.confirmedWith, ['123456']);
+      expect(find.text('Welcome Back'), findsNothing);
+      expect(find.byType(PasscodeNumpad), findsNothing);
+      expect(
+        container.read(syncKeepAwakePrivacyLockProvider).isLocked,
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets(
+    'unlock attempt suppresses duplicate taps before probe resolves',
+    (tester) async {
+      _setMobileViewport(tester);
+      final security = _FakeSecurityNotifier();
+      final buildCompleter = Completer<BiometricUnlockState>();
+      final biometric = _FakeBiometricUnlockNotifier(
+        _faceBiometricState,
+        passcode: '123456',
+        buildCompleter: buildCompleter,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          appSecurityProvider.overrideWith(() => security),
+          biometricUnlockProvider.overrideWith(() => biometric),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: container, child: _themedApp()),
+      );
+      await _settleInitialSync(tester);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+
+      await tester.tap(find.text('Unlock Vizor'));
+      await tester.tap(find.text('Unlock Vizor'));
+
+      buildCompleter.complete(_faceBiometricState);
+      await tester.pump();
+      await tester.pump();
+
+      expect(biometric.reads, 1);
+      expect(security.confirmedWith, ['123456']);
+      expect(
+        container.read(syncKeepAwakePrivacyLockProvider).isLocked,
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets('biometric cancellation falls back to passcode confirmation', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final security = _FakeSecurityNotifier();
+    final biometric = _FakeBiometricUnlockNotifier(_faceBiometricState);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        biometricUnlockProvider.overrideWith(() => biometric),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(biometric.reads, 1);
+    expect(security.confirmedWith, isEmpty);
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+
+    await _enterPasscode(tester, '123456');
+
+    expect(security.confirmedWith, ['123456']);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
+  });
+
+  testWidgets('biometric invalidation explains the passcode fallback', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final biometric = _FakeBiometricUnlockNotifier(
+      _faceBiometricState,
+      stateAfterRead: _faceBiometricState.copyWith(enabled: false),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+        biometricUnlockProvider.overrideWith(() => biometric),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(biometric.reads, 1);
+    expect(find.text('Face ID changed. Enter your passcode.'), findsOneWidget);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+  });
+
   testWidgets('wrong passcode keeps the virtual privacy lock visible', (
     tester,
   ) async {
@@ -153,6 +389,9 @@ void main() {
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap()),
         appSecurityProvider.overrideWith(() => security),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
@@ -189,6 +428,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap()),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
         syncProvider.overrideWith(() => syncNotifier),
       ],
     );
@@ -239,6 +481,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap()),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
         syncProvider.overrideWith(() => syncNotifier),
       ],
     );
@@ -314,6 +559,9 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap()),
+          biometricUnlockProvider.overrideWith(
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+          ),
           syncProvider.overrideWith(() => syncNotifier),
         ],
       );
@@ -431,7 +679,12 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [syncProvider.overrideWith(() => syncNotifier)],
+        overrides: [
+          biometricUnlockProvider.overrideWith(
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+          ),
+          syncProvider.overrideWith(() => syncNotifier),
+        ],
         child: MaterialApp(
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -503,6 +756,54 @@ void main() {
     expect(logoRect.top, greaterThanOrEqualTo(0));
     expect(buttonRect.bottom, lessThanOrEqualTo(568));
   });
+
+  testWidgets('uses the unlock icon when biometric unlock is unavailable', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(_privacyScreenApp());
+    await _settleInitialSync(tester);
+
+    expect(_findAppIcon(AppIcons.unlock), findsOneWidget);
+    expect(_findAppIcon(AppIcons.faceId), findsNothing);
+    expect(find.byIcon(Icons.fingerprint), findsNothing);
+  });
+
+  testWidgets('uses the Face ID icon when biometric unlock is usable', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _privacyScreenApp(
+        biometricNotifier: () =>
+            _FakeBiometricUnlockNotifier(_faceBiometricState),
+      ),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump();
+
+    expect(_findAppIcon(AppIcons.faceId), findsOneWidget);
+    expect(_findAppIcon(AppIcons.unlock), findsNothing);
+    expect(find.byIcon(Icons.fingerprint), findsNothing);
+  });
+
+  testWidgets('uses the fingerprint icon when fingerprint unlock is usable', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _privacyScreenApp(
+        biometricNotifier: () =>
+            _FakeBiometricUnlockNotifier(_fingerprintBiometricState),
+      ),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump();
+
+    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+    expect(_findAppIcon(AppIcons.unlock), findsNothing);
+    expect(_findAppIcon(AppIcons.faceId), findsNothing);
+  });
 }
 
 void _setMobileViewport(
@@ -520,6 +821,9 @@ Widget _app({required FakeSyncNotifier syncNotifier}) {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      biometricUnlockProvider.overrideWith(
+        () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+      ),
       syncProvider.overrideWith(() => syncNotifier),
     ],
     child: _themedApp(),
@@ -528,11 +832,16 @@ Widget _app({required FakeSyncNotifier syncNotifier}) {
 
 Widget _privacyScreenApp({
   SyncKeepAwakePrivacyLockMode mode = SyncKeepAwakePrivacyLockMode.syncing,
+  BiometricUnlockNotifier Function()? biometricNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      biometricUnlockProvider.overrideWith(
+        biometricNotifier ??
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+      ),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           _sync(percentage: 0.63, lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
@@ -577,6 +886,13 @@ Future<void> _enterPasscode(WidgetTester tester, String digits) async {
   }
   await tester.pump();
   await tester.pump();
+}
+
+Finder _findAppIcon(String iconName) {
+  return find.byWidgetPredicate(
+    (widget) => widget is AppIcon && widget.name == iconName,
+    description: 'AppIcon($iconName)',
+  );
 }
 
 AppBootstrapState _bootstrap() {

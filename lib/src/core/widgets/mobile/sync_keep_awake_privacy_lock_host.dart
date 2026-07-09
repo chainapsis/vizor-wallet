@@ -8,8 +8,10 @@ import '../../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../../features/onboarding/mobile/passcode_widgets.dart';
 import '../../../features/onboarding/shared/onboarding_welcome_art.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../services/biometric_unlock.dart';
 import '../../feedback/app_haptics.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../layout/app_form_factor.dart';
@@ -156,6 +158,7 @@ class _SyncKeepAwakePrivacyLockScreenState
   var _showPasscode = false;
   var _passcodeEntry = '';
   var _submittingPasscode = false;
+  var _unlockAttemptInFlight = false;
   String? _passcodeError;
 
   @override
@@ -166,12 +169,13 @@ class _SyncKeepAwakePrivacyLockScreenState
     }
   }
 
-  void _openPasscodePrompt() {
+  void _openPasscodePrompt({String? error}) {
     setState(() {
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = null;
+      _passcodeError = error;
       _submittingPasscode = false;
+      _unlockAttemptInFlight = false;
     });
   }
 
@@ -185,6 +189,7 @@ class _SyncKeepAwakePrivacyLockScreenState
     _passcodeEntry = '';
     _passcodeError = null;
     _submittingPasscode = false;
+    _unlockAttemptInFlight = false;
   }
 
   void _onPasscodeDigit(int digit) {
@@ -210,7 +215,50 @@ class _SyncKeepAwakePrivacyLockScreenState
 
   Future<void> _submitPasscode() async {
     if (_submittingPasscode) return;
-    final passcode = _passcodeEntry;
+    await _confirmPasscode(_passcodeEntry);
+  }
+
+  Future<void> _unlockOrPromptPasscode() async {
+    if (_submittingPasscode || _unlockAttemptInFlight) return;
+
+    setState(() {
+      _unlockAttemptInFlight = true;
+      _passcodeError = null;
+    });
+
+    final BiometricUnlockState biometric;
+    try {
+      biometric = await ref.read(biometricUnlockProvider.future);
+    } catch (_) {
+      if (mounted) _openPasscodePrompt();
+      return;
+    }
+    if (!mounted) return;
+
+    if (!biometric.usable) {
+      _openPasscodePrompt();
+      return;
+    }
+
+    final wasEnabled = biometric.enabled;
+    final passcode = await ref
+        .read(biometricUnlockProvider.notifier)
+        .readPasscode(reason: 'Unlock Vizor');
+    if (!mounted) return;
+
+    if (passcode == null) {
+      final now = ref.read(biometricUnlockProvider).value;
+      final error = wasEnabled && now != null && !now.enabled
+          ? biometric.availability.kind.changedMessage
+          : null;
+      _openPasscodePrompt(error: error);
+      return;
+    }
+
+    await _confirmPasscode(passcode);
+  }
+
+  Future<void> _confirmPasscode(String passcode) async {
     setState(() {
       _submittingPasscode = true;
       _passcodeError = null;
@@ -234,6 +282,8 @@ class _SyncKeepAwakePrivacyLockScreenState
     unawaited(AppHaptics.error());
     setState(() {
       _submittingPasscode = false;
+      _unlockAttemptInFlight = false;
+      _showPasscode = true;
       _passcodeEntry = '';
       _passcodeError = 'Incorrect Passcode';
     });
@@ -255,7 +305,9 @@ class _SyncKeepAwakePrivacyLockScreenState
 
     return _SyncKeepAwakeStatusScreen(
       mode: widget.mode,
-      onUnlockPressed: _openPasscodePrompt,
+      onUnlockPressed: _unlockAttemptInFlight || _submittingPasscode
+          ? null
+          : () => unawaited(_unlockOrPromptPasscode()),
     );
   }
 }
@@ -267,7 +319,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
   });
 
   final SyncKeepAwakePrivacyLockMode mode;
-  final VoidCallback onUnlockPressed;
+  final VoidCallback? onUnlockPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -277,6 +329,9 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
     final sync = done || interrupted
         ? null
         : ref.watch(syncProvider).asData?.value;
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
     final progress = sync?.displayPercentage ?? sync?.percentage ?? 0.0;
     final main = switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeStatusLockup(
@@ -338,7 +393,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
                       'sync_keep_awake_privacy_unlock_button',
                     ),
                     onPressed: onUnlockPressed,
-                    leading: AppIcon(done ? AppIcons.faceId : AppIcons.unlock),
+                    leading: _SyncKeepAwakeUnlockIcon(biometric: biometric),
                     minWidth: 165,
                     child: const Text('Unlock Vizor'),
                   ),
@@ -453,6 +508,23 @@ class _SyncKeepAwakeLayoutSpec {
       minimumMainToButtonGap:
           SyncKeepAwakePrivacyLockScreen._minimumRingToButtonGap,
     );
+  }
+}
+
+class _SyncKeepAwakeUnlockIcon extends StatelessWidget {
+  const _SyncKeepAwakeUnlockIcon({required this.biometric});
+
+  final BiometricUnlockState biometric;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!biometric.usable) return const AppIcon(AppIcons.unlock);
+
+    return switch (biometric.availability.kind) {
+      BiometricKind.face => const AppIcon(AppIcons.faceId),
+      BiometricKind.fingerprint => const Icon(Icons.fingerprint),
+      BiometricKind.none => const AppIcon(AppIcons.unlock),
+    };
   }
 }
 
