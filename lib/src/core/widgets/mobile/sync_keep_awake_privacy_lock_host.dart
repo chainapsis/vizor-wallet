@@ -333,12 +333,11 @@ class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
     const segmentCount = 96;
     const progressTickLength = 28.0;
     const trackTickLength = 16.0;
-    const trackOuterRadiusOffset = 14.0;
     const strokeWidth = 2.5;
     final clampedProgress = progress.clamp(0.0, 1.0).toDouble();
     final center = Offset(size.width / 2, size.height / 2);
-    final progressOuterRadius = (size.shortestSide / 2) - 1;
-    final trackOuterRadius = progressOuterRadius - trackOuterRadiusOffset;
+    final tickCenterRadius =
+        (size.shortestSide / 2) - (progressTickLength / 2) - 1;
     final scaledProgress = segmentCount * clampedProgress;
     final trackPaint = Paint()
       ..color = trackColor
@@ -349,14 +348,12 @@ class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
       final angle = (-math.pi / 2) + (math.pi * 2 * index / segmentCount);
       final direction = Offset(math.cos(angle), math.sin(angle));
       final segmentFill = (scaledProgress - index).clamp(0.0, 1.0).toDouble();
-      final outerRadius =
-          trackOuterRadius +
-          ((progressOuterRadius - trackOuterRadius) * segmentFill);
       final tickLength =
           trackTickLength +
           ((progressTickLength - trackTickLength) * segmentFill);
-      final outer = center + direction * outerRadius;
-      final inner = outer - (direction * tickLength);
+      final tickCenter = center + direction * tickCenterRadius;
+      final inner = tickCenter - (direction * tickLength / 2);
+      final outer = tickCenter + (direction * tickLength / 2);
       final paint = trackPaint
         ..color = Color.lerp(trackColor, progressColor, segmentFill)!;
 
