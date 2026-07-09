@@ -26,6 +26,8 @@ class _MultisigCreateSessionScreenState
   late final TextEditingController _coordinatorController;
   late final TextEditingController _labelController;
   final _securityGateController = MultisigSetupSecurityGateController();
+  int _participantCount = 3;
+  int _threshold = 2;
   bool _isSubmitting = false;
   bool _showValidation = false;
   String? _submitError;
@@ -72,6 +74,8 @@ class _MultisigCreateSessionScreenState
             .read(multisigPendingSessionsProvider.notifier)
             .createSession(
               coordinatorUrl: coordinatorUrl,
+              participantCount: _participantCount,
+              threshold: _threshold,
               label: _labelController.text,
             ),
       );
@@ -104,7 +108,7 @@ class _MultisigCreateSessionScreenState
               const MultisigOnboardingTitle(
                 title: 'Create multisig setup',
                 subtitle:
-                    'Start a coordinator session and share the session ID.',
+                    'Choose the signer policy before sharing the invite code.',
                 iconName: AppIcons.users,
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -143,6 +147,21 @@ class _MultisigCreateSessionScreenState
                             leading: const AppIcon(AppIcons.user),
                             showClearButton: true,
                             onSubmitted: (_) => _submit(),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          _PolicySelector(
+                            participantCount: _participantCount,
+                            threshold: _threshold,
+                            onParticipantCountChanged: (value) {
+                              setState(() {
+                                _participantCount = value;
+                                if (_threshold > value) _threshold = value;
+                                if (_threshold < 2) _threshold = 2;
+                              });
+                            },
+                            onThresholdChanged: (value) {
+                              setState(() => _threshold = value);
+                            },
                           ),
                           if (_securityGateController.requiresInput(
                             security,
@@ -192,6 +211,114 @@ class _MultisigCreateSessionScreenState
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PolicySelector extends StatelessWidget {
+  const _PolicySelector({
+    required this.participantCount,
+    required this.threshold,
+    required this.onParticipantCountChanged,
+    required this.onThresholdChanged,
+  });
+
+  final int participantCount;
+  final int threshold;
+  final ValueChanged<int> onParticipantCountChanged;
+  final ValueChanged<int> onThresholdChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Wallet policy',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Any $threshold of $participantCount participants can approve a send.',
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Signers total',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (var value = 2; value <= 5; value++)
+                  _PolicyChoice(
+                    label: '$value',
+                    selected: participantCount == value,
+                    onSelected: () => onParticipantCountChanged(value),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Approvals to confirm',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (var value = 2; value <= participantCount; value++)
+                  _PolicyChoice(
+                    label: '$value of $participantCount',
+                    selected: threshold == value,
+                    onSelected: () => onThresholdChanged(value),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PolicyChoice extends StatelessWidget {
+  const _PolicyChoice({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      onPressed: onSelected,
+      size: AppButtonSize.small,
+      variant: selected ? AppButtonVariant.primary : AppButtonVariant.secondary,
+      child: Text(label),
     );
   }
 }

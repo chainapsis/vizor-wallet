@@ -437,7 +437,7 @@ class _BackupSource {
 
 _BackupSource _backupSource(MultisigPendingSession session) {
   final threshold = session.threshold;
-  final participantCount = session.participants.length;
+  final participantCount = session.targetParticipantCount;
   if (threshold == null || threshold <= 0 || participantCount <= 0) {
     throw StateError('Multisig threshold or participants are missing.');
   }

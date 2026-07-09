@@ -112,12 +112,16 @@ Future<ApiMultisigAuthSession> createMultisigSession({
   required String admissionSecretKey,
   required String deliverySecretKey,
   required String inviteSecret,
+  required int participantCount,
+  required int threshold,
   String? label,
 }) => RustLib.instance.api.crateApiMultisigCreateMultisigSession(
   coordinatorUrl: coordinatorUrl,
   admissionSecretKey: admissionSecretKey,
   deliverySecretKey: deliverySecretKey,
   inviteSecret: inviteSecret,
+  participantCount: participantCount,
+  threshold: threshold,
   label: label,
 );
 
@@ -201,13 +205,11 @@ Future<ApiMultisigSession> lockMultisigSession({
   required String coordinatorUrl,
   required String sessionId,
   required String accessToken,
-  required int threshold,
   required String inviteSecret,
 }) => RustLib.instance.api.crateApiMultisigLockMultisigSession(
   coordinatorUrl: coordinatorUrl,
   sessionId: sessionId,
   accessToken: accessToken,
-  threshold: threshold,
   inviteSecret: inviteSecret,
 );
 
@@ -446,6 +448,8 @@ Future<ApiMultisigSigningAdvance> postMultisigBroadcastResult({
 
 class ApiMultisigAuthSession {
   final String sessionId;
+  final int participantCount;
+  final int? threshold;
   final String participantId;
   final String accessToken;
   final String refreshToken;
@@ -460,6 +464,8 @@ class ApiMultisigAuthSession {
 
   const ApiMultisigAuthSession({
     required this.sessionId,
+    required this.participantCount,
+    this.threshold,
     required this.participantId,
     required this.accessToken,
     required this.refreshToken,
@@ -476,6 +482,8 @@ class ApiMultisigAuthSession {
   @override
   int get hashCode =>
       sessionId.hashCode ^
+      participantCount.hashCode ^
+      threshold.hashCode ^
       participantId.hashCode ^
       accessToken.hashCode ^
       refreshToken.hashCode ^
@@ -494,6 +502,8 @@ class ApiMultisigAuthSession {
       other is ApiMultisigAuthSession &&
           runtimeType == other.runtimeType &&
           sessionId == other.sessionId &&
+          participantCount == other.participantCount &&
+          threshold == other.threshold &&
           participantId == other.participantId &&
           accessToken == other.accessToken &&
           refreshToken == other.refreshToken &&
@@ -791,6 +801,7 @@ class ApiMultisigSession {
   final String sessionId;
   final String state;
   final String creatorParticipantId;
+  final int participantCount;
   final int? threshold;
   final String? rosterHash;
   final String? groupPublicPackageHash;
@@ -802,6 +813,7 @@ class ApiMultisigSession {
     required this.sessionId,
     required this.state,
     required this.creatorParticipantId,
+    required this.participantCount,
     this.threshold,
     this.rosterHash,
     this.groupPublicPackageHash,
@@ -815,6 +827,7 @@ class ApiMultisigSession {
       sessionId.hashCode ^
       state.hashCode ^
       creatorParticipantId.hashCode ^
+      participantCount.hashCode ^
       threshold.hashCode ^
       rosterHash.hashCode ^
       groupPublicPackageHash.hashCode ^
@@ -830,6 +843,7 @@ class ApiMultisigSession {
           sessionId == other.sessionId &&
           state == other.state &&
           creatorParticipantId == other.creatorParticipantId &&
+          participantCount == other.participantCount &&
           threshold == other.threshold &&
           rosterHash == other.rosterHash &&
           groupPublicPackageHash == other.groupPublicPackageHash &&

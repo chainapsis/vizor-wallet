@@ -2709,7 +2709,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -2741,7 +2741,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -4714,7 +4714,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-coordinator-2"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -4729,7 +4729,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-core"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
 dependencies = [
  "anyhow",
  "frost-core",
@@ -4759,7 +4759,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-sdk"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=c95f2b8308ba0ba7eb4e694e30b738cddca23317#c95f2b8308ba0ba7eb4e694e30b738cddca23317"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
 dependencies = [
  "argon2",
  "base64",

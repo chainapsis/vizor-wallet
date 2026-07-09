@@ -142,6 +142,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                   .read(multisigPendingSessionsProvider.notifier)
                   .createSession(
                     coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+                    participantCount: args.requiredMultisigParticipantCount,
+                    threshold: args.requiredMultisigThreshold,
                   );
             case SetPasswordFlow.multisigJoinSession:
               pendingMultisigSession = await ref

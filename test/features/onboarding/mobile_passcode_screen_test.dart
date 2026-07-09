@@ -70,6 +70,8 @@ Widget _multisigCreateApp({
         builder: (_, _) => const MobilePasscodeScreen(
           args: SetPasswordScreenArgs.multisigCreateSession(
             coordinatorUrl: 'http://coordinator.test',
+            participantCount: 3,
+            threshold: 2,
           ),
         ),
       ),
@@ -243,6 +245,8 @@ class _RecordingMultisigPendingSessionsNotifier
   @override
   Future<MultisigPendingSession> createSession({
     String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) async {
     createdCoordinatorUrl = coordinatorUrl;
@@ -269,6 +273,8 @@ MultisigPendingSession _fakeMultisigSession() {
     inviteSecret: 'invite',
     accessTokenExpiresAt: now,
     refreshTokenExpiresAt: now,
+    participantCount: 3,
+    threshold: 2,
     participants: [],
     createdAt: now,
     updatedAt: now,

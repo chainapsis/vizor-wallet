@@ -648,6 +648,8 @@ fn wire__crate__api__multisig__create_multisig_session_impl(
             let api_admission_secret_key = <String>::sse_decode(&mut deserializer);
             let api_delivery_secret_key = <String>::sse_decode(&mut deserializer);
             let api_invite_secret = <String>::sse_decode(&mut deserializer);
+            let api_participant_count = <u16>::sse_decode(&mut deserializer);
+            let api_threshold = <u16>::sse_decode(&mut deserializer);
             let api_label = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -657,6 +659,8 @@ fn wire__crate__api__multisig__create_multisig_session_impl(
                         api_admission_secret_key,
                         api_delivery_secret_key,
                         api_invite_secret,
+                        api_participant_count,
+                        api_threshold,
                         api_label,
                     )?;
                     Ok(output_ok)
@@ -3437,7 +3441,6 @@ fn wire__crate__api__multisig__lock_multisig_session_impl(
             let api_coordinator_url = <String>::sse_decode(&mut deserializer);
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_access_token = <String>::sse_decode(&mut deserializer);
-            let api_threshold = <u16>::sse_decode(&mut deserializer);
             let api_invite_secret = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -3446,7 +3449,6 @@ fn wire__crate__api__multisig__lock_multisig_session_impl(
                         api_coordinator_url,
                         api_session_id,
                         api_access_token,
-                        api_threshold,
                         api_invite_secret,
                     )?;
                     Ok(output_ok)
@@ -6307,6 +6309,8 @@ impl SseDecode for crate::api::multisig::ApiMultisigAuthSession {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_participantCount = <u16>::sse_decode(deserializer);
+        let mut var_threshold = <Option<u16>>::sse_decode(deserializer);
         let mut var_participantId = <String>::sse_decode(deserializer);
         let mut var_accessToken = <String>::sse_decode(deserializer);
         let mut var_refreshToken = <String>::sse_decode(deserializer);
@@ -6321,6 +6325,8 @@ impl SseDecode for crate::api::multisig::ApiMultisigAuthSession {
             <crate::api::multisig::ApiMultisigParticipant>::sse_decode(deserializer);
         return crate::api::multisig::ApiMultisigAuthSession {
             session_id: var_sessionId,
+            participant_count: var_participantCount,
+            threshold: var_threshold,
             participant_id: var_participantId,
             access_token: var_accessToken,
             refresh_token: var_refreshToken,
@@ -6486,6 +6492,7 @@ impl SseDecode for crate::api::multisig::ApiMultisigSession {
         let mut var_sessionId = <String>::sse_decode(deserializer);
         let mut var_state = <String>::sse_decode(deserializer);
         let mut var_creatorParticipantId = <String>::sse_decode(deserializer);
+        let mut var_participantCount = <u16>::sse_decode(deserializer);
         let mut var_threshold = <Option<u16>>::sse_decode(deserializer);
         let mut var_rosterHash = <Option<String>>::sse_decode(deserializer);
         let mut var_groupPublicPackageHash = <Option<String>>::sse_decode(deserializer);
@@ -6497,6 +6504,7 @@ impl SseDecode for crate::api::multisig::ApiMultisigSession {
             session_id: var_sessionId,
             state: var_state,
             creator_participant_id: var_creatorParticipantId,
+            participant_count: var_participantCount,
             threshold: var_threshold,
             roster_hash: var_rosterHash,
             group_public_package_hash: var_groupPublicPackageHash,
@@ -8878,6 +8886,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigAuthSess
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.session_id.into_into_dart().into_dart(),
+            self.participant_count.into_into_dart().into_dart(),
+            self.threshold.into_into_dart().into_dart(),
             self.participant_id.into_into_dart().into_dart(),
             self.access_token.into_into_dart().into_dart(),
             self.refresh_token.into_into_dart().into_dart(),
@@ -9075,6 +9085,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigSession 
             self.session_id.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
             self.creator_participant_id.into_into_dart().into_dart(),
+            self.participant_count.into_into_dart().into_dart(),
             self.threshold.into_into_dart().into_dart(),
             self.roster_hash.into_into_dart().into_dart(),
             self.group_public_package_hash.into_into_dart().into_dart(),
@@ -11093,6 +11104,8 @@ impl SseEncode for crate::api::multisig::ApiMultisigAuthSession {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.session_id, serializer);
+        <u16>::sse_encode(self.participant_count, serializer);
+        <Option<u16>>::sse_encode(self.threshold, serializer);
         <String>::sse_encode(self.participant_id, serializer);
         <String>::sse_encode(self.access_token, serializer);
         <String>::sse_encode(self.refresh_token, serializer);
@@ -11197,6 +11210,7 @@ impl SseEncode for crate::api::multisig::ApiMultisigSession {
         <String>::sse_encode(self.session_id, serializer);
         <String>::sse_encode(self.state, serializer);
         <String>::sse_encode(self.creator_participant_id, serializer);
+        <u16>::sse_encode(self.participant_count, serializer);
         <Option<u16>>::sse_encode(self.threshold, serializer);
         <Option<String>>::sse_encode(self.roster_hash, serializer);
         <Option<String>>::sse_encode(self.group_public_package_hash, serializer);

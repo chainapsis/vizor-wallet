@@ -126,6 +126,8 @@ void main() {
         .createSession(
           coordinatorUrl: ' https://coordinator.example ',
           label: ' Family vault ',
+          participantCount: 3,
+          threshold: 2,
         );
 
     expect(created.role, MultisigPendingRole.creator);
@@ -136,7 +138,7 @@ void main() {
       _apiIdentity.admissionSecretKey,
     );
     expect(service.createCalls, [
-      'https://coordinator.example|Family vault|${_apiIdentity.admissionSecretKey}',
+      'https://coordinator.example|Family vault|3|2|${_apiIdentity.admissionSecretKey}',
     ]);
     expect(created.inviteSecret, 'invite-secret');
     expect(created.inviteCode, 'invite-secret');
@@ -428,10 +430,10 @@ void main() {
 
       final locked = await container
           .read(multisigPendingSessionsProvider.notifier)
-          .lockSession(storageId: session.storageId, threshold: 2);
+          .lockSession(storageId: session.storageId);
 
       expect(service.refreshCalls, ['session-1|participant-1|refresh-token']);
-      expect(service.lockCalls, ['session-1|lock-access|2']);
+      expect(service.lockCalls, ['session-1|lock-access']);
       expect(locked.state, 'ready');
       expect(locked.threshold, 2);
     },
@@ -450,7 +452,7 @@ void main() {
     await expectLater(
       container
           .read(multisigPendingSessionsProvider.notifier)
-          .lockSession(storageId: session.storageId, threshold: 2),
+          .lockSession(storageId: session.storageId),
       throwsA(isA<StateError>()),
     );
 
@@ -729,6 +731,8 @@ MultisigPendingSession _pendingSession({
     inviteSecret: 'invite-secret',
     accessTokenExpiresAt: accessTokenExpiresAt,
     refreshTokenExpiresAt: refreshTokenExpiresAt,
+    participantCount: 3,
+    threshold: 2,
     creatorParticipantId: participantId,
     participants: [_pendingParticipant(participantId: participantId)],
     createdAt: 1,
@@ -797,9 +801,13 @@ rust_multisig.ApiMultisigAuthSession _apiAuthSession({
   String deliverySecretKey = 'delivery-secret',
   String deliveryPublicKey = 'delivery-public',
   String state = 'collecting',
+  int participantCount = 3,
+  int? threshold = 2,
 }) {
   return rust_multisig.ApiMultisigAuthSession(
     sessionId: sessionId,
+    participantCount: participantCount,
+    threshold: threshold,
     participantId: participantId,
     accessToken: accessToken,
     refreshToken: refreshToken,
@@ -842,6 +850,7 @@ rust_multisig.ApiMultisigSession _apiSession({
   String sessionId = 'session-1',
   String state = 'collecting',
   String creatorParticipantId = 'participant-1',
+  int participantCount = 3,
   int? threshold,
   List<rust_multisig.ApiMultisigParticipant>? participants,
 }) {
@@ -849,6 +858,7 @@ rust_multisig.ApiMultisigSession _apiSession({
     sessionId: sessionId,
     state: state,
     creatorParticipantId: creatorParticipantId,
+    participantCount: participantCount,
     threshold: threshold,
     rosterHash: 'roster',
     groupPublicPackageHash: 'group',
@@ -1088,9 +1098,13 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) async {
-    createCalls.add('$coordinatorUrl|$label|${identity.admissionSecretKey}');
+    createCalls.add(
+      '$coordinatorUrl|$label|$participantCount|$threshold|${identity.admissionSecretKey}',
+    );
     return createResponse;
   }
 
@@ -1188,10 +1202,9 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    required int threshold,
     required String inviteSecret,
   }) async {
-    lockCalls.add('$sessionId|$accessToken|$threshold');
+    lockCalls.add('$sessionId|$accessToken');
     return lockResponse;
   }
 

@@ -212,6 +212,8 @@ abstract class RustLibApi extends BaseApi {
     required String admissionSecretKey,
     required String deliverySecretKey,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   });
 
@@ -645,7 +647,6 @@ abstract class RustLibApi extends BaseApi {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    required int threshold,
     required String inviteSecret,
   });
 
@@ -1824,6 +1825,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String admissionSecretKey,
     required String deliverySecretKey,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) {
     return handler.executeNormal(
@@ -1834,6 +1837,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(admissionSecretKey, serializer);
           sse_encode_String(deliverySecretKey, serializer);
           sse_encode_String(inviteSecret, serializer);
+          sse_encode_u_16(participantCount, serializer);
+          sse_encode_u_16(threshold, serializer);
           sse_encode_opt_String(label, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -1852,6 +1857,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           admissionSecretKey,
           deliverySecretKey,
           inviteSecret,
+          participantCount,
+          threshold,
           label,
         ],
         apiImpl: this,
@@ -1867,6 +1874,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "admissionSecretKey",
           "deliverySecretKey",
           "inviteSecret",
+          "participantCount",
+          "threshold",
           "label",
         ],
       );
@@ -4661,7 +4670,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    required int threshold,
     required String inviteSecret,
   }) {
     return handler.executeNormal(
@@ -4671,7 +4679,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(coordinatorUrl, serializer);
           sse_encode_String(sessionId, serializer);
           sse_encode_String(accessToken, serializer);
-          sse_encode_u_16(threshold, serializer);
           sse_encode_String(inviteSecret, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -4685,13 +4692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMultisigLockMultisigSessionConstMeta,
-        argValues: [
-          coordinatorUrl,
-          sessionId,
-          accessToken,
-          threshold,
-          inviteSecret,
-        ],
+        argValues: [coordinatorUrl, sessionId, accessToken, inviteSecret],
         apiImpl: this,
       ),
     );
@@ -4704,7 +4705,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "coordinatorUrl",
           "sessionId",
           "accessToken",
-          "threshold",
           "inviteSecret",
         ],
       );
@@ -7481,21 +7481,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiMultisigAuthSession dco_decode_api_multisig_auth_session(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return ApiMultisigAuthSession(
       sessionId: dco_decode_String(arr[0]),
-      participantId: dco_decode_String(arr[1]),
-      accessToken: dco_decode_String(arr[2]),
-      refreshToken: dco_decode_String(arr[3]),
-      admissionSecretKey: dco_decode_String(arr[4]),
-      admissionPublicKey: dco_decode_String(arr[5]),
-      deliverySecretKey: dco_decode_String(arr[6]),
-      deliveryPublicKey: dco_decode_String(arr[7]),
-      accessTokenExpiresAt: dco_decode_u_64(arr[8]),
-      refreshTokenExpiresAt: dco_decode_u_64(arr[9]),
-      state: dco_decode_String(arr[10]),
-      participant: dco_decode_api_multisig_participant(arr[11]),
+      participantCount: dco_decode_u_16(arr[1]),
+      threshold: dco_decode_opt_box_autoadd_u_16(arr[2]),
+      participantId: dco_decode_String(arr[3]),
+      accessToken: dco_decode_String(arr[4]),
+      refreshToken: dco_decode_String(arr[5]),
+      admissionSecretKey: dco_decode_String(arr[6]),
+      admissionPublicKey: dco_decode_String(arr[7]),
+      deliverySecretKey: dco_decode_String(arr[8]),
+      deliveryPublicKey: dco_decode_String(arr[9]),
+      accessTokenExpiresAt: dco_decode_u_64(arr[10]),
+      refreshTokenExpiresAt: dco_decode_u_64(arr[11]),
+      state: dco_decode_String(arr[12]),
+      participant: dco_decode_api_multisig_participant(arr[13]),
     );
   }
 
@@ -7617,18 +7619,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiMultisigSession dco_decode_api_multisig_session(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return ApiMultisigSession(
       sessionId: dco_decode_String(arr[0]),
       state: dco_decode_String(arr[1]),
       creatorParticipantId: dco_decode_String(arr[2]),
-      threshold: dco_decode_opt_box_autoadd_u_16(arr[3]),
-      rosterHash: dco_decode_opt_String(arr[4]),
-      groupPublicPackageHash: dco_decode_opt_String(arr[5]),
-      participants: dco_decode_list_api_multisig_participant(arr[6]),
-      createdAt: dco_decode_u_64(arr[7]),
-      updatedAt: dco_decode_u_64(arr[8]),
+      participantCount: dco_decode_u_16(arr[3]),
+      threshold: dco_decode_opt_box_autoadd_u_16(arr[4]),
+      rosterHash: dco_decode_opt_String(arr[5]),
+      groupPublicPackageHash: dco_decode_opt_String(arr[6]),
+      participants: dco_decode_list_api_multisig_participant(arr[7]),
+      createdAt: dco_decode_u_64(arr[8]),
+      updatedAt: dco_decode_u_64(arr[9]),
     );
   }
 
@@ -9458,6 +9461,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_sessionId = sse_decode_String(deserializer);
+    var var_participantCount = sse_decode_u_16(deserializer);
+    var var_threshold = sse_decode_opt_box_autoadd_u_16(deserializer);
     var var_participantId = sse_decode_String(deserializer);
     var var_accessToken = sse_decode_String(deserializer);
     var var_refreshToken = sse_decode_String(deserializer);
@@ -9471,6 +9476,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_participant = sse_decode_api_multisig_participant(deserializer);
     return ApiMultisigAuthSession(
       sessionId: var_sessionId,
+      participantCount: var_participantCount,
+      threshold: var_threshold,
       participantId: var_participantId,
       accessToken: var_accessToken,
       refreshToken: var_refreshToken,
@@ -9643,6 +9650,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sessionId = sse_decode_String(deserializer);
     var var_state = sse_decode_String(deserializer);
     var var_creatorParticipantId = sse_decode_String(deserializer);
+    var var_participantCount = sse_decode_u_16(deserializer);
     var var_threshold = sse_decode_opt_box_autoadd_u_16(deserializer);
     var var_rosterHash = sse_decode_opt_String(deserializer);
     var var_groupPublicPackageHash = sse_decode_opt_String(deserializer);
@@ -9655,6 +9663,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sessionId: var_sessionId,
       state: var_state,
       creatorParticipantId: var_creatorParticipantId,
+      participantCount: var_participantCount,
       threshold: var_threshold,
       rosterHash: var_rosterHash,
       groupPublicPackageHash: var_groupPublicPackageHash,
@@ -11992,6 +12001,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.sessionId, serializer);
+    sse_encode_u_16(self.participantCount, serializer);
+    sse_encode_opt_box_autoadd_u_16(self.threshold, serializer);
     sse_encode_String(self.participantId, serializer);
     sse_encode_String(self.accessToken, serializer);
     sse_encode_String(self.refreshToken, serializer);
@@ -12110,6 +12121,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.sessionId, serializer);
     sse_encode_String(self.state, serializer);
     sse_encode_String(self.creatorParticipantId, serializer);
+    sse_encode_u_16(self.participantCount, serializer);
     sse_encode_opt_box_autoadd_u_16(self.threshold, serializer);
     sse_encode_opt_String(self.rosterHash, serializer);
     sse_encode_opt_String(self.groupPublicPackageHash, serializer);

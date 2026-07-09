@@ -17,6 +17,8 @@ abstract class MultisigCoordinatorService {
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   });
 
@@ -62,7 +64,6 @@ abstract class MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    required int threshold,
     required String inviteSecret,
   });
 
@@ -207,6 +208,8 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) {
     return rust_multisig.createMultisigSession(
@@ -214,6 +217,8 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       admissionSecretKey: identity.admissionSecretKey,
       deliverySecretKey: identity.deliverySecretKey,
       inviteSecret: inviteSecret,
+      participantCount: participantCount,
+      threshold: threshold,
       label: label,
     );
   }
@@ -305,14 +310,12 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String coordinatorUrl,
     required String sessionId,
     required String accessToken,
-    required int threshold,
     required String inviteSecret,
   }) {
     return rust_multisig.lockMultisigSession(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       accessToken: accessToken,
-      threshold: threshold,
       inviteSecret: inviteSecret,
     );
   }

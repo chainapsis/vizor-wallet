@@ -120,6 +120,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                     .read(multisigPendingSessionsProvider.notifier)
                     .createSession(
                       coordinatorUrl: args.requiredMultisigCoordinatorUrl,
+                      participantCount: args.requiredMultisigParticipantCount,
+                      threshold: args.requiredMultisigThreshold,
                     );
               case SetPasswordFlow.multisigJoinSession:
                 pendingMultisigSession = await ref

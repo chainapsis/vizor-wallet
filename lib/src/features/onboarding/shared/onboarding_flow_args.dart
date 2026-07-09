@@ -49,6 +49,8 @@ class SetPasswordScreenArgs {
     this.multisigBackupFilePath,
     this.multisigCoordinatorUrl,
     this.multisigInviteCode,
+    this.multisigParticipantCount,
+    this.multisigThreshold,
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -95,9 +97,13 @@ class SetPasswordScreenArgs {
 
   const SetPasswordScreenArgs.multisigCreateSession({
     required String coordinatorUrl,
+    required int participantCount,
+    required int threshold,
   }) : this._(
          flow: SetPasswordFlow.multisigCreateSession,
          multisigCoordinatorUrl: coordinatorUrl,
+         multisigParticipantCount: participantCount,
+         multisigThreshold: threshold,
        );
 
   const SetPasswordScreenArgs.multisigJoinSession({
@@ -137,6 +143,8 @@ class SetPasswordScreenArgs {
   final String? multisigBackupFilePath;
   final String? multisigCoordinatorUrl;
   final String? multisigInviteCode;
+  final int? multisigParticipantCount;
+  final int? multisigThreshold;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -153,6 +161,8 @@ class SetPasswordScreenArgs {
   String get requiredMultisigBackupPassphrase => multisigBackupPassphrase!;
   String get requiredMultisigCoordinatorUrl => multisigCoordinatorUrl!;
   String get requiredMultisigInviteCode => multisigInviteCode!;
+  int get requiredMultisigParticipantCount => multisigParticipantCount!;
+  int get requiredMultisigThreshold => multisigThreshold!;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',

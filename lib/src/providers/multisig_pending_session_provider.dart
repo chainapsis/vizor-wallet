@@ -43,6 +43,24 @@ bool _isBase64UrlCodeUnit(int codeUnit) {
       codeUnit == 0x5f; // _
 }
 
+void _validateSessionPolicy({
+  required int participantCount,
+  required int threshold,
+}) {
+  if (participantCount < 2) {
+    throw ArgumentError.value(
+      participantCount,
+      'participantCount',
+      'must be at least 2',
+    );
+  }
+  if (threshold < 2 || threshold > participantCount) {
+    throw ArgumentError(
+      'threshold must be between 2 and participantCount $participantCount',
+    );
+  }
+}
+
 typedef MultisigNow = DateTime Function();
 
 final multisigNowProvider = Provider<MultisigNow>((ref) => DateTime.now);
@@ -166,6 +184,7 @@ class MultisigPendingSession {
     this.localBackupDestinations = const <String>[],
     this.label,
     this.creatorParticipantId,
+    this.participantCount,
     this.threshold,
     this.rosterHash,
     this.keyPackageB64,
@@ -190,6 +209,7 @@ class MultisigPendingSession {
   final int accessTokenExpiresAt;
   final int refreshTokenExpiresAt;
   final String? creatorParticipantId;
+  final int? participantCount;
   final int? threshold;
   final String? rosterHash;
   final String? keyPackageB64;
@@ -219,6 +239,19 @@ class MultisigPendingSession {
   bool get isCreator => participantId == creatorParticipantId;
   bool get isTerminal => state == 'ready' || state == 'failed';
   bool get isPending => !isTerminal;
+  int get targetParticipantCount {
+    final configured = participantCount;
+    if (configured != null && configured > 0) return configured;
+    return participants.length;
+  }
+
+  String get policyLabel {
+    final configuredThreshold = threshold;
+    if (configuredThreshold == null || configuredThreshold <= 0) {
+      return '$targetParticipantCount participants';
+    }
+    return '$configuredThreshold of $targetParticipantCount';
+  }
 
   String get displayLabel {
     final trimmed = label?.trim();
@@ -239,6 +272,7 @@ class MultisigPendingSession {
     int? accessTokenExpiresAt,
     int? refreshTokenExpiresAt,
     String? creatorParticipantId,
+    int? participantCount,
     int? threshold,
     String? rosterHash,
     String? keyPackageB64,
@@ -271,6 +305,7 @@ class MultisigPendingSession {
       refreshTokenExpiresAt:
           refreshTokenExpiresAt ?? this.refreshTokenExpiresAt,
       creatorParticipantId: creatorParticipantId ?? this.creatorParticipantId,
+      participantCount: participantCount ?? this.participantCount,
       threshold: threshold ?? this.threshold,
       rosterHash: rosterHash ?? this.rosterHash,
       keyPackageB64: keyPackageB64 ?? this.keyPackageB64,
@@ -299,6 +334,7 @@ class MultisigPendingSession {
     return copyWith(
       state: value.state,
       creatorParticipantId: value.creatorParticipantId,
+      participantCount: value.participantCount.toInt(),
       threshold: value.threshold,
       rosterHash: value.rosterHash,
       groupPublicPackageHash: value.groupPublicPackageHash,
@@ -354,6 +390,8 @@ class MultisigPendingSession {
       ),
       accessTokenExpiresAt: value.accessTokenExpiresAt.toInt(),
       refreshTokenExpiresAt: value.refreshTokenExpiresAt.toInt(),
+      participantCount: value.participantCount.toInt(),
+      threshold: value.threshold,
       participants: nextParticipants,
       updatedLocallyAt: DateTime.now().millisecondsSinceEpoch,
     );
@@ -374,6 +412,7 @@ class MultisigPendingSession {
     'accessTokenExpiresAt': accessTokenExpiresAt,
     'refreshTokenExpiresAt': refreshTokenExpiresAt,
     'creatorParticipantId': creatorParticipantId,
+    'participantCount': participantCount,
     'threshold': threshold,
     'rosterHash': rosterHash,
     'keyPackageB64': keyPackageB64,
@@ -463,6 +502,7 @@ class MultisigPendingSession {
         'Multisig pending session',
       ),
       creatorParticipantId: json['creatorParticipantId'] as String?,
+      participantCount: _readNullableInt(json['participantCount']),
       threshold: _readNullableInt(json['threshold']),
       rosterHash: json['rosterHash'] as String?,
       keyPackageB64: json['keyPackageB64'] as String?,
@@ -532,6 +572,8 @@ class MultisigPendingSession {
       creatorParticipantId: role == MultisigPendingRole.creator
           ? auth.participantId
           : null,
+      participantCount: auth.participantCount.toInt(),
+      threshold: auth.threshold,
       participants: [participant],
       createdAt: 0,
       updatedAt: 0,
@@ -827,9 +869,15 @@ class MultisigPendingSessionsNotifier
 
   Future<MultisigPendingSession> createSession({
     String coordinatorUrl = kDefaultMultisigCoordinatorUrl,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) async {
     final cleanUrl = _cleanRequired(coordinatorUrl, 'coordinator URL');
+    _validateSessionPolicy(
+      participantCount: participantCount,
+      threshold: threshold,
+    );
     final cleanLabel = _cleanOptional(label);
     final identity = _coordinator.generateParticipantIdentity();
     final inviteSecret = _coordinator.generateInviteSecret();
@@ -837,6 +885,8 @@ class MultisigPendingSessionsNotifier
       coordinatorUrl: cleanUrl,
       identity: identity,
       inviteSecret: inviteSecret,
+      participantCount: participantCount,
+      threshold: threshold,
       label: cleanLabel,
     );
     final pending = MultisigPendingSession.fromAuth(
@@ -1038,14 +1088,7 @@ class MultisigPendingSessionsNotifier
 
   Future<MultisigPendingSession> lockSession({
     required String storageId,
-    required int threshold,
   }) async {
-    // The coordinator accepts threshold 1 but FROST DKG requires >= 2
-    // (ThresholdParams / frost min_signers); locking a roster with 1 bricks
-    // the session because the threshold is immutable after lock.
-    if (threshold < 2) {
-      throw ArgumentError.value(threshold, 'threshold', 'must be at least 2');
-    }
     final pending = await _sessionWithFreshAccess(
       await _requireSession(storageId),
     );
@@ -1053,7 +1096,6 @@ class MultisigPendingSessionsNotifier
       coordinatorUrl: pending.coordinatorUrl,
       sessionId: pending.sessionId,
       accessToken: pending.accessToken,
-      threshold: threshold,
       inviteSecret: pending.inviteSecret,
     );
     _validateSessionOwner(

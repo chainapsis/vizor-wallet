@@ -43,8 +43,8 @@ rand_core = "0.6"
 zcash_proofs = "0.28"
 
 # Multisig coordinator SDK
-zcash-multisig-sdk = { git = "https://github.com/chainapsis/zcash-multisig.git", rev = "c95f2b8308ba0ba7eb4e694e30b738cddca23317", package = "zcash-multisig-sdk" }
-zcash_multisig = { git = "https://github.com/chainapsis/zcash-multisig.git", rev = "c95f2b8308ba0ba7eb4e694e30b738cddca23317", package = "zcash-multisig-core" }
+zcash-multisig-sdk = { git = "https://github.com/chainapsis/zcash-multisig.git", rev = "9b50f4ca433b022c50151321fd63e702c3a50b65", package = "zcash-multisig-sdk" }
+zcash_multisig = { git = "https://github.com/chainapsis/zcash-multisig.git", rev = "9b50f4ca433b022c50151321fd63e702c3a50b65", package = "zcash-multisig-core" }
 reddsa = { version = "0.5.2", features = ["frost"] }
 
 # Key generation

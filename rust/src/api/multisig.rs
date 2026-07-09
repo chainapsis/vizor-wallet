@@ -39,8 +39,8 @@ use zcash_multisig_sdk::{
     identity::AdmissionKey,
     types::{
         AdmissionAction, AdmissionChallengeReq, AuthRefreshReq, AuthSessionResp, AuthTokenResp,
-        CreateSigningRequestReq, EncryptedMessageReq, JoinSessionReq, LockSessionReq, MessageResp,
-        ParticipantResp, SessionResp, SigningRequestResp,
+        CreateSessionReq, CreateSigningRequestReq, EncryptedMessageReq, JoinSessionReq,
+        LockSessionReq, MessageResp, ParticipantResp, SessionResp, SigningRequestResp,
     },
 };
 
@@ -70,6 +70,8 @@ pub struct ApiMultisigParticipant {
 
 pub struct ApiMultisigAuthSession {
     pub session_id: String,
+    pub participant_count: u16,
+    pub threshold: Option<u16>,
     pub participant_id: String,
     pub access_token: String,
     pub refresh_token: String,
@@ -109,6 +111,7 @@ pub struct ApiMultisigSession {
     pub session_id: String,
     pub state: String,
     pub creator_participant_id: String,
+    pub participant_count: u16,
     pub threshold: Option<u16>,
     pub roster_hash: Option<String>,
     pub group_public_package_hash: Option<String>,
@@ -652,9 +655,12 @@ pub fn create_multisig_session(
     admission_secret_key: String,
     delivery_secret_key: String,
     invite_secret: String,
+    participant_count: u16,
+    threshold: u16,
     label: Option<String>,
 ) -> Result<ApiMultisigAuthSession, String> {
     block_on(async move {
+        validate_multisig_threshold(threshold, participant_count)?;
         let client = Coordinator2Client::new(coordinator_url);
         let challenge = client
             .create_admission_challenge(&AdmissionChallengeReq::CreateSession)
@@ -675,8 +681,10 @@ pub fn create_multisig_session(
             encrypted_label,
         );
         let created = client
-            .create_session(&zcash_multisig_sdk::types::CreateSessionReq {
+            .create_session(&CreateSessionReq {
                 session_id: session_id.clone(),
+                participant_count,
+                threshold,
                 creator,
             })
             .await
@@ -850,13 +858,12 @@ pub fn lock_multisig_session(
     coordinator_url: String,
     session_id: String,
     access_token: String,
-    threshold: u16,
     invite_secret: String,
 ) -> Result<ApiMultisigSession, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
         let session = client
-            .lock_session(&session_id, &access_token, &LockSessionReq { threshold })
+            .lock_session(&session_id, &access_token, &LockSessionReq {})
             .await
             .map_err(client_error)?;
 
@@ -1962,6 +1969,8 @@ fn map_auth_session(
 ) -> ApiMultisigAuthSession {
     ApiMultisigAuthSession {
         session_id: value.session_id,
+        participant_count: value.participant_count,
+        threshold: value.threshold,
         participant_id: value.participant_id,
         access_token: value.access_token,
         refresh_token: value.refresh_token,
@@ -2030,6 +2039,7 @@ fn map_session(value: SessionResp, invite_secret: &str) -> ApiMultisigSession {
         session_id: value.session_id,
         state: value.state.as_str().to_string(),
         creator_participant_id: value.creator_participant_id,
+        participant_count: value.participant_count,
         threshold: value.threshold,
         roster_hash: value.roster_hash,
         group_public_package_hash: value.group_public_package_hash,
@@ -2048,6 +2058,7 @@ fn map_session_without_labels(value: SessionResp) -> ApiMultisigSession {
         session_id: value.session_id,
         state: value.state.as_str().to_string(),
         creator_participant_id: value.creator_participant_id,
+        participant_count: value.participant_count,
         threshold: value.threshold,
         roster_hash: value.roster_hash,
         group_public_package_hash: value.group_public_package_hash,
@@ -2515,6 +2526,12 @@ fn sync_locked_roster(state: &mut LocalCreateState, session: &SessionResp) -> Re
     });
     if participants.len() < 2 {
         return Err("DKG requires at least two participants.".to_string());
+    }
+    if participants.len() != usize::from(session.participant_count) {
+        return Err(format!(
+            "Session needs {} participants before DKG can start.",
+            session.participant_count
+        ));
     }
     if participants.len() > u8::MAX as usize {
         return Err("Too many participants for this DKG identifier mapping.".to_string());

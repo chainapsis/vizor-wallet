@@ -44,7 +44,6 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
   bool _isAdvancingCreate = false;
   bool _isConfirmingBackup = false;
   bool _createAutoAdvanceEnabled = false;
-  int? _selectedThreshold;
   String? _error;
   MultisigCreateAdvanceResult? _createProgress;
   MultisigRealtimeLease? _realtimeLease;
@@ -136,8 +135,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
   }
 
   Future<void> _lockRoster(MultisigPendingSession session) async {
-    final threshold = _selectedThreshold;
-    if (threshold == null || _isLocking) return;
+    if (_isLocking) return;
     setState(() {
       _isLocking = true;
       _error = null;
@@ -145,7 +143,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     try {
       await ref
           .read(multisigPendingSessionsProvider.notifier)
-          .lockSession(storageId: session.storageId, threshold: threshold);
+          .lockSession(storageId: session.storageId);
       if (!mounted) return;
       setState(() => _isLocking = false);
     } catch (e) {
@@ -303,19 +301,6 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
         ? null
         : _summaryByStorageId(summaries, widget.sessionStorageId) ??
               _summaryBySessionId(summaries, widget.sessionStorageId);
-    final participantsCount = session?.participants.length ?? 0;
-    // FROST requires a threshold of at least 2, and locking is irreversible,
-    // so never preselect (or keep) a value below 2. Recompute when the
-    // stored selection is out of range — e.g. it was initialized while the
-    // roster still had a single participant.
-    if (session != null &&
-        participantsCount >= 2 &&
-        (_selectedThreshold == null ||
-            _selectedThreshold! < 2 ||
-            _selectedThreshold! > participantsCount)) {
-      final defaultThreshold = session.threshold ?? 2;
-      _selectedThreshold = defaultThreshold.clamp(2, participantsCount).toInt();
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _syncRealtimeLease(session, security.isUnlocked);
@@ -354,16 +339,11 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
               }
               return _SessionContent(
                 session: session,
-                selectedThreshold: _selectedThreshold,
                 isLocking: _isLocking,
                 isAdvancingCreate: _isAdvancingCreate,
                 isConfirmingBackup: _isConfirmingBackup,
                 createProgress: _createProgress,
                 error: _error,
-                onThresholdChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _selectedThreshold = value);
-                },
                 onCopyInviteCode: () => _copyInviteCode(session.inviteCode),
                 onLockRoster: () => _lockRoster(session),
                 onAdvanceCreate: () => _advanceCreate(session),
@@ -526,13 +506,11 @@ class _UnlockSessionContentState extends ConsumerState<_UnlockSessionContent> {
 class _SessionContent extends StatelessWidget {
   const _SessionContent({
     required this.session,
-    required this.selectedThreshold,
     required this.isLocking,
     required this.isAdvancingCreate,
     required this.isConfirmingBackup,
     required this.createProgress,
     required this.error,
-    required this.onThresholdChanged,
     required this.onCopyInviteCode,
     required this.onLockRoster,
     required this.onAdvanceCreate,
@@ -540,13 +518,11 @@ class _SessionContent extends StatelessWidget {
   });
 
   final MultisigPendingSession session;
-  final int? selectedThreshold;
   final bool isLocking;
   final bool isAdvancingCreate;
   final bool isConfirmingBackup;
   final MultisigCreateAdvanceResult? createProgress;
   final String? error;
-  final ValueChanged<int?> onThresholdChanged;
   final VoidCallback onCopyInviteCode;
   final VoidCallback onLockRoster;
   final VoidCallback onAdvanceCreate;
@@ -555,11 +531,11 @@ class _SessionContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final targetParticipantCount = session.targetParticipantCount;
     final canLock =
         session.isCreator &&
         session.state == 'collecting' &&
-        session.participants.length > 1 &&
-        (selectedThreshold ?? 0) >= 2;
+        session.participants.length == targetParticipantCount;
     final showBackupPanel = session.state == 'ready';
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: AppSpacing.xl),
@@ -584,30 +560,18 @@ class _SessionContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Threshold',
+                      canLock ? 'Ready to start' : 'Waiting for participants',
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.primary,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
-                    Wrap(
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xs,
-                      children: [
-                        // FROST DKG rejects threshold 1, so it is never
-                        // offered — locking with it would brick the session.
-                        for (
-                          var value = 2;
-                          value <= session.participants.length;
-                          value++
-                        )
-                          _ThresholdChoice(
-                            value: value,
-                            total: session.participants.length,
-                            selected: selectedThreshold == value,
-                            onSelected: () => onThresholdChanged(value),
-                          ),
-                      ],
+                    Text(
+                      '${session.participants.length} of $targetParticipantCount participants joined. '
+                      '${session.policyLabel} approvals will be required to send.',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     AppButton(
@@ -620,7 +584,7 @@ class _SessionContent extends StatelessWidget {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const AppIcon(AppIcons.lock),
-                      child: const Text('Lock roster'),
+                      child: const Text('Start key generation'),
                     ),
                   ],
                 ),
@@ -828,7 +792,7 @@ class _ParticipantsPanel extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  '${session.participants.length}',
+                  '${session.participants.length} of ${session.targetParticipantCount}',
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -1093,30 +1057,6 @@ String _phaseLabel(String? phase) {
     'in_progress' => 'Creating',
     _ => 'Ready',
   };
-}
-
-class _ThresholdChoice extends StatelessWidget {
-  const _ThresholdChoice({
-    required this.value,
-    required this.total,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final int value;
-  final int total;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      onPressed: onSelected,
-      variant: selected ? AppButtonVariant.primary : AppButtonVariant.secondary,
-      size: AppButtonSize.medium,
-      child: Text('$value of $total'),
-    );
-  }
 }
 
 class _MiniBadge extends StatelessWidget {

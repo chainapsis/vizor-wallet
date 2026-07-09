@@ -43,6 +43,7 @@ void main() {
 
       await tester.enterText(find.byType(EditableText).at(2), 'password123');
       await tester.enterText(find.byType(EditableText).at(3), 'password123');
+      await tester.ensureVisible(find.text('Create session'));
       await tester.tap(find.text('Create session'));
       await tester.pumpAndSettle();
 
@@ -81,6 +82,7 @@ void main() {
     await tester.enterText(find.byType(EditableText).at(2), 'password123');
     await tester.enterText(find.byType(EditableText).at(3), 'password123');
 
+    await tester.ensureVisible(find.text('Create session'));
     await tester.tap(find.text('Create session'));
     await tester.pumpAndSettle();
 
@@ -117,6 +119,7 @@ void main() {
       expect(find.byKey(kMultisigSetupPasswordFieldKey), findsNothing);
       expect(find.byKey(kMultisigSetupConfirmPasswordFieldKey), findsNothing);
 
+      await tester.ensureVisible(find.text('Create session'));
       await tester.tap(find.text('Create session'));
       await tester.pumpAndSettle();
 
@@ -401,9 +404,13 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
     required String coordinatorUrl,
     required rust_multisig.ApiMultisigParticipantIdentity identity,
     required String inviteSecret,
+    required int participantCount,
+    required int threshold,
     String? label,
   }) async {
-    createCalls.add('$coordinatorUrl|$label|${identity.admissionSecretKey}');
+    createCalls.add(
+      '$coordinatorUrl|$label|$participantCount|$threshold|${identity.admissionSecretKey}',
+    );
     final error = createError;
     if (error != null) throw error;
     return _apiAuthSession();
@@ -428,9 +435,13 @@ class _FakeMultisigCoordinatorService extends RustMultisigCoordinatorService {
 rust_multisig.ApiMultisigAuthSession _apiAuthSession({
   String sessionId = 'session-1',
   String participantId = 'participant-1',
+  int participantCount = 3,
+  int? threshold = 2,
 }) {
   return rust_multisig.ApiMultisigAuthSession(
     sessionId: sessionId,
+    participantCount: participantCount,
+    threshold: threshold,
     participantId: participantId,
     accessToken: 'access-token',
     refreshToken: 'refresh-token',

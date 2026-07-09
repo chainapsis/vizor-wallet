@@ -293,6 +293,8 @@ class _MobileMultisigCreateSessionScreenState
     extends ConsumerState<MobileMultisigCreateSessionScreen> {
   late final TextEditingController _coordinatorController;
   late final FocusNode _coordinatorFocus;
+  int _participantCount = 3;
+  int _threshold = 2;
   bool _isSubmitting = false;
   bool _showValidation = false;
   String? _submitError;
@@ -338,6 +340,8 @@ class _MobileMultisigCreateSessionScreenState
         '/multisig/set-password',
         extra: SetPasswordScreenArgs.multisigCreateSession(
           coordinatorUrl: coordinatorUrl,
+          participantCount: _participantCount,
+          threshold: _threshold,
         ),
       );
       return;
@@ -351,7 +355,11 @@ class _MobileMultisigCreateSessionScreenState
     try {
       final pending = await ref
           .read(multisigPendingSessionsProvider.notifier)
-          .createSession(coordinatorUrl: coordinatorUrl);
+          .createSession(
+            coordinatorUrl: coordinatorUrl,
+            participantCount: _participantCount,
+            threshold: _threshold,
+          );
       if (!mounted) return;
       context.go('/multisig/session/${Uri.encodeComponent(pending.storageId)}');
     } catch (e) {
@@ -377,7 +385,7 @@ class _MobileMultisigCreateSessionScreenState
     return MobileOnboardingStepScaffold(
       progress: _sessionSetupProgress,
       title: 'Create Setup',
-      subtitle: 'Start a coordinator session and share the invite code.',
+      subtitle: 'Choose the signer policy before sharing the invite code.',
       titleStyle: AppTypography.displaySmall,
       onBack: () => context.go('/multisig/connect'),
       bottomArea: AppButton(
@@ -408,6 +416,25 @@ class _MobileMultisigCreateSessionScreenState
               onSubmitted: (_) => _submit(),
             ),
           ),
+          const SizedBox(height: AppSpacing.sm),
+          _MobileSessionPolicyCard(
+            participantCount: _participantCount,
+            threshold: _threshold,
+            onParticipantCountChanged: (value) {
+              setState(() {
+                _participantCount = value;
+                if (_threshold > value) _threshold = value;
+                if (_threshold < 2) _threshold = 2;
+                _submitError = null;
+              });
+            },
+            onThresholdChanged: (value) {
+              setState(() {
+                _threshold = value;
+                _submitError = null;
+              });
+            },
+          ),
           if (needsPasscodeUnlock) ...[
             const SizedBox(height: AppSpacing.sm),
             _MobilePasscodeUnlockCard(
@@ -423,6 +450,96 @@ class _MobileMultisigCreateSessionScreenState
           const SizedBox(height: AppSpacing.xl2),
         ],
       ),
+    );
+  }
+}
+
+class _MobileSessionPolicyCard extends StatelessWidget {
+  const _MobileSessionPolicyCard({
+    required this.participantCount,
+    required this.threshold,
+    required this.onParticipantCountChanged,
+    required this.onThresholdChanged,
+  });
+
+  final int participantCount;
+  final int threshold;
+  final ValueChanged<int> onParticipantCountChanged;
+  final ValueChanged<int> onThresholdChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobileSectionCard(
+      iconName: AppIcons.users,
+      title: 'Wallet policy',
+      body:
+          'Any $threshold of $participantCount participants can approve a send.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Signers total',
+            style: AppTypography.labelSmall.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (var value = 2; value <= 5; value++)
+                _PolicyPill(
+                  label: '$value',
+                  selected: participantCount == value,
+                  onSelected: () => onParticipantCountChanged(value),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Approvals to confirm',
+            style: AppTypography.labelSmall.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (var value = 2; value <= participantCount; value++)
+                _PolicyPill(
+                  label: '$value of $participantCount',
+                  selected: threshold == value,
+                  onSelected: () => onThresholdChanged(value),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PolicyPill extends StatelessWidget {
+  const _PolicyPill({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      onPressed: onSelected,
+      size: AppButtonSize.medium,
+      variant: selected ? AppButtonVariant.primary : AppButtonVariant.secondary,
+      child: Text(label),
     );
   }
 }
@@ -634,7 +751,6 @@ class _MobileMultisigSessionScreenState
   bool _isAdvancingCreate = false;
   bool _isConfirmingBackup = false;
   bool _createAutoAdvanceEnabled = false;
-  int? _selectedThreshold;
   String? _error;
   MultisigCreateAdvanceResult? _createProgress;
   MultisigRealtimeLease? _realtimeLease;
@@ -726,8 +842,7 @@ class _MobileMultisigSessionScreenState
   }
 
   Future<void> _lockRoster(MultisigPendingSession session) async {
-    final threshold = _selectedThreshold;
-    if (threshold == null || _isLocking) return;
+    if (_isLocking) return;
     setState(() {
       _isLocking = true;
       _error = null;
@@ -735,7 +850,7 @@ class _MobileMultisigSessionScreenState
     try {
       await ref
           .read(multisigPendingSessionsProvider.notifier)
-          .lockSession(storageId: session.storageId, threshold: threshold);
+          .lockSession(storageId: session.storageId);
       if (!mounted) return;
       setState(() => _isLocking = false);
     } catch (e) {
@@ -887,15 +1002,6 @@ class _MobileMultisigSessionScreenState
         ? null
         : _summaryByStorageId(summaries, widget.sessionStorageId) ??
               _summaryBySessionId(summaries, widget.sessionStorageId);
-    final participantsCount = session?.participants.length ?? 0;
-    if (session != null &&
-        participantsCount >= 2 &&
-        (_selectedThreshold == null ||
-            _selectedThreshold! < 2 ||
-            _selectedThreshold! > participantsCount)) {
-      final defaultThreshold = session.threshold ?? 2;
-      _selectedThreshold = defaultThreshold.clamp(2, participantsCount).toInt();
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _syncRealtimeLease(session, security.isUnlocked);
@@ -940,16 +1046,11 @@ class _MobileMultisigSessionScreenState
                 }
                 return _SessionContent(
                   session: session,
-                  selectedThreshold: _selectedThreshold,
                   isLocking: _isLocking,
                   isAdvancingCreate: _isAdvancingCreate,
                   isConfirmingBackup: _isConfirmingBackup,
                   createProgress: _createProgress,
                   error: _error,
-                  onThresholdChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _selectedThreshold = value);
-                  },
                   onCopyInviteCode: () => _copyInviteCode(session.inviteCode),
                   onLockRoster: () => _lockRoster(session),
                   onAdvanceCreate: () => _advanceCreate(session),
@@ -1319,13 +1420,11 @@ class _MobilePasscodeUnlockCardState
 class _SessionContent extends StatelessWidget {
   const _SessionContent({
     required this.session,
-    required this.selectedThreshold,
     required this.isLocking,
     required this.isAdvancingCreate,
     required this.isConfirmingBackup,
     required this.createProgress,
     required this.error,
-    required this.onThresholdChanged,
     required this.onCopyInviteCode,
     required this.onLockRoster,
     required this.onAdvanceCreate,
@@ -1333,13 +1432,11 @@ class _SessionContent extends StatelessWidget {
   });
 
   final MultisigPendingSession session;
-  final int? selectedThreshold;
   final bool isLocking;
   final bool isAdvancingCreate;
   final bool isConfirmingBackup;
   final MultisigCreateAdvanceResult? createProgress;
   final String? error;
-  final ValueChanged<int?> onThresholdChanged;
   final VoidCallback onCopyInviteCode;
   final VoidCallback onLockRoster;
   final VoidCallback onAdvanceCreate;
@@ -1347,11 +1444,11 @@ class _SessionContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final targetParticipantCount = session.targetParticipantCount;
     final canLock =
         session.isCreator &&
         session.state == 'collecting' &&
-        session.participants.length > 1 &&
-        (selectedThreshold ?? 0) >= 2;
+        session.participants.length == targetParticipantCount;
     final showBackupPanel = session.state == 'ready';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1365,36 +1462,20 @@ class _SessionContent extends StatelessWidget {
         if (session.state == 'collecting') ...[
           _MobileSectionCard(
             iconName: AppIcons.lock,
-            title: 'Threshold',
-            body: 'Choose how many participants must approve this wallet.',
+            title: canLock ? 'Ready to start' : 'Waiting for participants',
+            body:
+                '${session.participants.length} of $targetParticipantCount participants joined. '
+                '${session.policyLabel} approvals will be required to send.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    for (
-                      var value = 2;
-                      value <= session.participants.length;
-                      value++
-                    )
-                      _ThresholdChoice(
-                        value: value,
-                        total: session.participants.length,
-                        selected: selectedThreshold == value,
-                        onSelected: () => onThresholdChanged(value),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
                 AppButton(
                   onPressed: canLock && !isLocking ? onLockRoster : null,
                   expand: true,
                   leading: isLocking
                       ? const _SmallSpinner()
                       : const AppIcon(AppIcons.lock),
-                  child: const Text('Lock roster'),
+                  child: const Text('Start key generation'),
                 ),
               ],
             ),
@@ -1542,7 +1623,8 @@ class _ParticipantsPanel extends StatelessWidget {
     return _MobileSectionCard(
       iconName: AppIcons.users,
       title: 'Participants',
-      body: '${session.participants.length} joined',
+      body:
+          '${session.participants.length} of ${session.targetParticipantCount} joined',
       child: Column(
         children: [
           for (final participant in session.participants)
@@ -1713,30 +1795,6 @@ class _ParticipantRow extends StatelessWidget {
           if (badges.isNotEmpty) _MiniBadge(label: badges.join(' · ')),
         ],
       ),
-    );
-  }
-}
-
-class _ThresholdChoice extends StatelessWidget {
-  const _ThresholdChoice({
-    required this.value,
-    required this.total,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final int value;
-  final int total;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      onPressed: onSelected,
-      size: AppButtonSize.medium,
-      variant: selected ? AppButtonVariant.primary : AppButtonVariant.secondary,
-      child: Text('$value of $total'),
     );
   }
 }

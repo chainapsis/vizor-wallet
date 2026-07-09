@@ -845,7 +845,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       if (threshold == null || threshold <= 0) {
         throw StateError('Multisig threshold is missing.');
       }
-      final participantCount = session.participants.length;
+      final participantCount = session.targetParticipantCount;
       if (participantCount <= 0) {
         throw StateError('Multisig participants are missing.');
       }
