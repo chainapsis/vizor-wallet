@@ -71,6 +71,7 @@ class ReviewInfoRow extends StatelessWidget {
     this.trailingActionKey,
     this.onTrailingAction,
     this.valueFit,
+    this.valueStyle,
     super.key,
   });
 
@@ -113,16 +114,23 @@ class ReviewInfoRow extends StatelessWidget {
   /// (long swap amounts scale down rather than ellipsize).
   final BoxFit? valueFit;
 
+  /// Overrides the serif headline style — the pay review cards use the
+  /// smaller Young Serif 28 (`AppTypography.headlineMedium`) while the
+  /// send/status screens keep the default 32.
+  final TextStyle? valueStyle;
+
   /// Row height pinned by the Figma `_Review Info` component.
   static const height = 90.0;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final valueStyle = appSerifDisplayStyle(color: colors.text.accent).copyWith(
-      decoration: struckThrough ? TextDecoration.lineThrough : null,
-      decorationColor: struckThrough ? colors.text.accent : null,
-    );
+    final valueStyle =
+        (this.valueStyle ?? appSerifDisplayStyle(color: colors.text.accent))
+            .copyWith(
+              decoration: struckThrough ? TextDecoration.lineThrough : null,
+              decorationColor: struckThrough ? colors.text.accent : null,
+            );
 
     return SizedBox(
       height: height,

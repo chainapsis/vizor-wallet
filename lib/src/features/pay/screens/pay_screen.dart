@@ -30,14 +30,38 @@ import '../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../address_book/providers/address_book_provider.dart';
+import '../../swap/models/swap_activity_navigation.dart';
+import '../../swap/models/swap_intent_presentation_mapper.dart'
+    show swapIntentsFromRecords;
 import '../../swap/models/swap_models.dart';
+import '../../swap/providers/swap_activity_store.dart'
+    show swapActivityRecordsProvider;
 import '../../swap/providers/swap_state_provider.dart';
+import '../../swap/screens/swap_review_screen.dart'
+    show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../swap/widgets/swap_asset_icon.dart';
 import '../../swap/widgets/swap_asset_selector_modal.dart';
 import '../../swap/widgets/swap_near_intents_attribution.dart';
+import '../../swap/widgets/swap_slippage_modal.dart';
+import '../models/pay_amount_input.dart';
+import '../models/pay_recent_recipients.dart';
+import '../widgets/pay_add_contact_modal.dart';
+import '../widgets/pay_amount_step.dart';
+import '../widgets/pay_recipient_step.dart';
+import '../widgets/pay_review_step.dart';
+import '../widgets/pay_wizard_stepper.dart';
 
-enum _PayModalSurface { assetSelector, addressScanner, contactPicker }
+enum _PayModalSurface {
+  assetSelector,
+  addressScanner,
+  contactPicker,
+  addContact,
+  slippage,
+}
+
+enum _PayWizardStep { amount, recipient, review }
 
 const _payHeaderGap = AppSpacing.md;
 const _payStepGap = AppSpacing.sm;
@@ -58,27 +82,37 @@ class PayScreen extends ConsumerStatefulWidget {
 
 class _PayScreenState extends ConsumerState<PayScreen> {
   late final ScrollController _scrollController;
+  late final TextEditingController _amountController;
+  late final FocusNode _amountFocusNode;
+  late final TextEditingController _recipientController;
   _PayModalSurface? _payModal;
-  String? _selectedPayNetworkId;
-  String? _selectedPayAssetKey;
+  var _wizardStep = _PayWizardStep.amount;
+  var _startingIntent = false;
+  Timer? _expiryTimer;
+  DateTime? _expiryDeadline;
+  Duration? _expiryRemaining;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    _amountController = TextEditingController();
+    _amountFocusNode = FocusNode(debugLabel: 'PayWizardAmount');
+    _recipientController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
-      setState(() {
-        _selectedPayNetworkId = null;
-        _selectedPayAssetKey = null;
-      });
+      setState(() => _wizardStep = _PayWizardStep.amount);
     });
   }
 
   @override
   void dispose() {
+    _expiryTimer?.cancel();
     _scrollController.dispose();
+    _amountController.dispose();
+    _amountFocusNode.dispose();
+    _recipientController.dispose();
     super.dispose();
   }
 
@@ -87,67 +121,120 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     setState(() => _payModal = null);
   }
 
-  void _handleDestinationChanged(String value) {
-    if (_selectedPayNetworkId != null || _selectedPayAssetKey != null) {
-      setState(() {
-        _selectedPayNetworkId = null;
-        _selectedPayAssetKey = null;
-      });
-    }
-    ref.read(swapStateProvider.notifier).updateDestination(value);
-  }
-
-  void _handleNetworkSelected(String chainTicker, SwapState swapState) {
-    final asset = _payPreferredAssetForNetwork(
-      swapState.supportedExternalAssets,
-      chainTicker,
-      current: swapState.externalAsset,
+  void _syncController(TextEditingController controller, String value) {
+    if (controller.text == value) return;
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
     );
-    if (asset == null) return;
-    setState(() {
-      _selectedPayNetworkId = chainTicker;
-      _selectedPayAssetKey = asset.identityKey;
-    });
-    ref.read(swapStateProvider.notifier).selectPayExternalAsset(asset);
   }
 
-  void _handleAssetSelected(SwapAsset asset) {
-    setState(() => _selectedPayAssetKey = asset.identityKey);
-    ref.read(swapStateProvider.notifier).selectPayExternalAsset(asset);
+  void _goToStep(_PayWizardStep step) {
+    if (_wizardStep == step) return;
+    if (_wizardStep == _PayWizardStep.review) {
+      ref.read(swapStateProvider.notifier).cancelReviewQuote();
+    }
+    setState(() => _wizardStep = step);
   }
 
   void _handleAddressScanned(String value) {
-    _handleDestinationChanged(value);
+    ref.read(swapStateProvider.notifier).updateDestination(value);
     _closePayModal();
   }
 
-  void _handleContactSelected(AddressBookContact contact, SwapState swapState) {
-    final asset = _payPreferredAssetForNetwork(
-      swapState.supportedExternalAssets,
-      contact.network.id,
-      current: swapState.externalAsset,
-    );
-    setState(() {
-      _selectedPayNetworkId = contact.network.id;
-      _selectedPayAssetKey = asset?.identityKey;
-    });
-    if (asset != null) {
-      ref.read(swapStateProvider.notifier).selectPayExternalAsset(asset);
-    }
-    ref.read(swapStateProvider.notifier).updateDestination(contact.address);
-    _closePayModal();
-  }
-
-  Future<void> _openReview() async {
+  Future<void> _openReview({String? address}) async {
     final notifier = ref.read(swapStateProvider.notifier);
+    if (address != null) {
+      notifier.updateDestination(address);
+    }
     await notifier.showReview();
     if (!mounted) return;
     final next = ref.read(swapStateProvider);
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
-      await context.push('/pay/review');
+      setState(() => _wizardStep = _PayWizardStep.review);
     }
+  }
+
+  void _startIntent() {
+    unawaited(() async {
+      if (!_startingIntent) {
+        setState(() => _startingIntent = true);
+      }
+      final result = await ref.read(swapStateProvider.notifier).startIntent();
+      if (!mounted) return;
+      if (result == null) {
+        setState(() => _startingIntent = false);
+        return;
+      }
+      switch (result) {
+        case SwapStartedActivity(:final intentId):
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.pay,
+            ).toString(),
+          );
+        case SwapStartedKeystoneSigning(:final intentId):
+          context.go(
+            swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.pay,
+              autoSignZecDeposit: true,
+            ).toString(),
+          );
+      }
+    }());
+  }
+
+  Future<void> _saveContact(
+    AddressBookNetwork network,
+    String label,
+    String profilePictureId,
+  ) async {
+    final address = ref.read(swapStateProvider).destinationText.trim();
+    await ref
+        .read(addressBookProvider.notifier)
+        .addContact(
+          label: label,
+          network: network,
+          address: address,
+          profilePictureId: profilePictureId,
+        );
+    if (!mounted) return;
+    _closePayModal();
+  }
+
+  /// Keeps the review countdown aligned with the active quote; a new quote
+  /// (re-review) re-arms the ticker.
+  void _ensureExpiryTicker(SwapQuote? quote) {
+    final deadline = quote == null
+        ? null
+        : quote.quoteExpiresAt ?? quote.depositInstruction.deadline;
+    if (deadline == _expiryDeadline) return;
+    _expiryDeadline = deadline;
+    _expiryTimer?.cancel();
+    _expiryTimer = null;
+    _expiryRemaining = deadline?.difference(DateTime.now());
+    if (deadline == null) return;
+    _expiryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final remaining = deadline.difference(DateTime.now());
+      setState(() => _expiryRemaining = remaining);
+      if (remaining <= Duration.zero) {
+        _expiryTimer?.cancel();
+        _expiryTimer = null;
+      }
+    });
+  }
+
+  String? get _expiresInText {
+    final remaining = _expiryRemaining;
+    if (remaining == null || remaining.isNegative) return null;
+    final minutes = remaining.inMinutes;
+    final seconds = remaining.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -162,6 +249,67 @@ class _PayScreenState extends ConsumerState<PayScreen> {
             (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
       ),
     );
+    final colors = context.colors;
+
+    _syncController(
+      _amountController,
+      swapState.receiveAmountInputMode == SwapAmountInputMode.fiat
+          ? swapState.receiveFiatText
+          : swapState.receiveAmountText,
+    );
+    _syncController(_recipientController, swapState.destinationText);
+
+    final network = AddressBookNetwork.tryFromChainTicker(
+      swapState.externalAsset.chainTicker,
+    );
+    final allContacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final contacts = network == null
+        ? const <AddressBookContact>[]
+        : payCompatibleContacts(allContacts, network);
+    final records = activeAccountUuid == null
+        ? const <SwapIntentRecord>[]
+        : ref.watch(swapActivityRecordsProvider(activeAccountUuid)).value ??
+              const <SwapIntentRecord>[];
+    final recents = network == null
+        ? const <PayRecentRecipient>[]
+        : payRecentRecipients(
+            intents: swapIntentsFromRecords(records),
+            network: network,
+          );
+
+    final quote = swapState.reviewQuote;
+    if (_wizardStep == _PayWizardStep.review) {
+      _ensureExpiryTicker(quote);
+      if ((quote == null || !swapState.reviewVisible) && !_startingIntent) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _wizardStep != _PayWizardStep.review) return;
+          if (ref.read(swapStateProvider).reviewQuote == null) {
+            setState(() => _wizardStep = _PayWizardStep.recipient);
+          }
+        });
+      }
+    } else {
+      _ensureExpiryTicker(null);
+    }
+
+    final recipientAddress = swapState.destinationText.trim();
+    final recipientContact = network == null
+        ? null
+        : payContactForAddress(allContacts, network, recipientAddress);
+    final startBlockedReason =
+        quote != null &&
+            swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+        ? "You don't have enough ZEC for this payment. Try a smaller amount."
+        : null;
+
+    final title = switch (_wizardStep) {
+      _PayWizardStep.amount => 'Pay in ${swapState.externalAsset.symbol}',
+      _PayWizardStep.recipient => 'Select Recipient',
+      _PayWizardStep.review => 'Review Payment',
+    };
+
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
@@ -174,34 +322,125 @@ class _PayScreenState extends ConsumerState<PayScreen> {
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 488),
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.s,
                     ),
-                    child: PayComposer(
-                      state: swapState,
-                      selectedNetworkId: _selectedPayNetworkId,
-                      selectedAssetKey: _selectedPayAssetKey,
-                      zecAvailableZatoshi: sync.spendableBalance,
-                      onAmountChanged: swapNotifier.updateReceiveAmount,
-                      onReceiveAmountFiatChanged:
-                          swapNotifier.updateReceiveAmountFiat,
-                      onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
-                      onDestinationChanged: _handleDestinationChanged,
-                      onNetworkSelected: (chainTicker) =>
-                          _handleNetworkSelected(chainTicker, swapState),
-                      onAssetSelected: _handleAssetSelected,
-                      onOpenAssetSelector: () => setState(
-                        () => _payModal = _PayModalSurface.assetSelector,
-                      ),
-                      onOpenAddressScanner: () => setState(
-                        () => _payModal = _PayModalSurface.addressScanner,
-                      ),
-                      onOpenContactPicker: () => setState(
-                        () => _payModal = _PayModalSurface.contactPicker,
-                      ),
-                      onReviewPayment: () => unawaited(_openReview()),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Text(
+                              title,
+                              key: const ValueKey('pay_wizard_title'),
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displaySmall.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            if (_wizardStep == _PayWizardStep.amount)
+                              Positioned(
+                                right: 0,
+                                child: _PaySlippageControl(
+                                  label: formatSwapSlippage(
+                                    swapState.slippageBps,
+                                  ),
+                                  selected:
+                                      _payModal == _PayModalSurface.slippage,
+                                  onTap: () => setState(
+                                    () => _payModal = _PayModalSurface.slippage,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        PayWizardStepper(
+                          currentIndex: _wizardStep.index,
+                          onStepSelected: (index) =>
+                              _goToStep(_PayWizardStep.values[index]),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        switch (_wizardStep) {
+                          _PayWizardStep.amount => PayAmountStep(
+                            state: swapState,
+                            controller: _amountController,
+                            focusNode: _amountFocusNode,
+                            onAmountChanged: swapNotifier.updateReceiveAmount,
+                            onFiatAmountChanged:
+                                swapNotifier.updateReceiveAmountFiat,
+                            onToggleFiatInputMode: () =>
+                                swapNotifier.toggleFiatInputMode(
+                                  SwapAmountInputSide.receive,
+                                ),
+                            onOpenAssetSelector: () => setState(
+                              () => _payModal = _PayModalSurface.assetSelector,
+                            ),
+                            onContinue: () =>
+                                _goToStep(_PayWizardStep.recipient),
+                          ),
+                          _PayWizardStep.recipient => PayRecipientStep(
+                            controller: _recipientController,
+                            typedAddress: swapState.destinationText,
+                            addressError:
+                                swapState.destinationAddressFormatError,
+                            contacts: contacts,
+                            recents: recents,
+                            busy: swapState.quoteLoading,
+                            onAddressChanged: swapNotifier.updateDestination,
+                            onOpenScanner: () => setState(
+                              () => _payModal = _PayModalSurface.addressScanner,
+                            ),
+                            onChooseRecipient: (address) =>
+                                unawaited(_openReview(address: address)),
+                            onSelectRecipient: () => unawaited(_openReview()),
+                            onAddToContacts: network == null
+                                ? () {}
+                                : () => setState(
+                                    () =>
+                                        _payModal = _PayModalSurface.addContact,
+                                  ),
+                          ),
+                          _PayWizardStep.review =>
+                            quote == null
+                                ? const SizedBox.shrink()
+                                : PayReviewStep(
+                                    quote: quote,
+                                    recipientAddress: recipientAddress,
+                                    recipientContact: recipientContact,
+                                    payingFiatText: swapReviewFiatTextForAsset(
+                                      swapState,
+                                      quote: quote,
+                                      asset: quote.receiveAsset,
+                                      amount: quote.receiveAmount,
+                                    ),
+                                    convertedFiatText:
+                                        swapReviewFiatTextForAsset(
+                                          swapState,
+                                          quote: quote,
+                                          asset: quote.sellAsset,
+                                          amount: quote.sellAmount,
+                                        ),
+                                    expiresInText: _expiresInText,
+                                    expired: swapState.quoteExpired,
+                                    starting:
+                                        _startingIntent ||
+                                        swapState.startSubmitting,
+                                    startBlockedReason: startBlockedReason,
+                                    startError: swapState.statusError,
+                                    onConfirm: _startIntent,
+                                    onReviewAgain: () =>
+                                        unawaited(_openReview()),
+                                  ),
+                        },
+                        const SizedBox(height: _payFooterGap),
+                        const Center(
+                          child: SwapNearIntentsAttribution(centered: true),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -214,13 +453,12 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   type: MaterialType.transparency,
                   child: switch (_payModal!) {
                     _PayModalSurface.assetSelector => SwapAssetSelectorModal(
-                      assets: _payAssetsForNetwork(
-                        swapState.supportedExternalAssets,
-                        swapState.externalAsset.chainTicker,
-                      ),
+                      assets: swapState.supportedExternalAssets,
                       selected: swapState.externalAsset,
                       onSelected: (asset) {
-                        _handleAssetSelected(asset);
+                        ref
+                            .read(swapStateProvider.notifier)
+                            .selectPayExternalAsset(asset);
                         _closePayModal();
                       },
                     ),
@@ -228,28 +466,89 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                       onAddressScanned: _handleAddressScanned,
                       onCancel: _closePayModal,
                     ),
-                    _PayModalSurface.contactPicker =>
-                      AddressBookContactPickerModal(
-                        title: _payContactPickerTitle(
-                          swapState.supportedExternalAssets,
-                          _selectedPayNetworkId,
-                        ),
-                        networks: _payContactPickerNetworks(
-                          swapState.supportedExternalAssets,
-                          _selectedPayNetworkId,
-                        ),
-                        emptyTitle: _payContactPickerEmptyTitle(
-                          swapState.supportedExternalAssets,
-                          _selectedPayNetworkId,
-                        ),
-                        onSelected: (contact) =>
-                            _handleContactSelected(contact, swapState),
-                        onCancel: _closePayModal,
-                      ),
+                    // The contact picker surface is mobile-only; the desktop
+                    // wizard surfaces contacts inline on the recipient step.
+                    _PayModalSurface.contactPicker => const SizedBox.shrink(),
+                    _PayModalSurface.addContact =>
+                      network == null
+                          ? const SizedBox.shrink()
+                          : PayAddContactModal(
+                              network: network,
+                              address: recipientAddress,
+                              onCancel: _closePayModal,
+                              onSave: (label, profilePictureId) => _saveContact(
+                                network,
+                                label,
+                                profilePictureId,
+                              ),
+                            ),
+                    _PayModalSurface.slippage => SwapSlippageModal(
+                      slippageBps: swapState.slippageBps,
+                      paymentMode: true,
+                      onSubmitted: (bps) {
+                        ref
+                            .read(swapStateProvider.notifier)
+                            .updateSlippageBps(bps);
+                        _closePayModal();
+                      },
+                      onCancel: _closePayModal,
+                    ),
                   },
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Slippage affordance right of the amount-step title — same anatomy as the
+/// swap composer's `_SlippageControl`.
+class _PaySlippageControl extends StatelessWidget {
+  const _PaySlippageControl({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        key: const ValueKey('pay_slippage_button'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 24,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+          decoration: BoxDecoration(
+            color: selected
+                ? colors.state.selectedOpacity
+                : colors.background.ground.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(AppRadii.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(AppIcons.cog, size: 16, color: colors.icon.muted),
+            ],
+          ),
         ),
       ),
     );
@@ -424,6 +723,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     _handleContactSelected(contact, swapState),
                 onCancel: _closePayModal,
               ),
+              // Desktop-wizard-only surfaces; the mobile composer never
+              // requests them.
+              _PayModalSurface.addContact ||
+              _PayModalSurface.slippage => const SizedBox.shrink(),
             };
             return SafeArea(
               bottom: false,
@@ -651,7 +954,7 @@ class _PayComposerState extends State<PayComposer> {
     if (_step == _PayComposerStep.quote && !networkReady) {
       _step = _PayComposerStep.recipient;
     }
-    final balanceExceeded = _payAmountExceedsAvailableZec(
+    final balanceExceeded = payAmountExceedsAvailableZec(
       state,
       widget.zecAvailableZatoshi,
     );
@@ -1157,7 +1460,7 @@ class _PayAmountPanel extends StatelessWidget {
                 child: AnimatedBuilder(
                   animation: controller,
                   builder: (context, _) {
-                    final inputWidth = _payAmountInputWidth(
+                    final inputWidth = payAmountInputWidth(
                       context: context,
                       text: controller.text,
                       style: amountTextStyle,
@@ -1179,7 +1482,7 @@ class _PayAmountPanel extends StatelessWidget {
                             textInputAction: TextInputAction.next,
                             inputFormatters: [
                               const CommaToDotInputFormatter(),
-                              _PayDecimalAmountInputFormatter(
+                              PayDecimalAmountInputFormatter(
                                 maxFractionDigits: inputIsFiat
                                     ? 2
                                     : asset.decimals,
@@ -1653,27 +1956,6 @@ class _PayButtonLabel extends StatelessWidget {
   }
 }
 
-class _PayDecimalAmountInputFormatter extends TextInputFormatter {
-  const _PayDecimalAmountInputFormatter({this.maxFractionDigits});
-
-  final int? maxFractionDigits;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text;
-    if (text.isEmpty) return newValue;
-    final max = maxFractionDigits;
-    final pattern = max == null
-        ? RegExp(r'^\d*(\.\d*)?$')
-        : RegExp('^\\d*(\\.\\d{0,$max})?\$');
-    if (pattern.hasMatch(text)) return newValue;
-    return oldValue;
-  }
-}
-
 String _payCtaLabel(
   SwapState state, {
   required bool networkReady,
@@ -1709,31 +1991,6 @@ String _payRateTextForState(SwapState state) {
   }
   return '1 ${state.externalAsset.symbol} = '
       '${SwapAsset.zec.formatAmount(1 / externalPerZec)} ZEC';
-}
-
-bool _payAmountExceedsAvailableZec(SwapState state, BigInt availableZatoshi) {
-  if (!state.direction.sendsZec) return false;
-  final quote = state.quote;
-  if (quote == null || quote.sellAmount <= 0 || !quote.sellAmount.isFinite) {
-    return false;
-  }
-  final requiredZatoshi = BigInt.from((quote.sellAmount * 100000000).ceil());
-  return requiredZatoshi >= availableZatoshi;
-}
-
-double _payAmountInputWidth({
-  required BuildContext context,
-  required String text,
-  required TextStyle style,
-  required double maxWidth,
-}) {
-  final displayText = text.trim().isEmpty ? '0' : text.trim();
-  final painter = TextPainter(
-    text: TextSpan(text: displayText, style: style),
-    maxLines: 1,
-    textDirection: Directionality.of(context),
-  )..layout();
-  return (painter.width + AppSpacing.sm).clamp(56.0, maxWidth).toDouble();
 }
 
 List<SwapAsset> _payVisibleTokenChips(

@@ -328,7 +328,9 @@ void main() {
         matching: find.byType(AppIcon),
       ),
     );
-    expect(payIcon.size, 16);
+    // Icon-only 60px pay entry per Figma 5407:152492.
+    expect(payIcon.size, 20);
+    expect(payRect.width, moreOrLessEquals(60, epsilon: 0.1));
     expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
     expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
     expect(receiveRect.left, greaterThan(sendRect.right));
@@ -342,16 +344,14 @@ void main() {
     );
     final state = container.read(swapStateProvider);
     expect(find.byType(PayScreen), findsOneWidget);
-    expect(find.byKey(const ValueKey('pay_page_title')), findsOneWidget);
+    // The wizard opens on the amount-first step.
+    expect(find.byKey(const ValueKey('pay_wizard_title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_amount_step')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_amount_input')), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('pay_recipient_address_field')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('pay_recipient_network_step')),
+      find.byKey(const ValueKey('pay_recipient_search_field')),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey('pay_review_button')), findsNothing);
     expect(state.direction, SwapDirection.zecToExternal);
     expect(state.quoteMode, SwapQuoteMode.exactOutput);
     expect(state.payMode, isTrue);
