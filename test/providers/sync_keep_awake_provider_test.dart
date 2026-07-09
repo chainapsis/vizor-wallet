@@ -101,6 +101,30 @@ void main() {
     },
   );
 
+  test('screen keep-awake active provider stays false while locked', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: false,
+          ),
+        ),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(syncProvider.future);
+    expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+  });
+
   test('interaction notifier records the last user activity time', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -235,6 +259,8 @@ void main() {
 AppBootstrapState _bootstrap({
   bool syncKeepAwakeEnabled = false,
   bool syncKeepAwakePromptSeen = false,
+  bool isPasswordConfigured = false,
+  bool isUnlocked = false,
 }) {
   return AppBootstrapState(
     initialLocation: '/home',
@@ -246,8 +272,8 @@ AppBootstrapState _bootstrap({
     privacyModeEnabled: false,
     syncKeepAwakeEnabled: syncKeepAwakeEnabled,
     syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
-    isPasswordConfigured: false,
-    isUnlocked: false,
+    isPasswordConfigured: isPasswordConfigured,
+    isUnlocked: isUnlocked,
     passwordRotationRecoveryFailed: false,
   );
 }

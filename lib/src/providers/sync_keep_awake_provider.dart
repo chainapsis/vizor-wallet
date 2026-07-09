@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
+import 'app_security_provider.dart';
 import 'sync_provider.dart';
 
 const kSyncKeepAwakePromptEtaThreshold = Duration(minutes: 1);
@@ -108,6 +109,7 @@ final syncKeepAwakeInteractionProvider =
     >(SyncKeepAwakeInteractionNotifier.new);
 
 final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
+  if (ref.watch(appSecurityProvider).requiresUnlock) return false;
   final settings = ref.watch(syncKeepAwakeProvider);
   final sync = ref.watch(syncProvider).asData?.value;
   if (sync == null) return false;

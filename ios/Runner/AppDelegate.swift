@@ -162,6 +162,33 @@ import UIKit
       }
     }
 
+    let screenAwakeChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/screen_awake",
+      binaryMessenger: messenger
+    )
+    screenAwakeChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setEnabled":
+        guard
+          let args = call.arguments as? [String: Any],
+          let enabled = args["enabled"] as? Bool
+        else {
+          result(
+            FlutterError(
+              code: "bad_args",
+              message: "Expected enabled argument.",
+              details: nil
+            )
+          )
+          return
+        }
+        UIApplication.shared.isIdleTimerDisabled = enabled
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger
