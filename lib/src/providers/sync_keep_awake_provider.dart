@@ -74,6 +74,46 @@ final syncKeepAwakeProvider =
       SyncKeepAwakeNotifier.new,
     );
 
+class SyncKeepAwakeInteractionState {
+  const SyncKeepAwakeInteractionState({
+    required this.lastInteractionAt,
+    this.revision = 0,
+  });
+
+  final DateTime lastInteractionAt;
+  final int revision;
+
+  Duration idleDuration(DateTime now) => now.difference(lastInteractionAt);
+}
+
+class SyncKeepAwakeInteractionNotifier
+    extends Notifier<SyncKeepAwakeInteractionState> {
+  @override
+  SyncKeepAwakeInteractionState build() {
+    return SyncKeepAwakeInteractionState(lastInteractionAt: DateTime.now());
+  }
+
+  void markInteraction({DateTime? at}) {
+    state = SyncKeepAwakeInteractionState(
+      lastInteractionAt: at ?? DateTime.now(),
+      revision: state.revision + 1,
+    );
+  }
+}
+
+final syncKeepAwakeInteractionProvider =
+    NotifierProvider<
+      SyncKeepAwakeInteractionNotifier,
+      SyncKeepAwakeInteractionState
+    >(SyncKeepAwakeInteractionNotifier.new);
+
+final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
+  final settings = ref.watch(syncKeepAwakeProvider);
+  final sync = ref.watch(syncProvider).asData?.value;
+  if (sync == null) return false;
+  return shouldKeepScreenAwakeForSync(settings: settings, sync: sync);
+});
+
 class SyncKeepAwakeEtaSample {
   const SyncKeepAwakeEtaSample({
     required this.syncStartedAt,
@@ -104,7 +144,7 @@ bool isNearTipCatchUp(SyncState sync) {
       kSyncKeepAwakeNearTipBlockGap;
 }
 
-bool canEstimateSyncKeepAwakeEta(SyncState sync) {
+bool isSyncKeepAwakeEligibleSync(SyncState sync) {
   return sync.isSyncing &&
       !sync.isBackgroundMode &&
       sync.percentage > 0 &&
@@ -113,6 +153,17 @@ bool canEstimateSyncKeepAwakeEta(SyncState sync) {
       sync.chainTipHeight > 0 &&
       sync.scannedHeight > 0 &&
       !isNearTipCatchUp(sync);
+}
+
+bool canEstimateSyncKeepAwakeEta(SyncState sync) {
+  return isSyncKeepAwakeEligibleSync(sync);
+}
+
+bool shouldKeepScreenAwakeForSync({
+  required SyncKeepAwakeSettings settings,
+  required SyncState sync,
+}) {
+  return settings.enabled && isSyncKeepAwakeEligibleSync(sync);
 }
 
 SyncKeepAwakeEtaEstimate estimateSyncKeepAwakeEta(

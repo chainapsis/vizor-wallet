@@ -7,6 +7,8 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
+import '../fakes/fake_sync_notifier.dart';
+
 void main() {
   test('settings provider starts from bootstrap keep-awake fields', () {
     final container = ProviderContainer(
@@ -36,6 +38,94 @@ void main() {
     expect(
       isNearTipCatchUp(_sync(scannedHeight: 0, chainTipHeight: 0)),
       isFalse,
+    );
+  });
+
+  test('screen keep-awake requires enabled settings and eligible sync', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    const enabled = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
+    const disabled = SyncKeepAwakeSettings(enabled: false, promptSeen: true);
+    final eligibleSync = _sync(lastSyncStartedAt: startedAt);
+
+    expect(
+      shouldKeepScreenAwakeForSync(settings: enabled, sync: eligibleSync),
+      isTrue,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(settings: disabled, sync: eligibleSync),
+      isFalse,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: enabled,
+        sync: _sync(
+          scannedHeight: 100,
+          chainTipHeight: 102,
+          lastSyncStartedAt: startedAt,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: enabled,
+        sync: _sync(percentage: 0, lastSyncStartedAt: startedAt),
+      ),
+      isFalse,
+    );
+  });
+
+  test(
+    'screen keep-awake active provider combines settings and sync state',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrap(
+              syncKeepAwakeEnabled: true,
+              syncKeepAwakePromptSeen: true,
+            ),
+          ),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+      await container.read(syncProvider.future);
+      expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+    },
+  );
+
+  test('interaction notifier records the last user activity time', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final first = DateTime(2026, 7, 9, 12);
+    final second = first.add(const Duration(seconds: 2));
+
+    container
+        .read(syncKeepAwakeInteractionProvider.notifier)
+        .markInteraction(at: first);
+    expect(
+      container.read(syncKeepAwakeInteractionProvider).lastInteractionAt,
+      first,
+    );
+    expect(container.read(syncKeepAwakeInteractionProvider).revision, 1);
+
+    container
+        .read(syncKeepAwakeInteractionProvider.notifier)
+        .markInteraction(at: second);
+    final state = container.read(syncKeepAwakeInteractionProvider);
+    expect(state.lastInteractionAt, second);
+    expect(state.revision, 2);
+    expect(
+      state.idleDuration(second.add(const Duration(seconds: 3))),
+      const Duration(seconds: 3),
     );
   });
 
