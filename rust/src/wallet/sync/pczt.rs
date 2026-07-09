@@ -204,10 +204,7 @@ pub fn create_pczt_from_proposal(
     proposal_id: u64,
     send_flow_id: &str,
 ) -> Result<Vec<u8>, String> {
-    use zcash_client_backend::data_api::wallet::{
-        create_pczt_from_proposal as zcb_create_pczt,
-        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
-    };
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
     use zcash_client_backend::wallet::OvkPolicy;
 
     // Consume the proposal up-front (matches execute_proposal), so
@@ -228,28 +225,22 @@ pub fn create_pczt_from_proposal(
         } else {
             ::orchard::builder::BundleType::DEFAULT
         };
-        if let Some(proposed_tx_version) = stored.proposed_tx_version {
-            zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
-                &mut db,
-                &network,
-                stored.account_id,
-                OvkPolicy::Sender,
-                &stored.proposal,
-                proposed_tx_version,
-                bundle_type,
-            )
-        } else {
-            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                &mut db,
-                &network,
-                stored.account_id,
-                OvkPolicy::Sender,
-                &stored.proposal,
-                // Keep the builder-derived expiry height.
-                None,
-                bundle_type,
-            )
-        }
+        // The transaction version rides on the proposal now; `None` builds at
+        // the version implied by the target height.
+        let proposal_for_pczt = stored
+            .proposal
+            .clone()
+            .with_proposed_version(stored.proposed_tx_version);
+        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            stored.account_id,
+            OvkPolicy::Sender,
+            &proposal_for_pczt,
+            // Keep the builder-derived expiry height.
+            None,
+            bundle_type,
+        )
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
@@ -474,7 +465,7 @@ pub(crate) fn set_orchard_anchor_and_witness(
     witness: &orchard::tree::MerklePath,
     spend_nullifier_hex: &str,
 ) -> Result<Vec<u8>, String> {
-    use pczt::roles::updater::{OrchardSpendWitness, Updater};
+    use pczt::roles::updater::Updater;
 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
     let spend_nullifier = parse_32_byte_hex(spend_nullifier_hex, "Orchard spend nullifier")?;
@@ -501,12 +492,9 @@ pub(crate) fn set_orchard_anchor_and_witness(
         }
     };
     let updated = Updater::new(pczt)
-        .set_v6_orchard_anchor(anchor)
+        .set_orchard_anchor(anchor)
         .map_err(|e| format!("Set Orchard anchor in PCZT: {e}"))?
-        .set_orchard_spend_witnesses([OrchardSpendWitness::from_merkle_path(
-            action_index,
-            witness.clone(),
-        )])
+        .set_orchard_spend_witnesses([(action_index, witness.clone())])
         .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
         .finish();
 
