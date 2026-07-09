@@ -78,42 +78,58 @@ pub struct KeystoneSigResult {
     pub results: Vec<KeystoneMsgSig>,
 }
 
-/// Reshape a wallet-layer [`keystone::DecodedActionSig`] (fixed `[u8; 64]`
-/// signature) into the FRB-boundary form (`Vec<u8>` signature).
-fn action_sig_to_api(action: keystone::DecodedActionSig) -> KeystoneActionSig {
-    KeystoneActionSig {
-        pool: action.pool,
-        action_index: action.action_index,
-        sig: action.sig.to_vec(),
-    }
+/// Reshape a PCZT [`OrchardSpendAuthSignature`] into the FRB-boundary form.
+///
+/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
+fn action_sig_to_api(
+    action: &pczt::roles::signer::OrchardSpendAuthSignature,
+) -> Result<KeystoneActionSig, String> {
+    let pool = match action.value_pool() {
+        orchard::ValuePool::Orchard => 0,
+        orchard::ValuePool::Ironwood => 1,
+    };
+    let action_index = u32::try_from(action.action_index())
+        .map_err(|_| "PCZT signature action index exceeds u32".to_string())?;
+    Ok(KeystoneActionSig {
+        pool,
+        action_index,
+        sig: action.signature().to_vec(),
+    })
 }
 
-/// Reshape a wallet-layer [`keystone::DecodedSigResult`] into the flat FRB
-/// structs Dart consumes.
-fn sig_result_to_api(decoded: keystone::DecodedSigResult) -> KeystoneSigResult {
-    KeystoneSigResult {
-        version: decoded.version,
-        request_id: decoded.request_id,
+/// Reshape an upstream PCZT batch signing response into the flat FRB structs
+/// Dart consumes.
+fn sig_result_to_api(
+    decoded: pczt::roles::signer::batch::BatchSignResponse,
+) -> Result<KeystoneSigResult, String> {
+    Ok(KeystoneSigResult {
+        version: pczt::roles::signer::batch::VERSION,
+        request_id: decoded.request_id().to_vec(),
         results: decoded
-            .results
-            .into_iter()
-            .map(|msg| KeystoneMsgSig {
-                message_id: msg.message_id,
-                sigs: msg.sigs.into_iter().map(action_sig_to_api).collect(),
+            .results()
+            .iter()
+            .map(|msg| {
+                Ok(KeystoneMsgSig {
+                    message_id: msg.message_id().to_vec(),
+                    sigs: msg
+                        .signatures()
+                        .iter()
+                        .map(action_sig_to_api)
+                        .collect::<Result<Vec<_>, String>>()?,
+                })
             })
-            .collect(),
-    }
+            .collect::<Result<Vec<_>, String>>()?,
+    })
 }
 
-/// Decode the CBOR payload returned from a compact `zcash-batch-sig-result` UR into
-/// flat FRB structs. The wallet-layer decode in
-/// `crate::wallet::keystone::decode_zcash_sig_result_cbor` does all CBOR shape
-/// and policy validation (supported version, known pool, exact 64-byte sig
-/// length); this wrapper only reshapes its `[u8; 64]` signatures into the
-/// `Vec<u8>` form FRB carries.
-pub fn decode_zcash_sig_result_cbor(cbor: Vec<u8>) -> Result<KeystoneSigResult, String> {
-    let decoded = keystone::decode_zcash_sig_result_cbor(&cbor)?;
-    Ok(sig_result_to_api(decoded))
+/// Decode the Postcard payload returned from a compact
+/// `zcash-batch-sig-result` UR into flat FRB structs. The wallet-layer decode
+/// applies correlation policy on top of the upstream PCZT wire types; this
+/// wrapper only reshapes fixed-size signatures into the `Vec<u8>` form FRB
+/// carries.
+pub fn decode_zcash_batch_sign_response(postcard: Vec<u8>) -> Result<KeystoneSigResult, String> {
+    let decoded = keystone::decode_zcash_batch_sign_response(&postcard)?;
+    sig_result_to_api(decoded)
 }
 
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact
@@ -128,20 +144,19 @@ pub fn decode_zcash_sign_result_cbor_as_sig_result(
         .results
         .into_iter()
         .map(|message| {
-            Ok(keystone::DecodedMsgSig {
-                message_id: message.id.into_bytes(),
-                sigs: crate::wallet::sync::extract_compact_sigs_from_signed_pczt(
+            Ok(pczt::roles::signer::batch::BatchSignResponseMessage::new(
+                message.id.into_bytes(),
+                crate::wallet::sync::extract_compact_sigs_from_signed_pczt(
                     &message.signed_pczt_bytes,
                 )?,
-            })
+            ))
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    Ok(sig_result_to_api(keystone::DecodedSigResult {
-        version: decoded.version,
-        request_id: decoded.request_id.into_bytes(),
+    sig_result_to_api(pczt::roles::signer::batch::BatchSignResponse::new(
+        decoded.request_id.into_bytes(),
         results,
-    }))
+    ))
 }
 
 /// Return the Sapling and Orchard nullifiers spent by a PCZT.

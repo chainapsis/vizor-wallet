@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1309935738;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -517747853;
 
 // Section: executor
 
@@ -1061,7 +1061,7 @@ fn wire__crate__api__keystone__decode_ur_to_pczt_impl(
         },
     )
 }
-fn wire__crate__api__keystone__decode_zcash_sig_result_cbor_impl(
+fn wire__crate__api__keystone__decode_zcash_batch_sign_response_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1069,7 +1069,7 @@ fn wire__crate__api__keystone__decode_zcash_sig_result_cbor_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "decode_zcash_sig_result_cbor",
+            debug_name: "decode_zcash_batch_sign_response",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -1083,11 +1083,12 @@ fn wire__crate__api__keystone__decode_zcash_sig_result_cbor_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_cbor = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_postcard = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::keystone::decode_zcash_sig_result_cbor(api_cbor)?;
+                    let output_ok =
+                        crate::api::keystone::decode_zcash_batch_sign_response(api_postcard)?;
                     Ok(output_ok)
                 })())
             }
@@ -8040,7 +8041,7 @@ fn pde_ffi_dispatcher_primary_impl(
 23 => wire__crate__api__keystone__decode_pczt_from_cbor_impl(port, ptr, rust_vec_len, data_len),
 24 => wire__crate__api__keystone__decode_ur_part_impl(port, ptr, rust_vec_len, data_len),
 25 => wire__crate__api__keystone__decode_ur_to_pczt_impl(port, ptr, rust_vec_len, data_len),
-26 => wire__crate__api__keystone__decode_zcash_sig_result_cbor_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__keystone__decode_zcash_batch_sign_response_impl(port, ptr, rust_vec_len, data_len),
 27 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_impl(port, ptr, rust_vec_len, data_len),
 28 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_as_sig_result_impl(port, ptr, rust_vec_len, data_len),
 29 => wire__crate__api__sync__decrypt_and_store_transaction_impl(port, ptr, rust_vec_len, data_len),

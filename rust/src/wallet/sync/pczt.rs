@@ -601,30 +601,28 @@ pub(crate) fn extract_transaction_from_pczt(
 /// This is the equivalent of [`extract_transaction_from_pczt`] for the compact
 /// path: instead of receiving a full redacted signed PCZT back from the device
 /// and combining it, the device returns only the produced spend-authorization
-/// signatures (decoded into [`crate::wallet::keystone::DecodedActionSig`]s).
+/// signatures (decoded into [`OrchardSpendAuthSignature`]s).
 /// We load the proofs-PCZT the wallet already holds into the [`Signer`] role
 /// and re-apply each signature by (pool, action index).
-/// `apply_orchard_signature` / `apply_ironwood_signature` rk-verify each
-/// signature against the action before storing it, so an incorrect or
-/// mismatched signature fails here rather than at broadcast. The finalize +
-/// extract tail is shared with the full path via [`finalize_and_extract`],
-/// which guarantees the two paths produce identical transaction bytes and
-/// txid.
+/// [`Signer::apply_orchard_spend_auth_signature`] verifies each signature
+/// against the action before storing it, so an incorrect or mismatched
+/// signature fails here rather than at broadcast. The finalize + extract tail
+/// is shared with the full path via [`finalize_and_extract`], which guarantees
+/// the two paths produce identical transaction bytes and txid.
 ///
 /// `sigs` must be the decoded signatures for the single message whose
 /// proofs-PCZT is passed in. Sapling params are only required when the PCZT
 /// carries a non-empty Sapling bundle (see the module docstring); migration
 /// PCZTs are Orchard/Ironwood-only and pass `None`.
 ///
+/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
 /// [`Signer`]: pczt::roles::signer::Signer
 pub(crate) fn apply_sigs_and_extract(
     pczt_with_proofs_bytes: &[u8],
-    sigs: &[crate::wallet::keystone::DecodedActionSig],
+    sigs: &[pczt::roles::signer::OrchardSpendAuthSignature],
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<ExtractedPcztTransaction, String> {
-    use crate::wallet::keystone::{DECODED_SIG_POOL_IRONWOOD, DECODED_SIG_POOL_ORCHARD};
-    use orchard::primitives::redpallas::{Signature, SpendAuth};
     use pczt::roles::signer::Signer;
 
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
@@ -635,43 +633,22 @@ pub(crate) fn apply_sigs_and_extract(
 
     let mut seen_sigs = std::collections::HashSet::new();
     for action_sig in sigs {
-        if !seen_sigs.insert((action_sig.pool, action_sig.action_index)) {
+        if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
             return Err(format!(
-                "Duplicate compact signature for pool {} action {}",
-                action_sig.pool, action_sig.action_index
+                "Duplicate compact signature for pool {:?} action {}",
+                action_sig.value_pool(),
+                action_sig.action_index()
             ));
         }
-        let index = action_sig.action_index as usize;
-        // `apply_*_signature` takes a typed redpallas SpendAuth signature; the
-        // device sends raw 64-byte signatures, so reconstruct the typed form.
-        let signature = Signature::<SpendAuth>::from(action_sig.sig);
-        match action_sig.pool {
-            DECODED_SIG_POOL_ORCHARD => {
-                signer
-                    .apply_orchard_signature(index, signature)
-                    .map_err(|e| format!("Apply Orchard signature at action {index}: {e:?}"))?;
-            }
-            DECODED_SIG_POOL_IRONWOOD => {
-                #[cfg(zcash_unstable = "nu6.3")]
-                {
-                    signer
-                        .apply_ironwood_signature(index, signature)
-                        .map_err(|e| {
-                            format!("Apply Ironwood signature at action {index}: {e:?}")
-                        })?;
-                }
-                #[cfg(not(zcash_unstable = "nu6.3"))]
-                {
-                    let _ = signature;
-                    return Err(format!(
-                        "Ironwood signature at action {index} requires nu6.3 support"
-                    ));
-                }
-            }
-            other => {
-                return Err(format!("Unsupported signature pool {other}"));
-            }
-        }
+        signer
+            .apply_orchard_spend_auth_signature(action_sig)
+            .map_err(|e| {
+                format!(
+                    "Apply {:?} signature at action {}: {e:?}",
+                    action_sig.value_pool(),
+                    action_sig.action_index()
+                )
+            })?;
     }
 
     let signed = signer.finish();
@@ -679,48 +656,26 @@ pub(crate) fn apply_sigs_and_extract(
 }
 
 /// Read the spend-authorization signatures out of a fully-signed PCZT as a
-/// compact [`crate::wallet::keystone::DecodedActionSig`] list — the inverse of
+/// compact [`OrchardSpendAuthSignature`] list — the inverse of
 /// [`apply_sigs_and_extract`]'s input.
 ///
 /// This is the local-signing analogue of decoding a device's compact
 /// `zcash-batch-sig-result`: the software migration path signs a base PCZT with the
 /// USK and then needs only the produced signatures (not the whole signed PCZT)
 /// to persist for later finalization, so the encrypted migration DB column
-/// stores the same compact form the hardware path stores. Every Orchard (and,
-/// under nu6.3, Ironwood) action whose spend carries a `spend_auth_sig` is
-/// emitted with its pool discriminant and action index; actions without a
-/// signature (outputs / unsigned spends) are skipped.
+/// stores the same compact form the hardware path stores. Every Orchard and
+/// Ironwood action whose spend carries a `spend_auth_sig` is emitted with its
+/// pool and action index; actions without a signature are skipped.
+///
+/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
 pub(crate) fn extract_compact_sigs_from_signed_pczt(
     signed_pczt_bytes: &[u8],
-) -> Result<Vec<crate::wallet::keystone::DecodedActionSig>, String> {
-    use crate::wallet::keystone::{
-        DecodedActionSig, DECODED_SIG_POOL_IRONWOOD, DECODED_SIG_POOL_ORCHARD,
-    };
+) -> Result<Vec<pczt::roles::signer::OrchardSpendAuthSignature>, String> {
+    use pczt::roles::signer::extract_orchard_spend_auth_signatures;
 
     let pczt =
         pczt::Pczt::parse(signed_pczt_bytes).map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
-
-    let mut sigs = Vec::new();
-    for (index, action) in pczt.orchard().actions().iter().enumerate() {
-        if let Some(sig) = action.spend().spend_auth_sig() {
-            sigs.push(DecodedActionSig {
-                pool: DECODED_SIG_POOL_ORCHARD,
-                action_index: index as u32,
-                sig: *sig,
-            });
-        }
-    }
-
-    #[cfg(zcash_unstable = "nu6.3")]
-    for (index, action) in pczt.ironwood().actions().iter().enumerate() {
-        if let Some(sig) = action.spend().spend_auth_sig() {
-            sigs.push(DecodedActionSig {
-                pool: DECODED_SIG_POOL_IRONWOOD,
-                action_index: index as u32,
-                sig: *sig,
-            });
-        }
-    }
+    let sigs = extract_orchard_spend_auth_signatures(&pczt);
 
     if sigs.is_empty() {
         return Err("Signed PCZT has no spend-authorization signatures".to_string());
@@ -1090,9 +1045,8 @@ mod tests {
             apply_sigs_and_extract, extract_compact_sigs_from_signed_pczt,
             extract_transaction_from_pczt, ironwood_orchard_proving_key, redact_pczt_for_signer,
         };
-        use crate::wallet::keystone::{DecodedActionSig, DECODED_SIG_POOL_ORCHARD};
-
         use orchard::tree::MerkleHashOrchard;
+        use pczt::roles::signer::OrchardSpendAuthSignature;
         use pczt::roles::{
             creator::Creator, io_finalizer::IoFinalizer, prover::Prover, signer::Signer,
             updater::Updater,
@@ -1354,21 +1308,21 @@ mod tests {
                 extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize().unwrap())
                     .expect("extract compact sigs from signed PCZT");
             assert!(
-                extracted_sigs.contains(&DecodedActionSig {
-                    pool: DECODED_SIG_POOL_ORCHARD,
-                    action_index: spend_index as u32,
-                    sig: sig_bytes,
-                }),
+                extracted_sigs.contains(&OrchardSpendAuthSignature::from_parts(
+                    orchard::ValuePool::Orchard,
+                    spend_index,
+                    sig_bytes,
+                )),
                 "compact sig extraction must include the signer's signature at the spend index"
             );
 
             // NEW path: hand the SAME signature to the compact path as a
             // (pool, action_index, sig) list and apply it onto the proofs clone.
-            let sigs = vec![DecodedActionSig {
-                pool: DECODED_SIG_POOL_ORCHARD,
-                action_index: spend_index as u32,
-                sig: sig_bytes,
-            }];
+            let sigs = vec![OrchardSpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                sig_bytes,
+            )];
             let new = apply_sigs_and_extract(&proofs_bytes, &sigs, None, None)
                 .expect("compact apply_sigs_and_extract path should succeed");
 

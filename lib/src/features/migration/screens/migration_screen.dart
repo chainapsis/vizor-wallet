@@ -1028,7 +1028,9 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   ) {
     switch (signedQr.urType) {
       case _keystoneBatchSigResultUrType:
-        return rust_keystone.decodeZcashSigResultCbor(cbor: signedQr.cbor);
+        return rust_keystone.decodeZcashBatchSignResponse(
+          postcard: signedQr.cbor,
+        );
       case _keystoneSignResultUrType:
         return rust_keystone.decodeZcashSignResultCborAsSigResult(
           cbor: signedQr.cbor,

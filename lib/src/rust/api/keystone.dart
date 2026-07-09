@@ -55,14 +55,16 @@ Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
 }) =>
     RustLib.instance.api.crateApiKeystoneDecodeZcashSignResultCbor(cbor: cbor);
 
-/// Decode the CBOR payload returned from a compact `zcash-batch-sig-result` UR into
-/// flat FRB structs. The wallet-layer decode in
-/// `crate::wallet::keystone::decode_zcash_sig_result_cbor` does all CBOR shape
-/// and policy validation (supported version, known pool, exact 64-byte sig
-/// length); this wrapper only reshapes its `[u8; 64]` signatures into the
-/// `Vec<u8>` form FRB carries.
-Future<KeystoneSigResult> decodeZcashSigResultCbor({required List<int> cbor}) =>
-    RustLib.instance.api.crateApiKeystoneDecodeZcashSigResultCbor(cbor: cbor);
+/// Decode the Postcard payload returned from a compact
+/// `zcash-batch-sig-result` UR into flat FRB structs. The wallet-layer decode
+/// applies correlation policy on top of the upstream PCZT wire types; this
+/// wrapper only reshapes fixed-size signatures into the `Vec<u8>` form FRB
+/// carries.
+Future<KeystoneSigResult> decodeZcashBatchSignResponse({
+  required List<int> postcard,
+}) => RustLib.instance.api.crateApiKeystoneDecodeZcashBatchSignResponse(
+  postcard: postcard,
+);
 
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact
 /// signature shape used by migration completion. Current ForgeBox firmware may

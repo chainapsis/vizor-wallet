@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -1309935738;
+  int get rustContentHash => -517747853;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -274,8 +274,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<Uint8List> crateApiKeystoneDecodeUrToPczt({required String urString});
 
-  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashSigResultCbor({
-    required List<int> cbor,
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> postcard,
   });
 
   Future<ZcashBatchSignResult> crateApiKeystoneDecodeZcashSignResultCbor({
@@ -2156,14 +2156,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashSigResultCbor({
-    required List<int> cbor,
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> postcard,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_list_prim_u_8_loose(cbor, serializer);
+          sse_encode_list_prim_u_8_loose(postcard, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2175,17 +2175,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_keystone_sig_result,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiKeystoneDecodeZcashSigResultCborConstMeta,
-        argValues: [cbor],
+        constMeta: kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta,
+        argValues: [postcard],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiKeystoneDecodeZcashSigResultCborConstMeta =>
+  TaskConstMeta get kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta =>
       const TaskConstMeta(
-        debugName: "decode_zcash_sig_result_cbor",
-        argNames: ["cbor"],
+        debugName: "decode_zcash_batch_sign_response",
+        argNames: ["postcard"],
       );
 
   @override

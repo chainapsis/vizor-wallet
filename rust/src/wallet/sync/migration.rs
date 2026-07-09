@@ -215,7 +215,7 @@ pub(crate) struct SignedMigrationPcztInsert {
     /// place of a full signed PCZT (the "signatures-only" round-trip). Stored
     /// encrypted as a compact blob; the wallet re-applies them onto the
     /// re-proofed base at finalization time.
-    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
+    pub sigs: Vec<pczt::roles::signer::OrchardSpendAuthSignature>,
     pub target_height: u32,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
@@ -228,7 +228,7 @@ pub(crate) struct SignedMigrationPczt {
     pub base_pczt: Vec<u8>,
     /// Decoded compact spend-authorization signatures for this child (see
     /// [`SignedMigrationPcztInsert::sigs`]).
-    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
+    pub sigs: Vec<pczt::roles::signer::OrchardSpendAuthSignature>,
     pub target_height: u32,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
@@ -776,7 +776,7 @@ fn insert_signed_child_pczts_with_tx(
         let encrypted_signed_pczt = secret_payload::encrypt_payload(
             Zeroizing::new(crate::wallet::keystone::encode_compact_action_sigs(
                 &child.sigs,
-            )),
+            )?),
             password,
             salt.as_slice(),
         )?;
