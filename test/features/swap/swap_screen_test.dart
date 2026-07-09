@@ -19,6 +19,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
@@ -3315,6 +3316,120 @@ void main() {
 
     expect(container.read(swapStateProvider).amountFiatText, '8000');
     expect(container.read(swapStateProvider).amountText, '1');
+  });
+
+  testWidgets('a focused fiat entry survives a display-currency change and '
+      're-expresses on blur', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    // Focus the pay field while it is in fiat mode so the composer reports
+    // the active entry side to the notifier.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_amount_field')));
+    await tester.pump();
+
+    // Currency resolves mid-entry: the focused side keeps the user's text
+    // (no clobber) while the token amount stays canonical.
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    // Blur applies the deferred re-expression in the new unit.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(_fieldText(tester, 'swap_amount_field'), '8000');
+  });
+
+  testWidgets('leaving the swap surfaces releases the market-data poller', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final source = _CountingMarketDataSource();
+    final router = GoRouter(
+      initialLocation: '/swap',
+      routes: [
+        _swapRoute(),
+        _swapActivityRoute(),
+        GoRoute(path: '/blank', builder: (_, _) => const SizedBox.shrink()),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: _PricingSwapProvider(const [100]),
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          swapFeatureEnabledProvider.overrideWithValue(true),
+          zecMarketDataSourceProvider.overrideWithValue(source),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(source.fetchCount, 1);
+
+    // Control: with a fiat surface on screen the poller keeps ticking.
+    // Stepped pumps (not one big jump) so frames interleave with timers the
+    // way they do live.
+    for (var i = 0; i < 19; i++) {
+      await tester.pump(const Duration(seconds: 10));
+    }
+    expect(source.fetchCount, 2);
+
+    // With no fiat surface mounted, the session-long SwapNotifier must not
+    // keep the autoDispose market-data poller alive NOR resurrect it from
+    // its 20s/30s poll and price-refresh timers — no fetches while away.
+    router.go('/blank');
+    await tester.pumpAndSettle();
+    final fetchesAtLeave = source.fetchCount;
+
+    for (var i = 0; i < 36; i++) {
+      await tester.pump(const Duration(seconds: 10));
+    }
+    expect(source.fetchCount, fetchesAtLeave);
   });
 
   testWidgets('price refresh keeps the review page open and warns on drift', (
@@ -7914,6 +8029,19 @@ Widget _routerHarness(
       },
     ),
   );
+}
+
+class _CountingMarketDataSource implements ZecMarketDataSource {
+  int fetchCount = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    fetchCount += 1;
+    return const ZecMarketData(
+      pricesByCurrency: {'usd': 100.0, 'inr': 8000.0},
+      change24hPctByCurrency: {},
+    );
+  }
 }
 
 GoRoute _swapRoute() {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -33,6 +35,7 @@ class SwapComposerPanel extends StatefulWidget {
     required this.zecAvailableZatoshi,
     this.destinationContactName,
     this.fiatDisplay = kUsdFiatDisplay,
+    this.onFiatEntrySideChanged,
     super.key,
   });
 
@@ -62,6 +65,11 @@ class SwapComposerPanel extends StatefulWidget {
 
   /// Selected display currency + USD conversion for quote fiat values.
   final FiatDisplay fiatDisplay;
+
+  /// Reports which fiat-mode field currently has focus (null when neither),
+  /// so [SwapNotifier] can preserve an in-progress fiat entry when the
+  /// display currency changes under it.
+  final ValueChanged<SwapAmountInputSide?>? onFiatEntrySideChanged;
 
   @override
   State<SwapComposerPanel> createState() => _SwapComposerPanelState();
@@ -103,10 +111,38 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     _receiveAmountFocusNode.removeListener(_handleAmountFocusChanged);
     _amountFocusNode.dispose();
     _receiveAmountFocusNode.dispose();
+    if (_reportedFiatEntrySide != null) {
+      // FocusNode.dispose() does not emit an unfocus event; clear the
+      // notifier-side marker after teardown (the callback is a tear-off of a
+      // keepAlive notifier, safe to invoke after this tree is gone).
+      final callback = widget.onFiatEntrySideChanged;
+      if (callback != null) scheduleMicrotask(() => callback(null));
+    }
     super.dispose();
   }
 
-  void _handleAmountFocusChanged() => setState(() {});
+  SwapAmountInputSide? _reportedFiatEntrySide;
+
+  void _handleAmountFocusChanged() {
+    setState(() {});
+    final side = _fiatEntrySide();
+    if (side == _reportedFiatEntrySide) return;
+    _reportedFiatEntrySide = side;
+    widget.onFiatEntrySideChanged?.call(side);
+  }
+
+  SwapAmountInputSide? _fiatEntrySide() {
+    final state = widget.state;
+    if (_amountFocusNode.hasFocus &&
+        state.amountInputMode == SwapAmountInputMode.fiat) {
+      return SwapAmountInputSide.pay;
+    }
+    if (_receiveAmountFocusNode.hasFocus &&
+        state.receiveAmountInputMode == SwapAmountInputMode.fiat) {
+      return SwapAmountInputSide.receive;
+    }
+    return null;
+  }
 
   void _syncController(TextEditingController controller, String value) {
     if (controller.text == value) return;

@@ -64,6 +64,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   bool _modalRouteOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Heal fiat texts that went stale while no swap surface was mounted —
+      // the keepAlive SwapNotifier deliberately does not track the
+      // autoDispose display chain on its own (see its build()).
+      ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
+    });
+  }
+
+  @override
   void dispose() {
     _swapModal.dispose();
     super.dispose();
@@ -261,6 +273,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         _closeSwapModal();
       },
     );
+    // USD-fallback flips (market data resolving the selected currency, or a
+    // refresh transiently dropping it) re-express the stored fiat texts.
+    // Screen-scoped on purpose: this screen already keeps the display chain
+    // alive via its watch below, while the keepAlive SwapNotifier must not
+    // hold any subscription on it (see its build()).
+    ref.listen<String>(
+      fiatDisplayProvider.select((display) => display.displayCurrency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
+      },
+    );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -341,6 +365,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         onReceiveAmountFiatChanged:
                             swapNotifier.updateReceiveAmountFiat,
                         onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
+                        onFiatEntrySideChanged:
+                            swapNotifier.setActiveFiatEntrySide,
                         onToggleDirection: swapNotifier.toggleDirection,
                         onOpenExternalAssetPicker: () =>
                             _openModal(_SwapModalSurface.assetSelector),

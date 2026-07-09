@@ -9,6 +9,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/fiat_currency_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'swap_activity_tracker.dart';
@@ -42,11 +43,39 @@ final class SwapStartedKeystoneSigning extends SwapStartResult {
 }
 
 class SwapNotifier extends Notifier<SwapState> {
-  FiatDisplay get _fiatDisplay => ref.read(fiatDisplayProvider);
+  /// Latest display info WITHOUT resurrecting the autoDispose provider
+  /// chain. A plain `ref.read(fiatDisplayProvider)` from this keepAlive
+  /// notifier re-creates the disposed market-data poller (and its CoinGecko
+  /// fetch) on every status-poll/price-refresh tick while no fiat surface is
+  /// mounted. While the provider is dead nothing renders fiat, so the last
+  /// known display is the correct denomination for state texts until a
+  /// surface revives the chain and live reads resume.
+  FiatDisplay get _fiatDisplay {
+    if (ref.exists(fiatDisplayProvider)) {
+      return _lastKnownFiatDisplay = ref.read(fiatDisplayProvider);
+    }
+    return _lastKnownFiatDisplay;
+  }
+
+  /// Starts as the USD fallback every fresh notifier resolves to before
+  /// market data arrives (`FiatDisplay.displayCurrency` falls back to USD
+  /// while the rate is unknown).
+  FiatDisplay _lastKnownFiatDisplay = kUsdFiatDisplay;
 
   var _quoteGeneration = 0;
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
+
+  /// Display-currency code the state's fiat texts were last derived in.
+  String? _fiatTextsCurrencyCode;
+
+  /// Fiat-mode side the user is typing in right now (composer focus), or
+  /// null. Reported by the composer surfaces via [setActiveFiatEntrySide].
+  SwapAmountInputSide? _activeFiatEntrySide;
+
+  /// A currency change arrived while a fiat side was being typed in; that
+  /// side's re-expression is deferred until the entry side changes.
+  bool _fiatReexpressDeferred = false;
 
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
@@ -69,12 +98,22 @@ class SwapNotifier extends Notifier<SwapState> {
     // the USD-derived token amount. Rate drift within the same currency is
     // deliberately ignored — it would fight active typing without changing
     // the unit.
+    //
+    // The sync has two triggers, neither of which may pin the autoDispose
+    // market-data poller from this keepAlive notifier (a strong listen on
+    // fiatDisplayProvider here kept the 3-minute CoinGecko fetch alive for
+    // the whole session; a weak one kept the disposed element resurrectable
+    // on every state flush):
+    //  1. the selected-currency listener below — safe, it targets a
+    //     keepAlive provider — covers user picks while the chain is alive
+    //     (any fiat surface mounted);
+    //  2. the swap screens call [syncFiatTextsCurrency] on mount and on
+    //     resolved-display changes, covering USD-fallback flips — those can
+    //     only happen while some fiat surface keeps the chain alive anyway.
+    _fiatTextsCurrencyCode = _fiatDisplay.displayCurrency.code;
     ref.listen<String>(
-      fiatDisplayProvider.select((display) => display.displayCurrency.code),
-      (previous, next) {
-        if (previous == null || previous == next) return;
-        state = swapStateWithDerivedFiatTexts(fiatDisplay: _fiatDisplay, state);
-      },
+      fiatCurrencyProvider.select((currency) => currency.code),
+      (previous, next) => syncFiatTextsCurrency(),
     );
     ref.listen<String?>(
       accountProvider.select((value) => value.value?.activeAccountUuid),
@@ -257,6 +296,68 @@ class SwapNotifier extends Notifier<SwapState> {
       fiatDisplay: _fiatDisplay,
     );
     state = next.copyWith(reviewVisible: false, clearMaxAmountError: true);
+  }
+
+  /// The reported entry side, but only while that side is still in fiat
+  /// input mode — mode changes happen without a focus event, so the check
+  /// lives at use time instead of chasing every mode-changing handler.
+  SwapAmountInputSide? get _currentFiatEntrySide {
+    final side = _activeFiatEntrySide;
+    return switch (side) {
+      null => null,
+      SwapAmountInputSide.pay
+          when state.amountInputMode == SwapAmountInputMode.fiat =>
+        side,
+      SwapAmountInputSide.receive
+          when state.receiveAmountInputMode == SwapAmountInputMode.fiat =>
+        side,
+      _ => null,
+    };
+  }
+
+  /// Re-expresses the stored fiat texts when the display currency unit
+  /// changed; no-op while it still matches, so redundant triggers collapse.
+  /// The side the user is actively typing in is preserved — clobbering an
+  /// in-progress entry (partial input included) is worse than a briefly
+  /// stale label — and re-expressed once the side blurs.
+  ///
+  /// Called by the swap screens (mount + resolved-display changes) and the
+  /// selected-currency listener in [build]; see the pinning note there.
+  void syncFiatTextsCurrency() {
+    final display = _fiatDisplay;
+    final code = display.displayCurrency.code;
+    final previous = _fiatTextsCurrencyCode;
+    _fiatTextsCurrencyCode = code;
+    if (previous == null || previous == code) return;
+    final activeSide = _currentFiatEntrySide;
+    if (activeSide != null) _fiatReexpressDeferred = true;
+    state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: display,
+      state,
+      preserveAmountFiatInput: activeSide == SwapAmountInputSide.pay,
+      preserveReceiveFiatInput: activeSide == SwapAmountInputSide.receive,
+    );
+  }
+
+  /// Composer surfaces report which fiat-mode field has focus (null when
+  /// neither). When a deferred currency re-expression is pending, it runs as
+  /// soon as the entry side changes, preserving only the newly-active side.
+  ///
+  /// The mounted guard covers the composers' dispose-time microtask, which
+  /// can land after the container itself was torn down (widget tests).
+  void setActiveFiatEntrySide(SwapAmountInputSide? side) {
+    if (!ref.mounted) return;
+    if (_activeFiatEntrySide == side) return;
+    _activeFiatEntrySide = side;
+    if (!_fiatReexpressDeferred) return;
+    final activeSide = _currentFiatEntrySide;
+    if (activeSide == null) _fiatReexpressDeferred = false;
+    state = swapStateWithDerivedFiatTexts(
+      fiatDisplay: _fiatDisplay,
+      state,
+      preserveAmountFiatInput: activeSide == SwapAmountInputSide.pay,
+      preserveReceiveFiatInput: activeSide == SwapAmountInputSide.receive,
+    );
   }
 
   void updateDestination(String value) {

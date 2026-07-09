@@ -66,6 +66,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
+      // Heal fiat texts that went stale while no swap surface was mounted —
+      // the keepAlive SwapNotifier deliberately does not track the
+      // autoDispose display chain on its own (see its build()).
+      ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
     });
   }
 
@@ -166,6 +170,18 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         setState(() => _swapModal = null);
       },
     );
+    // USD-fallback flips (market data resolving the selected currency, or a
+    // refresh transiently dropping it) re-express the stored fiat texts.
+    // Screen-scoped on purpose: this screen already keeps the display chain
+    // alive via its watch below, while the keepAlive SwapNotifier must not
+    // hold any subscription on it (see its build()).
+    ref.listen<String>(
+      fiatDisplayProvider.select((display) => display.displayCurrency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
+      },
+    );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -251,6 +267,8 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       onReceiveAmountFiatChanged:
                           swapNotifier.updateReceiveAmountFiat,
                       onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
+                      onFiatEntrySideChanged:
+                          swapNotifier.setActiveFiatEntrySide,
                       onToggleDirection: swapNotifier.toggleDirection,
                       onOpenExternalAssetPicker: _openAssetSelector,
                       onOpenDestinationAddress: _openAddressEditor,
