@@ -8,6 +8,9 @@ import 'app_icon.dart';
 
 enum AppToastTone { neutral, destructive }
 
+const _kToastIconSize = 20.0;
+const _kDestructiveToastForeground = Color(0xFFFFFFFF);
+
 class AppToast extends StatelessWidget {
   const AppToast({
     required this.message,
@@ -29,8 +32,14 @@ class AppToast extends StatelessWidget {
       AppToastTone.neutral => colors.background.inverse,
       AppToastTone.destructive => colors.background.utilityDestructiveStrong,
     };
-    final textColor = colors.text.inverse;
-    final iconColor = colors.icon.inverse;
+    final textColor = switch (tone) {
+      AppToastTone.neutral => colors.text.inverse,
+      AppToastTone.destructive => _kDestructiveToastForeground,
+    };
+    final iconColor = switch (tone) {
+      AppToastTone.neutral => colors.icon.inverse,
+      AppToastTone.destructive => _kDestructiveToastForeground,
+    };
     final textStyle = switch (tone) {
       AppToastTone.neutral => AppTypography.labelLarge,
       AppToastTone.destructive => AppTypography.labelLarge.copyWith(
@@ -53,7 +62,7 @@ class AppToast extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AppIcon(iconName, size: AppIconSize.medium, color: iconColor),
+              AppIcon(iconName, size: _kToastIconSize, color: iconColor),
               const SizedBox(width: AppSpacing.xxs),
               // Flexible so long messages wrap inside the pill instead of
               // overflowing the row off-screen.
@@ -184,8 +193,8 @@ void showAppToast(
 }) {
   // 1. A direct host scope (the toast renders inside the nearest
   //    AppToastHost, which is under the app's AppTheme).
-  final element =
-      context.getElementForInheritedWidgetOfExactType<_AppToastScope>();
+  final element = context
+      .getElementForInheritedWidgetOfExactType<_AppToastScope>();
   final scope = element?.widget as _AppToastScope?;
   if (scope != null) {
     scope.state.show(
@@ -220,8 +229,8 @@ void showAppToast(
   //    otherwise AppToast.build cannot resolve tokens and throws.
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay != null) {
-    final themeElement =
-        context.getElementForInheritedWidgetOfExactType<AppTheme>();
+    final themeElement = context
+        .getElementForInheritedWidgetOfExactType<AppTheme>();
     final theme = (themeElement?.widget as AppTheme?)?.data;
     _showOverlayToast(
       overlay,
@@ -277,27 +286,26 @@ void _showOverlayToast(
 
   late final OverlayEntry entry;
   entry = OverlayEntry(
-    builder:
-        (_) => _OverlayAppToast(
-          message: message,
-          iconName: iconName,
-          tone: tone,
-          duration: duration,
-          theme: theme,
-          onDismiss: () {
-            if (_AppToastHostState._fallbackOverlayEntry == entry) {
-              _AppToastHostState._fallbackOverlayEntry = null;
-            }
-            if (entry.mounted) {
-              entry.remove();
-            }
-          },
-          onDisposed: () {
-            if (_AppToastHostState._fallbackOverlayEntry == entry) {
-              _AppToastHostState._fallbackOverlayEntry = null;
-            }
-          },
-        ),
+    builder: (_) => _OverlayAppToast(
+      message: message,
+      iconName: iconName,
+      tone: tone,
+      duration: duration,
+      theme: theme,
+      onDismiss: () {
+        if (_AppToastHostState._fallbackOverlayEntry == entry) {
+          _AppToastHostState._fallbackOverlayEntry = null;
+        }
+        if (entry.mounted) {
+          entry.remove();
+        }
+      },
+      onDisposed: () {
+        if (_AppToastHostState._fallbackOverlayEntry == entry) {
+          _AppToastHostState._fallbackOverlayEntry = null;
+        }
+      },
+    ),
   );
 
   _AppToastHostState._fallbackOverlayEntry = entry;

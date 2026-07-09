@@ -256,9 +256,7 @@ void main() {
     );
   });
 
-  testWidgets('paste read progress only changes the bottom action', (
-    tester,
-  ) async {
+  testWidgets('paste read progress disables the manual card', (tester) async {
     final pendingClipboard = Completer<Map<String, String>?>();
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -283,13 +281,25 @@ void main() {
 
     expect(find.text('Reading clipboard data...'), findsOneWidget);
     expect(find.text('Manually Enter\nSecret Passphrase'), findsOneWidget);
+    final content = tester.widget<Opacity>(
+      find.byKey(const ValueKey('mobile_import_manual_card_content')),
+    );
+    expect(content.opacity, 0.25);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+
     expect(
       find.byKey(const ValueKey('mobile_import_manual_card')),
       findsOneWidget,
     );
+    expect(find.text('Enter your Secret Passphrase'), findsNothing);
   });
 
-  testWidgets('pending paste completion does not hijack manual entry', (
+  testWidgets('pending paste completion is not displaced by manual entry', (
     tester,
   ) async {
     final pendingClipboard = Completer<Map<String, String>?>();
@@ -315,16 +325,16 @@ void main() {
     await tester.pump();
     await tester.tap(
       find.byKey(const ValueKey('mobile_import_enter_manually')),
+      warnIfMissed: false,
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsNothing);
 
     pendingClipboard.complete({'text': _validMnemonic});
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-    expect(find.text('Review Import'), findsNothing);
+    expect(find.text('Review Import'), findsOneWidget);
   });
 
   testWidgets('paste normalizes quoted and numbered mnemonic text', (

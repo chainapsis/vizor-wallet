@@ -106,7 +106,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
         context,
         initialError,
         duration: widget.initialPreviewErrorDuration,
-        iconName: AppIcons.cross,
+        iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
     });
@@ -127,7 +127,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       showAppToast(
         context,
         _kImportClipboardReadError,
-        iconName: AppIcons.cross,
+        iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
       return;
@@ -141,7 +141,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       showAppToast(
         context,
         'Clipboard is empty',
-        iconName: AppIcons.cross,
+        iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
       return;
@@ -165,7 +165,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     showAppToast(
       context,
       pasteError,
-      iconName: AppIcons.cross,
+      iconName: AppIcons.cancel,
       tone: AppToastTone.destructive,
     );
   }
@@ -197,13 +197,14 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isReading = _pasteState == _ImportPasteState.reading;
     return MobileOnboardingStepScaffold(
       progress: mobileImportProgress(1),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Import Wallet',
       subtitle: _kImportPasteHelperText,
       bottomArea: _ImportPasteButton(state: _pasteState, onPaste: _paste),
-      child: _ImportManualSeedCard(onTap: _openManual),
+      child: _ImportManualSeedCard(onTap: isReading ? null : _openManual),
     );
   }
 }
@@ -211,14 +212,16 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 class _ImportManualSeedCard extends StatelessWidget {
   const _ImportManualSeedCard({required this.onTap});
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final homeText = colors.text.homeCard;
+    final enabled = onTap != null;
     return Semantics(
       button: true,
+      enabled: enabled,
       label: 'Enter secret passphrase manually',
       child: GestureDetector(
         key: const ValueKey('mobile_import_enter_manually'),
@@ -253,34 +256,38 @@ class _ImportManualSeedCard extends StatelessWidget {
                 ),
               ),
               Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.edit,
-                      size: AppIconSize.large,
-                      color: homeText,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SizedBox(
-                      width: 255,
-                      child: Text(
-                        'Manually Enter\nSecret Passphrase',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.headlineLarge.copyWith(
-                          color: homeText,
+                child: Opacity(
+                  key: const ValueKey('mobile_import_manual_card_content'),
+                  opacity: enabled ? 1 : 0.25,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppIcon(
+                        AppIcons.edit,
+                        size: AppIconSize.large,
+                        color: homeText,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      SizedBox(
+                        width: 255,
+                        child: Text(
+                          'Manually Enter\nSecret Passphrase',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.headlineLarge.copyWith(
+                            color: homeText,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Word by word.',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: homeText.withValues(alpha: 0.5),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Word by word.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: homeText.withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],

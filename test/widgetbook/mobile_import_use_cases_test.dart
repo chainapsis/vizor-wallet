@@ -43,6 +43,10 @@ void main() {
       );
       expect(editIcon.name, AppIcons.edit);
       expect(editIcon.size, AppIconSize.large);
+      final manualContent = tester.widget<Opacity>(
+        find.byKey(const ValueKey('mobile_import_manual_card_content')),
+      );
+      expect(manualContent.opacity, 1);
       expect(
         find.byKey(const ValueKey('mobile_import_manual_placeholder_blur')),
         findsNothing,
@@ -205,6 +209,19 @@ void main() {
       decoration.color,
       AppThemeData.dark.colors.background.utilityDestructiveStrong,
     );
+    final toastIcon = tester.widget<AppIcon>(
+      find.descendant(of: toast, matching: find.byType(AppIcon)),
+    );
+    expect(toastIcon.name, AppIcons.cancel);
+    expect(toastIcon.size, 20);
+    expect(toastIcon.color, const Color(0xFFFFFFFF));
+    final toastText = tester.widget<Text>(
+      find.descendant(
+        of: toast,
+        matching: find.text("Can't read the clipboard"),
+      ),
+    );
+    expect(toastText.style?.color, const Color(0xFFFFFFFF));
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_import_manual_card'))),
       const Size(361, 385),
