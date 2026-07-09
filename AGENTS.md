@@ -23,6 +23,10 @@ flutter_rust_bridge_codegen generate
 # Clear app from iOS simulator (keychain + state + uninstall)
 ./clear-app.sh
 
+# Build the on-device zwap hashbind prover xcframework (one-time per
+# checkout / provekit bump), then re-run pod install in ios/ and macos/.
+./scripts/build-hashbind-prover.sh
+
 # View Rust logs (log::info!, log::error!, etc.)
 # FRB routes Rust logs to os_log (subsystem "frb_user"), not Flutter console.
 # Run in a separate terminal:
@@ -636,6 +640,46 @@ implements this pipeline end-to-end; the Rust side lives in
 `rust/src/wallet/sync.rs::{create_pczt_from_proposal,
 add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt,
 discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
+
+### Zwap In-App Swap Backend (b2z/z2b/z2e/e2z)
+
+Non-custodial atomic swaps (BTC/ETH/USDC ↔ ZEC) behind
+`--dart-define=VIZOR_SWAP_BACKEND=zwap` (default `near`; dead path
+tree-shaken). Dart driver in
+`lib/src/features/swap/integrations/zwap/` (client/adapter/config), swap
+crypto in `rust/src/zwap/` with FRB surface `rust/src/api/swap_zwap.rs`.
+Endpoints come from `ZWAP_*` dart-defines (defaults target the local
+regtest stack).
+
+**Hashbind proving is on-device by default.** b2z/z2b need a ProveKit
+"hashbind" proof over the raw spend-auth scalar `k_a` — the one swap
+secret that must reach a prover:
+
+- `native/hashbind_prover/` — nightly-Rust cdylib wrapping upstream
+  `provekit-ffi` pinned to the solver's provekit rev (`cc391c8` +
+  `provekit_ntt`) with vendored witness math. NOT part of the FRB
+  workspace (nightly vs stable); built ahead of time by
+  `scripts/build-hashbind-prover.sh` into
+  `VizorHashbindProver.xcframework` (gitignored), vendored into
+  iOS/macOS by the guarded `VizorHashbindProver` pod, then
+  `pod install`. Without it the app builds fine and the swap flow
+  throws a clear "prover unavailable" error.
+- Dart bridge `zwap_hashbind_native.dart`: verifies the bundled
+  `assets/zwap/pallas.pkp` against a pinned sha256 (must stay
+  byte-identical to the solver's key — bump per the checklist in
+  `native/hashbind_prover/README.md`), then proves on a worker isolate
+  (~6s on M-series). Proof bytes are provekit `.np` postcard — the
+  encoding the solver's native verify engine consumes (browser FE posts
+  JSON wasm proofs; the solver routes by encoding).
+- Prover selection (`selectZwapHashbindProver` in
+  `zwap_swap_config.dart`): no `ZWAP_HASHBIND_PROVER_URL` → native
+  on-device prover; URL set in debug/profile → regtest HTTP helper
+  (unchanged harness); URL set in release → fail closed (the raw scalar
+  must never leave the device in production).
+- Rust wrapper tests: `cd native/hashbind_prover && cargo test` (fast:
+  golden witness parity vs proxy repo + ABI error paths) and
+  `cargo test --release -- --ignored --nocapture` (full prove→verify
+  round-trip against the solver's pkp/pkv fixtures + tamper reject).
 
 ### Wallet Creation
 
