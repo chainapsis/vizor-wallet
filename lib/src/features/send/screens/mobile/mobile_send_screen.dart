@@ -328,6 +328,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
   String _fiatAmountText = '';
+  // Set when a display-currency change arrives while the fiat field is
+  // focused: the re-expression is deferred to focus loss so it never
+  // clobbers an in-progress entry.
+  bool _fiatReexpressPending = false;
   MobileSendAmountInputMode _amountInputMode = MobileSendAmountInputMode.zec;
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
@@ -461,6 +465,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   void _handleAmountFocusChanged() {
     if (mounted) setState(() {});
+    if (!_amountFocus.hasFocus && _fiatReexpressPending) {
+      _reexpressFiatForCurrencyChange();
+    }
   }
 
   Future<void> _validateAddress() async {
@@ -645,6 +652,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // typed ZEC amount is currency-independent.
       return;
     }
+    if (_amountFocus.hasFocus) {
+      // Never rewrite a focused field: the prefix symbol already shows the
+      // new currency and the next keystroke re-prices the entry in it, so
+      // overwriting here would clobber an in-progress entry (a partial like
+      // "12." would be cleared outright). Re-express on focus loss instead.
+      _fiatReexpressPending = true;
+      return;
+    }
+    _fiatReexpressPending = false;
     final zatoshi = parseZecAmount(_amountText.trim());
     final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
     final fiatText = zatoshi == null || zecUnitPrice == null
@@ -674,6 +690,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
 
+    _fiatReexpressPending = false;
     setState(() {
       _amountInputMode = nextMode;
       if (_amountInputIsUsd) {
@@ -746,6 +763,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleFiatAmountChanged(String value) {
+    // A keystroke re-prices the whole entry at the current unit price, so a
+    // deferred currency re-expression is no longer needed (and would
+    // otherwise rewrite the user's own text on blur).
+    _fiatReexpressPending = false;
     final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
     final zatoshi = _zatoshiFromFiatText(value, zecUnitPrice);
     setState(() {

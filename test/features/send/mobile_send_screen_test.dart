@@ -1335,8 +1335,59 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1.5 ZEC'), findsOneWidget);
 
-    // Currency changes while the fiat entry is live: the text re-expresses
-    // the canonical 1.5 ZEC in KRW instead of relabeling '105' as won.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+      listen: false,
+    );
+
+    // Currency changes while the field is FOCUSED: never fight active
+    // typing — the entry text stays, the canonical ZEC amount stays.
+    await container
+        .read(fiatCurrencyProvider.notifier)
+        .set(fiatCurrencyForCode('krw'));
+    await tester.pumpAndSettle();
+
+    TextField amountInput() => tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput().controller?.text, '105');
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+
+    // On blur the deferred re-expression runs: the canonical 1.5 ZEC
+    // re-expresses in KRW instead of relabeling '105' as won.
+    // 1.5 ZEC * ₩91,000 = ₩136,500 at KRW's zero decimals.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(amountInput().controller?.text, '136500');
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('an unfocused fiat entry re-expresses immediately on a '
+      'display-currency change', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+      '105',
+    );
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MobileSendScreen)),
       listen: false,
@@ -1349,7 +1400,6 @@ void main() {
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
-    // 1.5 ZEC * ₩91,000 = ₩136,500 at KRW's zero decimals.
     expect(amountInput.controller?.text, '136500');
     expect(find.text('1.5 ZEC'), findsOneWidget);
   });
