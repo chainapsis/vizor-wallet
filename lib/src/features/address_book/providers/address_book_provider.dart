@@ -227,6 +227,21 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
     return added;
   }
 
+  Future<Set<String>> alreadyImportedContactIds(
+    Iterable<AddressBookContact> importedContacts,
+  ) async {
+    final current = await _loadedState();
+    if (current.contacts.isEmpty) return const <String>{};
+
+    final existingKeys = {
+      for (final contact in current.contacts) _contactKey(contact),
+    };
+    return {
+      for (final imported in importedContacts)
+        if (existingKeys.contains(_contactKey(imported))) imported.id,
+    };
+  }
+
   Future<void> _persist(List<AddressBookContact> contacts) async {
     await ref.read(addressBookRepositoryProvider).saveContacts(contacts);
   }

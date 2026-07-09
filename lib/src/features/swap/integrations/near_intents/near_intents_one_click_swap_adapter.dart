@@ -67,6 +67,7 @@ class NearIntentsOneClickSwapAdapter
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     _validateQuoteRequest(request);
+    final quoteMode = _oneClickQuoteModeForRequest(request);
     final amountText = _requiredQuoteAmountText(request);
 
     final tokens = await _ensureTokens();
@@ -80,9 +81,7 @@ class NearIntentsOneClickSwapAdapter
       tokens,
       operation: 'quote',
     );
-    final amountToken = request.mode == SwapQuoteMode.exactInput
-        ? sellToken
-        : receiveToken;
+    final amountToken = quoteMode.usesInputAmount ? sellToken : receiveToken;
     final amountBaseUnits = _toBaseUnits(amountText, amountToken.decimals);
     final requestedSlippageBps = request.slippageBps ?? slippageBps;
     final requestedRefundTo = request.refundAddress!.trim();
@@ -90,7 +89,7 @@ class NearIntentsOneClickSwapAdapter
 
     final body = <String, Object?>{
       'dry': request.dryRun,
-      'swapType': request.mode.oneClickSwapType,
+      'swapType': quoteMode.oneClickSwapType,
       'slippageTolerance': requestedSlippageBps,
       'originAsset': sellToken.assetId,
       'depositType': 'ORIGIN_CHAIN',
@@ -116,19 +115,22 @@ class NearIntentsOneClickSwapAdapter
     final quoteResponse = _OneClickQuoteResponse.fromJson(response.jsonObject);
     _validateQuoteResponseRequest(
       quoteResponse,
-      expectedMode: request.mode,
+      expectedMode: quoteMode,
       expectedFixedAmountBaseUnits: amountBaseUnits,
       expectedSlippageBps: requestedSlippageBps,
       expectedRefundTo: requestedRefundTo,
       expectedRecipient: requestedRecipient,
       sellToken: sellToken,
       receiveToken: receiveToken,
+      allowFlexibleQuotedAmount:
+          request.direction == SwapDirection.externalToZec &&
+          quoteMode == SwapQuoteMode.flexInput,
     );
     return _quoteFromOneClick(
       quoteResponse,
       direction: request.direction,
       externalAsset: request.externalAsset,
-      mode: request.mode,
+      mode: quoteMode,
       sellToken: sellToken,
       receiveToken: receiveToken,
       fallbackSlippageBps:
@@ -136,6 +138,14 @@ class NearIntentsOneClickSwapAdapter
           request.slippageBps ??
           slippageBps,
     );
+  }
+
+  SwapQuoteMode _oneClickQuoteModeForRequest(SwapQuoteRequest request) {
+    if (request.direction == SwapDirection.externalToZec &&
+        request.mode == SwapQuoteMode.exactInput) {
+      return SwapQuoteMode.flexInput;
+    }
+    return request.mode;
   }
 
   @override
@@ -647,6 +657,9 @@ class NearIntentsOneClickSwapAdapter
   }) {
     final details = response.swapDetails;
     if (details == null) return null;
+    if (response.quoteResponse.quoteRequest.mode == SwapQuoteMode.flexInput) {
+      return null;
+    }
     final quote = response.quoteResponse.quote;
     if (response.quoteResponse.quoteRequest.mode == SwapQuoteMode.exactOutput) {
       final expected = _statusDecimalAmount(
@@ -718,6 +731,7 @@ class NearIntentsOneClickSwapAdapter
     required String expectedRecipient,
     required _OneClickToken sellToken,
     required _OneClickToken receiveToken,
+    required bool allowFlexibleQuotedAmount,
   }) {
     final actual = response.quoteRequest;
     final actualSwapType = actual.swapTypeRaw?.trim().toUpperCase();
@@ -732,17 +746,24 @@ class NearIntentsOneClickSwapAdapter
     }
 
     final quote = response.quote;
-    final amountField = expectedMode == SwapQuoteMode.exactInput
+    final amountField = expectedMode.usesInputAmount
         ? quote.amountIn
         : quote.amountOut;
-    final amountFieldName = expectedMode == SwapQuoteMode.exactInput
+    final amountFieldName = expectedMode.usesInputAmount
         ? 'amountIn'
         : 'amountOut';
     final expectedFixedAmount = BigInt.parse(expectedFixedAmountBaseUnits);
-    if (_parseQuoteResponseBaseUnits(amountField, amountFieldName) !=
-            expectedFixedAmount ||
-        _parseQuoteResponseBaseUnits(actual.amount, 'quoteRequest.amount') !=
-            expectedFixedAmount) {
+    final responseFixedAmount = _parseQuoteResponseBaseUnits(
+      amountField,
+      amountFieldName,
+    );
+    final requestFixedAmount = _parseQuoteResponseBaseUnits(
+      actual.amount,
+      'quoteRequest.amount',
+    );
+    if (requestFixedAmount != expectedFixedAmount ||
+        (!allowFlexibleQuotedAmount &&
+            responseFixedAmount != expectedFixedAmount)) {
       throw OneClickApiException(
         '1Click quote response did not match the requested amount',
         operation: 'quote',
@@ -866,7 +887,32 @@ class NearIntentsOneClickSwapAdapter
         return entry.key;
       }
     }
+    final oneClickTickerAsset = _oneClickUniqueTickerAssetFromId(
+      assetId,
+      tokens,
+    );
+    if (oneClickTickerAsset != null) return oneClickTickerAsset;
     return null;
+  }
+
+  SwapAsset? _oneClickUniqueTickerAssetFromId(
+    String assetId,
+    List<_OneClickToken> tokens,
+  ) {
+    final parts = assetId.trim().toLowerCase().split(':');
+    if (parts.length < 2 || parts[0] != '1cs_v1') {
+      return null;
+    }
+
+    final ticker = parts[1];
+    if (ticker.isEmpty) return null;
+    final candidates = <String, SwapAsset>{};
+    for (final token in tokens) {
+      final asset = _assetForToken(token);
+      if (asset.symbol.toLowerCase() != ticker) continue;
+      candidates.putIfAbsent(token.assetId, () => asset);
+    }
+    return candidates.length == 1 ? candidates.values.single : null;
   }
 
   SwapAsset _assetForToken(_OneClickToken token) {

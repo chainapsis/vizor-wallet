@@ -7,6 +7,7 @@ class AccountInfo {
   final bool isHardware;
   final bool isSeedAnchor;
   final String profilePictureId;
+  final String? walletLinkSourceAccountUuid;
 
   const AccountInfo({
     required this.uuid,
@@ -15,6 +16,7 @@ class AccountInfo {
     this.isHardware = false,
     this.isSeedAnchor = false,
     this.profilePictureId = kDefaultProfilePictureId,
+    this.walletLinkSourceAccountUuid,
   });
 
   AccountInfo copyWith({
@@ -22,6 +24,7 @@ class AccountInfo {
     int? order,
     bool? isSeedAnchor,
     String? profilePictureId,
+    String? walletLinkSourceAccountUuid,
   }) => AccountInfo(
     uuid: uuid,
     name: name ?? this.name,
@@ -29,6 +32,8 @@ class AccountInfo {
     isHardware: isHardware,
     isSeedAnchor: isSeedAnchor ?? this.isSeedAnchor,
     profilePictureId: profilePictureId ?? this.profilePictureId,
+    walletLinkSourceAccountUuid:
+        walletLinkSourceAccountUuid ?? this.walletLinkSourceAccountUuid,
   );
 
   Map<String, dynamic> toJson() => {
@@ -38,6 +43,7 @@ class AccountInfo {
     'isHardware': isHardware,
     'isSeedAnchor': isSeedAnchor,
     'profilePictureId': profilePictureId,
+    'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
   };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -55,7 +61,16 @@ class AccountInfo {
     profilePictureId: normalizeProfilePictureId(
       json['profilePictureId'] as String? ?? kDefaultProfilePictureId,
     ),
+    walletLinkSourceAccountUuid: _normalizedOptionalString(
+      json['walletLinkSourceAccountUuid'],
+    ),
   );
+}
+
+String? _normalizedOptionalString(Object? value) {
+  if (value is! String) return null;
+  final normalized = value.trim();
+  return normalized.isEmpty ? null : normalized;
 }
 
 class AccountState {

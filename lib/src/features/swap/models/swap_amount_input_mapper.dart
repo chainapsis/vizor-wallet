@@ -31,11 +31,11 @@ String? swapReceiveTokenTextFromFiatInput(
 SwapState swapStateWithIndicativeCounterpart(SwapState next) {
   final estimate = next.draftQuote;
   if (estimate == null) {
-    return next.quoteMode == SwapQuoteMode.exactInput
+    return next.quoteMode.usesInputAmount
         ? next.copyWith(receiveAmountText: '')
         : next.copyWith(amountText: '');
   }
-  if (next.quoteMode == SwapQuoteMode.exactInput) {
+  if (next.quoteMode.usesInputAmount) {
     return next.copyWith(
       receiveAmountText: estimate.receiveAsset.formatAmountDown(
         estimate.receiveAmount,

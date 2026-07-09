@@ -194,8 +194,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 
     final payActive =
         _amountFocusNode.hasFocus ||
-        (!_receiveAmountFocusNode.hasFocus &&
-            state.quoteMode == SwapQuoteMode.exactInput);
+        (!_receiveAmountFocusNode.hasFocus && state.quoteMode.usesInputAmount);
     final receiveActive =
         _receiveAmountFocusNode.hasFocus ||
         (!_amountFocusNode.hasFocus &&

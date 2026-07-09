@@ -3,9 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/fiat_currencies.dart';
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -25,11 +27,13 @@ import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../models/send_prefill_args.dart';
+import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
@@ -108,6 +112,8 @@ class _MaxQuote {
   final BigInt amountZatoshi;
 }
 
+enum _DesktopSendAmountInputMode { zec, usd }
+
 class _AddressTextEditingController extends TextEditingController {
   // Emphasize the visible address edges while keeping the middle neutral.
   static const _highlightPrefixLength = 6;
@@ -156,7 +162,7 @@ class _AddressTextEditingController extends TextEditingController {
 
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
-  static const _singleLineFieldGap = AppSpacing.xs;
+  static const _singleLineFieldGap = AppSpacing.s;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
   static const _hardwareTexUnsupportedText =
@@ -176,6 +182,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String _addressType = '';
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
+  // Canonical wallet amount used for validation and Rust calls. The controller
+  // is only the visible text for the currently selected amount input mode.
+  String _amountText = '';
+  String _fiatAmountText = '';
+  // Set when a display-currency change arrives while the fiat field is
+  // focused: the re-expression is deferred to focus loss so it never
+  // clobbers an in-progress entry (same semantics as mobile send).
+  bool _fiatReexpressPending = false;
+  // The currency _fiatAmountText is denominated in — lets the unit-price
+  // drift listener tell "same-currency price update" (re-derive ZEC from the
+  // typed text, the #321 behavior) apart from "currency flip" (re-express
+  // the text from the canonical ZEC amount instead).
+  String? _fiatEntryCurrencyCode;
+  _DesktopSendAmountInputMode _amountInputMode =
+      _DesktopSendAmountInputMode.zec;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
@@ -189,6 +210,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   void initState() {
     super.initState();
     _applyPrefill(widget.prefill);
+    _fiatEntryCurrencyCode = ref.read(zecHomeFiatDisplayCurrencyProvider).code;
     _memoController.addListener(_handleMemoChanged);
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
@@ -203,7 +225,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (prefill == null) return;
     _addressController.text = prefill.address;
     if (prefill.amountText != null) {
-      _amountController.text = prefill.amountText!;
+      _amountText = prefill.amountText!.trim();
+      _amountController.text = _amountText;
       _amountError = null;
     }
     if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
@@ -247,6 +270,50 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _handleFieldVisualStateChanged() {
     if (mounted) setState(() {});
+    if (!_amountFocusNode.hasFocus && _fiatReexpressPending) {
+      _reexpressFiatForCurrencyChange();
+    }
+  }
+
+  /// The currency desktop fiat entry is denominated in — the resolved
+  /// display currency, so symbol/decimals always match the unit price from
+  /// [zecHomeFiatUnitPriceProvider] (USD fallback included).
+  FiatCurrency get _fiatCurrency =>
+      ref.read(zecHomeFiatDisplayCurrencyProvider);
+
+  void _reexpressFiatForCurrencyChange() {
+    if (!_amountInputIsUsd) {
+      // Token mode: symbols/decimals re-render via the provider watches; the
+      // typed ZEC amount is currency-independent. No fiat text is stored, so
+      // the entry denomination simply follows the display currency.
+      _fiatEntryCurrencyCode = _fiatCurrency.code;
+      return;
+    }
+    if (_amountFocusNode.hasFocus) {
+      // Never rewrite a focused field: the prefix symbol already shows the
+      // new currency and the next keystroke re-prices the entry in it, so
+      // overwriting here would clobber an in-progress entry (a partial like
+      // "12." would be cleared outright). Re-express on focus loss instead.
+      // _fiatEntryCurrencyCode intentionally stays at the OLD code: the text
+      // is still denominated in it, and the code mismatch is what keeps the
+      // unit-price drift listener from re-deriving ZEC from old-currency
+      // digits at the new currency's price.
+      _fiatReexpressPending = true;
+      return;
+    }
+    _fiatReexpressPending = false;
+    _fiatEntryCurrencyCode = _fiatCurrency.code;
+    final zatoshi = parseZecAmount(_amountText.trim());
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    final fiatText = zatoshi == null || zecUnitPrice == null
+        ? ''
+        : sendSendableFiatInputTextForZatoshi(
+            zatoshi,
+            zecUnitPrice,
+            _fiatCurrency,
+          );
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
   }
 
   void _openContactPicker() {
@@ -273,7 +340,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (oldWidget.spendableBalance != widget.spendableBalance) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
-      } else if (_amountController.text.trim().isNotEmpty) {
+      } else if (_amountText.trim().isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _validateAmount();
@@ -344,6 +411,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _handleAmountChanged() {
     if (_programmaticAmountEdit) return;
+    if (_amountInputIsUsd) {
+      _handleFiatAmountChanged(_amountController.text);
+      return;
+    }
     if (_isMaxMode) {
       _maxDebounceTimer?.cancel();
       _maxSeq++;
@@ -354,7 +425,145 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _error = null;
       });
     }
+    setState(() => _amountText = _amountController.text.trim());
     _validateAmount();
+  }
+
+  void _handleFiatAmountChanged(String value) {
+    // A keystroke re-prices the whole entry at the current unit price, so a
+    // deferred currency re-expression is no longer needed (and would
+    // otherwise rewrite the user's own text on blur).
+    _fiatReexpressPending = false;
+    _fiatEntryCurrencyCode = _fiatCurrency.code;
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    final zatoshi = sendZatoshiFromFiatText(value, zecUnitPrice);
+    if (_isMaxMode) {
+      _maxDebounceTimer?.cancel();
+      _maxSeq++;
+      setState(() {
+        _isMaxMode = false;
+        _isResolvingMax = false;
+        _maxQuote = null;
+        _error = null;
+      });
+    }
+    setState(() {
+      _fiatAmountText = value.trim();
+      _amountText = zatoshi == null
+          ? ''
+          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    });
+    _validateAmount();
+  }
+
+  void _handleZecUnitPriceChanged(double? zecUnitPrice) {
+    if (!_amountInputIsUsd || _programmaticAmountEdit) return;
+    if (_fiatCurrency.code != _fiatEntryCurrencyCode) {
+      // The unit price changed because the display CURRENCY flipped, not
+      // because the same currency's rate drifted: re-deriving ZEC from the
+      // old-currency text at the new currency's price would silently
+      // reinterpret the digits. The currency-change listener re-expresses
+      // the text instead.
+      return;
+    }
+
+    if (_isMaxMode) {
+      _refreshMaxFiatAmountText(zecUnitPrice);
+      return;
+    }
+
+    final fiatText = _fiatAmountText.trim();
+    if (fiatText.isEmpty) return;
+
+    final zatoshi = sendZatoshiFromFiatText(fiatText, zecUnitPrice);
+    final nextAmountText = zatoshi == null
+        ? ''
+        : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    if (nextAmountText == _amountText) return;
+
+    setState(() {
+      _amountText = nextAmountText;
+      if (nextAmountText.isEmpty) {
+        _amountError = '';
+      }
+    });
+    _validateAmount();
+  }
+
+  void _refreshMaxFiatAmountText(double? zecUnitPrice) {
+    final zatoshi = parseZecAmount(_amountText.trim());
+    if (zatoshi == null ||
+        zatoshi <= BigInt.zero ||
+        zecUnitPrice == null ||
+        !zecUnitPrice.isFinite ||
+        zecUnitPrice <= 0) {
+      return;
+    }
+
+    final fiatText = sendSendableFiatInputTextForZatoshi(
+      zatoshi,
+      zecUnitPrice,
+      _fiatCurrency,
+    );
+    if (fiatText.isEmpty || fiatText == _fiatAmountText) return;
+
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
+  }
+
+  bool get _amountInputIsUsd =>
+      _amountInputMode == _DesktopSendAmountInputMode.usd;
+
+  void _setAmountControllerText(String text) {
+    _programmaticAmountEdit = true;
+    _amountController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _programmaticAmountEdit = false;
+  }
+
+  void _toggleAmountInputMode() {
+    final nextMode = _amountInputIsUsd
+        ? _DesktopSendAmountInputMode.zec
+        : _DesktopSendAmountInputMode.usd;
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    if (nextMode == _DesktopSendAmountInputMode.usd && zecUnitPrice == null) {
+      return;
+    }
+
+    _fiatReexpressPending = false;
+    _fiatEntryCurrencyCode = _fiatCurrency.code;
+    var nextVisibleText = _amountText;
+    setState(() {
+      _amountInputMode = nextMode;
+      if (nextMode == _DesktopSendAmountInputMode.usd) {
+        final zatoshi = parseZecAmount(_amountText.trim());
+        _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
+            ? ''
+            : sendSendableFiatInputTextForZatoshi(
+                zatoshi,
+                zecUnitPrice!,
+                _fiatCurrency,
+              );
+        if (_fiatAmountText.isEmpty && _amountText.trim().isNotEmpty) {
+          _amountText = '';
+          _amountError = '';
+          _isMaxMode = false;
+          _isResolvingMax = false;
+          _maxQuote = null;
+          _maxSeq++;
+          _validateSeq++;
+        }
+        nextVisibleText = _fiatAmountText;
+      } else {
+        nextVisibleText = _amountText;
+      }
+    });
+    _setAmountControllerText(nextVisibleText);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _amountFocusNode.requestFocus();
+    });
   }
 
   bool get _hasValidAddress =>
@@ -400,7 +609,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     return quote.accountUuid == widget.activeAccountUuid &&
         quote.address == _addressController.text.trim() &&
         quote.memo == _effectiveMemo &&
-        parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
+        parseZecAmount(_amountText.trim()) == quote.amountZatoshi;
   }
 
   int get _memoLength => utf8.encode(_memoController.text).length;
@@ -423,6 +632,28 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
+
+  String get _reviewButtonLabel => 'Review';
+
+  String? _amountConversionText({
+    required BigInt? amountZatoshi,
+    required double? zecUnitPrice,
+    required FiatCurrency fiatCurrency,
+  }) {
+    if (_amountInputIsUsd) {
+      final zecText = amountZatoshi == null || amountZatoshi <= BigInt.zero
+          ? '0'
+          : ZecAmount.fromZatoshi(amountZatoshi).pretty().amountText;
+      return '$zecText $kZcashDefaultCurrencyTicker';
+    }
+
+    if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
+      return '${fiatCurrency.symbol} 0';
+    }
+    if (zecUnitPrice == null) return null;
+    return '${fiatCurrency.symbol} '
+        '${sendFiatDisplayTextForZatoshi(amountZatoshi, zecUnitPrice, fiatCurrency)}';
+  }
 
   void _activateMaxMode() {
     if (_isResolvingMax) return;
@@ -500,14 +731,31 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      _programmaticAmountEdit = true;
-      _amountController.value = TextEditingValue(
-        text: amountText,
-        selection: TextSelection.collapsed(offset: amountText.length),
-      );
-      _programmaticAmountEdit = false;
+      final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+      final fiatText = zecUnitPrice == null
+          ? ''
+          : sendSendableFiatInputTextForZatoshi(
+              estimate.amountZatoshi,
+              zecUnitPrice,
+              _fiatCurrency,
+            );
+      if (_amountInputIsUsd && fiatText.isEmpty) {
+        _setAmountControllerText('');
+        setState(() {
+          _amountText = '';
+          _fiatAmountText = '';
+          _isResolvingMax = false;
+          _isMaxMode = false;
+          _maxQuote = null;
+          _amountError = '';
+        });
+        return;
+      }
+      _setAmountControllerText(_amountInputIsUsd ? fiatText : amountText);
 
       setState(() {
+        _amountText = amountText;
+        _fiatAmountText = fiatText;
         _isResolvingMax = false;
         _amountError = null;
         _maxQuote = _MaxQuote(
@@ -536,17 +784,28 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
-    final text = _amountController.text.trim();
+    final text = _amountText.trim();
 
-    // Empty or just "." — silently invalid (no error shown, button disabled)
-    if (text.isEmpty || text == '.') {
+    // Empty, incomplete, or zero amounts are silently invalid: no error text,
+    // just keep Review disabled.
+    if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
       return;
     }
 
     final zatoshi = parseZecAmount(text);
-    if (zatoshi == null || zatoshi <= BigInt.zero) {
+    if (zatoshi == null) {
       setState(() => _amountError = 'Invalid amount');
+      return;
+    }
+    if (zatoshi <= BigInt.zero) {
+      setState(() => _amountError = '');
+      return;
+    }
+
+    final available = _availableBalanceForCurrentAddress;
+    if (zatoshi > available && !_hasValidAddress) {
+      setState(() => _amountError = _insufficientBalanceText);
       return;
     }
 
@@ -563,7 +822,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() => _amountError = _hardwareTexUnsupportedText);
       return;
     }
-    final available = _availableBalanceForCurrentAddress;
     if (zatoshi > available) {
       setState(() => _amountError = _insufficientBalanceText);
       return;
@@ -623,7 +881,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     try {
       final address = _addressController.text.trim();
-      final amountZatoshi = parseZecAmount(_amountController.text.trim());
+      final amountZatoshi = parseZecAmount(_amountText.trim());
 
       if (_isResolvingMax) {
         setState(() {
@@ -724,6 +982,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<double?>(zecHomeFiatUnitPriceProvider, (previous, next) {
+      if (previous == next || !mounted) return;
+      _handleZecUnitPriceChanged(next);
+    });
+    // Display-currency changes (Settings pick, or the USD fallback resolving
+    // once market data loads) re-express the stored fiat text from the
+    // canonical ZEC amount — mirrors mobile send so both degrade identically.
+    ref.listen<String>(
+      zecHomeFiatDisplayCurrencyProvider.select((currency) => currency.code),
+      (previous, next) {
+        if (previous == null || previous == next || !mounted) return;
+        _reexpressFiatForCurrencyChange();
+      },
+    );
+
     final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
       available,
@@ -733,6 +1006,42 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
     final colors = context.colors;
+    final sendFieldLabelStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.secondary,
+    );
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final amountConversionText = _amountConversionText(
+      amountZatoshi: amountZatoshi,
+      zecUnitPrice: zecUnitPrice,
+      fiatCurrency: fiatCurrency,
+    );
+    final amountConversionLoading =
+        amountConversionText == null &&
+        !_amountInputIsUsd &&
+        amountZatoshi != null &&
+        amountZatoshi > BigInt.zero;
+    final amountHasVisibleText = _amountController.text.trim().isNotEmpty;
+    final amountValueColor = _showAmountError
+        ? colors.text.destructive
+        : amountHasVisibleText
+        ? colors.text.accent
+        : colors.text.muted;
+    final amountValueStyle = AppTypography.labelLarge.copyWith(
+      color: _showAmountError ? colors.text.destructive : colors.text.accent,
+    );
+    final amountAffixStyle = AppTypography.labelLarge.copyWith(
+      color: amountValueColor,
+    );
+    final amountIconColor = _showAmountError
+        ? colors.icon.destructive
+        : amountHasVisibleText
+        ? colors.icon.accent
+        : colors.icon.regular;
+    final amountIconName = _amountInputIsUsd
+        ? AppIcons.moneyBag
+        : AppIcons.zcash;
 
     _addressController.edgeHighlightColor = null;
 
@@ -772,11 +1081,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _ =>
         matchedRecipientName == null
             ? null
-            : AppIcon(
-                AppIcons.user,
-                size: 16,
-                color: colors.icon.brandCrimson,
-              ),
+            : AppIcon(AppIcons.user, size: 16, color: colors.icon.brandCrimson),
     };
     final addressHasText = _addressController.text.trim().isNotEmpty;
     final addressLeadingIcon = switch (_addressType) {
@@ -836,6 +1141,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         onPressed: _canReview ? _openReview : null,
                         variant: AppButtonVariant.primary,
                         minWidth: _SendComposeLayout.reviewButtonWidth,
+                        constrainContent: true,
                         trailing: _isSending
                             ? null
                             : const AppIcon(AppIcons.chevronForward),
@@ -847,7 +1153,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Review'),
+                            : Text(
+                                _reviewButtonLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -855,11 +1165,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           AppTextField(
                             key: const ValueKey('send_address_field'),
                             label: 'Send to',
+                            labelStyle: sendFieldLabelStyle,
                             rightSlot: _SendContactsLabelButton(
                               label: 'Contacts',
                               onTap: _openContactPicker,
                             ),
                             tone: addressTone,
+                            borderColor:
+                                addressTone == AppTextFieldTone.destructive
+                                ? colors.border.utilityDestructive
+                                : null,
                             focusNode: _addressFocusNode,
                             controller: _addressController,
                             hintText: 'Zcash address',
@@ -899,37 +1214,51 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           AppTextField(
                             key: const ValueKey('send_amount_field'),
                             label: 'Amount',
+                            labelStyle: sendFieldLabelStyle,
                             tone: _showAmountError
                                 ? AppTextFieldTone.destructive
                                 : AppTextFieldTone.neutral,
+                            borderColor: _showAmountError
+                                ? colors.border.utilityDestructive
+                                : null,
                             focusNode: _amountFocusNode,
                             controller: _amountController,
-                            hintText: '0.00',
-                            leading: AppIcon(
-                              AppIcons.zcash,
-                              size: 20,
-                              color: _amountController.text.trim().isNotEmpty
-                                  ? colors.icon.accent
-                                  : colors.icon.regular,
+                            hintText: '0',
+                            textStyle: amountValueStyle,
+                            hintStyle: AppTypography.labelLarge.copyWith(
+                              color: _showAmountError
+                                  ? colors.text.destructive
+                                  : colors.text.muted,
                             ),
+                            leading: AppIcon(
+                              amountIconName,
+                              size: 20,
+                              color: amountIconColor,
+                            ),
+                            inlinePrefixText: _amountInputIsUsd
+                                ? fiatCurrency.symbol
+                                : null,
+                            inlinePrefixStyle: amountAffixStyle,
+                            inlineSuffixText: _amountInputIsUsd
+                                ? null
+                                : kZcashDefaultCurrencyTicker,
+                            inlineSuffixStyle: amountAffixStyle,
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
                             ),
-                            messageText: _showAmountError ? _amountError : null,
-                            messageIcon: _showAmountError
-                                ? AppIcon(
-                                    AppIcons.warning,
-                                    size: 16,
-                                    color: colors.text.destructive,
-                                  )
-                                : null,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            inputFormatters: const [ZecAmountInputFormatter()],
+                            inputFormatters: [
+                              _SendAmountInputFormatter(
+                                fiatDecimals: _amountInputIsUsd
+                                    ? fiatCurrency.maxDecimals
+                                    : null,
+                              ),
+                            ],
                             onChanged: (_) => _handleAmountChanged(),
                             showClearButton: true,
                             onClear: () {
@@ -937,6 +1266,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               _validateSeq++;
                               _maxSeq++;
                               setState(() {
+                                _amountText = '';
+                                _fiatAmountText = '';
                                 _isMaxMode = false;
                                 _isResolvingMax = false;
                                 _maxQuote = null;
@@ -945,8 +1276,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               });
                             },
                           ),
-                          const SizedBox(
-                            height: _singleLineFieldOverlayReserve,
+                          _SendAmountSubRows(
+                            errorText: _showAmountError ? _amountError : null,
+                            conversionText: amountConversionText,
+                            conversionLoading: amountConversionLoading,
+                            onConversionTap: _toggleAmountInputMode,
+                            conversionEnabled:
+                                _amountInputIsUsd || zecUnitPrice != null,
+                            enterUsdMode: !_amountInputIsUsd,
+                            fiatCurrency: fiatCurrency,
                           ),
                           const SizedBox(height: _singleLineFieldGap),
                           if (!hideMemoControls) ...[
@@ -963,9 +1301,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               AppTextField(
                                 key: const ValueKey('send_memo_field'),
                                 label: 'Message',
+                                labelStyle: sendFieldLabelStyle,
                                 tone: _memoError != null
                                     ? AppTextFieldTone.destructive
                                     : AppTextFieldTone.neutral,
+                                borderColor: _memoError != null
+                                    ? colors.border.utilityDestructive
+                                    : null,
                                 focusNode: _memoFocusNode,
                                 controller: _memoController,
                                 hintText: 'Add a message',
@@ -1065,7 +1407,7 @@ class _SendComposeLayout extends StatelessWidget {
   static const fieldsWidth = 396.0;
   static const reviewButtonWidth = 196.0;
   static const _containerHorizontalPadding = AppSpacing.s;
-  static const _containerVerticalPadding = AppSpacing.md;
+  static const _containerVerticalPadding = AppSpacing.sm;
   static const _sectionGap = 32.0;
   static const _fieldsVerticalPadding = AppSpacing.xs;
 
@@ -1176,10 +1518,10 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
               children: [
                 Text(
                   widget.label,
-                  style: AppTypography.labelMedium.copyWith(color: color),
+                  style: AppTypography.labelLarge.copyWith(color: color),
                 ),
-                const SizedBox(width: 2),
-                AppIcon(AppIcons.chevronForward, size: 12, color: color),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(AppIcons.chevronForward, size: 16, color: color),
               ],
             ),
           ),
@@ -1214,8 +1556,8 @@ class _SendMaxBalanceControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final maxLabel = Text(
-      'Max: $spendableText',
-      style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+      'Use Max',
+      style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
     );
 
     return Row(
@@ -1223,7 +1565,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: 'Use maximum spendable balance',
+          label: 'Use maximum spendable balance, $spendableText available',
           child: MouseRegion(
             cursor: onMaxPressed == null
                 ? SystemMouseCursors.basic
@@ -1247,12 +1589,12 @@ class _SendMaxBalanceControl extends StatelessWidget {
             ],
           ),
           child: SizedBox(
-            width: 18,
-            height: 18,
+            width: 16,
+            height: 16,
             child: Center(
               child: AppIcon(
                 AppIcons.help,
-                size: 14,
+                size: 16,
                 color: colors.icon.muted,
                 semanticLabel: 'Spendable balance info',
               ),
@@ -1260,6 +1602,237 @@ class _SendMaxBalanceControl extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SendAmountSubRows extends StatelessWidget {
+  const _SendAmountSubRows({
+    required this.errorText,
+    required this.conversionText,
+    required this.conversionLoading,
+    required this.onConversionTap,
+    required this.conversionEnabled,
+    required this.enterUsdMode,
+    required this.fiatCurrency,
+  });
+
+  static const _topGap = AppSpacing.xxs;
+  static const _rowHeight = 24.0;
+
+  final String? errorText;
+  final String? conversionText;
+  final bool conversionLoading;
+  final VoidCallback onConversionTap;
+  final bool conversionEnabled;
+  final bool enterUsdMode;
+  final FiatCurrency fiatCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
+    return SizedBox(
+      height: _topGap + (hasError ? _rowHeight * 2 : _rowHeight),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: _topGap),
+          if (hasError)
+            SizedBox(
+              height: _rowHeight,
+              child: _SendAmountErrorRow(text: errorText!),
+            ),
+          SizedBox(
+            height: _rowHeight,
+            child: _SendAmountConversionRow(
+              text: conversionText,
+              loading: conversionLoading,
+              onTap: onConversionTap,
+              enabled: conversionEnabled,
+              enterUsdMode: enterUsdMode,
+              fiatCurrency: fiatCurrency,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SendAmountErrorRow extends StatelessWidget {
+  const _SendAmountErrorRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                text,
+                key: const ValueKey('send_amount_error_text'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SendAmountConversionRow extends StatelessWidget {
+  const _SendAmountConversionRow({
+    required this.text,
+    required this.loading,
+    required this.onTap,
+    required this.enabled,
+    required this.enterUsdMode,
+    required this.fiatCurrency,
+  });
+
+  final String? text;
+  final bool loading;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool enterUsdMode;
+  final FiatCurrency fiatCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final content = Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xxs),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(
+            AppIcons.doubleArrowVertical,
+            size: 16,
+            color: enabled ? colors.icon.muted : colors.icon.disabled,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          if (loading) ...[
+            Text(
+              fiatCurrency.symbol,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.muted,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            const _SendAmountPriceLoadingBar(),
+          ] else
+            Text(
+              text ?? '${fiatCurrency.symbol} 0',
+              key: const ValueKey('send_amount_conversion_text'),
+              style: AppTypography.labelLarge.copyWith(
+                color: enabled ? colors.text.muted : colors.text.disabled,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    return Align(
+      alignment: AlignmentDirectional.topStart,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: enterUsdMode
+            ? 'Enter amount in ${fiatCurrency.displayCode}'
+            : 'Enter amount in $kZcashDefaultCurrencyTicker',
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          child: GestureDetector(
+            key: const ValueKey('send_amount_mode_toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? onTap : null,
+            child: content,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendAmountPriceLoadingBar extends StatelessWidget {
+  const _SendAmountPriceLoadingBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('send_amount_price_loading'),
+      width: 48,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.background.overlay.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+    );
+  }
+}
+
+class _SendAmountInputFormatter extends TextInputFormatter {
+  const _SendAmountInputFormatter({required this.fiatDecimals});
+
+  /// Fraction digits allowed in fiat mode (the display currency's
+  /// maxDecimals); null means ZEC mode (8 digits).
+  final int? fiatDecimals;
+
+  bool get isUsd => fiatDecimals != null;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll(',', '.');
+    if (text.isEmpty) return newValue.copyWith(text: text);
+
+    final buffer = StringBuffer();
+    var hasDecimal = false;
+    for (final codeUnit in text.codeUnits) {
+      final ch = String.fromCharCode(codeUnit);
+      if (ch == '.') {
+        if (hasDecimal) continue;
+        hasDecimal = true;
+        buffer.write(ch);
+        continue;
+      }
+      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
+        buffer.write(ch);
+      }
+    }
+
+    text = buffer.toString();
+    if (text.startsWith('.')) text = '0$text';
+    final maxLength = isUsd ? 12 : 17;
+    if (text.length > maxLength) text = text.substring(0, maxLength);
+    final decimalIndex = text.indexOf('.');
+    if (decimalIndex >= 0) {
+      final maxEnd = decimalIndex + 1 + (fiatDecimals ?? 8);
+      if (text.length > maxEnd) text = text.substring(0, maxEnd);
+    }
+
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }
@@ -1292,7 +1865,8 @@ class _SendAddMessageCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 'Add a memo',
-                style: AppTypography.labelMedium.copyWith(
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
                   color: colors.text.accent,
                 ),
               ),
@@ -1301,7 +1875,10 @@ class _SendAddMessageCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Encrypted, for shielded addresses only.',
-            style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
+            style: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.muted,
+            ),
             textAlign: TextAlign.center,
           ),
         ],

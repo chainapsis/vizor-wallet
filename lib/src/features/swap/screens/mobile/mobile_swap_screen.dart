@@ -62,6 +62,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   final ValueNotifier<_SwapModalSurface?> _swapModal =
       ValueNotifier<_SwapModalSurface?>(null);
   bool _modalRouteOpen = false;
+  String? _addressEditorDraftText;
+  bool _addressEditorDraftRemember = false;
 
   @override
   void initState() {
@@ -102,19 +104,44 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         pageBuilder: (_, _, _) => _buildSwapModal(),
       ).whenComplete(() {
         _modalRouteOpen = false;
-        if (mounted) setState(() => _swapModal.value = null);
+        if (mounted) {
+          setState(() {
+            _clearAddressEditorDraft();
+            _swapModal.value = null;
+          });
+        }
       }),
     );
+  }
+
+  void _openAddressEditor({String? draftText, bool? draftRemember}) {
+    _addressEditorDraftText = draftText ?? _addressEditorDraftText;
+    _addressEditorDraftRemember = draftRemember ?? _addressEditorDraftRemember;
+    _openModal(_SwapModalSurface.addressEditor);
+  }
+
+  void _captureAddressEditorDraft(String value, bool remember) {
+    _addressEditorDraftText = value;
+    _addressEditorDraftRemember = remember;
+  }
+
+  void _clearAddressEditorDraft() {
+    _addressEditorDraftText = null;
+    _addressEditorDraftRemember = false;
   }
 
   void _closeSwapModal() {
     if (_modalRouteOpen) {
       // State resets in the route's whenComplete.
+      _clearAddressEditorDraft();
       Navigator.of(context, rootNavigator: true).pop();
       return;
     }
     if (_swapModal.value != null) {
-      setState(() => _swapModal.value = null);
+      setState(() {
+        _clearAddressEditorDraft();
+        _swapModal.value = null;
+      });
     }
   }
 
@@ -150,6 +177,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 state: swapState,
                 contacts:
                     ref.watch(addressBookProvider).value?.contacts ?? const [],
+                initialAddress: _addressEditorDraftText,
+                initialRememberAddress: _addressEditorDraftRemember,
                 onSubmitted: (value, remember) {
                   if (remember) {
                     unawaited(_rememberSwapAddress(value, swapState));
@@ -157,9 +186,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   swapNotifier.updateDestination(value);
                   _closeSwapModal();
                 },
-                onScan: () => _openModal(_SwapModalSurface.addressScanner),
-                onOpenContacts: () =>
-                    _openModal(_SwapModalSurface.contactPicker),
+                onScan: (value, remember) {
+                  _captureAddressEditorDraft(value, remember);
+                  _openModal(_SwapModalSurface.addressScanner);
+                },
+                onOpenContacts: (value, remember) {
+                  _captureAddressEditorDraft(value, remember);
+                  _openModal(_SwapModalSurface.contactPicker);
+                },
                 onCancel: _closeSwapModal,
               ),
               // The address scanner is a bottom-sheet camera card (Figma
@@ -176,17 +210,16 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   return MobileScanOutcome.accepted(address);
                 },
                 onScanned: (value) {
-                  swapNotifier.updateDestination(value);
-                  _closeSwapModal();
+                  _openAddressEditor(draftText: value);
                 },
-                onClose: _closeSwapModal,
+                onClose: _openAddressEditor,
               ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
                 title: swapContactPickerTitle(swapState),
                 networks: swapContactPickerNetworks(swapState),
                 emptyTitle: swapContactPickerEmptyTitle(swapState),
                 onSelected: _selectAddressBookContact,
-                onCancel: () => _openModal(_SwapModalSurface.addressEditor),
+                onCancel: _openAddressEditor,
               ),
               _SwapModalSurface.slippageSettings =>
                 MobileSwapSlippageStepperModal(
@@ -370,8 +403,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         onToggleDirection: swapNotifier.toggleDirection,
                         onOpenExternalAssetPicker: () =>
                             _openModal(_SwapModalSurface.assetSelector),
-                        onOpenDestinationAddress: () =>
-                            _openModal(_SwapModalSurface.addressEditor),
+                        onOpenDestinationAddress: _openAddressEditor,
                         onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                         zecAvailableText: zecAvailableText,
                         destinationContactName: swapDestinationContactFor(
@@ -401,8 +433,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             child: _MobileSwapReviewButton(
                               state: swapState,
                               zecAvailableZatoshi: sync.spendableBalance,
-                              onOpenDestinationAddress: () =>
-                                  _openModal(_SwapModalSurface.addressEditor),
+                              onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),
                           ),

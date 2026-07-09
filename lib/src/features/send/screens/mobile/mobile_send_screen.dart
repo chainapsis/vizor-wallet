@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -36,6 +35,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../services/send_flow.dart';
+import '../../services/send_amount_conversion.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
@@ -605,26 +605,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  BigInt? _zatoshiFromFiatText(String text, double? zecUnitPrice) {
-    final normalized = text.trim();
-    if (normalized.isEmpty || normalized == '.' || normalized == '0.') {
-      return null;
-    }
-    final usd = double.tryParse(
-      normalized.startsWith('.') ? '0$normalized' : normalized,
-    );
-    if (usd == null ||
-        !usd.isFinite ||
-        usd <= 0 ||
-        zecUnitPrice == null ||
-        !zecUnitPrice.isFinite ||
-        zecUnitPrice <= 0) {
-      return null;
-    }
-    final zatoshi = (usd / zecUnitPrice) * zatoshiPerZec.toDouble();
-    if (!zatoshi.isFinite || zatoshi <= 0) return null;
-    return BigInt.from(zatoshi.floor());
-  }
+  BigInt? _zatoshiFromFiatText(String text, double? zecUnitPrice) =>
+      sendZatoshiFromFiatText(text, zecUnitPrice);
 
   /// The currency mobile fiat entry is actually denominated in — the
   /// resolved display currency, so symbol/decimals always match the unit
@@ -632,19 +614,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   FiatCurrency get _fiatCurrency =>
       ref.read(zecHomeFiatDisplayCurrencyProvider);
 
-  String _zeroFiatText(FiatCurrency currency) =>
-      (0.0).toStringAsFixed(currency.maxDecimals);
+  String _zeroFiatText(FiatCurrency currency) => sendZeroFiatText(currency);
 
-  String _fiatInputTextForZatoshi(BigInt zatoshi, double zecUnitPrice) {
-    final fiat = zatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUnitPrice;
-    if (!fiat.isFinite || fiat <= 0) return '';
-    return fiat.toStringAsFixed(_fiatCurrency.maxDecimals);
-  }
-
-  String _sendableFiatInputTextForZatoshi(BigInt zatoshi, double zecUnitPrice) {
-    final text = _fiatInputTextForZatoshi(zatoshi, zecUnitPrice);
-    return text == _zeroFiatText(_fiatCurrency) ? '' : text;
-  }
+  String _sendableFiatInputTextForZatoshi(
+    BigInt zatoshi,
+    double zecUnitPrice,
+  ) =>
+      sendSendableFiatInputTextForZatoshi(zatoshi, zecUnitPrice, _fiatCurrency);
 
   void _reexpressFiatForCurrencyChange() {
     if (!_amountInputIsUsd) {
@@ -670,16 +646,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _setAmountControllerText(fiatText);
   }
 
-  String _fiatDisplayTextForZatoshi(BigInt zatoshi, double zecUnitPrice) {
-    final currency = _fiatCurrency;
-    final raw = _fiatInputTextForZatoshi(zatoshi, zecUnitPrice);
-    if (raw.isEmpty) return _zeroFiatText(currency);
-    final parts = raw.split('.');
-    final whole = int.tryParse(parts.first) ?? 0;
-    final grouped = formatGroupedInteger(whole);
-    if (currency.maxDecimals == 0 || parts.length < 2) return grouped;
-    return '$grouped.${parts[1]}';
-  }
+  String _fiatDisplayTextForZatoshi(BigInt zatoshi, double zecUnitPrice) =>
+      sendFiatDisplayTextForZatoshi(zatoshi, zecUnitPrice, _fiatCurrency);
 
   void _toggleAmountInputMode() {
     final nextMode = _amountInputIsUsd

@@ -372,7 +372,7 @@ class _ReadyContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ContentColumn(
       title: 'Scan with Vizor mobile',
-      body: 'Open Vizor on your phone → Add a wallet → Import from desktop',
+      body: 'Open Vizor on your phone → Add a wallet → Link Vizor Desktop',
       visual: _QrTransferCard(
         qrPayload: state.qrPayload ?? '',
         remaining: state.remaining,

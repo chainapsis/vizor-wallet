@@ -34,6 +34,15 @@ const _walletLinkScanProgress = 0.4;
 const _walletLinkAccountsProgress = 0.6;
 const _walletLinkContactsProgress = 0.8;
 
+typedef WalletLinkCompletionCallback =
+    Future<void> Function({
+      required String packageId,
+      required String completionToken,
+      required List<int> keyBytes,
+      required int importedAccountCount,
+      required int importedContactCount,
+    });
+
 class MobileWalletLinkIntroScreen extends StatelessWidget {
   const MobileWalletLinkIntroScreen({super.key});
 
@@ -43,7 +52,7 @@ class MobileWalletLinkIntroScreen extends StatelessWidget {
       progress: _walletLinkIntroProgress,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Link with Desktop',
-      subtitle: 'Prepare your desktop app',
+      subtitle: 'Copy your desktop wallet to this phone',
       bottomArea: AppButton(
         key: const ValueKey('mobile_wallet_link_intro_scan'),
         expand: true,
@@ -85,7 +94,7 @@ class _DesktopLinkNoticeCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'This copies the wallet onto the phone - nothing on the computer changes. Keep it clearly distinct from the destructive wallet.dat migration flow.',
+              'This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.',
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
               ),
@@ -105,8 +114,8 @@ class _DesktopLinkSteps extends StatelessWidget {
     final colors = context.colors;
     const steps = [
       'Open & unlock your Vizor desktop app',
-      'Go to Settings -> Link Vizor Mobile',
-      'A moving QR code appears - keep it on screen. The code is encrypted. Your recovery phrase is never shown.',
+      'Go to Settings → Link Vizor Mobile',
+      'Scan the QR code on your desktop from the next screen.',
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,7 +186,7 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
         progress: _walletLinkScanProgress,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Scan QR Code',
-        subtitle: 'Scan the code on your desktop',
+        subtitle: 'Copy your desktop wallet to this phone',
         scrollable: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -333,14 +342,14 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
   final VoidCallback onScanAgain;
 
   String get _title => switch (error) {
-    MobileWalletLinkScanError.invalid => "This isn't a Vizor link",
+    MobileWalletLinkScanError.invalid => 'Invalid QR code',
     MobileWalletLinkScanError.expired => 'Link expired',
     MobileWalletLinkScanError.failed => "Couldn't open this link",
   };
 
   String get _body => switch (error) {
     MobileWalletLinkScanError.invalid =>
-      "The code you scanned isn't a Vizor desktop link. On your computer, open Settings -> Link Vizor Mobile.",
+      "The code you scanned isn't a Vizor desktop link. On your computer, open Settings → Link Vizor Mobile.",
     MobileWalletLinkScanError.expired =>
       'The code on your computer timed out. On desktop, choose Generate new code and scan it again.',
     MobileWalletLinkScanError.failed =>
@@ -415,7 +424,12 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
 }
 
 class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
-  const MobileWalletLinkSelectAccountsScreen({super.key});
+  const MobileWalletLinkSelectAccountsScreen({
+    this.completeWalletLinkPackage = completeWalletLinkPackageBestEffort,
+    super.key,
+  });
+
+  final WalletLinkCompletionCallback completeWalletLinkPackage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -426,54 +440,134 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       });
     }
 
+    final submitting = state.submitting;
+    final allAccountsSelected =
+        state.importableAccountCount > 0 &&
+        state.selectedAccountCount == state.importableAccountCount;
+    final canContinueWithContactsOnly =
+        state.importableContactCount > 0 &&
+        ref.watch(appSecurityProvider).isPasswordConfigured;
+    final hasNothingToImport =
+        state.importableAccountCount == 0 && state.importableContactCount == 0;
+    final pendingAccounts = [
+      for (final account in state.sortedAccounts)
+        if (!state.isAccountAlreadyImported(account.uuid)) account,
+    ];
+    final alreadyImportedAccounts = [
+      for (final account in state.sortedAccounts)
+        if (state.isAccountAlreadyImported(account.uuid)) account,
+    ];
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkAccountsProgress,
       title: 'Select account',
-      subtitle: const TextSpan(
-        text: 'This copies the chosen accounts to your phone. ',
-        children: [
-          TextSpan(
-            text: 'Nothing on your computer changes.',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-      listTitle:
-          '${state.accounts.length} account${state.accounts.length == 1 ? '' : 's'} found',
-      actionLabel: state.selectedAccountCount == state.importableAccountCount
-          ? 'Deselect all'
-          : 'Select all',
-      onAction: state.selectedAccountCount == state.importableAccountCount
-          ? () => ref
-                .read(mobileWalletLinkControllerProvider.notifier)
-                .deselectAllAccounts()
-          : () => ref
-                .read(mobileWalletLinkControllerProvider.notifier)
-                .selectAllImportableAccounts(),
-      buttonLabel:
-          'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
-      buttonEnabled: state.selectedAccountCount > 0,
+      subtitle: hasNothingToImport
+          ? const TextSpan(
+              text: 'There is nothing new to import from this desktop link.',
+            )
+          : TextSpan(
+              text:
+                  '${_walletLinkCountLabel(state.importableAccountCount, 'account', 'accounts')} ready to import, '
+                  '${alreadyImportedAccounts.length} already imported.',
+            ),
+      buttonLabel: hasNothingToImport
+          ? 'Go back'
+          : state.selectedAccountCount == 0
+          ? 'Continue'
+          : 'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
+      buttonLoadingLabel: 'Importing...',
+      buttonEnabled:
+          hasNothingToImport ||
+          state.selectedAccountCount > 0 ||
+          canContinueWithContactsOnly,
+      buttonLoading: submitting,
       onButtonPressed: () {
+        if (hasNothingToImport) {
+          unawaited(
+            _completeEmptyWalletLinkAndGoBack(
+              context,
+              ref,
+              completeWalletLinkPackage: completeWalletLinkPackage,
+            ),
+          );
+          return;
+        }
         if (state.contacts.isEmpty) {
           _continueToPasscodeOrImport(context, ref);
           return;
         }
         context.push('/onboarding/link-desktop/contacts');
       },
-      child: Column(
-        children: [
-          for (final account in state.accounts) ...[
-            _WalletLinkAccountRow(
-              account: account,
-              selected: state.selectedAccountUuids.contains(account.uuid),
-              onTap: () => ref
-                  .read(mobileWalletLinkControllerProvider.notifier)
-                  .toggleAccount(account.uuid),
+      child: hasNothingToImport
+          ? const _WalletLinkNothingToImportCard()
+          : Column(
+              children: [
+                if (pendingAccounts.isNotEmpty)
+                  _WalletLinkListSection(
+                    title:
+                        '${_walletLinkCountLabel(pendingAccounts.length, 'account', 'accounts')} found',
+                    actionLabel: allAccountsSelected
+                        ? 'Deselect all'
+                        : 'Select all',
+                    onAction: submitting || state.importableAccountCount == 0
+                        ? null
+                        : allAccountsSelected
+                        ? () => ref
+                              .read(mobileWalletLinkControllerProvider.notifier)
+                              .deselectAllAccounts()
+                        : () => ref
+                              .read(mobileWalletLinkControllerProvider.notifier)
+                              .selectAllImportableAccounts(),
+                    child: Column(
+                      children: [
+                        for (final (index, account)
+                            in pendingAccounts.indexed) ...[
+                          _WalletLinkAccountRow(
+                            account: account,
+                            selected: state.selectedAccountUuids.contains(
+                              account.uuid,
+                            ),
+                            alreadyImported: false,
+                            onTap:
+                                submitting ||
+                                    !state.isAccountSelectable(account)
+                                ? null
+                                : () => ref
+                                      .read(
+                                        mobileWalletLinkControllerProvider
+                                            .notifier,
+                                      )
+                                      .toggleAccount(account.uuid),
+                          ),
+                          if (index != pendingAccounts.length - 1)
+                            const SizedBox(height: AppSpacing.s),
+                        ],
+                      ],
+                    ),
+                  ),
+                if (pendingAccounts.isNotEmpty &&
+                    alreadyImportedAccounts.isNotEmpty)
+                  const SizedBox(height: AppSpacing.base),
+                if (alreadyImportedAccounts.isNotEmpty)
+                  _WalletLinkListSection(
+                    title: '${alreadyImportedAccounts.length} already imported',
+                    child: Column(
+                      children: [
+                        for (final (index, account)
+                            in alreadyImportedAccounts.indexed) ...[
+                          _WalletLinkAccountRow(
+                            account: account,
+                            selected: false,
+                            alreadyImported: true,
+                            onTap: null,
+                          ),
+                          if (index != alreadyImportedAccounts.length - 1)
+                            const SizedBox(height: AppSpacing.s),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: AppSpacing.s),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -490,54 +584,161 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       });
     }
 
-    final groups = _groupContactsByNetwork(state.contacts);
+    final submitting = state.submitting;
+    final pendingContacts = [
+      for (final contact in state.sortedContacts)
+        if (!state.isContactAlreadyImported(contact.id)) contact,
+    ];
+    final alreadyImportedContacts = [
+      for (final contact in state.sortedContacts)
+        if (state.isContactAlreadyImported(contact.id)) contact,
+    ];
+    final groups = _groupContactsByNetwork(pendingContacts);
+    final alreadyImportedGroups = _groupContactsByNetwork(
+      alreadyImportedContacts,
+    );
+    final allContactsSelected =
+        state.importableContactCount > 0 &&
+        state.selectedContactCount == state.importableContactCount;
     return _WalletLinkSelectionScaffold(
       progress: _walletLinkContactsProgress,
       title: 'Import contacts',
-      subtitle: const TextSpan(
+      subtitle: TextSpan(
         text:
-            "All contacts are selected by default - uncheck any you'd rather leave behind.",
+            '${_walletLinkCountLabel(state.contacts.length, 'contact', 'contacts')} found, '
+            '${alreadyImportedContacts.length} already imported.',
       ),
-      listTitle:
-          '${state.contacts.length} contact${state.contacts.length == 1 ? '' : 's'} found',
-      actionLabel: state.selectedContactCount == state.contacts.length
-          ? 'Deselect all'
-          : 'Select all',
-      onAction: state.selectedContactCount == state.contacts.length
-          ? () => ref
-                .read(mobileWalletLinkControllerProvider.notifier)
-                .deselectAllContacts()
-          : () => ref
-                .read(mobileWalletLinkControllerProvider.notifier)
-                .selectAllContacts(),
       buttonLabel:
           'Import ${state.selectedContactCount} contact${state.selectedContactCount == 1 ? '' : 's'}',
-      buttonEnabled: state.selectedAccountCount > 0,
+      buttonLoadingLabel: 'Importing...',
+      buttonEnabled:
+          state.selectedAccountCount > 0 || state.selectedContactCount > 0,
+      buttonLoading: submitting,
       onButtonPressed: () => _continueToPasscodeOrImport(context, ref),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (groupIndex, entry) in groups.entries.indexed) ...[
-            _ContactGroupHeader(network: entry.key),
-            const SizedBox(height: AppSpacing.s),
-            for (final (contactIndex, contact) in entry.value.indexed) ...[
-              _WalletLinkContactRow(
-                contact: contact,
-                selected: state.selectedContactIds.contains(contact.id),
-                onTap: () => ref
-                    .read(mobileWalletLinkControllerProvider.notifier)
-                    .toggleContact(contact.id),
+          if (groups.isNotEmpty)
+            _WalletLinkListSection(
+              title:
+                  '${_walletLinkCountLabel(pendingContacts.length, 'contact', 'contacts')} found',
+              actionLabel: allContactsSelected ? 'Deselect all' : 'Select all',
+              onAction: submitting || state.importableContactCount == 0
+                  ? null
+                  : allContactsSelected
+                  ? () => ref
+                        .read(mobileWalletLinkControllerProvider.notifier)
+                        .deselectAllContacts()
+                  : () => ref
+                        .read(mobileWalletLinkControllerProvider.notifier)
+                        .selectAllContacts(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (groupIndex, entry) in groups.entries.indexed) ...[
+                    _ContactGroupHeader(network: entry.key),
+                    const SizedBox(height: AppSpacing.s),
+                    for (final (contactIndex, contact)
+                        in entry.value.indexed) ...[
+                      _WalletLinkContactRow(
+                        contact: contact,
+                        selected: state.selectedContactIds.contains(contact.id),
+                        alreadyImported: false,
+                        onTap: submitting || !state.isContactSelectable(contact)
+                            ? null
+                            : () => ref
+                                  .read(
+                                    mobileWalletLinkControllerProvider.notifier,
+                                  )
+                                  .toggleContact(contact.id),
+                      ),
+                      if (contactIndex != entry.value.length - 1)
+                        const SizedBox(height: AppSpacing.s),
+                    ],
+                    if (groupIndex != groups.length - 1)
+                      const SizedBox(height: AppSpacing.sm),
+                  ],
+                ],
               ),
-              if (contactIndex != entry.value.length - 1)
-                const SizedBox(height: AppSpacing.s),
-            ],
-            if (groupIndex != groups.length - 1)
-              const SizedBox(height: AppSpacing.sm),
-          ],
+            ),
+          if (groups.isNotEmpty && alreadyImportedGroups.isNotEmpty)
+            const SizedBox(height: AppSpacing.base),
+          if (alreadyImportedGroups.isNotEmpty)
+            _WalletLinkListSection(
+              title: '${alreadyImportedContacts.length} already imported',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (groupIndex, entry)
+                      in alreadyImportedGroups.entries.indexed) ...[
+                    _ContactGroupHeader(network: entry.key),
+                    const SizedBox(height: AppSpacing.s),
+                    for (final (contactIndex, contact)
+                        in entry.value.indexed) ...[
+                      _WalletLinkContactRow(
+                        contact: contact,
+                        selected: false,
+                        alreadyImported: true,
+                        onTap: null,
+                      ),
+                      if (contactIndex != entry.value.length - 1)
+                        const SizedBox(height: AppSpacing.s),
+                    ],
+                    if (groupIndex != alreadyImportedGroups.length - 1)
+                      const SizedBox(height: AppSpacing.sm),
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+void _goBackFromWalletLink(BuildContext context) {
+  final navigator = Navigator.of(context);
+  if (navigator.canPop()) {
+    navigator.maybePop();
+    return;
+  }
+  GoRouter.maybeOf(context)?.go('/onboarding/link-desktop');
+}
+
+Future<void> _completeEmptyWalletLinkAndGoBack(
+  BuildContext context,
+  WidgetRef ref, {
+  required WalletLinkCompletionCallback completeWalletLinkPackage,
+}) async {
+  final state = ref.read(mobileWalletLinkControllerProvider);
+  if (state.submitting) return;
+  final packageId = state.packageId;
+  final completionToken = state.completionToken;
+  final keyBytes = state.keyBytes;
+  if (packageId == null || completionToken == null || keyBytes == null) {
+    _goBackFromWalletLink(context);
+    return;
+  }
+
+  final controller = ref.read(mobileWalletLinkControllerProvider.notifier);
+  controller.beginSubmit();
+  try {
+    await completeWalletLinkPackage(
+      packageId: packageId,
+      completionToken: completionToken,
+      keyBytes: keyBytes,
+      importedAccountCount: 0,
+      importedContactCount: 0,
+    );
+  } catch (_) {
+    // Completion is best-effort; the local no-op state should still exit.
+  }
+  if (!context.mounted) {
+    controller.endSubmit();
+    return;
+  }
+  controller.endSubmit();
+  GoRouter.maybeOf(context)?.go('/onboarding/link-desktop');
 }
 
 Future<void> _continueToPasscodeOrImport(
@@ -545,8 +746,12 @@ Future<void> _continueToPasscodeOrImport(
   WidgetRef ref,
 ) async {
   final state = ref.read(mobileWalletLinkControllerProvider);
+  if (state.submitting) return;
   final payload = state.payload;
-  if (payload == null || state.selectedAccounts.isEmpty) return;
+  if (payload == null ||
+      (state.selectedAccounts.isEmpty && state.selectedContacts.isEmpty)) {
+    return;
+  }
   final packageId = state.packageId;
   final completionToken = state.completionToken;
   final keyBytes = state.keyBytes;
@@ -557,6 +762,7 @@ Future<void> _continueToPasscodeOrImport(
   final contacts = state.selectedContacts;
   final security = ref.read(appSecurityProvider);
   if (!security.isPasswordConfigured) {
+    if (accounts.isEmpty) return;
     context.push(
       '/onboarding/set-passcode',
       extra: SetPasswordScreenArgs.importWalletLink(
@@ -572,19 +778,31 @@ Future<void> _continueToPasscodeOrImport(
   }
 
   final router = GoRouter.of(context);
+  final controller = ref.read(mobileWalletLinkControllerProvider.notifier);
+  controller.beginSubmit();
   try {
-    final accountImportResult = await runWithSyncPausedForAccountMutation(
-      ref,
-      () => ref
+    if (accounts.isEmpty) {
+      await ref
           .read(accountProvider.notifier)
-          .importLinkedWalletAccounts(
-            network: payload.network,
-            accountsToImport: accounts,
-          ),
-    );
-    final importedContactCount = await ref
-        .read(addressBookProvider.notifier)
-        .importContacts(contacts);
+          .validateLinkedWalletNetwork(payload.network);
+    }
+    final accountImportResult = accounts.isEmpty
+        ? const LinkedWalletAccountsImportResult(
+            importedCount: 0,
+            skippedDuplicateCount: 0,
+          )
+        : await runWithSyncPausedForAccountMutation(
+            ref,
+            () => ref
+                .read(accountProvider.notifier)
+                .importLinkedWalletAccounts(
+                  network: payload.network,
+                  accountsToImport: accounts,
+                ),
+          );
+    final importedContactCount = contacts.isEmpty
+        ? 0
+        : await ref.read(addressBookProvider.notifier).importContacts(contacts);
     await completeWalletLinkPackageBestEffort(
       packageId: packageId,
       completionToken: completionToken,
@@ -593,10 +811,15 @@ Future<void> _continueToPasscodeOrImport(
       importedContactCount: importedContactCount,
     );
   } catch (error) {
+    controller.endSubmit();
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(content: Text(onboardingSubmitErrorMessage(error))),
     );
+    return;
+  }
+  if (!context.mounted) {
+    controller.endSubmit();
     return;
   }
   router.go('/home');
@@ -607,11 +830,10 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
     required this.progress,
     required this.title,
     required this.subtitle,
-    required this.listTitle,
-    required this.actionLabel,
-    required this.onAction,
     required this.buttonLabel,
+    required this.buttonLoadingLabel,
     required this.buttonEnabled,
+    required this.buttonLoading,
     required this.onButtonPressed,
     required this.child,
   });
@@ -619,115 +841,200 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
   final double progress;
   final String title;
   final TextSpan subtitle;
-  final String listTitle;
-  final String actionLabel;
-  final VoidCallback onAction;
   final String buttonLabel;
+  final String buttonLoadingLabel;
   final bool buttonEnabled;
+  final bool buttonLoading;
   final VoidCallback onButtonPressed;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            MobileTopNav.steps(
-              progress: progress,
-              onBack: () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(
-              child: Stack(
-                children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      132,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.displayLarge.copyWith(
-                            color: colors.text.accent,
+    return PopScope(
+      canPop: !buttonLoading,
+      child: Scaffold(
+        backgroundColor: colors.background.window,
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MobileTopNav.steps(
+                progress: progress,
+                showBackButton: !buttonLoading,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.sm,
+                        AppSpacing.md,
+                        AppSpacing.sm,
+                        132,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.displayLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 320),
-                            child: Text.rich(
-                              subtitle,
-                              textAlign: TextAlign.center,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.primary,
+                          const SizedBox(height: AppSpacing.sm),
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 320),
+                              child: Text.rich(
+                                subtitle,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.primary,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.base),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xxs,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  listTitle,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: onAction,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xxs,
-                                    vertical: AppSpacing.xxs,
-                                  ),
-                                  child: Text(
-                                    actionLabel,
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.secondary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        child,
-                      ],
+                          const SizedBox(height: AppSpacing.base),
+                          child,
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _SelectionBottomAction(
+                        label: buttonLabel,
+                        loadingLabel: buttonLoadingLabel,
+                        enabled: buttonEnabled,
+                        loading: buttonLoading,
+                        onPressed: onButtonPressed,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletLinkListSection extends StatelessWidget {
+  const _WalletLinkListSection({
+    required this.title,
+    required this.child,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final Widget child;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              if (actionLabel != null)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onAction,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxs,
+                      vertical: AppSpacing.xxs,
+                    ),
+                    child: Text(
+                      actionLabel!,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: onAction == null
+                            ? colors.text.disabled
+                            : colors.text.secondary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _SelectionBottomAction(
-                      label: buttonLabel,
-                      enabled: buttonEnabled,
-                      onPressed: onButtonPressed,
-                    ),
-                  ),
-                ],
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        child,
+      ],
+    );
+  }
+}
+
+class _WalletLinkNothingToImportCard extends StatelessWidget {
+  const _WalletLinkNothingToImportCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 156),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+            ),
+            child: Center(
+              child: AppIcon(
+                AppIcons.checkCircle,
+                size: 24,
+                color: colors.icon.accent,
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Nothing to import',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Everything in this desktop link is already on this phone.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -736,12 +1043,16 @@ class _WalletLinkSelectionScaffold extends StatelessWidget {
 class _SelectionBottomAction extends StatelessWidget {
   const _SelectionBottomAction({
     required this.label,
+    required this.loadingLabel,
     required this.enabled,
+    required this.loading,
     required this.onPressed,
   });
 
   final String label;
+  final String loadingLabel;
   final bool enabled;
+  final bool loading;
   final VoidCallback onPressed;
 
   @override
@@ -765,8 +1076,9 @@ class _SelectionBottomAction extends StatelessWidget {
         ),
         child: AppButton(
           expand: true,
-          onPressed: enabled ? onPressed : null,
-          child: Text(label),
+          leading: loading ? const AppIcon(AppIcons.loader) : null,
+          onPressed: !loading && enabled ? onPressed : null,
+          child: Text(loading ? loadingLabel : label),
         ),
       ),
     );
@@ -777,17 +1089,19 @@ class _WalletLinkAccountRow extends StatelessWidget {
   const _WalletLinkAccountRow({
     required this.account,
     required this.selected,
+    required this.alreadyImported,
     required this.onTap,
   });
 
   final WalletLinkTransferAccount account;
   final bool selected;
-  final VoidCallback onTap;
+  final bool alreadyImported;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final enabled = account.isImportable;
+    final enabled = account.isImportable && !alreadyImported && onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
@@ -818,18 +1132,28 @@ class _WalletLinkAccountRow extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
-              child: Text(
-                account.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: enabled ? colors.text.accent : colors.text.secondary,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: account.isImportable
+                          ? colors.text.accent
+                          : colors.text.secondary,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: AppSpacing.xs),
-            _WalletLinkCheckbox(selected: selected && enabled),
+            if (!alreadyImported) ...[
+              const SizedBox(width: AppSpacing.xs),
+              _WalletLinkCheckbox(selected: selected && account.isImportable),
+            ],
           ],
         ),
       ),
@@ -841,19 +1165,22 @@ class _WalletLinkContactRow extends StatelessWidget {
   const _WalletLinkContactRow({
     required this.contact,
     required this.selected,
+    required this.alreadyImported,
     required this.onTap,
   });
 
   final AddressBookContact contact;
   final bool selected;
-  final VoidCallback onTap;
+  final bool alreadyImported;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final enabled = !alreadyImported && onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Container(
         constraints: const BoxConstraints(minHeight: 64),
         padding: const EdgeInsets.only(
@@ -888,7 +1215,7 @@ class _WalletLinkContactRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
-                      color: selected
+                      color: enabled && selected
                           ? colors.text.accent
                           : colors.text.secondary,
                       fontWeight: FontWeight.w400,
@@ -897,8 +1224,10 @@ class _WalletLinkContactRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.xs),
-            _WalletLinkCheckbox(selected: selected),
+            if (!alreadyImported) ...[
+              const SizedBox(width: AppSpacing.xs),
+              _WalletLinkCheckbox(selected: selected),
+            ],
           ],
         ),
       ),
@@ -965,11 +1294,15 @@ class _WalletLinkCheckbox extends StatelessWidget {
 }
 
 Map<AddressBookNetwork, List<AddressBookContact>> _groupContactsByNetwork(
-  List<AddressBookContact> contacts,
+  Iterable<AddressBookContact> contacts,
 ) {
   final grouped = <AddressBookNetwork, List<AddressBookContact>>{};
   for (final contact in contacts) {
     grouped.putIfAbsent(contact.network, () => []).add(contact);
   }
   return grouped;
+}
+
+String _walletLinkCountLabel(int count, String singular, String plural) {
+  return '$count ${count == 1 ? singular : plural}';
 }

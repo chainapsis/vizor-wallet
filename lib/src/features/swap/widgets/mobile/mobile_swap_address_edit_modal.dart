@@ -32,14 +32,18 @@ class MobileSwapAddressEditModal extends StatefulWidget {
     required this.onOpenContacts,
     required this.onCancel,
     this.contacts = const <AddressBookContact>[],
+    this.initialAddress,
+    this.initialRememberAddress = false,
     super.key,
   });
 
   final SwapState state;
   final void Function(String value, bool remember) onSubmitted;
-  final VoidCallback onScan;
-  final VoidCallback onOpenContacts;
+  final void Function(String value, bool remember) onScan;
+  final void Function(String value, bool remember) onOpenContacts;
   final VoidCallback onCancel;
+  final String? initialAddress;
+  final bool initialRememberAddress;
 
   /// Saved contacts; when the entered address matches one, its name is shown
   /// under the field so the user knows the address is correct.
@@ -59,7 +63,8 @@ class _MobileSwapAddressEditModalState
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.state.destinationText);
+    _controller = TextEditingController(text: _initialAddressText);
+    _rememberAddress = widget.initialRememberAddress;
     _focusNode = FocusNode(debugLabel: 'SwapAddressModalField');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -70,15 +75,18 @@ class _MobileSwapAddressEditModalState
   @override
   void didUpdateWidget(covariant MobileSwapAddressEditModal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state.destinationText == widget.state.destinationText) {
-      return;
+    final oldAddressText =
+        oldWidget.initialAddress ?? oldWidget.state.destinationText;
+    final nextAddressText = _initialAddressText;
+    if (oldAddressText != nextAddressText) {
+      _controller.value = TextEditingValue(
+        text: nextAddressText,
+        selection: TextSelection.collapsed(offset: nextAddressText.length),
+      );
     }
-    _controller.value = TextEditingValue(
-      text: widget.state.destinationText,
-      selection: TextSelection.collapsed(
-        offset: widget.state.destinationText.length,
-      ),
-    );
+    if (oldWidget.initialRememberAddress != widget.initialRememberAddress) {
+      _rememberAddress = widget.initialRememberAddress;
+    }
   }
 
   @override
@@ -94,6 +102,9 @@ class _MobileSwapAddressEditModalState
     if (!_canSubmit) return;
     widget.onSubmitted(_controller.text.trim(), _rememberAddress);
   }
+
+  String get _initialAddressText =>
+      widget.initialAddress ?? widget.state.destinationText;
 
   void _toggleRemember() {
     setState(() => _rememberAddress = !_rememberAddress);
@@ -177,14 +188,20 @@ class _MobileSwapAddressEditModalState
                   SwapInlineIconButton(
                     key: const ValueKey('swap_address_contacts_button'),
                     iconName: AppIcons.users,
-                    onTap: widget.onOpenContacts,
+                    onTap: () => widget.onOpenContacts(
+                      _controller.text.trim(),
+                      _rememberAddress,
+                    ),
                     size: AppInputSizing.iconSize,
                   ),
                   const SizedBox(width: 8),
                   SwapInlineIconButton(
                     key: const ValueKey('swap_address_scan_button'),
                     iconName: AppIcons.qr,
-                    onTap: widget.onScan,
+                    onTap: () => widget.onScan(
+                      _controller.text.trim(),
+                      _rememberAddress,
+                    ),
                     size: AppInputSizing.iconSize,
                   ),
                 ],

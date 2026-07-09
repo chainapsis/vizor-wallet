@@ -644,6 +644,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSendShieldedFilledUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Price loading',
+                      builder: buildSendPriceLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'USD input',
+                      builder: buildSendUsdInputUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Insufficient shielded balance',
+                      builder: buildSendNotEnoughUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Shielded - memo too long',
                       builder: buildSendMemoTooLongUseCase,
                     ),

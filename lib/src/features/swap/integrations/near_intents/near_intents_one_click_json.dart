@@ -75,6 +75,7 @@ String? _firstChainTxHash(Map<String, dynamic> json, String key) {
 SwapQuoteMode _oneClickSwapMode(String? value) {
   return switch (value?.trim().toUpperCase()) {
     'EXACT_OUTPUT' => SwapQuoteMode.exactOutput,
+    'FLEX_INPUT' => SwapQuoteMode.flexInput,
     _ => SwapQuoteMode.exactInput,
   };
 }

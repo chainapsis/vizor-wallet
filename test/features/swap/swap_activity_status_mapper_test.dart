@@ -94,10 +94,7 @@ void main() {
       ),
     );
 
-    expect(
-      presentation.details.where((row) => row.label == 'Tx ID'),
-      isEmpty,
-    );
+    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
   });
 
   test('adds address book labels to matching address detail rows', () {
@@ -436,6 +433,38 @@ void main() {
       presentation.details.map((detail) => detail.label),
       isNot(contains('Swap fee')),
     );
+  });
+
+  test('uses provider minimum deposit for flex-input incomplete deposits', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.incompleteDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        sellAmount: '140.35 USDC',
+        receiveEstimate: '2 ZEC',
+        depositAddress: '0xdeposit-address',
+        oneClickRecipient: 'u1recipient-address',
+        oneClickRefundTo: '0xrefund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          minimumDepositText: '139.65 USDC',
+          depositedAmountText: '139.00 USDC',
+        ),
+        nextAction: 'Deposit is below the minimum amount',
+      ),
+    );
+
+    expect(
+      _detailValue(presentation.details, 'Required deposit'),
+      '139.65 USDC',
+    );
+    expect(
+      _detailValue(presentation.details, 'Detected deposit'),
+      '139.00 USDC',
+    );
+    expect(_detailValue(presentation.details, 'Missing deposit'), '0.65 USDC');
   });
 
   test('maps deposit instructions by swap direction', () {

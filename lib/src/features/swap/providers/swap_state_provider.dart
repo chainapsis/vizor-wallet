@@ -42,6 +42,9 @@ final class SwapStartedKeystoneSigning extends SwapStartResult {
   const SwapStartedKeystoneSigning(super.intentId);
 }
 
+SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
+    direction.sendsZec ? SwapQuoteMode.exactInput : SwapQuoteMode.flexInput;
+
 class SwapNotifier extends Notifier<SwapState> {
   /// Latest display info WITHOUT resurrecting the autoDispose provider
   /// chain. A plain `ref.read(fiatDisplayProvider)` from this keepAlive
@@ -171,7 +174,7 @@ class SwapNotifier extends Notifier<SwapState> {
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: direction,
-          quoteMode: SwapQuoteMode.exactInput,
+          quoteMode: _inputQuoteModeForDirection(direction),
           amountInputMode: SwapAmountInputMode.token,
           receiveAmountInputMode: SwapAmountInputMode.token,
           amountFiatText: '',
@@ -196,7 +199,7 @@ class SwapNotifier extends Notifier<SwapState> {
       swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: nextDirection,
-          quoteMode: SwapQuoteMode.exactInput,
+          quoteMode: _inputQuoteModeForDirection(nextDirection),
           amountText: nextAmountText,
           receiveAmountText: '',
           amountInputMode: SwapAmountInputMode.token,
@@ -216,7 +219,7 @@ class SwapNotifier extends Notifier<SwapState> {
       fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
-          quoteMode: SwapQuoteMode.exactInput,
+          quoteMode: _inputQuoteModeForDirection(state.direction),
           amountText: value,
           reviewVisible: false,
           clearMaxAmountError: true,
@@ -236,7 +239,7 @@ class SwapNotifier extends Notifier<SwapState> {
       fiatDisplay: _fiatDisplay,
       swapStateWithIndicativeCounterpart(
         state.copyWith(
-          quoteMode: SwapQuoteMode.exactInput,
+          quoteMode: _inputQuoteModeForDirection(state.direction),
           receiveAmountInputMode: SwapAmountInputMode.fiat,
           amountInputMode: SwapAmountInputMode.fiat,
           amountFiatText: value,
@@ -773,7 +776,7 @@ class SwapNotifier extends Notifier<SwapState> {
       reviewVisible: false,
       amountText: '',
       receiveAmountText: '',
-      quoteMode: SwapQuoteMode.exactInput,
+      quoteMode: _inputQuoteModeForDirection(state.direction),
       amountInputMode: SwapAmountInputMode.token,
       receiveAmountInputMode: SwapAmountInputMode.token,
       amountFiatText: '',
@@ -910,7 +913,7 @@ class SwapNotifier extends Notifier<SwapState> {
     state = state.copyWith(
       direction: direction,
       externalAsset: externalAsset,
-      quoteMode: SwapQuoteMode.exactInput,
+      quoteMode: _inputQuoteModeForDirection(direction),
       amountText: amountText,
       receiveAmountText: '',
       amountInputMode: SwapAmountInputMode.token,
@@ -1504,7 +1507,7 @@ class SwapNotifier extends Notifier<SwapState> {
     state = state.copyWith(
       amountText: '',
       receiveAmountText: '',
-      quoteMode: SwapQuoteMode.exactInput,
+      quoteMode: _inputQuoteModeForDirection(state.direction),
       amountInputMode: SwapAmountInputMode.token,
       receiveAmountInputMode: SwapAmountInputMode.token,
       amountFiatText: '',

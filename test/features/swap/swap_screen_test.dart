@@ -431,12 +431,14 @@ void main() {
     await tester.pumpWidget(
       _themeHarness(
         AppToastHost(
-          child: SwapDepositTokensPageContent(
-            asset: SwapAsset.usdc,
-            amountText: '999.99 USDC',
-            depositAddress: depositAddress,
-            expiresInLabel: '16mins',
-            onDeposited: () {},
+          child: Center(
+            child: SwapDepositTokensPageContent(
+              asset: SwapAsset.usdc,
+              amountText: '999.99 USDC',
+              depositAddress: depositAddress,
+              expiresInLabel: '16mins',
+              onDeposited: () {},
+            ),
           ),
         ),
       ),
@@ -460,6 +462,67 @@ void main() {
       tester.widget<Text>(find.text(compactDepositAddress)).overflow,
       TextOverflow.visible,
     );
+    final addressLabel = find.descendant(
+      of: find.byKey(const ValueKey('swap_deposit_details')),
+      matching: find.text('One-time address'),
+    );
+    expect(addressLabel, findsOneWidget);
+    expect(find.text('One time'), findsNothing);
+    expect(find.text('One-time Address'), findsNothing);
+    expect(tester.widget<Text>(addressLabel).overflow, TextOverflow.visible);
+    final detailsRect = tester.getRect(
+      find.byKey(const ValueKey('swap_deposit_details')),
+    );
+    final amountRightRect = tester.getRect(
+      find.byKey(const ValueKey('swap_deposit_amount_right_item')),
+    );
+    final addressRightRect = tester.getRect(
+      find.byKey(const ValueKey('swap_deposit_address_right_item')),
+    );
+    final detailsContentRight = detailsRect.right - AppSpacing.sm;
+    expect(amountRightRect.width, greaterThanOrEqualTo(120));
+    expect(amountRightRect.right, closeTo(detailsContentRight, 0.01));
+    expect(addressRightRect.width, closeTo(177, 0.01));
+    expect(addressRightRect.right, closeTo(detailsContentRight, 0.01));
+    expect(
+      tester
+          .getRect(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_deposit_amount_right_item')),
+              matching: find.text('999.99 USDC'),
+            ),
+          )
+          .right,
+      lessThanOrEqualTo(
+        tester
+                .getRect(find.byKey(const ValueKey('swap_copy_deposit_amount')))
+                .left -
+            AppSpacing.xxs,
+      ),
+    );
+    expect(
+      tester.getRect(find.text(compactDepositAddress)).right,
+      lessThanOrEqualTo(
+        tester
+                .getRect(
+                  find.byKey(const ValueKey('swap_copy_deposit_address')),
+                )
+                .left -
+            AppSpacing.xxs,
+      ),
+    );
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('swap_copy_deposit_address')))
+          .right,
+      lessThanOrEqualTo(
+        tester
+            .getRect(
+              find.byKey(const ValueKey('swap_deposit_address_right_item')),
+            )
+            .right,
+      ),
+    );
 
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
     await tester.pump();
@@ -470,6 +533,61 @@ void main() {
     await tester.pump();
 
     expect(clipboardWrites.last, depositAddress);
+  });
+
+  testWidgets('deposit amount row grows for precise token amounts', (
+    tester,
+  ) async {
+    const preciseAmount = '0.06058709 ZEC';
+    const depositAddress =
+        '0x1111111111111111111111111111111111111111111111111111111111111111';
+
+    await tester.pumpWidget(
+      _themeHarness(
+        AppToastHost(
+          child: Center(
+            child: SwapDepositTokensPageContent(
+              asset: SwapAsset.zec,
+              amountText: preciseAmount,
+              depositAddress: depositAddress,
+              expiresInLabel: '16mins',
+              onDeposited: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final amountRight = find.byKey(
+      const ValueKey('swap_deposit_amount_right_item'),
+    );
+    final amountText = find.descendant(
+      of: amountRight,
+      matching: find.text(preciseAmount),
+    );
+    final copyButton = find.byKey(const ValueKey('swap_copy_deposit_amount'));
+    final detailsRect = tester.getRect(
+      find.byKey(const ValueKey('swap_deposit_details')),
+    );
+    final amountRightRect = tester.getRect(amountRight);
+    final amountLabel = find.descendant(
+      of: find.byKey(const ValueKey('swap_deposit_details')),
+      matching: find.text('Amount'),
+    );
+
+    expect(amountLabel, findsOneWidget);
+    expect(tester.widget<Text>(amountLabel).overflow, TextOverflow.visible);
+    expect(amountText, findsOneWidget);
+    expect(tester.widget<Text>(amountText).overflow, TextOverflow.visible);
+    expect(amountRightRect.width, greaterThan(120));
+    expect(
+      amountRightRect.right,
+      closeTo(detailsRect.right - AppSpacing.sm, 0.01),
+    );
+    expect(
+      tester.getRect(amountText).right,
+      lessThanOrEqualTo(tester.getRect(copyButton).left - AppSpacing.xxs),
+    );
   });
 
   testWidgets('deposit timeout uses theme-specific failure illustration', (
@@ -6512,6 +6630,7 @@ void main() {
 
     expect(swapProvider.requests, hasLength(1));
     expect(swapProvider.requests.single.direction, SwapDirection.externalToZec);
+    expect(swapProvider.requests.single.mode, SwapQuoteMode.flexInput);
     expect(
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',
@@ -6563,6 +6682,7 @@ void main() {
 
     expect(swapProvider.requests, hasLength(1));
     expect(swapProvider.requests.single.direction, SwapDirection.externalToZec);
+    expect(swapProvider.requests.single.mode, SwapQuoteMode.flexInput);
     expect(
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',

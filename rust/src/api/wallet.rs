@@ -415,6 +415,24 @@ pub fn import_software_account_at_index(
     })
 }
 
+pub fn is_software_wallet_link_account_imported(
+    mnemonic: String,
+    network: String,
+    db_path: String,
+    zip32_account_index: u32,
+) -> Result<bool, String> {
+    catch(|| {
+        if !keys::wallet_exists(&db_path) {
+            return Ok(false);
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let existing_seed_accounts =
+            keys::existing_software_seed_account_state(&db_path, network, &seed)?;
+        Ok(existing_seed_accounts.contains(zip32_account_index))
+    })
+}
+
 fn import_discovered_software_wallet_accounts(
     network: WalletNetwork,
     db_path: &str,
@@ -1010,5 +1028,38 @@ mod tests {
         };
 
         assert_eq!(error, keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE);
+    }
+
+    #[test]
+    fn test_software_wallet_link_imported_preflight_matches_existing_index() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        assert!(is_software_wallet_link_account_imported(
+            mnemonic.clone(),
+            "main".to_string(),
+            db_path_str.to_string(),
+            0,
+        )
+        .unwrap());
+        assert!(!is_software_wallet_link_account_imported(
+            mnemonic,
+            "main".to_string(),
+            db_path_str.to_string(),
+            1,
+        )
+        .unwrap());
     }
 }

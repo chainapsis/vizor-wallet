@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show MaterialApp, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_compose_view.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
 
@@ -49,6 +50,18 @@ void main() {
     expect(find.text('Shielded → Shielded'), findsNothing);
     expect(find.text('Shielded → Transparent'), findsNothing);
     expect(find.text('125.12'), findsOneWidget);
+    _expectAmountIcon(
+      tester,
+      AppIcons.zcash,
+      AppThemeData.light.colors.icon.accent,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.text('ZEC'),
+      ),
+      findsOneWidget,
+    );
 
     await _pumpSendUseCase(tester, buildSendTransparentUseCase);
 
@@ -63,6 +76,32 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Mike'), findsNothing);
     expect(find.text('Contacts'), findsOneWidget);
+  });
+
+  testWidgets('send USD use cases render the money bag amount icon', (
+    tester,
+  ) async {
+    await _pumpSendUseCase(tester, buildSendUsdInputUseCase);
+
+    expect(tester.takeException(), isNull);
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.accent,
+    );
+
+    await _pumpSendUseCase(tester, buildSendNotEnoughUseCase);
+
+    expect(tester.takeException(), isNull);
+    _expectAmountIcon(
+      tester,
+      AppIcons.moneyBag,
+      AppThemeData.light.colors.icon.destructive,
+    );
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(find.text('651.12 ZEC'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Not enough ZEC'), findsNothing);
   });
 }
 
@@ -90,4 +129,19 @@ Future<void> _pumpSendUseCase(
     ),
   );
   await tester.pump();
+}
+
+void _expectAmountIcon(WidgetTester tester, String name, Color color) {
+  final icon = tester.widget<AppIcon>(
+    find.descendant(
+      of: find.byKey(const ValueKey('send_amount_field')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == name,
+      ),
+    ),
+  );
+
+  expect(icon.name, name);
+  expect(icon.size, 20);
+  expect(icon.color, color);
 }
