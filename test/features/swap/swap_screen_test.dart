@@ -3305,6 +3305,10 @@ void main() {
     expect(container.read(swapStateProvider).amountFiatText, '100');
     expect(container.read(swapStateProvider).amountText, '1');
 
+    // No active entry: the field is not focused when the currency changes.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
     // Market data resolves the selected currency: the fiat text re-expresses
     // the canonical token amount in the new unit instead of relabeling the
     // old number.
@@ -3316,6 +3320,63 @@ void main() {
 
     expect(container.read(swapStateProvider).amountFiatText, '8000');
     expect(container.read(swapStateProvider).amountText, '1');
+  });
+
+  testWidgets('toggling a focused field into fiat mode still protects the '
+      'entry from a currency change', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    // enterText focuses the field in TOKEN mode; the toggle then flips it to
+    // fiat WITHOUT a focus event — the mode change alone must mark the side
+    // as actively edited.
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    // Preserved while focused, re-expressed on blur.
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(_fieldText(tester, 'swap_amount_field'), '8000');
   });
 
   testWidgets('a focused fiat entry survives a display-currency change and '

@@ -101,6 +101,15 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     super.didUpdateWidget(oldWidget);
     _syncController(_amountController, _payInputText(widget.state));
     _syncController(_receiveAmountController, _receiveInputText(widget.state));
+    // Input-mode toggles change the fiat entry side without a focus event
+    // (e.g. the field is focused in token mode and the user taps the fiat
+    // toggle). Report post-frame: didUpdateWidget runs during build, and the
+    // notifier may re-derive state when a deferred re-expression is pending.
+    if (_fiatEntrySide() != _reportedFiatEntrySide) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportFiatEntrySide();
+      });
+    }
   }
 
   @override
@@ -125,6 +134,10 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 
   void _handleAmountFocusChanged() {
     setState(() {});
+    _reportFiatEntrySide();
+  }
+
+  void _reportFiatEntrySide() {
     final side = _fiatEntrySide();
     if (side == _reportedFiatEntrySide) return;
     _reportedFiatEntrySide = side;
