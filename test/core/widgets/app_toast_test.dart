@@ -53,6 +53,49 @@ void main() {
     expect(icon.color, AppThemeData.light.colors.icon.inverse);
   });
 
+  testWidgets('AppToast destructive tone matches the error toast tokens', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: Center(
+          child: AppToast(
+            message: "Can't read the clipboard",
+            iconName: AppIcons.cross,
+            tone: AppToastTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final toastFinder = find.byType(AppToast);
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: toastFinder,
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(
+      decoration.color,
+      AppThemeData.light.colors.background.utilityDestructiveStrong,
+    );
+
+    final text = tester.widget<Text>(find.text("Can't read the clipboard"));
+    expect(text.style?.color, AppThemeData.light.colors.text.inverse);
+    expect(text.style?.fontWeight, FontWeight.w400);
+    expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
+
+    final icon = tester.widget<AppIcon>(find.byType(AppIcon));
+    expect(icon.name, AppIcons.cross);
+    expect(icon.size, AppIconSize.medium);
+    expect(icon.color, AppThemeData.light.colors.icon.inverse);
+  });
+
   testWidgets('AppToast clears inherited text decoration', (tester) async {
     await tester.pumpWidget(
       const _ThemedHarness(
@@ -181,8 +224,8 @@ void main() {
                   child: AppToastHost(child: SizedBox.expand()),
                 ),
                 TextButton(
-                  onPressed: () =>
-                      showAppToast(outerContext, 'Parent Context Toast'),
+                  onPressed:
+                      () => showAppToast(outerContext, 'Parent Context Toast'),
                   child: const Text('Show from parent'),
                 ),
               ],
@@ -268,19 +311,23 @@ class _OpenModalButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: TextButton(
-        onPressed: () => showModalBottomSheet<void>(
-          context: context,
-          useRootNavigator: true,
-          builder: (_) => AppTheme(
-            data: AppThemeData.light,
-            child: Builder(
-              builder: (sheetContext) => TextButton(
-                onPressed: () => showAppToast(sheetContext, 'Modal Toast'),
-                child: const Text('Copy from modal'),
-              ),
+        onPressed:
+            () => showModalBottomSheet<void>(
+              context: context,
+              useRootNavigator: true,
+              builder:
+                  (_) => AppTheme(
+                    data: AppThemeData.light,
+                    child: Builder(
+                      builder:
+                          (sheetContext) => TextButton(
+                            onPressed:
+                                () => showAppToast(sheetContext, 'Modal Toast'),
+                            child: const Text('Copy from modal'),
+                          ),
+                    ),
+                  ),
             ),
-          ),
-        ),
         child: const Text('Open modal'),
       ),
     );
@@ -337,8 +384,8 @@ class _NestedToastHosts extends StatelessWidget {
                 child: AppToastHost(child: SizedBox.expand()),
               ),
             TextButton(
-              onPressed: () =>
-                  showAppToast(outerContext, 'Restored Parent Toast'),
+              onPressed:
+                  () => showAppToast(outerContext, 'Restored Parent Toast'),
               child: const Text('Show after nested dispose'),
             ),
           ],

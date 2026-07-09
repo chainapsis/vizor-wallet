@@ -14,8 +14,8 @@ import '../primitives.dart';
 ///   Alpha neutral overlays.
 /// * [brandCrimsonSubtle] / [brandCrimsonStrong] — Brand-accent backgrounds.
 /// * [brandCrimsonAlpha] — Alpha brand overlay.
-/// * [utilityDestructiveSubtle] / [utilitySuccessSubtle] / [utilitySuccessStrong]
-///   — Utility backgrounds.
+/// * [utilityDestructiveSubtle] / [utilityDestructiveStrong] /
+///   [utilitySuccessSubtle] / [utilitySuccessStrong] — Utility backgrounds.
 /// * [utilityDestructiveAlphaSubtle] / [utilityDestructiveAlpha] /
 ///   [utilitySuccessAlpha] — Alpha utility overlays.
 /// * [homeCard] — Exception surface for the home balance card. Theme-invariant.
@@ -34,6 +34,7 @@ class AppBackgroundColors {
     required this.brandCrimsonStrong,
     required this.brandCrimsonAlpha,
     required this.utilityDestructiveSubtle,
+    required this.utilityDestructiveStrong,
     required this.utilityDestructiveAlphaSubtle,
     required this.utilityDestructiveAlpha,
     required this.utilitySuccessSubtle,
@@ -55,6 +56,7 @@ class AppBackgroundColors {
   final Color brandCrimsonStrong;
   final Color brandCrimsonAlpha;
   final Color utilityDestructiveSubtle;
+  final Color utilityDestructiveStrong;
   final Color utilityDestructiveAlphaSubtle;
   final Color utilityDestructiveAlpha;
   final Color utilitySuccessSubtle;
@@ -76,6 +78,7 @@ class AppBackgroundColors {
     brandCrimsonStrong: CrimsonPrimitives.p400Dark,
     brandCrimsonAlpha: CrimsonPrimitives.p300Alpha35Dark,
     utilityDestructiveSubtle: PlumPrimitives.p50Dark,
+    utilityDestructiveStrong: PlumPrimitives.p300Dark,
     utilityDestructiveAlphaSubtle: PlumPrimitives.p400Alpha8Dark,
     utilityDestructiveAlpha: PlumPrimitives.p400Alpha25Dark,
     utilitySuccessSubtle: GoldPrimitives.p150Dark,
@@ -98,6 +101,7 @@ class AppBackgroundColors {
     brandCrimsonStrong: CrimsonPrimitives.p300Light,
     brandCrimsonAlpha: CrimsonPrimitives.p300Alpha15Light,
     utilityDestructiveSubtle: PlumPrimitives.p0Light,
+    utilityDestructiveStrong: PlumPrimitives.p400Light,
     utilityDestructiveAlphaSubtle: PlumPrimitives.p400Alpha8Light,
     utilityDestructiveAlpha: PlumPrimitives.p400Alpha15Light,
     utilitySuccessSubtle: GoldPrimitives.p50Light,
