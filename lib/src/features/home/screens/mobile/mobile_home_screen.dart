@@ -563,10 +563,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 child: AppButton(
                   key: const ValueKey('mobile_home_send'),
                   expand: true,
+                  constrainContent: true,
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Send'),
+                  child: const Text(
+                    'Send',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -574,11 +579,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 child: AppButton(
                   key: const ValueKey('mobile_home_receive'),
                   expand: true,
+                  constrainContent: true,
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Receive'),
+                  child: const Text(
+                    'Receive',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -606,7 +616,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             onPressed: () => context.push('/receive'),
             leading: const _ButtonIcon(AppIcons.addNew),
             height: _mobileHomeActionButtonHeight,
-            child: const Text('Receive your first ZEC'),
+            child: const Text(
+              'Receive your first ZEC',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         const SizedBox(height: AppSpacing.md),
         if (recentRows.isEmpty)
