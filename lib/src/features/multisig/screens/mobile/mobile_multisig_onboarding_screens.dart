@@ -739,12 +739,12 @@ class _MobileMultisigSessionScreenState
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ref.read(appSecurityProvider).isUnlocked) return;
+      if (ref.read(appSecurityProvider).requiresUnlock) return;
       _refresh();
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted ||
-          !ref.read(appSecurityProvider).isUnlocked ||
+          ref.read(appSecurityProvider).requiresUnlock ||
           _isRefreshing ||
           _isLocking ||
           _isAdvancingCreate ||
@@ -937,8 +937,11 @@ class _MobileMultisigSessionScreenState
     showAppToast(context, 'Invite code copied');
   }
 
-  void _syncRealtimeLease(MultisigPendingSession? session, bool isUnlocked) {
-    if (!isUnlocked || session == null || !session.isPending) {
+  void _syncRealtimeLease(
+    MultisigPendingSession? session, {
+    required bool requiresUnlock,
+  }) {
+    if (requiresUnlock || session == null || !session.isPending) {
       _releaseRealtimeLease();
       return;
     }
@@ -980,9 +983,10 @@ class _MobileMultisigSessionScreenState
         ? null
         : _summaryByStorageId(summaries, widget.sessionStorageId) ??
               _summaryBySessionId(summaries, widget.sessionStorageId);
+    final requiresUnlock = security.requiresUnlock;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _syncRealtimeLease(session, security.isUnlocked);
+      _syncRealtimeLease(session, requiresUnlock: requiresUnlock);
     });
 
     return MobileOnboardingStepScaffold(
@@ -993,7 +997,7 @@ class _MobileMultisigSessionScreenState
           summary?.displayLabel ??
           'Session state is stored locally after create or join.',
       onBack: () => context.go('/multisig/connect'),
-      bottomArea: session == null || !security.isUnlocked
+      bottomArea: session == null || requiresUnlock
           ? null
           : AppButton(
               expand: true,
@@ -1004,7 +1008,7 @@ class _MobileMultisigSessionScreenState
                   : const AppIcon(AppIcons.sync),
               child: const Text('Refresh'),
             ),
-      child: !security.isUnlocked
+      child: requiresUnlock
           ? _MobilePasscodeUnlockCard(
               title: 'Unlock secure storage',
               body: 'Enter your passcode to continue this multisig setup.',

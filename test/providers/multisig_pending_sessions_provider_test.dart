@@ -28,34 +28,34 @@ void main() {
     },
   );
 
-  test('reloads stored sessions after the wallet unlocks', () async {
-    final store = _FakePendingSessionStore()
-      ..put(_pendingSession(sessionId: 'locked-session'));
-    final container = _container(store: store, isUnlocked: false);
-    addTearDown(container.dispose);
+  test(
+    'loads setup sessions before the first wallet password exists',
+    () async {
+      final store = _FakePendingSessionStore()
+        ..put(_pendingSession(sessionId: 'setup-session'));
+      final container = _container(
+        store: store,
+        isPasswordConfigured: false,
+        isUnlocked: false,
+      );
+      addTearDown(container.dispose);
 
-    expect(
-      await container.read(multisigPendingSessionsProvider.future),
-      isEmpty,
-    );
+      final sessions = await container.read(
+        multisigPendingSessionsProvider.future,
+      );
 
-    final security =
-        container.read(appSecurityProvider.notifier)
-            as _FakeAppSecurityNotifier;
-    security.setUnlocked(true);
-
-    final sessions = await container.read(
-      multisigPendingSessionsProvider.future,
-    );
-
-    expect(sessions.map((entry) => entry.sessionId), ['locked-session']);
-  });
+      expect(sessions.map((entry) => entry.sessionId), ['setup-session']);
+    },
+  );
 
   test(
     'exposes pending session summaries while the wallet is locked',
     () async {
+      final session = _pendingSession(sessionId: 'locked-session');
       final store = _FakePendingSessionStore()
-        ..put(_pendingSession(sessionId: 'locked-session'));
+        ..put(session, encrypted: true)
+        ..summaries[session.storageId] =
+            MultisigPendingSessionSummary.fromSession(session);
       final container = _container(store: store, isUnlocked: false);
       addTearDown(container.dispose);
 
@@ -71,6 +71,7 @@ void main() {
       expect(summaries, hasLength(1));
       expect(summaries.single.storageId, 'locked-session:participant-1');
       expect(summaries.single.sessionId, 'locked-session');
+      expect(store.summaries, isNotEmpty);
     },
   );
 
@@ -655,12 +656,16 @@ ProviderContainer _container({
   _FakeAccountMaterialStore? materialStore,
   _FakeMultisigCoordinatorService? service,
   _FakeRealtimeCursorStore? cursorStore,
+  bool isPasswordConfigured = true,
   bool isUnlocked = true,
 }) {
   return ProviderContainer(
     overrides: [
       appSecurityProvider.overrideWith(
-        () => _FakeAppSecurityNotifier(isUnlocked: isUnlocked),
+        () => _FakeAppSecurityNotifier(
+          isPasswordConfigured: isPasswordConfigured,
+          isUnlocked: isUnlocked,
+        ),
       ),
       multisigPendingSessionStoreProvider.overrideWithValue(
         store ?? _FakePendingSessionStore(),
@@ -682,13 +687,20 @@ ProviderContainer _container({
 }
 
 class _FakeAppSecurityNotifier extends AppSecurityNotifier {
-  _FakeAppSecurityNotifier({required this.isUnlocked});
+  _FakeAppSecurityNotifier({
+    required this.isPasswordConfigured,
+    required this.isUnlocked,
+  });
 
+  final bool isPasswordConfigured;
   final bool isUnlocked;
 
   @override
   AppSecurityState build() {
-    return AppSecurityState(isPasswordConfigured: true, isUnlocked: isUnlocked);
+    return AppSecurityState(
+      isPasswordConfigured: isPasswordConfigured,
+      isUnlocked: isUnlocked,
+    );
   }
 
   void setUnlocked(bool value) {
@@ -871,11 +883,17 @@ rust_multisig.ApiMultisigSession _apiSession({
 
 class _FakePendingSessionStore implements MultisigPendingSessionStore {
   final sessions = <String, MultisigPendingSession>{};
+  final encryptedStorageIds = <String>{};
   final summaries = <String, MultisigPendingSessionSummary>{};
   final createStates = <String, String>{};
 
-  void put(MultisigPendingSession session) {
+  void put(MultisigPendingSession session, {bool encrypted = false}) {
     sessions[session.storageId] = session;
+    if (encrypted) {
+      encryptedStorageIds.add(session.storageId);
+    } else {
+      encryptedStorageIds.remove(session.storageId);
+    }
   }
 
   @override
@@ -883,6 +901,9 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
     String storageId, {
     bool requireUnlockedSession = true,
   }) async {
+    if (requireUnlockedSession && encryptedStorageIds.contains(storageId)) {
+      return null;
+    }
     return sessions[storageId];
   }
 
@@ -890,12 +911,19 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   Future<List<MultisigPendingSession>> readAll({
     bool requireUnlockedSession = true,
   }) async {
-    return sessions.values.toList(growable: false);
+    return sessions.values
+        .where(
+          (session) =>
+              !requireUnlockedSession ||
+              !encryptedStorageIds.contains(session.storageId),
+        )
+        .toList(growable: false);
   }
 
   @override
   Future<void> write(MultisigPendingSession session) async {
     sessions[session.storageId] = session;
+    encryptedStorageIds.remove(session.storageId);
   }
 
   @override
@@ -936,11 +964,13 @@ class _FakePendingSessionStore implements MultisigPendingSessionStore {
   @override
   Future<void> delete(MultisigPendingSession session) async {
     sessions.remove(session.storageId);
+    encryptedStorageIds.remove(session.storageId);
   }
 
   @override
   Future<void> deleteByStorageId(String storageId) async {
     sessions.remove(storageId);
+    encryptedStorageIds.remove(storageId);
   }
 
   @override

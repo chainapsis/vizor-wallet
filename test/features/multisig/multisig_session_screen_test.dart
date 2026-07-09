@@ -43,21 +43,61 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
 
-    expect(find.text('Start create'), findsOneWidget);
+    expect(find.text('Start ceremony'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Start create'));
+    await tester.ensureVisible(find.text('Start ceremony'));
     await tester.pump();
-    await tester.tap(find.text('Start create'));
+    await tester.tap(find.text('Start ceremony'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(notifier.advanceCalls, 1);
-    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Continue ceremony'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(notifier.advanceCalls, 2);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('first-account setup session does not require password unlock', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final notifier = _FakePendingSessionsNotifier();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appSecurityProvider.overrideWith(
+            () => _NoPasswordAppSecurityNotifier(),
+          ),
+          multisigPendingSessionsProvider.overrideWith(() => notifier),
+          multisigPendingSessionSummariesProvider.overrideWith(
+            (ref) async => const <MultisigPendingSessionSummary>[],
+          ),
+          multisigRealtimeProvider.overrideWith(
+            () => _NoopMultisigRealtimeNotifier(),
+          ),
+        ],
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: MultisigSessionScreen(
+              sessionStorageId: notifier.session.storageId,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(find.text('Start ceremony'), findsOneWidget);
+    expect(find.text('Unlock secure storage'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -83,6 +123,16 @@ class _UnlockedAppSecurityNotifier extends AppSecurityNotifier {
   @override
   AppSecurityState build() {
     return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
+}
+
+class _NoPasswordAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(
+      isPasswordConfigured: false,
+      isUnlocked: false,
+    );
   }
 }
 

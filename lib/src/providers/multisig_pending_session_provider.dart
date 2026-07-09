@@ -873,8 +873,7 @@ class MultisigPendingSessionsNotifier
   @override
   FutureOr<List<MultisigPendingSession>> build() {
     final security = ref.watch(appSecurityProvider);
-    if (security.requiresUnlock) return const <MultisigPendingSession>[];
-    return _load();
+    return _load(rebuildSummaries: !security.requiresUnlock);
   }
 
   Future<MultisigPendingSession> createSession({
@@ -1344,13 +1343,19 @@ class MultisigPendingSessionsNotifier
   Future<List<MultisigPendingSession>> _currentSessions() async {
     final current = state.value;
     if (current != null) return current;
-    return _load();
+    return _load(
+      rebuildSummaries: !ref.read(appSecurityProvider).requiresUnlock,
+    );
   }
 
-  Future<List<MultisigPendingSession>> _load() async {
+  Future<List<MultisigPendingSession>> _load({
+    required bool rebuildSummaries,
+  }) async {
     final sessions = [...await _store.readAll()];
     _sortSessions(sessions);
-    await _store.rebuildSummaries(sessions);
+    if (rebuildSummaries) {
+      await _store.rebuildSummaries(sessions);
+    }
     return sessions;
   }
 }

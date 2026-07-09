@@ -54,12 +54,12 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ref.read(appSecurityProvider).isUnlocked) return;
+      if (ref.read(appSecurityProvider).requiresUnlock) return;
       _refresh();
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted ||
-          !ref.read(appSecurityProvider).isUnlocked ||
+          ref.read(appSecurityProvider).requiresUnlock ||
           _isRefreshing ||
           _isLocking ||
           _isAdvancingCreate ||
@@ -258,8 +258,11 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
     ).showSnackBar(const SnackBar(content: Text('Invite code copied.')));
   }
 
-  void _syncRealtimeLease(MultisigPendingSession? session, bool isUnlocked) {
-    if (!isUnlocked || session == null || !session.isPending) {
+  void _syncRealtimeLease(
+    MultisigPendingSession? session, {
+    required bool requiresUnlock,
+  }) {
+    if (requiresUnlock || session == null || !session.isPending) {
       _releaseRealtimeLease();
       return;
     }
@@ -301,12 +304,13 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
         ? null
         : _summaryByStorageId(summaries, widget.sessionStorageId) ??
               _summaryBySessionId(summaries, widget.sessionStorageId);
+    final requiresUnlock = security.requiresUnlock;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _syncRealtimeLease(session, security.isUnlocked);
+      _syncRealtimeLease(session, requiresUnlock: requiresUnlock);
     });
 
-    final refreshButton = session == null || !security.isUnlocked
+    final refreshButton = session == null || requiresUnlock
         ? null
         : AppButton(
             onPressed: _isRefreshing ? null : () => _refresh(),
@@ -322,7 +326,7 @@ class _MultisigSessionScreenState extends ConsumerState<MultisigSessionScreen> {
             child: const Text('Refresh'),
           );
 
-    final content = !security.isUnlocked
+    final content = requiresUnlock
         ? _UnlockSessionContent(
             onUnlocked: () async {
               ref.invalidate(multisigPendingSessionsProvider);
