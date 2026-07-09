@@ -426,7 +426,6 @@ pub(super) struct StoredProposal {
         send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
     >,
-    pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
     /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
     /// bundles (migration children only) and the PCZT must be built with
     /// `BundleType::UNPADDED` to balance. See `zip317_helper`.

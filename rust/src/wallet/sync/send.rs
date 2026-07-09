@@ -49,7 +49,7 @@ use transparent::{
     keys::TransparentKeyScope,
 };
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, TransparentSpendPolicy,
+    GreedyInputSelector, InputSelector, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -226,6 +226,10 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     fn should_retain_orchard(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
         true
     }
+
+    fn should_retain_ironwood(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
+        true
+    }
 }
 
 /// Wallet-local ZIP-317 rule that preserves standard fee parameters but
@@ -312,7 +316,7 @@ pub fn propose_send(
         proposed_tx_version,
         false,
     )?;
-    let (proposal, stored_tx_version) =
+    let (proposal, _) =
         propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
             let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
             propose_send_with_reserved_notes(
@@ -348,7 +352,6 @@ pub fn propose_send(
         id,
         StoredProposal {
             proposal,
-            proposed_tx_version: stored_tx_version,
             // Regular sends stay padded; only migration children opt in.
             unpadded_orchard_pool_bundles: false,
             network,
@@ -372,10 +375,7 @@ pub(crate) fn create_reserved_pczt_batch(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<Vec<ReservedPcztBatchItem>, String> {
-    use zcash_client_backend::data_api::wallet::{
-        create_pczt_from_proposal as zcb_create_pczt,
-        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
-    };
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     if requests.is_empty() {
         return Err("Batch requires at least one request".to_string());
@@ -415,7 +415,7 @@ pub(crate) fn create_reserved_pczt_batch(
             true,
         )
         .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
-        let (proposal, decided_tx_version) = propose_with_note_version_downgrade(
+        let (proposal, _) = propose_with_note_version_downgrade(
             pass1_proposal,
             proposed_tx_version,
             |tx_version| {
@@ -444,28 +444,16 @@ pub(crate) fn create_reserved_pczt_batch(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let pczt = with_wallet_db_write_lock("send.create_reserved_pczt_batch", || {
             let mut write_db = open_wallet_db(db_path, network)?;
-            if let Some(tx_version) = decided_tx_version {
-                zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
-                    &mut write_db,
-                    &network,
-                    account_id,
-                    OvkPolicy::Sender,
-                    &proposal,
-                    tx_version,
-                    orchard::builder::BundleType::UNPADDED,
-                )
-            } else {
-                zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                    &mut write_db,
-                    &network,
-                    account_id,
-                    OvkPolicy::Sender,
-                    &proposal,
-                    // Keep the builder-derived expiry height.
-                    None,
-                    orchard::builder::BundleType::UNPADDED,
-                )
-            }
+            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                &mut write_db,
+                &network,
+                account_id,
+                OvkPolicy::Sender,
+                &proposal,
+                // Keep the builder-derived expiry height.
+                None,
+                orchard::builder::BundleType::UNPADDED,
+            )
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
         })?;
         let pczt_bytes = pczt
@@ -593,10 +581,7 @@ pub(crate) fn create_shield_transparent_pczt(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<ShieldTransparentPcztResult, String> {
-    use zcash_client_backend::data_api::wallet::{
-        create_pczt_from_proposal as zcb_create_pczt,
-        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
-    };
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
 
@@ -608,35 +593,21 @@ pub(crate) fn create_shield_transparent_pczt(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
-        // The version-less creator pins V5; shielding must request V6
-        // explicitly once NU6.3 is active so the shielded output lands in the
-        // Ironwood pool (the fork derived this from the target height). Use
-        // the proposal's own target height rather than the synced-wallet
+        // Use the proposal's own target height rather than the synced-wallet
         // probe: the shielding flow works from the chain tip alone.
         let proposed_tx_version =
             proposed_tx_version_for_send(network, proposal.min_target_height());
-        let pczt = if let Some(tx_version) = proposed_tx_version {
-            zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
-                &mut db,
-                &network,
-                account_id,
-                OvkPolicy::Sender,
-                &proposal,
-                tx_version,
-                orchard::builder::BundleType::DEFAULT,
-            )
-        } else {
-            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                &mut db,
-                &network,
-                account_id,
-                OvkPolicy::Sender,
-                &proposal,
-                // Keep the builder-derived expiry height.
-                None,
-                orchard::builder::BundleType::DEFAULT,
-            )
-        }
+        let proposal = proposal.with_proposed_version(proposed_tx_version);
+        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            account_id,
+            OvkPolicy::Sender,
+            &proposal,
+            // Keep the builder-derived expiry height.
+            None,
+            orchard::builder::BundleType::DEFAULT,
+        )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
         let pczt_bytes = pczt
             .serialize()
@@ -699,7 +670,6 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                None,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -803,7 +773,6 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
-            let proposed_tx_version = stored.proposed_tx_version;
 
             let txids = match (spend_params_path, output_params_path) {
                 (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
@@ -817,7 +786,6 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        proposed_tx_version,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -832,7 +800,6 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        proposed_tx_version,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -3214,11 +3181,14 @@ fn create_orchard_denomination_split_transaction(
             .and_then(|bundle| {
                 bundle
                     .decrypt_output_with_key(action_index, &orchard_fvk.to_ivk(recipient_scope))
-                    .map(|(note, _, _)| Note::Orchard(note))
+                    .map(|(note, _, _)| Note::Orchard {
+                        note,
+                        pool: orchard::ValuePool::Orchard,
+                    })
             })
             .ok_or("Wallet-internal denomination output did not decrypt")?;
         let predicted_note = match note {
-            Note::Orchard(note) => note,
+            Note::Orchard { note, .. } => note,
             Note::Sapling(_) => {
                 return Err("Wallet-internal denomination output was Sapling".to_string())
             }
@@ -3478,7 +3448,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -3646,7 +3616,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -4015,9 +3985,10 @@ fn propose_send_with_reserved_notes(
             request,
             &change_strategy,
             // Reserved-note sends never fall back to transparent UTXOs.
-            &TransparentSpendPolicy::ShieldedOnly,
+            &SpendPolicy::default(),
             proposed_tx_version,
         )
+        .map(|proposal| proposal.with_proposed_version(proposed_tx_version))
         .map_err(|e| format!("Propose failed: {e}"))
 }
 
@@ -4047,7 +4018,7 @@ fn proposal_selected_orchard_note_versions<NoteRef>(
             .into_iter()
             .flat_map(|inputs| inputs.notes().iter())
     }) {
-        if let Note::Orchard(note) = note.note() {
+        if let Note::Orchard { note, .. } = note.note() {
             match note.version() {
                 orchard::note::NoteVersion::V2 => versions.has_v2 = true,
                 orchard::note::NoteVersion::V3 => versions.has_v3 = true,
@@ -4121,10 +4092,8 @@ fn should_downgrade_send_to_legacy_v5(
 /// (`estimate_send_max` deliberately does NOT funnel through here — see the
 /// note there for why the quoted max stays at the V6 ceiling.)
 ///
-/// Callers must store/build with the *returned* version: it stays coupled to
-/// [`zip317_helper`]'s `.with_legacy_orchard_change()` (applied iff
-/// `Some(V5)`), so fee/change accounting matches the version used at
-/// execution time.
+/// Callers must store/build with the returned proposal because it records the
+/// tx version used for fee/change accounting and transaction construction.
 fn propose_with_note_version_downgrade<NoteRef, F>(
     pass1_proposal: Proposal<WalletFeeRule, NoteRef>,
     pass1_tx_version: Option<TxVersion>,
@@ -4217,6 +4186,12 @@ impl InputSource for ReservedInputSource<'_> {
                 .filter(|note| !self.note_is_locked(note))
                 .cloned()
                 .collect(),
+            selected
+                .ironwood()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
         ))
     }
 
@@ -4237,6 +4212,12 @@ impl InputSource for ReservedInputSource<'_> {
             selected.sapling().to_vec(),
             selected
                 .orchard()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+            selected
+                .ironwood()
                 .iter()
                 .filter(|note| !self.note_is_locked(note))
                 .cloned()
@@ -4461,21 +4442,38 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let shielded_inputs = nonempty::NonEmpty::from_vec(spendable_notes.into_vec(&RetainAllNotes))
-        .map(|notes| ShieldedInputs::from_parts(anchor_height, notes))
+        .map(ShieldedInputs::from_parts)
         .ok_or("No shielded funds available to send")?;
 
     let balance = TransactionBalance::new(vec![], fee)
         .map_err(|e| format!("Max balance calculation failed: {e}"))?;
+    let ironwood_active = {
+        #[cfg(zcash_unstable = "nu6.3")]
+        {
+            network.is_nu_active(
+                consensus::NetworkUpgrade::Nu6_3,
+                BlockHeight::from(target_height),
+            )
+        }
+        #[cfg(not(zcash_unstable = "nu6.3"))]
+        {
+            let _ = &network;
+            false
+        }
+    };
 
     Proposal::single_step(
         request,
         BTreeMap::from([(0usize, PoolType::TRANSPARENT)]),
         vec![],
         Some(shielded_inputs),
+        anchor_height,
         balance,
         fee_rule,
         target_height,
+        ConfirmationsPolicy::default(),
         false,
+        ironwood_active,
     )
     .map_err(|e| format!("Propose transparent max failed: {e}"))
 }
@@ -4638,7 +4636,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -5448,7 +5446,7 @@ where
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
-    proposed_tx_version: Option<TxVersion>,
+    _proposed_tx_version: Option<TxVersion>,
     unpadded_orchard_pool_bundles: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
@@ -5471,13 +5469,6 @@ fn zip317_helper<DbT: InputSource>(
     } else {
         change_strategy
     };
-    #[cfg(zcash_unstable = "nu6.3")]
-    let change_strategy = if matches!(proposed_tx_version, Some(TxVersion::V5)) {
-        change_strategy.with_legacy_orchard_change()
-    } else {
-        change_strategy
-    };
-
     (change_strategy, GreedyInputSelector::new())
 }
 
@@ -5793,7 +5784,7 @@ mod tests {
             BlockHeight::from_u32(900),
             recipient,
             None,
-            ReceivedNotes::new(sapling_notes, orchard_notes),
+            ReceivedNotes::new(sapling_notes, orchard_notes, vec![]),
             ConservativeZip317FeeRule,
         )
         .expect("fabricated proposal should build")
@@ -5863,11 +5854,11 @@ mod tests {
         let request = TransactionRequest::new(vec![payment]).unwrap();
         // `ShieldedInputs` wants `ReceivedNote<_, wallet::Note>`; wrap the
         // orchard-typed note through `ReceivedNotes::into_vec` to get that form.
-        let notes = ReceivedNotes::new(vec![], vec![received_note]).into_vec(&RetainAllNotes);
-        let shielded_inputs = ShieldedInputs::from_parts(
-            BlockHeight::from_u32(900),
-            nonempty::NonEmpty::from_vec(notes).unwrap(),
-        );
+        let notes =
+            ReceivedNotes::new(vec![], vec![received_note], vec![]).into_vec(&RetainAllNotes);
+        let anchor_height = BlockHeight::from_u32(900);
+        let shielded_inputs =
+            ShieldedInputs::from_parts(nonempty::NonEmpty::from_vec(notes).unwrap());
         let balance = TransactionBalance::new(vec![], fee).unwrap();
 
         Proposal::single_step(
@@ -5875,9 +5866,12 @@ mod tests {
             BTreeMap::from([(0usize, payment_pool)]),
             vec![],
             Some(shielded_inputs),
+            anchor_height,
             balance,
             ConservativeZip317FeeRule,
             TargetHeight::from(BlockHeight::from_u32(1_000)),
+            ConfirmationsPolicy::default(),
+            false,
             false,
         )
         .expect("fabricated payment-pool proposal should build")
@@ -6531,7 +6525,7 @@ mod tests {
             BlockHeight::from_u32(900),
             recipient,
             None,
-            ReceivedNotes::new(vec![received_note], vec![]),
+            ReceivedNotes::new(vec![received_note], vec![], vec![]),
             ConservativeZip317FeeRule,
         )
         .expect("transparent-recipient send-max should build from shielded notes");
@@ -6748,7 +6742,6 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
-            None,
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal
