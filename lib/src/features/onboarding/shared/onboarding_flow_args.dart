@@ -2,8 +2,6 @@ enum SetPasswordFlow {
   create,
   importWallet,
   importKeystone,
-  multisigCreateSession,
-  multisigJoinSession,
   multisigFinalize,
   multisigRestore,
 }
@@ -48,10 +46,6 @@ class SetPasswordScreenArgs {
     this.multisigBackupPassphrase,
     this.multisigBackupFilePath,
     this.multisigCoordinatorUrl,
-    this.multisigInviteCode,
-    this.multisigLabel,
-    this.multisigParticipantCount,
-    this.multisigThreshold,
   });
 
   const SetPasswordScreenArgs.create({required String mnemonic})
@@ -96,30 +90,6 @@ class SetPasswordScreenArgs {
          multisigBackupPassphrase: backupPassphrase,
        );
 
-  const SetPasswordScreenArgs.multisigCreateSession({
-    required String coordinatorUrl,
-    required int participantCount,
-    required int threshold,
-    String? label,
-  }) : this._(
-         flow: SetPasswordFlow.multisigCreateSession,
-         multisigCoordinatorUrl: coordinatorUrl,
-         multisigLabel: label,
-         multisigParticipantCount: participantCount,
-         multisigThreshold: threshold,
-       );
-
-  const SetPasswordScreenArgs.multisigJoinSession({
-    required String coordinatorUrl,
-    required String inviteCode,
-    String? label,
-  }) : this._(
-         flow: SetPasswordFlow.multisigJoinSession,
-         multisigCoordinatorUrl: coordinatorUrl,
-         multisigInviteCode: inviteCode,
-         multisigLabel: label,
-       );
-
   const SetPasswordScreenArgs.multisigRestore({
     required String backupArtifactJson,
     required String backupPassphrase,
@@ -147,10 +117,6 @@ class SetPasswordScreenArgs {
   final String? multisigBackupPassphrase;
   final String? multisigBackupFilePath;
   final String? multisigCoordinatorUrl;
-  final String? multisigInviteCode;
-  final String? multisigLabel;
-  final int? multisigParticipantCount;
-  final int? multisigThreshold;
 
   bool get isImport => flow == SetPasswordFlow.importWallet;
   bool get isKeystoneImport => flow == SetPasswordFlow.importKeystone;
@@ -166,16 +132,11 @@ class SetPasswordScreenArgs {
   String get requiredMultisigBackupArtifactJson => multisigBackupArtifactJson!;
   String get requiredMultisigBackupPassphrase => multisigBackupPassphrase!;
   String get requiredMultisigCoordinatorUrl => multisigCoordinatorUrl!;
-  String get requiredMultisigInviteCode => multisigInviteCode!;
-  int get requiredMultisigParticipantCount => multisigParticipantCount!;
-  int get requiredMultisigThreshold => multisigThreshold!;
 
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
-    SetPasswordFlow.multisigCreateSession => '/multisig/create',
-    SetPasswordFlow.multisigJoinSession => '/multisig/join',
     SetPasswordFlow.multisigFinalize =>
       '/multisig/session/${Uri.encodeComponent(requiredMultisigSessionStorageId)}',
     SetPasswordFlow.multisigRestore => '/multisig/connect',
@@ -191,8 +152,6 @@ class SetPasswordScreenArgs {
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
-    SetPasswordFlow.multisigCreateSession => null,
-    SetPasswordFlow.multisigJoinSession => null,
     SetPasswordFlow.multisigFinalize => null,
     SetPasswordFlow.multisigRestore => null,
   };

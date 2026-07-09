@@ -70,6 +70,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   @override
   FutureOr<AccountState> build() {
     final bootstrap = ref.watch(appBootstrapProvider);
+    unawaited(
+      _cleanupFinalizedMultisigSetupSessions(bootstrap.initialAccountState),
+    );
     log(
       'AccountNotifier.build: bootstrapped accounts=${bootstrap.initialAccountState.accounts.length}',
     );
@@ -730,6 +733,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAddress: address,
       ),
     );
+    unawaited(_cleanupFinalizedMultisigSetupSessions(prev));
     unawaited(_refreshMultisigSigningRequestsForAccount(accountUuid));
   }
 
@@ -830,6 +834,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             currentAccounts.any(
               (account) => account.uuid == material.accountUuid,
             )) {
+          await _deleteFinalizedMultisigSetupSession(
+            pendingNotifier: pendingNotifier,
+            session: storedSession,
+          );
           await switchAccount(material.accountUuid);
           return;
         }
@@ -1014,14 +1022,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         Error.throwWithStackTrace(e, st);
       }
 
-      try {
-        await pendingNotifier.delete(session.storageId);
-      } catch (e, st) {
-        log(
-          'finalizeMultisigAccount: failed to delete pending session '
-          '${session.storageId}: $e\n$st',
-        );
-      }
+      await _deleteFinalizedMultisigSetupSession(
+        pendingNotifier: pendingNotifier,
+        session: session,
+      );
 
       log(
         'finalizeMultisigAccount: uuid=$importedAccountUuid, '
@@ -1317,6 +1321,57 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return resolveStoredOrDefaultZcashNetworkName(
       await _storage.readString(_networkKey),
     );
+  }
+
+  Future<void> _deleteFinalizedMultisigSetupSession({
+    required MultisigPendingSessionsNotifier pendingNotifier,
+    required MultisigPendingSession session,
+  }) async {
+    try {
+      await pendingNotifier.delete(session.storageId);
+    } catch (e, st) {
+      log(
+        'finalizeMultisigAccount: failed to delete finalized setup session '
+        '${session.storageId}: $e\n$st',
+      );
+    }
+  }
+
+  Future<void> _cleanupFinalizedMultisigSetupSessions(
+    AccountState accountState,
+  ) async {
+    final accountUuids = accountState.accounts
+        .map((account) => account.uuid)
+        .toSet();
+    if (accountUuids.isEmpty) return;
+
+    try {
+      final materials = await ref
+          .read(multisigAccountMaterialStoreProvider)
+          .readAll();
+      final finalizedStorageIds = materials
+          .where((material) => accountUuids.contains(material.accountUuid))
+          .map((material) => material.storageId)
+          .toSet();
+      if (finalizedStorageIds.isEmpty) return;
+
+      final pendingNotifier = ref.read(
+        multisigPendingSessionsProvider.notifier,
+      );
+      final sessions = await ref.read(multisigPendingSessionsProvider.future);
+      for (final session in sessions) {
+        if (!finalizedStorageIds.contains(session.storageId)) continue;
+        await _deleteFinalizedMultisigSetupSession(
+          pendingNotifier: pendingNotifier,
+          session: session,
+        );
+      }
+    } catch (e, st) {
+      log(
+        'AccountNotifier: failed to cleanup finalized multisig setup '
+        'sessions: $e\n$st',
+      );
+    }
   }
 
   Future<void> _deleteExistingDb(String dbPath) async {

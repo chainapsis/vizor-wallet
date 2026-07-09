@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_account_material_provider.dart';
+import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 
 void main() {
@@ -172,6 +174,64 @@ void main() {
     );
   });
 
+  test(
+    'finalized multisig setup cleanup requires matching account metadata',
+    () async {
+      final session = _pendingSession();
+      final pendingStore = _FakePendingSessionStore()
+        ..put(session)
+        ..summaries[session.storageId] =
+            MultisigPendingSessionSummary.fromSession(session)
+        ..createStates[session.storageId] = '{"round":1}';
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(accountUuid: 'multisig-account'));
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccountKinds()),
+          multisigPendingSessionStoreProvider.overrideWithValue(pendingStore),
+          multisigAccountMaterialStoreProvider.overrideWithValue(materialStore),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+      await _pumpEventQueue();
+
+      expect(pendingStore.sessions.containsKey(session.storageId), isFalse);
+      expect(pendingStore.summaries.containsKey(session.storageId), isFalse);
+      expect(pendingStore.createStates.containsKey(session.storageId), isFalse);
+    },
+  );
+
+  test(
+    'multisig setup cleanup preserves material without account metadata',
+    () async {
+      final session = _pendingSession();
+      final pendingStore = _FakePendingSessionStore()
+        ..put(session)
+        ..summaries[session.storageId] =
+            MultisigPendingSessionSummary.fromSession(session)
+        ..createStates[session.storageId] = '{"round":1}';
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(accountUuid: 'orphan-account'));
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccountKinds()),
+          multisigPendingSessionStoreProvider.overrideWithValue(pendingStore),
+          multisigAccountMaterialStoreProvider.overrideWithValue(materialStore),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+      await _pumpEventQueue();
+
+      expect(pendingStore.sessions.containsKey(session.storageId), isTrue);
+      expect(pendingStore.summaries.containsKey(session.storageId), isTrue);
+      expect(pendingStore.createStates.containsKey(session.storageId), isTrue);
+    },
+  );
+
   test('voting submission guard tracks multiple active jobs', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -223,6 +283,12 @@ void main() {
     );
     expect(container.read(votingSubmissionGuardProvider), isEmpty);
   });
+}
+
+Future<void> _pumpEventQueue() async {
+  for (var i = 0; i < 4; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }
 
 AppBootstrapState _bootstrapWithAccountKinds() {
@@ -278,4 +344,179 @@ AppBootstrapState _bootstrapWithAccounts() {
     isUnlocked: true,
     passwordRotationRecoveryFailed: false,
   );
+}
+
+const _identity = MultisigParticipantIdentity(
+  admissionSecretKey: 'admission-secret',
+  admissionPublicKey: 'admission-public',
+  deliverySecretKey: 'delivery-secret',
+  deliveryPublicKey: 'delivery-public',
+);
+
+MultisigPendingSession _pendingSession() {
+  return const MultisigPendingSession(
+    sessionId: 'session-1',
+    participantId: 'participant-1',
+    role: MultisigPendingRole.creator,
+    coordinatorUrl: 'https://coordinator.example',
+    label: 'Family vault',
+    state: 'ready',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    identity: _identity,
+    inviteSecret: 'invite-secret',
+    accessTokenExpiresAt: 2000,
+    refreshTokenExpiresAt: 3000,
+    participantCount: 3,
+    threshold: 2,
+    participants: [],
+    createdAt: 1,
+    updatedAt: 2,
+    createdLocallyAt: 3,
+    updatedLocallyAt: 4,
+  );
+}
+
+MultisigAccountMaterial _accountMaterial({required String accountUuid}) {
+  return MultisigAccountMaterial(
+    accountUuid: accountUuid,
+    sessionId: 'session-1',
+    participantId: 'participant-1',
+    coordinatorUrl: 'https://coordinator.example',
+    rosterHash: 'roster',
+    groupPublicPackageHash: 'group',
+    threshold: 2,
+    participantCount: 3,
+    identity: _identity,
+    keyPackageB64: 'key-package',
+    groupPublicPackageJson: '{"group":true}',
+    vaultAddress: 'uregtest1example',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    accessTokenExpiresAt: 2000,
+    refreshTokenExpiresAt: 3000,
+  );
+}
+
+class _FakePendingSessionStore implements MultisigPendingSessionStore {
+  final sessions = <String, MultisigPendingSession>{};
+  final summaries = <String, MultisigPendingSessionSummary>{};
+  final createStates = <String, String>{};
+
+  void put(MultisigPendingSession session) {
+    sessions[session.storageId] = session;
+  }
+
+  @override
+  Future<MultisigPendingSession?> read(
+    String storageId, {
+    bool requireUnlockedSession = true,
+  }) async {
+    return sessions[storageId];
+  }
+
+  @override
+  Future<List<MultisigPendingSession>> readAll({
+    bool requireUnlockedSession = true,
+  }) async {
+    return sessions.values.toList(growable: false);
+  }
+
+  @override
+  Future<void> write(MultisigPendingSession session) async {
+    sessions[session.storageId] = session;
+  }
+
+  @override
+  Future<List<MultisigPendingSessionSummary>> readAllSummaries() async {
+    return summaries.values.toList(growable: false);
+  }
+
+  @override
+  Future<void> writeSummary(MultisigPendingSession session) async {
+    summaries[session.storageId] = MultisigPendingSessionSummary.fromSession(
+      session,
+    );
+  }
+
+  @override
+  Future<void> rebuildSummaries(
+    Iterable<MultisigPendingSession> sessions,
+  ) async {
+    summaries.clear();
+    for (final session in sessions) {
+      await writeSummary(session);
+    }
+  }
+
+  @override
+  Future<void> delete(MultisigPendingSession session) async {
+    sessions.remove(session.storageId);
+  }
+
+  @override
+  Future<void> deleteByStorageId(String storageId) async {
+    sessions.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteSummary(String storageId) async {
+    summaries.remove(storageId);
+  }
+
+  @override
+  Future<void> deleteAllSummaries() async {
+    summaries.clear();
+  }
+
+  @override
+  Future<String?> readCreateState(MultisigPendingSession session) async {
+    return createStates[session.storageId];
+  }
+
+  @override
+  Future<void> writeCreateState(
+    MultisigPendingSession session,
+    String localStateJson,
+  ) async {
+    createStates[session.storageId] = localStateJson;
+  }
+
+  @override
+  Future<void> deleteCreateState(MultisigPendingSession session) async {
+    createStates.remove(session.storageId);
+  }
+}
+
+class _FakeAccountMaterialStore implements MultisigAccountMaterialStore {
+  final materials = <String, MultisigAccountMaterial>{};
+
+  void put(MultisigAccountMaterial material) {
+    materials[material.accountUuid] = material;
+  }
+
+  @override
+  Future<MultisigAccountMaterial?> read(
+    String accountUuid, {
+    bool requireUnlockedSession = true,
+  }) async {
+    return materials[accountUuid];
+  }
+
+  @override
+  Future<List<MultisigAccountMaterial>> readAll({
+    bool requireUnlockedSession = true,
+  }) async {
+    return materials.values.toList(growable: false);
+  }
+
+  @override
+  Future<void> write(MultisigAccountMaterial material) async {
+    materials[material.accountUuid] = material;
+  }
+
+  @override
+  Future<void> delete(String accountUuid) async {
+    materials.remove(accountUuid);
+  }
 }

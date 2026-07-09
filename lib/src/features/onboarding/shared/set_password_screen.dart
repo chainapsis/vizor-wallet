@@ -85,7 +85,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
-    MultisigPendingSession? pendingMultisigSession;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -115,23 +114,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   zip32Index: args.requiredKeystoneZip32Index,
                   birthdayHeight: args.importBirthdayHeight,
                 );
-              case SetPasswordFlow.multisigCreateSession:
-                pendingMultisigSession = await ref
-                    .read(multisigPendingSessionsProvider.notifier)
-                    .createSession(
-                      coordinatorUrl: args.requiredMultisigCoordinatorUrl,
-                      participantCount: args.requiredMultisigParticipantCount,
-                      threshold: args.requiredMultisigThreshold,
-                      label: args.multisigLabel,
-                    );
-              case SetPasswordFlow.multisigJoinSession:
-                pendingMultisigSession = await ref
-                    .read(multisigPendingSessionsProvider.notifier)
-                    .joinSession(
-                      coordinatorUrl: args.requiredMultisigCoordinatorUrl,
-                      inviteCode: args.requiredMultisigInviteCode,
-                      label: args.multisigLabel,
-                    );
               case SetPasswordFlow.multisigFinalize:
                 final sessions = await ref.read(
                   multisigPendingSessionsProvider.future,
@@ -188,13 +170,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         }
         if (args.flow == SetPasswordFlow.create) {
           clearCreateOnboardingSecretState(ref.read);
-        }
-        final pending = pendingMultisigSession;
-        if (pending != null) {
-          router.go(
-            '/multisig/session/${Uri.encodeComponent(pending.storageId)}',
-          );
-          return;
         }
         router.go('/home');
       });
@@ -254,14 +229,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         backTarget: backTarget,
         child: content,
       ),
-      SetPasswordFlow.multisigCreateSession => OnboardingTrailingPane(
-        backTarget: backTarget,
-        child: content,
-      ),
-      SetPasswordFlow.multisigJoinSession => OnboardingTrailingPane(
-        backTarget: backTarget,
-        child: content,
-      ),
       SetPasswordFlow.multisigFinalize => OnboardingTrailingPane(
         backTarget: backTarget,
         child: content,
@@ -279,8 +246,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       ImportOnboardingStep.walletBirthdayHeight.label,
     SetPasswordFlow.importKeystone =>
       KeystoneOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.multisigCreateSession => 'Create setup',
-    SetPasswordFlow.multisigJoinSession => 'Join setup',
     SetPasswordFlow.multisigFinalize => 'Recovery share',
     SetPasswordFlow.multisigRestore => 'Connect multisig',
   };

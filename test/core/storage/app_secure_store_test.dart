@@ -17,6 +17,8 @@ const _mnemonicKey = 'zcash_account_mnemonic_test-account';
 const _multisigMaterialKey = 'zcash_multisig_material_test-account';
 const _multisigPendingSessionKey =
     'zcash_multisig_pending_session_session-1:participant-1';
+const _multisigSetupSessionKey =
+    'zcash_multisig_setup_session_v1_session-1:participant-1';
 const _multisigPendingSummary = '{"sessionId":"session-1"}';
 const _externalEncryptedKey = 'external_encrypted_key';
 const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
@@ -214,6 +216,43 @@ void main() {
     );
   });
 
+  test(
+    'multisig setup sessions do not require wallet password unlock',
+    () async {
+      await store.writeMultisigSetupSession(
+        'session-1:participant-1',
+        _multisigPendingSession,
+      );
+
+      expect(
+        await store.readMultisigSetupSession('session-1:participant-1'),
+        _multisigPendingSession,
+      );
+      expect(await store.readAllMultisigSetupSessions(), {
+        'session-1:participant-1': _multisigPendingSession,
+      });
+      expect(await store.listMultisigSetupSessionStorageIds(), [
+        'session-1:participant-1',
+      ]);
+
+      await store.configurePassword(_oldPassword);
+      store.clearSessionPassword();
+      expect(
+        await store.readMultisigSetupSession('session-1:participant-1'),
+        _multisigPendingSession,
+      );
+      expect(await store.readAllMultisigSetupSessions(), {
+        'session-1:participant-1': _multisigPendingSession,
+      });
+
+      await store.deleteMultisigSetupSession('session-1:participant-1');
+      expect(
+        await store.readMultisigSetupSession('session-1:participant-1'),
+        isNull,
+      );
+    },
+  );
+
   test('deleteVotingHotkeysForAccount only clears matching account', () async {
     await store.configurePassword(_oldPassword);
     await store.writeVotingHotkey(
@@ -380,8 +419,13 @@ void main() {
       'session-1:participant-1',
       _multisigPendingSession,
     );
+    await store.writeMultisigSetupSession(
+      'session-1:participant-1',
+      _multisigPendingSession,
+    );
     await store.writeSecretString(_externalEncryptedKey, 'external secret');
     final externalPayload = await store.readPlain(_externalEncryptedKey);
+    final setupPayload = await store.readPlain(_multisigSetupSessionKey);
 
     final didChange = await store.changePassword(
       currentPassword: _oldPassword,
@@ -403,6 +447,7 @@ void main() {
       await store.readMultisigPendingSession('session-1:participant-1'),
       _multisigPendingSession,
     );
+    expect(await store.readPlain(_multisigSetupSessionKey), setupPayload);
   });
 
   test('changePassword rejects unreadable mnemonic payloads', () async {

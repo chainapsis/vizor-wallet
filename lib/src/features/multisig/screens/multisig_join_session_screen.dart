@@ -7,11 +7,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../providers/multisig_operation_error.dart';
 import '../../../providers/multisig_pending_session_provider.dart';
 import '../widgets/multisig_onboarding_flow.dart';
-import '../widgets/multisig_setup_security_gate.dart';
 
 class MultisigJoinSessionScreen extends ConsumerStatefulWidget {
   const MultisigJoinSessionScreen({super.key});
@@ -25,7 +23,6 @@ class _MultisigJoinSessionScreenState
     extends ConsumerState<MultisigJoinSessionScreen> {
   late final TextEditingController _sessionController;
   late final TextEditingController _labelController;
-  final _securityGateController = MultisigSetupSecurityGateController();
   bool _showError = false;
   bool _isSubmitting = false;
   String? _submitError;
@@ -41,14 +38,12 @@ class _MultisigJoinSessionScreenState
   void dispose() {
     _sessionController.dispose();
     _labelController.dispose();
-    _securityGateController.dispose();
     super.dispose();
   }
 
   Future<void> _join() async {
     if (_isSubmitting) return;
     final inviteCode = _sessionController.text.trim();
-    final security = ref.read(appSecurityProvider);
     String? normalizedInviteCode;
     if (inviteCode.isNotEmpty) {
       try {
@@ -61,7 +56,7 @@ class _MultisigJoinSessionScreenState
         return;
       }
     }
-    if (inviteCode.isEmpty || !_securityGateController.isValid(security)) {
+    if (inviteCode.isEmpty) {
       setState(() {
         _showError = true;
         _submitError = null;
@@ -75,17 +70,13 @@ class _MultisigJoinSessionScreenState
     });
 
     try {
-      final pending = await _securityGateController.runWithOpenSession(
-        ref: ref,
-        security: security,
-        action: () => ref
-            .read(multisigPendingSessionsProvider.notifier)
-            .joinSession(
-              coordinatorUrl: kDefaultMultisigCoordinatorUrl,
-              inviteCode: normalizedInviteCode!,
-              label: _labelController.text,
-            ),
-      );
+      final pending = await ref
+          .read(multisigPendingSessionsProvider.notifier)
+          .joinSession(
+            coordinatorUrl: kDefaultMultisigCoordinatorUrl,
+            inviteCode: normalizedInviteCode!,
+            label: _labelController.text,
+          );
       if (!mounted) return;
       context.go('/multisig/session/${Uri.encodeComponent(pending.storageId)}');
     } catch (e) {
@@ -99,7 +90,6 @@ class _MultisigJoinSessionScreenState
 
   @override
   Widget build(BuildContext context) {
-    final security = ref.watch(appSecurityProvider);
     return MultisigOnboardingTrailingPane(
       backTarget: const OnboardingBackTarget.route(
         label: 'Connect multisig',
@@ -154,23 +144,6 @@ class _MultisigJoinSessionScreenState
                             showClearButton: true,
                             onSubmitted: (_) => _join(),
                           ),
-                          if (_securityGateController.requiresInput(
-                            security,
-                          )) ...[
-                            const SizedBox(height: AppSpacing.sm),
-                            MultisigSetupSecurityGate(
-                              controller: _securityGateController,
-                              security: security,
-                              showValidation: _showError,
-                              enabled: !_isSubmitting,
-                              onChanged: () {
-                                setState(() {
-                                  _submitError = null;
-                                });
-                              },
-                              onSubmitted: _join,
-                            ),
-                          ],
                           if (_submitError != null) ...[
                             const SizedBox(height: AppSpacing.md),
                             _ErrorText(message: _submitError!),

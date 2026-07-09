@@ -110,7 +110,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
-    MultisigPendingSession? pendingMultisigSession;
 
     try {
       await routerRefresh.pauseWhile(() async {
@@ -137,23 +136,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 zip32Index: args.requiredKeystoneZip32Index,
                 birthdayHeight: args.importBirthdayHeight,
               );
-            case SetPasswordFlow.multisigCreateSession:
-              pendingMultisigSession = await ref
-                  .read(multisigPendingSessionsProvider.notifier)
-                  .createSession(
-                    coordinatorUrl: args.requiredMultisigCoordinatorUrl,
-                    participantCount: args.requiredMultisigParticipantCount,
-                    threshold: args.requiredMultisigThreshold,
-                    label: args.multisigLabel,
-                  );
-            case SetPasswordFlow.multisigJoinSession:
-              pendingMultisigSession = await ref
-                  .read(multisigPendingSessionsProvider.notifier)
-                  .joinSession(
-                    coordinatorUrl: args.requiredMultisigCoordinatorUrl,
-                    inviteCode: args.requiredMultisigInviteCode,
-                    label: args.multisigLabel,
-                  );
             case SetPasswordFlow.multisigFinalize:
               final sessions = await ref.read(
                 multisigPendingSessionsProvider.future,
@@ -197,13 +179,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         }
         if (args.flow == SetPasswordFlow.create) {
           clearCreateOnboardingSecretState(ref.read);
-        }
-        final pending = pendingMultisigSession;
-        if (pending != null) {
-          router.go(
-            '/multisig/session/${Uri.encodeComponent(pending.storageId)}',
-          );
-          return;
         }
         router.go('/onboarding/biometrics');
       });

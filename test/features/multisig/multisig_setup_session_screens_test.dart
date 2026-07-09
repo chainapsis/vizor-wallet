@@ -7,7 +7,6 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_create_session_screen.dart';
 import 'package:zcash_wallet/src/features/multisig/screens/multisig_join_session_screen.dart';
 import 'package:zcash_wallet/src/features/multisig/widgets/multisig_onboarding_flow.dart';
-import 'package:zcash_wallet/src/features/multisig/widgets/multisig_setup_security_gate.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/multisig_coordinator_service.dart';
 import 'package:zcash_wallet/src/providers/multisig_pending_session_provider.dart';
@@ -15,7 +14,7 @@ import 'package:zcash_wallet/src/rust/api/multisig.dart' as rust_multisig;
 
 void main() {
   testWidgets(
-    'create session configures password before storing pending state',
+    'create session stores setup state without configuring a password',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1200, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -38,92 +37,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(kMultisigSetupPasswordFieldKey), findsOneWidget);
-      expect(find.byKey(kMultisigSetupConfirmPasswordFieldKey), findsOneWidget);
+      expect(find.text('Wallet policy'), findsOneWidget);
+      expect(find.text('Create session'), findsNothing);
 
-      await tester.enterText(find.byType(EditableText).at(2), 'password123');
-      await tester.enterText(find.byType(EditableText).at(3), 'password123');
-      await tester.ensureVisible(find.text('Create session'));
-      await tester.tap(find.text('Create session'));
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
-
-      expect(security.prepareCalls, 1);
-      expect(security.commitCalls, 1);
-      expect(security.rollbackCalls, 0);
-      expect(coordinator.createCalls, hasLength(1));
-      expect(store.sessions.values.single.sessionId, 'session-1');
-      expect(find.text('session:session-1:participant-1'), findsOneWidget);
-    },
-  );
-
-  testWidgets('create session rolls password setup back when create fails', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final security = _FakeAppSecurityNotifier(
-      initialState: const AppSecurityState(
-        isPasswordConfigured: false,
-        isUnlocked: false,
-      ),
-    );
-    final coordinator = _FakeMultisigCoordinatorService(
-      createError: StateError('coordinator unavailable'),
-    );
-
-    await tester.pumpWidget(
-      _harness(
-        initialLocation: '/multisig/create',
-        security: security,
-        coordinator: coordinator,
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(EditableText).at(2), 'password123');
-    await tester.enterText(find.byType(EditableText).at(3), 'password123');
-
-    await tester.ensureVisible(find.text('Create session'));
-    await tester.tap(find.text('Create session'));
-    await tester.pumpAndSettle();
-
-    expect(security.prepareCalls, 1);
-    expect(security.commitCalls, 0);
-    expect(security.rollbackCalls, 1);
-    expect(find.textContaining('coordinator unavailable'), findsOneWidget);
-  });
-
-  testWidgets(
-    'create session keeps password fields hidden when already unlocked',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1200, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      final security = _FakeAppSecurityNotifier(
-        initialState: const AppSecurityState(
-          isPasswordConfigured: true,
-          isUnlocked: true,
-        ),
-      );
-      final store = _FakePendingSessionStore();
-      final coordinator = _FakeMultisigCoordinatorService();
-
-      await tester.pumpWidget(
-        _harness(
-          initialLocation: '/multisig/create',
-          security: security,
-          store: store,
-          coordinator: coordinator,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(kMultisigSetupPasswordFieldKey), findsNothing);
-      expect(find.byKey(kMultisigSetupConfirmPasswordFieldKey), findsNothing);
-
       await tester.ensureVisible(find.text('Create session'));
       await tester.tap(find.text('Create session'));
       await tester.pumpAndSettle();
 
       expect(security.prepareCalls, 0);
+      expect(security.commitCalls, 0);
+      expect(security.rollbackCalls, 0);
       expect(security.unlockCalls, 0);
       expect(coordinator.createCalls, hasLength(1));
       expect(store.sessions.values.single.sessionId, 'session-1');
@@ -131,7 +56,83 @@ void main() {
     },
   );
 
-  testWidgets('join session unlocks configured storage before storing state', (
+  testWidgets(
+    'create session reports create errors without password rollback',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final security = _FakeAppSecurityNotifier(
+        initialState: const AppSecurityState(
+          isPasswordConfigured: false,
+          isUnlocked: false,
+        ),
+      );
+      final coordinator = _FakeMultisigCoordinatorService(
+        createError: StateError('coordinator unavailable'),
+      );
+
+      await tester.pumpWidget(
+        _harness(
+          initialLocation: '/multisig/create',
+          security: security,
+          coordinator: coordinator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Create session'));
+      await tester.tap(find.text('Create session'));
+      await tester.pumpAndSettle();
+
+      expect(security.prepareCalls, 0);
+      expect(security.commitCalls, 0);
+      expect(security.rollbackCalls, 0);
+      expect(find.textContaining('coordinator unavailable'), findsOneWidget);
+    },
+  );
+
+  testWidgets('create session stores setup state when already unlocked', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final security = _FakeAppSecurityNotifier(
+      initialState: const AppSecurityState(
+        isPasswordConfigured: true,
+        isUnlocked: true,
+      ),
+    );
+    final store = _FakePendingSessionStore();
+    final coordinator = _FakeMultisigCoordinatorService();
+
+    await tester.pumpWidget(
+      _harness(
+        initialLocation: '/multisig/create',
+        security: security,
+        store: store,
+        coordinator: coordinator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wallet policy'), findsOneWidget);
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Create session'));
+    await tester.tap(find.text('Create session'));
+    await tester.pumpAndSettle();
+
+    expect(security.prepareCalls, 0);
+    expect(security.unlockCalls, 0);
+    expect(coordinator.createCalls, hasLength(1));
+    expect(store.sessions.values.single.sessionId, 'session-1');
+    expect(find.text('session:session-1:participant-1'), findsOneWidget);
+  });
+
+  testWidgets('join session stores setup state without unlocking storage', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
@@ -155,18 +156,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(kMultisigSetupPasswordFieldKey), findsOneWidget);
-    expect(find.byKey(kMultisigSetupConfirmPasswordFieldKey), findsNothing);
-
     await tester.enterText(
       find.byType(EditableText).at(0),
       'invitesecretinvitesecr',
     );
-    await tester.enterText(find.byType(EditableText).at(3), 'password123');
     await tester.tap(find.text('Join session'));
     await tester.pumpAndSettle();
 
-    expect(security.unlockCalls, 1);
+    expect(security.unlockCalls, 0);
     expect(security.prepareCalls, 0);
     expect(security.commitCalls, 0);
     expect(coordinator.joinCalls, hasLength(1));

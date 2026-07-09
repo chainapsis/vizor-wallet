@@ -327,7 +327,6 @@ void main() {
       final session = _pendingSession(accessTokenExpiresAt: 900);
       final material = _accountMaterial();
       store.put(session);
-      materialStore.put(material);
       final service = _FakeMultisigCoordinatorService(
         authUpdateResponse: _apiAuthUpdate(
           accessToken: 'new-access',
@@ -342,6 +341,8 @@ void main() {
         service: service,
       );
       addTearDown(container.dispose);
+      await container.read(multisigPendingSessionsProvider.future);
+      materialStore.put(material);
 
       final refreshed = await container
           .read(multisigPendingSessionsProvider.notifier)

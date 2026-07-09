@@ -35,6 +35,7 @@ const _accountMnemonicMigrationCompleteKey =
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
 const _multisigMaterialKeyPrefix = 'zcash_multisig_material_';
 const _multisigPendingSessionKeyPrefix = 'zcash_multisig_pending_session_';
+const _multisigSetupSessionKeyPrefix = 'zcash_multisig_setup_session_v1_';
 const _multisigPendingSessionSummaryKeyPrefix =
     'zcash_multisig_pending_summary_';
 const _multisigSigningRequestsKeyPrefix = 'zcash_multisig_signing_requests_';
@@ -248,6 +249,10 @@ class AppSecureStore {
     });
   }
 
+  Future<String?> readMultisigSetupSession(String sessionStorageId) {
+    return readPlain(_multisigSetupSessionKey(sessionStorageId));
+  }
+
   Future<Map<String, String>> readAllMultisigMaterials({
     bool requireUnlockedSession = false,
   }) {
@@ -300,6 +305,19 @@ class AppSecureStore {
     });
   }
 
+  Future<Map<String, String>> readAllMultisigSetupSessions() async {
+    final storedValues = await _runStorageOperation(
+      'read all multisig setup sessions',
+      _storage.readAll,
+    );
+    final result = <String, String>{};
+    for (final entry in storedValues.entries) {
+      if (!entry.key.startsWith(_multisigSetupSessionKeyPrefix)) continue;
+      result[_multisigSetupSessionIdFromKey(entry.key)] = entry.value;
+    }
+    return result;
+  }
+
   Future<String?> readMultisigPendingSessionSummary(String sessionStorageId) {
     return readPlain(_multisigPendingSessionSummaryKey(sessionStorageId));
   }
@@ -327,6 +345,17 @@ class AppSecureStore {
     return storedValues.keys
         .where((key) => key.startsWith(_multisigPendingSessionKeyPrefix))
         .map(_multisigPendingSessionIdFromKey)
+        .toList(growable: false);
+  }
+
+  Future<List<String>> listMultisigSetupSessionStorageIds() async {
+    final storedValues = await _runStorageOperation(
+      'list multisig setup session ids',
+      _storage.readAll,
+    );
+    return storedValues.keys
+        .where((key) => key.startsWith(_multisigSetupSessionKeyPrefix))
+        .map(_multisigSetupSessionIdFromKey)
         .toList(growable: false);
   }
 
@@ -401,6 +430,13 @@ class AppSecureStore {
         ),
       );
     });
+  }
+
+  Future<void> writeMultisigSetupSession(
+    String sessionStorageId,
+    String sessionJson,
+  ) {
+    return writePlain(_multisigSetupSessionKey(sessionStorageId), sessionJson);
   }
 
   Future<void> writeMultisigPendingSessionSummary(
@@ -518,6 +554,10 @@ class AppSecureStore {
             _storage.delete(key: _multisigPendingSessionKey(sessionStorageId)),
       );
     });
+  }
+
+  Future<void> deleteMultisigSetupSession(String sessionStorageId) {
+    return delete(_multisigSetupSessionKey(sessionStorageId));
   }
 
   Future<void> deleteMultisigPendingSessionSummary(String sessionStorageId) {
@@ -1259,6 +1299,12 @@ String _multisigPendingSessionKey(String sessionStorageId) =>
 
 String _multisigPendingSessionIdFromKey(String key) =>
     key.substring(_multisigPendingSessionKeyPrefix.length);
+
+String _multisigSetupSessionKey(String sessionStorageId) =>
+    '$_multisigSetupSessionKeyPrefix$sessionStorageId';
+
+String _multisigSetupSessionIdFromKey(String key) =>
+    key.substring(_multisigSetupSessionKeyPrefix.length);
 
 String _multisigPendingSessionSummaryKey(String sessionStorageId) =>
     '$_multisigPendingSessionSummaryKeyPrefix$sessionStorageId';

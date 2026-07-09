@@ -295,6 +295,7 @@ class _MobileMultisigCreateSessionScreenState
     extends ConsumerState<MobileMultisigCreateSessionScreen> {
   late final TextEditingController _labelController;
   late final FocusNode _labelFocus;
+  _MobileCreateSetupStep _step = _MobileCreateSetupStep.walletPolicy;
   int _participantCount = 3;
   int _threshold = 2;
   bool _isSubmitting = false;
@@ -314,37 +315,27 @@ class _MobileMultisigCreateSessionScreenState
     super.dispose();
   }
 
+  void _continueToSigner() {
+    setState(() {
+      _step = _MobileCreateSetupStep.signerAccount;
+      _submitError = null;
+    });
+  }
+
+  void _handleBack() {
+    if (_step == _MobileCreateSetupStep.walletPolicy) {
+      context.go('/multisig/connect');
+      return;
+    }
+    setState(() {
+      _step = _MobileCreateSetupStep.walletPolicy;
+      _submitError = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (_isSubmitting) return;
     const coordinatorUrl = kDefaultMultisigCoordinatorUrl;
-    final security = ref.read(appSecurityProvider);
-    final hasAccounts =
-        ref.read(accountProvider).value?.accounts.isNotEmpty ?? false;
-    final needsInitialPasscode = _needsInitialPasscode(
-      security: security,
-      hasAccounts: hasAccounts,
-    );
-    final needsPasscodeUnlock =
-        !needsInitialPasscode && security.requiresUnlock;
-    if (needsPasscodeUnlock) {
-      setState(() {
-        _submitError = null;
-      });
-      return;
-    }
-
-    if (needsInitialPasscode) {
-      context.push(
-        '/multisig/set-password',
-        extra: SetPasswordScreenArgs.multisigCreateSession(
-          coordinatorUrl: coordinatorUrl,
-          participantCount: _participantCount,
-          threshold: _threshold,
-          label: _labelController.text,
-        ),
-      );
-      return;
-    }
 
     setState(() {
       _isSubmitting = true;
@@ -373,71 +364,76 @@ class _MobileMultisigCreateSessionScreenState
 
   @override
   Widget build(BuildContext context) {
-    final security = ref.watch(appSecurityProvider);
-    final hasAccounts =
-        ref.watch(accountProvider).value?.accounts.isNotEmpty ?? false;
-    final needsInitialPasscode = _needsInitialPasscode(
-      security: security,
-      hasAccounts: hasAccounts,
-    );
-    final needsPasscodeUnlock =
-        !needsInitialPasscode && security.requiresUnlock;
+    final isPolicyStep = _step == _MobileCreateSetupStep.walletPolicy;
     return MobileOnboardingStepScaffold(
       progress: _sessionSetupProgress,
-      title: 'Create setup',
-      subtitle: 'Choose who can approve sends before sharing the invite code.',
+      title: isPolicyStep ? 'Create setup' : 'Your signer account',
+      subtitle: isPolicyStep
+          ? 'Choose who can approve sends before sharing the invite code.'
+          : 'Name this device before creating the invite code.',
       titleStyle: AppTypography.displaySmall,
-      onBack: () => context.go('/multisig/connect'),
+      onBack: _handleBack,
       bottomArea: AppButton(
         key: const ValueKey('mobile_multisig_create_submit_button'),
         expand: true,
-        onPressed: _isSubmitting || needsPasscodeUnlock ? null : _submit,
-        leading: _isSubmitting
+        onPressed: _isSubmitting
+            ? null
+            : isPolicyStep
+            ? _continueToSigner
+            : _submit,
+        leading: isPolicyStep
+            ? null
+            : _isSubmitting
             ? const _SmallSpinner()
             : const AppIcon(AppIcons.addNew),
         trailing: _isSubmitting ? null : const AppIcon(AppIcons.chevronForward),
-        child: Text(_isSubmitting ? 'Creating...' : 'Create session'),
+        child: Text(
+          isPolicyStep
+              ? 'Continue'
+              : _isSubmitting
+              ? 'Creating...'
+              : 'Create session',
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _MobileFieldLabel(
-            label: 'Signer label',
-            child: MobileTextField(
-              controller: _labelController,
-              focusNode: _labelFocus,
-              hintText: 'Shown to your co-signers',
-              leading: const _FieldLeadingIcon(AppIcons.user),
-              textInputAction: TextInputAction.done,
-              onChanged: (_) => setState(() => _submitError = null),
-              onSubmitted: (_) => _submit(),
+          if (isPolicyStep)
+            _MobileSessionPolicyCard(
+              participantCount: _participantCount,
+              threshold: _threshold,
+              onParticipantCountChanged: (value) {
+                setState(() {
+                  _participantCount = value;
+                  if (_threshold > value) _threshold = value;
+                  if (_threshold < 2) _threshold = 2;
+                  _submitError = null;
+                });
+              },
+              onThresholdChanged: (value) {
+                setState(() {
+                  _threshold = value;
+                  _submitError = null;
+                });
+              },
+            )
+          else ...[
+            _MobilePolicySummaryCard(
+              participantCount: _participantCount,
+              threshold: _threshold,
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MobileSessionPolicyCard(
-            participantCount: _participantCount,
-            threshold: _threshold,
-            onParticipantCountChanged: (value) {
-              setState(() {
-                _participantCount = value;
-                if (_threshold > value) _threshold = value;
-                if (_threshold < 2) _threshold = 2;
-                _submitError = null;
-              });
-            },
-            onThresholdChanged: (value) {
-              setState(() {
-                _threshold = value;
-                _submitError = null;
-              });
-            },
-          ),
-          if (needsPasscodeUnlock) ...[
             const SizedBox(height: AppSpacing.sm),
-            _MobilePasscodeUnlockCard(
-              title: 'Unlock secure storage',
-              body: 'Enter your passcode to create this multisig setup.',
-              onUnlocked: _submit,
+            _MobileFieldLabel(
+              label: 'Signer label',
+              child: MobileTextField(
+                controller: _labelController,
+                focusNode: _labelFocus,
+                hintText: 'Shown to your co-signers',
+                leading: const _FieldLeadingIcon(AppIcons.user),
+                textInputAction: TextInputAction.done,
+                onChanged: (_) => setState(() => _submitError = null),
+                onSubmitted: (_) => _submit(),
+              ),
             ),
           ],
           if (_submitError != null) ...[
@@ -450,6 +446,8 @@ class _MobileMultisigCreateSessionScreenState
     );
   }
 }
+
+enum _MobileCreateSetupStep { walletPolicy, signerAccount }
 
 class _MobileSessionPolicyCard extends StatelessWidget {
   const _MobileSessionPolicyCard({
@@ -518,6 +516,31 @@ class _MobileSessionPolicyCard extends StatelessWidget {
   }
 }
 
+class _MobilePolicySummaryCard extends StatelessWidget {
+  const _MobilePolicySummaryCard({
+    required this.participantCount,
+    required this.threshold,
+  });
+
+  final int participantCount;
+  final int threshold;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobileSectionCard(
+      iconName: AppIcons.users,
+      title: 'Wallet policy',
+      body: 'Any $threshold of $participantCount signers can approve a send.',
+      child: Text(
+        '$threshold approvals required from $participantCount total signers.',
+        style: AppTypography.bodySmall.copyWith(
+          color: context.colors.text.secondary,
+        ),
+      ),
+    );
+  }
+}
+
 class _PolicyPill extends StatelessWidget {
   const _PolicyPill({
     required this.label,
@@ -580,7 +603,6 @@ class _MobileMultisigJoinSessionScreenState
     if (_isSubmitting) return;
     final inviteCode = _sessionController.text.trim();
     const coordinatorUrl = kDefaultMultisigCoordinatorUrl;
-    final security = ref.read(appSecurityProvider);
     String? normalizedInviteCode;
     if (inviteCode.isNotEmpty) {
       try {
@@ -593,31 +615,11 @@ class _MobileMultisigJoinSessionScreenState
         return;
       }
     }
-    final hasAccounts =
-        ref.read(accountProvider).value?.accounts.isNotEmpty ?? false;
-    final needsInitialPasscode = _needsInitialPasscode(
-      security: security,
-      hasAccounts: hasAccounts,
-    );
-    final needsPasscodeUnlock =
-        !needsInitialPasscode && security.requiresUnlock;
-    if (inviteCode.isEmpty || needsPasscodeUnlock) {
+    if (inviteCode.isEmpty) {
       setState(() {
         _showError = true;
         _submitError = null;
       });
-      return;
-    }
-
-    if (needsInitialPasscode) {
-      context.push(
-        '/multisig/set-password',
-        extra: SetPasswordScreenArgs.multisigJoinSession(
-          coordinatorUrl: coordinatorUrl,
-          inviteCode: normalizedInviteCode!,
-          label: _labelController.text,
-        ),
-      );
       return;
     }
 
@@ -647,15 +649,6 @@ class _MobileMultisigJoinSessionScreenState
 
   @override
   Widget build(BuildContext context) {
-    final security = ref.watch(appSecurityProvider);
-    final hasAccounts =
-        ref.watch(accountProvider).value?.accounts.isNotEmpty ?? false;
-    final needsInitialPasscode = _needsInitialPasscode(
-      security: security,
-      hasAccounts: hasAccounts,
-    );
-    final needsPasscodeUnlock =
-        !needsInitialPasscode && security.requiresUnlock;
     return MobileOnboardingStepScaffold(
       progress: _sessionSetupProgress,
       title: 'Join setup',
@@ -665,7 +658,7 @@ class _MobileMultisigJoinSessionScreenState
       bottomArea: AppButton(
         key: const ValueKey('mobile_multisig_join_submit_button'),
         expand: true,
-        onPressed: _isSubmitting || needsPasscodeUnlock ? null : _join,
+        onPressed: _isSubmitting ? null : _join,
         leading: _isSubmitting
             ? const _SmallSpinner()
             : const AppIcon(AppIcons.link),
@@ -703,14 +696,6 @@ class _MobileMultisigJoinSessionScreenState
               onSubmitted: (_) => _join(),
             ),
           ),
-          if (needsPasscodeUnlock) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _MobilePasscodeUnlockCard(
-              title: 'Unlock secure storage',
-              body: 'Enter your passcode to join this multisig setup.',
-              onUnlocked: _join,
-            ),
-          ],
           if (_submitError != null) ...[
             const SizedBox(height: AppSpacing.sm),
             _InlineError(message: _submitError!),
@@ -2005,13 +1990,6 @@ double _progressForSession(MultisigPendingSession? session) {
     'ready' => 0.9,
     _ => _sessionSetupProgress,
   };
-}
-
-bool _needsInitialPasscode({
-  required AppSecurityState security,
-  required bool hasAccounts,
-}) {
-  return !hasAccounts && !security.isPasswordConfigured;
 }
 
 MultisigPendingSessionSummary? _summaryByStorageId(

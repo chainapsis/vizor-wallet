@@ -737,33 +737,41 @@ class MultisigPendingSessionStore {
     String storageId, {
     bool requireUnlockedSession = true,
   }) async {
-    final raw = await _storage.readMultisigPendingSession(
+    final setupRaw = await _storage.readMultisigSetupSession(storageId);
+    if (setupRaw != null && setupRaw.isNotEmpty) {
+      return MultisigPendingSession.fromStorageJson(setupRaw);
+    }
+    final encryptedRaw = await _storage.readMultisigPendingSession(
       storageId,
       requireUnlockedSession: requireUnlockedSession,
     );
-    if (raw == null || raw.isEmpty) return null;
-    return MultisigPendingSession.fromStorageJson(raw);
+    if (encryptedRaw == null || encryptedRaw.isEmpty) return null;
+    return MultisigPendingSession.fromStorageJson(encryptedRaw);
   }
 
   Future<List<MultisigPendingSession>> readAll({
     bool requireUnlockedSession = true,
   }) async {
-    final raw = await _storage.readAllMultisigPendingSessions(
+    final encryptedRaw = await _storage.readAllMultisigPendingSessions(
       requireUnlockedSession: requireUnlockedSession,
     );
+    final setupRaw = await _storage.readAllMultisigSetupSessions();
+    final raw = <String, String>{...encryptedRaw, ...setupRaw};
     return raw.values
         .map(MultisigPendingSession.fromStorageJson)
         .toList(growable: false);
   }
 
   Future<List<MultisigPendingSessionSummary>> readAllSummaries() async {
-    final encryptedSessionIds =
-        (await _storage.listMultisigPendingSessionStorageIds()).toSet();
+    final storedSessionIds = {
+      ...await _storage.listMultisigPendingSessionStorageIds(),
+      ...await _storage.listMultisigSetupSessionStorageIds(),
+    };
     final raw = await _storage.readAllMultisigPendingSessionSummaries();
     final summaries = <MultisigPendingSessionSummary>[];
     final summarizedIds = <String>{};
     for (final entry in raw.entries) {
-      if (!encryptedSessionIds.contains(entry.key)) continue;
+      if (!storedSessionIds.contains(entry.key)) continue;
       final summary = MultisigPendingSessionSummary.fromStorageJson(
         entry.value,
       );
@@ -771,7 +779,7 @@ class MultisigPendingSessionStore {
       summaries.add(summary);
       summarizedIds.add(summary.storageId);
     }
-    for (final storageId in encryptedSessionIds) {
+    for (final storageId in storedSessionIds) {
       if (summarizedIds.contains(storageId)) continue;
       summaries.add(MultisigPendingSessionSummary.fromStorageId(storageId));
     }
@@ -779,7 +787,7 @@ class MultisigPendingSessionStore {
   }
 
   Future<void> write(MultisigPendingSession session) {
-    return _storage.writeMultisigPendingSession(
+    return _storage.writeMultisigSetupSession(
       session.storageId,
       session.toStorageJson(),
     );
@@ -802,12 +810,14 @@ class MultisigPendingSessionStore {
     }
   }
 
-  Future<void> delete(MultisigPendingSession session) {
-    return _storage.deleteMultisigPendingSession(session.storageId);
+  Future<void> delete(MultisigPendingSession session) async {
+    await _storage.deleteMultisigSetupSession(session.storageId);
+    await _storage.deleteMultisigPendingSession(session.storageId);
   }
 
-  Future<void> deleteByStorageId(String storageId) {
-    return _storage.deleteMultisigPendingSession(storageId);
+  Future<void> deleteByStorageId(String storageId) async {
+    await _storage.deleteMultisigSetupSession(storageId);
+    await _storage.deleteMultisigPendingSession(storageId);
   }
 
   Future<void> deleteSummary(String storageId) {
