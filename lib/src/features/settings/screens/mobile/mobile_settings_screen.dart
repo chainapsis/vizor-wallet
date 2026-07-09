@@ -600,33 +600,34 @@ class _CurrencySheetState extends State<_CurrencySheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Eleven options outgrow short phones, so the list scrolls inside
-          // the sheet while the Update/Cancel actions stay pinned below.
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: kSupportedFiatCurrencies.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(height: AppSpacing.xs),
-                itemBuilder: (context, index) {
-                  final currency = kSupportedFiatCurrencies[index];
-                  return _SettingsOptionCard(
-                    key: ValueKey('mobile_currency_option_${currency.code}'),
-                    leading: Text(
-                      currency.symbol,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: context.colors.text.accent,
-                      ),
+          // Eleven options outgrow short phones, so the list is capped at
+          // 320 and scrolls inside the sheet while the Update/Cancel actions
+          // stay below. No Flexible wrapper: MobileModalScaffold's min-axis
+          // column hands this subtree unbounded height, under which a
+          // loose-fit flex child is laid out unconstrained anyway — the
+          // height cap is what does the work.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: kSupportedFiatCurrencies.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+              itemBuilder: (context, index) {
+                final currency = kSupportedFiatCurrencies[index];
+                return _SettingsOptionCard(
+                  key: ValueKey('mobile_currency_option_${currency.code}'),
+                  leading: Text(
+                    currency.symbol,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: context.colors.text.accent,
                     ),
-                    semanticLabel: currency.pickerLabel,
-                    label: currency.displayCode,
-                    selected: currency == _selected,
-                    onTap: () => setState(() => _selected = currency),
-                  );
-                },
-              ),
+                  ),
+                  semanticLabel: currency.pickerLabel,
+                  label: currency.displayCode,
+                  selected: currency == _selected,
+                  onTap: () => setState(() => _selected = currency),
+                );
+              },
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
