@@ -8,6 +8,7 @@ import 'app_security_provider.dart';
 import 'sync_provider.dart';
 
 const kSyncKeepAwakePromptEtaThreshold = Duration(minutes: 1);
+const kSyncKeepAwakePrivacyIdleTimeout = Duration(minutes: 1);
 const kSyncKeepAwakeNearTipBlockGap = 2;
 
 class SyncKeepAwakeSettings {
@@ -108,12 +109,71 @@ final syncKeepAwakeInteractionProvider =
       SyncKeepAwakeInteractionState
     >(SyncKeepAwakeInteractionNotifier.new);
 
+class SyncKeepAwakePrivacyLockState {
+  const SyncKeepAwakePrivacyLockState({required this.isLocked, this.lockedAt});
+
+  const SyncKeepAwakePrivacyLockState.unlocked()
+    : isLocked = false,
+      lockedAt = null;
+
+  final bool isLocked;
+  final DateTime? lockedAt;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is SyncKeepAwakePrivacyLockState &&
+            other.isLocked == isLocked &&
+            other.lockedAt == lockedAt;
+  }
+
+  @override
+  int get hashCode => Object.hash(isLocked, lockedAt);
+}
+
+class SyncKeepAwakePrivacyLockNotifier
+    extends Notifier<SyncKeepAwakePrivacyLockState> {
+  @override
+  SyncKeepAwakePrivacyLockState build() {
+    return const SyncKeepAwakePrivacyLockState.unlocked();
+  }
+
+  void lock({DateTime? at}) {
+    if (state.isLocked) return;
+    state = SyncKeepAwakePrivacyLockState(
+      isLocked: true,
+      lockedAt: at ?? DateTime.now(),
+    );
+  }
+
+  void unlock({DateTime? at}) {
+    ref.read(syncKeepAwakeInteractionProvider.notifier).markInteraction(at: at);
+    clear();
+  }
+
+  void clear() {
+    if (!state.isLocked) return;
+    state = const SyncKeepAwakePrivacyLockState.unlocked();
+  }
+}
+
+final syncKeepAwakePrivacyLockProvider =
+    NotifierProvider<
+      SyncKeepAwakePrivacyLockNotifier,
+      SyncKeepAwakePrivacyLockState
+    >(SyncKeepAwakePrivacyLockNotifier.new);
+
 final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
   if (ref.watch(appSecurityProvider).requiresUnlock) return false;
   final settings = ref.watch(syncKeepAwakeProvider);
   final sync = ref.watch(syncProvider).asData?.value;
   if (sync == null) return false;
   return shouldKeepScreenAwakeForSync(settings: settings, sync: sync);
+});
+
+final syncKeepAwakePrivacyLockVisibleProvider = Provider<bool>((ref) {
+  return ref.watch(syncKeepAwakeActiveProvider) &&
+      ref.watch(syncKeepAwakePrivacyLockProvider).isLocked;
 });
 
 class SyncKeepAwakeEtaSample {

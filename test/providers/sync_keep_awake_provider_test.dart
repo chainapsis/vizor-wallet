@@ -153,6 +153,35 @@ void main() {
     );
   });
 
+  test('privacy lock provider tracks virtual lock and unlock activity', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final lockedAt = DateTime(2026, 7, 9, 12);
+    final unlockedAt = lockedAt.add(const Duration(seconds: 5));
+
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .lock(at: lockedAt);
+    expect(
+      container.read(syncKeepAwakePrivacyLockProvider),
+      SyncKeepAwakePrivacyLockState(isLocked: true, lockedAt: lockedAt),
+    );
+
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .unlock(at: unlockedAt);
+
+    expect(
+      container.read(syncKeepAwakePrivacyLockProvider),
+      const SyncKeepAwakePrivacyLockState.unlocked(),
+    );
+    expect(
+      container.read(syncKeepAwakeInteractionProvider).lastInteractionAt,
+      unlockedAt,
+    );
+  });
+
   test('ETA is not estimated for ineligible sync states', () {
     final startedAt = DateTime(2026, 7, 9, 12);
     final now = startedAt.add(const Duration(seconds: 30));

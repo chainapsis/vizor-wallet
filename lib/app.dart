@@ -22,6 +22,7 @@ import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_native_host.dart';
+import 'src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -896,21 +897,25 @@ class ZcashWalletApp extends ConsumerWidget {
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
                     child: SyncKeepAwakeNativeHost(
-                      child: SyncKeepAwakeInteractionListener(
-                        child: GestureDetector(
-                          onTap: () {
-                            // Leaf-only: skip when the primary focus is a
-                            // `FocusScopeNode` rather than a concrete `FocusNode`.
-                            // Unfocusing the scope itself strips the scope's
-                            // "most-recently-focused child" memory, which leaves the
-                            // next Tab with no deterministic starting point.
-                            final primary = FocusManager.instance.primaryFocus;
-                            if (primary != null && primary is! FocusScopeNode) {
-                              primary.unfocus();
-                            }
-                          },
-                          behavior: HitTestBehavior.translucent,
-                          child: child!,
+                      child: SyncKeepAwakePrivacyLockHost(
+                        child: SyncKeepAwakeInteractionListener(
+                          child: GestureDetector(
+                            onTap: () {
+                              // Leaf-only: skip when the primary focus is a
+                              // `FocusScopeNode` rather than a concrete `FocusNode`.
+                              // Unfocusing the scope itself strips the scope's
+                              // "most-recently-focused child" memory, which leaves the
+                              // next Tab with no deterministic starting point.
+                              final primary =
+                                  FocusManager.instance.primaryFocus;
+                              if (primary != null &&
+                                  primary is! FocusScopeNode) {
+                                primary.unfocus();
+                              }
+                            },
+                            behavior: HitTestBehavior.translucent,
+                            child: child!,
+                          ),
                         ),
                       ),
                     ),
