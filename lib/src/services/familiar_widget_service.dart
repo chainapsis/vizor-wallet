@@ -26,22 +26,20 @@ class FamiliarWidgetService {
   final MethodChannel _channel;
   final FamiliarWidgetPlatformCheck _supportsFamiliarWidget;
 
-  Future<void> update({
-    required String profilePictureId,
-    required String accountName,
-  }) async {
+  // The account name is a user-authored string that can carry sensitive
+  // labels ("Savings", "DAO payroll"). It must never reach the home-screen
+  // widget, which renders on an unauthenticated surface. Only the profile
+  // picture id crosses the channel; the widget derives its class title from
+  // that id natively.
+  Future<void> update({required String profilePictureId}) async {
     if (!_supportsFamiliarWidget()) return;
 
     final normalizedProfilePictureId = normalizeProfilePictureId(
       profilePictureId,
     );
-    final normalizedAccountName = accountName.trim();
     try {
       final success = await _channel.invokeMethod<bool>('updateFamiliar', {
         'profilePictureId': normalizedProfilePictureId,
-        'accountName': normalizedAccountName.isEmpty
-            ? 'Vizor'
-            : normalizedAccountName,
       });
       if (success != true) {
         log('FamiliarWidget: native update returned $success');

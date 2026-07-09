@@ -14,6 +14,7 @@ import WidgetKit
       BackgroundSyncManager.shared.registerBackgroundTask()
       TxTrackManager.shared.registerTask()
     }
+    FamiliarWidgetStore.purgeLegacyAccountName()
     FamiliarWidgetReloader.reload()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -102,8 +103,7 @@ import WidgetKit
       case "updateFamiliar":
         let args = call.arguments as? [String: Any]
         let saved = FamiliarWidgetStore.save(
-          profilePictureId: args?["profilePictureId"] as? String,
-          accountName: args?["accountName"] as? String
+          profilePictureId: args?["profilePictureId"] as? String
         )
         FamiliarWidgetReloader.reload()
         result(saved)
@@ -230,12 +230,20 @@ private enum FamiliarWidgetStore {
   private static let accountNameKey = "familiar_widget_account_name"
   private static let revisionKey = "familiar_widget_revision"
 
-  static func save(profilePictureId: String?, accountName: String?) -> Bool {
+  static func save(profilePictureId: String?) -> Bool {
     guard let defaults else { return false }
     defaults.set(profilePictureId ?? "pfp-01", forKey: profilePictureIdKey)
-    defaults.set(accountName ?? "Vizor", forKey: accountNameKey)
+    purgeLegacyAccountName()
     defaults.set(Date().timeIntervalSince1970, forKey: revisionKey)
     return defaults.synchronize()
+  }
+
+  /// The account name must never reach the unauthenticated widget surface.
+  /// Remove any value written by an earlier build of this feature so it does
+  /// not linger in the App Group plist at rest, even if the user never
+  /// triggers another account mutation on this build.
+  static func purgeLegacyAccountName() {
+    defaults?.removeObject(forKey: accountNameKey)
   }
 }
 

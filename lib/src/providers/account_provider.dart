@@ -68,7 +68,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log(
       'AccountNotifier.build: bootstrapped accounts=${bootstrap.initialAccountState.accounts.length}',
     );
-    return bootstrap.initialAccountState;
+    final initial = bootstrap.initialAccountState;
+    // Publish the familiar snapshot for the bootstrapped active account so the
+    // home-screen widget reflects the current profile on launch, not only after
+    // a later account mutation.
+    _publishFamiliarWidgetSnapshot(initial);
+    return initial;
   }
 
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
@@ -803,13 +808,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   void _publishFamiliarWidgetSnapshot(AccountState accountState) {
     final active = accountState.activeAccount;
+    // Only the profile picture id is published. The account name is
+    // deliberately withheld from the widget snapshot (see
+    // FamiliarWidgetService.update) so no user-authored label lands on the
+    // unauthenticated home-screen surface.
     unawaited(
       ref
           .read(familiarWidgetServiceProvider)
           .update(
             profilePictureId:
                 active?.profilePictureId ?? kDefaultProfilePictureId,
-            accountName: active?.name ?? 'Vizor',
           ),
     );
   }

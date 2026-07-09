@@ -180,32 +180,26 @@ void main() {
 
     await container.read(accountProvider.future);
     await _flushFamiliarWidgetUpdate();
-    expect(calls, isEmpty);
+    // build() publishes the bootstrapped active account's snapshot on launch so
+    // the widget reflects the current profile without waiting for a mutation.
+    expect(calls.last.arguments, {'profilePictureId': 'pfp-01'});
 
     await container.read(accountProvider.notifier).switchAccount('account-2');
     await _flushFamiliarWidgetUpdate();
-    expect(calls.last.arguments, {
-      'profilePictureId': 'pfp-06',
-      'accountName': 'Keystone',
-    });
+    expect(calls.last.arguments, {'profilePictureId': 'pfp-06'});
 
+    // Renaming must not push the user-authored account name to the widget.
     await container
         .read(accountProvider.notifier)
         .renameAccount('account-2', '  Vault  ');
     await _flushFamiliarWidgetUpdate();
-    expect(calls.last.arguments, {
-      'profilePictureId': 'pfp-06',
-      'accountName': 'Vault',
-    });
+    expect(calls.last.arguments, {'profilePictureId': 'pfp-06'});
 
     await container
         .read(accountProvider.notifier)
         .updateProfilePicture('account-2', 'pfp-09');
     await _flushFamiliarWidgetUpdate();
-    expect(calls.last.arguments, {
-      'profilePictureId': 'pfp-09',
-      'accountName': 'Vault',
-    });
+    expect(calls.last.arguments, {'profilePictureId': 'pfp-09'});
   });
 
   test('voting submission guard tracks multiple active jobs', () {

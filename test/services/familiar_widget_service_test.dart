@@ -20,38 +20,30 @@ void main() {
     );
   }
 
-  test('update sends normalized familiar snapshot to native channel', () async {
+  test('update sends only the normalized profile picture id', () async {
     MethodCall? sent;
     messenger.setMockMethodCallHandler(channel, (call) async {
       sent = call;
       return true;
     });
 
-    await buildService().update(
-      profilePictureId: 'wizard',
-      accountName: '  Orchard  ',
-    );
+    await buildService().update(profilePictureId: 'wizard');
 
     expect(sent!.method, 'updateFamiliar');
-    expect(sent!.arguments, {
-      'profilePictureId': 'pfp-11',
-      'accountName': 'Orchard',
-    });
+    // The account name must never be sent to the unauthenticated widget.
+    expect(sent!.arguments, {'profilePictureId': 'pfp-11'});
   });
 
-  test('update falls back to Vizor for blank account names', () async {
+  test('update normalizes an unknown profile picture id to the default', () async {
     MethodCall? sent;
     messenger.setMockMethodCallHandler(channel, (call) async {
       sent = call;
       return true;
     });
 
-    await buildService().update(profilePictureId: 'unknown', accountName: '  ');
+    await buildService().update(profilePictureId: 'unknown');
 
-    expect(sent!.arguments, {
-      'profilePictureId': 'pfp-01',
-      'accountName': 'Vizor',
-    });
+    expect(sent!.arguments, {'profilePictureId': 'pfp-01'});
   });
 
   test(
@@ -63,9 +55,7 @@ void main() {
         return true;
       });
 
-      await buildService(
-        supported: false,
-      ).update(profilePictureId: 'pfp-02', accountName: 'Account 1');
+      await buildService(supported: false).update(profilePictureId: 'pfp-02');
 
       expect(calls, isEmpty);
     },

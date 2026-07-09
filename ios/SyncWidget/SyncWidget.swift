@@ -10,7 +10,6 @@ import SwiftUI
 
 private let familiarAppGroupId = "group.com.keplr.vizor"
 private let familiarProfilePictureIdKey = "familiar_widget_profile_picture_id"
-private let familiarAccountNameKey = "familiar_widget_account_name"
 private let familiarRevisionKey = "familiar_widget_revision"
 
 struct Provider: TimelineProvider {
@@ -36,16 +35,14 @@ struct SimpleEntry: TimelineEntry {
 
 struct FamiliarSnapshot {
     let profilePictureId: String
-    let accountName: String
     let revision: Double
 
     var identity: String {
-        "\(profilePictureId)-\(accountName)-\(revision)"
+        "\(profilePictureId)-\(revision)"
     }
 
     static let placeholder = FamiliarSnapshot(
         profilePictureId: "pfp-01",
-        accountName: "Vizor",
         revision: 0
     )
 
@@ -54,7 +51,6 @@ struct FamiliarSnapshot {
         defaults?.synchronize()
         return FamiliarSnapshot(
             profilePictureId: defaults?.string(forKey: familiarProfilePictureIdKey) ?? "pfp-01",
-            accountName: defaults?.string(forKey: familiarAccountNameKey) ?? "Vizor",
             revision: defaults?.double(forKey: familiarRevisionKey) ?? 0
         )
     }
@@ -120,7 +116,6 @@ private struct FamiliarScene: View {
                 }
 
                 FamiliarNameplate(
-                    accountName: snapshot.accountName,
                     title: profileTitle,
                     accent: accent,
                     family: family
@@ -358,7 +353,6 @@ private struct FamiliarProfileGem: View {
 }
 
 private struct FamiliarNameplate: View {
-    let accountName: String
     let title: String
     let accent: Color
     let family: WidgetFamily
@@ -369,13 +363,16 @@ private struct FamiliarNameplate: View {
                 .frame(width: gemSize, height: gemSize)
 
             VStack(alignment: .leading, spacing: family == .systemSmall ? 0 : 1) {
-                Text(accountName)
+                // The class title (derived from the profile picture) is the
+                // widget's label. The account name is intentionally absent so
+                // no user-authored string reaches this unauthenticated surface.
+                Text(title)
                     .font(.system(size: accountFontSize, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color(red: 0.94, green: 0.86, blue: 0.68))
                     .lineLimit(1)
                     .minimumScaleFactor(0.64)
                 if family != .systemSmall {
-                    Text(title.uppercased())
+                    Text("FAMILIAR")
                         .font(.system(size: 8.5, weight: .black, design: .monospaced))
                         .foregroundStyle(accent.opacity(0.92))
                         .lineLimit(1)
