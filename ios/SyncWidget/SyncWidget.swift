@@ -12,6 +12,24 @@ private let familiarAppGroupId = "group.com.keplr.vizor"
 private let familiarProfilePictureIdKey = "familiar_widget_profile_picture_id"
 private let familiarRevisionKey = "familiar_widget_revision"
 
+// v0 idle-state proof. The familiar drifts toward rest the longer it has been
+// since the app last published its snapshot (`revision`). Thresholds are
+// compressed so the drift is observable in a demo; the real cadence is days
+// (dossier §2: resting ≈ 35d) and the real signal will be last-sync, not
+// last-publish. `revision` == 0 (placeholder / never published) reads as awake.
+private let familiarStirringAfter: TimeInterval = 90       // DEMO: 1.5 min
+private let familiarRestingAfter: TimeInterval = 5 * 60    // DEMO: 5 min
+
+/// 0 = fully awake (serene), 1 = fully at rest. Linear ramp between thresholds.
+func familiarRestfulness(now: Date, revision: Double) -> Double {
+    guard revision > 0 else { return 0 }
+    let elapsed = now.timeIntervalSince1970 - revision
+    if elapsed <= familiarStirringAfter { return 0 }
+    if elapsed >= familiarRestingAfter { return 1 }
+    return (elapsed - familiarStirringAfter)
+        / (familiarRestingAfter - familiarStirringAfter)
+}
+
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> SimpleEntry {
         SimpleEntry(date: .now, snapshot: .placeholder)
@@ -22,9 +40,22 @@ struct Provider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        let entry = SimpleEntry(date: .now, snapshot: .current())
-        let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: .now) ?? .now.addingTimeInterval(900)
-        completion(Timeline(entries: [entry], policy: .after(refreshDate)))
+        let snapshot = FamiliarSnapshot.current()
+        let now = Date.now
+        // Pre-schedule a series of entries across the idle window so the familiar
+        // drifts toward rest even if the app is never opened. The snapshot (and
+        // its `revision`) is identical across entries; only the entry date
+        // advances, so `familiarRestfulness` rises step by step and WidgetKit
+        // renders the dimming without spending reload budget per step.
+        let stepCount = 20
+        let step: TimeInterval = 30
+        var entries: [SimpleEntry] = []
+        for i in 0..<stepCount {
+            let date = now.addingTimeInterval(Double(i) * step)
+            entries.append(SimpleEntry(date: date, snapshot: snapshot))
+        }
+        let refreshDate = now.addingTimeInterval(Double(stepCount) * step)
+        completion(Timeline(entries: entries, policy: .after(refreshDate)))
     }
 }
 
@@ -65,6 +96,11 @@ struct SyncWidgetEntryView: View {
         GeometryReader { proxy in
             FamiliarScene(
                 snapshot: entry.snapshot,
+                restfulness: familiarRestfulness(
+                    now: entry.date,
+                    revision: entry.snapshot.revision
+                ),
+                motionTime: entry.date.timeIntervalSince1970,
                 family: family,
                 size: proxy.size
             )
@@ -75,8 +111,31 @@ struct SyncWidgetEntryView: View {
 
 private struct FamiliarScene: View {
     let snapshot: FamiliarSnapshot
+    let restfulness: Double
+    let motionTime: Double
     let family: WidgetFamily
     let size: CGSize
+
+    // 1 = fully awake (moving), 0 = at rest (still). Motion amplitude scales
+    // with this, so the familiar visibly bobs/breathes while awake and freezes
+    // as it settles — motion presence reads as "alive" far better than dimming.
+    private var liveliness: Double { 1.0 - restfulness }
+
+    private func wave(period: Double, phase: Double = 0) -> Double {
+        sin(2.0 * Double.pi * motionTime / period + phase)
+    }
+
+    private var bobOffset: CGFloat {
+        CGFloat(wave(period: 58) * 6.0 * liveliness)
+    }
+
+    private var swayOffset: CGFloat {
+        CGFloat(wave(period: 91, phase: 0.7) * 3.0 * liveliness)
+    }
+
+    private var breathScale: CGFloat {
+        1.0 + CGFloat(wave(period: 58, phase: 1.2) * 0.022 * liveliness)
+    }
 
     private var accent: Color {
         FamiliarProfileAccent.color(for: snapshot.profilePictureId)
@@ -92,7 +151,10 @@ private struct FamiliarScene: View {
                 .frame(width: size.width, height: size.height)
 
             RadialGradient(
-                colors: [accent.opacity(0.34), Color.clear],
+                colors: [
+                    accent.opacity(0.34 * (1.0 - 0.75 * restfulness)),
+                    Color.clear,
+                ],
                 center: .center,
                 startRadius: 4,
                 endRadius: avatarGlowRadius
@@ -104,7 +166,24 @@ private struct FamiliarScene: View {
                 accent: accent,
                 family: family
             )
-            .position(x: avatarX, y: avatarY)
+            .scaleEffect(breathScale)
+            .position(x: avatarX + swayOffset, y: avatarY + bobOffset)
+
+            // Resting veil: the scene dims as the familiar settles. Sits above
+            // the avatar but below the nameplate so the label stays legible.
+            if restfulness > 0 {
+                Color.black
+                    .opacity(0.20 * restfulness)
+                    .allowsHitTesting(false)
+            }
+
+            if restfulness > 0.35 {
+                FamiliarSleepGlyph(family: family, intensity: restfulness)
+                    .position(
+                        x: avatarX + avatarSide * 0.34,
+                        y: avatarY - avatarSide * 0.42
+                    )
+            }
 
             VStack(spacing: 0) {
                 Spacer()
@@ -189,6 +268,18 @@ private struct FamiliarScene: View {
             return 118
         default:
             return 86
+        }
+    }
+
+    // Mirrors FamiliarAvatar.side so the sleep glyph can anchor to the avatar.
+    private var avatarSide: CGFloat {
+        switch family {
+        case .systemLarge:
+            return 196
+        case .systemMedium:
+            return 136
+        default:
+            return 104
         }
     }
 }
@@ -469,6 +560,38 @@ private struct FamiliarQuestStrip: View {
         .padding(.vertical, 7)
         .background(Color(red: 0.04, green: 0.05, blue: 0.06).opacity(0.74))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct FamiliarSleepGlyph: View {
+    let family: WidgetFamily
+    let intensity: Double
+
+    private var base: CGFloat {
+        switch family {
+        case .systemLarge:
+            return 22
+        case .systemMedium:
+            return 16
+        default:
+            return 13
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: -base * 0.12) {
+            Text("z")
+                .font(.system(size: base, weight: .black, design: .rounded))
+                .offset(x: base * 0.7)
+            Text("z")
+                .font(.system(size: base * 0.72, weight: .heavy, design: .rounded))
+                .offset(x: base * 0.28)
+            Text("z")
+                .font(.system(size: base * 0.5, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(Color(red: 0.94, green: 0.86, blue: 0.68))
+        .opacity(min(1.0, max(0.0, (intensity - 0.35) / 0.5)))
+        .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
     }
 }
 
