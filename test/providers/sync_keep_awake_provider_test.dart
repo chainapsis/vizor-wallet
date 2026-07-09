@@ -125,6 +125,172 @@ void main() {
     expect(container.read(syncKeepAwakeActiveProvider), isFalse);
   });
 
+  test('privacy lock mode shows done after a locked sync completes', () async {
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: true,
+          ),
+        ),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(syncProvider.future);
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .lock(at: DateTime(2026, 7, 9, 12, 1));
+
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+
+    expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+    expect(container.read(syncKeepAwakePrivacyLockVisibleProvider), isTrue);
+  });
+
+  test(
+    'privacy lock mode shows interrupted when locked sync stops early',
+    () async {
+      final syncNotifier = FakeSyncNotifier(
+        _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrap(
+              syncKeepAwakeEnabled: true,
+              syncKeepAwakePromptSeen: true,
+              isPasswordConfigured: true,
+              isUnlocked: true,
+            ),
+          ),
+          syncProvider.overrideWith(() => syncNotifier),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(syncProvider.future);
+      container
+          .read(syncKeepAwakePrivacyLockProvider.notifier)
+          .lock(at: DateTime(2026, 7, 9, 12, 1));
+
+      syncNotifier.emit(
+        _sync(
+          isSyncing: false,
+          percentage: 0.5,
+          scannedHeight: 150,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+        ),
+      );
+
+      expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+      expect(container.read(syncKeepAwakePrivacyLockVisibleProvider), isTrue);
+      expect(
+        container.read(syncKeepAwakePrivacyLockModeProvider),
+        SyncKeepAwakePrivacyLockMode.interrupted,
+      );
+    },
+  );
+
+  test(
+    'privacy lock mode stays latched across near-tip follow-up syncs',
+    () async {
+      final syncNotifier = FakeSyncNotifier(
+        _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrap(
+              syncKeepAwakeEnabled: true,
+              syncKeepAwakePromptSeen: true,
+              isPasswordConfigured: true,
+              isUnlocked: true,
+            ),
+          ),
+          syncProvider.overrideWith(() => syncNotifier),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(syncProvider.future);
+      container
+          .read(syncKeepAwakePrivacyLockProvider.notifier)
+          .lock(at: DateTime(2026, 7, 9, 12, 1));
+      syncNotifier.emit(
+        _sync(
+          isSyncing: false,
+          percentage: 1,
+          scannedHeight: 200,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+        ),
+      );
+
+      expect(
+        container.read(syncKeepAwakePrivacyLockModeProvider),
+        SyncKeepAwakePrivacyLockMode.done,
+      );
+
+      syncNotifier.emit(
+        _sync(
+          percentage: 0,
+          scannedHeight: 200,
+          chainTipHeight: 202,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
+        ),
+      );
+
+      expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+      expect(container.read(syncKeepAwakePrivacyLockVisibleProvider), isTrue);
+      expect(
+        container.read(syncKeepAwakePrivacyLockModeProvider),
+        SyncKeepAwakePrivacyLockMode.syncing,
+      );
+
+      syncNotifier.emit(
+        _sync(
+          isSyncing: false,
+          percentage: 1,
+          scannedHeight: 202,
+          chainTipHeight: 202,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
+        ),
+      );
+
+      expect(container.read(syncKeepAwakePrivacyLockVisibleProvider), isTrue);
+      expect(
+        container.read(syncKeepAwakePrivacyLockModeProvider),
+        SyncKeepAwakePrivacyLockMode.done,
+      );
+    },
+  );
+
   test('interaction notifier records the last user activity time', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

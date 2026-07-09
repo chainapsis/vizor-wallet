@@ -163,6 +163,8 @@ final syncKeepAwakePrivacyLockProvider =
       SyncKeepAwakePrivacyLockState
     >(SyncKeepAwakePrivacyLockNotifier.new);
 
+enum SyncKeepAwakePrivacyLockMode { hidden, syncing, done, interrupted }
+
 final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
   if (ref.watch(appSecurityProvider).requiresUnlock) return false;
   final settings = ref.watch(syncKeepAwakeProvider);
@@ -171,9 +173,27 @@ final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
   return shouldKeepScreenAwakeForSync(settings: settings, sync: sync);
 });
 
+final syncKeepAwakePrivacyLockModeProvider =
+    Provider<SyncKeepAwakePrivacyLockMode>((ref) {
+      if (ref.watch(appSecurityProvider).requiresUnlock) {
+        return SyncKeepAwakePrivacyLockMode.hidden;
+      }
+      if (!ref.watch(syncKeepAwakePrivacyLockProvider).isLocked) {
+        return SyncKeepAwakePrivacyLockMode.hidden;
+      }
+      final sync = ref.watch(syncProvider).asData?.value;
+      if (sync?.isSyncing == true && sync?.isBackgroundMode != true) {
+        return SyncKeepAwakePrivacyLockMode.syncing;
+      }
+      if (sync != null && isSyncKeepAwakeCompletedSync(sync)) {
+        return SyncKeepAwakePrivacyLockMode.done;
+      }
+      return SyncKeepAwakePrivacyLockMode.interrupted;
+    });
+
 final syncKeepAwakePrivacyLockVisibleProvider = Provider<bool>((ref) {
-  return ref.watch(syncKeepAwakeActiveProvider) &&
-      ref.watch(syncKeepAwakePrivacyLockProvider).isLocked;
+  return ref.watch(syncKeepAwakePrivacyLockModeProvider) !=
+      SyncKeepAwakePrivacyLockMode.hidden;
 });
 
 class SyncKeepAwakeEtaSample {
@@ -215,6 +235,12 @@ bool isSyncKeepAwakeEligibleSync(SyncState sync) {
       sync.chainTipHeight > 0 &&
       sync.scannedHeight > 0 &&
       !isNearTipCatchUp(sync);
+}
+
+bool isSyncKeepAwakeCompletedSync(SyncState sync) {
+  if (sync.isSyncing || sync.isBackgroundMode) return false;
+  if (sync.percentage >= 1 || sync.displayPercentage >= 1) return true;
+  return sync.chainTipHeight > 0 && sync.scannedHeight >= sync.chainTipHeight;
 }
 
 bool canEstimateSyncKeepAwakeEta(SyncState sync) {

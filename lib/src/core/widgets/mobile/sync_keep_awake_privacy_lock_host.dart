@@ -39,7 +39,8 @@ class _SyncKeepAwakePrivacyLockHostState
 
     final active = ref.watch(syncKeepAwakeActiveProvider);
     final interaction = ref.watch(syncKeepAwakeInteractionProvider);
-    final visible = ref.watch(syncKeepAwakePrivacyLockVisibleProvider);
+    final mode = ref.watch(syncKeepAwakePrivacyLockModeProvider);
+    final visible = mode != SyncKeepAwakePrivacyLockMode.hidden;
     _syncIdleTimer(active: active, interaction: interaction, visible: visible);
 
     return Stack(
@@ -47,7 +48,7 @@ class _SyncKeepAwakePrivacyLockHostState
       children: [
         widget.child,
         if (visible)
-          const Positioned.fill(child: SyncKeepAwakePrivacyLockScreen()),
+          Positioned.fill(child: SyncKeepAwakePrivacyLockScreen(mode: mode)),
       ],
     );
   }
@@ -66,6 +67,7 @@ class _SyncKeepAwakePrivacyLockHostState
     if (!active) {
       _idleTimer?.cancel();
       _idleTimer = null;
+      if (visible) return;
       _clearAfterFrameIfInactive();
       return;
     }
@@ -114,7 +116,12 @@ class _SyncKeepAwakePrivacyLockHostState
 }
 
 class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
-  const SyncKeepAwakePrivacyLockScreen({super.key});
+  const SyncKeepAwakePrivacyLockScreen({
+    this.mode = SyncKeepAwakePrivacyLockMode.syncing,
+    super.key,
+  });
+
+  final SyncKeepAwakePrivacyLockMode mode;
 
   static const _figmaReferenceHeight = 852.0;
   static const _shortScreenOuterMargin = 32.0;
@@ -126,25 +133,50 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
   static const _ringSize = 303.0;
   static const _ringToButtonGap = 129.0;
   static const _minimumRingToButtonGap = 48.0;
+  static const _logoToDoneStatusGap = 156.0;
+  static const _minimumLogoToDoneStatusGap = 48.0;
+  static const _doneStatusHeight = 200.0;
+  static const _doneStatusToButtonGap = 147.0;
+  static const _minimumDoneStatusToButtonGap = 48.0;
   static const _bodyWidth = 130.0;
-  static const _contentStackHeight =
-      _logoHeight +
-      _logoToRingGap +
-      _ringSize +
-      _ringToButtonGap +
-      AppButtonSizingMobile.largeHeight;
-  static const _minimumContentStackHeight =
-      _logoHeight +
-      _minimumLogoToRingGap +
-      _ringSize +
-      _minimumRingToButtonGap +
-      AppButtonSizingMobile.largeHeight;
+  static const _doneBodyWidth = 200.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final sync = ref.watch(syncProvider).asData?.value;
+    final done = mode == SyncKeepAwakePrivacyLockMode.done;
+    final interrupted = mode == SyncKeepAwakePrivacyLockMode.interrupted;
+    final sync = done || interrupted
+        ? null
+        : ref.watch(syncProvider).asData?.value;
     final progress = sync?.displayPercentage ?? sync?.percentage ?? 0.0;
+    final main = switch (mode) {
+      SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeStatusLockup(
+        iconName: AppIcons.checkCircle,
+        iconKey: ValueKey('sync_keep_awake_privacy_done_check'),
+        title: 'Synced',
+        body: 'Synced successfully.\nYou can unlock Vizor.',
+        success: true,
+      ),
+      SyncKeepAwakePrivacyLockMode.interrupted =>
+        const _SyncKeepAwakeStatusLockup(
+          iconName: AppIcons.warning,
+          iconKey: ValueKey('sync_keep_awake_privacy_interrupted_warning'),
+          title: 'Sync paused',
+          body: 'Unlock Vizor to continue.',
+          success: false,
+        ),
+      SyncKeepAwakePrivacyLockMode.hidden ||
+      SyncKeepAwakePrivacyLockMode.syncing => _SyncKeepAwakeProgressLockup(
+        progress: progress,
+      ),
+    };
+    final semanticsLabel = switch (mode) {
+      SyncKeepAwakePrivacyLockMode.done => 'Vizor is synced',
+      SyncKeepAwakePrivacyLockMode.interrupted => 'Vizor sync is paused',
+      SyncKeepAwakePrivacyLockMode.hidden ||
+      SyncKeepAwakePrivacyLockMode.syncing => 'Vizor is syncing',
+    };
 
     return Material(
       color: colors.background.window,
@@ -152,7 +184,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
         scopesRoute: true,
         namesRoute: true,
         explicitChildNodes: true,
-        label: 'Vizor is syncing',
+        label: semanticsLabel,
         child: SafeArea(
           bottom: false,
           child: LayoutBuilder(
@@ -160,6 +192,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
               final layout = _resolveVerticalLayout(
                 availableHeight: constraints.maxHeight,
                 screenHeight: MediaQuery.sizeOf(context).height,
+                mode: mode,
               );
               return Column(
                 children: [
@@ -169,9 +202,9 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
                     width: _logoWidth,
                     height: _logoHeight,
                   ),
-                  SizedBox(height: layout.logoToRingGap),
-                  _SyncKeepAwakeProgressLockup(progress: progress),
-                  SizedBox(height: layout.ringToButtonGap),
+                  SizedBox(height: layout.logoToMainGap),
+                  main,
+                  SizedBox(height: layout.mainToButtonGap),
                   AppButton(
                     key: const ValueKey(
                       'sync_keep_awake_privacy_unlock_button',
@@ -179,7 +212,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
                     onPressed: () => ref
                         .read(syncKeepAwakePrivacyLockProvider.notifier)
                         .unlock(),
-                    leading: const AppIcon(AppIcons.unlock),
+                    leading: AppIcon(done ? AppIcons.faceId : AppIcons.unlock),
                     minWidth: 165,
                     child: const Text('Unlock Vizor'),
                   ),
@@ -195,46 +228,103 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
   _SyncKeepAwakeVerticalLayout _resolveVerticalLayout({
     required double availableHeight,
     required double screenHeight,
+    required SyncKeepAwakePrivacyLockMode mode,
   }) {
+    final spec = _SyncKeepAwakeLayoutSpec.forMode(mode);
     if (screenHeight >= _figmaReferenceHeight) {
-      return const _SyncKeepAwakeVerticalLayout(
+      return _SyncKeepAwakeVerticalLayout(
         topGap: _logoTopGap,
-        logoToRingGap: _logoToRingGap,
-        ringToButtonGap: _ringToButtonGap,
+        logoToMainGap: spec.logoToMainGap,
+        mainToButtonGap: spec.mainToButtonGap,
       );
     }
 
-    var logoToRingGap = _logoToRingGap;
-    var ringToButtonGap = _ringToButtonGap;
+    var logoToMainGap = spec.logoToMainGap;
+    var mainToButtonGap = spec.mainToButtonGap;
     final targetStackHeight = math.max(
-      _minimumContentStackHeight,
+      spec.minimumStackHeight,
       availableHeight - (_shortScreenOuterMargin * 2),
     );
     final reduction = math.min(
-      _contentStackHeight - targetStackHeight,
-      (_logoToRingGap - _minimumLogoToRingGap) +
-          (_ringToButtonGap - _minimumRingToButtonGap),
+      spec.stackHeight - targetStackHeight,
+      (spec.logoToMainGap - spec.minimumLogoToMainGap) +
+          (spec.mainToButtonGap - spec.minimumMainToButtonGap),
     );
 
     if (reduction > 0) {
-      final logoReducible = _logoToRingGap - _minimumLogoToRingGap;
-      final buttonReducible = _ringToButtonGap - _minimumRingToButtonGap;
+      final logoReducible = spec.logoToMainGap - spec.minimumLogoToMainGap;
+      final buttonReducible =
+          spec.mainToButtonGap - spec.minimumMainToButtonGap;
       final totalReducible = logoReducible + buttonReducible;
-      logoToRingGap -= reduction * logoReducible / totalReducible;
-      ringToButtonGap -= reduction * buttonReducible / totalReducible;
+      logoToMainGap -= reduction * logoReducible / totalReducible;
+      mainToButtonGap -= reduction * buttonReducible / totalReducible;
     }
 
     final stackHeight =
         _logoHeight +
-        logoToRingGap +
-        _ringSize +
-        ringToButtonGap +
+        logoToMainGap +
+        spec.mainHeight +
+        mainToButtonGap +
         AppButtonSizingMobile.largeHeight;
 
     return _SyncKeepAwakeVerticalLayout(
       topGap: math.max(0, (availableHeight - stackHeight) / 2),
-      logoToRingGap: logoToRingGap,
-      ringToButtonGap: ringToButtonGap,
+      logoToMainGap: logoToMainGap,
+      mainToButtonGap: mainToButtonGap,
+    );
+  }
+}
+
+class _SyncKeepAwakeLayoutSpec {
+  const _SyncKeepAwakeLayoutSpec({
+    required this.logoToMainGap,
+    required this.minimumLogoToMainGap,
+    required this.mainHeight,
+    required this.mainToButtonGap,
+    required this.minimumMainToButtonGap,
+  });
+
+  final double logoToMainGap;
+  final double minimumLogoToMainGap;
+  final double mainHeight;
+  final double mainToButtonGap;
+  final double minimumMainToButtonGap;
+
+  double get stackHeight =>
+      SyncKeepAwakePrivacyLockScreen._logoHeight +
+      logoToMainGap +
+      mainHeight +
+      mainToButtonGap +
+      AppButtonSizingMobile.largeHeight;
+
+  double get minimumStackHeight =>
+      SyncKeepAwakePrivacyLockScreen._logoHeight +
+      minimumLogoToMainGap +
+      mainHeight +
+      minimumMainToButtonGap +
+      AppButtonSizingMobile.largeHeight;
+
+  factory _SyncKeepAwakeLayoutSpec.forMode(SyncKeepAwakePrivacyLockMode mode) {
+    if (mode == SyncKeepAwakePrivacyLockMode.done ||
+        mode == SyncKeepAwakePrivacyLockMode.interrupted) {
+      return const _SyncKeepAwakeLayoutSpec(
+        logoToMainGap: SyncKeepAwakePrivacyLockScreen._logoToDoneStatusGap,
+        minimumLogoToMainGap:
+            SyncKeepAwakePrivacyLockScreen._minimumLogoToDoneStatusGap,
+        mainHeight: SyncKeepAwakePrivacyLockScreen._doneStatusHeight,
+        mainToButtonGap: SyncKeepAwakePrivacyLockScreen._doneStatusToButtonGap,
+        minimumMainToButtonGap:
+            SyncKeepAwakePrivacyLockScreen._minimumDoneStatusToButtonGap,
+      );
+    }
+    return const _SyncKeepAwakeLayoutSpec(
+      logoToMainGap: SyncKeepAwakePrivacyLockScreen._logoToRingGap,
+      minimumLogoToMainGap:
+          SyncKeepAwakePrivacyLockScreen._minimumLogoToRingGap,
+      mainHeight: SyncKeepAwakePrivacyLockScreen._ringSize,
+      mainToButtonGap: SyncKeepAwakePrivacyLockScreen._ringToButtonGap,
+      minimumMainToButtonGap:
+          SyncKeepAwakePrivacyLockScreen._minimumRingToButtonGap,
     );
   }
 }
@@ -242,13 +332,84 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerWidget {
 class _SyncKeepAwakeVerticalLayout {
   const _SyncKeepAwakeVerticalLayout({
     required this.topGap,
-    required this.logoToRingGap,
-    required this.ringToButtonGap,
+    required this.logoToMainGap,
+    required this.mainToButtonGap,
   });
 
   final double topGap;
-  final double logoToRingGap;
-  final double ringToButtonGap;
+  final double logoToMainGap;
+  final double mainToButtonGap;
+}
+
+class _SyncKeepAwakeStatusLockup extends StatelessWidget {
+  const _SyncKeepAwakeStatusLockup({
+    required this.iconName,
+    required this.iconKey,
+    required this.title,
+    required this.body,
+    required this.success,
+  });
+
+  final String iconName;
+  final Key iconKey;
+  final String title;
+  final String body;
+  final bool success;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: SyncKeepAwakePrivacyLockScreen._doneStatusHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: AppIcon(
+                iconName,
+                key: iconKey,
+                size: 40,
+                color: success ? colors.sync.lightSuccess : colors.icon.warning,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTypography.displayLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 150,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: SizedBox(
+                width: SyncKeepAwakePrivacyLockScreen._doneBodyWidth,
+                child: Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SyncKeepAwakeProgressLockup extends StatelessWidget {

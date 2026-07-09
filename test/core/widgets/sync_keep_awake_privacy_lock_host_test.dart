@@ -115,6 +115,181 @@ void main() {
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
   });
 
+  testWidgets('keeps the privacy screen and shows done after sync completes', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        displayPercentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+    await tester.pump();
+
+    expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+    expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+    expect(find.text('Synced'), findsOneWidget);
+    expect(
+      find.text('Synced successfully.\nYou can unlock Vizor.'),
+      findsOneWidget,
+    );
+    expect(find.text('Unlock Vizor'), findsOneWidget);
+  });
+
+  testWidgets('keeps the privacy screen across near-tip follow-up syncs', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        displayPercentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Synced'), findsOneWidget);
+
+    syncNotifier.emit(
+      _sync(
+        percentage: 0,
+        displayPercentage: 0,
+        scannedHeight: 200,
+        chainTipHeight: 202,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
+      ),
+    );
+    await tester.pump();
+
+    expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+    expect(find.text('Synced'), findsNothing);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        displayPercentage: 1,
+        scannedHeight: 202,
+        chainTipHeight: 202,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('Unlock Vizor'), findsOneWidget);
+  });
+
+  testWidgets(
+    'keeps the privacy screen with paused copy when sync stops early',
+    (tester) async {
+      _setMobileViewport(tester);
+      final syncNotifier = FakeSyncNotifier(
+        _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          syncProvider.overrideWith(() => syncNotifier),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: container, child: _themedApp()),
+      );
+      await _settleInitialSync(tester);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+
+      syncNotifier.emit(
+        _sync(
+          isSyncing: false,
+          percentage: 0.5,
+          displayPercentage: 0.5,
+          scannedHeight: 150,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+        ),
+      );
+      await tester.pump();
+
+      expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+      expect(
+        container.read(syncKeepAwakePrivacyLockModeProvider),
+        SyncKeepAwakePrivacyLockMode.interrupted,
+      );
+      expect(find.text('Synced'), findsNothing);
+      expect(
+        find.text('Synced successfully.\nYou can unlock Vizor.'),
+        findsNothing,
+      );
+      expect(find.text('Sync paused'), findsOneWidget);
+      expect(find.text('Unlock Vizor to continue.'), findsOneWidget);
+      expect(find.text('Unlock Vizor'), findsOneWidget);
+    },
+  );
+
   testWidgets('keeps the Figma vertical position on the reference viewport', (
     tester,
   ) async {
@@ -127,6 +302,48 @@ void main() {
     );
 
     expect(logoRect.top, closeTo(110, 0.1));
+  });
+
+  testWidgets('keeps the done state Figma vertical positions', (tester) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _privacyScreenApp(mode: SyncKeepAwakePrivacyLockMode.done),
+    );
+    await _settleInitialSync(tester);
+
+    final checkRect = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_done_check')),
+    );
+    final titleRect = tester.getRect(find.text('Synced'));
+    final buttonRect = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_unlock_button')),
+    );
+
+    expect(checkRect.top, closeTo(306, 0.1));
+    expect(titleRect.top, closeTo(406, 0.1));
+    expect(buttonRect.top, closeTo(653, 0.1));
+  });
+
+  testWidgets('uses the status layout for the interrupted state', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _privacyScreenApp(mode: SyncKeepAwakePrivacyLockMode.interrupted),
+    );
+    await _settleInitialSync(tester);
+
+    final warningRect = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_interrupted_warning')),
+    );
+    final titleRect = tester.getRect(find.text('Sync paused'));
+    final buttonRect = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_unlock_button')),
+    );
+
+    expect(warningRect.top, closeTo(306, 0.1));
+    expect(titleRect.top, closeTo(406, 0.1));
+    expect(buttonRect.top, closeTo(653, 0.1));
   });
 
   testWidgets('renders the current display sync percentage', (tester) async {
@@ -244,7 +461,9 @@ Widget _app({required FakeSyncNotifier syncNotifier}) {
   );
 }
 
-Widget _privacyScreenApp() {
+Widget _privacyScreenApp({
+  SyncKeepAwakePrivacyLockMode mode = SyncKeepAwakePrivacyLockMode.syncing,
+}) {
   return ProviderScope(
     overrides: [
       syncProvider.overrideWith(
@@ -255,7 +474,7 @@ Widget _privacyScreenApp() {
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
-      home: const SyncKeepAwakePrivacyLockScreen(),
+      home: SyncKeepAwakePrivacyLockScreen(mode: mode),
     ),
   );
 }
