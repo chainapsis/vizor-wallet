@@ -180,12 +180,20 @@ void main() {
     );
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
+    expect(find.text('Syncing'), findsOneWidget);
     final keepAwakeRow = find.byKey(
       const ValueKey('mobile_settings_sync_keep_awake_row'),
     );
     expect(keepAwakeRow, findsOneWidget);
     expect(
-      find.descendant(of: keepAwakeRow, matching: find.text('Off')),
+      find.descendant(
+        of: keepAwakeRow,
+        matching: find.text('Keep screen awake'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Keep the screen active while Vizor is syncing'),
       findsOneWidget,
     );
     // The About entry stays hidden until the legal documents are ready.
@@ -286,16 +294,25 @@ void main() {
       const ValueKey('mobile_settings_sync_keep_awake_row'),
     );
     expect(
-      find.descendant(of: row, matching: find.text('Off')),
+      find.descendant(of: row, matching: find.text('Keep screen awake')),
       findsOneWidget,
     );
+    final thumb = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+    );
+    final track = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle'),
+    );
+    final offThumbLeft = tester.getTopLeft(thumb).dx;
+    final trackCenterX = tester.getCenter(track).dx;
 
     await tester.tap(row);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(notifier.lastEnabled, isTrue);
     expect(notifier.lastMarkPromptSeen, isTrue);
-    expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
+    expect(tester.getTopLeft(thumb).dx, greaterThan(offThumbLeft));
+    expect(tester.getCenter(thumb).dx, greaterThan(trackCenterX));
   });
 
   testWidgets('sync keep-awake row reflects persisted enabled state', (
@@ -313,7 +330,17 @@ void main() {
     final row = find.byKey(
       const ValueKey('mobile_settings_sync_keep_awake_row'),
     );
-    expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
+    final thumb = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+    );
+    final track = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle'),
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Keep screen awake')),
+      findsOneWidget,
+    );
+    expect(tester.getCenter(thumb).dx, greaterThan(tester.getCenter(track).dx));
   });
 
   testWidgets('every settings row renders active', (tester) async {
