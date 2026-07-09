@@ -21,16 +21,15 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
-/// Phase 1 scope: the grouped list renders with live values, but only
-/// the theme row is interactive; the remaining rows enable as their
-/// mobile flows ship (secret passphrase needs the FaceID/screenshot
-/// guards, password/endpoint/address book need their own screens).
+/// Rows share the grouped-list pattern; each row owns its navigation or
+/// toggle behavior as the corresponding mobile flow ships.
 class MobileSettingsScreen extends ConsumerWidget {
   const MobileSettingsScreen({super.key});
 
@@ -45,6 +44,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
+    final syncKeepAwake = ref.watch(syncKeepAwakeProvider);
     final settingsRowStyle = AppTypography.labelLarge.copyWith(
       fontWeight: FontWeight.w400,
     );
@@ -197,6 +197,25 @@ class MobileSettingsScreen extends ConsumerWidget {
                       chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
+                    ),
+                    MobileListRow(
+                      key: const ValueKey(
+                        'mobile_settings_sync_keep_awake_row',
+                      ),
+                      leading: _RowIcon(AppIcons.day),
+                      label: 'Keep screen awake',
+                      value: syncKeepAwake.enabled ? 'On' : 'Off',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: settingsValueColor,
+                      onTap: () => unawaited(
+                        _toggleSyncKeepAwake(
+                          context,
+                          ref,
+                          enabled: syncKeepAwake.enabled,
+                        ),
+                      ),
                     ),
                     // No Figma frame for this row yet — listed in
                     // design_suggestion. Hidden on devices without
@@ -355,6 +374,19 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     if (selected != null && selected != current) {
       await ref.read(themeModeProvider.notifier).set(selected);
+    }
+  }
+
+  Future<void> _toggleSyncKeepAwake(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool enabled,
+  }) async {
+    try {
+      await ref.read(syncKeepAwakeProvider.notifier).setEnabled(!enabled);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppToast(context, "Couldn't update screen awake setting.");
     }
   }
 }
