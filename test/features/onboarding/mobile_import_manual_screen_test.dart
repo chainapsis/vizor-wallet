@@ -257,7 +257,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Invalid Secret Passphrase word.'), findsOneWidget);
+    expect(find.text('Invalid secret passphrase word.'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
   });
 

@@ -174,6 +174,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileImportReview12UseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Import review 15 words',
+                      builder: buildMobileImportReview15UseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Import review 18 words',
                       builder: buildMobileImportReview18UseCase,
                     ),

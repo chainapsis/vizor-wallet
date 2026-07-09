@@ -66,12 +66,16 @@ const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit fossil carbon drift '
     'narrow across raise';
+const _previewImportReviewMnemonic15 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify';
 const _previewImportReviewMnemonic12 =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine';
 const _previewImportReviewMnemonic18 =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit';
+const _previewErrorToastDuration = Duration(hours: 1);
 
 const _previewManualAcceptedWords = [
   'abandon',
@@ -187,7 +191,7 @@ Widget buildMobileImportPasteUseCase(BuildContext context) {
 
 Widget buildMobileImportPasteErrorUseCase(BuildContext context) {
   return const _MobilePreviewFrame(
-    child: _MobileImportHarness(initialPasteError: "Can't read clipboard data"),
+    child: _MobileImportHarness(initialPasteError: "Can't read the clipboard"),
   );
 }
 
@@ -216,7 +220,7 @@ Widget buildMobileImportManualErrorUseCase(BuildContext context) {
       child: MobileImportManualScreen(
         wordListOverride: _previewManualWordList,
         initialTypedWord: 'Secr\$',
-        initialError: 'Invalid Secret Passphrase word.',
+        initialError: 'Invalid secret passphrase word.',
       ),
     ),
   );
@@ -235,7 +239,7 @@ Widget buildMobileImportManualDoneUseCase(BuildContext context) {
 }
 
 Widget buildMobileImportReviewUseCase(BuildContext context) {
-  return buildMobileImportReview24UseCase(context);
+  return buildMobileImportReview15UseCase(context);
 }
 
 Widget buildMobileImportReview12UseCase(BuildContext context) {
@@ -243,6 +247,15 @@ Widget buildMobileImportReview12UseCase(BuildContext context) {
     child: _MobileImportHarness(
       initialLocation: '/import/review',
       initialReviewMnemonic: _previewImportReviewMnemonic12,
+    ),
+  );
+}
+
+Widget buildMobileImportReview15UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic15,
     ),
   );
 }
@@ -747,24 +760,29 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
       routes: [
         GoRoute(
           path: '/import',
-          builder: (_, _) =>
-              MobileImportScreen(initialPreviewError: widget.initialPasteError),
+          builder:
+              (_, _) => MobileImportScreen(
+                initialPreviewError: widget.initialPasteError,
+                initialPreviewErrorDuration: _previewErrorToastDuration,
+              ),
         ),
         GoRoute(
           path: '/import/manual',
-          builder: (_, _) => const MobileImportManualScreen(
-            wordListOverride: _previewManualWordList,
-          ),
+          builder:
+              (_, _) => const MobileImportManualScreen(
+                wordListOverride: _previewManualWordList,
+              ),
         ),
         GoRoute(
           path: '/import/review',
           builder: (_, state) {
             final extra = state.extra;
-            final args = extra is ImportSecretPassphraseArgs
-                ? extra
-                : ImportSecretPassphraseArgs(
-                    mnemonic: widget.initialReviewMnemonic,
-                  );
+            final args =
+                extra is ImportSecretPassphraseArgs
+                    ? extra
+                    : ImportSecretPassphraseArgs(
+                      mnemonic: widget.initialReviewMnemonic,
+                    );
             return MobileImportReviewScreen(
               args: args,
               screenshotStream: const Stream.empty(),
@@ -774,8 +792,9 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
         ),
         GoRoute(
           path: '/import/birthday',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/import/birthday'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );
@@ -832,16 +851,17 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => AccountsScreen(
-            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
-            initialModalAccountUuid: widget.initialModalAccountUuid,
-            initialModal: widget.initialModal,
-          ),
+          builder:
+              (_, _) => AccountsScreen(
+                initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+                initialModalAccountUuid: widget.initialModalAccountUuid,
+                initialModal: widget.initialModal,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/home',
@@ -968,9 +988,10 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(
           path: '/settings/link-mobile',
-          builder: (_, _) => const WalletLinkDesktopScreen(
-            previewState: WalletLinkState.initial(),
-          ),
+          builder:
+              (_, _) => const WalletLinkDesktopScreen(
+                previewState: WalletLinkState.initial(),
+              ),
         ),
         for (final path in const [
           '/settings/secret-passphrase',
@@ -1102,15 +1123,16 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => MobileAccountsScreen(
-            initialSheetAccountUuid: widget.initialSheetAccountUuid,
-            initialSheet: widget.initialSheet,
-          ),
+          builder:
+              (_, _) => MobileAccountsScreen(
+                initialSheetAccountUuid: widget.initialSheetAccountUuid,
+                initialSheet: widget.initialSheet,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/send',
@@ -1152,14 +1174,17 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
       routes: [
         GoRoute(
           path: '/home',
-          builder: (_, _) => AppMobileShell(
-            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
-            tabBar: AppMobileTabBar(
-              items: _mobileHomeTabItems,
-              currentIndex: 0,
-              onSelect: (_) {},
-            ),
-          ),
+          builder:
+              (_, _) => AppMobileShell(
+                body: _MobileHomeBody(
+                  openAccountsSheet: widget.openAccountsSheet,
+                ),
+                tabBar: AppMobileTabBar(
+                  items: _mobileHomeTabItems,
+                  currentIndex: 0,
+                  onSelect: (_) {},
+                ),
+              ),
         ),
         GoRoute(
           path: '/send',
@@ -1179,9 +1204,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
+          builder:
+              (_, state) => _PreviewRoutePlaceholder(
+                label: '/activity/tx/${state.pathParameters['txid']}',
+              ),
         ),
         GoRoute(
           path: '/settings',
@@ -1193,8 +1219,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
       ],
     );
@@ -1260,8 +1286,9 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
         // satisfy the router.
         GoRoute(
           path: '/onboarding/intro',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
           path: '/import',
@@ -1313,8 +1340,8 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
         ),
         GoRoute(
           path: '/lost-password',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/lost-password'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/lost-password'),
         ),
       ],
     );

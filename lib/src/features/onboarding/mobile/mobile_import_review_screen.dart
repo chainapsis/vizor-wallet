@@ -14,12 +14,22 @@ import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
-import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-const _kImportReviewSeedCardHeight = 360.0;
+const _kImportReviewProgress = 60 / 196;
+const _kImportReviewSeedCardHeight = 385.0;
 const _kImportReviewSeedChipWidth = 90.0;
 const _kImportReviewSeedColumns = 3;
+const _kImportReviewSeedCardPadding = EdgeInsets.fromLTRB(
+  AppSpacing.md,
+  AppSpacing.lg,
+  AppSpacing.md,
+  AppSpacing.xl,
+);
+const _kImportReviewDenseSeedCardPadding = EdgeInsets.symmetric(
+  horizontal: AppSpacing.md,
+  vertical: AppSpacing.md,
+);
 
 enum MobileImportReviewResult { clear }
 
@@ -54,11 +64,12 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   late final SensitivePrivacyOverlayController _privacyController;
   bool _screenshotSheetShowing = false;
 
-  List<String> get _words => widget.args.mnemonic
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((word) => word.isNotEmpty)
-      .toList();
+  List<String> get _words =>
+      widget.args.mnemonic
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((word) => word.isNotEmpty)
+          .toList();
 
   @override
   void initState() {
@@ -117,22 +128,20 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
       sensitiveContentVisible: words.isNotEmpty,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileImportProgress(2),
+        progress: _kImportReviewProgress,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Review Import',
-        subtitle: 'Review your Secret Passphrase\nbefore import starts.',
+        subtitle: 'Review your secret passphrase\nbefore import starts.',
+        bottomAreaPadding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          0,
+          AppSpacing.sm,
+          AppSpacing.md,
+        ),
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppButton(
-              key: const ValueKey('mobile_import_review_continue'),
-              expand: true,
-              onPressed: () => _continue(context),
-              trailing: const AppIcon(AppIcons.chevronForward),
-              child: const Text('Confirm & continue'),
-            ),
-            const SizedBox(height: AppSpacing.xs),
             AppButton(
               key: const ValueKey('mobile_import_review_clear'),
               variant: AppButtonVariant.ghost,
@@ -140,10 +149,18 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
               constrainContent: true,
               onPressed: () => _clear(context),
               child: const Text(
-                'Clear secret phrase',
+                'Clear secret passphrase',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            AppButton(
+              key: const ValueKey('mobile_import_review_continue'),
+              expand: true,
+              onPressed: () => _continue(context),
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: const Text('Confirm & continue'),
             ),
           ],
         ),
@@ -161,15 +178,16 @@ class MobileImportReviewSeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final cardPadding =
+        words.length > 18
+            ? _kImportReviewDenseSeedCardPadding
+            : _kImportReviewSeedCardPadding;
     return Container(
       key: const ValueKey('mobile_import_review_seed_card'),
       width: double.infinity,
       height: _kImportReviewSeedCardHeight,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.base,
-      ),
+      padding: cardPadding,
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.xLarge),

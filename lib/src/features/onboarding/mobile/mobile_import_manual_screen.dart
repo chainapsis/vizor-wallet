@@ -13,7 +13,7 @@ import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-const _kManualInvalidWordMessage = 'Invalid Secret Passphrase word.';
+const _kManualInvalidWordMessage = 'Invalid secret passphrase word.';
 const _kManualSuggestionsHeight = 60.0;
 const _kManualSuggestionChipHeight = 36.0;
 

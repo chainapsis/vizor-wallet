@@ -7,34 +7,73 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
-  testWidgets('mobile import paste use case renders clipboard card', (
-    tester,
-  ) async {
-    await _pumpUseCase(tester, buildMobileImportPasteUseCase);
+  testWidgets(
+    'mobile import paste use case renders manual card and paste CTA',
+    (tester) async {
+      await _pumpUseCase(tester, buildMobileImportPasteUseCase);
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('Import Wallet'), findsOneWidget);
-    expect(find.text('Paste from clipboard'), findsOneWidget);
-    expect(find.text('Enter Secret Passphrase manually'), findsOneWidget);
-    final manualButton = tester.widget<AppButton>(
-      find.byKey(const ValueKey('mobile_import_enter_manually')),
-    );
-    expect(manualButton.variant, AppButtonVariant.ghost);
-    expect(manualButton.expand, isTrue);
-    expect(
-      find.byKey(const ValueKey('mobile_import_paste_card')),
-      findsOneWidget,
-    );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_import_paste_card'))),
-      const Size(361, 390),
-    );
-    expect(find.text('Paste'), findsOneWidget);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('Import Wallet'), findsOneWidget);
+      expect(
+        find.text('Accept 12, 15, 18, 21, or 24-word\nsecret passphrases'),
+        findsOneWidget,
+      );
+      expect(find.text('Manually Enter\nSecret Passphrase'), findsOneWidget);
+      expect(find.text('Word by word.'), findsOneWidget);
+      expect(find.text('Or paste from clipboard'), findsOneWidget);
+      final manualCard = find.byKey(
+        const ValueKey('mobile_import_manual_card'),
+      );
+      expect(manualCard, findsOneWidget);
+      expect(tester.getSize(manualCard), const Size(361, 385));
+      final title = tester.widget<Text>(
+        find.text('Manually Enter\nSecret Passphrase'),
+      );
+      expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+      expect(title.style?.height, AppTypography.headlineLarge.height);
+      final editIcon = tester.widget<AppIcon>(
+        find.descendant(of: manualCard, matching: find.byType(AppIcon)).first,
+      );
+      expect(editIcon.name, AppIcons.edit);
+      expect(editIcon.size, AppIconSize.large);
+      final firstIndex = tester.widget<Text>(find.text('01'));
+      expect(firstIndex.style?.fontSize, 15);
+      expect(firstIndex.style?.height, 21 / 15);
+      expect(
+        firstIndex.style?.color,
+        AppThemeData.dark.colors.text.homeCard.withValues(alpha: 0.5),
+      );
+      final index1 = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_index_1')),
+      );
+      final index2 = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_index_2')),
+      );
+      final index3 = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_index_3')),
+      );
+      final index4 = tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_index_4')),
+      );
+      expect(index2.dy, closeTo(index1.dy, 0.01));
+      expect(index2.dx, greaterThan(index1.dx));
+      expect(index3.dy, closeTo(index1.dy, 0.01));
+      expect(index3.dx, greaterThan(index2.dx));
+      expect(index4.dy, greaterThan(index1.dy));
+      expect(index4.dx, closeTo(index1.dx, 0.01));
+      final pasteButton = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_import_paste')),
+      );
+      expect(pasteButton.variant, AppButtonVariant.primary);
+      expect(pasteButton.expand, isTrue);
+    },
+  );
 
   testWidgets('mobile import paste use case opens manual entry', (
     tester,
@@ -52,25 +91,36 @@ void main() {
     expect(find.text('Accept 12, 15, 18, 21 or 24 words'), findsOneWidget);
   });
 
-  testWidgets('mobile import paste error use case renders retry card', (
+  testWidgets('mobile import paste error use case keeps the manual card', (
     tester,
   ) async {
     await _pumpUseCase(tester, buildMobileImportPasteErrorUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text("Can't read clipboard data"), findsOneWidget);
-    final errorBody = find.text('Try again or enter it manually.');
-    expect(errorBody, findsOneWidget);
+    expect(find.text("Can't read the clipboard"), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    final toast = find.byType(AppToast);
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: toast,
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
     expect(
-      tester.widget<Text>(errorBody).overflow,
-      isNot(TextOverflow.ellipsis),
+      decoration.color,
+      AppThemeData.dark.colors.background.utilityDestructiveStrong,
     );
-    expect(tester.widget<Text>(errorBody).maxLines, isNull);
-    expect(find.text('Try again'), findsOneWidget);
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_import_paste_card'))),
-      const Size(361, 390),
+      tester.getSize(find.byKey(const ValueKey('mobile_import_manual_card'))),
+      const Size(361, 385),
     );
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text("Can't read the clipboard"), findsOneWidget);
   });
 
   testWidgets('mobile import manual empty use case renders first slot', (
@@ -117,7 +167,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text(r'Secr$'), findsOneWidget);
-    expect(find.text('Invalid Secret Passphrase word.'), findsOneWidget);
+    expect(find.text('Invalid secret passphrase word.'), findsOneWidget);
   });
 
   testWidgets('mobile import manual done use case exposes review action', (
@@ -143,7 +193,7 @@ void main() {
     expect(find.text('Review Import'), findsOneWidget);
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
     expect(find.text('Confirm & continue'), findsOneWidget);
-    expect(find.text('Clear secret phrase'), findsOneWidget);
+    expect(find.text('Clear secret passphrase'), findsOneWidget);
     final clearButton = tester.widget<AppButton>(
       find.byKey(const ValueKey('mobile_import_review_clear')),
     );
@@ -157,7 +207,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_import_review_seed_card')),
       ),
-      const Size(361, 360),
+      const Size(361, 385),
     );
     expect(find.text('01 caution'), findsNothing);
     expect(find.text('01'), findsOneWidget);
@@ -165,6 +215,44 @@ void main() {
     expect(find.text('12'), findsOneWidget);
     expect(find.text('genuine'), findsOneWidget);
     expect(find.text('13'), findsNothing);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_import_review_word_chip_1')),
+          )
+          .width,
+      90,
+    );
+  });
+
+  testWidgets('mobile import review 15-word use case matches Figma state', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileImportReview15UseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_import_review_seed_card')),
+      ),
+      const Size(361, 385),
+    );
+    expect(find.text('15'), findsOneWidget);
+    expect(find.text('modify'), findsOneWidget);
+    expect(find.text('16'), findsNothing);
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('mobile_import_review_clear')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('mobile_import_review_continue')),
+            )
+            .dy,
+      ),
+    );
     expect(
       tester
           .getSize(
@@ -295,14 +383,21 @@ void main() {
   ) async {
     await _pumpUseCase(tester, buildMobileImportReviewUseCase);
 
-    await tester.tap(find.text('Clear secret phrase'));
+    await tester.tap(find.text('Clear secret passphrase'));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.text('Import Wallet'), findsOneWidget);
-    expect(find.text('Paste from clipboard'), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
     expect(find.text('Review Import'), findsNothing);
   });
+}
+
+double _stepsProgress(WidgetTester tester) {
+  final fill = tester.widget<FractionallySizedBox>(
+    find.byType(FractionallySizedBox).first,
+  );
+  return fill.widthFactor!;
 }
 
 Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
@@ -317,10 +412,7 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
-      home: AppTheme(
-        data: AppThemeData.dark,
-        child: Builder(builder: builder),
-      ),
+      home: AppTheme(data: AppThemeData.dark, child: Builder(builder: builder)),
     ),
   );
   await tester.pump();

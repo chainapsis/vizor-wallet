@@ -42,9 +42,10 @@ Widget _entryAppWithBirthdayProbe() {
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
         path: '/import/review',
-        builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as ImportSecretPassphraseArgs,
-        ),
+        builder:
+            (_, state) => MobileImportReviewScreen(
+              args: state.extra as ImportSecretPassphraseArgs,
+            ),
       ),
       GoRoute(
         path: '/import/birthday',
@@ -69,22 +70,24 @@ Widget _stackedPasteApp() {
     routes: [
       GoRoute(
         path: '/method',
-        builder: (context, _) => Scaffold(
-          body: Center(
-            child: TextButton(
-              key: const ValueKey('method_import'),
-              onPressed: () => context.push('/import'),
-              child: const Text('Method selection'),
+        builder:
+            (context, _) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  key: const ValueKey('method_import'),
+                  onPressed: () => context.push('/import'),
+                  child: const Text('Method selection'),
+                ),
+              ),
             ),
-          ),
-        ),
       ),
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
         path: '/import/review',
-        builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as ImportSecretPassphraseArgs,
-        ),
+        builder:
+            (_, state) => MobileImportReviewScreen(
+              args: state.extra as ImportSecretPassphraseArgs,
+            ),
       ),
     ],
   );
@@ -160,7 +163,7 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('the entry offers paste and the manual wizard link', (
+  testWidgets('the entry offers manual card and the paste action', (
     tester,
   ) async {
     await tester.pumpWidget(_app('/import'));
@@ -168,58 +171,63 @@ void main() {
 
     expect(find.text('Import Wallet'), findsOneWidget);
     expect(find.byType(MobileImportScreen), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_import_enter_manually')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-  });
-
-  testWidgets('the manual link stays tappable after a rejected paste', (
-    tester,
-  ) async {
-    _mockClipboard(tester, 'one two three');
-    await tester.pumpWidget(_app('/import'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_import_enter_manually')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-  });
-
-  testWidgets('a non-phrase paste renders the no-phrase retry card', (
-    tester,
-  ) async {
-    _mockClipboard(tester, 'one two three');
-    await tester.pumpWidget(_app('/import'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('No Secret Passphrase found'), findsOneWidget);
     expect(
-      find.text('Paste a 12, 15, 18, 21, or 24-word phrase.'),
+      find.text('Accept 12, 15, 18, 21, or 24-word\nsecret passphrases'),
       findsOneWidget,
     );
-    expect(find.text('Try again'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_import_manual_card')),
+      findsOneWidget,
+    );
+    expect(find.text('Manually Enter\nSecret Passphrase'), findsOneWidget);
+    expect(find.text('Word by word.'), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+  });
+
+  testWidgets('the manual card stays tappable after a rejected paste', (
+    tester,
+  ) async {
+    _mockClipboard(tester, 'one two three');
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+  });
+
+  testWidgets('a non-phrase paste shows a toast and keeps the entry state', (
+    tester,
+  ) async {
+    _mockClipboard(tester, 'one two three');
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No secret passphrase found'), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
     expect(find.textContaining('found 3'), findsNothing);
     expect(find.text('Invalid Secret Passphrase'), findsNothing);
     expect(
-      find.byKey(const ValueKey('mobile_import_paste_card')),
+      find.byKey(const ValueKey('mobile_import_manual_card')),
       findsOneWidget,
     );
   });
 
-  testWidgets('an invalid mnemonic candidate explains the phrase error', (
-    tester,
-  ) async {
+  testWidgets('an invalid mnemonic candidate shows a toast', (tester) async {
     _mockClipboard(tester, _invalidOrderedMnemonic);
     await tester.pumpWidget(_app('/import'));
     await tester.pumpAndSettle();
@@ -227,12 +235,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Invalid Secret Passphrase'), findsOneWidget);
-    expect(find.text('Check the word order and try again.'), findsOneWidget);
-    expect(find.text("Can't read clipboard data"), findsNothing);
+    expect(find.text('Invalid secret passphrase'), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
+    expect(find.text("Can't read the clipboard"), findsNothing);
   });
 
-  testWidgets('clipboard read failure renders the retry card state', (
+  testWidgets('clipboard read failure shows the Figma toast state', (
     tester,
   ) async {
     _mockClipboardFailure(tester);
@@ -242,12 +250,44 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.text("Can't read clipboard data"), findsOneWidget);
-    expect(find.text('Try again or enter it manually.'), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
-    expect(find.text('Paste from clipboard'), findsNothing);
+    expect(find.text("Can't read the clipboard"), findsOneWidget);
+    expect(find.text('Or paste from clipboard'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
     expect(
-      find.byKey(const ValueKey('mobile_import_paste_card')),
+      find.byKey(const ValueKey('mobile_import_manual_card')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('paste read progress only changes the bottom action', (
+    tester,
+  ) async {
+    final pendingClipboard = Completer<Map<String, String>?>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) {
+        if (call.method == 'Clipboard.getData') return pendingClipboard.future;
+        return Future.value(null);
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+      if (!pendingClipboard.isCompleted) pendingClipboard.complete(null);
+    });
+
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pump();
+
+    expect(find.text('Reading clipboard data...'), findsOneWidget);
+    expect(find.text('Manually Enter\nSecret Passphrase'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_import_manual_card')),
       findsOneWidget,
     );
   });
@@ -262,7 +302,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
-    expect(find.text('No Secret Passphrase found'), findsOneWidget);
+    expect(find.text('No secret passphrase found'), findsOneWidget);
     expect(find.textContaining('found 3'), findsNothing);
     expect(find.textContaining('"one"'), findsNothing);
   });
