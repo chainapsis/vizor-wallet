@@ -129,6 +129,60 @@ void main() {
     expect(logoRect.top, closeTo(110, 0.1));
   });
 
+  testWidgets('renders the current display sync percentage', (tester) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(_privacyScreenApp());
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(find.text('63%'), findsOneWidget);
+  });
+
+  testWidgets('animates display sync percentage changes', (tester) async {
+    _setMobileViewport(tester);
+    final syncNotifier = FakeSyncNotifier(
+      _sync(
+        percentage: 0.05,
+        displayPercentage: 0.05,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [syncProvider.overrideWith(() => syncNotifier)],
+        child: MaterialApp(
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+          home: const SyncKeepAwakePrivacyLockScreen(),
+        ),
+      ),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(find.text('5%'), findsOneWidget);
+
+    syncNotifier.emit(
+      _sync(
+        percentage: 0.10,
+        displayPercentage: 0.10,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('10%'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('10%'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(find.text('10%'), findsOneWidget);
+  });
+
   testWidgets('centers the privacy stack on a shorter phone viewport', (
     tester,
   ) async {
@@ -251,6 +305,7 @@ SyncState _sync({
   bool isSyncing = true,
   bool isBackgroundMode = false,
   double percentage = 0.25,
+  double? displayPercentage,
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
@@ -259,6 +314,7 @@ SyncState _sync({
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,
+    displayPercentage: displayPercentage,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,

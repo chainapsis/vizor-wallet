@@ -254,54 +254,64 @@ class _SyncKeepAwakeVerticalLayout {
 class _SyncKeepAwakeProgressLockup extends StatelessWidget {
   const _SyncKeepAwakeProgressLockup({required this.progress});
 
+  static const _progressAnimationDuration = Duration(milliseconds: 420);
+
   final double progress;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final targetProgress = progress.clamp(0.0, 1.0).toDouble();
     return SizedBox.square(
       dimension: SyncKeepAwakePrivacyLockScreen._ringSize,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _SyncKeepAwakeSegmentedRingPainter(
-                progress: progress,
-                trackColor: colors.background.raised,
-                progressColor: colors.sync.lightSuccess,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 118,
-            left: 0,
-            right: 0,
-            child: Text(
-              '${formatSyncStatusPercentage(progress)}%',
-              textAlign: TextAlign.center,
-              style: AppTypography.displayLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 170,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: SizedBox(
-                width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
-                child: Text(
-                  'Vizor is syncing,\nstick around ...',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: targetProgress, end: targetProgress),
+        duration: _progressAnimationDuration,
+        curve: Curves.easeOutCubic,
+        builder: (context, animatedProgress, _) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _SyncKeepAwakeSegmentedRingPainter(
+                    progress: animatedProgress,
+                    trackColor: colors.background.raised,
+                    progressColor: colors.sync.lightSuccess,
                   ),
                 ),
               ),
-            ),
-          ),
-        ],
+              Positioned(
+                top: 118,
+                left: 0,
+                right: 0,
+                child: Text(
+                  '${formatSyncStatusPercentage(animatedProgress)}%',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 170,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: SizedBox(
+                    width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
+                    child: Text(
+                      'Vizor is syncing,\nstick around ...',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -321,31 +331,36 @@ class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const segmentCount = 96;
-    const tickLength = 28.0;
+    const progressTickLength = 28.0;
+    const trackTickLength = 16.0;
+    const trackOuterRadiusOffset = 14.0;
     const strokeWidth = 2.5;
-    final clampedProgress = progress.clamp(0.0, 1.0);
+    final clampedProgress = progress.clamp(0.0, 1.0).toDouble();
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.shortestSide / 2) - (tickLength / 2) - 1;
-    final filledSegments = (segmentCount * clampedProgress).round();
+    final progressOuterRadius = (size.shortestSide / 2) - 1;
+    final trackOuterRadius = progressOuterRadius - trackOuterRadiusOffset;
+    final scaledProgress = segmentCount * clampedProgress;
     final trackPaint = Paint()
       ..color = trackColor
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-    final progressPaint = Paint()
-      ..color = progressColor
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
     for (var index = 0; index < segmentCount; index++) {
       final angle = (-math.pi / 2) + (math.pi * 2 * index / segmentCount);
       final direction = Offset(math.cos(angle), math.sin(angle));
-      final outer = center + direction * (radius + tickLength / 2);
-      final inner = center + direction * (radius - tickLength / 2);
-      canvas.drawLine(
-        inner,
-        outer,
-        index < filledSegments ? progressPaint : trackPaint,
-      );
+      final segmentFill = (scaledProgress - index).clamp(0.0, 1.0).toDouble();
+      final outerRadius =
+          trackOuterRadius +
+          ((progressOuterRadius - trackOuterRadius) * segmentFill);
+      final tickLength =
+          trackTickLength +
+          ((progressTickLength - trackTickLength) * segmentFill);
+      final outer = center + direction * outerRadius;
+      final inner = outer - (direction * tickLength);
+      final paint = trackPaint
+        ..color = Color.lerp(trackColor, progressColor, segmentFill)!;
+
+      canvas.drawLine(inner, outer, paint);
     }
   }
 
