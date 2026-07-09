@@ -15,6 +15,12 @@ import '../core/storage/app_secure_store.dart';
 class FiatCurrencyNotifier extends Notifier<FiatCurrency> {
   static final _store = AppSecureStore.instance;
 
+  /// True once the user picked a currency this session. A slow initial
+  /// hydration read must never overwrite a newer selection: [set] has
+  /// already persisted it, so losing the race would leave storage on the
+  /// new currency while this session displays the stale one.
+  bool _selectionMade = false;
+
   @override
   FiatCurrency build() {
     unawaited(_hydrate());
@@ -24,7 +30,7 @@ class FiatCurrencyNotifier extends Notifier<FiatCurrency> {
   Future<void> _hydrate() async {
     try {
       final stored = await _store.readPlain(kFiatCurrencyKey);
-      if (stored == null) return;
+      if (_selectionMade || stored == null) return;
       state = fiatCurrencyForCode(stored);
     } catch (_) {
       // Keep the USD default when the preference cannot be read; selection
@@ -33,6 +39,7 @@ class FiatCurrencyNotifier extends Notifier<FiatCurrency> {
   }
 
   Future<void> set(FiatCurrency currency) async {
+    _selectionMade = true;
     state = currency;
     try {
       await _store.writePlain(kFiatCurrencyKey, currency.code);
