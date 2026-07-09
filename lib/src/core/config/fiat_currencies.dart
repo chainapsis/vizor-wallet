@@ -74,17 +74,25 @@ FiatCurrency fiatCurrencyForCode(String? code) {
 /// Zero-decimal currencies render whole numbers ("₩1,234" stays unformatted
 /// grouping-wise: "₩1234" is never reached because values >= 1000 compact to
 /// "₩1.23K").
+///
+/// Branches are chosen on the value as it would ROUND at that branch's
+/// precision, not on the raw value: ₩999.6 rounds to 1000 in a zero-decimal
+/// currency and must compact to "₩1K" (not render as the ungrouped "₩1000"
+/// the doc above rules out), and $999,999.99 rounds to 1000K and must
+/// compact to "$1M" (not "$1000K").
 String formatCompactFiatValueFor(FiatCurrency currency, double value) {
   if (!value.isFinite || value <= 0) {
     return '${currency.symbol}${(0.0).toStringAsFixed(currency.maxDecimals)}';
   }
-  if (value >= 1000000) {
-    return '${currency.symbol}${trimTrailingFiatZeros(value / 1000000, fractionDigits: 3)}M';
+  final plainRounded = double.parse(value.toStringAsFixed(currency.maxDecimals));
+  if (plainRounded < 1000) {
+    return '${currency.symbol}${value.toStringAsFixed(currency.maxDecimals)}';
   }
-  if (value >= 1000) {
+  final thousandsRounded = double.parse((value / 1000).toStringAsFixed(2));
+  if (thousandsRounded < 1000) {
     return '${currency.symbol}${trimTrailingFiatZeros(value / 1000, fractionDigits: 2)}K';
   }
-  return '${currency.symbol}${value.toStringAsFixed(currency.maxDecimals)}';
+  return '${currency.symbol}${trimTrailingFiatZeros(value / 1000000, fractionDigits: 3)}M';
 }
 
 String trimTrailingFiatZeros(double value, {required int fractionDigits}) {

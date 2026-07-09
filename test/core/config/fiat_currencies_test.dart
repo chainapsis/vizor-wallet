@@ -43,6 +43,20 @@ void main() {
       expect(formatCompactFiatValueFor(krw, 1234567), '₩1.235M');
     });
 
+    test('values that round across a branch threshold compact instead of '
+        'rendering ungrouped', () {
+      // Plain-branch rounding must not produce the ungrouped "₩1000" the
+      // compact contract rules out: 999.6 rounds to 1000 at zero decimals.
+      expect(formatCompactFiatValueFor(krw, 999.6), '₩1K');
+      expect(formatCompactFiatValueFor(krw, 999.4), '₩999');
+      // USD keeps two decimals, so 999.6 stays plain but 999.996 crosses.
+      expect(formatCompactFiatValueFor(kUsdFiatCurrency, 999.6), r'$999.60');
+      expect(formatCompactFiatValueFor(kUsdFiatCurrency, 999.996), r'$1K');
+      // Same rule at the K→M edge: 999,996 would render as "$1000K".
+      expect(formatCompactFiatValueFor(kUsdFiatCurrency, 999996), r'$1M');
+      expect(formatCompactFiatValueFor(kUsdFiatCurrency, 999940), r'$999.94K');
+    });
+
     test('FiatDisplay converts USD values and falls back to USD', () {
       const inr = FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1);
       const display = FiatDisplay(currency: inr, usdToCurrencyRate: 83.2);
