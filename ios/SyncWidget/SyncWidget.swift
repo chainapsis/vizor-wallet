@@ -137,6 +137,23 @@ private struct FamiliarScene: View {
         1.0 + CGFloat(wave(period: 58, phase: 1.2) * 0.022 * liveliness)
     }
 
+    // Frame-swap animation: cycle the idle frames one step per timeline entry
+    // (30s cadence) while awake; show the sleep frame once fully at rest. This
+    // is the pixel-frame pipeline the widget can actually drive — real sprites
+    // drop in here later.
+    private static let idleFrames = [
+        "familiar_idle_00", "familiar_idle_01",
+        "familiar_idle_02", "familiar_idle_03",
+    ]
+
+    private var familiarFrame: String {
+        if restfulness > 0.7 { return "familiar_sleep_00" }
+        let count = FamiliarScene.idleFrames.count
+        let step = Int((motionTime / 30).rounded(.down))
+        let i = ((step % count) + count) % count
+        return FamiliarScene.idleFrames[i]
+    }
+
     private var accent: Color {
         FamiliarProfileAccent.color(for: snapshot.profilePictureId)
     }
@@ -162,20 +179,12 @@ private struct FamiliarScene: View {
             .blendMode(.screen)
 
             FamiliarAvatar(
-                profilePictureId: snapshot.profilePictureId,
+                frameName: familiarFrame,
                 accent: accent,
                 family: family
             )
             .scaleEffect(breathScale)
             .position(x: avatarX + swayOffset, y: avatarY + bobOffset)
-
-            // Resting veil: the scene dims as the familiar settles. Sits above
-            // the avatar but below the nameplate so the label stays legible.
-            if restfulness > 0 {
-                Color.black
-                    .opacity(0.20 * restfulness)
-                    .allowsHitTesting(false)
-            }
 
             if restfulness > 0.35 {
                 FamiliarSleepGlyph(family: family, intensity: restfulness)
@@ -367,7 +376,9 @@ private struct FamiliarCornerMark: View {
 }
 
 private struct FamiliarAvatar: View {
-    let profilePictureId: String
+    // Placeholder pixel-art creature frame (familiar_idle_0x / familiar_sleep_00).
+    // Prototype only: proves the frame-swap pipeline before real art lands.
+    let frameName: String
     let accent: Color
     let family: WidgetFamily
 
@@ -389,7 +400,7 @@ private struct FamiliarAvatar: View {
             Circle()
                 .stroke(accent.opacity(0.88), lineWidth: ringWidth)
                 .padding(ringWidth + 3)
-            Image(FamiliarProfileAccent.assetName(for: profilePictureId))
+            Image(frameName)
                 .resizable()
                 .interpolation(.none)
                 .scaledToFit()
