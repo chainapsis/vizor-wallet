@@ -42,10 +42,9 @@ Widget _entryAppWithBirthdayProbe() {
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
         path: '/import/review',
-        builder:
-            (_, state) => MobileImportReviewScreen(
-              args: state.extra as ImportSecretPassphraseArgs,
-            ),
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
       ),
       GoRoute(
         path: '/import/birthday',
@@ -70,24 +69,22 @@ Widget _stackedPasteApp() {
     routes: [
       GoRoute(
         path: '/method',
-        builder:
-            (context, _) => Scaffold(
-              body: Center(
-                child: TextButton(
-                  key: const ValueKey('method_import'),
-                  onPressed: () => context.push('/import'),
-                  child: const Text('Method selection'),
-                ),
-              ),
+        builder: (context, _) => Scaffold(
+          body: Center(
+            child: TextButton(
+              key: const ValueKey('method_import'),
+              onPressed: () => context.push('/import'),
+              child: const Text('Method selection'),
             ),
+          ),
+        ),
       ),
       GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
       GoRoute(
         path: '/import/review',
-        builder:
-            (_, state) => MobileImportReviewScreen(
-              args: state.extra as ImportSecretPassphraseArgs,
-            ),
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
       ),
     ],
   );
@@ -290,6 +287,44 @@ void main() {
       find.byKey(const ValueKey('mobile_import_manual_card')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('pending paste completion does not hijack manual entry', (
+    tester,
+  ) async {
+    final pendingClipboard = Completer<Map<String, String>?>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) {
+        if (call.method == 'Clipboard.getData') return pendingClipboard.future;
+        return Future.value(null);
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+      if (!pendingClipboard.isCompleted) pendingClipboard.complete(null);
+    });
+
+    await tester.pumpWidget(_app('/import'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+
+    pendingClipboard.complete({'text': _validMnemonic});
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+    expect(find.text('Review Import'), findsNothing);
   });
 
   testWidgets('paste normalizes quoted and numbered mnemonic text', (

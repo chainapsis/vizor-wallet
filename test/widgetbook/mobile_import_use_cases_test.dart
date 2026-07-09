@@ -47,6 +47,10 @@ void main() {
         find.byKey(const ValueKey('mobile_import_manual_placeholder_blur')),
         findsNothing,
       );
+      final placeholderFade = tester.widget<ShaderMask>(
+        find.byKey(const ValueKey('mobile_import_manual_placeholder_fade')),
+      );
+      expect(placeholderFade.blendMode, BlendMode.dstIn);
       final firstIndex = tester.widget<Text>(find.text('01'));
       expect(firstIndex.style?.fontSize, 15);
       expect(firstIndex.style?.height, 21 / 15);

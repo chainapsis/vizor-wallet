@@ -92,6 +92,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   var _pasteState = _ImportPasteState.idle;
   var _initialPreviewToastShown = false;
 
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -121,6 +123,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       log('MobileImport: ERROR reading clipboard: $e');
       if (!mounted) return;
       setState(() => _pasteState = _ImportPasteState.idle);
+      if (!_isCurrentRoute) return;
       showAppToast(
         context,
         _kImportClipboardReadError,
@@ -134,6 +137,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     if (words.isEmpty) {
       if (!mounted) return;
       setState(() => _pasteState = _ImportPasteState.idle);
+      if (!_isCurrentRoute) return;
       showAppToast(
         context,
         'Clipboard is empty',
@@ -147,6 +151,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     if (pasteError == null) {
       if (!mounted) return;
       setState(() => _pasteState = _ImportPasteState.idle);
+      if (!_isCurrentRoute) return;
       context.push(
         '/import/review',
         extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
@@ -156,6 +161,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 
     if (!mounted) return;
     setState(() => _pasteState = _ImportPasteState.idle);
+    if (!_isCurrentRoute) return;
     showAppToast(
       context,
       pasteError,
@@ -229,7 +235,7 @@ class _ImportManualSeedCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              const Positioned.fill(child: _ImportManualWordPlaceholders()),
+              const Positioned.fill(child: _ImportManualFadedWords()),
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -281,6 +287,33 @@ class _ImportManualSeedCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ImportManualFadedWords extends StatelessWidget {
+  const _ImportManualFadedWords();
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      key: const ValueKey('mobile_import_manual_placeholder_fade'),
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) => const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFFFFFFFF),
+          Color(0xFFFFFFFF),
+          Color(0x2EFFFFFF),
+          Color(0x00FFFFFF),
+          Color(0x2EFFFFFF),
+          Color(0xFFFFFFFF),
+          Color(0xFFFFFFFF),
+        ],
+        stops: [0, 0.15, 0.34, 0.5, 0.66, 0.85, 1],
+      ).createShader(rect),
+      child: const _ImportManualWordPlaceholders(),
     );
   }
 }
