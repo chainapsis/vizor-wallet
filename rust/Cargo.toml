@@ -73,34 +73,34 @@ url = "2.5.8"
 [dependencies.zcash_primitives]
 version = "0.29.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 
 [dependencies.zcash_address]
 version = "0.13.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 
 [dependencies.zcash_keys]
 version = "0.15.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.10.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.9.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 
 [dependencies.zcash_client_backend]
 version = "0.23"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 features = [
     "orchard",
     "transparent-inputs",
@@ -113,13 +113,13 @@ features = [
 [dependencies.zcash_client_sqlite]
 version = "0.21"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "6d6c4555e60a61598caf11bcf629a3e08a7c65c0"
+rev = "7c1139c1d87d51f06fe30d28983e1285ad4b7351"
 package = "zcash_voting"
 
 # Must match the orchard node used by zcash_client_sqlite / zcash_voting to
@@ -134,12 +134,12 @@ version = "0.15.0-pre.2"
 [dependencies.zcash_proofs]
 version = "0.29.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 
 [dependencies.pczt]
 version = "0.7"
 git = "https://github.com/zcash/librustzcash"
-rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6"
+rev = "877e574adb641861781525e7cfe46d615fd4ef3d"
 features = [
     "orchard",
     "io-finalizer",
@@ -172,7 +172,7 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "6d6c4555e60a61598caf11bcf629a3e08a7c65c0"
+rev = "7c1139c1d87d51f06fe30d28983e1285ad4b7351"
 package = "vote-commitment-tree"
 
 # Redirect every crates.io `orchard` requirement (this crate's direct dep plus
@@ -180,19 +180,6 @@ package = "vote-commitment-tree"
 # the pczt-recompute head so the graph resolves to a single orchard node,
 # matching the librustzcash and firmware pins.
 [patch.crates-io]
-equihash = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-f4jumble = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-pczt = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_client_sqlite = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
-zip321 = { git = "https://github.com/zcash/librustzcash", rev = "da388cbf8a8dceb5de908cf98307e198a87e9db6" }
 orchard = { git = "https://github.com/zcash/orchard", rev = "475ef0ff77d45aebff93cb039d639250d82518a3" }
 # librustzcash and zcash_voting build against an unreleased shardtree/
 # incrementalmerkletree API (retained checkpoints); `[patch]` is not transitive,

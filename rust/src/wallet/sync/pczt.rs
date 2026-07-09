@@ -225,12 +225,18 @@ pub fn create_pczt_from_proposal(
         } else {
             ::orchard::builder::BundleType::DEFAULT
         };
+        // The transaction version rides on the proposal now; `None` builds at
+        // the version implied by the target height.
+        let proposal_for_pczt = stored
+            .proposal
+            .clone()
+            .with_proposed_version(stored.proposed_tx_version);
         zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             stored.account_id,
             OvkPolicy::Sender,
-            &stored.proposal,
+            &proposal_for_pczt,
             // Keep the builder-derived expiry height.
             None,
             bundle_type,
@@ -486,7 +492,7 @@ pub(crate) fn set_orchard_anchor_and_witness(
         }
     };
     let updated = Updater::new(pczt)
-        .set_v6_orchard_anchor(anchor)
+        .set_orchard_anchor(anchor)
         .map_err(|e| format!("Set Orchard anchor in PCZT: {e}"))?
         .set_orchard_spend_witnesses([(action_index, witness.clone())])
         .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
