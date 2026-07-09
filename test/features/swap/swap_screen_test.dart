@@ -3486,14 +3486,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Preserved while focused, re-expressed on blur.
+    // Preserved while focused.
     expect(container.read(swapStateProvider).amountFiatText, '100');
     expect(_fieldText(tester, 'swap_amount_field'), '100');
 
-    FocusManager.instance.primaryFocus?.unfocus();
+    // Review is the commitment point: opening it flushes the deferred
+    // re-expression even though the field never blurred, so the composer
+    // can't show the new symbol on old-currency digits while quoting.
+    await container.read(swapStateProvider.notifier).showReview();
     await tester.pumpAndSettle();
 
     expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
     expect(_fieldText(tester, 'swap_amount_field'), '8000');
   });
 

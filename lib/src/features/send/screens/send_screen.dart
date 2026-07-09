@@ -301,6 +301,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _fiatReexpressPending = true;
       return;
     }
+    _applyFiatReexpression();
+  }
+
+  void _applyFiatReexpression() {
     _fiatReexpressPending = false;
     _fiatEntryCurrencyCode = _fiatCurrency.code;
     final zatoshi = parseZecAmount(_amountText.trim());
@@ -314,6 +318,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           );
     setState(() => _fiatAmountText = fiatText);
     _setAmountControllerText(fiatText);
+  }
+
+  /// Review is the commitment point: apply a currency re-expression that was
+  /// deferred while the fiat field was focused, so the visible entry and
+  /// symbol agree with what the review screen derives. The canonical ZEC
+  /// amount is unchanged by this — it only rewrites the label.
+  void _flushPendingFiatReexpression() {
+    if (!_fiatReexpressPending) return;
+    _applyFiatReexpression();
   }
 
   void _openContactPicker() {
@@ -871,6 +884,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool get _isAmountValid => _amountError == null;
 
   Future<void> _openReview() async {
+    _flushPendingFiatReexpression();
     setState(() {
       _isSending = true;
       _error = null;

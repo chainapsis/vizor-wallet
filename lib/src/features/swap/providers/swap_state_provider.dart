@@ -342,6 +342,12 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
+  void _flushDeferredFiatReexpression() {
+    if (!_fiatReexpressDeferred) return;
+    _fiatReexpressDeferred = false;
+    state = swapStateWithDerivedFiatTexts(fiatDisplay: _fiatDisplay, state);
+  }
+
   /// Composer surfaces report which fiat-mode field has focus (null when
   /// neither). When a deferred currency re-expression is pending, it runs as
   /// soon as the entry side changes, preserving only the newly-active side.
@@ -562,6 +568,11 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   Future<void> showReview() async {
+    // Review is the commitment point: apply any currency re-expression that
+    // was deferred while a fiat field was focused, so the composer text and
+    // symbol agree with the fiat values review derives. Token amounts are
+    // unchanged — this only rewrites labels.
+    _flushDeferredFiatReexpression();
     if (!state.canReviewQuote) return;
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;

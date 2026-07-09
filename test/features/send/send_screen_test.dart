@@ -740,6 +740,28 @@ void main() {
 
     expect(_fieldText(tester, 'send_amount_field'), '225.00');
     expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    // Review is the commitment point: a flip deferred while the field is
+    // focused flushes when Review is clicked (no blur happens first), and
+    // the proposed amount stays the canonical 2.5 ZEC.
+    await tester.tap(_editableIn('send_amount_field'));
+    await tester.pumpAndSettle();
+    container.read(zecUsdPriceProvider.notifier).setPrice(100);
+    container.read(testFiatDisplay.notifier).state = kUsdFiatDisplay;
+    await tester.pumpAndSettle();
+    expect(_fieldText(tester, 'send_amount_field'), '225.00');
+
+    await tester.tap(find.text('Review'));
+    await tester.pump();
+    expect(_fieldText(tester, 'send_amount_field'), '250.00');
+
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(250000000));
   });
 
   testWidgets('native amount remains reviewable while USD price is loading', (
