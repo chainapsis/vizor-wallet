@@ -97,6 +97,7 @@ const PREFETCH_SANDBLASTING_WIRE_BYTES_PER_BLOCK: u64 = 90 * 1024;
 const PREFETCH_RESIDENT_BUDGET: u64 = 128 * 1024 * 1024;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const PREFETCH_RESIDENT_BUDGET: u64 = 32 * 1024 * 1024;
+const RESUBMIT_EVERY_BATCHES: u64 = 16;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
@@ -176,6 +177,24 @@ fn effective_prefetch_depth(running_mode: u8) -> usize {
         PREFETCH_DEPTH_FOREGROUND
     };
     env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 1, 16) as usize
+}
+
+fn effective_resubmit_every() -> u64 {
+    env_override_clamped(
+        "ZCASH_SYNC_RESUBMIT_EVERY",
+        RESUBMIT_EVERY_BATCHES,
+        1,
+        u64::MAX,
+    )
+}
+
+fn should_run_post_batch_resubmit(
+    batch_found_tx: bool,
+    is_last_batch_of_range: bool,
+    batch_index: u64,
+    every: u64,
+) -> bool {
+    batch_found_tx || is_last_batch_of_range || batch_index % every.max(1) == 0
 }
 
 fn can_spawn_prefetch(
@@ -1396,6 +1415,9 @@ async fn run_sync_impl(
     let mut fetch_wait_total = std::time::Duration::ZERO;
     let mut fetch_batches = 0u64;
     let mut stale_prefetches = 0u64;
+    let resubmit_every = effective_resubmit_every();
+    let mut resubmit_total = std::time::Duration::ZERO;
+    let mut resubmit_passes = 0u64;
     log::info!(
         "[{}] sync: prefetch depth={}, resident budget={} MiB",
         elapsed(),
@@ -1878,113 +1900,80 @@ async fn run_sync_impl(
             return Ok(());
         }
 
+        let batch_found_tx = scan_summary.received_sapling_note_count() > 0
+            || scan_summary.spent_sapling_note_count() > 0
+            || scan_summary.received_orchard_note_count() > 0
+            || scan_summary.spent_orchard_note_count() > 0;
+
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
-        // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
-        // lines 593/701 call sites (end of verify batch / end of
-        // regular batch).
-        //
-        // We deliberately re-fetch the chain tip via
-        // `get_latest_block` before each pass instead of reusing
-        // `tip.height` captured once at the top of `run_sync_impl`.
-        // `get_resubmittable_txs` decides "still inside expiry
-        // window" with `expiry_height > current_height`; using the
-        // stale top-of-sync tip meant a long catch-up session
-        // (several thousand blocks) could keep rebroadcasting txs
-        // whose expiry had already passed against the real chain
-        // tip. Refreshing here is one extra unary gRPC per batch,
-        // which is cheap compared to the batch download itself and
-        // closes the "resubmit expired tx forever" regression
-        // caught by Codex 2nd-round review finding 2.
-        //
-        // Pre-flight guard matches the one at the startup resubmit
-        // call site — if cancel or mode-change landed during
-        // `run_enhancement` (which can spend a second or two on a
-        // transparent-address scan), bail before opening a single
-        // new `send_transaction` RPC. The helper also consults the
-        // same closure between candidates and before each retry so
-        // a cancel arriving mid-pass stops initiating further
-        // broadcasts.
-        //
-        // Best-effort: helper swallows per-tx failures, we ignore
-        // the return value, and if the tip refresh itself fails we
-        // log and skip the pass rather than falling back to the
-        // stale height (the whole point of the refresh is to avoid
-        // rebroadcasting against a stale expiry window).
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-            log::info!(
-                "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
-                elapsed(),
-            );
-            return Ok(());
-        }
-        match get_latest_block(&mut client)
-            .await
-            .map(|tip| tip.height as u32)
-        {
-            Ok(fresh_tip_height) => {
-                // Promote the fresh tip to the authoritative value
-                // so progress events and the final completion event
-                // use the latest chain height, not the one from
-                // sync startup. Also update the DB so
-                // suggest_scan_ranges picks up any new blocks that
-                // appeared since the initial (or last periodic) tip
-                // fetch.
-                //
-                // IMPORTANT: update_chain_tip MUST succeed before
-                // we bump current_tip_height. If the DB write fails,
-                // suggest_scan_ranges still operates on the old tip
-                // and the loop may break with isComplete=true —
-                // bumping current_tip_height prematurely would make
-                // the completion event claim a height the wallet
-                // never actually scanned. (Codex 3rd-round finding.)
-                if (fresh_tip_height as u64) > current_tip_height {
-                    let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
-                    match with_wallet_db_write_lock(
-                        "sync_engine.update_chain_tip.post_batch",
-                        || db.update_chain_tip(fresh_bh),
-                    ) {
-                        Ok(_) => {
-                            current_tip_height = fresh_tip_height as u64;
-                        }
-                        Err(e) => {
-                            log::warn!(
+        // Keep fresh-tip lookup and pending-send resubmit paired, but avoid
+        // doing both after every quiet batch in a long cold sync. Activity,
+        // the configured cadence, and the range boundary always trigger it.
+        let run_resubmit = should_run_post_batch_resubmit(
+            batch_found_tx,
+            end == range.block_range().end,
+            fetch_batches,
+            resubmit_every,
+        );
+        if run_resubmit {
+            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+            {
+                log::info!(
+                    "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
+                    elapsed(),
+                );
+                return Ok(());
+            }
+
+            let resubmit_start = std::time::Instant::now();
+            match get_latest_block(&mut client)
+                .await
+                .map(|tip| tip.height as u32)
+            {
+                Ok(fresh_tip_height) => {
+                    if (fresh_tip_height as u64) > current_tip_height {
+                        let fresh_height = BlockHeight::from_u32(fresh_tip_height);
+                        match with_wallet_db_write_lock(
+                            "sync_engine.update_chain_tip.post_batch",
+                            || db.update_chain_tip(fresh_height),
+                        ) {
+                            Ok(()) => current_tip_height = fresh_tip_height as u64,
+                            Err(e) => log::warn!(
                                 "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
                                  failed, keeping tip at {current_tip_height}: {e}",
                                 elapsed(),
-                            );
+                            ),
                         }
                     }
+                    last_tip_refresh = std::time::Instant::now();
+                    let _ = crate::wallet::sync::resubmit_pending_transactions(
+                        db_data_path,
+                        &mut client,
+                        fresh_tip_height,
+                        || {
+                            cancel.load(Ordering::Relaxed)
+                                || desired_mode.load(Ordering::SeqCst) != running_mode
+                        },
+                    )
+                    .await;
                 }
-                let _ = crate::wallet::sync::resubmit_pending_transactions(
-                    db_data_path,
-                    &mut client,
-                    fresh_tip_height,
-                    || {
-                        cancel.load(Ordering::Relaxed)
-                            || desired_mode.load(Ordering::SeqCst) != running_mode
-                    },
-                )
-                .await;
-            }
-            Err(e) => {
-                log::warn!(
+                Err(e) => log::warn!(
                     "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
                     elapsed(),
-                );
+                ),
             }
+            resubmit_total += resubmit_start.elapsed();
+            resubmit_passes += 1;
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-            log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            log::info!("[{}] sync: exiting after post-batch work", elapsed());
             return Ok(());
         }
 
         // Report progress
-        let has_new_tx = scan_summary.received_sapling_note_count() > 0
-            || scan_summary.spent_sapling_note_count() > 0
-            || scan_summary.received_orchard_note_count() > 0
-            || scan_summary.spent_orchard_note_count() > 0;
+        let has_new_tx = batch_found_tx;
         let post_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
@@ -2108,6 +2097,13 @@ async fn run_sync_impl(
         fetch_wait_total.as_secs_f64(),
         fetch_batches,
         stale_prefetches,
+    );
+    log::info!(
+        "[{}] sync: resubmit/tip refresh {:.2}s over {} passes (cadence={})",
+        elapsed(),
+        resubmit_total.as_secs_f64(),
+        resubmit_passes,
+        resubmit_every,
     );
     match transparent_receive_cache::refresh_all_from_wallet_db(
         db_data_path,
@@ -2371,6 +2367,18 @@ mod tests {
         assert!(can_spawn_prefetch(1, 4, 10, 10, 100, 10_000));
         assert!(!can_spawn_prefetch(1, 4, 10, 10, 400, 10_000));
         assert!(!can_spawn_prefetch(4, 4, 0, 1, 1, u64::MAX));
+    }
+
+    #[test]
+    fn post_batch_resubmit_cadence_preserves_activity_and_range_end() {
+        let every = RESUBMIT_EVERY_BATCHES;
+        assert!(!should_run_post_batch_resubmit(false, false, 1, every));
+        assert!(!should_run_post_batch_resubmit(false, false, 15, every));
+        assert!(should_run_post_batch_resubmit(false, false, 16, every));
+        assert!(should_run_post_batch_resubmit(true, false, 3, every));
+        assert!(should_run_post_batch_resubmit(false, true, 3, every));
+        assert!(should_run_post_batch_resubmit(false, false, 1, 1));
+        assert!(should_run_post_batch_resubmit(false, false, 7, 0));
     }
 
     #[test]
