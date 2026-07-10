@@ -227,6 +227,33 @@ void main() {
     );
   });
 
+  test('reserves Recipient received for completed Pay activity', () {
+    for (final status in const [
+      SwapIntentStatus.failed,
+      SwapIntentStatus.refunded,
+      SwapIntentStatus.expired,
+    ]) {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+
+      expect(
+        presentation.receiveLabel,
+        'Recipient gets',
+        reason: status.name,
+      );
+    }
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in

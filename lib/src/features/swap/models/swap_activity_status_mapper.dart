@@ -188,7 +188,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
               : 'You pay'
         : "You're paying",
     receiveLabel: payMode
-        ? intent.status.isTerminal
+        ? intent.status == SwapIntentStatus.complete
               ? 'Recipient received'
               : 'Recipient gets'
         : "You're receiving",
