@@ -505,8 +505,16 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'Amount',
+                      name: 'Amount - Loaded',
                       builder: buildMobilePayAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Empty',
+                      builder: buildMobilePayAmountEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Pricing refresh',
+                      builder: buildMobilePayAmountRefreshingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Recipient - Initial',
@@ -519,6 +527,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Recipient - Matched contact',
                       builder: buildMobilePayRecipientMatchedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Add contact sheet',
+                      builder: buildMobilePayAddContactUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Review',
