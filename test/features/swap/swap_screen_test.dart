@@ -3046,20 +3046,28 @@ void main() {
       listen: false,
     );
     expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    container.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+    await tester.pump();
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
 
     // account-2 has no saved pay asset: the memory must reset instead of
-    // leaking account-1's selection into the next Pay open.
+    // leaking account-1's selection into the mounted Pay composer.
     await container.read(accountProvider.notifier).switchAccount('account-2');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.usdc);
 
     await container.read(accountProvider.notifier).switchAccount('account-1');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
   });
 
   testWidgets('account switch closes open swap activity detail', (

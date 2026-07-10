@@ -366,14 +366,17 @@ class SwapNotifier extends Notifier<SwapState> {
   void selectPayExternalAsset(
     SwapAsset asset, {
     bool clearDestinationOnChainChange = false,
+    bool rememberSelection = true,
   }) {
     final supportedAsset = _supportedAssetFor(
       asset,
       state.supportedExternalAssets,
     );
     if (supportedAsset == null) return;
-    ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
-    unawaited(_persistPaySelectedAsset(supportedAsset));
+    if (rememberSelection) {
+      ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
+      unawaited(_persistPaySelectedAsset(supportedAsset));
+    }
     // Mobile Pay still collects the recipient first and therefore preserves
     // it by default. Desktop Pay is amount-first and opts into clearing a
     // stale address when the selected chain changes.
@@ -1772,11 +1775,27 @@ class SwapNotifier extends Notifier<SwapState> {
           .read(paySelectedAssetStoreProvider)
           .loadSelectedAsset(accountUuid: scopedAccountUuid);
       if (!_isAccountActive(scopedAccountUuid)) return;
+      final restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
       // No saved value must reset the memory: keeping the previous account's
       // selection would leak it into this account's Pay flow.
       ref
           .read(paySelectedAssetProvider.notifier)
-          .select(saved ?? PaySelectedAssetNotifier.defaultAsset);
+          .select(restoredAsset);
+      if (state.payMode) {
+        final supportedAssets = state.supportedExternalAssets;
+        final liveAsset =
+            _supportedAssetFor(restoredAsset, supportedAssets) ??
+            _supportedAssetFor(
+              PaySelectedAssetNotifier.defaultAsset,
+              supportedAssets,
+            ) ??
+            (supportedAssets.isEmpty ? restoredAsset : supportedAssets.first);
+        selectPayExternalAsset(
+          liveAsset,
+          clearDestinationOnChainChange: true,
+          rememberSelection: false,
+        );
+      }
     } catch (_) {}
   }
 
