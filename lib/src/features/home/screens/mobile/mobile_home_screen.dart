@@ -30,6 +30,7 @@ import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
@@ -474,6 +475,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
 
+    void openPay() {
+      ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      context.push('/pay');
+    }
+
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
@@ -531,102 +537,182 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         kMobileTabBarHeight + AppSpacing.lg,
       ),
       children: [
-        _BalanceCard(
-          balanceText: privacyModeEnabled
-              ? fixedPrivacyMask()
-              : ZecAmount.fromZatoshi(
-                  shieldedBalance,
-                ).compactBalance.amountText,
-          fiatBalanceText: shieldedFiatBalanceText,
-          priceChange24hPct: priceChange24hPct,
-          transparentBalanceText: ZecAmount.fromZatoshi(
-            transparentBalance,
-          ).compactBalance.amountText,
-          hasTransparentBalance: transparentBalance > BigInt.zero,
-          canShieldBalance: sync.canShieldTransparentBalance,
-          isShieldingBalance: _isShieldingBalance,
-          privacyModeEnabled: privacyModeEnabled,
-          onTogglePrivacyMode: widget.onTogglePrivacyMode,
-          onShieldBalancePressed: () => unawaited(_shieldTransparentBalance()),
-        ),
-        const SizedBox(height: AppSpacing.s),
-        if (hasBalance)
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_home_send'),
-                  expand: true,
-                  constrainContent: true,
-                  onPressed: () => context.push('/send'),
-                  leading: const _ButtonIcon(AppIcons.plane),
-                  height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Send',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              children: [
+                _BalanceCard(
+                  balanceText: privacyModeEnabled
+                      ? fixedPrivacyMask()
+                      : ZecAmount.fromZatoshi(
+                          shieldedBalance,
+                        ).compactBalance.amountText,
+                  fiatBalanceText: shieldedFiatBalanceText,
+                  priceChange24hPct: priceChange24hPct,
+                  transparentBalanceText: ZecAmount.fromZatoshi(
+                    transparentBalance,
+                  ).compactBalance.amountText,
+                  hasTransparentBalance: transparentBalance > BigInt.zero,
+                  canShieldBalance: sync.canShieldTransparentBalance,
+                  isShieldingBalance: _isShieldingBalance,
+                  privacyModeEnabled: privacyModeEnabled,
+                  onTogglePrivacyMode: widget.onTogglePrivacyMode,
+                  onShieldBalancePressed: () =>
+                      unawaited(_shieldTransparentBalance()),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_home_receive'),
-                  expand: true,
-                  constrainContent: true,
-                  variant: AppButtonVariant.secondary,
-                  onPressed: () => context.push('/receive'),
-                  leading: const _ButtonIcon(AppIcons.arrowDownCircle),
-                  height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Receive',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                const SizedBox(height: AppSpacing.s),
+                if (hasBalance)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppButton(
+                          key: const ValueKey('mobile_home_send'),
+                          expand: true,
+                          constrainContent: true,
+                          onPressed: () => context.push('/send'),
+                          leading: const _ButtonIcon(AppIcons.plane),
+                          height: _mobileHomeActionButtonHeight,
+                          child: const Text(
+                            'Send',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: AppButton(
+                          key: const ValueKey('mobile_home_receive'),
+                          expand: true,
+                          constrainContent: true,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: () => context.push('/receive'),
+                          leading: const _ButtonIcon(AppIcons.arrowDownCircle),
+                          height: _mobileHomeActionButtonHeight,
+                          child: const Text(
+                            'Receive',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      DecoratedBox(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xFF1C7ADE),
+                              blurRadius: 60,
+                              spreadRadius: 20,
+                            ),
+                            BoxShadow(
+                              color: Color(0xFF1C7ADE),
+                              blurRadius: 100,
+                            ),
+                          ],
+                        ),
+                        child: SizedBox(
+                          width: _mobileHomeActionButtonHeight,
+                          height: _mobileHomeActionButtonHeight,
+                          child: Semantics(
+                            button: true,
+                            label: 'Pay',
+                            child: AppButton(
+                              key: const ValueKey('mobile_home_pay'),
+                              minWidth: _mobileHomeActionButtonHeight,
+                              height: _mobileHomeActionButtonHeight,
+                              contentPadding: EdgeInsets.zero,
+                              variant: AppButtonVariant.secondary,
+                              onPressed: openPay,
+                              child: const _ButtonIcon(AppIcons.coins),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  AppButton(
+                    // Same key as the funded-state Receive button — only one
+                    // of the two renders at a time.
+                    key: const ValueKey('mobile_home_receive'),
+                    expand: true,
+                    constrainContent: true,
+                    onPressed: () => context.push('/receive'),
+                    leading: const _ButtonIcon(AppIcons.addNew),
+                    height: _mobileHomeActionButtonHeight,
+                    child: const Text(
+                      'Receive your first ZEC',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
+            if (hasBalance) ...[
+              Positioned(
+                right: 41,
+                top: 172,
+                width: 118,
+                height: 65,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/illustrations/pay_home_badges.png',
+                    key: const ValueKey('mobile_home_pay_badges'),
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
             ],
-          )
-        else
-          AppButton(
-            // Same key as the funded-state Receive button — only one of
-            // the two renders at a time.
-            key: const ValueKey('mobile_home_receive'),
-            expand: true,
-            constrainContent: true,
-            onPressed: () => context.push('/receive'),
-            leading: const _ButtonIcon(AppIcons.addNew),
-            height: _mobileHomeActionButtonHeight,
-            child: const Text(
-              'Receive your first ZEC',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.md),
-        if (recentRows.isEmpty)
-          const _EmptyActivity()
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xs,
-              vertical: AppSpacing.s,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
-                const SizedBox(height: AppSpacing.md),
-                for (var i = 0; i < recentRows.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.s),
-                  KeyedSubtree(
-                    key: ValueKey('mobile_home_activity_row_$i'),
-                    child: ActivityFeedRowGroup(row: recentRows[i]),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (recentRows.isEmpty)
+              const _EmptyActivity()
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.s,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _RecentActivityHeader(
+                      onSeeAll: () => context.go('/activity'),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    for (var i = 0; i < recentRows.length; i++) ...[
+                      if (i > 0) const SizedBox(height: AppSpacing.s),
+                      KeyedSubtree(
+                        key: ValueKey('mobile_home_activity_row_$i'),
+                        child: ActivityFeedRowGroup(row: recentRows[i]),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            if (hasBalance)
+              Positioned(
+                right: 43,
+                top: -35,
+                width: 80,
+                height: 80,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/illustrations/pay_coin.png',
+                    key: const ValueKey('mobile_home_pay_coin'),
+                    fit: BoxFit.contain,
                   ),
-                ],
-              ],
-            ),
-          ),
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }

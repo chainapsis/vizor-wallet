@@ -657,12 +657,10 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return null;
     }
-    final quoteExpiresAt = quote.quoteExpiresAt;
-    if (quoteExpiresAt != null &&
-        !DateTime.now().toUtc().isBefore(
-          quoteExpiresAt.subtract(const Duration(seconds: 5)),
-        )) {
-      log('Swap: start blocked; quote expired at $quoteExpiresAt');
+    final actionDeadline = quote.actionDeadline;
+    if (actionDeadline != null &&
+        !DateTime.now().toUtc().isBefore(actionDeadline)) {
+      log('Swap: start blocked; quote action deadline was $actionDeadline');
       expireReviewQuote();
       return null;
     }

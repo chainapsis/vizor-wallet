@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -242,6 +243,28 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(MobileReceiveScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('payment submitted route pushes a Cupertino page', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    unawaited(router.push<void>('/pay/submitted/intent-123'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.byType(MobilePaySubmittedScreen), findsOneWidget);
+    final screen = tester.widget<MobilePaySubmittedScreen>(
+      find.byType(MobilePaySubmittedScreen),
+    );
+    expect(screen.intentId, 'intent-123');
+    final route = ModalRoute.of(
+      tester.element(find.byType(MobilePaySubmittedScreen)),
+    );
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
   });
 }
 

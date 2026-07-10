@@ -748,10 +748,22 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   bool _detailsExpanded = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (_usesMobilePayStatus(widget.intent, widget.layout)) {
+      _activeTab = SwapStatusTab.details;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.intent.id != widget.intent.id) {
-      _activeTab = SwapStatusTab.progress;
+    if (oldWidget.intent.id != widget.intent.id ||
+        oldWidget.intent.payMode != widget.intent.payMode ||
+        oldWidget.layout != widget.layout) {
+      _activeTab = _usesMobilePayStatus(widget.intent, widget.layout)
+          ? SwapStatusTab.details
+          : SwapStatusTab.progress;
       _detailsExpanded = false;
     }
   }
@@ -809,9 +821,26 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final recipientContact = hasRecipient
+          ? addressBookContactForSwapAsset(
+              contacts: addressBookContacts,
+              asset: presentation.receiveAsset,
+              address: recipient,
+            )
+          : null;
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
+        paymentHeader: presentation.paymentMode && hasRecipient
+            ? MobilePayStatusHeader(
+                asset: presentation.receiveAsset,
+                amountText: trimSwapAmountText(presentation.receiveAmountText),
+                fiatText: presentation.receiveFiatText,
+                recipientAddress: recipient,
+                recipientName: recipientContact?.label,
+                recipientProfilePictureId: recipientContact?.profilePictureId,
+              )
+            : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
           label: presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
@@ -926,6 +955,12 @@ rust_sync.TransactionInfo? _recentPayDepositTransaction(
     if (transaction.txidHex.toLowerCase() == walletTxid) return transaction;
   }
   return null;
+}
+
+bool _usesMobilePayStatus(SwapIntent intent, SwapActivityDetailLayout layout) {
+  return layout == SwapActivityDetailLayout.mobile &&
+      intent.payMode &&
+      intent.direction == SwapDirection.zecToExternal;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.

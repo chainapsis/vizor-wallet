@@ -19,12 +19,17 @@ class MobileSwapSlippageStepperModal extends StatefulWidget {
     required this.slippageBps,
     required this.onSubmitted,
     required this.onCancel,
+    this.paymentMode = false,
     super.key,
   });
 
   final int slippageBps;
   final ValueChanged<int> onSubmitted;
   final VoidCallback onCancel;
+
+  /// Pay flow variant — mirrors [SwapSlippageModal.paymentMode]: prepends the
+  /// quote-movement explainer above the stepper.
+  final bool paymentMode;
 
   @override
   State<MobileSwapSlippageStepperModal> createState() =>
@@ -108,6 +113,16 @@ class _MobileSwapSlippageStepperModalState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.paymentMode) ...[
+            Text(
+              'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           SizedBox(
             height: _bodyHeight,
             child: Center(

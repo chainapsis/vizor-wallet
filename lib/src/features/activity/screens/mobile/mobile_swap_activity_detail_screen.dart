@@ -30,13 +30,6 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
   final SwapActivityReturnTarget returnTarget;
   final bool autoSignZecDeposit;
 
-  String _titleFor(SwapState state, SwapIntent? intent) {
-    if (intent == null) return 'Swap';
-    if (intent.status == SwapIntentStatus.expired) return 'Swap failed';
-    if (swapActivityShowsExternalDepositPage(intent)) return 'Review quote';
-    return swapActivityStatusPresentationForIntent(state, intent).title;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
@@ -56,7 +49,7 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: _titleFor(state, intent),
+                title: mobileSwapActivityTitle(state, intent),
                 // Pushed from activity rows -> pop; arrived via go()
                 // from the review start -> fall back to the return
                 // target (pop would be a no-op there).
@@ -82,4 +75,22 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+String mobileSwapActivityTitle(SwapState state, SwapIntent? intent) {
+  if (intent == null) return 'Swap';
+  final presentation = swapActivityStatusPresentationForIntent(state, intent);
+  if (presentation.paymentMode) {
+    return switch (intent.status) {
+      SwapIntentStatus.complete => 'Paid',
+      SwapIntentStatus.incompleteDeposit => 'Payment incomplete',
+      SwapIntentStatus.failed ||
+      SwapIntentStatus.refunded ||
+      SwapIntentStatus.expired => 'Payment failed',
+      _ => 'Paying ...',
+    };
+  }
+  if (intent.status == SwapIntentStatus.expired) return 'Swap failed';
+  if (swapActivityShowsExternalDepositPage(intent)) return 'Review quote';
+  return presentation.title;
 }

@@ -17,6 +17,7 @@ import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
 import 'home_use_cases.dart';
+import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'pay_use_cases.dart';
 import 'receive_use_cases.dart';
@@ -497,6 +498,39 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Completed',
                       builder: buildPayCompletedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Amount',
+                      builder: buildMobilePayAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient - Initial',
+                      builder: buildMobilePayRecipientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient - New address',
+                      builder: buildMobilePayRecipientNewAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient - Matched contact',
+                      builder: buildMobilePayRecipientMatchedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review',
+                      builder: buildMobilePayReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review - Expired',
+                      builder: buildMobilePayReviewExpiredUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Submitted',
+                      builder: buildMobilePaySubmittedUseCase,
                     ),
                   ],
                 ),
