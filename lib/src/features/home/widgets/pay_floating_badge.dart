@@ -132,6 +132,7 @@ class _PayIntroductionBadgeTargetState
             child: IgnorePointer(
               child: ExcludeSemantics(
                 child: PayFloatingBadge(
+                  animate: ref.watch(payIntroductionBadgeMotionEnabledProvider),
                   showGlow: false,
                   showNew: _showNew,
                 ),
@@ -208,10 +209,7 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
     if (_shouldAnimate) {
       final controller = _activeController;
       if (controller.isAnimating) return;
-      controller.forward(from: 0).then((_) {
-        if (!mounted || !_shouldAnimate) return;
-        controller.reverse();
-      });
+      controller.repeat(reverse: true);
       return;
     }
     final controller = _controller;

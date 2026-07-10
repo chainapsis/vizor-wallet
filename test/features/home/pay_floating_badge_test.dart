@@ -57,7 +57,7 @@ void main() {
     );
   });
 
-  testWidgets('coin bobs once and stays still under reduce motion', (
+  testWidgets('coin bobs continuously and stays still under reduce motion', (
     tester,
   ) async {
     await _pumpBadge(
@@ -67,8 +67,12 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 900));
     expect(_coinTranslationY(tester), lessThan(0));
-    await tester.pumpAndSettle();
-    expect(_coinTranslationY(tester), 0);
+    // A full up-down cycle later the loop passes through rest...
+    await tester.pump(const Duration(milliseconds: 2700));
+    expect(_coinTranslationY(tester), moreOrLessEquals(0));
+    // ...and keeps bobbing instead of stopping after one cycle.
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(_coinTranslationY(tester), lessThan(0));
 
     await _pumpBadge(
       tester,

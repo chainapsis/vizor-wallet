@@ -779,6 +779,9 @@ Widget _appHarness(
       payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
         payIntroductionBadgePersistenceEnabled,
       ),
+      // The coin bob loops forever, which would break pumpAndSettle here;
+      // motion itself is covered by pay_floating_badge_test.
+      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),

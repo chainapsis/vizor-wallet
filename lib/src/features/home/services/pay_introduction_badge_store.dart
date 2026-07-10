@@ -39,3 +39,8 @@ final payIntroductionBadgeStoreProvider = Provider<PayIntroductionBadgeStore>(
 final payIntroductionBadgePersistenceEnabledProvider = Provider<bool>(
   (_) => true,
 );
+
+/// Test seam for full-app suites that rely on `pumpAndSettle`: the coin bob
+/// loops forever in production, which never settles. Reduce motion at runtime
+/// is handled separately via `MediaQuery.disableAnimations`.
+final payIntroductionBadgeMotionEnabledProvider = Provider<bool>((_) => true);
