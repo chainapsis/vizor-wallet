@@ -39,6 +39,7 @@ void main() {
       sessionId: 'session-1',
       participantId: 'participant-1',
       coordinatorUrl: 'http://127.0.0.1:3001',
+      network: 'regtest',
       rosterHash: 'roster',
       groupPublicPackageHash: 'group',
       threshold: 2,

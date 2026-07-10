@@ -774,6 +774,7 @@ MultisigAccountMaterial _accountMaterial() {
     sessionId: 'session-1',
     participantId: 'participant-1',
     coordinatorUrl: 'https://coordinator.example',
+    network: 'regtest',
     rosterHash: 'roster',
     groupPublicPackageHash: 'group',
     threshold: 2,
@@ -1243,6 +1244,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   Future<rust_multisig.ApiPreparedMultisigSigningRequest>
   prepareSigningRequest({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -1250,11 +1252,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String requestSeed,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
-    required bool needsSaplingParams,
-    required String amountZatoshi,
-    required String feeZatoshi,
-    required String recipientAddress,
-    String? memo,
+    required String groupPublicPackageJson,
   }) async {
     return rust_multisig.ApiPreparedMultisigSigningRequest(
       signingRequestId: 'signing-request',
@@ -1264,6 +1262,12 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
       requestJson: '{}',
       idempotencyKey: 'idempotency',
       pcztHash: 'pczt-hash',
+      reviewDigest: 'review-digest',
+      amountZatoshi: '1000',
+      feeZatoshi: '100',
+      recipientAddress: 'u1recipient',
+      addressType: 'unified',
+      needsSaplingParams: false,
       createdAt: BigInt.one,
     );
   }
@@ -1317,6 +1321,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   @override
   Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -1334,6 +1339,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   @override
   Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String signingRequestId,
     required String participantId,
@@ -1341,6 +1347,9 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
     required String rosterHash,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    required String expectedReviewDigest,
+    required String expectedRequesterParticipantId,
     required String keyPackageB64,
     String? localStateJson,
   }) async {

@@ -75,6 +75,7 @@ class MultisigSigningRequestRecord {
     required this.selectedParticipantIds,
     required this.pcztB64,
     required this.pcztHash,
+    this.reviewDigest = '',
     required this.needsSaplingParams,
     required this.amountZatoshi,
     required this.feeZatoshi,
@@ -104,6 +105,7 @@ class MultisigSigningRequestRecord {
   final List<String> selectedParticipantIds;
   final String pcztB64;
   final String pcztHash;
+  final String reviewDigest;
   final bool needsSaplingParams;
   final String amountZatoshi;
   final String feeZatoshi;
@@ -125,6 +127,7 @@ class MultisigSigningRequestRecord {
   final bool broadcastResultSent;
 
   bool get isDraft => state == multisigSigningDraftState;
+  bool get hasVerifiedReview => reviewDigest.isNotEmpty;
   bool get hasBroadcastTxid =>
       broadcastTxid != null && broadcastTxid!.isNotEmpty;
   bool get localParticipantSelected =>
@@ -172,6 +175,7 @@ class MultisigSigningRequestRecord {
     'selectedParticipantIds': selectedParticipantIds,
     'pcztB64': pcztB64,
     'pcztHash': pcztHash,
+    'reviewDigest': reviewDigest,
     'needsSaplingParams': needsSaplingParams,
     'amountZatoshi': amountZatoshi,
     'feeZatoshi': feeZatoshi,
@@ -199,6 +203,7 @@ class MultisigSigningRequestRecord {
     int? updatedAt,
     String? sendFlowId,
     List<String>? selectedParticipantIds,
+    String? reviewDigest,
     bool? coordinatorSubmitted,
     String? createRequestJson,
     String? createRequestIdempotencyKey,
@@ -219,6 +224,7 @@ class MultisigSigningRequestRecord {
           selectedParticipantIds ?? this.selectedParticipantIds,
       pcztB64: pcztB64,
       pcztHash: pcztHash,
+      reviewDigest: reviewDigest ?? this.reviewDigest,
       needsSaplingParams: needsSaplingParams,
       amountZatoshi: amountZatoshi,
       feeZatoshi: feeZatoshi,
@@ -255,6 +261,7 @@ class MultisigSigningRequestRecord {
       selectedParticipantIds: _readStringList(json['selectedParticipantIds']),
       pcztB64: _readRequiredString(json, 'pcztB64'),
       pcztHash: _readRequiredString(json, 'pcztHash'),
+      reviewDigest: json['reviewDigest'] as String? ?? '',
       needsSaplingParams: json['needsSaplingParams'] as bool? ?? false,
       amountZatoshi: json['amountZatoshi'] as String? ?? '0',
       feeZatoshi: json['feeZatoshi'] as String? ?? '0',
@@ -278,29 +285,30 @@ class MultisigSigningRequestRecord {
     );
   }
 
-  static MultisigSigningRequestRecord fromTxRequestBody({
+  static MultisigSigningRequestRecord fromVerifiedSigningRequest({
     required String accountUuid,
     required String localParticipantId,
-    required Map<String, Object?> body,
+    required rust_multisig.ApiVerifiedMultisigSigningRequest request,
     required int receivedAt,
   }) {
     return MultisigSigningRequestRecord(
-      signingRequestId: body['signingRequestId'] as String? ?? '',
+      signingRequestId: request.signingRequestId,
       accountUuid: accountUuid,
-      sessionId: body['sessionId'] as String? ?? '',
+      sessionId: request.sessionId,
       localParticipantId: localParticipantId,
-      requesterParticipantId: body['requesterParticipantId'] as String? ?? '',
-      selectedParticipantIds: _readStringList(body['selectedParticipantIds']),
-      pcztB64: body['pcztB64'] as String? ?? '',
-      pcztHash: body['pcztHash'] as String? ?? '',
-      needsSaplingParams: body['needsSaplingParams'] as bool? ?? false,
-      amountZatoshi: body['amountZatoshi'] as String? ?? '0',
-      feeZatoshi: body['feeZatoshi'] as String? ?? '0',
-      recipientAddress: body['recipientAddress'] as String? ?? '',
-      addressType: body['addressType'] as String? ?? '',
-      memo: body['memo'] as String?,
+      requesterParticipantId: request.requesterParticipantId,
+      selectedParticipantIds: request.selectedParticipantIds,
+      pcztB64: request.pcztB64,
+      pcztHash: request.pcztHash,
+      reviewDigest: request.reviewDigest,
+      needsSaplingParams: request.needsSaplingParams,
+      amountZatoshi: request.amountZatoshi,
+      feeZatoshi: request.feeZatoshi,
+      recipientAddress: request.recipientAddress,
+      addressType: request.addressType,
+      memo: null,
       state: 'open',
-      createdAt: _readInt(body['createdAt']) * 1000,
+      createdAt: request.createdAt.toInt() * 1000,
       updatedAt: receivedAt,
       coordinatorSubmitted: true,
     );
@@ -332,6 +340,15 @@ class MultisigSigningRequestStore {
           ),
         )
         .where((entry) => entry.signingRequestId.isNotEmpty)
+        // v1 coordinator requests carried an independent, unverified review
+        // summary. Keep only local drafts; submitted requests must be v2.
+        .where(
+          (entry) =>
+              entry.hasVerifiedReview ||
+              (!entry.coordinatorSubmitted &&
+                  entry.createRequestJson == null &&
+                  entry.sendFlowId != null),
+        )
         .toList(growable: false);
   }
 
@@ -946,6 +963,7 @@ class MultisigSigningRequestsNotifier
     final prepared = await _withAuthRetry(material, (freshMaterial) {
       return _coordinator.prepareSigningRequest(
         coordinatorUrl: freshMaterial.coordinatorUrl,
+        network: freshMaterial.network,
         sessionId: freshMaterial.sessionId,
         participantId: freshMaterial.participantId,
         accessToken: freshMaterial.accessToken,
@@ -953,11 +971,7 @@ class MultisigSigningRequestsNotifier
         requestSeed: sendFlowId,
         selectedParticipantIds: record.selectedParticipantIds,
         pcztBytes: pcztBytes,
-        needsSaplingParams: record.needsSaplingParams,
-        amountZatoshi: record.amountZatoshi,
-        feeZatoshi: record.feeZatoshi,
-        recipientAddress: record.recipientAddress,
-        memo: _cleanOptional(record.memo),
+        groupPublicPackageJson: freshMaterial.groupPublicPackageJson,
       );
     });
     final updated = MultisigSigningRequestRecord(
@@ -969,12 +983,13 @@ class MultisigSigningRequestsNotifier
       selectedParticipantIds: prepared.selectedParticipantIds,
       pcztB64: record.pcztB64,
       pcztHash: prepared.pcztHash,
-      needsSaplingParams: record.needsSaplingParams,
-      amountZatoshi: record.amountZatoshi,
-      feeZatoshi: record.feeZatoshi,
-      recipientAddress: record.recipientAddress,
-      addressType: record.addressType,
-      memo: record.memo,
+      reviewDigest: prepared.reviewDigest,
+      needsSaplingParams: prepared.needsSaplingParams,
+      amountZatoshi: prepared.amountZatoshi,
+      feeZatoshi: prepared.feeZatoshi,
+      recipientAddress: prepared.recipientAddress,
+      addressType: prepared.addressType,
+      memo: null,
       state: 'requested',
       createdAt: prepared.createdAt.toInt() * 1000,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -1029,8 +1044,12 @@ class MultisigSigningRequestsNotifier
     MultisigSigningRequestRecord record,
     MultisigAccountMaterial material,
   ) async {
+    if (!record.hasVerifiedReview) {
+      throw StateError('This signing request has no verified PCZT review.');
+    }
     final result = await _coordinator.submitSigningRound1(
       coordinatorUrl: material.coordinatorUrl,
+      network: material.network,
       sessionId: record.sessionId,
       signingRequestId: record.signingRequestId,
       participantId: material.participantId,
@@ -1038,6 +1057,9 @@ class MultisigSigningRequestsNotifier
       rosterHash: material.rosterHash,
       selectedParticipantIds: record.selectedParticipantIds,
       pcztBytes: _decodeBase64UrlNoPad(record.pcztB64),
+      groupPublicPackageJson: material.groupPublicPackageJson,
+      expectedReviewDigest: record.reviewDigest,
+      expectedRequesterParticipantId: record.requesterParticipantId,
       keyPackageB64: material.keyPackageB64,
       localStateJson: record.localStateJson,
     );
@@ -1217,6 +1239,7 @@ class MultisigSigningRequestsNotifier
     final storedCursor = await _cursorStore.read(material.storageId);
     final inbox = await _coordinator.getSigningInbox(
       coordinatorUrl: material.coordinatorUrl,
+      network: material.network,
       sessionId: material.sessionId,
       participantId: material.participantId,
       accessToken: material.accessToken,
@@ -1278,21 +1301,24 @@ class MultisigSigningRequestsNotifier
     MultisigAccountMaterial material,
     rust_multisig.ApiMultisigSigningMessage message,
   ) {
-    final plaintext = message.plaintextJson;
-    if (plaintext == null || plaintext.trim().isEmpty) return false;
-    final decoded = jsonDecode(plaintext);
-    if (decoded is! Map) return false;
-    final body = decoded.cast<String, Object?>();
     if (message.kind == 'tx_request') {
-      final incoming = MultisigSigningRequestRecord.fromTxRequestBody(
+      final verified = message.verifiedSigningRequest;
+      if (verified == null) return false;
+      final incoming = MultisigSigningRequestRecord.fromVerifiedSigningRequest(
         accountUuid: material.accountUuid,
         localParticipantId: material.participantId,
-        body: body,
+        request: verified,
         receivedAt: message.createdAt.toInt() * 1000,
       );
       if (incoming.signingRequestId.isEmpty) return false;
       return _mergeRecord(records, incoming);
     }
+
+    final plaintext = message.plaintextJson;
+    if (plaintext == null || plaintext.trim().isEmpty) return false;
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map) return false;
+    final body = decoded.cast<String, Object?>();
 
     final relatedId = message.relatedId;
     if (relatedId == null || relatedId.isEmpty) return false;
@@ -1483,11 +1509,9 @@ class MultisigSigningRequestsNotifier
   ) {
     return _synchronized(() async {
       final records = [...await _currentRecords()];
-      if (previousSigningRequestId != record.signingRequestId) {
-        records.removeWhere(
-          (entry) => entry.signingRequestId == previousSigningRequestId,
-        );
-      }
+      records.removeWhere(
+        (entry) => entry.signingRequestId == previousSigningRequestId,
+      );
       _mergeRecord(records, record);
       await _save(records);
       state = AsyncData(_sorted(records));
@@ -1512,6 +1536,13 @@ class MultisigSigningRequestsNotifier
       return true;
     }
     final current = records[index];
+    if ((_hasLockedRequestBinding(current) ||
+            _hasLockedRequestBinding(incoming)) &&
+        !_sameRequestBinding(current, incoming)) {
+      throw StateError(
+        'Signing request binding changed for ${incoming.signingRequestId}.',
+      );
+    }
     final round1 = {
       ...current.round1ParticipantIds,
       ...incoming.round1ParticipantIds,
@@ -1542,6 +1573,32 @@ class MultisigSigningRequestsNotifier
           current.broadcastResultSent || incoming.broadcastResultSent,
     );
     return true;
+  }
+
+  bool _hasLockedRequestBinding(MultisigSigningRequestRecord record) {
+    return record.coordinatorSubmitted || _hasPreparedCreate(record);
+  }
+
+  bool _sameRequestBinding(
+    MultisigSigningRequestRecord left,
+    MultisigSigningRequestRecord right,
+  ) {
+    return left.accountUuid == right.accountUuid &&
+        left.sessionId == right.sessionId &&
+        left.localParticipantId == right.localParticipantId &&
+        left.requesterParticipantId == right.requesterParticipantId &&
+        _sameParticipantIds(
+          left.selectedParticipantIds,
+          right.selectedParticipantIds,
+        ) &&
+        left.pcztB64 == right.pcztB64 &&
+        left.pcztHash == right.pcztHash &&
+        left.reviewDigest == right.reviewDigest &&
+        left.needsSaplingParams == right.needsSaplingParams &&
+        left.amountZatoshi == right.amountZatoshi &&
+        left.feeZatoshi == right.feeZatoshi &&
+        left.recipientAddress == right.recipientAddress &&
+        left.addressType == right.addressType;
   }
 
   Future<MultisigSigningRequestRecord> _findRecord(

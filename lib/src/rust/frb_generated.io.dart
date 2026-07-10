@@ -142,6 +142,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
+  ApiVerifiedMultisigSigningRequest
+  dco_decode_api_verified_multisig_signing_request(dynamic raw);
+
+  @protected
   ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
 
   @protected
@@ -158,6 +162,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  dco_decode_box_autoadd_api_verified_multisig_signing_request(dynamic raw);
 
   @protected
   ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
@@ -424,6 +432,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  ApiVerifiedMultisigSigningRequest?
+  dco_decode_opt_box_autoadd_api_verified_multisig_signing_request(dynamic raw);
 
   @protected
   CompletedVoteDisplayView?
@@ -771,6 +783,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVerifiedMultisigSigningRequest
+  sse_decode_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVoteCommitEvent sse_decode_api_vote_commit_event(
     SseDeserializer deserializer,
   );
@@ -795,6 +813,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  sse_decode_box_autoadd_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ApiVotingRoundContext sse_decode_box_autoadd_api_voting_round_context(
@@ -1121,6 +1145,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  ApiVerifiedMultisigSigningRequest?
+  sse_decode_opt_box_autoadd_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  );
 
   @protected
   CompletedVoteDisplayView?
@@ -1539,6 +1569,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_vote_commit_event(
     ApiVoteCommitEvent self,
     SseSerializer serializer,
@@ -1567,6 +1603,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_api_voting_round_context(
@@ -1972,6 +2014,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_completed_vote_display_view(

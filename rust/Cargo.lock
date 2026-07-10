@@ -4714,7 +4714,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-coordinator-2"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=a336641e6d43edaf97a7bc452e3642c9f3244dd1#a336641e6d43edaf97a7bc452e3642c9f3244dd1"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -4729,7 +4729,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-core"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=a336641e6d43edaf97a7bc452e3642c9f3244dd1#a336641e6d43edaf97a7bc452e3642c9f3244dd1"
 dependencies = [
  "anyhow",
  "frost-core",
@@ -4741,6 +4741,7 @@ dependencies = [
  "pczt",
  "rand 0.8.6",
  "reddsa",
+ "sapling-crypto",
  "secp256k1",
  "serde",
  "serde_bytes",
@@ -4751,6 +4752,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_proofs",
  "zcash_protocol",
+ "zcash_script",
  "zcash_transparent",
  "zeroize",
  "zip32",
@@ -4759,7 +4761,7 @@ dependencies = [
 [[package]]
 name = "zcash-multisig-sdk"
 version = "0.1.0"
-source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=9b50f4ca433b022c50151321fd63e702c3a50b65#9b50f4ca433b022c50151321fd63e702c3a50b65"
+source = "git+https://github.com/chainapsis/zcash-multisig.git?rev=a336641e6d43edaf97a7bc452e3642c9f3244dd1#a336641e6d43edaf97a7bc452e3642c9f3244dd1"
 dependencies = [
  "argon2",
  "base64",
@@ -4778,6 +4780,7 @@ dependencies = [
  "x25519-dalek",
  "zcash-multisig-coordinator-2",
  "zcash-multisig-core",
+ "zcash_protocol",
  "zeroize",
 ]
 

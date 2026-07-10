@@ -20,6 +20,7 @@ use zcash_multisig::{
     dkg::{dkg_part1, dkg_part2, dkg_part3, parse_dkg_round1, parse_dkg_round2, DkgRound2Msg},
     injector::inject_orchard_signature,
     keys::{build_group_public_package, GroupPublicPackage},
+    review::{verify_pczt_for_review, TransactionReview},
     signer::{
         aggregate, extract_alpha, make_signing_package, parse_round1_msg, parse_round2_msg,
         public_key_package_from_group_package, round1_commit, round1_msg, round2_msg, round2_sign,
@@ -37,6 +38,9 @@ use zcash_multisig_sdk::{
         seal_session_label, vault_delivery_keypair, DeliveryKeypair, E2eContext,
     },
     identity::AdmissionKey,
+    signing::{
+        decrypt_and_verify_signing_request, prepare_signing_request, VerifiedSigningRequest,
+    },
     types::{
         AdmissionAction, AdmissionChallengeReq, AuthRefreshReq, AuthSessionResp, AuthTokenResp,
         CreateSessionReq, CreateSigningRequestReq, EncryptedMessageReq, JoinSessionReq,
@@ -179,7 +183,24 @@ pub struct ApiMultisigSigningMessage {
     pub to_participant_id: Option<String>,
     pub related_id: Option<String>,
     pub plaintext_json: Option<String>,
+    pub verified_signing_request: Option<ApiVerifiedMultisigSigningRequest>,
     pub decrypt_error: Option<String>,
+    pub created_at: u64,
+}
+
+pub struct ApiVerifiedMultisigSigningRequest {
+    pub signing_request_id: String,
+    pub session_id: String,
+    pub requester_participant_id: String,
+    pub selected_participant_ids: Vec<String>,
+    pub pczt_b64: String,
+    pub pczt_hash: String,
+    pub review_digest: String,
+    pub amount_zatoshi: String,
+    pub fee_zatoshi: String,
+    pub recipient_address: String,
+    pub address_type: String,
+    pub needs_sapling_params: bool,
     pub created_at: u64,
 }
 
@@ -202,6 +223,12 @@ pub struct ApiPreparedMultisigSigningRequest {
     pub request_json: String,
     pub idempotency_key: String,
     pub pczt_hash: String,
+    pub review_digest: String,
+    pub amount_zatoshi: String,
+    pub fee_zatoshi: String,
+    pub recipient_address: String,
+    pub address_type: String,
+    pub needs_sapling_params: bool,
     pub created_at: u64,
 }
 
@@ -253,25 +280,6 @@ struct ApiMultisigErrorBody {
     http_status: Option<u16>,
     retry_after_seconds: Option<u64>,
     retryable: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TxRequestBody {
-    version: u8,
-    kind: String,
-    signing_request_id: String,
-    session_id: String,
-    requester_participant_id: String,
-    selected_participant_ids: Vec<String>,
-    pczt_b64: String,
-    pczt_hash: String,
-    needs_sapling_params: bool,
-    amount_zatoshi: String,
-    fee_zatoshi: String,
-    recipient_address: String,
-    memo: Option<String>,
-    created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1121,6 +1129,7 @@ pub fn advance_multisig_create(
 
 pub fn prepare_multisig_signing_request(
     coordinator_url: String,
+    network: String,
     session_id: String,
     participant_id: String,
     access_token: String,
@@ -1128,15 +1137,12 @@ pub fn prepare_multisig_signing_request(
     request_seed: String,
     selected_participant_ids: Vec<String>,
     pczt_bytes: Vec<u8>,
-    needs_sapling_params: bool,
-    amount_zatoshi: String,
-    fee_zatoshi: String,
-    recipient_address: String,
-    memo: Option<String>,
+    group_public_package_json: String,
 ) -> Result<ApiPreparedMultisigSigningRequest, String> {
     block_on(async move {
         prepare_multisig_signing_request_inner(
             coordinator_url,
+            network,
             session_id,
             participant_id,
             access_token,
@@ -1144,11 +1150,7 @@ pub fn prepare_multisig_signing_request(
             request_seed,
             selected_participant_ids,
             pczt_bytes,
-            needs_sapling_params,
-            amount_zatoshi,
-            fee_zatoshi,
-            recipient_address,
-            memo,
+            group_public_package_json,
         )
         .await
     })
@@ -1183,6 +1185,7 @@ pub fn submit_prepared_multisig_signing_request(
 #[allow(clippy::too_many_arguments)]
 async fn prepare_multisig_signing_request_inner(
     coordinator_url: String,
+    network: String,
     session_id: String,
     participant_id: String,
     access_token: String,
@@ -1190,11 +1193,7 @@ async fn prepare_multisig_signing_request_inner(
     request_seed: String,
     selected_participant_ids: Vec<String>,
     pczt_bytes: Vec<u8>,
-    needs_sapling_params: bool,
-    amount_zatoshi: String,
-    fee_zatoshi: String,
-    recipient_address: String,
-    memo: Option<String>,
+    group_public_package_json: String,
 ) -> Result<ApiPreparedMultisigSigningRequest, String> {
     let selected = normalize_selected_participants(selected_participant_ids)?;
     if !selected.iter().any(|value| value == &participant_id) {
@@ -1215,7 +1214,8 @@ async fn prepare_multisig_signing_request_inner(
 
     let participants_by_id: BTreeMap<String, ParticipantResp> = session
         .participants
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|participant| (participant.participant_id.clone(), participant))
         .collect();
     for selected_id in &selected {
@@ -1228,48 +1228,25 @@ async fn prepare_multisig_signing_request_inner(
 
     let signing_request_id =
         stable_id("sign", &[&session_id, &participant_id, request_seed.trim()]);
-    let pczt_hash = hash_bytes_b64(&pczt_bytes);
     let created_at = unix_now_secs();
-    let body = TxRequestBody {
-        version: 1,
-        kind: "tx_request".to_string(),
-        signing_request_id: signing_request_id.clone(),
-        session_id: session_id.clone(),
-        requester_participant_id: participant_id.clone(),
-        selected_participant_ids: selected.clone(),
-        pczt_b64: URL_SAFE_NO_PAD.encode(&pczt_bytes),
-        pczt_hash: pczt_hash.clone(),
-        needs_sapling_params,
-        amount_zatoshi,
-        fee_zatoshi,
-        recipient_address,
-        memo: memo.filter(|value| !value.trim().is_empty()),
+    let wallet_network = wallet_keys::parse_network(&network)?;
+    let group: GroupPublicPackage = serde_json::from_str(&group_public_package_json)
+        .map_err(|e| format!("Failed to parse multisig group public package: {e}"))?;
+    let prepared = prepare_signing_request(
+        &wallet_network,
+        &group,
+        &session_id,
+        &roster_hash,
+        &participant_id,
+        &signing_request_id,
+        &selected,
+        &session.participants,
+        &pczt_bytes,
         created_at,
-    };
-    let body_json = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
-
-    let encrypted_bodies = participants_by_id
-        .values()
-        .map(|participant| {
-            let ctx = E2eContext {
-                session_id: &session_id,
-                roster_hash: Some(&roster_hash),
-                kind: "tx_request",
-                from_participant_id: &participant_id,
-                to_participant_id: Some(&participant.participant_id),
-                related_id: Some(&signing_request_id),
-            };
-            encrypt_for(&participant.delivery_public_key, &ctx, &body_json)
-                .map_err(|e| e.to_string())
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-
-    let req = CreateSigningRequestReq {
-        signing_request_id: signing_request_id.clone(),
-        selected_participant_ids: selected.clone(),
-        encrypted_bodies,
-    };
-    let request_json = serde_json::to_string(&req).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
+    let review = single_output_review(&prepared.review)?;
+    let request_json = serde_json::to_string(&prepared.request).map_err(|e| e.to_string())?;
     let idempotency_key = idempotency_key("signing-create", &[&signing_request_id]);
 
     Ok(ApiPreparedMultisigSigningRequest {
@@ -1279,7 +1256,13 @@ async fn prepare_multisig_signing_request_inner(
         selected_participant_ids: selected,
         request_json,
         idempotency_key,
-        pczt_hash,
+        pczt_hash: prepared.pczt_hash,
+        review_digest: prepared.review_digest,
+        amount_zatoshi: prepared.review.total_send_zatoshi.to_string(),
+        fee_zatoshi: prepared.review.fee_zatoshi.to_string(),
+        recipient_address: review.address,
+        address_type: review.pool,
+        needs_sapling_params: prepared.review.needs_sapling_params,
         created_at,
     })
 }
@@ -1357,6 +1340,7 @@ pub fn get_multisig_signing_request(
 
 pub fn get_multisig_signing_inbox(
     coordinator_url: String,
+    network: String,
     session_id: String,
     participant_id: String,
     access_token: String,
@@ -1367,6 +1351,9 @@ pub fn get_multisig_signing_inbox(
 ) -> Result<ApiMultisigSigningInbox, String> {
     block_on(async move {
         let client = Coordinator2Client::new(coordinator_url);
+        let wallet_network = wallet_keys::parse_network(&network)?;
+        let group: GroupPublicPackage = serde_json::from_str(&group_public_package_json)
+            .map_err(|e| format!("Failed to parse multisig group public package: {e}"))?;
         let delivery = DeliveryKeypair::from_secret_b64(&delivery_secret_key)
             .map_err(|e| format!("Invalid delivery secret key: {e}"))?;
         // Broadcast vault metadata (participant labels) is encrypted to the
@@ -1377,22 +1364,59 @@ pub fn get_multisig_signing_inbox(
             .inbox(&session_id, &access_token, after)
             .await
             .map_err(client_error)?;
-        let messages = inbox
-            .messages
-            .into_iter()
-            .filter(|message| {
-                matches!(
-                    message.kind.as_str(),
-                    "tx_request" | "tx_round1" | "tx_round2" | "broadcast_result" | "vault_label"
-                )
-            })
-            .map(|message| {
+        let mut messages = Vec::new();
+        for message in inbox.messages.into_iter().filter(|message| {
+            matches!(
+                message.kind.as_str(),
+                "tx_request" | "tx_round1" | "tx_round2" | "broadcast_result" | "vault_label"
+            )
+        }) {
+            let mut verified_signing_request = None;
+            let (plaintext_json, decrypt_error) = if message.kind == "tx_request" {
+                match message.related_id.as_deref() {
+                    Some(signing_request_id) => {
+                        // Coordinator state is authoritative for signer selection. A
+                        // transient fetch/auth failure must abort the inbox refresh so
+                        // the caller does not advance its cursor past this request.
+                        let signing = client
+                            .get_signing_request(signing_request_id, &access_token)
+                            .await
+                            .map_err(client_error)?;
+                        let verified = if signing.session_id != session_id {
+                            Err("Signing request belongs to a different session.".to_string())
+                        } else {
+                            decrypt_and_verify_signing_request(
+                                &wallet_network,
+                                &group,
+                                &delivery,
+                                &roster_hash,
+                                &participant_id,
+                                &signing,
+                                &message,
+                            )
+                            .map_err(|e| e.to_string())
+                            .and_then(map_verified_signing_request)
+                        };
+                        match verified {
+                            Ok(request) => {
+                                verified_signing_request = Some(request);
+                                (None, None)
+                            }
+                            Err(error) => (None, Some(error)),
+                        }
+                    }
+                    None => (
+                        None,
+                        Some("Signing request message has no related id.".to_string()),
+                    ),
+                }
+            } else {
                 let keypair = if message.kind == "vault_label" {
                     &vault
                 } else {
                     &delivery
                 };
-                let (plaintext_json, decrypt_error) = match decrypt_signing_message(
+                match decrypt_signing_message(
                     &session_id,
                     &participant_id,
                     &roster_hash,
@@ -1404,21 +1428,22 @@ pub fn get_multisig_signing_inbox(
                         Err(e) => (None, Some(format!("Message is not UTF-8 JSON: {e}"))),
                     },
                     Err(e) => (None, Some(e)),
-                };
-                ApiMultisigSigningMessage {
-                    cursor: message.cursor,
-                    message_id: message.message_id,
-                    session_id: message.session_id,
-                    kind: message.kind,
-                    from_participant_id: message.from_participant_id,
-                    to_participant_id: message.to_participant_id,
-                    related_id: message.related_id,
-                    plaintext_json,
-                    decrypt_error,
-                    created_at: message.created_at,
                 }
-            })
-            .collect();
+            };
+            messages.push(ApiMultisigSigningMessage {
+                cursor: message.cursor,
+                message_id: message.message_id,
+                session_id: message.session_id,
+                kind: message.kind,
+                from_participant_id: message.from_participant_id,
+                to_participant_id: message.to_participant_id,
+                related_id: message.related_id,
+                plaintext_json,
+                verified_signing_request,
+                decrypt_error,
+                created_at: message.created_at,
+            });
+        }
         Ok(ApiMultisigSigningInbox {
             cursor: inbox.cursor,
             messages,
@@ -1459,6 +1484,7 @@ pub fn get_multisig_session_events(
 
 pub fn submit_multisig_signing_round1(
     coordinator_url: String,
+    network: String,
     session_id: String,
     signing_request_id: String,
     participant_id: String,
@@ -1466,12 +1492,41 @@ pub fn submit_multisig_signing_round1(
     roster_hash: String,
     selected_participant_ids: Vec<String>,
     pczt_bytes: Vec<u8>,
+    group_public_package_json: String,
+    expected_review_digest: String,
+    expected_requester_participant_id: String,
     key_package_b64: String,
     local_state_json: Option<String>,
 ) -> Result<ApiMultisigSigningAdvance, String> {
     block_on(async move {
         let selected = normalize_selected_participants(selected_participant_ids)?;
         ensure_selected_signer(&selected, &participant_id)?;
+        let client = Coordinator2Client::new(coordinator_url);
+        let signing = client
+            .get_signing_request(&signing_request_id, &access_token)
+            .await
+            .map_err(client_error)?;
+        let coordinator_selected =
+            normalize_selected_participants(signing.selected_participant_ids.clone())?;
+        if signing.session_id != session_id
+            || coordinator_selected != selected
+            || signing.requester_participant_id != expected_requester_participant_id
+        {
+            return Err(
+                "Local signing request does not match coordinator signing state.".to_string(),
+            );
+        }
+        let wallet_network = wallet_keys::parse_network(&network)?;
+        let group: GroupPublicPackage = serde_json::from_str(&group_public_package_json)
+            .map_err(|e| format!("Failed to parse multisig group public package: {e}"))?;
+        let verified = verify_pczt_for_review(&wallet_network, &group, &pczt_bytes)
+            .map_err(|e| format!("Refusing to sign unverified PCZT: {e}"))?;
+        let actual_review_digest = URL_SAFE_NO_PAD.encode(verified.review_digest());
+        if actual_review_digest != expected_review_digest {
+            return Err(
+                "Refusing to sign a PCZT that differs from the reviewed transaction.".to_string(),
+            );
+        }
         let pczt_hash = hash_bytes_b64(&pczt_bytes);
         let mut state = parse_signing_state(local_state_json, &signing_request_id, &pczt_hash)?;
         if state.round1_sent {
@@ -1517,7 +1572,6 @@ pub fn submit_multisig_signing_round1(
             state.round1_body_json_b64 = Some(URL_SAFE_NO_PAD.encode(&body_json));
             body_json
         };
-        let client = Coordinator2Client::new(coordinator_url);
         let recipients = signing_recipients(&client, &session_id, &access_token, &selected).await?;
         if let Err(e) = post_signing_body_to_selected(
             &mut state,
@@ -3018,6 +3072,51 @@ fn hash_bytes_b64(value: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(value);
     URL_SAFE_NO_PAD.encode(h.finalize())
+}
+
+struct SingleReviewOutput {
+    address: String,
+    pool: String,
+}
+
+fn single_output_review(review: &TransactionReview) -> Result<SingleReviewOutput, String> {
+    if review.external_outputs.len() != 1 {
+        return Err(format!(
+            "Multisig review currently requires exactly one external recipient; PCZT has {}.",
+            review.external_outputs.len()
+        ));
+    }
+    let output = &review.external_outputs[0];
+    let pool = match output.pool {
+        zcash_multisig::review::ReviewPool::Orchard => "unified",
+        zcash_multisig::review::ReviewPool::Sapling => "sapling",
+        zcash_multisig::review::ReviewPool::Transparent => "transparent",
+    };
+    Ok(SingleReviewOutput {
+        address: output.address.clone(),
+        pool: pool.to_string(),
+    })
+}
+
+fn map_verified_signing_request(
+    verified: VerifiedSigningRequest,
+) -> Result<ApiVerifiedMultisigSigningRequest, String> {
+    let output = single_output_review(&verified.review)?;
+    Ok(ApiVerifiedMultisigSigningRequest {
+        signing_request_id: verified.signing_request_id,
+        session_id: verified.session_id,
+        requester_participant_id: verified.requester_participant_id,
+        selected_participant_ids: verified.selected_participant_ids,
+        pczt_b64: verified.pczt_b64,
+        pczt_hash: verified.pczt_hash,
+        review_digest: verified.review_digest,
+        amount_zatoshi: verified.review.total_send_zatoshi.to_string(),
+        fee_zatoshi: verified.review.fee_zatoshi.to_string(),
+        recipient_address: output.address,
+        address_type: output.pool,
+        needs_sapling_params: verified.review.needs_sapling_params,
+        created_at: verified.created_at,
+    })
 }
 
 fn stable_id(prefix: &str, parts: &[&str]) -> String {

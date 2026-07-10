@@ -383,6 +383,7 @@ MultisigAccountMaterial _accountMaterial({required String accountUuid}) {
     sessionId: 'session-1',
     participantId: 'participant-1',
     coordinatorUrl: 'https://coordinator.example',
+    network: 'regtest',
     rosterHash: 'roster',
     groupPublicPackageHash: 'group',
     threshold: 2,

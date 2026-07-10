@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `post_create_message_with_outbox`, `post_signing_body_to_selected`, `prepare_multisig_signing_request_inner`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ApiMultisigErrorBody`, `ApiMultisigErrorKind`, `LocalCreateState`, `LocalRosterParticipant`, `LocalSigningState`, `SigningInboxMessages`, `TxRequestBody`, `TxRound1Body`, `TxRound2Body`, `TxRoundActionMsg`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `map_verified_signing_request`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `post_create_message_with_outbox`, `post_signing_body_to_selected`, `prepare_multisig_signing_request_inner`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `single_output_review`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ApiMultisigErrorBody`, `ApiMultisigErrorKind`, `LocalCreateState`, `LocalRosterParticipant`, `LocalSigningState`, `SigningInboxMessages`, `SingleReviewOutput`, `TxRound1Body`, `TxRound2Body`, `TxRoundActionMsg`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 ApiMultisigThresholdParams validateMultisigThreshold({
   required int threshold,
@@ -235,6 +235,7 @@ Future<ApiMultisigCreateAdvance> advanceMultisigCreate({
 
 Future<ApiPreparedMultisigSigningRequest> prepareMultisigSigningRequest({
   required String coordinatorUrl,
+  required String network,
   required String sessionId,
   required String participantId,
   required String accessToken,
@@ -242,13 +243,10 @@ Future<ApiPreparedMultisigSigningRequest> prepareMultisigSigningRequest({
   required String requestSeed,
   required List<String> selectedParticipantIds,
   required List<int> pcztBytes,
-  required bool needsSaplingParams,
-  required String amountZatoshi,
-  required String feeZatoshi,
-  required String recipientAddress,
-  String? memo,
+  required String groupPublicPackageJson,
 }) => RustLib.instance.api.crateApiMultisigPrepareMultisigSigningRequest(
   coordinatorUrl: coordinatorUrl,
+  network: network,
   sessionId: sessionId,
   participantId: participantId,
   accessToken: accessToken,
@@ -256,11 +254,7 @@ Future<ApiPreparedMultisigSigningRequest> prepareMultisigSigningRequest({
   requestSeed: requestSeed,
   selectedParticipantIds: selectedParticipantIds,
   pcztBytes: pcztBytes,
-  needsSaplingParams: needsSaplingParams,
-  amountZatoshi: amountZatoshi,
-  feeZatoshi: feeZatoshi,
-  recipientAddress: recipientAddress,
-  memo: memo,
+  groupPublicPackageJson: groupPublicPackageJson,
 );
 
 Future<ApiMultisigSigningRequest> submitPreparedMultisigSigningRequest({
@@ -316,6 +310,7 @@ Future<ApiMultisigSigningRequest> getMultisigSigningRequest({
 
 Future<ApiMultisigSigningInbox> getMultisigSigningInbox({
   required String coordinatorUrl,
+  required String network,
   required String sessionId,
   required String participantId,
   required String accessToken,
@@ -325,6 +320,7 @@ Future<ApiMultisigSigningInbox> getMultisigSigningInbox({
   required PlatformInt64 after,
 }) => RustLib.instance.api.crateApiMultisigGetMultisigSigningInbox(
   coordinatorUrl: coordinatorUrl,
+  network: network,
   sessionId: sessionId,
   participantId: participantId,
   accessToken: accessToken,
@@ -348,6 +344,7 @@ Future<ApiMultisigSessionEvents> getMultisigSessionEvents({
 
 Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   required String coordinatorUrl,
+  required String network,
   required String sessionId,
   required String signingRequestId,
   required String participantId,
@@ -355,10 +352,14 @@ Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   required String rosterHash,
   required List<String> selectedParticipantIds,
   required List<int> pcztBytes,
+  required String groupPublicPackageJson,
+  required String expectedReviewDigest,
+  required String expectedRequesterParticipantId,
   required String keyPackageB64,
   String? localStateJson,
 }) => RustLib.instance.api.crateApiMultisigSubmitMultisigSigningRound1(
   coordinatorUrl: coordinatorUrl,
+  network: network,
   sessionId: sessionId,
   signingRequestId: signingRequestId,
   participantId: participantId,
@@ -366,6 +367,9 @@ Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   rosterHash: rosterHash,
   selectedParticipantIds: selectedParticipantIds,
   pcztBytes: pcztBytes,
+  groupPublicPackageJson: groupPublicPackageJson,
+  expectedReviewDigest: expectedReviewDigest,
+  expectedRequesterParticipantId: expectedRequesterParticipantId,
   keyPackageB64: keyPackageB64,
   localStateJson: localStateJson,
 );
@@ -982,6 +986,7 @@ class ApiMultisigSigningMessage {
   final String? toParticipantId;
   final String? relatedId;
   final String? plaintextJson;
+  final ApiVerifiedMultisigSigningRequest? verifiedSigningRequest;
   final String? decryptError;
   final BigInt createdAt;
 
@@ -994,6 +999,7 @@ class ApiMultisigSigningMessage {
     this.toParticipantId,
     this.relatedId,
     this.plaintextJson,
+    this.verifiedSigningRequest,
     this.decryptError,
     required this.createdAt,
   });
@@ -1008,6 +1014,7 @@ class ApiMultisigSigningMessage {
       toParticipantId.hashCode ^
       relatedId.hashCode ^
       plaintextJson.hashCode ^
+      verifiedSigningRequest.hashCode ^
       decryptError.hashCode ^
       createdAt.hashCode;
 
@@ -1024,6 +1031,7 @@ class ApiMultisigSigningMessage {
           toParticipantId == other.toParticipantId &&
           relatedId == other.relatedId &&
           plaintextJson == other.plaintextJson &&
+          verifiedSigningRequest == other.verifiedSigningRequest &&
           decryptError == other.decryptError &&
           createdAt == other.createdAt;
 }
@@ -1159,6 +1167,12 @@ class ApiPreparedMultisigSigningRequest {
   final String requestJson;
   final String idempotencyKey;
   final String pcztHash;
+  final String reviewDigest;
+  final String amountZatoshi;
+  final String feeZatoshi;
+  final String recipientAddress;
+  final String addressType;
+  final bool needsSaplingParams;
   final BigInt createdAt;
 
   const ApiPreparedMultisigSigningRequest({
@@ -1169,6 +1183,12 @@ class ApiPreparedMultisigSigningRequest {
     required this.requestJson,
     required this.idempotencyKey,
     required this.pcztHash,
+    required this.reviewDigest,
+    required this.amountZatoshi,
+    required this.feeZatoshi,
+    required this.recipientAddress,
+    required this.addressType,
+    required this.needsSaplingParams,
     required this.createdAt,
   });
 
@@ -1181,6 +1201,12 @@ class ApiPreparedMultisigSigningRequest {
       requestJson.hashCode ^
       idempotencyKey.hashCode ^
       pcztHash.hashCode ^
+      reviewDigest.hashCode ^
+      amountZatoshi.hashCode ^
+      feeZatoshi.hashCode ^
+      recipientAddress.hashCode ^
+      addressType.hashCode ^
+      needsSaplingParams.hashCode ^
       createdAt.hashCode;
 
   @override
@@ -1195,5 +1221,78 @@ class ApiPreparedMultisigSigningRequest {
           requestJson == other.requestJson &&
           idempotencyKey == other.idempotencyKey &&
           pcztHash == other.pcztHash &&
+          reviewDigest == other.reviewDigest &&
+          amountZatoshi == other.amountZatoshi &&
+          feeZatoshi == other.feeZatoshi &&
+          recipientAddress == other.recipientAddress &&
+          addressType == other.addressType &&
+          needsSaplingParams == other.needsSaplingParams &&
+          createdAt == other.createdAt;
+}
+
+class ApiVerifiedMultisigSigningRequest {
+  final String signingRequestId;
+  final String sessionId;
+  final String requesterParticipantId;
+  final List<String> selectedParticipantIds;
+  final String pcztB64;
+  final String pcztHash;
+  final String reviewDigest;
+  final String amountZatoshi;
+  final String feeZatoshi;
+  final String recipientAddress;
+  final String addressType;
+  final bool needsSaplingParams;
+  final BigInt createdAt;
+
+  const ApiVerifiedMultisigSigningRequest({
+    required this.signingRequestId,
+    required this.sessionId,
+    required this.requesterParticipantId,
+    required this.selectedParticipantIds,
+    required this.pcztB64,
+    required this.pcztHash,
+    required this.reviewDigest,
+    required this.amountZatoshi,
+    required this.feeZatoshi,
+    required this.recipientAddress,
+    required this.addressType,
+    required this.needsSaplingParams,
+    required this.createdAt,
+  });
+
+  @override
+  int get hashCode =>
+      signingRequestId.hashCode ^
+      sessionId.hashCode ^
+      requesterParticipantId.hashCode ^
+      selectedParticipantIds.hashCode ^
+      pcztB64.hashCode ^
+      pcztHash.hashCode ^
+      reviewDigest.hashCode ^
+      amountZatoshi.hashCode ^
+      feeZatoshi.hashCode ^
+      recipientAddress.hashCode ^
+      addressType.hashCode ^
+      needsSaplingParams.hashCode ^
+      createdAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVerifiedMultisigSigningRequest &&
+          runtimeType == other.runtimeType &&
+          signingRequestId == other.signingRequestId &&
+          sessionId == other.sessionId &&
+          requesterParticipantId == other.requesterParticipantId &&
+          selectedParticipantIds == other.selectedParticipantIds &&
+          pcztB64 == other.pcztB64 &&
+          pcztHash == other.pcztHash &&
+          reviewDigest == other.reviewDigest &&
+          amountZatoshi == other.amountZatoshi &&
+          feeZatoshi == other.feeZatoshi &&
+          recipientAddress == other.recipientAddress &&
+          addressType == other.addressType &&
+          needsSaplingParams == other.needsSaplingParams &&
           createdAt == other.createdAt;
 }

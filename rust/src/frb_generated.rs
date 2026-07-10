@@ -2330,6 +2330,7 @@ fn wire__crate__api__multisig__get_multisig_signing_inbox_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_participant_id = <String>::sse_decode(&mut deserializer);
             let api_access_token = <String>::sse_decode(&mut deserializer);
@@ -2342,6 +2343,7 @@ fn wire__crate__api__multisig__get_multisig_signing_inbox_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::multisig::get_multisig_signing_inbox(
                         api_coordinator_url,
+                        api_network,
                         api_session_id,
                         api_participant_id,
                         api_access_token,
@@ -3942,6 +3944,7 @@ fn wire__crate__api__multisig__prepare_multisig_signing_request_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_participant_id = <String>::sse_decode(&mut deserializer);
             let api_access_token = <String>::sse_decode(&mut deserializer);
@@ -3949,16 +3952,13 @@ fn wire__crate__api__multisig__prepare_multisig_signing_request_impl(
             let api_request_seed = <String>::sse_decode(&mut deserializer);
             let api_selected_participant_ids = <Vec<String>>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_needs_sapling_params = <bool>::sse_decode(&mut deserializer);
-            let api_amount_zatoshi = <String>::sse_decode(&mut deserializer);
-            let api_fee_zatoshi = <String>::sse_decode(&mut deserializer);
-            let api_recipient_address = <String>::sse_decode(&mut deserializer);
-            let api_memo = <Option<String>>::sse_decode(&mut deserializer);
+            let api_group_public_package_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::multisig::prepare_multisig_signing_request(
                         api_coordinator_url,
+                        api_network,
                         api_session_id,
                         api_participant_id,
                         api_access_token,
@@ -3966,11 +3966,7 @@ fn wire__crate__api__multisig__prepare_multisig_signing_request_impl(
                         api_request_seed,
                         api_selected_participant_ids,
                         api_pczt_bytes,
-                        api_needs_sapling_params,
-                        api_amount_zatoshi,
-                        api_fee_zatoshi,
-                        api_recipient_address,
-                        api_memo,
+                        api_group_public_package_json,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5278,6 +5274,7 @@ fn wire__crate__api__multisig__submit_multisig_signing_round1_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_coordinator_url = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             let api_session_id = <String>::sse_decode(&mut deserializer);
             let api_signing_request_id = <String>::sse_decode(&mut deserializer);
             let api_participant_id = <String>::sse_decode(&mut deserializer);
@@ -5285,6 +5282,9 @@ fn wire__crate__api__multisig__submit_multisig_signing_round1_impl(
             let api_roster_hash = <String>::sse_decode(&mut deserializer);
             let api_selected_participant_ids = <Vec<String>>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_group_public_package_json = <String>::sse_decode(&mut deserializer);
+            let api_expected_review_digest = <String>::sse_decode(&mut deserializer);
+            let api_expected_requester_participant_id = <String>::sse_decode(&mut deserializer);
             let api_key_package_b64 = <String>::sse_decode(&mut deserializer);
             let api_local_state_json = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -5292,6 +5292,7 @@ fn wire__crate__api__multisig__submit_multisig_signing_round1_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::multisig::submit_multisig_signing_round1(
                         api_coordinator_url,
+                        api_network,
                         api_session_id,
                         api_signing_request_id,
                         api_participant_id,
@@ -5299,6 +5300,9 @@ fn wire__crate__api__multisig__submit_multisig_signing_round1_impl(
                         api_roster_hash,
                         api_selected_participant_ids,
                         api_pczt_bytes,
+                        api_group_public_package_json,
+                        api_expected_review_digest,
+                        api_expected_requester_participant_id,
                         api_key_package_b64,
                         api_local_state_json,
                     )?;
@@ -6598,6 +6602,9 @@ impl SseDecode for crate::api::multisig::ApiMultisigSigningMessage {
         let mut var_toParticipantId = <Option<String>>::sse_decode(deserializer);
         let mut var_relatedId = <Option<String>>::sse_decode(deserializer);
         let mut var_plaintextJson = <Option<String>>::sse_decode(deserializer);
+        let mut var_verifiedSigningRequest = <Option<
+            crate::api::multisig::ApiVerifiedMultisigSigningRequest,
+        >>::sse_decode(deserializer);
         let mut var_decryptError = <Option<String>>::sse_decode(deserializer);
         let mut var_createdAt = <u64>::sse_decode(deserializer);
         return crate::api::multisig::ApiMultisigSigningMessage {
@@ -6609,6 +6616,7 @@ impl SseDecode for crate::api::multisig::ApiMultisigSigningMessage {
             to_participant_id: var_toParticipantId,
             related_id: var_relatedId,
             plaintext_json: var_plaintextJson,
+            verified_signing_request: var_verifiedSigningRequest,
             decrypt_error: var_decryptError,
             created_at: var_createdAt,
         };
@@ -6687,6 +6695,12 @@ impl SseDecode for crate::api::multisig::ApiPreparedMultisigSigningRequest {
         let mut var_requestJson = <String>::sse_decode(deserializer);
         let mut var_idempotencyKey = <String>::sse_decode(deserializer);
         let mut var_pcztHash = <String>::sse_decode(deserializer);
+        let mut var_reviewDigest = <String>::sse_decode(deserializer);
+        let mut var_amountZatoshi = <String>::sse_decode(deserializer);
+        let mut var_feeZatoshi = <String>::sse_decode(deserializer);
+        let mut var_recipientAddress = <String>::sse_decode(deserializer);
+        let mut var_addressType = <String>::sse_decode(deserializer);
+        let mut var_needsSaplingParams = <bool>::sse_decode(deserializer);
         let mut var_createdAt = <u64>::sse_decode(deserializer);
         return crate::api::multisig::ApiPreparedMultisigSigningRequest {
             signing_request_id: var_signingRequestId,
@@ -6696,6 +6710,12 @@ impl SseDecode for crate::api::multisig::ApiPreparedMultisigSigningRequest {
             request_json: var_requestJson,
             idempotency_key: var_idempotencyKey,
             pczt_hash: var_pcztHash,
+            review_digest: var_reviewDigest,
+            amount_zatoshi: var_amountZatoshi,
+            fee_zatoshi: var_feeZatoshi,
+            recipient_address: var_recipientAddress,
+            address_type: var_addressType,
+            needs_sapling_params: var_needsSaplingParams,
             created_at: var_createdAt,
         };
     }
@@ -6723,6 +6743,40 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
             is_complete: var_isComplete,
             has_new_tx: var_hasNewTx,
             phase: var_phase,
+        };
+    }
+}
+
+impl SseDecode for crate::api::multisig::ApiVerifiedMultisigSigningRequest {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_signingRequestId = <String>::sse_decode(deserializer);
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_requesterParticipantId = <String>::sse_decode(deserializer);
+        let mut var_selectedParticipantIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_pcztB64 = <String>::sse_decode(deserializer);
+        let mut var_pcztHash = <String>::sse_decode(deserializer);
+        let mut var_reviewDigest = <String>::sse_decode(deserializer);
+        let mut var_amountZatoshi = <String>::sse_decode(deserializer);
+        let mut var_feeZatoshi = <String>::sse_decode(deserializer);
+        let mut var_recipientAddress = <String>::sse_decode(deserializer);
+        let mut var_addressType = <String>::sse_decode(deserializer);
+        let mut var_needsSaplingParams = <bool>::sse_decode(deserializer);
+        let mut var_createdAt = <u64>::sse_decode(deserializer);
+        return crate::api::multisig::ApiVerifiedMultisigSigningRequest {
+            signing_request_id: var_signingRequestId,
+            session_id: var_sessionId,
+            requester_participant_id: var_requesterParticipantId,
+            selected_participant_ids: var_selectedParticipantIds,
+            pczt_b64: var_pcztB64,
+            pczt_hash: var_pcztHash,
+            review_digest: var_reviewDigest,
+            amount_zatoshi: var_amountZatoshi,
+            fee_zatoshi: var_feeZatoshi,
+            recipient_address: var_recipientAddress,
+            address_type: var_addressType,
+            needs_sapling_params: var_needsSaplingParams,
+            created_at: var_createdAt,
         };
     }
 }
@@ -7630,6 +7684,19 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::multisig::ApiVerifiedMultisigSigningRequest> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(
+                <crate::api::multisig::ApiVerifiedMultisigSigningRequest>::sse_decode(deserializer),
+            );
         } else {
             return None;
         }
@@ -9229,6 +9296,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiMultisigSigningM
             self.to_participant_id.into_into_dart().into_dart(),
             self.related_id.into_into_dart().into_dart(),
             self.plaintext_json.into_into_dart().into_dart(),
+            self.verified_signing_request.into_into_dart().into_dart(),
             self.decrypt_error.into_into_dart().into_dart(),
             self.created_at.into_into_dart().into_dart(),
         ]
@@ -9333,6 +9401,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiPreparedMultisig
             self.request_json.into_into_dart().into_dart(),
             self.idempotency_key.into_into_dart().into_dart(),
             self.pczt_hash.into_into_dart().into_dart(),
+            self.review_digest.into_into_dart().into_dart(),
+            self.amount_zatoshi.into_into_dart().into_dart(),
+            self.fee_zatoshi.into_into_dart().into_dart(),
+            self.recipient_address.into_into_dart().into_dart(),
+            self.address_type.into_into_dart().into_dart(),
+            self.needs_sapling_params.into_into_dart().into_dart(),
             self.created_at.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -9374,6 +9448,38 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncProgressEvent>
     for crate::api::sync::ApiSyncProgressEvent
 {
     fn into_into_dart(self) -> crate::api::sync::ApiSyncProgressEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::multisig::ApiVerifiedMultisigSigningRequest {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.signing_request_id.into_into_dart().into_dart(),
+            self.session_id.into_into_dart().into_dart(),
+            self.requester_participant_id.into_into_dart().into_dart(),
+            self.selected_participant_ids.into_into_dart().into_dart(),
+            self.pczt_b64.into_into_dart().into_dart(),
+            self.pczt_hash.into_into_dart().into_dart(),
+            self.review_digest.into_into_dart().into_dart(),
+            self.amount_zatoshi.into_into_dart().into_dart(),
+            self.fee_zatoshi.into_into_dart().into_dart(),
+            self.recipient_address.into_into_dart().into_dart(),
+            self.address_type.into_into_dart().into_dart(),
+            self.needs_sapling_params.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::multisig::ApiVerifiedMultisigSigningRequest
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::multisig::ApiVerifiedMultisigSigningRequest>
+    for crate::api::multisig::ApiVerifiedMultisigSigningRequest
+{
+    fn into_into_dart(self) -> crate::api::multisig::ApiVerifiedMultisigSigningRequest {
         self
     }
 }
@@ -11282,6 +11388,10 @@ impl SseEncode for crate::api::multisig::ApiMultisigSigningMessage {
         <Option<String>>::sse_encode(self.to_participant_id, serializer);
         <Option<String>>::sse_encode(self.related_id, serializer);
         <Option<String>>::sse_encode(self.plaintext_json, serializer);
+        <Option<crate::api::multisig::ApiVerifiedMultisigSigningRequest>>::sse_encode(
+            self.verified_signing_request,
+            serializer,
+        );
         <Option<String>>::sse_encode(self.decrypt_error, serializer);
         <u64>::sse_encode(self.created_at, serializer);
     }
@@ -11334,6 +11444,12 @@ impl SseEncode for crate::api::multisig::ApiPreparedMultisigSigningRequest {
         <String>::sse_encode(self.request_json, serializer);
         <String>::sse_encode(self.idempotency_key, serializer);
         <String>::sse_encode(self.pczt_hash, serializer);
+        <String>::sse_encode(self.review_digest, serializer);
+        <String>::sse_encode(self.amount_zatoshi, serializer);
+        <String>::sse_encode(self.fee_zatoshi, serializer);
+        <String>::sse_encode(self.recipient_address, serializer);
+        <String>::sse_encode(self.address_type, serializer);
+        <bool>::sse_encode(self.needs_sapling_params, serializer);
         <u64>::sse_encode(self.created_at, serializer);
     }
 }
@@ -11350,6 +11466,25 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
         <bool>::sse_encode(self.is_complete, serializer);
         <bool>::sse_encode(self.has_new_tx, serializer);
         <String>::sse_encode(self.phase, serializer);
+    }
+}
+
+impl SseEncode for crate::api::multisig::ApiVerifiedMultisigSigningRequest {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.signing_request_id, serializer);
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.requester_participant_id, serializer);
+        <Vec<String>>::sse_encode(self.selected_participant_ids, serializer);
+        <String>::sse_encode(self.pczt_b64, serializer);
+        <String>::sse_encode(self.pczt_hash, serializer);
+        <String>::sse_encode(self.review_digest, serializer);
+        <String>::sse_encode(self.amount_zatoshi, serializer);
+        <String>::sse_encode(self.fee_zatoshi, serializer);
+        <String>::sse_encode(self.recipient_address, serializer);
+        <String>::sse_encode(self.address_type, serializer);
+        <bool>::sse_encode(self.needs_sapling_params, serializer);
+        <u64>::sse_encode(self.created_at, serializer);
     }
 }
 
@@ -12015,6 +12150,18 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::multisig::ApiVerifiedMultisigSigningRequest> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::multisig::ApiVerifiedMultisigSigningRequest>::sse_encode(
+                value, serializer,
+            );
         }
     }
 }

@@ -769,6 +769,7 @@ final _multisigMaterial = MultisigAccountMaterial(
   sessionId: 'sess_test',
   participantId: 'part_bob',
   coordinatorUrl: 'http://localhost:8080',
+  network: 'regtest',
   rosterHash: 'roster',
   groupPublicPackageHash: 'group',
   threshold: 2,

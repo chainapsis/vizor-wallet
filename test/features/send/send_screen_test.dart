@@ -926,6 +926,7 @@ MultisigAccountMaterial _multisigMaterial() {
     sessionId: 'session-1',
     participantId: 'participant-1',
     coordinatorUrl: 'https://coordinator.example',
+    network: 'regtest',
     rosterHash: 'roster',
     groupPublicPackageHash: 'group',
     threshold: 2,

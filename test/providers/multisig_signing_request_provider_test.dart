@@ -285,6 +285,8 @@ void main() {
           .submitRound1(requestStore.records.single);
 
       expect(coordinator.round1Calls, ['signing-request|participant-1']);
+      expect(coordinator.round1ReviewDigests, ['review-digest']);
+      expect(coordinator.round1RequesterParticipantIds, ['participant-1']);
       expect(updated.localStateJson, '{"outbound":true}');
       expect(updated.round1ParticipantIds, isEmpty);
       expect(requestStore.records.single.localStateJson, '{"outbound":true}');
@@ -548,6 +550,45 @@ void main() {
 
       expect(requestStore.records.single.signingRequestId, 'signing-request');
       expect(cursorStore.cursors['session-1:participant-1']?.inboxCursor, 9);
+    },
+  );
+
+  test(
+    'inbox refresh cannot replace an existing signing request binding',
+    () async {
+      final original = _submittedRecord(signingRequestId: 'signing-request');
+      final requestStore = _FakeSigningRequestStore()..records = [original];
+      final materialStore = _FakeAccountMaterialStore()
+        ..put(_accountMaterial(accessTokenExpiresAt: 9999999999));
+      final cursorStore = _FakeRealtimeCursorStore();
+      final coordinator = _FakeCoordinatorService(
+        inboxCursor: 7,
+        inboxMessages: [
+          _txRequestMessage(
+            signingRequestId: 'signing-request',
+            requesterParticipantId: 'participant-2',
+            pcztB64: 'BAUG',
+            pcztHash: 'replacement-pczt-hash',
+          ),
+        ],
+      );
+      final container = _container(
+        requestStore: requestStore,
+        materialStore: materialStore,
+        coordinatorService: coordinator,
+        cursorStore: cursorStore,
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(multisigSigningRequestsProvider.notifier)
+          .refreshForAccount('account-1');
+
+      final stored = requestStore.records.single;
+      expect(stored.requesterParticipantId, original.requesterParticipantId);
+      expect(stored.pcztB64, original.pcztB64);
+      expect(stored.pcztHash, original.pcztHash);
+      expect(cursorStore.cursors['session-1:participant-1']?.inboxCursor, 7);
     },
   );
 
@@ -1026,6 +1067,8 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   final inboxCalls = <String>[];
   final round1Calls = <String>[];
   final round1AccessTokens = <String>[];
+  final round1ReviewDigests = <String>[];
+  final round1RequesterParticipantIds = <String>[];
   final round2Calls = <String>[];
   final aggregateCalls = <String>[];
   final refreshCalls = <String>[];
@@ -1062,6 +1105,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   Future<rust_multisig.ApiPreparedMultisigSigningRequest>
   prepareSigningRequest({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -1069,11 +1113,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String requestSeed,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
-    required bool needsSaplingParams,
-    required String amountZatoshi,
-    required String feeZatoshi,
-    required String recipientAddress,
-    String? memo,
+    required String groupPublicPackageJson,
   }) async {
     prepareCalls.add('$sessionId|$participantId|$requestSeed');
     if (failPrepareOnce) {
@@ -1088,6 +1128,12 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
       requestJson: '{"request":true}',
       idempotencyKey: 'idempotency',
       pcztHash: 'pczt-hash',
+      reviewDigest: 'review-digest',
+      amountZatoshi: '1000',
+      feeZatoshi: '100',
+      recipientAddress: 'u1recipient',
+      addressType: 'unified',
+      needsSaplingParams: false,
       createdAt: BigInt.from(42),
     );
   }
@@ -1192,6 +1238,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   @override
   Future<rust_multisig.ApiMultisigSigningInbox> getSigningInbox({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -1212,6 +1259,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   @override
   Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String signingRequestId,
     required String participantId,
@@ -1219,11 +1267,16 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     required String rosterHash,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    required String expectedReviewDigest,
+    required String expectedRequesterParticipantId,
     required String keyPackageB64,
     String? localStateJson,
   }) async {
     round1Calls.add('$signingRequestId|$participantId');
     round1AccessTokens.add(accessToken);
+    round1ReviewDigests.add(expectedReviewDigest);
+    round1RequesterParticipantIds.add(expectedRequesterParticipantId);
     if (failRound1UnauthorizedOnce && accessToken == 'access-token') {
       failRound1UnauthorizedOnce = false;
       return rust_multisig.ApiMultisigSigningAdvance(
@@ -1304,6 +1357,7 @@ MultisigAccountMaterial _accountMaterial({
     sessionId: 'session-1',
     participantId: 'participant-1',
     coordinatorUrl: 'https://coordinator.example',
+    network: 'regtest',
     rosterHash: 'roster',
     groupPublicPackageHash: 'group',
     threshold: 2,
@@ -1355,6 +1409,7 @@ MultisigSigningRequestRecord _preparedRecord({required String sendFlowId}) {
     selectedParticipantIds: const <String>['participant-1', 'participant-2'],
     pcztB64: 'AQID',
     pcztHash: 'pczt-hash',
+    reviewDigest: 'review-digest',
     needsSaplingParams: false,
     amountZatoshi: '1000',
     feeZatoshi: '100',
@@ -1382,6 +1437,7 @@ MultisigSigningRequestRecord _submittedRecord({
     selectedParticipantIds: const <String>['participant-1', 'participant-2'],
     pcztB64: 'AQID',
     pcztHash: 'pczt-hash',
+    reviewDigest: 'review-digest',
     needsSaplingParams: false,
     amountZatoshi: '1000',
     feeZatoshi: '100',
@@ -1396,31 +1452,33 @@ MultisigSigningRequestRecord _submittedRecord({
 
 rust_multisig.ApiMultisigSigningMessage _txRequestMessage({
   required String signingRequestId,
+  String requesterParticipantId = 'participant-1',
+  String pcztB64 = 'AQID',
+  String pcztHash = 'pczt-hash',
 }) {
   return rust_multisig.ApiMultisigSigningMessage(
     cursor: 1,
     messageId: 'message-1',
     sessionId: 'session-1',
     kind: 'tx_request',
-    fromParticipantId: 'participant-1',
+    fromParticipantId: requesterParticipantId,
     toParticipantId: 'participant-1',
     relatedId: signingRequestId,
-    plaintextJson: jsonEncode({
-      'version': 1,
-      'kind': 'tx_request',
-      'signingRequestId': signingRequestId,
-      'sessionId': 'session-1',
-      'requesterParticipantId': 'participant-1',
-      'selectedParticipantIds': ['participant-1', 'participant-2'],
-      'pcztB64': 'AQID',
-      'pcztHash': 'pczt-hash',
-      'needsSaplingParams': false,
-      'amountZatoshi': '1000',
-      'feeZatoshi': '100',
-      'recipientAddress': 'u1recipient',
-      'addressType': 'unified',
-      'createdAt': 42,
-    }),
+    verifiedSigningRequest: rust_multisig.ApiVerifiedMultisigSigningRequest(
+      signingRequestId: signingRequestId,
+      sessionId: 'session-1',
+      requesterParticipantId: requesterParticipantId,
+      selectedParticipantIds: const ['participant-1', 'participant-2'],
+      pcztB64: pcztB64,
+      pcztHash: pcztHash,
+      reviewDigest: 'review-digest',
+      amountZatoshi: '1000',
+      feeZatoshi: '100',
+      recipientAddress: 'u1recipient',
+      addressType: 'unified',
+      needsSaplingParams: false,
+      createdAt: BigInt.from(42),
+    ),
     createdAt: BigInt.from(43),
   );
 }

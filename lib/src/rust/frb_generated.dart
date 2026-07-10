@@ -470,6 +470,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<ApiMultisigSigningInbox> crateApiMultisigGetMultisigSigningInbox({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -737,6 +738,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ApiPreparedMultisigSigningRequest>
   crateApiMultisigPrepareMultisigSigningRequest({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -744,11 +746,7 @@ abstract class RustLibApi extends BaseApi {
     required String requestSeed,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
-    required bool needsSaplingParams,
-    required String amountZatoshi,
-    required String feeZatoshi,
-    required String recipientAddress,
-    String? memo,
+    required String groupPublicPackageJson,
   });
 
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
@@ -971,6 +969,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ApiMultisigSigningAdvance>
   crateApiMultisigSubmitMultisigSigningRound1({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String signingRequestId,
     required String participantId,
@@ -978,6 +977,9 @@ abstract class RustLibApi extends BaseApi {
     required String rosterHash,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    required String expectedReviewDigest,
+    required String expectedRequesterParticipantId,
     required String keyPackageB64,
     String? localStateJson,
   });
@@ -3553,6 +3555,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<ApiMultisigSigningInbox> crateApiMultisigGetMultisigSigningInbox({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -3566,6 +3569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(coordinatorUrl, serializer);
+          sse_encode_String(network, serializer);
           sse_encode_String(sessionId, serializer);
           sse_encode_String(participantId, serializer);
           sse_encode_String(accessToken, serializer);
@@ -3587,6 +3591,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiMultisigGetMultisigSigningInboxConstMeta,
         argValues: [
           coordinatorUrl,
+          network,
           sessionId,
           participantId,
           accessToken,
@@ -3605,6 +3610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "get_multisig_signing_inbox",
         argNames: [
           "coordinatorUrl",
+          "network",
           "sessionId",
           "participantId",
           "accessToken",
@@ -5222,6 +5228,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ApiPreparedMultisigSigningRequest>
   crateApiMultisigPrepareMultisigSigningRequest({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String participantId,
     required String accessToken,
@@ -5229,17 +5236,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String requestSeed,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
-    required bool needsSaplingParams,
-    required String amountZatoshi,
-    required String feeZatoshi,
-    required String recipientAddress,
-    String? memo,
+    required String groupPublicPackageJson,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(coordinatorUrl, serializer);
+          sse_encode_String(network, serializer);
           sse_encode_String(sessionId, serializer);
           sse_encode_String(participantId, serializer);
           sse_encode_String(accessToken, serializer);
@@ -5247,11 +5251,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(requestSeed, serializer);
           sse_encode_list_String(selectedParticipantIds, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
-          sse_encode_bool(needsSaplingParams, serializer);
-          sse_encode_String(amountZatoshi, serializer);
-          sse_encode_String(feeZatoshi, serializer);
-          sse_encode_String(recipientAddress, serializer);
-          sse_encode_opt_String(memo, serializer);
+          sse_encode_String(groupPublicPackageJson, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5266,6 +5266,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiMultisigPrepareMultisigSigningRequestConstMeta,
         argValues: [
           coordinatorUrl,
+          network,
           sessionId,
           participantId,
           accessToken,
@@ -5273,11 +5274,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           requestSeed,
           selectedParticipantIds,
           pcztBytes,
-          needsSaplingParams,
-          amountZatoshi,
-          feeZatoshi,
-          recipientAddress,
-          memo,
+          groupPublicPackageJson,
         ],
         apiImpl: this,
       ),
@@ -5289,6 +5286,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "prepare_multisig_signing_request",
         argNames: [
           "coordinatorUrl",
+          "network",
           "sessionId",
           "participantId",
           "accessToken",
@@ -5296,11 +5294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "requestSeed",
           "selectedParticipantIds",
           "pcztBytes",
-          "needsSaplingParams",
-          "amountZatoshi",
-          "feeZatoshi",
-          "recipientAddress",
-          "memo",
+          "groupPublicPackageJson",
         ],
       );
 
@@ -6701,6 +6695,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ApiMultisigSigningAdvance>
   crateApiMultisigSubmitMultisigSigningRound1({
     required String coordinatorUrl,
+    required String network,
     required String sessionId,
     required String signingRequestId,
     required String participantId,
@@ -6708,6 +6703,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String rosterHash,
     required List<String> selectedParticipantIds,
     required List<int> pcztBytes,
+    required String groupPublicPackageJson,
+    required String expectedReviewDigest,
+    required String expectedRequesterParticipantId,
     required String keyPackageB64,
     String? localStateJson,
   }) {
@@ -6716,6 +6714,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(coordinatorUrl, serializer);
+          sse_encode_String(network, serializer);
           sse_encode_String(sessionId, serializer);
           sse_encode_String(signingRequestId, serializer);
           sse_encode_String(participantId, serializer);
@@ -6723,6 +6722,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rosterHash, serializer);
           sse_encode_list_String(selectedParticipantIds, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
+          sse_encode_String(groupPublicPackageJson, serializer);
+          sse_encode_String(expectedReviewDigest, serializer);
+          sse_encode_String(expectedRequesterParticipantId, serializer);
           sse_encode_String(keyPackageB64, serializer);
           sse_encode_opt_String(localStateJson, serializer);
           pdeCallFfi(
@@ -6739,6 +6741,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiMultisigSubmitMultisigSigningRound1ConstMeta,
         argValues: [
           coordinatorUrl,
+          network,
           sessionId,
           signingRequestId,
           participantId,
@@ -6746,6 +6749,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           rosterHash,
           selectedParticipantIds,
           pcztBytes,
+          groupPublicPackageJson,
+          expectedReviewDigest,
+          expectedRequesterParticipantId,
           keyPackageB64,
           localStateJson,
         ],
@@ -6759,6 +6765,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "submit_multisig_signing_round1",
         argNames: [
           "coordinatorUrl",
+          "network",
           "sessionId",
           "signingRequestId",
           "participantId",
@@ -6766,6 +6773,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "rosterHash",
           "selectedParticipantIds",
           "pcztBytes",
+          "groupPublicPackageJson",
+          "expectedReviewDigest",
+          "expectedRequesterParticipantId",
           "keyPackageB64",
           "localStateJson",
         ],
@@ -7708,8 +7718,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ApiMultisigSigningMessage(
       cursor: dco_decode_i_64(arr[0]),
       messageId: dco_decode_String(arr[1]),
@@ -7719,8 +7729,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       toParticipantId: dco_decode_opt_String(arr[5]),
       relatedId: dco_decode_opt_String(arr[6]),
       plaintextJson: dco_decode_opt_String(arr[7]),
-      decryptError: dco_decode_opt_String(arr[8]),
-      createdAt: dco_decode_u_64(arr[9]),
+      verifiedSigningRequest:
+          dco_decode_opt_box_autoadd_api_verified_multisig_signing_request(
+            arr[8],
+          ),
+      decryptError: dco_decode_opt_String(arr[9]),
+      createdAt: dco_decode_u_64(arr[10]),
     );
   }
 
@@ -7782,8 +7796,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_api_prepared_multisig_signing_request(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return ApiPreparedMultisigSigningRequest(
       signingRequestId: dco_decode_String(arr[0]),
       sessionId: dco_decode_String(arr[1]),
@@ -7792,7 +7806,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       requestJson: dco_decode_String(arr[4]),
       idempotencyKey: dco_decode_String(arr[5]),
       pcztHash: dco_decode_String(arr[6]),
-      createdAt: dco_decode_u_64(arr[7]),
+      reviewDigest: dco_decode_String(arr[7]),
+      amountZatoshi: dco_decode_String(arr[8]),
+      feeZatoshi: dco_decode_String(arr[9]),
+      recipientAddress: dco_decode_String(arr[10]),
+      addressType: dco_decode_String(arr[11]),
+      needsSaplingParams: dco_decode_bool(arr[12]),
+      createdAt: dco_decode_u_64(arr[13]),
     );
   }
 
@@ -7812,6 +7832,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isComplete: dco_decode_bool(arr[6]),
       hasNewTx: dco_decode_bool(arr[7]),
       phase: dco_decode_String(arr[8]),
+    );
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  dco_decode_api_verified_multisig_signing_request(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    return ApiVerifiedMultisigSigningRequest(
+      signingRequestId: dco_decode_String(arr[0]),
+      sessionId: dco_decode_String(arr[1]),
+      requesterParticipantId: dco_decode_String(arr[2]),
+      selectedParticipantIds: dco_decode_list_String(arr[3]),
+      pcztB64: dco_decode_String(arr[4]),
+      pcztHash: dco_decode_String(arr[5]),
+      reviewDigest: dco_decode_String(arr[6]),
+      amountZatoshi: dco_decode_String(arr[7]),
+      feeZatoshi: dco_decode_String(arr[8]),
+      recipientAddress: dco_decode_String(arr[9]),
+      addressType: dco_decode_String(arr[10]),
+      needsSaplingParams: dco_decode_bool(arr[11]),
+      createdAt: dco_decode_u_64(arr[12]),
     );
   }
 
@@ -7894,6 +7938,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  dco_decode_box_autoadd_api_verified_multisig_signing_request(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_api_verified_multisig_signing_request(raw);
   }
 
   @protected
@@ -8558,6 +8609,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest?
+  dco_decode_opt_box_autoadd_api_verified_multisig_signing_request(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_api_verified_multisig_signing_request(raw);
   }
 
   @protected
@@ -9757,6 +9819,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_toParticipantId = sse_decode_opt_String(deserializer);
     var var_relatedId = sse_decode_opt_String(deserializer);
     var var_plaintextJson = sse_decode_opt_String(deserializer);
+    var var_verifiedSigningRequest =
+        sse_decode_opt_box_autoadd_api_verified_multisig_signing_request(
+          deserializer,
+        );
     var var_decryptError = sse_decode_opt_String(deserializer);
     var var_createdAt = sse_decode_u_64(deserializer);
     return ApiMultisigSigningMessage(
@@ -9768,6 +9834,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       toParticipantId: var_toParticipantId,
       relatedId: var_relatedId,
       plaintextJson: var_plaintextJson,
+      verifiedSigningRequest: var_verifiedSigningRequest,
       decryptError: var_decryptError,
       createdAt: var_createdAt,
     );
@@ -9851,6 +9918,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_requestJson = sse_decode_String(deserializer);
     var var_idempotencyKey = sse_decode_String(deserializer);
     var var_pcztHash = sse_decode_String(deserializer);
+    var var_reviewDigest = sse_decode_String(deserializer);
+    var var_amountZatoshi = sse_decode_String(deserializer);
+    var var_feeZatoshi = sse_decode_String(deserializer);
+    var var_recipientAddress = sse_decode_String(deserializer);
+    var var_addressType = sse_decode_String(deserializer);
+    var var_needsSaplingParams = sse_decode_bool(deserializer);
     var var_createdAt = sse_decode_u_64(deserializer);
     return ApiPreparedMultisigSigningRequest(
       signingRequestId: var_signingRequestId,
@@ -9860,6 +9933,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       requestJson: var_requestJson,
       idempotencyKey: var_idempotencyKey,
       pcztHash: var_pcztHash,
+      reviewDigest: var_reviewDigest,
+      amountZatoshi: var_amountZatoshi,
+      feeZatoshi: var_feeZatoshi,
+      recipientAddress: var_recipientAddress,
+      addressType: var_addressType,
+      needsSaplingParams: var_needsSaplingParams,
       createdAt: var_createdAt,
     );
   }
@@ -9888,6 +9967,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isComplete: var_isComplete,
       hasNewTx: var_hasNewTx,
       phase: var_phase,
+    );
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  sse_decode_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_signingRequestId = sse_decode_String(deserializer);
+    var var_sessionId = sse_decode_String(deserializer);
+    var var_requesterParticipantId = sse_decode_String(deserializer);
+    var var_selectedParticipantIds = sse_decode_list_String(deserializer);
+    var var_pcztB64 = sse_decode_String(deserializer);
+    var var_pcztHash = sse_decode_String(deserializer);
+    var var_reviewDigest = sse_decode_String(deserializer);
+    var var_amountZatoshi = sse_decode_String(deserializer);
+    var var_feeZatoshi = sse_decode_String(deserializer);
+    var var_recipientAddress = sse_decode_String(deserializer);
+    var var_addressType = sse_decode_String(deserializer);
+    var var_needsSaplingParams = sse_decode_bool(deserializer);
+    var var_createdAt = sse_decode_u_64(deserializer);
+    return ApiVerifiedMultisigSigningRequest(
+      signingRequestId: var_signingRequestId,
+      sessionId: var_sessionId,
+      requesterParticipantId: var_requesterParticipantId,
+      selectedParticipantIds: var_selectedParticipantIds,
+      pcztB64: var_pcztB64,
+      pcztHash: var_pcztHash,
+      reviewDigest: var_reviewDigest,
+      amountZatoshi: var_amountZatoshi,
+      feeZatoshi: var_feeZatoshi,
+      recipientAddress: var_recipientAddress,
+      addressType: var_addressType,
+      needsSaplingParams: var_needsSaplingParams,
+      createdAt: var_createdAt,
     );
   }
 
@@ -9984,6 +10099,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest
+  sse_decode_box_autoadd_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_api_verified_multisig_signing_request(deserializer));
   }
 
   @protected
@@ -10902,6 +11026,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ApiVerifiedMultisigSigningRequest?
+  sse_decode_opt_box_autoadd_api_verified_multisig_signing_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_api_verified_multisig_signing_request(
+        deserializer,
+      ));
     } else {
       return null;
     }
@@ -12199,6 +12339,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.toParticipantId, serializer);
     sse_encode_opt_String(self.relatedId, serializer);
     sse_encode_opt_String(self.plaintextJson, serializer);
+    sse_encode_opt_box_autoadd_api_verified_multisig_signing_request(
+      self.verifiedSigningRequest,
+      serializer,
+    );
     sse_encode_opt_String(self.decryptError, serializer);
     sse_encode_u_64(self.createdAt, serializer);
   }
@@ -12259,6 +12403,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.requestJson, serializer);
     sse_encode_String(self.idempotencyKey, serializer);
     sse_encode_String(self.pcztHash, serializer);
+    sse_encode_String(self.reviewDigest, serializer);
+    sse_encode_String(self.amountZatoshi, serializer);
+    sse_encode_String(self.feeZatoshi, serializer);
+    sse_encode_String(self.recipientAddress, serializer);
+    sse_encode_String(self.addressType, serializer);
+    sse_encode_bool(self.needsSaplingParams, serializer);
     sse_encode_u_64(self.createdAt, serializer);
   }
 
@@ -12277,6 +12427,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isComplete, serializer);
     sse_encode_bool(self.hasNewTx, serializer);
     sse_encode_String(self.phase, serializer);
+  }
+
+  @protected
+  void sse_encode_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.signingRequestId, serializer);
+    sse_encode_String(self.sessionId, serializer);
+    sse_encode_String(self.requesterParticipantId, serializer);
+    sse_encode_list_String(self.selectedParticipantIds, serializer);
+    sse_encode_String(self.pcztB64, serializer);
+    sse_encode_String(self.pcztHash, serializer);
+    sse_encode_String(self.reviewDigest, serializer);
+    sse_encode_String(self.amountZatoshi, serializer);
+    sse_encode_String(self.feeZatoshi, serializer);
+    sse_encode_String(self.recipientAddress, serializer);
+    sse_encode_String(self.addressType, serializer);
+    sse_encode_bool(self.needsSaplingParams, serializer);
+    sse_encode_u_64(self.createdAt, serializer);
   }
 
   @protected
@@ -12349,6 +12520,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_verified_multisig_signing_request(self, serializer);
   }
 
   @protected
@@ -13147,6 +13327,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_verified_multisig_signing_request(
+    ApiVerifiedMultisigSigningRequest? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_api_verified_multisig_signing_request(
+        self,
+        serializer,
+      );
     }
   }
 

@@ -1643,6 +1643,7 @@ class _FakeSigningRequestsNotifier extends MultisigSigningRequestsNotifier {
       sessionId: 'session-1',
       participantId: 'participant-alice',
       coordinatorUrl: 'http://localhost:8080',
+      network: 'regtest',
       rosterHash: 'roster',
       groupPublicPackageHash: 'group',
       threshold: 2,

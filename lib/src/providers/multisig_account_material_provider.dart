@@ -47,6 +47,7 @@ class MultisigAccountMaterial {
     required this.sessionId,
     required this.participantId,
     required this.coordinatorUrl,
+    required this.network,
     required this.rosterHash,
     required this.groupPublicPackageHash,
     required this.threshold,
@@ -69,6 +70,7 @@ class MultisigAccountMaterial {
   final String sessionId;
   final String participantId;
   final String coordinatorUrl;
+  final String network;
   final String rosterHash;
   final String groupPublicPackageHash;
   final int threshold;
@@ -104,6 +106,7 @@ class MultisigAccountMaterial {
       sessionId: sessionId,
       participantId: participantId,
       coordinatorUrl: coordinatorUrl,
+      network: network,
       rosterHash: rosterHash,
       groupPublicPackageHash: groupPublicPackageHash,
       threshold: threshold,
@@ -132,6 +135,7 @@ class MultisigAccountMaterial {
     'sessionId': sessionId,
     'participantId': participantId,
     'coordinatorUrl': coordinatorUrl,
+    'network': network,
     'rosterHash': rosterHash,
     'groupPublicPackageHash': groupPublicPackageHash,
     'threshold': threshold,
@@ -168,6 +172,7 @@ class MultisigAccountMaterial {
       sessionId: _readRequiredString(json, 'sessionId'),
       participantId: _readRequiredString(json, 'participantId'),
       coordinatorUrl: _readRequiredString(json, 'coordinatorUrl'),
+      network: _readRequiredString(json, 'network'),
       rosterHash: _readRequiredString(json, 'rosterHash'),
       groupPublicPackageHash: _readRequiredString(
         json,
