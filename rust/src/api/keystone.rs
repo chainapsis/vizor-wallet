@@ -145,19 +145,24 @@ fn sig_result_to_api(
     })
 }
 
-/// Decode the Postcard payload returned from a compact
-/// `zcash-batch-sig-result` UR into flat FRB structs. The wallet-layer decode
-/// validates the upstream PCZT wire types; the application supplies the current
-/// request and ordered message ids to correlate the ordered signature lists.
+/// Decode the CBOR payload returned from a compact `zcash-batch-sig-result` UR
+/// into flat FRB structs. The echoed request id is checked before the ordered
+/// signature lists are correlated with the application's ordered message ids.
 pub fn decode_zcash_batch_sign_response(
-    postcard: Vec<u8>,
-    request_id: String,
+    cbor: Vec<u8>,
+    expected_request_id: String,
     message_ids: Vec<String>,
 ) -> Result<KeystoneSigResult, String> {
-    let decoded = keystone::decode_zcash_batch_sign_response(&postcard)?;
+    if expected_request_id.is_empty() {
+        return Err("Expected Zcash batch request id must not be empty".to_string());
+    }
+    let (request_id, decoded) = keystone::decode_zcash_batch_sign_response(&cbor)?;
+    if request_id != expected_request_id.as_bytes() {
+        return Err("Keystone batch result request id does not match the request".to_string());
+    }
     sig_result_to_api(
         decoded,
-        request_id.into_bytes(),
+        request_id,
         message_ids.into_iter().map(String::into_bytes).collect(),
     )
 }
@@ -248,6 +253,47 @@ pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn encoded_compact_response(request_id: &str) -> Vec<u8> {
+        use pczt::roles::signer::batch::BatchSignResponse;
+
+        let postcard = BatchSignResponse::new(vec![vec![]]).serialize().unwrap();
+        ur_registry::zcash::zcash_batch_sig_result::ZcashBatchSigResult::new(
+            request_id.as_bytes().to_vec(),
+            postcard,
+        )
+        .try_into()
+        .unwrap()
+    }
+
+    #[test]
+    fn compact_response_validates_echoed_request_id() {
+        let decoded = decode_zcash_batch_sign_response(
+            encoded_compact_response("request-1"),
+            "request-1".to_string(),
+            vec!["message-1".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(decoded.request_id, b"request-1");
+        assert_eq!(decoded.results[0].message_id, b"message-1");
+    }
+
+    #[test]
+    fn compact_response_rejects_wrong_request_id_before_mapping() {
+        let error = decode_zcash_batch_sign_response(
+            encoded_compact_response("stale-request"),
+            "request-1".to_string(),
+            vec!["message-1".to_string()],
+        )
+        .err()
+        .unwrap();
+
+        assert_eq!(
+            error,
+            "Keystone batch result request id does not match the request"
+        );
+    }
 
     #[test]
     fn compact_response_uses_application_correlation_in_request_order() {

@@ -3523,6 +3523,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "thiserror-core"
+version = "1.0.50"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c001ee18b7e5e3f62cbf58c7fe220119e68d902bb7443179c0c8aef30090e999"
+dependencies = [
+ "thiserror-core-impl",
+]
+
+[[package]]
+name = "thiserror-core-impl"
+version = "1.0.50"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4c60d69f36615a077cc7663b9cb8e42275722d23e58a7fa3d2c7f2915d09d04"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3876,8 +3896,8 @@ dependencies = [
 
 [[package]]
 name = "ur-registry"
-version = "1.0.4"
-source = "git+https://github.com/KeystoneHQ/keystone-sdk-rust#063bc798a6e94b6ff19e61e0084d94cf9b56b13e"
+version = "1.0.5"
+source = "git+https://github.com/valargroup/keystone-sdk-rust.git?rev=7a6910511cb26ac7f18f924b281a0da15552ebb1#7a6910511cb26ac7f18f924b281a0da15552ebb1"
 dependencies = [
  "bs58",
  "hex",
@@ -3891,6 +3911,7 @@ dependencies = [
  "prost-types 0.11.9",
  "serde",
  "thiserror 1.0.69",
+ "thiserror-core",
 ]
 
 [[package]]

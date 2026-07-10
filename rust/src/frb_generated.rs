@@ -1083,15 +1083,15 @@ fn wire__crate__api__keystone__decode_zcash_batch_sign_response_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_postcard = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_request_id = <String>::sse_decode(&mut deserializer);
+            let api_cbor = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_expected_request_id = <String>::sse_decode(&mut deserializer);
             let api_message_ids = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::keystone::decode_zcash_batch_sign_response(
-                        api_postcard,
-                        api_request_id,
+                        api_cbor,
+                        api_expected_request_id,
                         api_message_ids,
                     )?;
                     Ok(output_ok)

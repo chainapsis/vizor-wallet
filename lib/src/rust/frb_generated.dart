@@ -275,8 +275,8 @@ abstract class RustLibApi extends BaseApi {
   Future<Uint8List> crateApiKeystoneDecodeUrToPczt({required String urString});
 
   Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
-    required List<int> postcard,
-    required String requestId,
+    required List<int> cbor,
+    required String expectedRequestId,
     required List<String> messageIds,
   });
 
@@ -2159,16 +2159,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
-    required List<int> postcard,
-    required String requestId,
+    required List<int> cbor,
+    required String expectedRequestId,
     required List<String> messageIds,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_list_prim_u_8_loose(postcard, serializer);
-          sse_encode_String(requestId, serializer);
+          sse_encode_list_prim_u_8_loose(cbor, serializer);
+          sse_encode_String(expectedRequestId, serializer);
           sse_encode_list_String(messageIds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -2182,7 +2182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta,
-        argValues: [postcard, requestId, messageIds],
+        argValues: [cbor, expectedRequestId, messageIds],
         apiImpl: this,
       ),
     );
@@ -2191,7 +2191,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta =>
       const TaskConstMeta(
         debugName: "decode_zcash_batch_sign_response",
-        argNames: ["postcard", "requestId", "messageIds"],
+        argNames: ["cbor", "expectedRequestId", "messageIds"],
       );
 
   @override

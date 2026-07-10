@@ -680,9 +680,13 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
         return;
       }
       final resultRequestId = _decodeKeystoneId(result.requestId);
-      if (resultRequestId != request.requestId) {
+      final expectedResultRequestId = _keystoneChunkRequestId(
+        request,
+        chunkIndex,
+      );
+      if (resultRequestId != expectedResultRequestId) {
         throw _KeystoneMigrationError(
-          'Signed result is for $resultRequestId, expected ${request.requestId}.',
+          'Signed result is for $resultRequestId, expected $expectedResultRequestId.',
         );
       }
       final signedMessages = result.results
@@ -1009,7 +1013,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   ) {
     final messages = _keystoneChunkMessages(request, chunkIndex);
     return rust_keystone.encodeZcashSignBatchUrParts(
-      requestId: request.requestId,
+      requestId: _keystoneChunkRequestId(request, chunkIndex),
       messages: messages
           .map(
             (message) => rust_keystone_wallet.ZcashBatchMessageInput(
@@ -1035,8 +1039,8 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     switch (signedQr.urType) {
       case _keystoneBatchSigResultUrType:
         return rust_keystone.decodeZcashBatchSignResponse(
-          postcard: signedQr.cbor,
-          requestId: request.requestId,
+          cbor: signedQr.cbor,
+          expectedRequestId: _keystoneChunkRequestId(request, chunkIndex),
           messageIds: _keystoneChunkMessages(
             request,
             chunkIndex,
@@ -1063,6 +1067,17 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     } on FormatException {
       return idBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     }
+  }
+
+  /// The migration request id identifies the whole operation, while each QR
+  /// chunk is a separate batch request/result exchange. Include the one-based
+  /// chunk number so a delayed result from another chunk cannot be accepted.
+  String _keystoneChunkRequestId(
+    rust_sync.KeystoneMigrationSigningRequest request,
+    int chunkIndex,
+  ) {
+    _keystoneChunkMessages(request, chunkIndex);
+    return '${request.requestId}:batch-${chunkIndex + 1}';
   }
 
   List<rust_sync.KeystoneSignedMigrationMessage> _validateKeystoneSignedChunk({

@@ -148,7 +148,8 @@ features = [
 ]
 
 [dependencies.ur-registry]
-git = "https://github.com/KeystoneHQ/keystone-sdk-rust"
+git = "https://github.com/valargroup/keystone-sdk-rust.git"
+rev = "7a6910511cb26ac7f18f924b281a0da15552ebb1"
 package = "ur-registry"
 default-features = false
 features = ["std"]
