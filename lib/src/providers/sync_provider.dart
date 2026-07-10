@@ -34,6 +34,8 @@ class SyncState {
   final bool isBackgroundMode;
   final double percentage;
   final double displayPercentage;
+  final double displayTargetPercentage;
+  final int displayTargetBlocks;
   final int scannedHeight;
   final int chainTipHeight;
   final BigInt transparentBalance;
@@ -80,6 +82,8 @@ class SyncState {
     this.isBackgroundMode = false,
     this.percentage = 0,
     double? displayPercentage,
+    double? displayTargetPercentage,
+    this.displayTargetBlocks = 0,
     this.scannedHeight = 0,
     this.chainTipHeight = 0,
     BigInt? transparentBalance,
@@ -104,6 +108,7 @@ class SyncState {
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
        displayPercentage = displayPercentage ?? percentage,
+       displayTargetPercentage = displayTargetPercentage ?? percentage,
        transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
@@ -124,6 +129,8 @@ class SyncState {
     bool? isBackgroundMode,
     double? percentage,
     double? displayPercentage,
+    double? displayTargetPercentage,
+    int? displayTargetBlocks,
     int? scannedHeight,
     int? chainTipHeight,
     BigInt? transparentBalance,
@@ -159,6 +166,9 @@ class SyncState {
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
       percentage: percentage ?? this.percentage,
       displayPercentage: displayPercentage ?? this.displayPercentage,
+      displayTargetPercentage:
+          displayTargetPercentage ?? this.displayTargetPercentage,
+      displayTargetBlocks: displayTargetBlocks ?? this.displayTargetBlocks,
       scannedHeight: scannedHeight ?? this.scannedHeight,
       chainTipHeight: chainTipHeight ?? this.chainTipHeight,
       transparentBalance: transparentBalance ?? this.transparentBalance,
@@ -209,6 +219,8 @@ class SyncState {
       isBackgroundMode: isBackgroundMode,
       percentage: percentage,
       displayPercentage: displayPercentage,
+      displayTargetPercentage: displayTargetPercentage,
+      displayTargetBlocks: displayTargetBlocks,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       failure: failure,
@@ -1055,6 +1067,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: _bgDelegate.isActive,
         percentage: 1.0,
         displayPercentage: 1.0,
+        displayTargetPercentage: 1.0,
+        displayTargetBlocks: 0,
         scannedHeight: scannedHeight,
         chainTipHeight: chainTipHeight,
         lastSyncStartedAt: prev?.lastSyncStartedAt ?? completedAt,
@@ -1430,6 +1444,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
+        displayTargetPercentage: event.displayTargetPercentage,
+        displayTargetBlocks: event.displayTargetBlocks,
         scannedHeight: event.scannedHeight,
         chainTipHeight: event.chainTipHeight,
         transparentBalance: useFetchedAccountData
@@ -1616,6 +1632,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         percentage: current?.percentage ?? 0.0,
         displayPercentage:
             current?.displayPercentage ?? current?.percentage ?? 0.0,
+        displayTargetPercentage:
+            current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
+        displayTargetBlocks: current?.displayTargetBlocks ?? 0,
         scannedHeight: current?.scannedHeight ?? 0,
         chainTipHeight: current?.chainTipHeight ?? 0,
         transparentBalance: transparent ?? accountFallback?.transparentBalance,

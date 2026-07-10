@@ -21,16 +21,15 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
-/// Phase 1 scope: the grouped list renders with live values, but only
-/// the theme row is interactive; the remaining rows enable as their
-/// mobile flows ship (secret passphrase needs the FaceID/screenshot
-/// guards, password/endpoint/address book need their own screens).
+/// Rows share the grouped-list pattern; each row owns its navigation or
+/// toggle behavior as the corresponding mobile flow ships.
 class MobileSettingsScreen extends ConsumerWidget {
   const MobileSettingsScreen({super.key});
 
@@ -45,9 +44,8 @@ class MobileSettingsScreen extends ConsumerWidget {
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
-    final settingsRowStyle = AppTypography.labelLarge.copyWith(
-      fontWeight: FontWeight.w400,
-    );
+    final syncKeepAwake = ref.watch(syncKeepAwakeProvider);
+    const settingsRowStyle = AppTypography.labelLarge;
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
     final seedPhraseEnabled = account != null && !account.isHardware;
@@ -167,6 +165,17 @@ class MobileSettingsScreen extends ConsumerWidget {
                       onTap: () => context.push('/settings/address-book'),
                     ),
                   ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _SyncKeepAwakeSettingsCard(
+                  enabled: syncKeepAwake.enabled,
+                  onToggle: () => unawaited(
+                    _toggleSyncKeepAwake(
+                      context,
+                      ref,
+                      enabled: syncKeepAwake.enabled,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
@@ -357,6 +366,19 @@ class MobileSettingsScreen extends ConsumerWidget {
       await ref.read(themeModeProvider.notifier).set(selected);
     }
   }
+
+  Future<void> _toggleSyncKeepAwake(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool enabled,
+  }) async {
+    try {
+      await ref.read(syncKeepAwakeProvider.notifier).setEnabled(!enabled);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppToast(context, "Couldn't update screen awake setting.");
+    }
+  }
 }
 
 /// Compact confirmation sheet for disabling biometric unlock. Mirrors the
@@ -458,13 +480,148 @@ class _SettingsGroup extends StatelessWidget {
             child: Text(
               title,
               style: AppTypography.labelLarge.copyWith(
-                fontWeight: FontWeight.w400,
                 color: context.colors.text.secondary,
               ),
             ),
           ),
           ...rows,
         ],
+      ),
+    );
+  }
+}
+
+class _SyncKeepAwakeSettingsCard extends StatelessWidget {
+  const _SyncKeepAwakeSettingsCard({
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  static const _description =
+      'Keep the screen active while Vizor is syncing. This will make long '
+      'syncs easier. For security, the screen will lock with passcode after '
+      '1 minute of inactivity.';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileSurfaceCard(
+      cornerRadius: AppRadii.large,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Text(
+              'Syncing',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            toggled: enabled,
+            label: 'Keep screen awake',
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_settings_sync_keep_awake_row'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggle,
+              child: SizedBox(
+                height: _settingsRowHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox.square(
+                        dimension: 32,
+                        child: Center(child: _RowIcon(AppIcons.day)),
+                      ),
+                      const SizedBox(width: AppSpacing.s),
+                      Expanded(
+                        child: Text(
+                          'Keep screen awake',
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      _SyncKeepAwakeToggle(
+                        key: const ValueKey(
+                          'mobile_settings_sync_keep_awake_toggle',
+                        ),
+                        enabled: enabled,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            _description,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncKeepAwakeToggle extends StatelessWidget {
+  const _SyncKeepAwakeToggle({required this.enabled, super.key});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final trackColor = enabled
+        ? colors.background.brandCrimsonStrong
+        : colors.background.raised;
+    final borderColor = enabled
+        ? colors.border.brandCrimsonStrong
+        : colors.border.regular;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+      width: 64,
+      height: 28,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: trackColor,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+        border: Border.all(color: borderColor),
+      ),
+      child: AnimatedAlign(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
+        child: DecoratedBox(
+          key: const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFFFF),
+            borderRadius: BorderRadius.circular(AppRadii.full),
+          ),
+          child: const SizedBox(width: 40, height: 24),
+        ),
       ),
     );
   }

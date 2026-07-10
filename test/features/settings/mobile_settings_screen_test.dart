@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
@@ -88,16 +89,46 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   }
 }
 
+class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
+  _FakeSyncKeepAwakeNotifier([
+    this.initialState = const SyncKeepAwakeSettings(
+      enabled: false,
+      promptSeen: false,
+    ),
+  ]);
+
+  final SyncKeepAwakeSettings initialState;
+  bool? lastEnabled;
+  bool? lastMarkPromptSeen;
+
+  @override
+  SyncKeepAwakeSettings build() => initialState;
+
+  @override
+  Future<void> setEnabled(bool enabled, {bool markPromptSeen = true}) async {
+    lastEnabled = enabled;
+    lastMarkPromptSeen = markPromptSeen;
+    state = state.copyWith(
+      enabled: enabled,
+      promptSeen: markPromptSeen ? true : null,
+    );
+  }
+}
+
 Widget _app({
   AccountState accountState = _accountState,
   BiometricUnlockState? biometric,
   BiometricUnlockNotifier Function()? biometricNotifier,
+  _FakeSyncKeepAwakeNotifier? syncKeepAwakeNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      syncKeepAwakeProvider.overrideWith(
+        () => syncKeepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier(),
+      ),
       if (biometricNotifier != null)
         biometricUnlockProvider.overrideWith(biometricNotifier)
       else if (biometric != null)
@@ -149,6 +180,22 @@ void main() {
     );
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
+    expect(find.text('Syncing'), findsOneWidget);
+    final keepAwakeRow = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_row'),
+    );
+    expect(keepAwakeRow, findsOneWidget);
+    expect(
+      find.descendant(
+        of: keepAwakeRow,
+        matching: find.text('Keep screen awake'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Keep the screen active while Vizor is syncing'),
+      findsOneWidget,
+    );
     // The About entry stays hidden until the legal documents are ready.
     expect(find.text('About Vizor'), findsNothing);
     // Endpoint shows the live RPC host:port.
@@ -236,11 +283,75 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
   });
 
+  testWidgets('sync keep-awake row toggles the persisted setting', (
+    tester,
+  ) async {
+    final notifier = _FakeSyncKeepAwakeNotifier();
+    await tester.pumpWidget(_app(syncKeepAwakeNotifier: notifier));
+    await tester.pump();
+
+    final row = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_row'),
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Keep screen awake')),
+      findsOneWidget,
+    );
+    final thumb = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+    );
+    final track = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle'),
+    );
+    final offThumbLeft = tester.getTopLeft(thumb).dx;
+    final trackCenterX = tester.getCenter(track).dx;
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(notifier.lastEnabled, isTrue);
+    expect(notifier.lastMarkPromptSeen, isTrue);
+    expect(tester.getTopLeft(thumb).dx, greaterThan(offThumbLeft));
+    expect(tester.getCenter(thumb).dx, greaterThan(trackCenterX));
+  });
+
+  testWidgets('sync keep-awake row reflects persisted enabled state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        syncKeepAwakeNotifier: _FakeSyncKeepAwakeNotifier(
+          const SyncKeepAwakeSettings(enabled: true, promptSeen: true),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_row'),
+    );
+    final thumb = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+    );
+    final track = find.byKey(
+      const ValueKey('mobile_settings_sync_keep_awake_toggle'),
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Keep screen awake')),
+      findsOneWidget,
+    );
+    expect(tester.getCenter(thumb).dx, greaterThan(tester.getCenter(track).dx));
+  });
+
   testWidgets('every settings row renders active', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
-    for (final label in ['Contacts', 'Secret Passphrase']) {
+    for (final label in [
+      'Contacts',
+      'Secret Passphrase',
+      'Keep screen awake',
+    ]) {
       final row = tester.widget<Text>(find.text(label));
       expect(
         row.style?.color,

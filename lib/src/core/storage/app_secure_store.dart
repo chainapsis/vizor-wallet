@@ -21,6 +21,8 @@ import '../../rust/api/secret.dart' as rust_secret;
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
 const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
+const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
+const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
