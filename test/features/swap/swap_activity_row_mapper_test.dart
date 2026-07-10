@@ -146,6 +146,65 @@ void main() {
     expect(row!.childRows, isEmpty);
   });
 
+  testWidgets('unsuccessful Pay rows show a debit only after deposit', (
+    tester,
+  ) async {
+    late List<ActivityRowData> rows;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              SwapActivityRowItem item(
+                SwapIntentStatus status, {
+                bool deposited = true,
+              }) {
+                return SwapActivityRowItem(
+                  intentId: 'pay-${status.name}-$deposited',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '4.0000 ZEC',
+                  receiveEstimateText: '100.00 USDC',
+                  status: status,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  depositWalletTxidHex: deposited
+                      ? 'wallet-order-deposit'
+                      : null,
+                  payMode: true,
+                  activityTimestamp: null,
+                );
+              }
+
+              rows = [
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.failed),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.incompleteDeposit),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.failed, deposited: false),
+                ),
+              ];
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows.map((row) => row.amountText), [
+      '-4.0000 ZEC',
+      '-4.0000 ZEC',
+      '100.00 USDC',
+    ]);
+  });
+
   testWidgets('mobile swap activity rows compact large amounts', (
     tester,
   ) async {

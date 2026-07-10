@@ -262,7 +262,16 @@ String _payActivityAmountText(
       maskLength: _swapActivityAmountPrivacyMaskLength,
     );
   }
-  final amount = item.receiveEstimateText.trim();
+  final showsDepositDebit =
+      (item.depositWalletTxidHex?.trim().isNotEmpty ?? false) &&
+      (item.status == SwapIntentStatus.failed ||
+          item.status == SwapIntentStatus.incompleteDeposit);
+  final amount = showsDepositDebit
+      ? item.sellAmountText.trim()
+      : item.receiveEstimateText.trim();
+  if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
+    return '-$amount';
+  }
   return amount.isEmpty ? '--' : amount;
 }
 
