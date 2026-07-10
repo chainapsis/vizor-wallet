@@ -929,11 +929,30 @@ class SwapNotifier extends Notifier<SwapState> {
         : intent.oneClickRefundTo ?? '';
     final inputAmountText = retryingPay ? receiveAmountText : sellAmountText;
     if (inputAmountText.isEmpty || destinationText.isEmpty) return;
+    final supportedAssets = state.supportedExternalAssets;
+    final selectedExternalAsset = retryingPay
+        ? supportedAssets.isEmpty
+              ? externalAsset
+              : _supportedAssetFor(externalAsset, supportedAssets) ??
+                    _supportedAssetFor(
+                      ref.read(paySelectedAssetProvider),
+                      supportedAssets,
+                    ) ??
+                    _supportedAssetFor(
+                      PaySelectedAssetNotifier.defaultAsset,
+                      supportedAssets,
+                    ) ??
+                    supportedAssets.first
+        : externalAsset;
+    if (retryingPay) {
+      ref.read(paySelectedAssetProvider.notifier).select(selectedExternalAsset);
+      unawaited(_persistPaySelectedAsset(selectedExternalAsset));
+    }
 
     _quoteGeneration++;
     state = state.copyWith(
       direction: direction,
-      externalAsset: externalAsset,
+      externalAsset: selectedExternalAsset,
       quoteMode: retryingPay
           ? SwapQuoteMode.exactOutput
           : _inputQuoteModeForDirection(direction),

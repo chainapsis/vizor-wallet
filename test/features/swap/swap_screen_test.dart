@@ -775,15 +775,21 @@ void main() {
           nextAction: 'Start a fresh quote',
         ).copyWith(
           sellAmount: '2.45125 ZEC',
-          receiveEstimate: '990 USDC',
+          receiveEstimate: '4 SOL',
+          externalAsset: SwapAsset.sol,
           payMode: true,
         );
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [payIntent],
+      initialPayAsset: SwapAsset.usdc,
+    );
 
     await tester.pumpWidget(
       _routerHarness(
         router,
         seedSwapActivityFixtures: false,
-        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        sessionStore: sessionStore,
+        priceRefreshInterval: const Duration(seconds: 1),
       ),
     );
     await _pumpUntilPresent(tester, find.text('Restart swap'));
@@ -799,9 +805,17 @@ void main() {
     );
     final state = container.read(swapStateProvider);
     expect(state.payMode, isTrue);
-    expect(state.externalAsset, SwapAsset.usdc);
-    expect(state.receiveAmountText, '990');
+    expect(state.externalAsset, SwapAsset.sol);
+    expect(state.receiveAmountText, '4');
     expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    expect(sessionStore.savedPayAsset, SwapAsset.sol);
   });
 
   testWidgets('swap status summary shows the captured fiat from the mapper', (
