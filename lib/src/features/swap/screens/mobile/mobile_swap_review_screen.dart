@@ -43,6 +43,7 @@ class _MobileSwapReviewScreenState
     extends ConsumerState<MobileSwapReviewScreen> {
   var _hadReviewState = false;
   var _startingIntent = false;
+  var _startIntentInFlight = false;
   SwapState? _startingReviewSnapshot;
   var _keystoneSigningReviewInactive = false;
   Timer? _expiryTimer;
@@ -135,16 +136,25 @@ class _MobileSwapReviewScreenState
   }
 
   void _startIntent() {
+    if (_startIntentInFlight) return;
     unawaited(() async {
       final reviewSnapshot = ref.read(swapStateProvider);
-      if (!_startingIntent) {
-        setState(() {
+      setState(() {
+        _startIntentInFlight = true;
+        if (!_startingIntent) {
           _startingIntent = true;
           _startingReviewSnapshot = reviewSnapshot;
           _keystoneSigningReviewInactive = false;
-        });
+        }
+      });
+      SwapStartResult? result;
+      try {
+        result = await ref.read(swapStateProvider.notifier).startIntent();
+      } finally {
+        if (mounted) {
+          setState(() => _startIntentInFlight = false);
+        }
       }
-      final result = await ref.read(swapStateProvider.notifier).startIntent();
       if (!mounted) return;
       if (result == null) {
         setState(() {
@@ -304,14 +314,14 @@ class _MobileSwapReviewScreenState
           )
         : null;
 
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
         child: Column(
           children: [
             MobileTopNav.back(
               title: widget.payMode ? 'Review Payment' : 'Review quote',
-              onBack: _returnToSwap,
+              onBack: _startIntentInFlight ? null : _returnToSwap,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -422,5 +432,6 @@ class _MobileSwapReviewScreenState
         ),
       ),
     );
+    return PopScope<void>(canPop: !_startIntentInFlight, child: content);
   }
 }

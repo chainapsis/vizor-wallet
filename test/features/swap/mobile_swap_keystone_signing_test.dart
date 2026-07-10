@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -563,10 +564,14 @@ void main() {
       ],
     );
 
+    late _DelayedReviewStartSwapNotifier swapNotifier;
     await tester.pumpWidget(
       _app(
         router,
-        swapNotifier: () => _ReviewStartSwapNotifier(_hardwareIntent),
+        swapNotifier: () {
+          swapNotifier = _DelayedReviewStartSwapNotifier(_hardwareIntent);
+          return swapNotifier;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -574,6 +579,14 @@ void main() {
     expect(find.text('Confirm & pay'), findsOneWidget);
 
     await tester.tap(find.text('Confirm & pay'));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_swap_keystone_sign_route')),
+      findsNothing,
+    );
+
+    swapNotifier.completeStart();
     await tester.pumpAndSettle();
 
     expect(
@@ -901,6 +914,20 @@ class _ReviewStartSwapNotifier extends SwapNotifier {
   void clearPendingKeystoneSigningIntent(String intentId) {
     if (intentId == intent.id) pendingCleared = true;
     state = state.copyWith(clearPendingKeystoneSigningIntent: true);
+  }
+}
+
+class _DelayedReviewStartSwapNotifier extends _ReviewStartSwapNotifier {
+  _DelayedReviewStartSwapNotifier(super.intent);
+
+  final _startCompleter = Completer<void>();
+
+  void completeStart() => _startCompleter.complete();
+
+  @override
+  Future<SwapStartResult?> startIntent() async {
+    await _startCompleter.future;
+    return super.startIntent();
   }
 }
 

@@ -295,7 +295,7 @@ class MobilePayReviewActions extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             expand: true,
             constrainContent: true,
-            onPressed: onCancel,
+            onPressed: starting ? null : onCancel,
             child: const Text('Cancel'),
           ),
         ],
