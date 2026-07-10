@@ -11,7 +11,7 @@ use zcash_client_backend::{
         chain::{self, error::Error as ChainError, scan_cached_blocks},
         scanning::{ScanPriority, ScanRange},
         wallet::ConfirmationsPolicy,
-        WalletCommitmentTrees, WalletRead, WalletWrite,
+        TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletWrite,
     },
     proto::service,
 };
@@ -53,7 +53,7 @@ pub(crate) mod mempool;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
-use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
+use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN, REWIND_DISTANCE};
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, next_stream_message, open_lwd_channel, send_transaction,
@@ -85,14 +85,18 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
 
-// Each prefetched batch performs a compact-block stream plus boundary
-// tree-state validation. A depth greater than one therefore multiplies
-// lightwalletd RPC pressure without improving scan throughput on the
-// single-threaded mobile runtime. Keep one look-ahead by default; operators
-// can opt into a deeper queue after measuring their endpoint and memory
-// budget, or set it to zero to disable prefetching entirely.
+// Desktop uses one look-ahead batch. Mobile sync can run on a current-thread
+// Tokio runtime (notably the iOS background FFI), where a spawned network task
+// cannot make progress while scan_cached_blocks is executing synchronously;
+// defaulting prefetch off avoids extra RPC and memory pressure there.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const PREFETCH_DEPTH_FOREGROUND: usize = 1;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const PREFETCH_DEPTH_FOREGROUND: usize = 0;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const PREFETCH_DEPTH_BACKGROUND: usize = 1;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const PREFETCH_DEPTH_BACKGROUND: usize = 0;
 
 /// The resident-memory estimate applies a conservative multiplier to the
 /// encoded compact-block size to account for decoded vectors and allocations.
@@ -103,7 +107,9 @@ const PREFETCH_SANDBLASTING_WIRE_BYTES_PER_BLOCK: u64 = 90 * 1024;
 const PREFETCH_RESIDENT_BUDGET: u64 = 128 * 1024 * 1024;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const PREFETCH_RESIDENT_BUDGET: u64 = 32 * 1024 * 1024;
-const RESUBMIT_EVERY_BATCHES: u64 = 16;
+const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const STATUS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const RESUBMIT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(120);
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
@@ -182,30 +188,22 @@ fn effective_prefetch_depth(running_mode: u8) -> usize {
     } else {
         PREFETCH_DEPTH_FOREGROUND
     };
-    env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 0, 16) as usize
+    env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 0, 1) as usize
 }
 
-fn effective_resubmit_every() -> u64 {
-    env_override_clamped(
-        "ZCASH_SYNC_RESUBMIT_EVERY",
-        RESUBMIT_EVERY_BATCHES,
-        1,
-        u64::MAX,
-    )
-}
-
-fn should_run_post_batch_passes(
-    batch_found_tx: bool,
-    is_last_batch_of_range: bool,
-    batch_index: u64,
-    every: u64,
-) -> bool {
-    batch_found_tx || is_last_batch_of_range || batch_index % every.max(1) == 0
+fn effective_resubmit_interval() -> std::time::Duration {
+    std::time::Duration::from_secs(env_override_clamped(
+        "ZCASH_SYNC_RESUBMIT_INTERVAL_SECS",
+        RESUBMIT_INTERVAL.as_secs(),
+        10,
+        3_600,
+    ))
 }
 
 fn can_spawn_prefetch(
     queued_batches: usize,
     depth: usize,
+    current_wire_bytes: u64,
     queued_blocks: u64,
     next_batch_blocks: u64,
     estimated_wire_bytes_per_block: u64,
@@ -214,17 +212,14 @@ fn can_spawn_prefetch(
     if queued_batches >= depth {
         return false;
     }
-    // Preserve at least one look-ahead batch even when the preceding batch
-    // was unusually large. The chain's sandblasting batch cap bounds that
-    // single-batch overshoot.
-    if queued_batches == 0 {
-        return true;
-    }
-    queued_blocks
-        .saturating_add(next_batch_blocks)
-        .saturating_mul(estimated_wire_bytes_per_block)
+    current_wire_bytes
+        .saturating_add(
+            queued_blocks
+                .saturating_add(next_batch_blocks)
+                .saturating_mul(estimated_wire_bytes_per_block),
+        )
         .saturating_mul(PREFETCH_DECODED_MEMORY_FACTOR)
-        < resident_budget
+        <= resident_budget
 }
 
 fn prefetch_wire_floor(start: BlockHeight) -> u64 {
@@ -236,11 +231,41 @@ fn prefetch_wire_floor(start: BlockHeight) -> u64 {
     }
 }
 
+fn memory_bounded_batch_size(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    estimated_wire_bytes_per_block: u64,
+    resident_budget: u64,
+) -> u32 {
+    let protocol_cap = batch_size_for_range(base_batch_size, start, range_end);
+    let bytes_per_block = estimated_wire_bytes_per_block.max(prefetch_wire_floor(start));
+    let estimated_resident_per_block =
+        bytes_per_block.saturating_mul(PREFETCH_DECODED_MEMORY_FACTOR);
+    let memory_cap = if estimated_resident_per_block == 0 {
+        protocol_cap
+    } else {
+        (resident_budget / estimated_resident_per_block).clamp(1, u64::from(u32::MAX)) as u32
+    };
+    protocol_cap.min(memory_cap)
+}
+
 struct DownloadedBatch {
     block_source: block_source::MemoryBlockSource,
     from_state: chain::ChainState,
     canonical_end_hash_at_fetch: BlockHash,
     synthetic_start_anchor: bool,
+}
+
+#[derive(Clone, Copy)]
+enum EndValidationMode {
+    /// Validate the downloaded last block against a concurrently fetched
+    /// canonical end state before returning.
+    Immediate,
+    /// Defer the canonical end-state lookup until the prefetched batch is
+    /// consumed. This removes one redundant tree-state RPC per prefetched
+    /// batch while retaining a fresh fork check immediately before scan.
+    Deferred,
 }
 
 fn compact_hash(bytes: &[u8], context: &str) -> Result<BlockHash, String> {
@@ -618,12 +643,12 @@ fn ensure_complete_scan_state(
         )));
     };
 
-    if db_tip_height < current_tip_height {
+    if db_tip_height != current_tip_height {
         return Err(SyncError::continuity(
             current_tip_height,
             format!(
                 "sync completion blocked: wallet DB chain tip {db_tip_height} \
-                 lags lightwalletd tip {current_tip_height}"
+                 does not equal lightwalletd tip {current_tip_height}"
             ),
         ));
     }
@@ -639,6 +664,68 @@ fn ensure_complete_scan_state(
     }
 
     Ok((fully_scanned_height, db_tip_height))
+}
+
+fn rewind_for_canonical_tip_mismatch(
+    db: &mut WalletDatabase,
+    remote_tip: BlockHeight,
+) -> Result<u64, SyncError> {
+    let mismatch_height = u32::from(remote_tip) as u64;
+    let requested = BlockHeight::from_u32(
+        u32::from(remote_tip).saturating_sub(u32::try_from(REWIND_DISTANCE).unwrap_or(10)),
+    );
+    let actual = with_wallet_db_write_lock(
+        "sync_engine.truncate_to_height.canonical_tip_mismatch",
+        || {
+            match db.truncate_to_height(requested) {
+            Ok(height) => Ok(height),
+            Err(SqliteClientError::RequestedRewindInvalid {
+                safe_rewind_height: Some(safe),
+                ..
+            }) => db.truncate_to_height(safe).map_err(|e| {
+                SyncError::db(format!(
+                    "truncate_to_height({safe}) after canonical tip mismatch: {e}"
+                ))
+            }),
+            Err(e) if is_sqlite_lock_contention(&e) => Err(SyncError::other(format!(
+                "truncate_to_height({requested}) after canonical tip mismatch: SQLite lock contention: {e}"
+            ))),
+            Err(e) => Err(SyncError::db(format!(
+                "truncate_to_height({requested}) after canonical tip mismatch: {e}"
+            ))),
+        }
+        },
+    )?;
+
+    let ranges = with_wallet_db_write_lock(
+        "sync_engine.update_chain_tip.canonical_tip_mismatch",
+        || -> Result<Vec<ScanRange>, SyncError> {
+            db.update_chain_tip(remote_tip).map_err(|e| {
+                SyncError::db(format!(
+                    "update_chain_tip({mismatch_height}) after canonical mismatch: {e}"
+                ))
+            })?;
+            db.suggest_scan_ranges().map_err(|e| {
+                SyncError::db(format!(
+                    "suggest_scan_ranges after canonical tip mismatch: {e}"
+                ))
+            })
+        },
+    )?;
+    let pending = pending_scan_blocks(&ranges);
+    log::warn!(
+        "[{}] sync: canonical tip mismatch rewound wallet to {} and queued {} block(s)",
+        elapsed(),
+        u32::from(actual),
+        pending,
+    );
+    if u32::from(actual) < u32::from(remote_tip) && pending == 0 {
+        return Err(SyncError::continuity(
+            mismatch_height,
+            "canonical tip rewind produced no pending scan ranges",
+        ));
+    }
+    Ok(pending)
 }
 
 fn queue_witness_repairs_if_needed(
@@ -1385,20 +1472,14 @@ async fn run_sync_impl(
     let mut verify_phase_announced = false;
     let mut main_phase_announced = false;
 
-    /// If the scan loop has been running longer than this without
-    /// refreshing the chain tip from lightwalletd, we re-fetch
-    /// the tip and call `update_chain_tip` so that
-    /// `suggest_scan_ranges` incorporates any new blocks that
-    /// appeared while the wallet was catching up.
-    ///
-    /// Matches zcash-android-wallet-sdk's
-    /// `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
-    /// (CompactBlockProcessor.kt:1197). We don't restart the
-    /// whole sync like the SDK does — just refreshing the tip is
-    /// enough because our `suggest_scan_ranges` call at the top
-    /// of each loop iteration already reflects the new tip once
-    /// `update_chain_tip` has written it to the DB.
-    const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+    // If the scan loop has been running longer than the configured interval without
+    // refreshing the chain tip from lightwalletd, we re-fetch
+    // the tip and call `update_chain_tip` so that
+    // `suggest_scan_ranges` incorporates any new blocks that
+    // appeared while the wallet was catching up.
+    //
+    // We don't restart the whole sync like the Android SDK does; refreshing
+    // the tip is enough because suggest_scan_ranges observes it immediately.
     let mut last_tip_refresh = std::time::Instant::now();
 
     type PrefetchResult = Result<DownloadedBatch, SyncError>;
@@ -1415,17 +1496,23 @@ async fn run_sync_impl(
         }
     }
     let prefetch_depth = effective_prefetch_depth(running_mode);
+    let batch_resident_budget = if prefetch_depth > 0 {
+        PREFETCH_RESIDENT_BUDGET / 2
+    } else {
+        PREFETCH_RESIDENT_BUDGET
+    };
     let mut prefetch: VecDeque<Prefetch> = VecDeque::new();
     let mut estimated_wire_bytes_per_block = 0u64;
     let mut fetch_wait_total = std::time::Duration::ZERO;
     let mut fetch_batches = 0u64;
     let mut stale_prefetches = 0u64;
-    let resubmit_every = effective_resubmit_every();
+    let resubmit_interval = effective_resubmit_interval();
+    let mut last_resubmit = std::time::Instant::now();
+    let mut last_status_poll = std::time::Instant::now();
     let mut resubmit_total = std::time::Duration::ZERO;
     let mut resubmit_passes = 0u64;
     let mut enhancement_total = std::time::Duration::ZERO;
     let mut enhancement_passes = 0u64;
-    let mut final_enhancement_drain_needed = true;
     log::info!(
         "[{}] sync: prefetch depth={}, resident budget={} MiB",
         elapsed(),
@@ -1516,15 +1603,71 @@ async fn run_sync_impl(
                     prefetch.clear();
                     continue;
                 } else {
-                    // The resubmit/tip-refresh pass is intentionally
-                    // cadence-gated during long quiet scans. Before claiming
-                    // completion, obtain an authoritative tip once more so a
-                    // block mined since the last cadence tick cannot be
-                    // silently omitted from the scan queue.
+                    // Completion barrier: drain transaction enhancement first,
+                    // then verify the remote canonical (height, hash) against
+                    // the wallet DB immediately before emitting completion.
+                    let should_exit = || {
+                        cancel.load(Ordering::Relaxed)
+                            || desired_mode.load(Ordering::SeqCst) != running_mode
+                    };
+                    let enhancement_start = std::time::Instant::now();
+                    let final_outcome =
+                        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
+                            .await?;
+                    enhancement_total += enhancement_start.elapsed();
+                    enhancement_passes += 1;
+                    if should_exit() {
+                        log::info!(
+                            "[{}] sync: exiting during final enhancement pass",
+                            elapsed()
+                        );
+                        return Ok(());
+                    }
+                    if final_outcome.stored > 0 {
+                        log::info!(
+                            "[{}] sync: final enhancement pass stored {} transaction(s)",
+                            elapsed(),
+                            final_outcome.stored,
+                        );
+                    }
+                    if let Some(error) = final_outcome.failure {
+                        return Err(error);
+                    }
+                    if !final_outcome.drained {
+                        return Err(SyncError::other(
+                            "final transaction enhancement queue contains actionable work",
+                        ));
+                    }
+
                     let final_tip = get_latest_block(&mut client).await?;
                     let final_tip_height =
                         block_height_from_u64(final_tip.height, "final lightwalletd tip height")?;
                     let final_tip_height_u64 = u32::from(final_tip_height) as u64;
+                    let final_tip_hash = compact_hash(&final_tip.hash, "final lightwalletd tip")
+                        .map_err(SyncError::parse)?;
+                    let summary = wallet_summary_heights(&db)?;
+                    let local_db_tip = summary.map(|(_, tip)| tip);
+                    let local_hash = db
+                        .get_block_hash(final_tip_height)
+                        .map_err(|e| SyncError::db(format!("get final wallet block hash: {e}")))?;
+
+                    let local_covers_remote = local_db_tip
+                        .map(|height| height >= final_tip_height_u64)
+                        .unwrap_or(false);
+                    let canonical_mismatch = local_db_tip
+                        .map(|height| height > final_tip_height_u64)
+                        .unwrap_or(false)
+                        || (local_covers_remote && local_hash != Some(final_tip_hash));
+                    if canonical_mismatch {
+                        let pending = rewind_for_canonical_tip_mismatch(&mut db, final_tip_height)?;
+                        current_tip_height = final_tip_height_u64;
+                        initial_total = pending;
+                        prev_remaining = pending;
+                        force_witness_check_this_run = true;
+                        prefetch.clear();
+                        continue;
+                    }
+
                     if final_tip_height_u64 != current_tip_height {
                         with_wallet_db_write_lock(
                             "sync_engine.update_chain_tip.completion_refresh",
@@ -1537,7 +1680,7 @@ async fn run_sync_impl(
                             },
                         )?;
                         log::info!(
-                            "[{}] sync: completion tip advanced {} -> {}; rescanning newly queued ranges",
+                            "[{}] sync: completion tip changed {} -> {}; rescanning newly queued ranges",
                             elapsed(),
                             current_tip_height,
                             final_tip_height_u64,
@@ -1586,7 +1729,13 @@ async fn run_sync_impl(
         // making scan_cached_blocks much slower per block and
         // using more memory. Matches the SDK's
         // `SANDBLASTING_RANGE` check.
-        let batch_size = batch_size_for_range(base_batch_size, start, range.block_range().end);
+        let batch_size = memory_bounded_batch_size(
+            base_batch_size,
+            start,
+            range.block_range().end,
+            estimated_wire_bytes_per_block,
+            batch_resident_budget,
+        );
         let end = std::cmp::min(start + batch_size, range.block_range().end);
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let current_pct = if initial_total > 0 {
@@ -1644,7 +1793,7 @@ async fn run_sync_impl(
                                 u32::from(end) - 1,
                             );
                             prefetch.clear();
-                            download_batch(client.clone(), network, start, end).await?
+                            download_current_batch(client.clone(), network, start, end).await?
                         }
                         Err(e) => {
                             stale_prefetches += 1;
@@ -1655,7 +1804,7 @@ async fn run_sync_impl(
                                 u32::from(end) - 1,
                             );
                             prefetch.clear();
-                            download_batch(client.clone(), network, start, end).await?
+                            download_current_batch(client.clone(), network, start, end).await?
                         }
                     }
                 }
@@ -1665,7 +1814,7 @@ async fn run_sync_impl(
                         elapsed()
                     );
                     prefetch.clear();
-                    download_batch(client.clone(), network, start, end).await?
+                    download_current_batch(client.clone(), network, start, end).await?
                 }
                 Err(e) => {
                     log::warn!(
@@ -1673,21 +1822,22 @@ async fn run_sync_impl(
                         elapsed()
                     );
                     prefetch.clear();
-                    download_batch(client.clone(), network, start, end).await?
+                    download_current_batch(client.clone(), network, start, end).await?
                 }
             }
         } else {
             // The first batch, a range/priority change, or a rewind cannot
             // safely reuse predictions from the previous queue.
             prefetch.clear();
-            download_batch(client.clone(), network, start, end).await?
+            download_current_batch(client.clone(), network, start, end).await?
         };
         let fetch_wait = fetch_wait_start.elapsed();
         fetch_wait_total += fetch_wait;
         fetch_batches += 1;
+        let current_batch_wire_bytes = batch.block_source.wire_bytes();
         if batch.block_source.block_count() > 0 {
             estimated_wire_bytes_per_block =
-                (batch.block_source.wire_bytes() / batch.block_source.block_count() as u64).max(1);
+                (current_batch_wire_bytes / batch.block_source.block_count() as u64).max(1);
         }
         log::debug!(
             "[{}] sync: batch {} fetch-wait {:.0}ms ({} blocks, {} KiB wire)",
@@ -1708,6 +1858,60 @@ async fn run_sync_impl(
             from_state,
             ..
         } = batch;
+
+        // Start the next download before entering the synchronous scanner so
+        // desktop's multi-thread runtime can overlap network I/O with the
+        // current batch's CPU/SQLite work. Mobile defaults prefetch off because
+        // its current-thread background runtime cannot provide this overlap.
+        if !cancel.load(Ordering::Relaxed) {
+            let range_end = range.block_range().end;
+            let mut prefetch_start = prefetch.back().map(|item| item.end).unwrap_or(end);
+            while prefetch_start < range_end {
+                let prefetch_batch = memory_bounded_batch_size(
+                    base_batch_size,
+                    prefetch_start,
+                    range_end,
+                    estimated_wire_bytes_per_block,
+                    batch_resident_budget,
+                );
+                let prefetch_end = std::cmp::min(prefetch_start + prefetch_batch, range_end);
+                let next_batch_blocks =
+                    u32::from(prefetch_end).saturating_sub(u32::from(prefetch_start)) as u64;
+                let queued_blocks = prefetch
+                    .iter()
+                    .map(|item| u32::from(item.end).saturating_sub(u32::from(item.start)) as u64)
+                    .sum();
+                if !can_spawn_prefetch(
+                    prefetch.len(),
+                    prefetch_depth,
+                    current_batch_wire_bytes,
+                    queued_blocks,
+                    next_batch_blocks,
+                    estimated_wire_bytes_per_block.max(prefetch_wire_floor(prefetch_start)),
+                    PREFETCH_RESIDENT_BUDGET,
+                ) {
+                    break;
+                }
+
+                let batch_client = client.clone();
+                let batch_start = prefetch_start;
+                prefetch.push_back(Prefetch {
+                    start: batch_start,
+                    end: prefetch_end,
+                    handle: Some(tokio::spawn(async move {
+                        download_batch(
+                            batch_client,
+                            network,
+                            batch_start,
+                            prefetch_end,
+                            EndValidationMode::Deferred,
+                        )
+                        .await
+                    })),
+                });
+                prefetch_start = prefetch_end;
+            }
+        }
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -1943,69 +2147,37 @@ async fn run_sync_impl(
             || scan_summary.received_orchard_note_count() > 0
             || scan_summary.spent_orchard_note_count() > 0;
 
-        let run_post_batch_passes = should_run_post_batch_passes(
-            batch_found_tx,
-            end == range.block_range().end,
-            fetch_batches,
-            resubmit_every,
-        );
+        let is_last_batch_of_range = end == range.block_range().end;
         let should_exit = || {
             cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
         };
         let mut has_new_tx = batch_found_tx;
 
-        if run_post_batch_passes {
-            let enhancement_start = std::time::Instant::now();
-            match run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await {
-                Ok(outcome) => {
-                    has_new_tx |= outcome.stored > 0;
-                    final_enhancement_drain_needed = !outcome.drained;
-                }
-                Err(e) => {
-                    final_enhancement_drain_needed = true;
-                    log::warn!(
-                        "[{}] sync: enhancement pass failed (queue retained): {e}",
-                        elapsed()
-                    );
-                }
-            }
-            enhancement_total += enhancement_start.elapsed();
-            enhancement_passes += 1;
-        } else {
-            final_enhancement_drain_needed = true;
-        }
-
-        // Keep fresh-tip lookup and pending-send resubmit paired, but avoid
-        // doing both after every quiet batch in a long cold sync. Activity,
-        // the configured cadence, and the range boundary always trigger it.
-        if run_post_batch_passes {
-            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
-            {
-                log::info!(
-                    "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
-                    elapsed(),
-                );
-                return Ok(());
-            }
-
+        // Tip refresh and resubmit have independent time/activity policies.
+        // Both need an authoritative height, so share one lookup when either
+        // is due without coupling enhancement to the same cadence.
+        let tip_refresh_due =
+            is_last_batch_of_range || last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL;
+        let resubmit_time_due = last_resubmit.elapsed() >= resubmit_interval;
+        let needs_fresh_tip =
+            tip_refresh_due || resubmit_time_due || batch_found_tx || is_last_batch_of_range;
+        if needs_fresh_tip {
             let resubmit_start = std::time::Instant::now();
-            match get_latest_block(&mut client)
-                .await
-                .map(|tip| tip.height as u32)
-            {
-                Ok(fresh_tip_height) => {
-                    if (fresh_tip_height as u64) > current_tip_height {
-                        let fresh_height = BlockHeight::from_u32(fresh_tip_height);
+            match get_latest_block(&mut client).await {
+                Ok(fresh_tip) => {
+                    let fresh_height = block_height_from_u64(
+                        fresh_tip.height,
+                        "post-batch lightwalletd tip height",
+                    )?;
+                    let fresh_tip_height = u32::from(fresh_height) as u64;
+                    let tip_changed = fresh_tip_height != current_tip_height;
+                    if fresh_tip_height > current_tip_height {
                         match with_wallet_db_write_lock(
                             "sync_engine.update_chain_tip.post_batch",
                             || db.update_chain_tip(fresh_height),
                         ) {
                             Ok(()) => {
-                                current_tip_height = fresh_tip_height as u64;
-                                // The address-history request ranges may now
-                                // extend beyond the enhancement pass that ran
-                                // immediately before this refresh.
-                                final_enhancement_drain_needed = true;
+                                current_tip_height = fresh_tip_height;
                             }
                             Err(e) => log::warn!(
                                 "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
@@ -2013,26 +2185,80 @@ async fn run_sync_impl(
                                 elapsed(),
                             ),
                         }
+                    } else if fresh_tip_height < current_tip_height {
+                        log::warn!(
+                            "[{}] sync: lightwalletd tip moved backward {} -> {}; canonical hash check will resolve it at completion",
+                            elapsed(),
+                            current_tip_height,
+                            fresh_tip_height,
+                        );
                     }
                     last_tip_refresh = std::time::Instant::now();
-                    let _ = crate::wallet::sync::resubmit_pending_transactions(
-                        db_data_path,
-                        &mut client,
-                        fresh_tip_height,
-                        || {
-                            cancel.load(Ordering::Relaxed)
-                                || desired_mode.load(Ordering::SeqCst) != running_mode
-                        },
-                    )
-                    .await;
+                    if resubmit_time_due || batch_found_tx || is_last_batch_of_range || tip_changed
+                    {
+                        let _ = crate::wallet::sync::resubmit_pending_transactions(
+                            db_data_path,
+                            &mut client,
+                            u32::from(fresh_height),
+                            || {
+                                cancel.load(Ordering::Relaxed)
+                                    || desired_mode.load(Ordering::SeqCst) != running_mode
+                            },
+                        )
+                        .await;
+                        last_resubmit = std::time::Instant::now();
+                        resubmit_passes += 1;
+                    }
                 }
                 Err(e) => log::warn!(
-                    "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
+                    "[{}] sync: post-batch tip refresh failed, skipping resubmit: {e}",
                     elapsed(),
                 ),
             }
             resubmit_total += resubmit_start.elapsed();
-            resubmit_passes += 1;
+        }
+
+        let requests = db
+            .transaction_data_requests()
+            .map_err(|e| SyncError::db(format!("transaction_data_requests for scheduling: {e}")))?;
+        let now = std::time::SystemTime::now();
+        let has_immediate_enhancement = requests.iter().any(|request| match request {
+            TransactionDataRequest::Enhancement(_) => true,
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                request.block_range_end().is_some()
+                    && request.request_at().map_or(true, |due| due <= now)
+            }
+            TransactionDataRequest::GetStatus(_) => false,
+        });
+        let has_status_requests = requests
+            .iter()
+            .any(|request| matches!(request, TransactionDataRequest::GetStatus(_)));
+        let run_enhancement_now = has_immediate_enhancement
+            || batch_found_tx
+            || is_last_batch_of_range
+            || (has_status_requests && last_status_poll.elapsed() >= STATUS_POLL_INTERVAL);
+        if run_enhancement_now {
+            let enhancement_start = std::time::Instant::now();
+            match run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await {
+                Ok(outcome) => {
+                    has_new_tx |= outcome.stored > 0;
+                    if let Some(error) = outcome.failure {
+                        log::warn!(
+                            "[{}] sync: enhancement pass retained failed work for final retry: {error}",
+                            elapsed(),
+                        );
+                    }
+                }
+                Err(e) => log::warn!(
+                    "[{}] sync: enhancement pass failed (queue retained): {e}",
+                    elapsed(),
+                ),
+            }
+            enhancement_total += enhancement_start.elapsed();
+            enhancement_passes += 1;
+            if has_status_requests {
+                last_status_poll = std::time::Instant::now();
+            }
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after post-batch work", elapsed());
@@ -2075,8 +2301,13 @@ async fn run_sync_impl(
             .find(|r| is_pending_scan_range(r))
             .map(|r| {
                 let next_start = r.block_range().start;
-                let next_batch_size =
-                    batch_size_for_range(base_batch_size, next_start, r.block_range().end);
+                let next_batch_size = memory_bounded_batch_size(
+                    base_batch_size,
+                    next_start,
+                    r.block_range().end,
+                    estimated_wire_bytes_per_block,
+                    batch_resident_budget,
+                );
                 let next_end = std::cmp::min(next_start + next_batch_size, r.block_range().end);
                 u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
             })
@@ -2107,84 +2338,6 @@ async fn run_sync_impl(
         progress_fn(progress);
         #[cfg(debug_assertions)]
         maybe_sleep_for_e2e_sync_batch_delay().await;
-
-        // Refill a contiguous look-ahead queue. The most recently measured
-        // wire density is multiplied by a decoded-memory factor before the
-        // resident budget is checked.
-        if !cancel.load(Ordering::Relaxed) {
-            let range_end = range.block_range().end;
-            let mut prefetch_start = prefetch.back().map(|item| item.end).unwrap_or(end);
-            while prefetch_start < range_end {
-                let prefetch_batch =
-                    batch_size_for_range(base_batch_size, prefetch_start, range_end);
-                let prefetch_end = std::cmp::min(prefetch_start + prefetch_batch, range_end);
-                let next_batch_blocks =
-                    u32::from(prefetch_end).saturating_sub(u32::from(prefetch_start)) as u64;
-                let queued_blocks = prefetch
-                    .iter()
-                    .map(|item| u32::from(item.end).saturating_sub(u32::from(item.start)) as u64)
-                    .sum();
-                if !can_spawn_prefetch(
-                    prefetch.len(),
-                    prefetch_depth,
-                    queued_blocks,
-                    next_batch_blocks,
-                    estimated_wire_bytes_per_block.max(prefetch_wire_floor(prefetch_start)),
-                    PREFETCH_RESIDENT_BUDGET,
-                ) {
-                    break;
-                }
-
-                let batch_client = client.clone();
-                let batch_start = prefetch_start;
-                prefetch.push_back(Prefetch {
-                    start: batch_start,
-                    end: prefetch_end,
-                    handle: Some(tokio::spawn(async move {
-                        download_batch(batch_client, network, batch_start, prefetch_end).await
-                    })),
-                });
-                prefetch_start = prefetch_end;
-            }
-        }
-    }
-
-    if final_enhancement_drain_needed
-        && !cancel.load(Ordering::Relaxed)
-        && desired_mode.load(Ordering::SeqCst) == running_mode
-    {
-        let should_exit = || {
-            cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
-        };
-        let enhancement_start = std::time::Instant::now();
-        let final_outcome =
-            run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
-        enhancement_total += enhancement_start.elapsed();
-        enhancement_passes += 1;
-        if should_exit() {
-            log::info!(
-                "[{}] sync: exiting during final enhancement pass",
-                elapsed()
-            );
-            return Ok(());
-        }
-        if final_outcome.stored > 0 {
-            log::info!(
-                "[{}] sync: final enhancement pass stored {} transaction(s)",
-                elapsed(),
-                final_outcome.stored,
-            );
-        }
-        if !final_outcome.drained {
-            // Intermediate passes are best-effort so scanning can continue,
-            // but completion must preserve the previous correctness contract:
-            // transiently unserviceable enhancement work triggers the outer
-            // retry loop instead of reporting a fully-complete sync with an
-            // incomplete transaction-history queue.
-            return Err(SyncError::net(
-                "final transaction enhancement queue was not drained",
-            ));
-        }
     }
 
     let (final_scanned_height, final_tip_height) =
@@ -2203,11 +2356,11 @@ async fn run_sync_impl(
         stale_prefetches,
     );
     log::info!(
-        "[{}] sync: resubmit/tip refresh {:.2}s over {} passes (cadence={})",
+        "[{}] sync: resubmit/tip refresh {:.2}s over {} passes (resubmit_interval={}s)",
         elapsed(),
         resubmit_total.as_secs_f64(),
         resubmit_passes,
-        resubmit_every,
+        resubmit_interval.as_secs(),
     );
     log::info!(
         "[{}] sync: enhancement {:.2}s over {} passes",
@@ -2231,7 +2384,6 @@ async fn run_sync_impl(
             e
         ),
     }
-    truncate_wallet_wal_best_effort(db_data_path);
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -2245,6 +2397,14 @@ async fn run_sync_impl(
         phase: String::new(),
     };
     progress_fn(final_progress);
+
+    // Completion must not wait behind a potentially busy checkpoint. Drop the
+    // long-lived sync connection first, then perform best-effort WAL
+    // maintenance on the blocking pool after the user-visible completion
+    // event has been delivered.
+    drop(db);
+    let checkpoint_path = db_data_path.to_string();
+    tokio::task::spawn_blocking(move || truncate_wallet_wal_best_effort(&checkpoint_path));
 
     Ok(())
 }
@@ -2332,11 +2492,42 @@ async fn fetch_batch_start_state(
 /// Downloads blocks and both boundary states concurrently. Boundary
 /// validation happens before returning, so even the initial synchronous batch
 /// cannot mix compact blocks and a tree frontier from different forks.
+async fn download_current_batch(
+    client: CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
+    start: BlockHeight,
+    end_exclusive: BlockHeight,
+) -> Result<DownloadedBatch, SyncError> {
+    for attempt in 0..2 {
+        match download_batch(
+            client.clone(),
+            network,
+            start,
+            end_exclusive,
+            EndValidationMode::Immediate,
+        )
+        .await
+        {
+            Err(SyncError::Network(message))
+                if attempt == 0 && message.contains("inconsistent downloaded batch") =>
+            {
+                log::warn!(
+                    "[{}] sync: batch boundary changed during download; retrying locally",
+                    elapsed(),
+                );
+            }
+            result => return result,
+        }
+    }
+    unreachable!("bounded batch retry always returns on its final attempt")
+}
+
 async fn download_batch(
     client: CompactTxStreamerClient<Channel>,
     network: WalletNetwork,
     start: BlockHeight,
     end_exclusive: BlockHeight,
+    end_validation: EndValidationMode,
 ) -> Result<DownloadedBatch, SyncError> {
     let mut blocks_client = client.clone();
     let mut start_client = client.clone();
@@ -2346,13 +2537,14 @@ async fn download_batch(
     let (block_source, (from_state, synthetic_start_anchor), end_state) = tokio::try_join!(
         download_blocks(&mut blocks_client, start, end_height),
         fetch_batch_start_state(&mut start_client, network, start),
-        fetch_batch_end_state(&mut end_client, network, end_height),
+        fetch_batch_end_state(&mut end_client, network, end_height, end_validation),
     )?;
 
-    // lightwalletd does not expose a meaningful commitment-tree state before
-    // Sapling activation. In that era the compact-block stream is still
-    // canonical, so use its final block hash for boundary/reorg validation and
-    // avoid an RPC that some lightwalletd versions reject outright.
+    // For pre-Sapling batches there is no meaningful commitment-tree state;
+    // deferred prefetch validation likewise waits until consumption for the
+    // canonical end state. In both cases retain the stream's last hash as the
+    // expected value. A prefetched post-Sapling batch compares it to a fresh
+    // tree-state hash immediately before scan.
     let canonical_end_hash_at_fetch = match end_state {
         Some(state) => state.block_hash(),
         None => {
@@ -2379,8 +2571,11 @@ async fn fetch_batch_end_state(
     client: &mut CompactTxStreamerClient<Channel>,
     network: WalletNetwork,
     end_height: BlockHeight,
+    end_validation: EndValidationMode,
 ) -> Result<Option<chain::ChainState>, SyncError> {
-    if should_use_empty_chain_state(&network, end_height)? {
+    if matches!(end_validation, EndValidationMode::Deferred)
+        || should_use_empty_chain_state(&network, end_height)?
+    {
         Ok(None)
     } else {
         fetch_validated_chain_state(client, end_height)
@@ -2509,22 +2704,10 @@ mod tests {
 
     #[test]
     fn prefetch_budget_counts_estimated_decoded_memory() {
-        assert!(can_spawn_prefetch(0, 4, 10_000, 10_000, 10_000, 1));
-        assert!(can_spawn_prefetch(1, 4, 10, 10, 100, 10_000));
-        assert!(!can_spawn_prefetch(1, 4, 10, 10, 400, 10_000));
-        assert!(!can_spawn_prefetch(4, 4, 0, 1, 1, u64::MAX));
-    }
-
-    #[test]
-    fn post_batch_pass_cadence_preserves_activity_and_range_end() {
-        let every = RESUBMIT_EVERY_BATCHES;
-        assert!(!should_run_post_batch_passes(false, false, 1, every));
-        assert!(!should_run_post_batch_passes(false, false, 15, every));
-        assert!(should_run_post_batch_passes(false, false, 16, every));
-        assert!(should_run_post_batch_passes(true, false, 3, every));
-        assert!(should_run_post_batch_passes(false, true, 3, every));
-        assert!(should_run_post_batch_passes(false, false, 1, 1));
-        assert!(should_run_post_batch_passes(false, false, 7, 0));
+        assert!(can_spawn_prefetch(0, 1, 1_000, 0, 10, 100, 6_000));
+        assert!(!can_spawn_prefetch(0, 1, 1_000, 0, 10, 100, 5_999));
+        assert!(!can_spawn_prefetch(0, 1, 10_000, 0, 10_000, 10_000, 1));
+        assert!(!can_spawn_prefetch(1, 1, 0, 0, 1, 1, u64::MAX));
     }
 
     #[test]
@@ -2534,7 +2717,8 @@ mod tests {
         let one_batch_blocks = BATCH_SIZE_SANDBLASTING as u64;
         assert!(can_spawn_prefetch(
             0,
-            PREFETCH_DEPTH_BACKGROUND,
+            1,
+            0,
             0,
             one_batch_blocks,
             estimate,
@@ -2542,12 +2726,37 @@ mod tests {
         ));
         assert!(!can_spawn_prefetch(
             1,
-            PREFETCH_DEPTH_BACKGROUND,
+            1,
+            0,
             one_batch_blocks,
             one_batch_blocks,
             estimate,
             32 * 1024 * 1024,
         ));
+    }
+
+    #[test]
+    fn observed_dense_blocks_reduce_the_next_batch_size() {
+        let start = BlockHeight::from_u32(SANDBLASTING_END + 100);
+        let end = start + BATCH_SIZE_FOREGROUND;
+        let normal = memory_bounded_batch_size(
+            BATCH_SIZE_FOREGROUND,
+            start,
+            end,
+            PREFETCH_WIRE_FLOOR_BYTES_PER_BLOCK,
+            64 * 1024 * 1024,
+        );
+        let dense = memory_bounded_batch_size(
+            BATCH_SIZE_FOREGROUND,
+            start,
+            end,
+            256 * 1024,
+            64 * 1024 * 1024,
+        );
+
+        assert_eq!(normal, BATCH_SIZE_FOREGROUND);
+        assert!(dense < normal);
+        assert!(dense > 0);
     }
 
     #[test]

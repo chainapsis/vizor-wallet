@@ -32,7 +32,10 @@
 //! (`should_exit`) or skip entirely: whatever remains is picked up by
 //! the next pass or the next sync run.
 
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    time::SystemTime,
+};
 
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -40,8 +43,9 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
-        WalletRead, WalletWrite,
+        wallet::decrypt_and_store_transaction, OutputStatusFilter, TransactionDataRequest,
+        TransactionStatus, TransactionStatusFilter, TransactionsInvolvingAddress, WalletRead,
+        WalletWrite,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -95,13 +99,18 @@ pub(super) struct EnhancementOutcome {
     /// `Enhancement` and address-scoped requests (drives `has_new_tx`).
     pub stored: usize,
     /// True only when the pass verifiably left no actionable NEW work:
-    /// the queue read back empty/inert, or an entire round produced the
-    /// identical request set as the previous one (whatever remains is
-    /// persistent, e.g. GetStatus for a still-unmined send). False on
+    /// the queue read back empty/inert, or an entire round produced only the
+    /// same persistent GetStatus requests (e.g. for a still-unmined send). False on
     /// early exits (cancel, network error) and on 3-round exhaustion with
     /// fresh work still appearing — callers use this to decide whether the
     /// post-loop drain still has anything to do.
     pub drained: bool,
+    /// The first concrete failure encountered after any earlier successful
+    /// writes were retained. Callers can preserve `stored` for UI refreshes
+    /// while still propagating the correct parse/DB/network classification at
+    /// the final drain instead of flattening every incomplete pass to a
+    /// generic network error.
+    pub failure: Option<SyncError>,
 }
 
 pub(super) async fn run_enhancement<ShouldExit>(
@@ -117,7 +126,8 @@ where
     let mut failed_txids: HashSet<String> = HashSet::new();
     let mut stored: usize = 0;
     let mut drained = false;
-    let mut prev_signature: Option<std::collections::BTreeSet<String>> = None;
+    let mut failure: Option<SyncError> = None;
+    let mut prev_signature: Option<BTreeSet<TransactionDataRequest>> = None;
 
     // Telemetry to locate the cost of an enhancement pass.
     let enh_t0 = std::time::Instant::now();
@@ -137,6 +147,33 @@ where
             break;
         }
 
+        // zcash_client_sqlite 0.21 emits bounded address requests only for
+        // spend discovery, using (Mined, All). Its (All, Unspent) ephemeral
+        // discovery requests have no end height and are deferred above this
+        // layer. GetTaddressTxids cannot enforce mempool or currently-unspent
+        // filtering, so fail closed if a future backend emits a bounded
+        // unsupported combination instead of silently applying excess data.
+        if let Some(request) = requests.iter().find_map(|r| match r {
+            TransactionDataRequest::TransactionsInvolvingAddress(request)
+                if request.block_range_end().is_some()
+                    && address_request_is_due(request, SystemTime::now())
+                    && !address_request_is_supported(request) =>
+            {
+                Some(request)
+            }
+            _ => None,
+        }) {
+            record_first_failure(
+                &mut failure,
+                SyncError::Other(format!(
+                    "unsupported bounded transparent address filters: tx={:?}, output={:?}",
+                    request.tx_status_filter(),
+                    request.output_status_filter(),
+                )),
+            );
+            break;
+        }
+
         // If nothing in the queue is actionable (e.g. address-scoped
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
@@ -144,7 +181,7 @@ where
         let actionable = requests.iter().any(|r| match r {
             TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
             TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                req.block_range_end().is_some()
+                address_request_is_due(req, SystemTime::now()) && req.block_range_end().is_some()
             }
         });
         if !actionable {
@@ -159,20 +196,27 @@ where
         // still-unmined send regenerates until it mines) and re-servicing
         // it is pure duplication: up to 3 identical full-raw-tx fetches per
         // pass, every sync cycle, for the tx's whole unmined lifetime.
-        let signature: std::collections::BTreeSet<String> = requests
+        let signature: BTreeSet<TransactionDataRequest> = requests
             .iter()
-            .map(|r| match r {
-                TransactionDataRequest::GetStatus(txid) => format!("s:{txid}"),
-                TransactionDataRequest::Enhancement(txid) => format!("e:{txid}"),
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => format!(
-                    "a:{:?}:{}:{:?}",
-                    req.address(),
-                    req.block_range_start(),
-                    req.block_range_end(),
-                ),
+            .filter(|r| match r {
+                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
+                    address_request_is_due(req, SystemTime::now())
+                        && req.block_range_end().is_some()
+                }
+                _ => true,
             })
+            .cloned()
             .collect();
-        if prev_signature.as_ref() == Some(&signature) {
+        // A GetStatus request for an unmined transaction is expected to
+        // remain in the queue. It is the only repeated request that proves
+        // the pass is idle: repeated Enhancement/address requests can mean
+        // parsing, validation, or DB application failed and must never be
+        // hidden as a successful drain.
+        if prev_signature.as_ref() == Some(&signature)
+            && signature
+                .iter()
+                .all(|r| matches!(r, TransactionDataRequest::GetStatus(_)))
+        {
             drained = true;
             break;
         }
@@ -218,7 +262,7 @@ where
         // aborts the in-flight fetches — without first draining every
         // response. The fee lookups use a dedicated client clone because
         // the stream holds a shared borrow of `client` while alive.
-        let mut round_network_error = false;
+        let mut round_had_failure = false;
         let mut fee_client = client.clone();
         let mut fetch_stream = futures::stream::iter(status_items)
             .map(|(txid, needs_status, is_enhancement)| {
@@ -244,55 +288,69 @@ where
             let txid_str = format!("{txid}");
             match res {
                 Ok(raw) => {
-                    let mined_height = match mined_height_from_raw_height(raw.height) {
-                        Ok(h) => h,
-                        Err(e) => {
-                            log::warn!("sync: invalid mined height for {txid_str} (skipping): {e}");
+                    // GetStatus only needs the server's height metadata. Do
+                    // not deserialize/decrypt the raw transaction or fetch
+                    // transparent parents unless full enhancement was also
+                    // requested for this txid.
+                    if is_enhancement {
+                        let mined_height = match mined_height_from_raw_height(raw.height) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                log::warn!(
+                                    "sync: invalid mined height for {txid_str} (skipping): {e}"
+                                );
+                                round_had_failure = true;
+                                record_first_failure(&mut failure, e);
+                                continue;
+                            }
+                        };
+                        if raw.data.is_empty() {
+                            log::warn!("sync: empty transaction data for enhancement {txid_str}");
+                            round_had_failure = true;
+                            record_first_failure(
+                                &mut failure,
+                                SyncError::Parse(format!(
+                                    "empty transaction data for enhancement {txid_str}"
+                                )),
+                            );
                             continue;
                         }
-                    };
-                    if !raw.data.is_empty() {
-                        match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                            Ok(tx) => {
-                                match with_wallet_db_write_lock(
-                                    "sync_engine.enhance.decrypt_and_store_transaction",
-                                    || {
-                                        decrypt_and_store_transaction(
-                                            &network,
-                                            db,
-                                            &tx,
-                                            mined_height,
-                                        )
-                                    },
-                                ) {
-                                    Ok(()) => {
-                                        if is_enhancement {
-                                            stored += 1;
-                                        }
-                                    }
-                                    Err(e) => log::error!(
-                                        "sync: decrypt_and_store_transaction failed: {e}"
-                                    ),
-                                }
-                                let fee_t = std::time::Instant::now();
-                                if let Err(e) = fill_missing_transparent_fee(
-                                    &mut fee_client,
-                                    db_path,
-                                    &tx,
-                                    should_exit,
-                                )
-                                .await
-                                {
-                                    log::warn!(
-                                        "sync: transparent fee enhancement failed for {txid_str}: {e}"
-                                    );
-                                }
-                                fee_time += fee_t.elapsed();
-                            }
+                        let tx = match parse_transaction_for_txid(&raw.data, txid) {
+                            Ok(tx) => tx,
                             Err(e) => {
-                                log::warn!("sync: Transaction::read failed for {txid_str}: {e}")
+                                log::warn!("sync: invalid transaction for {txid_str}: {e}");
+                                round_had_failure = true;
+                                record_first_failure(&mut failure, e);
+                                continue;
+                            }
+                        };
+                        match with_wallet_db_write_lock(
+                            "sync_engine.enhance.decrypt_and_store_transaction",
+                            || decrypt_and_store_transaction(&network, db, &tx, mined_height),
+                        ) {
+                            Ok(()) => stored += 1,
+                            Err(e) => {
+                                log::error!("sync: decrypt_and_store_transaction failed: {e}");
+                                round_had_failure = true;
+                                record_first_failure(
+                                    &mut failure,
+                                    SyncError::Db(format!(
+                                        "decrypt_and_store_transaction failed: {e}"
+                                    )),
+                                );
+                                continue;
                             }
                         }
+                        let fee_t = std::time::Instant::now();
+                        if let Err(e) =
+                            fill_missing_transparent_fee(&mut fee_client, db_path, &tx, should_exit)
+                                .await
+                        {
+                            log::warn!(
+                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
+                            );
+                        }
+                        fee_time += fee_t.elapsed();
                     }
                     if needs_status {
                         match transaction_status_from_raw_height(raw.height) {
@@ -302,11 +360,22 @@ where
                                     || db.set_transaction_status(txid, status),
                                 ) {
                                     log::error!("sync: set_transaction_status failed: {e}");
+                                    round_had_failure = true;
+                                    record_first_failure(
+                                        &mut failure,
+                                        SyncError::Db(format!(
+                                            "set_transaction_status failed: {e}"
+                                        )),
+                                    );
                                 }
                             }
-                            Err(e) => log::warn!(
-                                "sync: invalid status height for {txid_str} (skipping): {e}"
-                            ),
+                            Err(e) => {
+                                log::warn!(
+                                    "sync: invalid status height for {txid_str} (skipping): {e}"
+                                );
+                                round_had_failure = true;
+                                record_first_failure(&mut failure, e);
+                            }
                         }
                     }
                 }
@@ -324,6 +393,11 @@ where
                             },
                         ) {
                             log::error!("sync: set_transaction_status failed: {e}");
+                            round_had_failure = true;
+                            record_first_failure(
+                                &mut failure,
+                                SyncError::Db(format!("set_transaction_status failed: {e}")),
+                            );
                         }
                     }
                     GetTransactionErrorAction::RetryAsNetwork => {
@@ -336,7 +410,13 @@ where
                             "sync: get_transaction failed for {txid_str} \
                              (ending pass after this round): {e}"
                         );
-                        round_network_error = true;
+                        round_had_failure = true;
+                        record_first_failure(
+                            &mut failure,
+                            SyncError::Network(format!(
+                                "get_transaction failed for {txid_str}: {e}"
+                            )),
+                        );
                     }
                 },
             }
@@ -346,10 +426,13 @@ where
         }
 
         // --- address-scoped requests: concurrent history streams, serial apply ---
-        let addr_items: Vec<(String, u64, u64)> = requests
+        let now = SystemTime::now();
+        let addr_items: Vec<(TransactionsInvolvingAddress, String, u64, u64)> = requests
             .iter()
             .filter_map(|r| match r {
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
+                TransactionDataRequest::TransactionsInvolvingAddress(req)
+                    if address_request_is_due(req, now) =>
+                {
                     req.block_range_end().map(|end_height| {
                         let addr_str = zcash_keys::encoding::encode_transparent_address_p(
                             &network,
@@ -357,7 +440,7 @@ where
                         );
                         let start = u32::from(req.block_range_start()) as u64;
                         let end = u32::from(end_height) as u64;
-                        (addr_str, start, end.saturating_sub(1))
+                        (req.clone(), addr_str, start, end.saturating_sub(1))
                     })
                 }
                 _ => None,
@@ -371,11 +454,13 @@ where
         // This prevents a single heavily-used transparent address from
         // accumulating its entire history in a Vec before the first DB write.
         let mut addr_stream = futures::stream::iter(addr_items)
-            .map(|(addr_str, start, end)| {
+            .map(|(request, addr_str, start, end)| {
                 let mut c = client.clone();
-                async move { start_address_txs(&mut c, addr_str, start, end, should_exit).await }
+                async move {
+                    start_address_txs(&mut c, request, addr_str, start, end, should_exit).await
+                }
             })
-            .buffer_unordered(concurrency);
+            .buffer_unordered(address_enhancement_concurrency());
         while let Some(result) = addr_stream.next().await {
             if should_exit() {
                 break 'rounds;
@@ -391,10 +476,12 @@ where
                         "sync: address history fetch failed \
                          (continuing with other addresses): {e}"
                     );
-                    round_network_error = true;
+                    round_had_failure = true;
+                    record_first_failure(&mut failure, e);
                     continue;
                 }
             };
+            let mut apply_failed = false;
             loop {
                 let next = tokio::select! {
                     item = fetch.receiver.recv() => item,
@@ -404,12 +491,30 @@ where
                     break;
                 };
                 let (mined_height, tx) = match next {
-                    Ok(item) => item,
+                    Ok(AddressTxEvent::Transaction(item)) => item,
+                    Ok(AddressTxEvent::Complete) => {
+                        if !apply_failed {
+                            let as_of_height = BlockHeight::from_u32(fetch.end as u32);
+                            if let Err(e) = with_wallet_db_write_lock(
+                                "sync_engine.enhance.notify_address_checked",
+                                || db.notify_address_checked(fetch.request.clone(), as_of_height),
+                            ) {
+                                log::error!("sync: notify_address_checked failed: {e}");
+                                round_had_failure = true;
+                                record_first_failure(
+                                    &mut failure,
+                                    SyncError::Db(format!("notify_address_checked failed: {e}")),
+                                );
+                            }
+                        }
+                        break;
+                    }
                     Err(e) => {
                         log::warn!(
                             "sync: address history stream failed (continuing with other addresses): {e}"
                         );
-                        round_network_error = true;
+                        round_had_failure = true;
+                        record_first_failure(&mut failure, e);
                         break;
                     }
                 };
@@ -422,7 +527,15 @@ where
                 ) {
                     Ok(()) => stored += 1,
                     Err(e) => {
-                        log::error!("sync: decrypt_and_store_transaction (addr) failed: {e}")
+                        log::error!("sync: decrypt_and_store_transaction (addr) failed: {e}");
+                        round_had_failure = true;
+                        apply_failed = true;
+                        record_first_failure(
+                            &mut failure,
+                            SyncError::Db(format!(
+                                "decrypt_and_store_transaction (addr) failed: {e}"
+                            )),
+                        );
                     }
                 }
                 let fee_t = std::time::Instant::now();
@@ -439,7 +552,7 @@ where
         }
         drop(addr_stream);
 
-        if round_network_error {
+        if round_had_failure {
             break;
         }
     }
@@ -455,7 +568,17 @@ where
             fee_time.as_secs_f64(),
         );
     }
-    Ok(EnhancementOutcome { stored, drained })
+    Ok(EnhancementOutcome {
+        stored,
+        drained,
+        failure,
+    })
+}
+
+fn record_first_failure(slot: &mut Option<SyncError>, error: SyncError) {
+    if slot.is_none() {
+        *slot = Some(error);
+    }
 }
 
 /// Concurrency for the enhancement network fetches. Overridable via
@@ -470,13 +593,46 @@ fn enhancement_concurrency() -> usize {
     ) as usize
 }
 
+/// Transparent-address queries can correlate a wallet's addresses at a
+/// public lightwalletd. Keep them serialized unless the operator explicitly
+/// opts into trusted-provider parallelism. Setting this variable above one is
+/// therefore both a performance tuning knob and an explicit privacy choice.
+fn address_enhancement_concurrency() -> usize {
+    super::env_override_clamped(
+        "ZCASH_SYNC_TRUSTED_ADDRESS_CONCURRENCY",
+        1,
+        1,
+        DEFAULT_ENHANCEMENT_CONCURRENCY.max(1),
+    ) as usize
+}
+
+fn address_request_is_due(request: &TransactionsInvolvingAddress, now: SystemTime) -> bool {
+    request
+        .request_at()
+        .map_or(true, |request_at| request_at <= now)
+}
+
+fn address_request_is_supported(request: &TransactionsInvolvingAddress) -> bool {
+    matches!(
+        (request.tx_status_filter(), request.output_status_filter()),
+        (TransactionStatusFilter::Mined, OutputStatusFilter::All)
+    )
+}
+
 /// Stream a transparent address's transaction history in `[start, end]`
 /// and parse each returned transaction. Network-only (no DB writes) so it
 /// can run concurrently with other address scans; the caller applies the
 /// results serially under the wallet-DB write lock.
 struct AddressTxFetch {
-    receiver: mpsc::Receiver<Result<(Option<BlockHeight>, Transaction), SyncError>>,
+    request: TransactionsInvolvingAddress,
+    end: u64,
+    receiver: mpsc::Receiver<Result<AddressTxEvent, SyncError>>,
     handle: tokio::task::JoinHandle<()>,
+}
+
+enum AddressTxEvent {
+    Transaction((Option<BlockHeight>, Transaction)),
+    Complete,
 }
 
 impl Drop for AddressTxFetch {
@@ -490,6 +646,7 @@ impl Drop for AddressTxFetch {
 /// the consumer stops early (cancel, mode switch, or a failed sibling).
 async fn start_address_txs<ShouldExit>(
     client: &mut CompactTxStreamerClient<Channel>,
+    request: TransactionsInvolvingAddress,
     address: String,
     start: u64,
     end: u64,
@@ -512,7 +669,12 @@ where
             match lwd::next_stream_message(&mut stream, "get_taddress_txids stream").await {
                 Ok(Some(raw)) => {
                     if raw.data.is_empty() {
-                        continue;
+                        let _ = sender
+                            .send(Err(SyncError::parse(
+                                "empty transaction in transparent address history",
+                            )))
+                            .await;
+                        break;
                     }
                     let mined_height = match mined_height_from_raw_height(raw.height) {
                         Ok(height) => height,
@@ -521,16 +683,34 @@ where
                             break;
                         }
                     };
+                    if let Err(e) = validate_address_tx_height(mined_height, start, end) {
+                        let _ = sender.send(Err(e)).await;
+                        break;
+                    }
                     match Transaction::read(&raw.data[..], BranchId::Sapling) {
                         Ok(tx) => {
-                            if sender.send(Ok((mined_height, tx))).await.is_err() {
+                            if sender
+                                .send(Ok(AddressTxEvent::Transaction((mined_height, tx))))
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }
-                        Err(e) => log::warn!("sync: Transaction::read (addr) failed: {e}"),
+                        Err(e) => {
+                            let _ = sender
+                                .send(Err(SyncError::parse(format!(
+                                    "Transaction::read (addr) failed: {e}"
+                                ))))
+                                .await;
+                            break;
+                        }
                     }
                 }
-                Ok(None) => break,
+                Ok(None) => {
+                    let _ = sender.send(Ok(AddressTxEvent::Complete)).await;
+                    break;
+                }
                 Err(e) => {
                     let _ = sender.send(Err(e)).await;
                     break;
@@ -538,7 +718,43 @@ where
             }
         }
     });
-    Ok(Some(AddressTxFetch { receiver, handle }))
+    Ok(Some(AddressTxFetch {
+        request,
+        end,
+        receiver,
+        handle,
+    }))
+}
+
+fn parse_transaction_for_txid(data: &[u8], expected_txid: TxId) -> Result<Transaction, SyncError> {
+    let tx = Transaction::read(data, BranchId::Sapling)
+        .map_err(|e| SyncError::parse(format!("Transaction::read failed: {e}")))?;
+    if tx.txid() != expected_txid {
+        return Err(SyncError::parse(format!(
+            "lightwalletd returned txid {} for requested {expected_txid}",
+            tx.txid()
+        )));
+    }
+    Ok(tx)
+}
+
+fn validate_address_tx_height(
+    mined_height: Option<BlockHeight>,
+    start: u64,
+    end: u64,
+) -> Result<(), SyncError> {
+    let Some(height) = mined_height else {
+        return Err(SyncError::parse(
+            "unmined transaction returned for a bounded transparent address history query",
+        ));
+    };
+    let height = u32::from(height) as u64;
+    if height < start || height > end {
+        return Err(SyncError::parse(format!(
+            "transparent address history returned height {height} outside [{start}, {end}]"
+        )));
+    }
+    Ok(())
 }
 
 async fn fill_missing_transparent_fee<ShouldExit>(
@@ -633,6 +849,13 @@ where
                 return Ok(BTreeMap::new());
             }
         };
+        if parent_tx.txid().as_ref() != outpoint.hash() {
+            return Err(SyncError::parse(format!(
+                "lightwalletd returned transparent parent {} for requested {}",
+                parent_tx.txid(),
+                hex::encode(outpoint.hash()),
+            )));
+        }
 
         let Some(parent_bundle) = parent_tx.transparent_bundle() else {
             return Ok(BTreeMap::new());
@@ -758,6 +981,8 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use transparent::address::TransparentAddress;
 
     fn transparent_fee_test_tx() -> Transaction {
         let tx_bytes = hex::decode(
@@ -909,5 +1134,76 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+
+    #[test]
+    fn enhancement_transaction_must_match_requested_txid() {
+        let tx = transparent_fee_test_tx();
+        let mut encoded = vec![];
+        tx.write(&mut encoded).unwrap();
+
+        assert!(parse_transaction_for_txid(&encoded, tx.txid()).is_ok());
+        assert!(matches!(
+            parse_transaction_for_txid(&encoded, TxId::NULL),
+            Err(SyncError::Parse(_)),
+        ));
+    }
+
+    #[test]
+    fn bounded_address_history_rejects_unmined_and_out_of_range_items() {
+        assert!(validate_address_tx_height(Some(BlockHeight::from_u32(10)), 10, 20).is_ok());
+        assert!(validate_address_tx_height(Some(BlockHeight::from_u32(20)), 10, 20).is_ok());
+        assert!(matches!(
+            validate_address_tx_height(None, 10, 20),
+            Err(SyncError::Parse(_)),
+        ));
+        assert!(matches!(
+            validate_address_tx_height(Some(BlockHeight::from_u32(9)), 10, 20),
+            Err(SyncError::Parse(_)),
+        ));
+        assert!(matches!(
+            validate_address_tx_height(Some(BlockHeight::from_u32(21)), 10, 20),
+            Err(SyncError::Parse(_)),
+        ));
+    }
+
+    #[test]
+    fn address_request_respects_decorrelation_time_and_preserves_filters() {
+        let now = SystemTime::now();
+        let request_at = now + Duration::from_secs(60);
+        let request = match TransactionDataRequest::transactions_involving_address(
+            TransparentAddress::PublicKeyHash([7; 20]),
+            BlockHeight::from_u32(10),
+            Some(BlockHeight::from_u32(20)),
+            Some(request_at),
+            TransactionStatusFilter::Mined,
+            OutputStatusFilter::Unspent,
+        ) {
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => request,
+            _ => unreachable!(),
+        };
+
+        assert!(!address_request_is_due(&request, now));
+        assert!(address_request_is_due(
+            &request,
+            request_at + Duration::from_secs(1)
+        ));
+        assert_eq!(request.request_at(), Some(request_at));
+        assert_eq!(request.tx_status_filter(), &TransactionStatusFilter::Mined);
+        assert_eq!(request.output_status_filter(), &OutputStatusFilter::Unspent);
+        assert!(!address_request_is_supported(&request));
+
+        let supported = match TransactionDataRequest::transactions_involving_address(
+            TransparentAddress::PublicKeyHash([8; 20]),
+            BlockHeight::from_u32(10),
+            Some(BlockHeight::from_u32(20)),
+            None,
+            TransactionStatusFilter::Mined,
+            OutputStatusFilter::All,
+        ) {
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => request,
+            _ => unreachable!(),
+        };
+        assert!(address_request_is_supported(&supported));
     }
 }

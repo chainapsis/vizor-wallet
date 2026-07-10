@@ -35,7 +35,10 @@ const SYNC_CONN_CACHE_SIZE: i64 = -65_536; // 64 MiB
 const SYNC_CONN_CACHE_SIZE: i64 = -32_768; // 32 MiB
 
 const SYNC_CONN_WAL_AUTOCHECKPOINT_PAGES: i64 = 10_000;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const SYNC_CONN_MMAP_BYTES: i64 = 268_435_456; // 256 MiB
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const SYNC_CONN_MMAP_BYTES: i64 = 67_108_864; // 64 MiB
 
 pub(crate) fn open_wallet_db_with_timeout(
     db_path: &str,
@@ -101,24 +104,29 @@ fn configure_wallet_connection(
     }
     if matches!(tuning, ConnTuning::Sync) {
         debug_assert!(ensure_wal, "sync tuning requires WAL mode");
-        conn.pragma_update(None, "mmap_size", SYNC_CONN_MMAP_BYTES)
-            .map_err(|e| format!("Failed to set wallet DB mmap_size: {e}"))?;
-        conn.pragma_update(None, "temp_store", "MEMORY")
-            .map_err(|e| format!("Failed to set wallet DB temp_store: {e}"))?;
-        conn.pragma_update(None, "cache_size", SYNC_CONN_CACHE_SIZE)
-            .map_err(|e| format!("Failed to set wallet DB cache_size: {e}"))?;
-        conn.pragma_update(None, "synchronous", "NORMAL")
-            .map_err(|e| format!("Failed to set wallet DB synchronous mode: {e}"))?;
-        conn.pragma_update(
-            None,
+        // These are performance hints, not correctness requirements. If a
+        // platform SQLite build rejects one, retain its safer default instead
+        // of making wallet sync unavailable.
+        apply_optional_pragma(conn, "mmap_size", SYNC_CONN_MMAP_BYTES);
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+        apply_optional_pragma(conn, "temp_store", "MEMORY");
+        apply_optional_pragma(conn, "cache_size", SYNC_CONN_CACHE_SIZE);
+        apply_optional_pragma(conn, "synchronous", "NORMAL");
+        apply_optional_pragma(
+            conn,
             "wal_autocheckpoint",
             SYNC_CONN_WAL_AUTOCHECKPOINT_PAGES,
-        )
-        .map_err(|e| format!("Failed to set wallet DB wal_autocheckpoint: {e}"))?;
+        );
     }
     rusqlite::vtab::array::load_module(conn)
         .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
     Ok(())
+}
+
+fn apply_optional_pragma(conn: &rusqlite::Connection, name: &str, value: impl rusqlite::ToSql) {
+    if let Err(e) = conn.pragma_update(None, name, value) {
+        log::warn!("wallet DB: optional sync PRAGMA {name} was not applied: {e}");
+    }
 }
 
 /// Reclaims the WAL accumulated by a completed bulk sync. Concurrent readers
