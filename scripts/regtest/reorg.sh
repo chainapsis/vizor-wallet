@@ -43,6 +43,15 @@ case "$mempool_mode" in
     ;;
 esac
 
+# A same-height replacement cannot be synchronized reliably by watching only
+# GetLatestBlock.height: the old and new branches have the same value. Fail
+# deterministically when the hash-capable gRPC probe is unavailable instead of
+# racing the next wallet sync against stale lightwalletd state.
+if [[ "$tip_mode" == "same-height" ]] && ! command -v grpcurl >/dev/null 2>&1; then
+  echo "reorg.sh: same-height mode requires grpcurl to verify the replacement tip hash" >&2
+  exit 1
+fi
+
 old_tip="$(zcash_cli getblockcount)"
 target_height=$((old_tip - depth))
 target_hash="$(zcash_cli getblockhash "$target_height")"
@@ -129,6 +138,7 @@ if command -v grpcurl >/dev/null 2>&1; then
     exit 1
   fi
 else
+  # Height is sufficient only when the replacement branch must be longer.
   wait_for_lightwalletd_tip "$new_tip"
 fi
 
