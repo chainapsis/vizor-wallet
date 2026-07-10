@@ -13,7 +13,6 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
@@ -125,17 +124,6 @@ Widget _app(
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
-      ),
-      GoRoute(
-        path: '/pay',
-        builder: (_, _) => Consumer(
-          builder: (_, ref, _) {
-            final state = ref.watch(swapStateProvider);
-            return Text(
-              'pay route ${state.direction.name} ${state.quoteMode.name}',
-            );
-          },
-        ),
       ),
     ],
   );
@@ -466,18 +454,8 @@ void main() {
     final receiveRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_receive')),
     );
-    final payRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_home_pay')),
-    );
-    final payIcon = tester.widget<AppIcon>(
-      find.descendant(
-        of: find.byKey(const ValueKey('mobile_home_pay')),
-        matching: find.byType(AppIcon),
-      ),
-    );
     final sendLabelStyle = _effectiveTextStyle(tester, find.text('Send'));
     final receiveLabelStyle = _effectiveTextStyle(tester, find.text('Receive'));
-    final payLabelStyle = _effectiveTextStyle(tester, find.text('Pay'));
     final shieldedLabel = tester.widget<Text>(find.text('Shielded balance'));
     final fiatLabel = tester.widget<Text>(
       find.byKey(const ValueKey('mobile_home_balance_fiat_text')),
@@ -491,11 +469,7 @@ void main() {
 
     expect(privacyButtonRect.size, const Size(32, 32));
     expect(privacyIcon.size, 16);
-    expect(payIcon.size, 20);
-    expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
-    expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
     expect(receiveRect.left, greaterThan(sendRect.right));
-    expect(payRect.left, greaterThan(receiveRect.right));
     expect(sendRect.height, AppButtonSizing.largeHeight);
     expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
     expect(sendLabelStyle.height, AppTypography.labelLarge.height);
@@ -511,10 +485,6 @@ void main() {
       receiveLabelStyle.letterSpacing,
       AppTypography.labelLarge.letterSpacing,
     );
-    expect(payLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
-    expect(payLabelStyle.height, AppTypography.labelLarge.height);
-    expect(payLabelStyle.fontWeight, AppTypography.labelLarge.fontWeight);
-    expect(payLabelStyle.letterSpacing, AppTypography.labelLarge.letterSpacing);
     expect(shieldedLabel.style?.fontSize, 14);
     expect(shieldedLabel.style?.height, 16 / 14);
     expect(fiatLabel.style?.fontSize, 14);
@@ -534,19 +504,6 @@ void main() {
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
     expect(find.text('receive route'), findsOneWidget);
-  });
-
-  testWidgets('pay action opens exact-output pay route', (tester) async {
-    await tester.pumpWidget(
-      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    await tester.tap(find.byKey(const ValueKey('mobile_home_pay')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
   });
 
   testWidgets('uses the mobile Rest illustration canvas for empty activity', (
@@ -669,8 +626,8 @@ void main() {
     final sendRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_send')),
     );
-    final payRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_home_pay')),
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_receive')),
     );
     final rowRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_activity_row_0')),
@@ -695,7 +652,7 @@ void main() {
     );
     expect(
       rowRect.right,
-      moreOrLessEquals(payRect.right - AppSpacing.xs, epsilon: 0.1),
+      moreOrLessEquals(receiveRect.right - AppSpacing.xs, epsilon: 0.1),
     );
     expect(headerRect.left, rowRect.left);
     expect(seeAllRect.height, 24);

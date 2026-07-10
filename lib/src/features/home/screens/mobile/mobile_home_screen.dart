@@ -30,7 +30,6 @@ import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
-import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
@@ -475,11 +474,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
 
-    void openPay() {
-      ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
-      context.push('/pay');
-    }
-
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
@@ -589,19 +583,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_home_pay'),
-                  expand: true,
-                  constrainContent: true,
-                  variant: AppButtonVariant.secondary,
-                  onPressed: openPay,
-                  leading: const _CompactButtonIcon(AppIcons.coins),
-                  height: _mobileHomeActionButtonHeight,
-                  child: const Text('Pay'),
                 ),
               ),
             ],
@@ -1127,17 +1108,6 @@ class _PrivacyEyeButton extends StatelessWidget {
 
 class _ButtonIcon extends StatelessWidget {
   const _ButtonIcon(this.iconName);
-
-  final String iconName;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppIcon(iconName, size: 20);
-  }
-}
-
-class _CompactButtonIcon extends StatelessWidget {
-  const _CompactButtonIcon(this.iconName);
 
   final String iconName;
 
