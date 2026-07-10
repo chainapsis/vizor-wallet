@@ -162,7 +162,7 @@ fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     default_batch_size
 }
 
-fn env_override_clamped(name: &str, default: u64, min: u64, max: u64) -> u64 {
+pub(super) fn env_override_clamped(name: &str, default: u64, min: u64, max: u64) -> u64 {
     std::env::var(name)
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -188,7 +188,7 @@ fn effective_resubmit_every() -> u64 {
     )
 }
 
-fn should_run_post_batch_resubmit(
+fn should_run_post_batch_passes(
     batch_found_tx: bool,
     is_last_batch_of_range: bool,
     batch_index: u64,
@@ -1260,10 +1260,9 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
     })?;
 
-    // Match the cancellation granularity we already use for
-    // `run_enhancement`: let this stage run to completion once it has
-    // started, but don't enter it (or continue past it) after a
-    // cancel/mode change has already been observed.
+    // The upstream transparent UTXO refresh does not accept a cancellation
+    // predicate, so don't enter it (or continue past it) after a cancel/mode
+    // change has already been observed.
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
@@ -1418,6 +1417,9 @@ async fn run_sync_impl(
     let resubmit_every = effective_resubmit_every();
     let mut resubmit_total = std::time::Duration::ZERO;
     let mut resubmit_passes = 0u64;
+    let mut enhancement_total = std::time::Duration::ZERO;
+    let mut enhancement_passes = 0u64;
+    let mut final_enhancement_drain_needed = true;
     log::info!(
         "[{}] sync: prefetch depth={}, resident budget={} MiB",
         elapsed(),
@@ -1905,19 +1907,42 @@ async fn run_sync_impl(
             || scan_summary.received_orchard_note_count() > 0
             || scan_summary.spent_orchard_note_count() > 0;
 
-        // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
-
-        // Keep fresh-tip lookup and pending-send resubmit paired, but avoid
-        // doing both after every quiet batch in a long cold sync. Activity,
-        // the configured cadence, and the range boundary always trigger it.
-        let run_resubmit = should_run_post_batch_resubmit(
+        let run_post_batch_passes = should_run_post_batch_passes(
             batch_found_tx,
             end == range.block_range().end,
             fetch_batches,
             resubmit_every,
         );
-        if run_resubmit {
+        let should_exit = || {
+            cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+        };
+        let mut has_new_tx = batch_found_tx;
+
+        if run_post_batch_passes {
+            let enhancement_start = std::time::Instant::now();
+            match run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await {
+                Ok(outcome) => {
+                    has_new_tx |= outcome.stored > 0;
+                    final_enhancement_drain_needed = !outcome.drained;
+                }
+                Err(e) => {
+                    final_enhancement_drain_needed = true;
+                    log::warn!(
+                        "[{}] sync: enhancement pass failed (queue retained): {e}",
+                        elapsed()
+                    );
+                }
+            }
+            enhancement_total += enhancement_start.elapsed();
+            enhancement_passes += 1;
+        } else {
+            final_enhancement_drain_needed = true;
+        }
+
+        // Keep fresh-tip lookup and pending-send resubmit paired, but avoid
+        // doing both after every quiet batch in a long cold sync. Activity,
+        // the configured cadence, and the range boundary always trigger it.
+        if run_post_batch_passes {
             if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
             {
                 log::info!(
@@ -1939,7 +1964,13 @@ async fn run_sync_impl(
                             "sync_engine.update_chain_tip.post_batch",
                             || db.update_chain_tip(fresh_height),
                         ) {
-                            Ok(()) => current_tip_height = fresh_tip_height as u64,
+                            Ok(()) => {
+                                current_tip_height = fresh_tip_height as u64;
+                                // The address-history request ranges may now
+                                // extend beyond the enhancement pass that ran
+                                // immediately before this refresh.
+                                final_enhancement_drain_needed = true;
+                            }
                             Err(e) => log::warn!(
                                 "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
                                  failed, keeping tip at {current_tip_height}: {e}",
@@ -1973,7 +2004,6 @@ async fn run_sync_impl(
         }
 
         // Report progress
-        let has_new_tx = batch_found_tx;
         let post_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
@@ -2083,6 +2113,44 @@ async fn run_sync_impl(
         }
     }
 
+    if final_enhancement_drain_needed
+        && !cancel.load(Ordering::Relaxed)
+        && desired_mode.load(Ordering::SeqCst) == running_mode
+    {
+        let should_exit = || {
+            cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+        };
+        let enhancement_start = std::time::Instant::now();
+        let final_outcome =
+            run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+        enhancement_total += enhancement_start.elapsed();
+        enhancement_passes += 1;
+        if should_exit() {
+            log::info!(
+                "[{}] sync: exiting during final enhancement pass",
+                elapsed()
+            );
+            return Ok(());
+        }
+        if final_outcome.stored > 0 {
+            log::info!(
+                "[{}] sync: final enhancement pass stored {} transaction(s)",
+                elapsed(),
+                final_outcome.stored,
+            );
+        }
+        if !final_outcome.drained {
+            // Intermediate passes are best-effort so scanning can continue,
+            // but completion must preserve the previous correctness contract:
+            // transiently unserviceable enhancement work triggers the outer
+            // retry loop instead of reporting a fully-complete sync with an
+            // incomplete transaction-history queue.
+            return Err(SyncError::net(
+                "final transaction enhancement queue was not drained",
+            ));
+        }
+    }
+
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&db, current_tip_height)?;
     log::info!(
@@ -2104,6 +2172,12 @@ async fn run_sync_impl(
         resubmit_total.as_secs_f64(),
         resubmit_passes,
         resubmit_every,
+    );
+    log::info!(
+        "[{}] sync: enhancement {:.2}s over {} passes",
+        elapsed(),
+        enhancement_total.as_secs_f64(),
+        enhancement_passes,
     );
     match transparent_receive_cache::refresh_all_from_wallet_db(
         db_data_path,
@@ -2370,15 +2444,15 @@ mod tests {
     }
 
     #[test]
-    fn post_batch_resubmit_cadence_preserves_activity_and_range_end() {
+    fn post_batch_pass_cadence_preserves_activity_and_range_end() {
         let every = RESUBMIT_EVERY_BATCHES;
-        assert!(!should_run_post_batch_resubmit(false, false, 1, every));
-        assert!(!should_run_post_batch_resubmit(false, false, 15, every));
-        assert!(should_run_post_batch_resubmit(false, false, 16, every));
-        assert!(should_run_post_batch_resubmit(true, false, 3, every));
-        assert!(should_run_post_batch_resubmit(false, true, 3, every));
-        assert!(should_run_post_batch_resubmit(false, false, 1, 1));
-        assert!(should_run_post_batch_resubmit(false, false, 7, 0));
+        assert!(!should_run_post_batch_passes(false, false, 1, every));
+        assert!(!should_run_post_batch_passes(false, false, 15, every));
+        assert!(should_run_post_batch_passes(false, false, 16, every));
+        assert!(should_run_post_batch_passes(true, false, 3, every));
+        assert!(should_run_post_batch_passes(false, true, 3, every));
+        assert!(should_run_post_batch_passes(false, false, 1, 1));
+        assert!(should_run_post_batch_passes(false, false, 7, 0));
     }
 
     #[test]
