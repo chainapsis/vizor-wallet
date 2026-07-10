@@ -53,7 +53,7 @@ pub(crate) mod mempool;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
-use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN, REWIND_DISTANCE};
+use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, next_stream_message, open_lwd_channel, send_transaction,
@@ -666,36 +666,173 @@ fn ensure_complete_scan_state(
     Ok((fully_scanned_height, db_tip_height))
 }
 
-fn rewind_for_canonical_tip_mismatch(
+async fn canonical_chain_state_at(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: BlockHeight,
+) -> Result<chain::ChainState, SyncError> {
+    let state = get_tree_state(client, u32::from(height) as u64)
+        .await?
+        .to_chain_state()
+        .map_err(|e| SyncError::parse(format!("parse canonical tree state at {height}: {e}")))?;
+    if state.block_height() != height {
+        return Err(SyncError::parse(format!(
+            "lightwalletd returned tree state for {}, requested {height}",
+            state.block_height(),
+        )));
+    }
+    Ok(state)
+}
+
+/// librustzcash deliberately retains received-note rows when a transaction is
+/// unmined by a rewind so memo and sent-note history are not lost. The retained
+/// commitment-tree position and Sapling/Orchard nullifier, however, belong to
+/// the orphaned branch. Clear only that re-derivable chain metadata so
+/// `check_witnesses` does not ask shardtree for an orphaned leaf and a later
+/// re-mining can store the note's new position/nullifier.
+fn clear_unmined_note_tree_metadata(db_path: &str) -> Result<usize, SyncError> {
+    with_wallet_db_write_lock("sync_engine.clear_unmined_note_tree_metadata", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
+            .map_err(|e| SyncError::db(format!("open wallet DB for orphan-note cleanup: {e}")))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| SyncError::db(format!("begin orphan-note cleanup: {e}")))?;
+        let mut cleared = 0usize;
+        for table in ["sapling_received_notes", "orchard_received_notes"] {
+            cleared += tx
+                .execute(
+                    &format!(
+                        "UPDATE {table}
+                         SET commitment_tree_position = NULL, nf = NULL
+                         WHERE commitment_tree_position IS NOT NULL
+                         AND EXISTS (
+                            SELECT 1 FROM transactions tx
+                            WHERE tx.id_tx = {table}.transaction_id
+                            AND tx.mined_height IS NULL
+                         )"
+                    ),
+                    [],
+                )
+                .map_err(|e| SyncError::db(format!("clear orphaned metadata in {table}: {e}")))?;
+        }
+        tx.commit()
+            .map_err(|e| SyncError::db(format!("commit orphan-note cleanup: {e}")))?;
+        Ok(cleared)
+    })
+}
+
+async fn rewind_for_canonical_tip_mismatch(
+    client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_path: &str,
     remote_tip: BlockHeight,
+    remote_tip_hash: BlockHash,
 ) -> Result<u64, SyncError> {
     let mismatch_height = u32::from(remote_tip) as u64;
-    let requested = BlockHeight::from_u32(
-        u32::from(remote_tip).saturating_sub(u32::try_from(REWIND_DISTANCE).unwrap_or(10)),
-    );
-    let actual = with_wallet_db_write_lock(
-        "sync_engine.truncate_to_height.canonical_tip_mismatch",
-        || {
-            match db.truncate_to_height(requested) {
-            Ok(height) => Ok(height),
-            Err(SqliteClientError::RequestedRewindInvalid {
-                safe_rewind_height: Some(safe),
-                ..
-            }) => db.truncate_to_height(safe).map_err(|e| {
-                SyncError::db(format!(
-                    "truncate_to_height({safe}) after canonical tip mismatch: {e}"
-                ))
-            }),
-            Err(e) if is_sqlite_lock_contention(&e) => Err(SyncError::other(format!(
-                "truncate_to_height({requested}) after canonical tip mismatch: SQLite lock contention: {e}"
-            ))),
-            Err(e) => Err(SyncError::db(format!(
-                "truncate_to_height({requested}) after canonical tip mismatch: {e}"
-            ))),
-        }
-        },
-    )?;
+    let remote_tip_u32 = u32::from(remote_tip);
+    let local_tip_hash = db
+        .get_block_hash(remote_tip)
+        .map_err(|e| SyncError::db(format!("get wallet block hash at {remote_tip}: {e}")))?;
+
+    // A backward-moving tip can still be on the same branch. In that case a
+    // direct height truncation is sufficient and avoids a tree-state RPC.
+    let rewind_anchor = if local_tip_hash == Some(remote_tip_hash) {
+        with_wallet_db_write_lock("sync_engine.truncate_to_height.backward_tip", || {
+            db.truncate_to_height(remote_tip).map_err(|e| {
+                if is_sqlite_lock_contention(&e) {
+                    SyncError::other(format!(
+                        "truncate_to_height({remote_tip}): SQLite lock contention: {e}"
+                    ))
+                } else {
+                    SyncError::db(format!("truncate_to_height({remote_tip}): {e}"))
+                }
+            })
+        })?
+    } else {
+        // Hash mismatch means the fork point is unknown. A fixed ten-block
+        // rewind can splice a canonical batch onto an orphaned commitment
+        // frontier when the reorg is deeper. Find the highest common ancestor
+        // with exponentially spaced probes, then binary-search the boundary.
+        // This costs O(log reorg_depth) tree-state RPCs on the rare reorg path.
+        let mut last_mismatch = remote_tip_u32;
+        let mut distance = 1u32;
+        let (anchor_state, found_common_ancestor) = loop {
+            let candidate_u32 = remote_tip_u32.saturating_sub(distance);
+            let candidate = BlockHeight::from_u32(candidate_u32);
+            let state = canonical_chain_state_at(client, candidate).await?;
+            let local_hash = db
+                .get_block_hash(candidate)
+                .map_err(|e| SyncError::db(format!("get wallet block hash at {candidate}: {e}")))?;
+
+            if local_hash == Some(state.block_hash()) {
+                // `candidate` is equal and `last_mismatch` is unequal. Locate
+                // the highest equal height so the rescan is no larger than
+                // necessary while still preserving a valid old frontier.
+                let mut low_equal = candidate_u32;
+                let mut high_mismatch = last_mismatch;
+                let mut low_state = state;
+                while high_mismatch.saturating_sub(low_equal) > 1 {
+                    let mid_u32 = low_equal + (high_mismatch - low_equal) / 2;
+                    let mid = BlockHeight::from_u32(mid_u32);
+                    let mid_state = canonical_chain_state_at(client, mid).await?;
+                    let mid_local_hash = db.get_block_hash(mid).map_err(|e| {
+                        SyncError::db(format!("get wallet block hash at {mid}: {e}"))
+                    })?;
+                    if mid_local_hash == Some(mid_state.block_hash()) {
+                        low_equal = mid_u32;
+                        low_state = mid_state;
+                    } else {
+                        high_mismatch = mid_u32;
+                    }
+                }
+                break (low_state, true);
+            }
+
+            // If wallet block metadata is no longer retained, the canonical
+            // state at this lower height is still a safe reset anchor;
+            // truncate_to_chain_state can inject its frontiers below the
+            // retained checkpoint window without vendoring shardtree.
+            if candidate_u32 == 0 || local_hash.is_none() {
+                break (state, false);
+            }
+
+            last_mismatch = candidate_u32;
+            distance = distance.saturating_mul(2).min(remote_tip_u32);
+        };
+        let anchor_height = anchor_state.block_height();
+        with_wallet_db_write_lock(
+            "sync_engine.truncate_to_chain_state.canonical_tip_mismatch",
+            || {
+                db.truncate_to_chain_state(anchor_state).map_err(|e| {
+                    if is_sqlite_lock_contention(&e) {
+                        SyncError::other(format!(
+                            "truncate_to_chain_state({anchor_height}): SQLite lock contention: {e}"
+                        ))
+                    } else {
+                        SyncError::db(format!("truncate_to_chain_state({anchor_height}): {e}"))
+                    }
+                })
+            },
+        )?;
+        log::warn!(
+            "[{}] sync: canonical mismatch selected rewind anchor {} ({})",
+            elapsed(),
+            anchor_height,
+            if found_common_ancestor {
+                "highest common ancestor"
+            } else {
+                "canonical frontier fallback"
+            },
+        );
+        anchor_height
+    };
+    let cleared_notes = clear_unmined_note_tree_metadata(db_path)?;
+    if cleared_notes > 0 {
+        log::info!(
+            "[{}] sync: cleared orphan-branch tree metadata from {} unmined note(s)",
+            elapsed(),
+            cleared_notes,
+        );
+    }
 
     let ranges = with_wallet_db_write_lock(
         "sync_engine.update_chain_tip.canonical_tip_mismatch",
@@ -716,10 +853,10 @@ fn rewind_for_canonical_tip_mismatch(
     log::warn!(
         "[{}] sync: canonical tip mismatch rewound wallet to {} and queued {} block(s)",
         elapsed(),
-        u32::from(actual),
+        u32::from(rewind_anchor),
         pending,
     );
-    if u32::from(actual) < u32::from(remote_tip) && pending == 0 {
+    if u32::from(rewind_anchor) < u32::from(remote_tip) && pending == 0 {
         return Err(SyncError::continuity(
             mismatch_height,
             "canonical tip rewind produced no pending scan ranges",
@@ -827,6 +964,7 @@ fn queue_witness_repairs_if_needed(
 async fn repair_anchor_root_mismatch_if_needed(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_path: &str,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
 ) -> Result<Option<u64>, SyncError> {
@@ -943,6 +1081,15 @@ async fn repair_anchor_root_mismatch_if_needed(
                 continue;
             }
         };
+
+        let cleared_notes = clear_unmined_note_tree_metadata(db_path)?;
+        if cleared_notes > 0 {
+            log::info!(
+                "[{}] sync: cleared orphan-branch tree metadata from {} unmined note(s)",
+                elapsed(),
+                cleared_notes,
+            );
+        }
 
         let pending_blocks = pending_scan_blocks(&post_rewind_ranges);
         let first_pending =
@@ -1592,6 +1739,7 @@ async fn run_sync_impl(
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     &mut client,
                     &mut db,
+                    db_data_path,
                     current_tip_height,
                     &mut anchor_root_repair_passes_this_run,
                 )
@@ -1659,7 +1807,14 @@ async fn run_sync_impl(
                         .unwrap_or(false)
                         || (local_covers_remote && local_hash != Some(final_tip_hash));
                     if canonical_mismatch {
-                        let pending = rewind_for_canonical_tip_mismatch(&mut db, final_tip_height)?;
+                        let pending = rewind_for_canonical_tip_mismatch(
+                            &mut client,
+                            &mut db,
+                            db_data_path,
+                            final_tip_height,
+                            final_tip_hash,
+                        )
+                        .await?;
                         current_tip_height = final_tip_height_u64;
                         initial_total = pending;
                         prev_remaining = pending;
@@ -1856,14 +2011,42 @@ async fn run_sync_impl(
         let DownloadedBatch {
             block_source,
             from_state,
+            synthetic_start_anchor,
             ..
         } = batch;
+
+        // The downloaded blocks and tree state may be mutually consistent
+        // while still starting from a different branch than the wallet DB.
+        // Compare the canonical start-state hash with our retained predecessor
+        // before touching commitment trees; otherwise a deep reorg can splice
+        // a new suffix onto an orphaned frontier without a prev-hash error.
+        let local_anchor_mismatch = if synthetic_start_anchor {
+            None
+        } else {
+            let anchor_height = from_state.block_height();
+            let local_anchor = db.get_block_hash(anchor_height).map_err(|e| {
+                SyncError::db(format!(
+                    "get wallet batch anchor hash at {anchor_height}: {e}"
+                ))
+            })?;
+            local_anchor
+                .filter(|hash| *hash != from_state.block_hash())
+                .map(|local_hash| {
+                    SyncError::continuity(
+                        u32::from(start) as u64,
+                        format!(
+                            "wallet anchor {anchor_height} hash {local_hash:?} differs from canonical {:?}",
+                            from_state.block_hash(),
+                        ),
+                    )
+                })
+        };
 
         // Start the next download before entering the synchronous scanner so
         // desktop's multi-thread runtime can overlap network I/O with the
         // current batch's CPU/SQLite work. Mobile defaults prefetch off because
         // its current-thread background runtime cannot provide this overlap.
-        if !cancel.load(Ordering::Relaxed) {
+        if local_anchor_mismatch.is_none() && !cancel.load(Ordering::Relaxed) {
             let range_end = range.block_range().end;
             let mut prefetch_start = prefetch.back().map(|item| item.end).unwrap_or(end);
             while prefetch_start < range_end {
@@ -1933,16 +2116,20 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
-        let scan_result = with_wallet_db_write_lock("sync_engine.scan_cached_blocks", || {
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_size as usize,
-            )
-            .map_err(|e| match e {
+        let scan_result = if let Some(anchor_error) = local_anchor_mismatch {
+            prefetch.clear();
+            Err(anchor_error)
+        } else {
+            with_wallet_db_write_lock("sync_engine.scan_cached_blocks", || {
+                scan_cached_blocks(
+                    &network,
+                    &block_source,
+                    &mut db,
+                    start,
+                    &from_state,
+                    batch_size as usize,
+                )
+                .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                     let at_height = u32::from(scan_err.at_height()) as u64;
                     SyncError::continuity(at_height, scan_err.to_string())
@@ -1974,9 +2161,10 @@ async fn run_sync_impl(
                         SyncError::db(format!("scan wallet: {wallet_err}"))
                     }
                 }
-                other => SyncError::other(format!("scan: {other}")),
+                    other => SyncError::other(format!("scan: {other}")),
+                })
             })
-        });
+        };
 
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
@@ -2084,6 +2272,14 @@ async fn run_sync_impl(
                             }
                         },
                     )?;
+                    let cleared_notes = clear_unmined_note_tree_metadata(db_data_path)?;
+                    if cleared_notes > 0 {
+                        log::info!(
+                            "[{}] sync: cleared orphan-branch tree metadata from {} unmined note(s)",
+                            elapsed(),
+                            cleared_notes,
+                        );
+                    }
                     let current_tip = BlockHeight::from_u32(current_tip_height as u32);
                     let post_rewind_ranges = with_wallet_db_write_lock(
                         "sync_engine.update_chain_tip.after_rewind",
