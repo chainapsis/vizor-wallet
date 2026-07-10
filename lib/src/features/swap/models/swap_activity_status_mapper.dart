@@ -1,3 +1,5 @@
+import '../../../core/formatting/date_format.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
@@ -15,6 +17,40 @@ class SwapActivityAccountDetail {
 
   final String name;
   final String? profilePictureId;
+}
+
+enum PayActivityStatusPhase { inProgress, completed }
+
+/// Desktop Pay status data backed by values whose meaning is known at the
+/// activity boundary. Provider/app fees are deliberately not repurposed as the
+/// Figma `Tx fee`; that value is injected only from a confirmed matching ZEC
+/// deposit transaction in wallet history.
+class PayActivityStatusPresentation {
+  const PayActivityStatusPresentation({
+    required this.phase,
+    required this.timestampText,
+    required this.txIdText,
+    required this.convertedFromText,
+    required this.transactionFeeText,
+    this.txIdUri,
+  });
+
+  final PayActivityStatusPhase phase;
+  final String timestampText;
+  final String txIdText;
+  final Uri? txIdUri;
+  final String convertedFromText;
+  final String transactionFeeText;
+
+  String get title => switch (phase) {
+    PayActivityStatusPhase.inProgress => 'Pay in progress...',
+    PayActivityStatusPhase.completed => 'Paid successfully',
+  };
+
+  String get statusLabel => switch (phase) {
+    PayActivityStatusPhase.inProgress => 'In progress',
+    PayActivityStatusPhase.completed => 'Completed',
+  };
 }
 
 class SwapActivityStatusPresentation {
@@ -39,6 +75,7 @@ class SwapActivityStatusPresentation {
     required this.details,
     this.progressTabLabel = 'Swap progress',
     this.paymentMode = false,
+    this.payStatus,
     required this.showTabs,
   });
 
@@ -76,6 +113,7 @@ class SwapActivityStatusPresentation {
   final List<SwapStatusDetailRowData> details;
   final String progressTabLabel;
   final bool paymentMode;
+  final PayActivityStatusPresentation? payStatus;
   final bool showTabs;
 }
 
@@ -84,11 +122,18 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapIntent intent, {
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
+  BigInt? confirmedDepositFeeZatoshi,
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
   final sendsZec = intent.direction != SwapDirection.externalToZec;
   final payMode = intent.payMode && sendsZec;
+  final payStatus = payMode
+      ? _payActivityStatusPresentation(
+          intent,
+          confirmedDepositFeeZatoshi: confirmedDepositFeeZatoshi,
+        )
+      : null;
   final recipientAddress = intent.oneClickRecipient?.trim();
   final refundAddress = intent.oneClickRefundTo?.trim();
   final payFiatText = _swapActivityFiatTextForAsset(
@@ -128,6 +173,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   }
 
   return SwapActivityStatusPresentation(
+    // Keep the shared presentation stable for mobile. Desktop Pay consumes
+    // the dedicated [payStatus] copy below instead of these shared fields.
     title: _swapActivityStatusTitle(intent),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
@@ -159,7 +206,59 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     ),
     progressTabLabel: payMode ? 'Payment progress' : 'Swap progress',
     paymentMode: payMode,
+    payStatus: payStatus,
+    // Desktop Pay renders its dedicated Figma status content before the
+    // shared status page. Keep the shared progress tabs available for mobile.
     showTabs: !intent.status.isTerminal,
+  );
+}
+
+PayActivityStatusPresentation? _payActivityStatusPresentation(
+  SwapIntent intent, {
+  BigInt? confirmedDepositFeeZatoshi,
+}) {
+  final phase = switch (intent.status) {
+    SwapIntentStatus.complete => PayActivityStatusPhase.completed,
+    SwapIntentStatus.awaitingDeposit ||
+    SwapIntentStatus.awaitingExternalDeposit ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.providerStatusUnknown => PayActivityStatusPhase.inProgress,
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => null,
+  };
+  if (phase == null) return null;
+
+  final timestamp = phase == PayActivityStatusPhase.completed
+      ? intent.completedAt ?? intent.updatedAt ?? intent.createdAt
+      : intent.createdAt ?? intent.updatedAt;
+  final depositAddress = _firstNonEmpty([intent.depositAddress]);
+
+  return PayActivityStatusPresentation(
+    phase: phase,
+    timestampText: timestamp == null
+        ? 'Not reported'
+        : formatDayMonthTime(timestamp),
+    txIdText: depositAddress == null
+        ? 'Not reported'
+        : compactSwapAddress(
+            depositAddress,
+            maxLength: 19,
+            prefixLength: 8,
+            suffixLength: 8,
+            separator: '...',
+          ),
+    txIdUri: depositAddress == null
+        ? null
+        : nearIntentsExplorerTransactionUri(depositAddress),
+    convertedFromText: intent.sellAmount,
+    transactionFeeText:
+        confirmedDepositFeeZatoshi != null &&
+            confirmedDepositFeeZatoshi > BigInt.zero
+        ? ZecAmount.fromZatoshi(confirmedDepositFeeZatoshi).fee.toString()
+        : 'Not reported',
   );
 }
 

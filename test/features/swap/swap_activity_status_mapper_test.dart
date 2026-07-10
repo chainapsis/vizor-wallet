@@ -78,7 +78,7 @@ void main() {
     );
   });
 
-  test('maps pay activity status without swap-specific detail rows', () {
+  test('maps completed pay activity to the Figma status presentation', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
       _intent(
@@ -87,22 +87,41 @@ void main() {
         externalAsset: SwapAsset.usdc,
         sellAmount: '4.0000 ZEC',
         receiveEstimate: '100.00 USDC',
+        depositAddress: 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
         depositTxHash: 'zec-shielded-spend-txid',
+        nearIntentHash: 'near-intent-hash-123',
         destinationChainTxHash: '0xusdc-delivery-txid',
         oneClickRecipient: '0xrecipient-address',
         totalFeesText: '0.1800 ZEC',
-        completedAt: DateTime.utc(2026, 5, 25, 13, 30),
+        completedAt: DateTime(2026, 5, 25, 13, 30),
         payMode: true,
       ),
     );
 
     expect(presentation.title, 'Payment complete');
+    expect(presentation.statusLabel, 'Complete');
     expect(presentation.payLabel, 'You paid');
     expect(presentation.receiveLabel, 'Recipient received');
     expect(presentation.payDetailText, 'Privately, from shielded balance');
     expect(presentation.progressTabLabel, 'Payment progress');
     expect(presentation.paymentMode, isTrue);
     expect(presentation.showTabs, isFalse);
+    expect(presentation.payStatus, isNotNull);
+    expect(presentation.payStatus!.title, 'Paid successfully');
+    expect(presentation.payStatus!.statusLabel, 'Completed');
+    expect(presentation.payStatus!.phase, PayActivityStatusPhase.completed);
+    expect(presentation.payStatus!.timestampText, '25 May, 13:30');
+    expect(presentation.payStatus!.txIdText, 't1bufats...CvaAzeBo');
+    expect(
+      presentation.payStatus!.txIdUri,
+      Uri.parse(
+        'https://explorer.near-intents.org/transactions/'
+        't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+      ),
+    );
+    expect(presentation.payStatus!.convertedFromText, '4.0000 ZEC');
+    // totalFeesText is an app/provider fee, not the network transaction fee.
+    expect(presentation.payStatus!.transactionFeeText, 'Not reported');
     expect(presentation.steps.map((step) => step.title), [
       'Spend ZEC',
       'Convert',
@@ -158,7 +177,7 @@ void main() {
     );
   });
 
-  test('omits pay activity fee rows when status has no fee data', () {
+  test('maps in-progress pay activity without invented tx fees', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
       _intent(
@@ -168,11 +187,24 @@ void main() {
         sellAmount: '4.0000 ZEC',
         receiveEstimate: '100.00 USDC',
         oneClickRecipient: '0xrecipient-address',
+        createdAt: DateTime(2026, 5, 25, 13, 30),
         payMode: true,
       ),
     );
 
+    expect(presentation.title, 'Payment in progress');
+    expect(presentation.statusLabel, 'Processing');
     expect(presentation.paymentMode, isTrue);
+    expect(presentation.showTabs, isTrue);
+    expect(presentation.payStatus, isNotNull);
+    expect(presentation.payStatus!.title, 'Pay in progress...');
+    expect(presentation.payStatus!.statusLabel, 'In progress');
+    expect(presentation.payStatus!.phase, PayActivityStatusPhase.inProgress);
+    expect(presentation.payStatus!.timestampText, '25 May, 13:30');
+    expect(presentation.payStatus!.txIdText, 'Not reported');
+    expect(presentation.payStatus!.txIdUri, isNull);
+    expect(presentation.payStatus!.convertedFromText, '4.0000 ZEC');
+    expect(presentation.payStatus!.transactionFeeText, 'Not reported');
     expect(
       presentation.details.map((detail) => detail.label),
       isNot(contains('Fees')),

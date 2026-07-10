@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -9,16 +10,21 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/sync_provider.dart';
+import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
+import '../../send/widgets/verify_address_modal.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../models/swap_keystone_broadcast_result.dart';
 import '../models/swap_models.dart';
+import '../providers/pay_deposit_transaction_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
@@ -26,6 +32,7 @@ import 'swap_keystone_signing_overlay.dart';
 import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
+import 'pay_activity_status_content.dart';
 import 'swap_status_page_content.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
@@ -69,12 +76,20 @@ class _SwapKeystoneSigningRequest {
   final bool clearPendingIntentOnCancel;
 }
 
+class _PayRecipientOverlayRequest {
+  const _PayRecipientOverlayRequest({required this.address, this.contact});
+
+  final String address;
+  final AddressBookContact? contact;
+}
+
 class _SwapActivityDetailSurfaceState
     extends ConsumerState<SwapActivityDetailSurface> {
   final _toastOverlayContextKey = GlobalKey(
     debugLabel: 'swap_activity_toast_overlay_context',
   );
   _SwapKeystoneSigningRequest? _keystoneSigningRequest;
+  _PayRecipientOverlayRequest? _payRecipientOverlayRequest;
   String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
 
@@ -93,6 +108,7 @@ class _SwapActivityDetailSurfaceState
     if (oldWidget.intentId != widget.intentId ||
         oldWidget.autoSignZecDeposit != widget.autoSignZecDeposit) {
       _initialIntentApplied = false;
+      _payRecipientOverlayRequest = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _applyInitialIntent();
@@ -224,6 +240,20 @@ class _SwapActivityDetailSurfaceState
     _cleanupCancelledKeystoneSigningRequest(request);
   }
 
+  void _showPayRecipientAddress(String address, AddressBookContact? contact) {
+    setState(() {
+      _payRecipientOverlayRequest = _PayRecipientOverlayRequest(
+        address: address,
+        contact: contact,
+      );
+    });
+  }
+
+  void _closePayRecipientAddress() {
+    if (_payRecipientOverlayRequest == null) return;
+    setState(() => _payRecipientOverlayRequest = null);
+  }
+
   void _cleanupCancelledKeystoneSigningRequest(
     _SwapKeystoneSigningRequest request,
   ) {
@@ -321,6 +351,7 @@ class _SwapActivityDetailSurfaceState
         if (previous == next || !mounted) return;
         setState(() {
           _keystoneSigningRequest = null;
+          _payRecipientOverlayRequest = null;
         });
         context.go('/activity');
       },
@@ -378,6 +409,7 @@ class _SwapActivityDetailSurfaceState
             onReviewFreshQuote: _reviewFreshQuote,
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
+            onShowPayRecipientAddress: _showPayRecipientAddress,
           );
 
     return Stack(
@@ -399,6 +431,20 @@ class _SwapActivityDetailSurfaceState
                   _closeKeystoneSigning(cleanupCancelledRequest: true),
               onDepositBroadcast: (result) =>
                   _handleKeystoneDepositBroadcast(context, result),
+            ),
+          ),
+        if (_payRecipientOverlayRequest case final request?)
+          AppPaneModalOverlay(
+            onDismiss: _closePayRecipientAddress,
+            child: VerifyAddressModal(
+              address: request.address,
+              variant: request.contact == null
+                  ? VerifyAddressModalVariant.unknown
+                  : VerifyAddressModalVariant.knownContact,
+              unknownAddressKind: VerifyAddressModalAddressKind.external,
+              contactName: request.contact?.label,
+              contactProfilePictureId: request.contact?.profilePictureId,
+              onClose: _closePayRecipientAddress,
             ),
           ),
         if (widget.layout != SwapActivityDetailLayout.mobile)
@@ -486,6 +532,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
     required this.intentIsHardware,
+    this.onShowPayRecipientAddress,
     super.key,
   });
 
@@ -501,6 +548,8 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
   final bool intentIsHardware;
+  final void Function(String address, AddressBookContact? contact)?
+  onShowPayRecipientAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -517,6 +566,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onReviewFreshQuote: onReviewFreshQuote,
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
+      onShowPayRecipientAddress: onShowPayRecipientAddress,
     );
     final isDepositPage = swapActivityShowsDepositPage(
       intent,
@@ -569,6 +619,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
     required this.intentIsHardware,
+    this.onShowPayRecipientAddress,
   });
 
   final SwapState state;
@@ -583,6 +634,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
   final bool intentIsHardware;
+  final void Function(String address, AddressBookContact? contact)?
+  onShowPayRecipientAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -633,7 +686,11 @@ class _SwapActivityFlowContent extends StatelessWidget {
           onDepositZec: () => onSignZecDeposit(intent),
           mobile: layout == SwapActivityDetailLayout.mobile,
         ),
-      _ => _SwapStatusForIntent(intent: intent, layout: layout),
+      _ => _SwapStatusForIntent(
+        intent: intent,
+        layout: layout,
+        onShowPayRecipientAddress: onShowPayRecipientAddress,
+      ),
     };
 
     final mobile = layout == SwapActivityDetailLayout.mobile;
@@ -665,10 +722,13 @@ class _SwapStatusForIntent extends ConsumerStatefulWidget {
   const _SwapStatusForIntent({
     required this.intent,
     this.layout = SwapActivityDetailLayout.desktop,
+    this.onShowPayRecipientAddress,
   });
 
   final SwapIntent intent;
   final SwapActivityDetailLayout layout;
+  final void Function(String address, AddressBookContact? contact)?
+  onShowPayRecipientAddress;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -698,6 +758,32 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     );
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
+    final depositTxid = intent.depositTxHash?.trim();
+    final accountUuid = intent.accountUuid?.trim();
+    final shouldLoadPayDeposit =
+        widget.layout == SwapActivityDetailLayout.desktop &&
+        intent.payMode &&
+        intent.direction == SwapDirection.zecToExternal &&
+        depositTxid != null &&
+        depositTxid.isNotEmpty &&
+        accountUuid != null &&
+        accountUuid.isNotEmpty;
+    rust_sync.TransactionInfo? depositTransaction;
+    if (shouldLoadPayDeposit) {
+      depositTransaction = ref.watch(
+        syncProvider.select(
+          (sync) => _recentPayDepositTransaction(sync.value, intent),
+        ),
+      );
+      depositTransaction ??= ref
+          .watch(
+            payDepositTransactionProvider((
+              accountUuid: accountUuid,
+              depositTxid: depositTxid,
+            )),
+          )
+          .value;
+    }
     final presentation = swapActivityStatusPresentationForIntent(
       state,
       intent,
@@ -708,6 +794,9 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               profilePictureId: accountInfo.profilePictureId,
             ),
       addressBookContacts: addressBookContacts,
+      confirmedDepositFeeZatoshi: _confirmedPayDepositFeeZatoshi(
+        depositTransaction,
+      ),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       final recipient = intent.oneClickRecipient?.trim();
@@ -745,6 +834,36 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       );
     }
 
+    final payStatus = presentation.payStatus;
+    final recipientAddress = intent.oneClickRecipient?.trim();
+    if (payStatus != null &&
+        recipientAddress != null &&
+        recipientAddress.isNotEmpty) {
+      final recipientContact = addressBookContactForSwapAsset(
+        contacts: addressBookContacts,
+        asset: presentation.receiveAsset,
+        address: recipientAddress,
+      );
+      final txIdUri = payStatus.txIdUri;
+      return PayActivityStatusContent(
+        status: payStatus,
+        amountAsset: presentation.receiveAsset,
+        amountText: presentation.receiveAmountText,
+        amountFiatText: presentation.receiveFiatText,
+        recipientAddress: recipientAddress,
+        recipientContact: recipientContact,
+        onShowFullAddress: () => widget.onShowPayRecipientAddress?.call(
+          recipientAddress,
+          recipientContact,
+        ),
+        onOpenExplorer: txIdUri == null
+            ? null
+            : () => unawaited(
+                launchUrl(txIdUri, mode: LaunchMode.externalApplication),
+              ),
+      );
+    }
+
     return SwapStatusPageContent(
       title: presentation.title,
       payAsset: presentation.payAsset,
@@ -775,6 +894,30 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           copyTextWithToast(context, text: text, toastMessage: 'Copied'),
     );
   }
+}
+
+BigInt? _confirmedPayDepositFeeZatoshi(rust_sync.TransactionInfo? transaction) {
+  if (transaction == null ||
+      transaction.expiredUnmined ||
+      transaction.minedHeight <= BigInt.zero) {
+    return null;
+  }
+  return transaction.fee > BigInt.zero ? transaction.fee : null;
+}
+
+rust_sync.TransactionInfo? _recentPayDepositTransaction(
+  SyncState? syncState,
+  SwapIntent intent,
+) {
+  if (syncState == null || syncState.accountUuid != intent.accountUuid) {
+    return null;
+  }
+  final walletTxid = swapChainTxidToWalletTxidHex(intent.depositTxHash);
+  if (walletTxid == null) return null;
+  for (final transaction in syncState.recentTransactions) {
+    if (transaction.txidHex.toLowerCase() == walletTxid) return transaction;
+  }
+  return null;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.
