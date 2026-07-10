@@ -4,7 +4,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_add_contact_card.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
@@ -21,6 +23,50 @@ void main() {
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_pay_preview_frame'))),
       const Size(393, 852),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount previews expose empty and pricing refresh states', (
+    tester,
+  ) async {
+    await _pumpUseCase(
+      tester,
+      buildMobilePayAmountEmptyUseCase,
+      AppThemeData.light,
+    );
+
+    expect(find.text(r'$ 0'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_amount_counterpart_skeleton')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_pay_estimated_skeleton')),
+      findsNothing,
+    );
+
+    await _pumpUseCase(
+      tester,
+      buildMobilePayAmountRefreshingUseCase,
+      AppThemeData.dark,
+    );
+
+    expect(
+      find.byKey(const ValueKey('mobile_pay_amount_counterpart_skeleton')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_pay_estimated_skeleton')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
     );
     expect(tester.takeException(), isNull);
   });
@@ -73,7 +119,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('submitted preview uses the theme-specific production asset', (
+  testWidgets('add contact preview uses the Pay-specific shared sheet card', (
+    tester,
+  ) async {
+    await _pumpUseCase(
+      tester,
+      buildMobilePayAddContactUseCase,
+      AppThemeData.light,
+    );
+
+    expect(find.byType(MobilePayAddContactCard), findsOneWidget);
+    expect(find.text('Address label'), findsOneWidget);
+    expect(find.text('Chain & address'), findsOneWidget);
+    expect(find.text('Ethereum'), findsOneWidget);
+    expect(find.text('Save contact'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('submitted preview uses the shared transaction status asset', (
     tester,
   ) async {
     await _pumpUseCase(
@@ -90,7 +154,7 @@ void main() {
             widget is Image &&
             widget.image is AssetImage &&
             (widget.image as AssetImage).assetName ==
-                'assets/illustrations/pay_submitted_background_dark.png',
+                'assets/illustrations/mobile_send_status_background.png',
       ),
       findsOneWidget,
     );

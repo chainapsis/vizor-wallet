@@ -2,18 +2,23 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/pay/models/pay_recent_recipients.dart';
 import '../src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
+import '../src/features/pay/widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
 import '../src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import '../src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
+import '../src/features/swap/models/swap_deposit_broadcast_result.dart';
 import '../src/features/swap/models/swap_models.dart';
+import '../src/features/swap/providers/swap_state_provider.dart';
 
 const _mikeAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _aliceAddress = '0xde709f2102306220921060314715629080e2fb77';
@@ -66,6 +71,61 @@ const _payAmountState = SwapState(
   payMode: true,
 );
 
+const _payAmountEmptyState = SwapState(
+  direction: SwapDirection.zecToExternal,
+  quoteMode: SwapQuoteMode.exactOutput,
+  amountText: '',
+  receiveAmountText: '',
+  receiveFiatText: '',
+  destinationText: '',
+  externalAsset: SwapAsset.usdc,
+  reviewVisible: false,
+  intents: [],
+  pricingLoading: true,
+  payMode: true,
+);
+
+const _payAmountRefreshingState = SwapState(
+  direction: SwapDirection.zecToExternal,
+  quoteMode: SwapQuoteMode.exactOutput,
+  amountText: '2.251',
+  receiveAmountText: '990',
+  receiveFiatText: '990.00',
+  destinationText: '',
+  externalAsset: SwapAsset.usdc,
+  reviewVisible: false,
+  intents: [],
+  pricingLoading: true,
+  payMode: true,
+);
+
+const _paySubmittedIntent = SwapIntent(
+  id: 'widgetbook-pay-intent',
+  pair: 'ZEC -> USDC',
+  sellAmount: '2.251 ZEC',
+  receiveEstimate: '990 USDC',
+  provider: 'NEAR Intents',
+  status: SwapIntentStatus.awaitingDeposit,
+  nextAction: 'Payment submitted',
+  direction: SwapDirection.zecToExternal,
+  externalAsset: SwapAsset.usdc,
+  depositTxHash: 'widgetbook-pay-deposit-txid',
+  broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+  payMode: true,
+);
+
+const _paySubmittedState = SwapState(
+  direction: SwapDirection.zecToExternal,
+  amountText: '',
+  receiveAmountText: '',
+  destinationText: '',
+  externalAsset: SwapAsset.usdc,
+  reviewVisible: false,
+  intents: [_paySubmittedIntent],
+  selectedIntentId: 'widgetbook-pay-intent',
+  payMode: true,
+);
+
 const _payQuote = SwapQuote(
   direction: SwapDirection.zecToExternal,
   sellAsset: SwapAsset.zec,
@@ -89,7 +149,29 @@ const _payQuote = SwapQuote(
 );
 
 Widget buildMobilePayAmountUseCase(BuildContext context) {
-  return const _MobilePayFrame(child: _MobilePayAmountPreview());
+  return const _MobilePayFrame(
+    child: _MobilePayAmountPreview(
+      key: ValueKey('mobile_pay_amount_loaded_preview'),
+    ),
+  );
+}
+
+Widget buildMobilePayAmountEmptyUseCase(BuildContext context) {
+  return const _MobilePayFrame(
+    child: _MobilePayAmountPreview(
+      key: ValueKey('mobile_pay_amount_empty_preview'),
+      initialState: _payAmountEmptyState,
+    ),
+  );
+}
+
+Widget buildMobilePayAmountRefreshingUseCase(BuildContext context) {
+  return const _MobilePayFrame(
+    child: _MobilePayAmountPreview(
+      key: ValueKey('mobile_pay_amount_refreshing_preview'),
+      initialState: _payAmountRefreshingState,
+    ),
+  );
 }
 
 Widget buildMobilePayRecipientUseCase(BuildContext context) {
@@ -119,6 +201,31 @@ Widget buildMobilePayRecipientMatchedUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobilePayAddContactUseCase(BuildContext context) {
+  return _MobilePayFrame(
+    child: ColoredBox(
+      color: context.colors.background.window,
+      child: ColoredBox(
+        color: context.colors.background.neutralScrim,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Spacer(),
+            MobileModalCard(
+              child: MobilePayAddContactCard(
+                network: AddressBookNetwork.ethereum,
+                address: _newAddress,
+                onCancel: _noop,
+                onSave: (_, _) async {},
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Widget buildMobilePayReviewUseCase(BuildContext context) {
   return const _MobilePayFrame(child: _MobilePayReviewPreview());
 }
@@ -128,9 +235,19 @@ Widget buildMobilePayReviewExpiredUseCase(BuildContext context) {
 }
 
 Widget buildMobilePaySubmittedUseCase(BuildContext context) {
-  return const _MobilePayFrame(
-    child: MobilePaySubmittedScreen(intentId: 'widgetbook-pay-intent'),
+  return ProviderScope(
+    overrides: [
+      swapStateProvider.overrideWith(() => _WidgetbookPaySubmittedNotifier()),
+    ],
+    child: const _MobilePayFrame(
+      child: MobilePaySubmittedScreen(intentId: 'widgetbook-pay-intent'),
+    ),
   );
+}
+
+class _WidgetbookPaySubmittedNotifier extends SwapNotifier {
+  @override
+  SwapState build() => _paySubmittedState;
 }
 
 class _MobilePayFrame extends StatelessWidget {
@@ -153,7 +270,12 @@ class _MobilePayFrame extends StatelessWidget {
 }
 
 class _MobilePayAmountPreview extends StatefulWidget {
-  const _MobilePayAmountPreview();
+  const _MobilePayAmountPreview({
+    this.initialState = _payAmountState,
+    super.key,
+  });
+
+  final SwapState initialState;
 
   @override
   State<_MobilePayAmountPreview> createState() =>
@@ -163,11 +285,12 @@ class _MobilePayAmountPreview extends StatefulWidget {
 class _MobilePayAmountPreviewState extends State<_MobilePayAmountPreview> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
-  var _state = _payAmountState;
+  late SwapState _state;
 
   @override
   void initState() {
     super.initState();
+    _state = widget.initialState;
     _controller = TextEditingController(text: _state.receiveAmountText);
     _focusNode = FocusNode(
       canRequestFocus: false,
@@ -190,6 +313,7 @@ class _MobilePayAmountPreviewState extends State<_MobilePayAmountPreview> {
       body: SafeArea(
         child: Column(
           children: [
+            const SizedBox(height: AppSpacing.s),
             MobileTopNav.back(title: 'Pay in USDC', onBack: _noop),
             Expanded(
               child: MobilePayAmountStep(
