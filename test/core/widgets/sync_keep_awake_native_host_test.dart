@@ -56,6 +56,26 @@ void main() {
     expect(_enabledArgs(calls), [true, false]);
   });
 
+  testWidgets('enables native keep-awake during zero-percent first batch', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final syncNotifier = FakeSyncNotifier(
+      _sync(
+        percentage: 0,
+        displayTargetBlocks: 100,
+        scannedHeight: 0,
+        chainTipHeight: 0,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+
+    expect(_enabledArgs(calls), [true]);
+  });
+
   testWidgets('does not call native API when the setting is disabled', (
     tester,
   ) async {
@@ -157,6 +177,7 @@ SyncState _sync({
   bool isSyncing = true,
   bool isBackgroundMode = false,
   double percentage = 0.25,
+  int displayTargetBlocks = 0,
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
@@ -165,6 +186,7 @@ SyncState _sync({
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,
+    displayTargetBlocks: displayTargetBlocks,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,

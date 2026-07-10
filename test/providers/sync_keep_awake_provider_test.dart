@@ -41,7 +41,7 @@ void main() {
     );
   });
 
-  test('screen keep-awake requires enabled settings and eligible sync', () {
+  test('screen keep-awake requires enabled settings and substantial work', () {
     final startedAt = DateTime(2026, 7, 9, 12);
     const enabled = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
     const disabled = SyncKeepAwakeSettings(enabled: false, promptSeen: true);
@@ -70,6 +70,45 @@ void main() {
       shouldKeepScreenAwakeForSync(
         settings: enabled,
         sync: _sync(percentage: 0, lastSyncStartedAt: startedAt),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: enabled,
+        sync: _sync(
+          percentage: 0,
+          displayTargetBlocks: 100,
+          scannedHeight: 0,
+          chainTipHeight: 0,
+          lastSyncStartedAt: startedAt,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: enabled,
+        sync: _sync(
+          percentage: 0,
+          displayTargetBlocks: 2,
+          scannedHeight: 0,
+          chainTipHeight: 0,
+          lastSyncStartedAt: startedAt,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: enabled,
+        sync: _sync(
+          percentage: 0,
+          displayTargetBlocks: 100,
+          scannedHeight: 100,
+          chainTipHeight: 102,
+          lastSyncStartedAt: startedAt,
+        ),
       ),
       isFalse,
     );
@@ -351,13 +390,27 @@ void main() {
   test('ETA is not estimated for ineligible sync states', () {
     final startedAt = DateTime(2026, 7, 9, 12);
     final now = startedAt.add(const Duration(seconds: 30));
+    final zeroProgressSync = _sync(
+      percentage: 0,
+      displayTargetBlocks: 100,
+      lastSyncStartedAt: startedAt,
+    );
 
     expect(
-      estimateSyncKeepAwakeEta(
-        _sync(percentage: 0, lastSyncStartedAt: startedAt),
-        now: now,
-      ).remaining,
+      estimateSyncKeepAwakeEta(zeroProgressSync, now: now).remaining,
       isNull,
+    );
+    expect(canEstimateSyncKeepAwakeEta(zeroProgressSync), isFalse);
+    expect(
+      shouldShowSyncKeepAwakePrompt(
+        sync: zeroProgressSync,
+        settings: const SyncKeepAwakeSettings(
+          enabled: false,
+          promptSeen: false,
+        ),
+        now: now,
+      ),
+      isFalse,
     );
     expect(
       estimateSyncKeepAwakeEta(

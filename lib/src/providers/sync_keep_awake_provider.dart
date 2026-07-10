@@ -237,6 +237,22 @@ bool isSyncKeepAwakeEligibleSync(SyncState sync) {
       !isNearTipCatchUp(sync);
 }
 
+bool isSyncKeepAwakeActiveSync(SyncState sync) {
+  if (!sync.isSyncing ||
+      sync.isBackgroundMode ||
+      sync.percentage >= 1 ||
+      sync.lastSyncStartedAt == null) {
+    return false;
+  }
+
+  final hasKnownHeights = sync.chainTipHeight > 0 && sync.scannedHeight > 0;
+  if (hasKnownHeights) {
+    return !isNearTipCatchUp(sync);
+  }
+
+  return sync.displayTargetBlocks > kSyncKeepAwakeNearTipBlockGap;
+}
+
 bool isSyncKeepAwakeCompletedSync(SyncState sync) {
   if (sync.isSyncing || sync.isBackgroundMode) return false;
   if (sync.percentage >= 1 || sync.displayPercentage >= 1) return true;
@@ -251,7 +267,7 @@ bool shouldKeepScreenAwakeForSync({
   required SyncKeepAwakeSettings settings,
   required SyncState sync,
 }) {
-  return settings.enabled && isSyncKeepAwakeEligibleSync(sync);
+  return settings.enabled && isSyncKeepAwakeActiveSync(sync);
 }
 
 SyncKeepAwakeEtaEstimate estimateSyncKeepAwakeEta(
