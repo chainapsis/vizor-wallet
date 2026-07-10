@@ -781,7 +781,6 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     final depositTxid = intent.depositTxHash?.trim();
     final accountUuid = intent.accountUuid?.trim();
     final shouldLoadPayDeposit =
-        widget.layout == SwapActivityDetailLayout.desktop &&
         intent.payMode &&
         intent.direction == SwapDirection.zecToExternal &&
         depositTxid != null &&

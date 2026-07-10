@@ -1,21 +1,35 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/material.dart' show MaterialApp, Tooltip;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+import '../../fakes/fake_sync_notifier.dart';
 
 const _recipient = '0x12351aBcDeF01234567890123456789076123';
 
-Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
+Widget _harness(
+  Widget child, {
+  AppThemeData theme = AppThemeData.light,
+  bool scroll = true,
+}) {
   return MaterialApp(
     builder: (_, navigator) => AppTheme(data: theme, child: navigator!),
     home: Directionality(
@@ -32,7 +46,7 @@ Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
             height: 852,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SingleChildScrollView(child: child),
+              child: scroll ? SingleChildScrollView(child: child) : child,
             ),
           ),
         ),
@@ -56,27 +70,24 @@ SwapActivityStatusPresentation _presentation({required bool completed}) {
     receiveFiatText: r'$250.12',
     payAmountText: '4.125 ZEC',
     receiveAmountText: '990 USDC',
+    payStatus: PayActivityStatusPresentation(
+      phase: completed
+          ? PayActivityStatusPhase.completed
+          : PayActivityStatusPhase.inProgress,
+      timestampText: 'May 20, 2026 13:20',
+      txIdText: '0123123124512512',
+      txIdUri: Uri.parse('https://explorer.near-intents.org/transactions/1'),
+      convertedFromText: '4.125 ZEC',
+      transactionFeeText: '0.0001 ZEC',
+    ),
     badgeKind: completed
         ? SwapStatusBadgeKind.completed
         : SwapStatusBadgeKind.liveQuote,
     progressIndex: completed ? 3 : 1,
     steps: const [],
-    details: [
-      const SwapStatusDetailRowData(
-        label: 'Timestamp',
-        value: 'May 20, 2026 13:20',
-      ),
+    details: const [
       SwapStatusDetailRowData(
-        label: 'Tx ID',
-        value: '0123123124512512',
-        linkUri: Uri.parse('https://explorer.near-intents.org/transactions/1'),
-      ),
-      const SwapStatusDetailRowData(
-        label: 'Converted from',
-        value: '4.125 ZEC',
-      ),
-      const SwapStatusDetailRowData(
-        label: 'Tx fee',
+        label: 'Network + conversion fees',
         value: '0.0125 ZEC',
         help: true,
       ),
@@ -129,6 +140,9 @@ void main() {
     expect(find.text('Tx ID'), findsOneWidget);
     expect(find.text('Converted from'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text('0.0125 ZEC'), findsNothing);
+    expect(_tooltipWithMessage(kTxFeeHelpTooltip), findsOneWidget);
     expect(find.text("You're receiving"), findsNothing);
 
     expect(
@@ -212,18 +226,106 @@ void main() {
     expect(card.top - header.bottom, 76);
   });
 
-  test('mobile pay status mapper provides the Figma transaction rows', () {
-    final presentation = swapActivityStatusPresentationForIntent(
-      _state(),
-      _intent(status: SwapIntentStatus.processing),
-    );
+  test(
+    'mobile pay keeps the confirmed deposit fee separate from route fees',
+    () {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(status: SwapIntentStatus.processing),
+        confirmedDepositFeeZatoshi: BigInt.from(10000),
+      );
 
-    expect(presentation.paymentMode, isTrue);
-    expect(
-      presentation.details.map((row) => row.label),
-      containsAll(['Timestamp', 'Tx ID', 'Converted from', 'Tx fee']),
-    );
-  });
+      expect(presentation.paymentMode, isTrue);
+      expect(presentation.payStatus?.transactionFeeText, '0.0001 ZEC');
+      expect(
+        presentation.details.map((row) => row.label),
+        contains('Network + conversion fees'),
+      );
+      expect(
+        presentation.details.map((row) => row.label),
+        isNot(contains('Tx fee')),
+      );
+
+      final withoutConfirmedDeposit = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(status: SwapIntentStatus.processing),
+      );
+      expect(
+        withoutConfirmedDeposit.payStatus?.transactionFeeText,
+        'Not reported',
+      );
+    },
+  );
+
+  testWidgets(
+    'mobile Pay loads the confirmed wallet deposit fee and Zcash tooltip',
+    (tester) async {
+      const depositTxid =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final intent = _intent(
+        status: SwapIntentStatus.processing,
+      ).copyWith(accountUuid: 'account-1', depositTxHash: depositTxid);
+      final state = SwapState(
+        direction: SwapDirection.zecToExternal,
+        amountText: '',
+        receiveAmountText: '',
+        destinationText: '',
+        externalAsset: SwapAsset.usdc,
+        reviewVisible: false,
+        intents: [intent],
+        selectedIntentId: intent.id,
+        payMode: true,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_PayAccountNotifier.new),
+            addressBookProvider.overrideWith(_EmptyAddressBookNotifier.new),
+            swapStateProvider.overrideWith(() => _PayStatusNotifier(state)),
+            syncProvider.overrideWith(
+              () => FakeSyncNotifier(
+                SyncState(
+                  accountUuid: 'account-1',
+                  hasAccountScopedData: true,
+                  recentTransactions: [
+                    _sentZecTransaction(
+                      txidHex: depositTxid,
+                      fee: BigInt.from(10000),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          child: _harness(
+            SwapActivityDetailPagePanel(
+              state: state,
+              intent: intent,
+              layout: SwapActivityDetailLayout.mobile,
+              depositChecking: false,
+              depositCheckWarning: null,
+              onRefreshStatus: () {},
+              onMarkDeposited: () {},
+              onDepositTxHashChanged: (_) {},
+              onSubmitDepositTransaction: () {},
+              onReviewFreshQuote: () {},
+              onSignZecDeposit: (_) {},
+              intentIsHardware: false,
+            ),
+            scroll: false,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('0.0001 ZEC'), findsOneWidget);
+      expect(find.text('0.0125 ZEC'), findsNothing);
+      expect(_tooltipWithMessage(kTxFeeHelpTooltip), findsOneWidget);
+    },
+  );
 
   test('mobile activity titles distinguish paying and paid from swap', () {
     expect(
@@ -250,6 +352,13 @@ Finder _appIcon(String name) {
   return find.byWidgetPredicate(
     (widget) => widget is AppIcon && widget.name == name,
     description: 'AppIcon($name)',
+  );
+}
+
+Finder _tooltipWithMessage(String message) {
+  return find.byWidgetPredicate(
+    (widget) => widget is Tooltip && widget.message == message,
+    description: 'Tooltip("$message")',
   );
 }
 
@@ -287,4 +396,46 @@ SwapIntent _intent({required SwapIntentStatus status, bool payMode = true}) {
         : null,
     payMode: payMode,
   );
+}
+
+rust_sync.TransactionInfo _sentZecTransaction({
+  required String txidHex,
+  required BigInt fee,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: -412500000,
+    fee: fee,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: BigInt.from(412500000),
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+class _PayStatusNotifier extends SwapNotifier {
+  _PayStatusNotifier(this.initialState);
+
+  final SwapState initialState;
+
+  @override
+  SwapState build() => initialState;
+}
+
+class _PayAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1payaccount',
+  );
+}
+
+class _EmptyAddressBookNotifier extends AddressBookNotifier {
+  @override
+  AddressBookState build() => const AddressBookState();
 }
