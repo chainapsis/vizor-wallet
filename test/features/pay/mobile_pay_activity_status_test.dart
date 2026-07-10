@@ -123,7 +123,7 @@ void main() {
     expect(find.text('Full address'), findsOneWidget);
     expect(find.text('Payment progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
-    expect(find.text('In progress...'), findsOneWidget);
+    expect(find.text('In progress'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('Tx ID'), findsOneWidget);
     expect(find.text('Converted from'), findsOneWidget);

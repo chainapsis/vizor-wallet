@@ -193,9 +193,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   /// Keeps the review countdown aligned with the active quote; a new quote
   /// (re-review) re-arms the ticker.
   void _ensureExpiryTicker(SwapQuote? quote) {
-    final deadline = quote == null
-        ? null
-        : quote.quoteExpiresAt ?? quote.depositInstruction.deadline;
+    final deadline = quote?.actionDeadline;
     if (deadline == _expiryDeadline) return;
     _expiryDeadline = deadline;
     _expiryTimer?.cancel();

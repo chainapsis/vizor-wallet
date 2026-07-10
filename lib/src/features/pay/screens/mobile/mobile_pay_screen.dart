@@ -59,7 +59,7 @@ const _payStepGap = AppSpacing.sm;
 const _payReviewGap = AppSpacing.md;
 const _payFooterGap = AppSpacing.sm;
 const _payTextFieldMessageReserve = AppSpacing.md;
-const _payDesktopTokenVisibleLimit = 4;
+const _payTokenVisibleLimit = 4;
 
 class MobilePayScreen extends ConsumerStatefulWidget {
   const MobilePayScreen({super.key});
@@ -387,7 +387,7 @@ class PayComposer extends StatefulWidget {
     required this.onOpenAddressScanner,
     required this.onOpenContactPicker,
     required this.onReviewPayment,
-    this.tokenVisibleLimit = _payDesktopTokenVisibleLimit,
+    this.tokenVisibleLimit = _payTokenVisibleLimit,
     this.showHeader = true,
     this.showFooterAttribution = true,
     super.key,
