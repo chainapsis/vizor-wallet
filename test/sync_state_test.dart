@@ -18,6 +18,129 @@ void main() {
     expect(state.pendingBalance, BigInt.from(12));
   });
 
+  test('display spendable defaults to the authoritative balance', () {
+    final state = SyncState(spendableBalance: BigInt.from(50));
+
+    expect(state.displaySpendableBalance, BigInt.from(50));
+    expect(
+      state.displaySpendableFreshness,
+      SpendableBalanceFreshness.authoritative,
+    );
+    expect(state.isUsingCompletedSpendableSnapshot, isFalse);
+  });
+
+  test('only a completed account snapshot is eligible for preservation', () {
+    final completed = SyncState(
+      hasBalanceData: true,
+      scannedHeight: 100,
+      chainTipHeight: 100,
+      spendableBalance: BigInt.from(50),
+    );
+
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed,
+        requested: true,
+      ),
+      isTrue,
+    );
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed,
+        requested: false,
+      ),
+      isFalse,
+    );
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed.copyWith(scannedHeight: 99),
+        requested: true,
+      ),
+      isFalse,
+    );
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed.copyWith(hasBalanceData: false),
+        requested: true,
+      ),
+      isFalse,
+    );
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed.copyWith(
+          scannedHeight: 99,
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+        ),
+        requested: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('incremental sync keeps the last completed spendable display', () {
+    final previous = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+      orchardPendingBalance: BigInt.from(1000),
+    );
+
+    final resolved = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.zero,
+      didFetchBalance: true,
+      syncComplete: false,
+    );
+
+    expect(resolved.balance, BigInt.from(50));
+    expect(resolved.freshness, SpendableBalanceFreshness.lastCompletedSync);
+  });
+
+  test('completed sync replaces the snapshot with the Rust balance', () {
+    final previous = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final spent = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.zero,
+      didFetchBalance: true,
+      syncComplete: true,
+    );
+    final unchanged = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.from(50),
+      didFetchBalance: true,
+      syncComplete: true,
+    );
+
+    expect(spent.balance, BigInt.zero);
+    expect(spent.freshness, SpendableBalanceFreshness.authoritative);
+    expect(unchanged.balance, BigInt.from(50));
+    expect(unchanged.freshness, SpendableBalanceFreshness.authoritative);
+  });
+
+  test('failed completion read retains the last verified display', () {
+    final previous = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final resolved = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.zero,
+      didFetchBalance: false,
+      syncComplete: true,
+    );
+
+    expect(resolved.balance, BigInt.from(50));
+    expect(resolved.freshness, SpendableBalanceFreshness.lastCompletedSync);
+  });
+
   test('displayPercentage defaults to actual percentage', () {
     final state = SyncState(percentage: 0.25);
 
@@ -84,6 +207,7 @@ void main() {
     expect(scoped.hasRecentTransactionsData, isTrue);
     expect(scoped.totalBalance, BigInt.from(123));
     expect(scoped.spendableBalance, BigInt.from(100));
+    expect(scoped.displaySpendableBalance, BigInt.from(100));
     expect(scoped.recentTransactions, [tx]);
     expect(scoped.percentage, 0.75);
   });
@@ -111,6 +235,7 @@ void main() {
     expect(scoped.hasDataForAccount('account-b'), isFalse);
     expect(scoped.totalBalance, BigInt.zero);
     expect(scoped.spendableBalance, BigInt.zero);
+    expect(scoped.displaySpendableBalance, BigInt.zero);
     expect(scoped.recentTransactions, isEmpty);
     expect(scoped.isSyncing, isTrue);
     expect(scoped.percentage, 0.75);
