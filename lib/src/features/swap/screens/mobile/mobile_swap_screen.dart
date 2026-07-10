@@ -30,6 +30,7 @@ import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 
 enum _SwapModalSurface {
   assetSelector,
@@ -63,6 +64,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   bool _modalRouteOpen = false;
   String? _addressEditorDraftText;
   bool _addressEditorDraftRemember = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Heal fiat texts that went stale while no swap surface was mounted —
+      // the keepAlive SwapNotifier deliberately does not track the
+      // autoDispose display chain on its own (see its build()).
+      ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
+    });
+  }
 
   @override
   void dispose() {
@@ -293,6 +306,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         _closeSwapModal();
       },
     );
+    // USD-fallback flips (market data resolving the selected currency, or a
+    // refresh transiently dropping it) re-express the stored fiat texts.
+    // Screen-scoped on purpose: this screen already keeps the display chain
+    // alive via its watch below, while the keepAlive SwapNotifier must not
+    // hold any subscription on it (see its build()).
+    ref.listen<String>(
+      fiatDisplayProvider.select((display) => display.displayCurrency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        ref.read(swapStateProvider.notifier).syncFiatTextsCurrency();
+      },
+    );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -364,6 +389,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   child: Column(
                     children: [
                       MobileSwapComposerTicket(
+                        fiatDisplay: ref.watch(fiatDisplayProvider),
                         state: swapState,
                         onAmountChanged: swapNotifier.updateAmount,
                         onAmountFiatChanged: swapNotifier.updateAmountFiat,
@@ -372,6 +398,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         onReceiveAmountFiatChanged:
                             swapNotifier.updateReceiveAmountFiat,
                         onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
+                        onFiatEntrySideChanged:
+                            swapNotifier.setActiveFiatEntrySide,
                         onToggleDirection: swapNotifier.toggleDirection,
                         onOpenExternalAssetPicker: () =>
                             _openModal(_SwapModalSurface.assetSelector),

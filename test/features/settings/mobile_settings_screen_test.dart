@@ -17,10 +17,12 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/fiat_currency_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/in_memory_fiat_currency_notifier.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -126,6 +128,7 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      fiatCurrencyProvider.overrideWith(InMemoryFiatCurrencyNotifier.new),
       syncKeepAwakeProvider.overrideWith(
         () => syncKeepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier(),
       ),
@@ -281,6 +284,49 @@ void main() {
     // Sheet closed and the row value reflects the new mode.
     expect(find.text('System (Auto)'), findsNothing);
     expect(find.text('Light'), findsOneWidget);
+  });
+
+  testWidgets('currency row opens the sheet and applies the selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_currency_row')),
+    );
+    await tester.pump();
+    expect(find.text('USD'), findsOneWidget);
+
+    await tester.tap(find.text('Currency'));
+    await tester.pumpAndSettle();
+
+    final krwOption = find.byKey(const ValueKey('mobile_currency_option_krw'));
+    await tester.scrollUntilVisible(
+      krwOption,
+      60,
+      scrollable: find
+          .descendant(
+            of: find.byType(MobileModalScaffold),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pump();
+
+    // Selection commits through Update, not on tap.
+    await tester.tap(krwOption);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_currency_update')));
+    await tester.pumpAndSettle();
+
+    // Sheet closed and the row value reflects the new currency.
+    expect(
+      find.byKey(const ValueKey('mobile_currency_option_krw')),
+      findsNothing,
+    );
+    expect(find.text('KRW'), findsOneWidget);
+    expect(find.text('USD'), findsNothing);
   });
 
   testWidgets('sync keep-awake row toggles the persisted setting', (

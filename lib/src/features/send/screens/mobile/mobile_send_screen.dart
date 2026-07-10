@@ -25,6 +25,7 @@ import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
+import '../../../../core/config/fiat_currencies.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -36,8 +37,7 @@ import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../widgets/send_recipient_resolver.dart';
-import '../../widgets/send_review_layout.dart'
-    show SendReviewContactRecipient;
+import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -328,6 +328,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
   String _fiatAmountText = '';
+  // Set when a display-currency change arrives while the fiat field is
+  // focused: the re-expression is deferred to focus loss so it never
+  // clobbers an in-progress entry.
+  bool _fiatReexpressPending = false;
   MobileSendAmountInputMode _amountInputMode = MobileSendAmountInputMode.zec;
   String? _amountError = ''; // null = valid, '' = silently incomplete
   int _validateSeq = 0;
@@ -461,6 +465,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   void _handleAmountFocusChanged() {
     if (mounted) setState(() {});
+    if (!_amountFocus.hasFocus && _fiatReexpressPending) {
+      _reexpressFiatForCurrencyChange();
+    }
   }
 
   Future<void> _validateAddress() async {
@@ -598,22 +605,67 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  BigInt? _zatoshiFromFiatText(String text, double? zecUnitPrice) =>
+      sendZatoshiFromFiatText(text, zecUnitPrice);
+
+  /// The currency mobile fiat entry is actually denominated in — the
+  /// resolved display currency, so symbol/decimals always match the unit
+  /// price from [zecHomeFiatUnitPriceProvider] (USD fallback included).
+  FiatCurrency get _fiatCurrency =>
+      ref.read(zecHomeFiatDisplayCurrencyProvider);
+
+  String _zeroFiatText(FiatCurrency currency) => sendZeroFiatText(currency);
+
+  String _sendableFiatInputTextForZatoshi(
+    BigInt zatoshi,
+    double zecUnitPrice,
+  ) =>
+      sendSendableFiatInputTextForZatoshi(zatoshi, zecUnitPrice, _fiatCurrency);
+
+  void _reexpressFiatForCurrencyChange() {
+    if (!_amountInputIsUsd) {
+      // Token mode: symbols/decimals re-render via the provider watches; the
+      // typed ZEC amount is currency-independent.
+      return;
+    }
+    if (_amountFocus.hasFocus) {
+      // Never rewrite a focused field: the prefix symbol already shows the
+      // new currency and the next keystroke re-prices the entry in it, so
+      // overwriting here would clobber an in-progress entry (a partial like
+      // "12." would be cleared outright). Re-express on focus loss instead.
+      _fiatReexpressPending = true;
+      return;
+    }
+    _fiatReexpressPending = false;
+    final zatoshi = parseZecAmount(_amountText.trim());
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    final fiatText = zatoshi == null || zecUnitPrice == null
+        ? ''
+        : _sendableFiatInputTextForZatoshi(zatoshi, zecUnitPrice);
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
+  }
+
+  String _fiatDisplayTextForZatoshi(BigInt zatoshi, double zecUnitPrice) =>
+      sendFiatDisplayTextForZatoshi(zatoshi, zecUnitPrice, _fiatCurrency);
+
   void _toggleAmountInputMode() {
     final nextMode = _amountInputIsUsd
         ? MobileSendAmountInputMode.zec
         : MobileSendAmountInputMode.usd;
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-    if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    if (nextMode == MobileSendAmountInputMode.usd && zecUnitPrice == null) {
       return;
     }
 
+    _fiatReexpressPending = false;
     setState(() {
       _amountInputMode = nextMode;
       if (_amountInputIsUsd) {
         final zatoshi = parseZecAmount(_amountText.trim());
         _fiatAmountText = zatoshi == null || zatoshi <= BigInt.zero
             ? ''
-            : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!);
+            : _sendableFiatInputTextForZatoshi(zatoshi, zecUnitPrice!);
         if (_fiatAmountText.isEmpty) {
           _amountText = '';
           _amountError = '';
@@ -679,8 +731,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleFiatAmountChanged(String value) {
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-    final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
+    // A keystroke re-prices the whole entry at the current unit price, so a
+    // deferred currency re-expression is no longer needed (and would
+    // otherwise rewrite the user's own text on blur).
+    _fiatReexpressPending = false;
+    final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+    final zatoshi = _zatoshiFromFiatText(value, zecUnitPrice);
     setState(() {
       _fiatAmountText = value.trim();
       _amountText = zatoshi == null
@@ -755,12 +811,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
-      final fiatText = zecUsdUnitPrice == null
+      final zecUnitPrice = ref.read(zecHomeFiatUnitPriceProvider);
+      final fiatText = zecUnitPrice == null
           ? ''
-          : sendSendableUsdInputTextForZatoshi(
+          : _sendableFiatInputTextForZatoshi(
               estimate.amountZatoshi,
-              zecUsdUnitPrice,
+              zecUnitPrice,
             );
       if (_amountInputIsUsd && fiatText.isEmpty) {
         _setAmountControllerText('');
@@ -1195,6 +1251,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fiat-mode state is denominated in the display currency it was typed
+    // under. When that currency changes (Settings pick, or the USD fallback
+    // resolving once market data loads), re-express the stored fiat text from
+    // the canonical ZEC amount — mirrors SwapNotifier's currency-change
+    // listener so send and swap degrade identically.
+    ref.listen<String>(
+      zecHomeFiatDisplayCurrencyProvider.select((currency) => currency.code),
+      (previous, next) {
+        if (previous == null || previous == next) return;
+        _reexpressFiatForCurrencyChange();
+      },
+    );
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
     final showRecipientFieldLayer =
@@ -1633,7 +1701,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -1673,7 +1741,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       context,
                       showError: showError,
                       spendableText: spendableText,
-                      zecUsdUnitPrice: zecUsdUnitPrice,
+                      zecUnitPrice: zecUnitPrice,
                       amountStyle: amountStyle,
                       amountUnitStyle: amountUnitStyle,
                     ),
@@ -1793,7 +1861,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     BuildContext context, {
     required bool showError,
     required String spendableText,
-    required double? zecUsdUnitPrice,
+    required double? zecUnitPrice,
     required TextStyle amountStyle,
     required TextStyle amountUnitStyle,
   }) {
@@ -1811,7 +1879,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const SizedBox(height: AppSpacing.md),
           _buildAmountInputPanel(
             context,
-            zecUsdUnitPrice: zecUsdUnitPrice,
+            zecUnitPrice: zecUnitPrice,
             amountStyle: amountStyle,
             amountUnitStyle: amountUnitStyle,
           ),
@@ -1877,7 +1945,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountInputPanel(
     BuildContext context, {
-    required double? zecUsdUnitPrice,
+    required double? zecUnitPrice,
     required TextStyle amountStyle,
     required TextStyle amountUnitStyle,
   }) {
@@ -1895,7 +1963,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             amountUnitStyle: amountUnitStyle,
           ),
           const SizedBox(height: AppSpacing.s),
-          _buildAmountConversionRow(context, zecUsdUnitPrice: zecUsdUnitPrice),
+          _buildAmountConversionRow(context, zecUnitPrice: zecUnitPrice),
         ],
       ),
     );
@@ -1923,7 +1991,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final inputFormatters = [
       const CommaToDotInputFormatter(),
       _DecimalAmountInputFormatter(
-        maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+        maxFractionDigits: _amountInputIsUsd
+            ? ref.watch(zecHomeFiatDisplayCurrencyProvider).maxDecimals
+            : 8,
         maxLength: _amountInputIsUsd ? 12 : 17,
       ),
     ];
@@ -1933,7 +2003,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final affixWidth = _amountInputIsUsd
-              ? _textWidth(r'$', usdPrefixStyle, textScaler: textScaler) +
+              ? _textWidth(
+                      ref.watch(zecHomeFiatDisplayCurrencyProvider).symbol,
+                      usdPrefixStyle,
+                      textScaler: textScaler,
+                    ) +
                     AppSpacing.xs
               : _textWidth('ZEC', amountUnitStyle, textScaler: textScaler) +
                     AppSpacing.xs;
@@ -1956,7 +2030,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     0,
                     _kMobileSendAmountUsdPrefixOpticalOffsetY,
                   ),
-                  child: Text(r'$', style: usdPrefixStyle),
+                  child: Text(
+                    ref.watch(zecHomeFiatDisplayCurrencyProvider).symbol,
+                    style: usdPrefixStyle,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
               ],
@@ -2057,22 +2134,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountConversionRow(
     BuildContext context, {
-    required double? zecUsdUnitPrice,
+    required double? zecUnitPrice,
   }) {
     final colors = context.colors;
     final amountZatoshi = parseZecAmount(_amountText.trim());
-    final canToggle = _amountInputIsUsd || zecUsdUnitPrice != null;
+    final canToggle = _amountInputIsUsd || zecUnitPrice != null;
     final metaText = _amountInputIsUsd
         ? '${amountZatoshi == null ? '0' : ZecAmount.fromZatoshi(amountZatoshi).pretty().amountText} ZEC'
-        : zecUsdUnitPrice == null
+        : zecUnitPrice == null
         ? null
-        : r'$ ' +
-              (amountZatoshi == null || amountZatoshi <= BigInt.zero
-                  ? '0.00'
-                  : sendUsdDisplayTextForZatoshi(
-                      amountZatoshi,
-                      zecUsdUnitPrice,
-                    ));
+        : '${_fiatCurrency.symbol} '
+              '${amountZatoshi == null || amountZatoshi <= BigInt.zero ? _zeroFiatText(_fiatCurrency) : _fiatDisplayTextForZatoshi(amountZatoshi, zecUnitPrice)}';
 
     return SizedBox(
       height: _kMobileSendAmountMetaHeight,
@@ -2081,7 +2153,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           button: true,
           label: _amountInputIsUsd
               ? 'Enter amount in ZEC'
-              : 'Enter amount in USD',
+              : 'Enter amount in ${_fiatCurrency.displayCode}',
           enabled: canToggle,
           child: GestureDetector(
             key: const ValueKey('mobile_send_amount_mode_toggle'),
@@ -2098,7 +2170,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 const SizedBox(width: AppSpacing.xxs),
                 if (metaText == null) ...[
                   Text(
-                    r'$',
+                    _fiatCurrency.symbol,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -2131,7 +2203,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ? null
         : fiatTextForZatoshi(
             amountZatoshi,
-            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+            zecUnitPrice: ref.watch(zecHomeFiatUnitPriceProvider),
+            currency: ref.watch(zecHomeFiatDisplayCurrencyProvider),
           );
     final feeText = _feeZatoshi == null
         ? '—'

@@ -1,3 +1,4 @@
+import '../../../core/config/fiat_currencies.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
@@ -5,7 +6,6 @@ import '../domain/near_intents_explorer.dart';
 import 'swap_address_book_helpers.dart';
 import 'swap_address_formatting.dart';
 import 'swap_detail_tooltips.dart';
-import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
@@ -76,6 +76,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapIntent intent, {
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
@@ -86,11 +87,13 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     intent: intent,
     side: _SwapActivityAmountSide.sell,
     amountText: intent.sellAmount,
+    fiatDisplay: fiatDisplay,
   );
   final receiveFiatText = _swapActivityFiatTextForAsset(
     intent: intent,
     side: _SwapActivityAmountSide.receive,
     amountText: intent.receiveEstimate,
+    fiatDisplay: fiatDisplay,
   );
 
   // The summary's bottom lines: fiat on the ZEC side, the counterparty
@@ -614,22 +617,27 @@ String swapActivityPairSymbol(String pair, int index) {
   return index == 0 ? 'deposit asset' : 'receive asset';
 }
 
+/// The persisted basis is USD captured at swap time; non-USD display uses
+/// the *current* implied FX rate, so historical rows re-price as FX moves.
+/// This is deliberate (display-only conversion, nothing persisted changes) —
+/// capturing per-currency values at swap time would require storing them.
 String _swapActivityFiatTextForAsset({
   required SwapIntent intent,
   required _SwapActivityAmountSide side,
   required String amountText,
+  required FiatDisplay fiatDisplay,
 }) {
   final amount = _numericAmount(amountText);
-  if (amount == null || amount <= 0) return r'$--';
+  if (amount == null || amount <= 0) return fiatDisplay.placeholderText;
   final fiatValueBasis = intent.fiatValueBasis;
-  if (fiatValueBasis == null) return r'$--';
+  if (fiatValueBasis == null) return fiatDisplay.placeholderText;
   final capturedValue = switch (side) {
     _SwapActivityAmountSide.sell => fiatValueBasis.sellUsdValue(amount),
     _SwapActivityAmountSide.receive => fiatValueBasis.receiveUsdValue(amount),
   };
   return capturedValue == null
-      ? r'$--'
-      : swapFormatCompactFiatValue(capturedValue);
+      ? fiatDisplay.placeholderText
+      : fiatDisplay.formatCompactUsdValue(capturedValue);
 }
 
 enum _SwapActivityAmountSide { sell, receive }

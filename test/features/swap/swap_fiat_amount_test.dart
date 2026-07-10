@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_fiat_amount.dart';
-import 'package:zcash_wallet/src/features/swap/models/swap_fiat_value_formatting.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 void main() {
@@ -119,9 +119,47 @@ void main() {
   });
 
   test('formats compact fiat display values', () {
-    expect(swapFormatCompactFiatValue(0), r'$0.00');
-    expect(swapFormatCompactFiatValue(1234.5), r'$1.23K');
-    expect(swapFormatCompactFiatValue(1234567), r'$1.235M');
+    expect(formatCompactFiatValueFor(kUsdFiatCurrency, 0), r'$0.00');
+    expect(formatCompactFiatValueFor(kUsdFiatCurrency, 1234.5), r'$1.23K');
+    expect(formatCompactFiatValueFor(kUsdFiatCurrency, 1234567), r'$1.235M');
+  });
+
+  test('caps swap fiat digits for low-decimal display currencies', () {
+    const krwDisplay = FiatDisplay(
+      currency: FiatCurrency(code: 'krw', symbol: '₩', maxDecimals: 0),
+      usdToCurrencyRate: 1,
+    );
+    const inrDisplay = FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 1,
+    );
+    final state = _stateWithUsdRate(1, zecUsdPrice: 50.25);
+
+    // Zero-decimal currency: no fractional units.
+    expect(
+      swapFiatDisplayText(
+        state,
+        asset: SwapAsset.zec,
+        tokenAmountText: '1',
+        fiatDisplay: krwDisplay,
+      ),
+      '₩50',
+    );
+    // One-decimal currency: a single fraction digit at most.
+    expect(
+      swapFiatDisplayText(
+        state,
+        asset: SwapAsset.zec,
+        tokenAmountText: '1',
+        fiatDisplay: inrDisplay,
+      ),
+      '₹50.2',
+    );
+    // Two-decimal currencies keep the pre-existing magnitude-based digits.
+    expect(
+      swapFiatDisplayText(state, asset: SwapAsset.zec, tokenAmountText: '1'),
+      r'$50.25',
+    );
   });
 }
 

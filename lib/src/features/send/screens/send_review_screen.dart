@@ -295,7 +295,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       address: widget.args.address,
       ownAccounts: ownAccounts,
     );
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
 
@@ -316,7 +317,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 amountText: _formatAmount(widget.args.amountZatoshi),
                 fiatText: fiatTextForZatoshi(
                   widget.args.amountZatoshi,
-                  zecUsdUnitPrice: zecUsdUnitPrice,
+                  zecUnitPrice: zecUnitPrice,
+                  currency: fiatCurrency,
                 ),
                 recipient: recipient,
                 feeText: _formatFee(widget.args.feeZatoshi),

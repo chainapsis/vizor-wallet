@@ -12,9 +12,9 @@ import '../domain/swap_contract.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_detail_tooltips.dart';
-import '../models/swap_fiat_value_formatting.dart';
 import 'swap_amount_text.dart';
 import 'swap_review_info.dart';
+import '../../../core/config/fiat_currencies.dart';
 
 /// Content width inside the 420 content area (Figma ' Review' frame).
 const double _swapReviewContentWidth = 396;
@@ -33,6 +33,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.onCopy,
     this.showTitle = true,
     this.addressBookContacts = const [],
+    this.fiatDisplay = kUsdFiatDisplay,
     super.key,
   });
 
@@ -48,6 +49,9 @@ class SwapReviewPageContent extends StatelessWidget {
   final String? startBlockedReason;
   final String? slippageToleranceTextOverride;
   final String? payFiatTextOverride;
+
+  /// Selected display currency + USD conversion for quote fiat values.
+  final FiatDisplay fiatDisplay;
   final String? receiveFiatTextOverride;
 
   /// Copies the full counterparty address to the clipboard (and surfaces a
@@ -125,7 +129,7 @@ class SwapReviewPageContent extends StatelessWidget {
         asset: quote.sellAsset,
         label: "You're paying",
         amountText: quote.sellAmountText,
-        detailText: payFiatTextOverride ?? _payFiatText(quote),
+        detailText: payFiatTextOverride ?? _payFiatText(quote, fiatDisplay),
       );
     }
     final refundAddress = addressPlan.oneClickRefundTo.trim();
@@ -148,7 +152,8 @@ class SwapReviewPageContent extends StatelessWidget {
         asset: quote.receiveAsset,
         label: "You're receiving",
         amountText: quote.receiveEstimateText,
-        detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
+        detailText:
+            receiveFiatTextOverride ?? _receiveFiatText(quote, fiatDisplay),
       );
     }
     final recipientAddress = addressPlan.userExternalAddress.trim();
@@ -339,18 +344,24 @@ class _ReviewNotice extends StatelessWidget {
   }
 }
 
-String _payFiatText(SwapQuote quote) {
-  return _quoteFiatText(quote.fiatValueBasis?.sellUsdValue(quote.sellAmount));
-}
-
-String _receiveFiatText(SwapQuote quote) {
+String _payFiatText(SwapQuote quote, FiatDisplay fiatDisplay) {
   return _quoteFiatText(
-    quote.fiatValueBasis?.receiveUsdValue(quote.receiveAmount),
+    quote.fiatValueBasis?.sellUsdValue(quote.sellAmount),
+    fiatDisplay,
   );
 }
 
-String _quoteFiatText(double? value) {
-  return value == null ? r'$--' : swapFormatCompactFiatValue(value);
+String _receiveFiatText(SwapQuote quote, FiatDisplay fiatDisplay) {
+  return _quoteFiatText(
+    quote.fiatValueBasis?.receiveUsdValue(quote.receiveAmount),
+    fiatDisplay,
+  );
+}
+
+String _quoteFiatText(double? value, FiatDisplay fiatDisplay) {
+  return value == null
+      ? fiatDisplay.placeholderText
+      : fiatDisplay.formatCompactUsdValue(value);
 }
 
 /// Public for the mobile review content, which renders the same row.

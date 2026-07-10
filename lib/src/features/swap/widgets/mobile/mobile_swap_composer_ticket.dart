@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/config/fiat_currencies.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -35,6 +38,8 @@ class MobileSwapComposerTicket extends StatefulWidget {
     required this.onUseMaxZecAmount,
     required this.zecAvailableText,
     this.destinationContactName,
+    this.fiatDisplay = kUsdFiatDisplay,
+    this.onFiatEntrySideChanged,
     super.key,
   });
 
@@ -53,6 +58,14 @@ class MobileSwapComposerTicket extends StatefulWidget {
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onUseMaxZecAmount;
   final String zecAvailableText;
+
+  /// Selected display currency + USD conversion for quote fiat values.
+  final FiatDisplay fiatDisplay;
+
+  /// Reports which fiat-mode field currently has focus (null when neither),
+  /// so [SwapNotifier] can preserve an in-progress fiat entry when the
+  /// display currency changes under it.
+  final ValueChanged<SwapAmountInputSide?>? onFiatEntrySideChanged;
 
   @override
   State<MobileSwapComposerTicket> createState() =>
@@ -94,6 +107,15 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     super.didUpdateWidget(oldWidget);
     _syncController(_amountController, _payInputText(widget.state));
     _syncController(_receiveAmountController, _receiveInputText(widget.state));
+    // Input-mode toggles change the fiat entry side without a focus event
+    // (e.g. the field is focused in token mode and the user taps the fiat
+    // toggle). Report post-frame: didUpdateWidget runs during build, and the
+    // notifier may re-derive state when a deferred re-expression is pending.
+    if (_fiatEntrySide() != _reportedFiatEntrySide) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportFiatEntrySide();
+      });
+    }
   }
 
   @override
@@ -104,10 +126,42 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     _receiveAmountFocusNode.removeListener(_handleAmountFocusChanged);
     _amountFocusNode.dispose();
     _receiveAmountFocusNode.dispose();
+    if (_reportedFiatEntrySide != null) {
+      // FocusNode.dispose() does not emit an unfocus event; clear the
+      // notifier-side marker after teardown (the callback is a tear-off of a
+      // keepAlive notifier, safe to invoke after this tree is gone).
+      final callback = widget.onFiatEntrySideChanged;
+      if (callback != null) scheduleMicrotask(() => callback(null));
+    }
     super.dispose();
   }
 
-  void _handleAmountFocusChanged() => setState(() {});
+  SwapAmountInputSide? _reportedFiatEntrySide;
+
+  void _handleAmountFocusChanged() {
+    setState(() {});
+    _reportFiatEntrySide();
+  }
+
+  void _reportFiatEntrySide() {
+    final side = _fiatEntrySide();
+    if (side == _reportedFiatEntrySide) return;
+    _reportedFiatEntrySide = side;
+    widget.onFiatEntrySideChanged?.call(side);
+  }
+
+  SwapAmountInputSide? _fiatEntrySide() {
+    final state = widget.state;
+    if (_amountFocusNode.hasFocus &&
+        state.amountInputMode == SwapAmountInputMode.fiat) {
+      return SwapAmountInputSide.pay;
+    }
+    if (_receiveAmountFocusNode.hasFocus &&
+        state.receiveAmountInputMode == SwapAmountInputMode.fiat) {
+      return SwapAmountInputSide.receive;
+    }
+    return null;
+  }
 
   void _syncController(TextEditingController controller, String value) {
     if (controller.text == value) return;
@@ -178,7 +232,9 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
         onChanged: payInputIsFiat
             ? widget.onAmountFiatChanged
             : widget.onAmountChanged,
-        prefixText: payInputIsFiat ? r'$' : null,
+        prefixText: payInputIsFiat
+            ? widget.fiatDisplay.displayCurrency.symbol
+            : null,
         maxFractionDigits: payInputIsFiat
             ? null
             : state.direction.fromAsset(state.externalAsset).decimals,
@@ -198,6 +254,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           asset: state.direction.fromAsset(state.externalAsset),
           tokenAmountText: state.amountText,
           inputMode: state.amountInputMode,
+          fiatDisplay: widget.fiatDisplay,
         ),
         showModeIcon: payActive,
         active: payInputIsFiat,
@@ -225,7 +282,9 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
         onChanged: receiveInputIsFiat
             ? widget.onReceiveAmountFiatChanged
             : widget.onReceiveAmountChanged,
-        prefixText: receiveInputIsFiat ? r'$' : null,
+        prefixText: receiveInputIsFiat
+            ? widget.fiatDisplay.displayCurrency.symbol
+            : null,
         maxFractionDigits: receiveInputIsFiat
             ? null
             : state.direction.toAsset(state.externalAsset).decimals,
@@ -245,6 +304,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           asset: state.direction.toAsset(state.externalAsset),
           tokenAmountText: state.receiveAmountText,
           inputMode: state.receiveAmountInputMode,
+          fiatDisplay: widget.fiatDisplay,
         ),
         showModeIcon: receiveActive,
         active: receiveInputIsFiat,
@@ -764,6 +824,7 @@ String _amountMetaText(
   required SwapAsset asset,
   required String tokenAmountText,
   required SwapAmountInputMode inputMode,
+  required FiatDisplay fiatDisplay,
 }) {
   if (inputMode == SwapAmountInputMode.fiat) {
     return swapTokenAmountDisplayText(tokenAmountText: tokenAmountText);
@@ -772,5 +833,6 @@ String _amountMetaText(
     state,
     asset: asset,
     tokenAmountText: tokenAmountText,
+    fiatDisplay: fiatDisplay,
   );
 }

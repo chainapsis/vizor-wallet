@@ -106,8 +106,8 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 Widget _app(
   SyncState syncState, {
   ZecMarketData? marketData = const ZecMarketData(
-    usdPrice: 70,
-    change24hPct: 13.12,
+    pricesByCurrency: {'usd': 70},
+    change24hPctByCurrency: {'usd': 13.12},
   ),
   FakeSyncNotifier? syncNotifier,
   _FakeSyncKeepAwakeNotifier? keepAwakeNotifier,

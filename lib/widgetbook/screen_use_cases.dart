@@ -544,7 +544,10 @@ Widget _buildMobileHomeUseCase({
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         const _PreviewZecMarketDataSource(
-          ZecMarketData(usdPrice: 70, change24hPct: 13.12),
+          ZecMarketData(
+            pricesByCurrency: {'usd': 70},
+            change24hPctByCurrency: {'usd': 13.12},
+          ),
         ),
       ),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {

@@ -463,10 +463,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         sync.transparentBalance + sync.transparentPendingBalance;
     final hasBalance =
         shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final fiatBalanceText = fiatTextForZatoshi(
       shieldedBalance,
-      zecUsdUnitPrice: zecUsdUnitPrice,
+      zecUnitPrice: zecUnitPrice,
+      currency: fiatCurrency,
     );
     final shieldedFiatBalanceText =
         privacyModeEnabled && fiatBalanceText != null

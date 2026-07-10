@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -667,6 +670,100 @@ void main() {
     expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
   });
 
+  testWidgets('a display-currency change re-expresses the fiat entry instead '
+      'of reinterpreting it at the new unit price', (tester) async {
+    await _setDesktopViewport(tester);
+    final zecUsdPriceProvider =
+        NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+          _TestZecUsdPriceNotifier.new,
+        );
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(1000000000),
+        zecUsdPriceProvider: zecUsdPriceProvider,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_amount_field'), '250');
+    await tester.pumpAndSettle();
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+      listen: false,
+    );
+
+    // KRW resolves: the unit price flips denomination in the same event. The
+    // drift recompute must NOT reinterpret '250' as won; the canonical
+    // 2.5 ZEC re-expresses at ₩91,000 instead.
+    const krw = FiatCurrency(code: 'krw', symbol: '₩', maxDecimals: 0);
+    container.read(zecUsdPriceProvider.notifier).setPrice(91000);
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: krw,
+      usdToCurrencyRate: 910,
+    );
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '227500');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    // Focused mid-entry, the flip must preserve the user's text and defer
+    // the re-expression to blur.
+    await tester.tap(_editableIn('send_amount_field'));
+    await tester.pumpAndSettle();
+    const eur = FiatCurrency(code: 'eur', symbol: '€', maxDecimals: 2);
+    container.read(zecUsdPriceProvider.notifier).setPrice(90);
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: eur,
+      usdToCurrencyRate: 0.9,
+    );
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '227500');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_amount_field'), '225.00');
+    expect(find.text('2.5 $kZcashDefaultCurrencyTicker'), findsOneWidget);
+
+    // Review is the commitment point: a flip deferred while the field is
+    // focused flushes when Review is clicked (no blur happens first), and
+    // the proposed amount stays the canonical 2.5 ZEC.
+    await tester.tap(_editableIn('send_amount_field'));
+    await tester.pumpAndSettle();
+    container.read(zecUsdPriceProvider.notifier).setPrice(100);
+    container.read(testFiatDisplay.notifier).state = kUsdFiatDisplay;
+    await tester.pumpAndSettle();
+    expect(_fieldText(tester, 'send_amount_field'), '225.00');
+
+    await tester.tap(find.text('Review'));
+    await tester.pump();
+    expect(_fieldText(tester, 'send_amount_field'), '250.00');
+
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(250000000));
+  });
+
   testWidgets('native amount remains reviewable while USD price is loading', (
     tester,
   ) async {
@@ -780,6 +877,7 @@ Widget _sendHarness({
   BigInt? transparentBalance,
   double? zecUsdPrice = 70,
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -794,11 +892,12 @@ Widget _sendHarness({
 
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
       zecUsdPriceProvider == null
-          ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
-          : zecHomeUsdUnitPriceProvider.overrideWith(
+          ? zecHomeFiatUnitPriceProvider.overrideWithValue(zecUsdPrice)
+          : zecHomeFiatUnitPriceProvider.overrideWith(
               (ref) => ref.watch(zecUsdPriceProvider),
             ),
       syncProvider.overrideWith(

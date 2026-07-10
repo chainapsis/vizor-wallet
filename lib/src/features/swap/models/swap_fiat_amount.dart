@@ -1,3 +1,4 @@
+import '../../../core/config/fiat_currencies.dart';
 import 'swap_models.dart';
 import 'swap_fiat_value_formatting.dart';
 
@@ -34,36 +35,40 @@ String swapFiatDisplayText(
   SwapState state, {
   required SwapAsset asset,
   required String tokenAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final amount = double.tryParse(tokenAmountText.trim());
-  if (amount == null || amount <= 0) return r'$0';
+  if (amount == null || amount <= 0) return fiatDisplay.zeroText;
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
-  if (usdValue == null) return r'$--';
-  return '\$${swapFormatFiatValue(usdValue)}';
+  if (usdValue == null) return fiatDisplay.placeholderText;
+  return '${fiatDisplay.displayCurrency.symbol}'
+      '${_formatConvertedFiatValue(fiatDisplay, usdValue)}';
 }
 
 String swapFiatInputTextFromTokenText(
   SwapState state, {
   required SwapAsset asset,
   required String tokenAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final amount = double.tryParse(tokenAmountText.trim());
   if (amount == null || amount <= 0) return '';
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
   if (usdValue == null) return '';
-  return swapFormatFiatValue(usdValue);
+  return _formatConvertedFiatValue(fiatDisplay, usdValue);
 }
 
 String? swapTokenAmountTextFromFiatText(
   SwapState state, {
   required SwapAsset asset,
   required String fiatAmountText,
+  FiatDisplay fiatDisplay = kUsdFiatDisplay,
 }) {
   final fiatAmount = double.tryParse(fiatAmountText.trim());
   if (fiatAmount == null || fiatAmount <= 0) return '';
   final usdUnitPrice = swapUsdUnitPriceForAsset(state, asset: asset);
   if (usdUnitPrice == null || usdUnitPrice <= 0) return null;
-  return asset.formatAmountDown(fiatAmount / usdUnitPrice);
+  return asset.formatAmountDown(fiatDisplay.toUsd(fiatAmount) / usdUnitPrice);
 }
 
 /// Token-equivalent meta line shown while the card is in fiat input mode.
@@ -76,4 +81,20 @@ String swapTokenAmountDisplayText({required String tokenAmountText}) {
 
 double? _usableUnitPrice(double? value) {
   return value != null && value.isFinite && value > 0 ? value : null;
+}
+
+/// [swapFormatFiatValue] with the fraction digits capped for low-decimal
+/// currencies: KRW/JPY (0) never show sub-unit digits and 1-decimal
+/// currencies show at most one. Currencies with >= 2 decimals keep the
+/// magnitude-based digits unchanged, preserving the pre-existing USD output
+/// byte-for-byte (including 4 digits for sub-unit values).
+String _formatConvertedFiatValue(FiatDisplay fiatDisplay, double usdValue) {
+  final value = fiatDisplay.convertUsd(usdValue);
+  final maxDecimals = fiatDisplay.displayCurrency.maxDecimals;
+  if (maxDecimals >= 2) return swapFormatFiatValue(value);
+  if (value <= 0) return '0';
+  return trimTrailingFiatZeros(
+    swapTruncateToFractionDigits(value, maxDecimals),
+    fractionDigits: maxDecimals,
+  );
 }

@@ -183,8 +183,9 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'destinationChainTxHash': record.destinationChainTxHash,
     'providerRefundInfo': _providerRefundInfoToJson(record.providerRefundInfo),
     'fiatValueBasis': _fiatValueBasisToJson(record.fiatValueBasis),
-    'lastStatusCheckedAt':
-        record.lastStatusCheckedAt?.toUtc().toIso8601String(),
+    'lastStatusCheckedAt': record.lastStatusCheckedAt
+        ?.toUtc()
+        .toIso8601String(),
     'statusError': record.statusError,
     'broadcastNotice': record.broadcastNotice,
     'broadcastStatus': record.broadcastStatus,

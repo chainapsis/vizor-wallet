@@ -237,7 +237,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       address: widget.args.address,
       ownAccounts: ownAccounts,
     );
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUnitPrice = ref.watch(zecHomeFiatUnitPriceProvider);
+    final fiatCurrency = ref.watch(zecHomeFiatDisplayCurrencyProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
     final canOpenExplorer =
@@ -272,7 +273,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         amountText: _formatAmount(widget.args.amountZatoshi),
                         fiatText: fiatTextForZatoshi(
                           widget.args.amountZatoshi,
-                          zecUsdUnitPrice: zecUsdUnitPrice,
+                          zecUnitPrice: zecUnitPrice,
+                          currency: fiatCurrency,
                         ),
                         recipient: recipient,
                         timestampText: formatDayMonthTime(

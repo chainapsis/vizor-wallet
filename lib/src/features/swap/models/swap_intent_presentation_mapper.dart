@@ -237,8 +237,7 @@ SwapIntent updateSwapIntentFromSnapshot(
     providerStatus: snapshot.status,
     deadline: depositDeadline,
     hasDepositEvidence: swapHasConfirmedDepositEvidence(
-      originChainTxHash:
-          _hasText(intent.originChainTxHash)
+      originChainTxHash: _hasText(intent.originChainTxHash)
           ? intent.originChainTxHash
           : snapshot.originChainTxHash,
       depositTxHash: intent.depositTxHash,
@@ -320,4 +319,3 @@ String _nextActionForRestoredStatus(
 }
 
 bool _hasText(String? value) => value?.trim().isNotEmpty ?? false;
-

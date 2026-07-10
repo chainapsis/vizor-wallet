@@ -9,6 +9,8 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,9 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/fiat_currencies.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
@@ -276,9 +281,7 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text(
-          'To: Treasury (0x5290840 ... 4169ee7) on Ethereum',
-        ),
+        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
       ),
       findsOneWidget,
     );
@@ -3376,6 +3379,311 @@ void main() {
     expect(swapProvider.sawForcedRefresh, isTrue);
     expect(_fieldText(tester, 'swap_receive_amount_field'), '200.00');
     expect(find.text('1 ZEC = 200.00 USDC'), findsOneWidget);
+  });
+
+  testWidgets('fiat texts re-derive when the display currency changes', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+
+    // Fiat mode under the USD fallback: 1 ZEC @ $100.
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+
+    // No active entry: the field is not focused when the currency changes.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    // Market data resolves the selected currency: the fiat text re-expresses
+    // the canonical token amount in the new unit instead of relabeling the
+    // old number.
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
+  });
+
+  testWidgets('toggling a focused field into fiat mode still protects the '
+      'entry from a currency change', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    // enterText focuses the field in TOKEN mode; the toggle then flips it to
+    // fiat WITHOUT a focus event — the mode change alone must mark the side
+    // as actively edited.
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    // Preserved while focused.
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    // Review is the commitment point: opening it flushes the deferred
+    // re-expression even though the field never blurred, so the composer
+    // can't show the new symbol on old-currency digits while quoting.
+    await container.read(swapStateProvider.notifier).showReview();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
+    expect(_fieldText(tester, 'swap_amount_field'), '8000');
+  });
+
+  testWidgets('a focused fiat entry survives a display-currency change and '
+      're-expresses on blur', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    // Focus the pay field while it is in fiat mode so the composer reports
+    // the active entry side to the notifier.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_amount_field')));
+    await tester.pump();
+
+    // Currency resolves mid-entry: the focused side keeps the user's text
+    // (no clobber) while the token amount stays canonical.
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    // Blur applies the deferred re-expression in the new unit.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(_fieldText(tester, 'swap_amount_field'), '8000');
+  });
+
+  testWidgets('price refresh does not reinterpret a deferred fiat entry in '
+      'the new currency', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        priceRefreshInterval: const Duration(seconds: 1),
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    // Focus the pay field while it is in fiat mode so the currency change
+    // below defers its re-expression.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_amount_field')));
+    await tester.pump();
+
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountText, '1');
+
+    // A supported-asset price refresh lands while the re-expression is still
+    // deferred. The "100" on screen still means $100, so the refresh must
+    // not reinterpret it as ₹100 and rescale the token amount.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    // Blur still re-expresses the entry from the canonical token amount.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
+  });
+
+  testWidgets('leaving the swap surfaces releases the market-data poller', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final source = _CountingMarketDataSource();
+    final router = GoRouter(
+      initialLocation: '/swap',
+      routes: [
+        _swapRoute(),
+        _swapActivityRoute(),
+        GoRoute(path: '/blank', builder: (_, _) => const SizedBox.shrink()),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: _PricingSwapProvider(const [100]),
+        seedSwapActivityFixtures: false,
+        extraOverrides: [
+          swapFeatureEnabledProvider.overrideWithValue(true),
+          zecMarketDataSourceProvider.overrideWithValue(source),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(source.fetchCount, 1);
+
+    // Control: with a fiat surface on screen the poller keeps ticking.
+    // Stepped pumps (not one big jump) so frames interleave with timers the
+    // way they do live.
+    for (var i = 0; i < 19; i++) {
+      await tester.pump(const Duration(seconds: 10));
+    }
+    expect(source.fetchCount, 2);
+
+    // With no fiat surface mounted, the session-long SwapNotifier must not
+    // keep the autoDispose market-data poller alive NOR resurrect it from
+    // its 20s/30s poll and price-refresh timers — no fetches while away.
+    router.go('/blank');
+    await tester.pumpAndSettle();
+    final fetchesAtLeave = source.fetchCount;
+
+    for (var i = 0; i < 36; i++) {
+      await tester.pump(const Duration(seconds: 10));
+    }
+    expect(source.fetchCount, fetchesAtLeave);
   });
 
   testWidgets('price refresh keeps the review page open and warns on drift', (
@@ -7884,6 +8192,7 @@ Widget _routerHarness(
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
+  List<Override> extraOverrides = const [],
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7892,6 +8201,7 @@ Widget _routerHarness(
       sessionStore ?? _FakeSwapPersistenceStore(initialIntents: fixtureIntents);
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       addressBookRepositoryProvider.overrideWithValue(
         addressBookRepository ?? _FakeAddressBookRepository(),
@@ -7975,6 +8285,19 @@ Widget _routerHarness(
       },
     ),
   );
+}
+
+class _CountingMarketDataSource implements ZecMarketDataSource {
+  int fetchCount = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    fetchCount += 1;
+    return const ZecMarketData(
+      pricesByCurrency: {'usd': 100.0, 'inr': 8000.0},
+      change24hPctByCurrency: {},
+    );
+  }
 }
 
 GoRoute _swapRoute() {
@@ -8695,7 +9018,10 @@ String _destinationSummaryText(WidgetTester tester) {
       ? (widget.data ?? '')
       : (tester
                 .widget<Text>(
-                  find.descendant(of: finder.first, matching: find.byType(Text)),
+                  find.descendant(
+                    of: finder.first,
+                    matching: find.byType(Text),
+                  ),
                 )
                 .data ??
             '');
