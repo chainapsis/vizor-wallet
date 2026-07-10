@@ -135,4 +135,12 @@ void main() {
   test('empty bootstrap starts with privacy mode disabled', () {
     expect(AppBootstrapState.empty.privacyModeEnabled, isFalse);
   });
+
+  test(
+    'empty bootstrap starts with sync keep-awake disabled and unprompted',
+    () {
+      expect(AppBootstrapState.empty.syncKeepAwakeEnabled, isFalse);
+      expect(AppBootstrapState.empty.syncKeepAwakePromptSeen, isFalse);
+    },
+  );
 }

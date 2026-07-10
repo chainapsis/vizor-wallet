@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -27,6 +28,37 @@ class _FakePrivacyModeNotifier extends PrivacyModeNotifier {
   @override
   Future<void> set(bool enabled) async {
     state = enabled;
+  }
+}
+
+class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
+  _FakeSyncKeepAwakeNotifier([
+    this.initialState = const SyncKeepAwakeSettings(
+      enabled: false,
+      promptSeen: false,
+    ),
+  ]);
+
+  final SyncKeepAwakeSettings initialState;
+  int markPromptSeenCount = 0;
+  bool? lastEnabled;
+
+  @override
+  SyncKeepAwakeSettings build() => initialState;
+
+  @override
+  Future<void> markPromptSeen() async {
+    markPromptSeenCount += 1;
+    state = state.copyWith(promptSeen: true);
+  }
+
+  @override
+  Future<void> setEnabled(bool enabled, {bool markPromptSeen = true}) async {
+    lastEnabled = enabled;
+    state = state.copyWith(
+      enabled: enabled,
+      promptSeen: markPromptSeen ? true : null,
+    );
   }
 }
 
@@ -78,8 +110,11 @@ Widget _app(
     change24hPctByCurrency: {'usd': 13.12},
   ),
   FakeSyncNotifier? syncNotifier,
+  _FakeSyncKeepAwakeNotifier? keepAwakeNotifier,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
+  final effectiveKeepAwakeNotifier =
+      keepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier();
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -97,6 +132,7 @@ Widget _app(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
+      syncKeepAwakeProvider.overrideWith(() => effectiveKeepAwakeNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
@@ -174,6 +210,121 @@ void main() {
     expect(canvasRect.size, const Size(340, 220));
     expect(imageRect.size, const Size(246, 192));
     expect(canvasRect.bottom, moreOrLessEquals(744));
+  });
+
+  testWidgets('shows sync keep-awake prompt for long foreground sync', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier();
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          percentage: 0.25,
+          scannedHeight: 100,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime.now().subtract(
+            const Duration(seconds: 30),
+          ),
+        ),
+        keepAwakeNotifier: keepAwakeNotifier,
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Keep screen awake during sync?'), findsOneWidget);
+    expect(find.text('This will make long syncs much easier.'), findsOneWidget);
+    expect(find.text('Keep screen awake'), findsOneWidget);
+    expect(find.text('Maybe later'), findsOneWidget);
+    expect(keepAwakeNotifier.markPromptSeenCount, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_sync_keep_awake_prompt_enable')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(keepAwakeNotifier.lastEnabled, isTrue);
+    expect(find.text('Keep screen awake during sync?'), findsNothing);
+  });
+
+  testWidgets('does not repeat sync keep-awake prompt after it was seen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier(
+      const SyncKeepAwakeSettings(enabled: false, promptSeen: true),
+    );
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          percentage: 0.25,
+          scannedHeight: 100,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime.now().subtract(
+            const Duration(seconds: 30),
+          ),
+        ),
+        keepAwakeNotifier: keepAwakeNotifier,
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Keep screen awake during sync?'), findsNothing);
+    expect(keepAwakeNotifier.markPromptSeenCount, 0);
+  });
+
+  testWidgets('does not show sync keep-awake prompt when already enabled', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier(
+      const SyncKeepAwakeSettings(enabled: true, promptSeen: false),
+    );
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          percentage: 0.25,
+          scannedHeight: 100,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime.now().subtract(
+            const Duration(seconds: 30),
+          ),
+        ),
+        keepAwakeNotifier: keepAwakeNotifier,
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Keep screen awake during sync?'), findsNothing);
+    expect(keepAwakeNotifier.markPromptSeenCount, 0);
   });
 
   testWidgets('shows balance, actions, and empty activity when funded', (

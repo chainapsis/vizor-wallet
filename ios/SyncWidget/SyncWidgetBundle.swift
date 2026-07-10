@@ -11,7 +11,6 @@ import SwiftUI
 @main
 struct SyncWidgetBundle: WidgetBundle {
     var body: some Widget {
-        SyncWidget()
         SyncWidgetLiveActivity()
     }
 }
