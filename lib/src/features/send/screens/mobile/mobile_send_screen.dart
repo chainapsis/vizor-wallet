@@ -1166,14 +1166,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         return;
       }
       final lower = e.toString().toLowerCase();
+      final insufficientFunds =
+          lower.contains('insufficientfunds') || lower.contains('insufficient');
       setState(() {
         _feeZatoshi = null;
         _reviewFeeQuote = null;
         _isRefreshingReviewFee = false;
-        _reviewFeeRetryAvailable = true;
-        _reviewFeeNotice = lower.contains('sync')
-            ? 'Finishing wallet sync. Try again shortly.'
-            : 'Fee unavailable. Try again.';
+        _reviewFeeRetryAvailable = !insufficientFunds;
+        if (insufficientFunds) {
+          _amountError = _notEnoughZecText;
+          _reviewFeeNotice = _notEnoughZecText;
+        } else {
+          _reviewFeeNotice = lower.contains('sync')
+              ? 'Finishing wallet sync. Try again shortly.'
+              : 'Fee unavailable. Try again.';
+        }
       });
     }
   }

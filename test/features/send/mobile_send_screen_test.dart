@@ -818,6 +818,42 @@ void main() {
     expect(find.text('—'), findsNothing);
   });
 
+  testWidgets('insufficient review fee estimate does not offer retry', (
+    tester,
+  ) async {
+    var feeCalls = 0;
+
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: _FakeSyncNotifier(),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              feeCalls++;
+              throw StateError('Propose failed: InsufficientFunds');
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(feeCalls, greaterThanOrEqualTo(1));
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(find.text('Fee unavailable. Try again.'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')))
+          .onPressed,
+      isNull,
+    );
+  });
+
   testWidgets('changed proposal fee requires a second confirmation', (
     tester,
   ) async {
