@@ -76,6 +76,81 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        previous: completed.copyWith(
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(50),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+        ),
+        requested: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('sync failure preserves the completed spendable snapshot', () {
+    final syncing = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final preserved = SyncState.preserveSpendableDisplay(syncing);
+
+    expect(preserved.balance, BigInt.from(50));
+    expect(preserved.freshness, SpendableBalanceFreshness.lastCompletedSync);
+  });
+
+  test('stale account refresh keeps newer progress metadata', () {
+    final tx = _tx('f' * 64);
+    final current = SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      isSyncing: true,
+      percentage: 0.75,
+      scannedHeight: 75,
+      chainTipHeight: 100,
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+    final balance = rust_sync.WalletBalance(
+      availability: rust_sync.WalletBalanceAvailability.available,
+      transparent: BigInt.from(1),
+      sapling: BigInt.from(2),
+      orchard: BigInt.from(3),
+      transparentPending: BigInt.from(4),
+      saplingPending: BigInt.from(5),
+      orchardPending: BigInt.from(6),
+      changePendingConfirmation: BigInt.from(7),
+      valuePendingSpendability: BigInt.from(8),
+      uneconomicValue: BigInt.from(9),
+      spendable: BigInt.from(5),
+      total: BigInt.from(21),
+    );
+
+    final merged = current.withFetchedAccountData(
+      balance: balance,
+      fetchedRecentTransactions: [tx],
+      canShieldTransparentBalance: true,
+      shieldTransparentFee: BigInt.one,
+      shieldTransparentAmount: BigInt.one,
+      syncComplete: false,
+    );
+
+    expect(merged.percentage, 0.75);
+    expect(merged.scannedHeight, 75);
+    expect(merged.chainTipHeight, 100);
+    expect(merged.spendableBalance, BigInt.from(5));
+    expect(merged.displaySpendableBalance, BigInt.from(50));
+    expect(
+      merged.displaySpendableFreshness,
+      SpendableBalanceFreshness.lastCompletedSync,
+    );
+    expect(merged.recentTransactions, [tx]);
+    expect(merged.canShieldTransparentBalance, isTrue);
   });
 
   test('incremental sync keeps the last completed spendable display', () {
