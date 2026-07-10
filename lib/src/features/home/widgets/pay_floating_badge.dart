@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -26,7 +28,8 @@ class PayIntroductionNewGate extends ConsumerStatefulWidget {
 
 class _PayIntroductionNewGateState extends ConsumerState<PayIntroductionNewGate>
     with WidgetsBindingObserver {
-  bool _checkStarted = false;
+  bool _checkInProgress = false;
+  bool _presentationCompleted = false;
   bool _showNew = false;
   bool? _tickerWasEnabled;
   bool? _routeWasCurrent;
@@ -59,42 +62,88 @@ class _PayIntroductionNewGateState extends ConsumerState<PayIntroductionNewGate>
     }
     _tickerWasEnabled = tickerEnabled;
     _routeWasCurrent = routeIsCurrent;
+    _startCheckIfNeeded();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
       _hide();
+      return;
     }
+    _startCheckIfNeeded();
   }
 
   void _startCheckIfNeeded() {
-    if (!widget.enabled || _checkStarted) return;
-    _checkStarted = true;
+    if (!widget.enabled || _checkInProgress || _presentationCompleted) return;
+    _checkInProgress = true;
     // Microtask (not a zero-duration timer) so widget tests that only flush
     // microtasks between pumps never see a pending timer from this gate.
     Future<void>.microtask(() async {
       if (ref.read(payIntroductionBadgePersistenceEnabledProvider)) {
         final store = ref.read(payIntroductionBadgeStoreProvider);
         try {
-          if (await store.hasSeen()) return;
-          // Persist first: once the user has seen this introduction, a process
-          // exit must not make it appear again on the next launch.
-          await store.markSeen();
+          if (await store.hasSeen()) {
+            _presentationCompleted = true;
+            _checkInProgress = false;
+            return;
+          }
         } catch (error) {
           debugPrint('Pay introduction badge persistence failed: $error');
+          _checkInProgress = false;
           return;
         }
       }
-      if (!mounted || !widget.enabled) return;
-      final lifecycleState = WidgetsBinding.instance.lifecycleState;
-      if (lifecycleState != null &&
-          lifecycleState != AppLifecycleState.resumed) {
+      if (!_canPresent) {
+        _finishIncompleteCheck();
         return;
       }
-      if (!TickerMode.valuesOf(context).enabled) return;
-      if (ModalRoute.of(context)?.isCurrent == false) return;
       setState(() => _showNew = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _completeAfterVisibleFrame();
+      });
+    });
+  }
+
+  bool get _canPresent {
+    if (!mounted || !widget.enabled) return false;
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (lifecycleState != null && lifecycleState != AppLifecycleState.resumed) {
+      return false;
+    }
+    if (!TickerMode.valuesOf(context).enabled) return false;
+    return ModalRoute.of(context)?.isCurrent != false;
+  }
+
+  void _completeAfterVisibleFrame() {
+    if (!_canPresent || !_showNew) {
+      _hide();
+      _finishIncompleteCheck();
+      return;
+    }
+
+    // The NEW marker has now been painted on a current, resumed route. Only
+    // consume the install-local introduction after that visible first frame.
+    _presentationCompleted = true;
+    _checkInProgress = false;
+    if (!ref.read(payIntroductionBadgePersistenceEnabledProvider)) return;
+    final store = ref.read(payIntroductionBadgeStoreProvider);
+    unawaited(_persistSeen(store));
+  }
+
+  Future<void> _persistSeen(PayIntroductionBadgeStore store) async {
+    try {
+      await store.markSeen();
+    } catch (error) {
+      debugPrint('Pay introduction badge persistence failed: $error');
+    }
+  }
+
+  void _finishIncompleteCheck() {
+    _checkInProgress = false;
+    if (!_canPresent) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startCheckIfNeeded();
     });
   }
 
@@ -394,7 +443,7 @@ class _PayCoinImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/illustrations/pay_floating_coin.png',
+      'assets/illustrations/pay_coin.png',
       key: const ValueKey('pay_floating_badge_coin'),
       width: 68,
       height: 68,

@@ -33,6 +33,13 @@ void main() {
       find.byKey(const ValueKey('pay_floating_badge')),
     );
     expect(badgeRect.size, PayFloatingBadge.size);
+    final coin = tester.widget<Image>(
+      find.byKey(const ValueKey('pay_floating_badge_coin')),
+    );
+    expect(
+      (coin.image as AssetImage).assetName,
+      'assets/illustrations/pay_coin.png',
+    );
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('pay_floating_badge_coin'))),
       badgeRect.topLeft + const Offset(39, 0),
@@ -83,7 +90,7 @@ void main() {
     expect(_coinTranslationY(tester), 0);
   });
 
-  testWidgets('target persists NEW before showing and omits it on restart', (
+  testWidgets('target persists NEW after showing and omits it on restart', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore();
@@ -111,6 +118,29 @@ void main() {
     expect(find.text('Pay in USDC'), findsOneWidget);
     expect(find.text('NEW'), findsNothing);
     expect(store.markCount, 1);
+  });
+
+  testWidgets('target retries after resuming without consuming unseen NEW', (
+    tester,
+  ) async {
+    final store = _FakePayIntroductionBadgeStore();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+
+    await _pumpTarget(tester, store, persistenceEnabled: true);
+
+    expect(find.text('NEW'), findsNothing);
+    expect(store.markCount, 0);
+    expect(store.seen, isFalse);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(find.text('NEW'), findsOneWidget);
+    expect(store.markCount, 1);
+    expect(store.seen, isTrue);
   });
 
   testWidgets('persistent callout keeps the coin motion after NEW is seen', (
