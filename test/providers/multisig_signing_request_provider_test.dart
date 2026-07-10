@@ -266,6 +266,13 @@ void main() {
           ),
         );
       final coordinator = _FakeCoordinatorService(
+        onDispatch: (localStateJson) {
+          expect(
+            requestStore.records.single.localStateJson,
+            localStateJson,
+            reason: 'prepared nonce and outbox must be durable before dispatch',
+          );
+        },
         round1Response: const rust_multisig.ApiMultisigSigningAdvance(
           localStateJson: '{"outbound":true}',
           detail:
@@ -1050,6 +1057,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     this.round1Response,
     this.signingRequestResponse,
     this.failRound1UnauthorizedOnce = false,
+    this.onDispatch,
   });
 
   bool failPrepareOnce;
@@ -1061,6 +1069,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   final Object? inboxError;
   final rust_multisig.ApiMultisigSigningAdvance? round1Response;
   final rust_multisig.ApiMultisigSigningRequest? signingRequestResponse;
+  final void Function(String localStateJson)? onDispatch;
   final signingRequestCalls = <String>[];
   final prepareCalls = <String>[];
   final submitCalls = <String>[];
@@ -1072,6 +1081,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   final round2Calls = <String>[];
   final aggregateCalls = <String>[];
   final refreshCalls = <String>[];
+  String? _preparedKind;
 
   @override
   Future<rust_multisig.ApiMultisigAuthUpdate> refreshOrResumeAuth({
@@ -1257,7 +1267,7 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound1({
     required String coordinatorUrl,
     required String network,
     required String sessionId,
@@ -1277,25 +1287,16 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     round1AccessTokens.add(accessToken);
     round1ReviewDigests.add(expectedReviewDigest);
     round1RequesterParticipantIds.add(expectedRequesterParticipantId);
-    if (failRound1UnauthorizedOnce && accessToken == 'access-token') {
-      failRound1UnauthorizedOnce = false;
-      return rust_multisig.ApiMultisigSigningAdvance(
-        localStateJson: '{"round1_sent":false}',
-        detail:
-            'Network error while submitting Round 1: ${_structuredError('unauthorized', 'access token expired', 401)}',
-        submitted: false,
-      );
-    }
-    return round1Response ??
-        const rust_multisig.ApiMultisigSigningAdvance(
-          localStateJson: '{"round1_sent":true}',
-          detail: 'Round 1 submitted.',
-          submitted: true,
-        );
+    _preparedKind = 'round1';
+    return const rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: '{"prepared":"round1"}',
+      detail: 'Round 1 prepared locally.',
+      submitted: false,
+    );
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound2({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -1309,9 +1310,51 @@ class _FakeCoordinatorService implements MultisigCoordinatorService {
     String? localStateJson,
   }) async {
     round2Calls.add('$signingRequestId|$participantId');
+    _preparedKind = 'round2';
     return const rust_multisig.ApiMultisigSigningAdvance(
-      localStateJson: '{"round2_sent":true}',
-      detail: 'Round 2 submitted.',
+      localStateJson: '{"prepared":"round2"}',
+      detail: 'Round 2 prepared locally.',
+      submitted: false,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> dispatchSigningOutbox({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String pcztHash,
+    required String localStateJson,
+  }) async {
+    onDispatch?.call(localStateJson);
+    if (_preparedKind == 'round1') {
+      if (failRound1UnauthorizedOnce && accessToken == 'access-token') {
+        failRound1UnauthorizedOnce = false;
+        return rust_multisig.ApiMultisigSigningAdvance(
+          localStateJson: localStateJson,
+          detail:
+              'Network error while sending prepared signing message: ${_structuredError('unauthorized', 'access token expired', 401)}',
+          submitted: false,
+        );
+      }
+      return round1Response ??
+          const rust_multisig.ApiMultisigSigningAdvance(
+            localStateJson: '{"round1_sent":true}',
+            detail: 'Prepared signing messages submitted.',
+            submitted: true,
+          );
+    }
+    if (_preparedKind == 'round2') {
+      return const rust_multisig.ApiMultisigSigningAdvance(
+        localStateJson: '{"round2_sent":true}',
+        detail: 'Prepared signing messages submitted.',
+        submitted: true,
+      );
+    }
+    return rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: localStateJson,
+      detail: 'Prepared signing messages submitted.',
       submitted: true,
     );
   }

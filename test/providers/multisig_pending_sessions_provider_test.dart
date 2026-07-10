@@ -1337,7 +1337,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound1({
     required String coordinatorUrl,
     required String network,
     required String sessionId,
@@ -1361,7 +1361,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound2({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -1376,6 +1376,22 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }) async {
     return const rust_multisig.ApiMultisigSigningAdvance(
       localStateJson: '{}',
+      detail: 'submitted',
+      submitted: true,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> dispatchSigningOutbox({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String pcztHash,
+    required String localStateJson,
+  }) async {
+    return rust_multisig.ApiMultisigSigningAdvance(
+      localStateJson: localStateJson,
       detail: 'submitted',
       submitted: true,
     );
@@ -1402,7 +1418,7 @@ class _FakeMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareBroadcastResult({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,

@@ -210,6 +210,12 @@ pub struct ApiMultisigSigningAdvance {
     pub submitted: bool,
 }
 
+pub struct ApiMultisigOutboxDispatch {
+    pub local_state_json: String,
+    pub detail: String,
+    pub submitted: bool,
+}
+
 pub struct ApiMultisigSignedPczt {
     pub local_state_json: String,
     pub signed_pczt_bytes: Vec<u8>,
@@ -317,6 +323,8 @@ struct LocalSigningState {
     signing_request_id: String,
     pczt_hash: String,
     #[serde(default)]
+    participant_id: String,
+    #[serde(default)]
     action_indices: Vec<usize>,
     #[serde(default)]
     nonce_b64_by_action: BTreeMap<usize, String>,
@@ -343,11 +351,12 @@ struct LocalSigningState {
 }
 
 impl LocalSigningState {
-    fn new(signing_request_id: String, pczt_hash: String) -> Self {
+    fn new(signing_request_id: String, pczt_hash: String, participant_id: String) -> Self {
         Self {
             version: 1,
             signing_request_id,
             pczt_hash,
+            participant_id,
             action_indices: Vec::new(),
             nonce_b64_by_action: BTreeMap::new(),
             round1_body_json_b64: None,
@@ -391,6 +400,12 @@ impl LocalSigningState {
         recipients
             .iter()
             .all(|recipient| self.sent_to_contains(kind, &recipient.participant_id))
+    }
+
+    fn has_pending_kind(&self, kind: &str) -> bool {
+        self.outbound_messages
+            .values()
+            .any(|message| message.kind == kind)
     }
 }
 
@@ -473,6 +488,21 @@ impl LocalCreateState {
             group_public_package_json: None,
             group_public_package_hash: None,
             dkg_complete_submitted: false,
+        }
+    }
+
+    fn mark_sent_to(&mut self, kind: &str, participant_id: String) {
+        match kind {
+            "dkg_broadcast_seed" => {
+                self.seed_sent_to.insert(participant_id);
+            }
+            "dkg_round1" => {
+                self.round1_sent_to.insert(participant_id);
+            }
+            "dkg_round2" => {
+                self.round2_sent_to.insert(participant_id);
+            }
+            _ => {}
         }
     }
 }
@@ -902,6 +932,14 @@ pub fn advance_multisig_create(
             .map_err(client_error)?;
 
         let mut state = parse_create_state(local_state_json, &session_id, &participant_id)?;
+        if !state.outbound_messages.is_empty() {
+            return create_progress(
+                session,
+                state,
+                "Prepared DKG messages are waiting to be sent.".to_string(),
+                Vec::new(),
+            );
+        }
         if session.state.as_str() != "request_create" {
             return create_progress(
                 session,
@@ -965,26 +1003,22 @@ pub fn advance_multisig_create(
                 {
                     continue;
                 }
-                if let Err(e) = post_create_message_with_outbox(
+                prepare_create_message_outbox(
                     &mut state,
-                    &client,
-                    &access_token,
                     &roster_hash,
                     &participant_id,
                     &recipient,
                     "dkg_broadcast_seed",
                     &seed,
-                )
-                .await
-                {
-                    return create_progress(
-                        session,
-                        state,
-                        format!("Network error while sending DKG seed: {e}"),
-                        vec![recipient.participant_id],
-                    );
-                }
-                state.seed_sent_to.insert(recipient.participant_id);
+                )?;
+            }
+            if !state.outbound_messages.is_empty() {
+                return create_progress(
+                    session,
+                    state,
+                    "DKG seed messages prepared locally.".to_string(),
+                    Vec::new(),
+                );
             }
         }
 
@@ -1000,26 +1034,22 @@ pub fn advance_multisig_create(
                 .get(&participant_id)
                 .ok_or_else(|| "Missing local DKG round1 message.".to_string())?;
             let payload = serde_json::to_vec(own_round1).map_err(|e| e.to_string())?;
-            if let Err(e) = post_create_message_with_outbox(
+            prepare_create_message_outbox(
                 &mut state,
-                &client,
-                &access_token,
                 &roster_hash,
                 &participant_id,
                 &recipient,
                 "dkg_round1",
                 &payload,
-            )
-            .await
-            {
-                return create_progress(
-                    session,
-                    state,
-                    format!("Network error while sending DKG round 1: {e}"),
-                    vec![recipient.participant_id],
-                );
-            }
-            state.round1_sent_to.insert(recipient.participant_id);
+            )?;
+        }
+        if !state.outbound_messages.is_empty() {
+            return create_progress(
+                session,
+                state,
+                "DKG Round 1 messages prepared locally.".to_string(),
+                Vec::new(),
+            );
         }
 
         let missing_round1 = missing_round1_participants(&state);
@@ -1044,26 +1074,22 @@ pub fn advance_multisig_create(
                 .get(&recipient.participant_id)
                 .ok_or_else(|| "Missing outbound DKG round 2 message.".to_string())?;
             let payload = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
-            if let Err(e) = post_create_message_with_outbox(
+            prepare_create_message_outbox(
                 &mut state,
-                &client,
-                &access_token,
                 &roster_hash,
                 &participant_id,
                 &recipient,
                 "dkg_round2",
                 &payload,
-            )
-            .await
-            {
-                return create_progress(
-                    session,
-                    state,
-                    format!("Network error while sending DKG round 2: {e}"),
-                    vec![recipient.participant_id],
-                );
-            }
-            state.round2_sent_to.insert(recipient.participant_id);
+            )?;
+        }
+        if !state.outbound_messages.is_empty() {
+            return create_progress(
+                session,
+                state,
+                "DKG Round 2 messages prepared locally.".to_string(),
+                Vec::new(),
+            );
         }
 
         let missing_round2 = missing_round2_participants(&state, &participant_id);
@@ -1076,7 +1102,18 @@ pub fn advance_multisig_create(
             );
         }
 
+        let material_was_persisted = state.key_package_b64.is_some()
+            && state.group_public_package_json.is_some()
+            && state.group_public_package_hash.is_some();
         ensure_dkg_finalized(&mut state)?;
+        if !material_was_persisted {
+            return create_progress(
+                session,
+                state,
+                "DKG key material prepared locally.".to_string(),
+                Vec::new(),
+            );
+        }
         if !state.dkg_complete_submitted {
             let admission = AdmissionKey::from_secret_b64(&admission_secret_key)
                 .map_err(|err| format!("Invalid admission secret key: {err}"))?;
@@ -1124,6 +1161,51 @@ pub fn advance_multisig_create(
             "Your create step is complete.".to_string(),
             waiting,
         )
+    })
+}
+
+pub fn dispatch_multisig_create_outbox(
+    coordinator_url: String,
+    session_id: String,
+    participant_id: String,
+    access_token: String,
+    local_state_json: String,
+) -> Result<ApiMultisigOutboxDispatch, String> {
+    block_on(async move {
+        let mut state: LocalCreateState =
+            serde_json::from_str(&local_state_json).map_err(|e| e.to_string())?;
+        if state.session_id != session_id || state.participant_id != participant_id {
+            return Err("Stored DKG outbox belongs to another participant session.".to_string());
+        }
+        let client = Coordinator2Client::new(coordinator_url);
+        let keys = state.outbound_messages.keys().cloned().collect::<Vec<_>>();
+        for key in keys {
+            let envelope = state
+                .outbound_messages
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| "Prepared DKG message disappeared from outbox.".to_string())?;
+            let recipient = envelope
+                .to_participant_id
+                .clone()
+                .ok_or_else(|| "Prepared DKG message has no recipient.".to_string())?;
+            if let Err(error) = client
+                .post_message_with_idempotency(&session_id, &access_token, &key, &envelope)
+                .await
+            {
+                return create_outbox_dispatch(
+                    state,
+                    &format!(
+                        "Network error while sending prepared DKG message: {}",
+                        client_error(error)
+                    ),
+                    false,
+                );
+            }
+            state.outbound_messages.remove(&key);
+            state.mark_sent_to(&envelope.kind, recipient);
+        }
+        create_outbox_dispatch(state, "Prepared DKG messages submitted.", true)
     })
 }
 
@@ -1482,7 +1564,7 @@ pub fn get_multisig_session_events(
     })
 }
 
-pub fn submit_multisig_signing_round1(
+pub fn prepare_multisig_signing_round1(
     coordinator_url: String,
     network: String,
     session_id: String,
@@ -1528,9 +1610,21 @@ pub fn submit_multisig_signing_round1(
             );
         }
         let pczt_hash = hash_bytes_b64(&pczt_bytes);
-        let mut state = parse_signing_state(local_state_json, &signing_request_id, &pczt_hash)?;
+        let mut state = parse_signing_state(
+            local_state_json,
+            &signing_request_id,
+            &pczt_hash,
+            &participant_id,
+        )?;
         if state.round1_sent {
             return signing_advance(state, "Round 1 was already submitted.");
+        }
+        if !state.outbound_messages.is_empty() {
+            return signing_advance_with_submission(
+                state,
+                "Prepared signing messages are waiting to be sent.",
+                false,
+            );
         }
 
         let body_json = if let Some(existing) = &state.round1_body_json_b64 {
@@ -1573,33 +1667,21 @@ pub fn submit_multisig_signing_round1(
             body_json
         };
         let recipients = signing_recipients(&client, &session_id, &access_token, &selected).await?;
-        if let Err(e) = post_signing_body_to_selected(
+        prepare_signing_body_to_recipients(
             &mut state,
-            &client,
             &session_id,
             &signing_request_id,
-            &access_token,
             &roster_hash,
             &participant_id,
             &recipients,
             "tx_round1",
             &body_json,
-        )
-        .await
-        {
-            return signing_advance_with_submission(
-                state,
-                &format!("Network error while submitting Round 1: {e}"),
-                false,
-            );
-        }
-
-        state.round1_sent = state.all_sent_to("tx_round1", &recipients);
-        signing_advance(state, "Round 1 submitted.")
+        )?;
+        signing_advance_with_submission(state, "Round 1 prepared locally.", false)
     })
 }
 
-pub fn submit_multisig_signing_round2(
+pub fn prepare_multisig_signing_round2(
     coordinator_url: String,
     session_id: String,
     signing_request_id: String,
@@ -1616,9 +1698,21 @@ pub fn submit_multisig_signing_round2(
         let selected = normalize_selected_participants(selected_participant_ids)?;
         ensure_selected_signer(&selected, &participant_id)?;
         let pczt_hash = hash_bytes_b64(&pczt_bytes);
-        let mut state = parse_signing_state(local_state_json, &signing_request_id, &pczt_hash)?;
+        let mut state = parse_signing_state(
+            local_state_json,
+            &signing_request_id,
+            &pczt_hash,
+            &participant_id,
+        )?;
         if state.round2_sent {
             return signing_advance(state, "Round 2 was already submitted.");
+        }
+        if !state.outbound_messages.is_empty() {
+            return signing_advance_with_submission(
+                state,
+                "Prepared signing messages are waiting to be sent.",
+                false,
+            );
         }
         if !state.round1_sent {
             return Err("Submit Round 1 before Round 2.".to_string());
@@ -1683,29 +1777,17 @@ pub fn submit_multisig_signing_round2(
             body_json
         };
         let recipients = signing_recipients(&client, &session_id, &access_token, &selected).await?;
-        if let Err(e) = post_signing_body_to_selected(
+        prepare_signing_body_to_recipients(
             &mut state,
-            &client,
             &session_id,
             &signing_request_id,
-            &access_token,
             &roster_hash,
             &participant_id,
             &recipients,
             "tx_round2",
             &body_json,
-        )
-        .await
-        {
-            return signing_advance_with_submission(
-                state,
-                &format!("Network error while submitting Round 2: {e}"),
-                false,
-            );
-        }
-
-        state.round2_sent = state.all_sent_to("tx_round2", &recipients);
-        signing_advance(state, "Round 2 submitted.")
+        )?;
+        signing_advance_with_submission(state, "Round 2 prepared locally.", false)
     })
 }
 
@@ -1726,7 +1808,12 @@ pub fn aggregate_multisig_signed_pczt(
         let selected = normalize_selected_participants(selected_participant_ids)?;
         ensure_selected_signer(&selected, &participant_id)?;
         let pczt_hash = hash_bytes_b64(&pczt_bytes);
-        let mut state = parse_signing_state(local_state_json, &signing_request_id, &pczt_hash)?;
+        let mut state = parse_signing_state(
+            local_state_json,
+            &signing_request_id,
+            &pczt_hash,
+            &participant_id,
+        )?;
         if let Some(existing) = &state.signed_pczt_b64 {
             return Ok(ApiMultisigSignedPczt {
                 local_state_json: serde_json::to_string(&state).map_err(|e| e.to_string())?,
@@ -1787,7 +1874,7 @@ pub fn aggregate_multisig_signed_pczt(
     })
 }
 
-pub fn post_multisig_broadcast_result(
+pub fn prepare_multisig_broadcast_result(
     coordinator_url: String,
     session_id: String,
     signing_request_id: String,
@@ -1801,11 +1888,23 @@ pub fn post_multisig_broadcast_result(
 ) -> Result<ApiMultisigSigningAdvance, String> {
     block_on(async move {
         let _selected = normalize_selected_participants(selected_participant_ids)?;
-        let mut state = parse_signing_state(local_state_json, &signing_request_id, &pczt_hash)?;
+        let mut state = parse_signing_state(
+            local_state_json,
+            &signing_request_id,
+            &pczt_hash,
+            &participant_id,
+        )?;
         let client = Coordinator2Client::new(coordinator_url);
         let recipients = session_recipients(&client, &session_id, &access_token).await?;
         if state.all_sent_to("broadcast_result", &recipients) {
             return signing_advance(state, "Broadcast result was already submitted.");
+        }
+        if !state.outbound_messages.is_empty() {
+            return signing_advance_with_submission(
+                state,
+                "Prepared signing messages are waiting to be sent.",
+                false,
+            );
         }
         let related_id = signing_request_id.clone();
         let body_json = if let Some(existing) = &state.broadcast_result_body_json_b64 {
@@ -1821,27 +1920,75 @@ pub fn post_multisig_broadcast_result(
             state.broadcast_result_body_json_b64 = Some(URL_SAFE_NO_PAD.encode(&body_json));
             body_json
         };
-        if let Err(e) = post_signing_body_to_selected(
+        prepare_signing_body_to_recipients(
             &mut state,
-            &client,
             &session_id,
             &related_id,
-            &access_token,
             &roster_hash,
             &participant_id,
             &recipients,
             "broadcast_result",
             &body_json,
-        )
-        .await
-        {
-            return signing_advance_with_submission(
-                state,
-                &format!("Network error while submitting broadcast result: {e}"),
-                false,
-            );
+        )?;
+        signing_advance_with_submission(state, "Broadcast result prepared locally.", false)
+    })
+}
+
+pub fn dispatch_multisig_signing_outbox(
+    coordinator_url: String,
+    signing_request_id: String,
+    participant_id: String,
+    access_token: String,
+    pczt_hash: String,
+    local_state_json: String,
+) -> Result<ApiMultisigSigningAdvance, String> {
+    block_on(async move {
+        let mut state = parse_signing_state(
+            Some(local_state_json),
+            &signing_request_id,
+            &pczt_hash,
+            &participant_id,
+        )?;
+        let client = Coordinator2Client::new(coordinator_url);
+        let keys = state.outbound_messages.keys().cloned().collect::<Vec<_>>();
+        for key in keys {
+            let envelope =
+                state.outbound_messages.get(&key).cloned().ok_or_else(|| {
+                    "Prepared signing message disappeared from outbox.".to_string()
+                })?;
+            let recipient = envelope
+                .to_participant_id
+                .clone()
+                .ok_or_else(|| "Prepared signing message has no recipient.".to_string())?;
+            if let Err(error) = client
+                .post_signing_message_with_idempotency(
+                    &signing_request_id,
+                    &access_token,
+                    &key,
+                    &envelope,
+                )
+                .await
+            {
+                return signing_advance_with_submission(
+                    state,
+                    &format!(
+                        "Network error while sending prepared signing message: {}",
+                        client_error(error)
+                    ),
+                    false,
+                );
+            }
+            state.outbound_messages.remove(&key);
+            state.mark_sent_to(&envelope.kind, recipient);
         }
-        signing_advance(state, "Broadcast result submitted.")
+        if state.round1_body_json_b64.is_some() && !state.has_pending_kind("tx_round1") {
+            state.round1_sent = true;
+        }
+        if state.round2_body_json_b64.is_some() && !state.has_pending_kind("tx_round2") {
+            state.round2_sent = true;
+            state.nonce_b64_by_action.clear();
+        }
+        signing_advance(state, "Prepared signing messages submitted.")
     })
 }
 
@@ -2187,19 +2334,23 @@ fn parse_signing_state(
     local_state_json: Option<String>,
     signing_request_id: &str,
     pczt_hash: &str,
+    participant_id: &str,
 ) -> Result<LocalSigningState, String> {
     let Some(raw) = local_state_json.filter(|value| !value.trim().is_empty()) else {
         return Ok(LocalSigningState::new(
             signing_request_id.to_string(),
             pczt_hash.to_string(),
+            participant_id.to_string(),
         ));
     };
     let mut state: LocalSigningState = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     if state.signing_request_id != signing_request_id || state.pczt_hash != pczt_hash {
-        return Ok(LocalSigningState::new(
-            signing_request_id.to_string(),
-            pczt_hash.to_string(),
-        ));
+        return Err("Stored signing state belongs to another request or PCZT.".to_string());
+    }
+    if state.participant_id.is_empty() {
+        state.participant_id = participant_id.to_string();
+    } else if state.participant_id != participant_id {
+        return Err("Stored signing state belongs to another participant.".to_string());
     }
     state.version = 1;
     Ok(state)
@@ -2218,6 +2369,18 @@ fn signing_advance_with_submission(
     submitted: bool,
 ) -> Result<ApiMultisigSigningAdvance, String> {
     Ok(ApiMultisigSigningAdvance {
+        local_state_json: serde_json::to_string(&state).map_err(|e| e.to_string())?,
+        detail: detail.to_string(),
+        submitted,
+    })
+}
+
+fn create_outbox_dispatch(
+    state: LocalCreateState,
+    detail: &str,
+    submitted: bool,
+) -> Result<ApiMultisigOutboxDispatch, String> {
+    Ok(ApiMultisigOutboxDispatch {
         local_state_json: serde_json::to_string(&state).map_err(|e| e.to_string())?,
         detail: detail.to_string(),
         submitted,
@@ -2309,12 +2472,10 @@ async fn session_recipients(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn post_signing_body_to_selected(
+fn prepare_signing_body_to_recipients(
     state: &mut LocalSigningState,
-    client: &Coordinator2Client,
     session_id: &str,
     signing_request_id: &str,
-    access_token: &str,
     roster_hash: &str,
     from_participant_id: &str,
     recipients: &[ParticipantResp],
@@ -2334,9 +2495,7 @@ async fn post_signing_body_to_selected(
                 &recipient.participant_id,
             ],
         );
-        let envelope = if let Some(envelope) = state.outbound_messages.get(&idempotency_key) {
-            envelope.clone()
-        } else {
+        if !state.outbound_messages.contains_key(&idempotency_key) {
             let ctx = E2eContext {
                 session_id,
                 roster_hash: Some(roster_hash),
@@ -2347,22 +2506,8 @@ async fn post_signing_body_to_selected(
             };
             let envelope = encrypt_for(&recipient.delivery_public_key, &ctx, body_json)
                 .map_err(|e| e.to_string())?;
-            state
-                .outbound_messages
-                .insert(idempotency_key.clone(), envelope.clone());
-            envelope
-        };
-        client
-            .post_signing_message_with_idempotency(
-                signing_request_id,
-                access_token,
-                &idempotency_key,
-                &envelope,
-            )
-            .await
-            .map_err(client_error)?;
-        state.outbound_messages.remove(&idempotency_key);
-        state.mark_sent_to(kind, recipient.participant_id.clone());
+            state.outbound_messages.insert(idempotency_key, envelope);
+        }
     }
     Ok(())
 }
@@ -2924,10 +3069,8 @@ fn roster_entry(
         .ok_or_else(|| "Participant is missing from roster.".to_string())
 }
 
-async fn post_create_message_with_outbox(
+fn prepare_create_message_outbox(
     state: &mut LocalCreateState,
-    client: &Coordinator2Client,
-    access_token: &str,
     roster_hash: &str,
     from_participant_id: &str,
     recipient: &LocalRosterParticipant,
@@ -2943,9 +3086,7 @@ async fn post_create_message_with_outbox(
             &recipient.participant_id,
         ],
     );
-    let envelope = if let Some(envelope) = state.outbound_messages.get(&key) {
-        envelope.clone()
-    } else {
+    if !state.outbound_messages.contains_key(&key) {
         let ctx = E2eContext {
             session_id: &state.session_id,
             roster_hash: Some(roster_hash),
@@ -2956,16 +3097,8 @@ async fn post_create_message_with_outbox(
         };
         let envelope = encrypt_for(&recipient.delivery_public_key, &ctx, plaintext)
             .map_err(|e| e.to_string())?;
-        state
-            .outbound_messages
-            .insert(key.clone(), envelope.clone());
-        envelope
-    };
-    client
-        .post_message_with_idempotency(&state.session_id, access_token, &key, &envelope)
-        .await
-        .map_err(client_error)?;
-    state.outbound_messages.remove(&key);
+        state.outbound_messages.insert(key, envelope);
+    }
     Ok(())
 }
 
@@ -3320,6 +3453,110 @@ mod tests {
         assert_eq!(decoded["message"], "expired");
         assert_eq!(decoded["httpStatus"], 401);
         assert_eq!(decoded["retryable"], true);
+    }
+
+    #[test]
+    fn dkg_prepare_reuses_the_exact_encrypted_outbox_entry() {
+        let recipient_keys = DeliveryKeypair::generate();
+        let recipient = LocalRosterParticipant {
+            participant_id: "participant-2".to_string(),
+            delivery_public_key: recipient_keys.public_key_b64(),
+            dkg_identifier_hex: "02".to_string(),
+        };
+        let mut state = LocalCreateState::new("session-1".to_string(), "participant-1".to_string());
+
+        prepare_create_message_outbox(
+            &mut state,
+            "roster-hash",
+            "participant-1",
+            &recipient,
+            "dkg_round1",
+            br#"{"round":1}"#,
+        )
+        .unwrap();
+        let first = state.outbound_messages.clone();
+
+        prepare_create_message_outbox(
+            &mut state,
+            "roster-hash",
+            "participant-1",
+            &recipient,
+            "dkg_round1",
+            br#"{"round":1}"#,
+        )
+        .unwrap();
+
+        assert_eq!(state.outbound_messages, first);
+        assert_eq!(state.outbound_messages.len(), 1);
+    }
+
+    #[test]
+    fn signing_prepare_reuses_the_exact_encrypted_outbox_entry() {
+        let recipient_keys = DeliveryKeypair::generate();
+        let recipient = ParticipantResp {
+            participant_id: "participant-2".to_string(),
+            encrypted_label: None,
+            admission_public_key: "admission-public".to_string(),
+            delivery_public_key: recipient_keys.public_key_b64(),
+            joined_at: 1,
+            dkg_completed: true,
+            dkg_roster_hash: Some("roster-hash".to_string()),
+            dkg_group_public_package_hash: Some("group-hash".to_string()),
+            dkg_attestation_signature: Some("signature".to_string()),
+        };
+        let mut state = LocalSigningState::new(
+            "signing-request-1".to_string(),
+            "pczt-hash".to_string(),
+            "participant-1".to_string(),
+        );
+
+        prepare_signing_body_to_recipients(
+            &mut state,
+            "session-1",
+            "signing-request-1",
+            "roster-hash",
+            "participant-1",
+            &[recipient.clone()],
+            "tx_round1",
+            br#"{"round":1}"#,
+        )
+        .unwrap();
+        let first = state.outbound_messages.clone();
+
+        prepare_signing_body_to_recipients(
+            &mut state,
+            "session-1",
+            "signing-request-1",
+            "roster-hash",
+            "participant-1",
+            &[recipient],
+            "tx_round1",
+            br#"{"round":1}"#,
+        )
+        .unwrap();
+
+        assert_eq!(state.outbound_messages, first);
+        assert_eq!(state.outbound_messages.len(), 1);
+    }
+
+    #[test]
+    fn signing_state_is_bound_to_the_local_participant() {
+        let state = LocalSigningState::new(
+            "signing-request-1".to_string(),
+            "pczt-hash".to_string(),
+            "participant-1".to_string(),
+        );
+        let encoded = serde_json::to_string(&state).unwrap();
+
+        let error = parse_signing_state(
+            Some(encoded),
+            "signing-request-1",
+            "pczt-hash",
+            "participant-2",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("another participant"));
     }
 
     #[test]

@@ -1047,7 +1047,7 @@ class MultisigSigningRequestsNotifier
     if (!record.hasVerifiedReview) {
       throw StateError('This signing request has no verified PCZT review.');
     }
-    final result = await _coordinator.submitSigningRound1(
+    final prepared = await _coordinator.prepareSigningRound1(
       coordinatorUrl: material.coordinatorUrl,
       network: material.network,
       sessionId: record.sessionId,
@@ -1063,24 +1063,37 @@ class MultisigSigningRequestsNotifier
       keyPackageB64: material.keyPackageB64,
       localStateJson: record.localStateJson,
     );
+    var current = record.copyWith(
+      localStateJson: prepared.localStateJson,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _upsert(current);
+    final dispatched = await _coordinator.dispatchSigningOutbox(
+      coordinatorUrl: material.coordinatorUrl,
+      signingRequestId: record.signingRequestId,
+      participantId: material.participantId,
+      accessToken: material.accessToken,
+      pcztHash: record.pcztHash,
+      localStateJson: prepared.localStateJson,
+    );
     final round1 = {
       ...record.round1ParticipantIds,
-      if (result.submitted) material.participantId,
+      if (dispatched.submitted) material.participantId,
     }.toList()..sort();
-    final updated = record.copyWith(
-      localStateJson: result.localStateJson,
+    current = current.copyWith(
+      localStateJson: dispatched.localStateJson,
       round1ParticipantIds: round1,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    await _upsert(updated);
-    if (!result.submitted) {
-      if (multisigErrorLooksIdempotencyInProgress(result.detail)) {
-        return updated;
+    await _upsert(current);
+    if (!dispatched.submitted) {
+      if (multisigErrorLooksIdempotencyInProgress(dispatched.detail)) {
+        return current;
       }
-      throw StateError(result.detail);
+      throw StateError(dispatched.detail);
     }
     await refreshForAccount(record.accountUuid);
-    return _findRecord(record.signingRequestId, fallback: updated);
+    return _findRecord(record.signingRequestId, fallback: current);
   }
 
   Future<MultisigSigningRequestRecord> _submitRound2WithMaterial(
@@ -1090,7 +1103,7 @@ class MultisigSigningRequestsNotifier
     if (!record.localRound1Submitted) {
       throw StateError('Submit Round 1 before Round 2.');
     }
-    final result = await _coordinator.submitSigningRound2(
+    final prepared = await _coordinator.prepareSigningRound2(
       coordinatorUrl: material.coordinatorUrl,
       sessionId: record.sessionId,
       signingRequestId: record.signingRequestId,
@@ -1103,24 +1116,37 @@ class MultisigSigningRequestsNotifier
       keyPackageB64: material.keyPackageB64,
       localStateJson: record.localStateJson,
     );
+    var current = record.copyWith(
+      localStateJson: prepared.localStateJson,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _upsert(current);
+    final dispatched = await _coordinator.dispatchSigningOutbox(
+      coordinatorUrl: material.coordinatorUrl,
+      signingRequestId: record.signingRequestId,
+      participantId: material.participantId,
+      accessToken: material.accessToken,
+      pcztHash: record.pcztHash,
+      localStateJson: prepared.localStateJson,
+    );
     final round2 = {
       ...record.round2ParticipantIds,
-      if (result.submitted) material.participantId,
+      if (dispatched.submitted) material.participantId,
     }.toList()..sort();
-    final updated = record.copyWith(
-      localStateJson: result.localStateJson,
+    current = current.copyWith(
+      localStateJson: dispatched.localStateJson,
       round2ParticipantIds: round2,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    await _upsert(updated);
-    if (!result.submitted) {
-      if (multisigErrorLooksIdempotencyInProgress(result.detail)) {
-        return updated;
+    await _upsert(current);
+    if (!dispatched.submitted) {
+      if (multisigErrorLooksIdempotencyInProgress(dispatched.detail)) {
+        return current;
       }
-      throw StateError(result.detail);
+      throw StateError(dispatched.detail);
     }
     await refreshForAccount(record.accountUuid);
-    return _findRecord(record.signingRequestId, fallback: updated);
+    return _findRecord(record.signingRequestId, fallback: current);
   }
 
   Future<MultisigSigningRequestRecord> _aggregateSignedPcztWithMaterial(
@@ -1201,7 +1227,7 @@ class MultisigSigningRequestsNotifier
       );
       await _upsert(current);
     }
-    final notified = await _coordinator.postBroadcastResult(
+    final prepared = await _coordinator.prepareBroadcastResult(
       coordinatorUrl: material.coordinatorUrl,
       sessionId: current.sessionId,
       signingRequestId: current.signingRequestId,
@@ -1213,8 +1239,23 @@ class MultisigSigningRequestsNotifier
       txid: txid,
       localStateJson: current.localStateJson,
     );
+    current = current.copyWith(
+      localStateJson: prepared.localStateJson,
+      broadcastTxid: txid,
+      broadcastResultSent: false,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _upsert(current);
+    final notified = await _coordinator.dispatchSigningOutbox(
+      coordinatorUrl: material.coordinatorUrl,
+      signingRequestId: current.signingRequestId,
+      participantId: material.participantId,
+      accessToken: material.accessToken,
+      pcztHash: current.pcztHash,
+      localStateJson: prepared.localStateJson,
+    );
     final updated = current.copyWith(
-      state: 'completed',
+      state: notified.submitted ? 'completed' : current.state,
       localStateJson: notified.localStateJson,
       broadcastTxid: txid,
       broadcastResultSent: notified.submitted,

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `map_verified_signing_request`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `post_create_message_with_outbox`, `post_signing_body_to_selected`, `prepare_multisig_signing_request_inner`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `single_output_review`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
+// These functions are ignored because they are not marked as `pub`: `all_dkg_round1_packages`, `all_sent_to`, `block_on`, `classify_client_status`, `clean_label`, `client_error`, `collect_signing_inbox`, `create_outbox_dispatch`, `create_progress_with`, `decode_b64_32`, `decode_b64`, `decrypt_create_message`, `decrypt_signing_message`, `dkg_identifier`, `ensure_auth_owner`, `ensure_dkg_finalized`, `ensure_dkg_round1`, `ensure_dkg_round2`, `ensure_round1_ready`, `ensure_round2_ready`, `ensure_selected_signer`, `has_pending_kind`, `hash_bytes_b64`, `hash_group_public_package`, `idempotency_key`, `identifier_from_hex`, `insert_unique_round1`, `insert_unique_round2`, `map_auth_session`, `map_auth_update_from_session`, `map_auth_update_from_tokens`, `map_participant_without_label`, `map_participant`, `map_session_without_labels`, `map_session`, `map_signing_request`, `map_tokens`, `map_verified_signing_request`, `mark_sent_to`, `mark_sent_to`, `missing_round1_participants`, `missing_round2_participants`, `multisig_identity_from_keys`, `new`, `new`, `normalize_backup_passphrase`, `normalize_selected_participants`, `own_roster_entry`, `parse_create_state`, `parse_key_package_b64`, `parse_signing_state`, `poll_create_inbox`, `prepare_create_message_outbox`, `prepare_multisig_signing_request_inner`, `prepare_signing_body_to_recipients`, `refresh_error_allows_resume`, `restore_participant_identity`, `resume_participant_auth_session`, `roster_entry`, `round1_commitments_for_action`, `round2_shares_for_action`, `round_action_msg`, `seal_label`, `seed_issuer_participant_id`, `sent_to_contains`, `session_recipients`, `session_state_phase`, `signing_advance_with_submission`, `signing_advance`, `signing_recipients`, `single_output_review`, `stable_hash`, `stable_id`, `state_action_indices`, `status_code_allows_resume`, `structured_multisig_error`, `sync_locked_roster`, `unix_now_secs`, `unsigned_orchard_action_indices`, `vault_address_from_group_public_package`, `without_identifier`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ApiMultisigErrorBody`, `ApiMultisigErrorKind`, `LocalCreateState`, `LocalRosterParticipant`, `LocalSigningState`, `SigningInboxMessages`, `SingleReviewOutput`, `TxRound1Body`, `TxRound2Body`, `TxRoundActionMsg`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -233,6 +233,20 @@ Future<ApiMultisigCreateAdvance> advanceMultisigCreate({
   localStateJson: localStateJson,
 );
 
+Future<ApiMultisigOutboxDispatch> dispatchMultisigCreateOutbox({
+  required String coordinatorUrl,
+  required String sessionId,
+  required String participantId,
+  required String accessToken,
+  required String localStateJson,
+}) => RustLib.instance.api.crateApiMultisigDispatchMultisigCreateOutbox(
+  coordinatorUrl: coordinatorUrl,
+  sessionId: sessionId,
+  participantId: participantId,
+  accessToken: accessToken,
+  localStateJson: localStateJson,
+);
+
 Future<ApiPreparedMultisigSigningRequest> prepareMultisigSigningRequest({
   required String coordinatorUrl,
   required String network,
@@ -342,7 +356,7 @@ Future<ApiMultisigSessionEvents> getMultisigSessionEvents({
   after: after,
 );
 
-Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
+Future<ApiMultisigSigningAdvance> prepareMultisigSigningRound1({
   required String coordinatorUrl,
   required String network,
   required String sessionId,
@@ -357,7 +371,7 @@ Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   required String expectedRequesterParticipantId,
   required String keyPackageB64,
   String? localStateJson,
-}) => RustLib.instance.api.crateApiMultisigSubmitMultisigSigningRound1(
+}) => RustLib.instance.api.crateApiMultisigPrepareMultisigSigningRound1(
   coordinatorUrl: coordinatorUrl,
   network: network,
   sessionId: sessionId,
@@ -374,7 +388,7 @@ Future<ApiMultisigSigningAdvance> submitMultisigSigningRound1({
   localStateJson: localStateJson,
 );
 
-Future<ApiMultisigSigningAdvance> submitMultisigSigningRound2({
+Future<ApiMultisigSigningAdvance> prepareMultisigSigningRound2({
   required String coordinatorUrl,
   required String sessionId,
   required String signingRequestId,
@@ -386,7 +400,7 @@ Future<ApiMultisigSigningAdvance> submitMultisigSigningRound2({
   required List<int> pcztBytes,
   required String keyPackageB64,
   String? localStateJson,
-}) => RustLib.instance.api.crateApiMultisigSubmitMultisigSigningRound2(
+}) => RustLib.instance.api.crateApiMultisigPrepareMultisigSigningRound2(
   coordinatorUrl: coordinatorUrl,
   sessionId: sessionId,
   signingRequestId: signingRequestId,
@@ -426,7 +440,7 @@ Future<ApiMultisigSignedPczt> aggregateMultisigSignedPczt({
   localStateJson: localStateJson,
 );
 
-Future<ApiMultisigSigningAdvance> postMultisigBroadcastResult({
+Future<ApiMultisigSigningAdvance> prepareMultisigBroadcastResult({
   required String coordinatorUrl,
   required String sessionId,
   required String signingRequestId,
@@ -437,7 +451,7 @@ Future<ApiMultisigSigningAdvance> postMultisigBroadcastResult({
   required String pcztHash,
   required String txid,
   String? localStateJson,
-}) => RustLib.instance.api.crateApiMultisigPostMultisigBroadcastResult(
+}) => RustLib.instance.api.crateApiMultisigPrepareMultisigBroadcastResult(
   coordinatorUrl: coordinatorUrl,
   sessionId: sessionId,
   signingRequestId: signingRequestId,
@@ -447,6 +461,22 @@ Future<ApiMultisigSigningAdvance> postMultisigBroadcastResult({
   selectedParticipantIds: selectedParticipantIds,
   pcztHash: pcztHash,
   txid: txid,
+  localStateJson: localStateJson,
+);
+
+Future<ApiMultisigSigningAdvance> dispatchMultisigSigningOutbox({
+  required String coordinatorUrl,
+  required String signingRequestId,
+  required String participantId,
+  required String accessToken,
+  required String pcztHash,
+  required String localStateJson,
+}) => RustLib.instance.api.crateApiMultisigDispatchMultisigSigningOutbox(
+  coordinatorUrl: coordinatorUrl,
+  signingRequestId: signingRequestId,
+  participantId: participantId,
+  accessToken: accessToken,
+  pcztHash: pcztHash,
   localStateJson: localStateJson,
 );
 
@@ -729,6 +759,31 @@ class ApiMultisigCreateAdvance {
           keyPackageB64 == other.keyPackageB64 &&
           groupPublicPackageJson == other.groupPublicPackageJson &&
           groupPublicPackageHash == other.groupPublicPackageHash;
+}
+
+class ApiMultisigOutboxDispatch {
+  final String localStateJson;
+  final String detail;
+  final bool submitted;
+
+  const ApiMultisigOutboxDispatch({
+    required this.localStateJson,
+    required this.detail,
+    required this.submitted,
+  });
+
+  @override
+  int get hashCode =>
+      localStateJson.hashCode ^ detail.hashCode ^ submitted.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMultisigOutboxDispatch &&
+          runtimeType == other.runtimeType &&
+          localStateJson == other.localStateJson &&
+          detail == other.detail &&
+          submitted == other.submitted;
 }
 
 class ApiMultisigParticipant {

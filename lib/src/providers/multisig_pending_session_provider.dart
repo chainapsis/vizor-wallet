@@ -1011,6 +1011,14 @@ class MultisigPendingSessionsNotifier
       localStateJson: localStateJson,
     );
     await _store.writeCreateState(pending, advanced.localStateJson);
+    final dispatched = await rust_multisig.dispatchMultisigCreateOutbox(
+      coordinatorUrl: pending.coordinatorUrl,
+      sessionId: pending.sessionId,
+      participantId: pending.participantId,
+      accessToken: pending.accessToken,
+      localStateJson: advanced.localStateJson,
+    );
+    await _store.writeCreateState(pending, dispatched.localStateJson);
     await _publishVaultLabelIfReady(pending, advanced);
     final updated = await _applySessionUpdate(
       pending,
@@ -1030,7 +1038,9 @@ class MultisigPendingSessionsNotifier
     return MultisigCreateAdvanceResult(
       session: updated,
       phase: advanced.phase,
-      detail: normalizeMultisigProgressDetail(advanced.detail),
+      detail: normalizeMultisigProgressDetail(
+        dispatched.submitted ? advanced.detail : dispatched.detail,
+      ),
       waitingForParticipantIds: advanced.waitingForParticipantIds,
       round1Count: advanced.round1Count.toInt(),
       round2Count: advanced.round2Count.toInt(),

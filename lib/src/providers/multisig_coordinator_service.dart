@@ -128,7 +128,7 @@ abstract class MultisigCoordinatorService {
     required int after,
   });
 
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound1({
     required String coordinatorUrl,
     required String network,
     required String sessionId,
@@ -145,7 +145,7 @@ abstract class MultisigCoordinatorService {
     String? localStateJson,
   });
 
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound2({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -157,6 +157,15 @@ abstract class MultisigCoordinatorService {
     required List<int> pcztBytes,
     required String keyPackageB64,
     String? localStateJson,
+  });
+
+  Future<rust_multisig.ApiMultisigSigningAdvance> dispatchSigningOutbox({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String pcztHash,
+    required String localStateJson,
   });
 
   Future<rust_multisig.ApiMultisigSignedPczt> aggregateSignedPczt({
@@ -173,7 +182,7 @@ abstract class MultisigCoordinatorService {
     String? localStateJson,
   });
 
-  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareBroadcastResult({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -446,7 +455,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound1({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound1({
     required String coordinatorUrl,
     required String network,
     required String sessionId,
@@ -462,7 +471,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String keyPackageB64,
     String? localStateJson,
   }) {
-    return rust_multisig.submitMultisigSigningRound1(
+    return rust_multisig.prepareMultisigSigningRound1(
       coordinatorUrl: coordinatorUrl,
       network: network,
       sessionId: sessionId,
@@ -481,7 +490,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> submitSigningRound2({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareSigningRound2({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -494,7 +503,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String keyPackageB64,
     String? localStateJson,
   }) {
-    return rust_multisig.submitMultisigSigningRound2(
+    return rust_multisig.prepareMultisigSigningRound2(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       signingRequestId: signingRequestId,
@@ -505,6 +514,25 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
       selectedParticipantIds: selectedParticipantIds,
       pcztBytes: pcztBytes,
       keyPackageB64: keyPackageB64,
+      localStateJson: localStateJson,
+    );
+  }
+
+  @override
+  Future<rust_multisig.ApiMultisigSigningAdvance> dispatchSigningOutbox({
+    required String coordinatorUrl,
+    required String signingRequestId,
+    required String participantId,
+    required String accessToken,
+    required String pcztHash,
+    required String localStateJson,
+  }) {
+    return rust_multisig.dispatchMultisigSigningOutbox(
+      coordinatorUrl: coordinatorUrl,
+      signingRequestId: signingRequestId,
+      participantId: participantId,
+      accessToken: accessToken,
+      pcztHash: pcztHash,
       localStateJson: localStateJson,
     );
   }
@@ -539,7 +567,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
   }
 
   @override
-  Future<rust_multisig.ApiMultisigSigningAdvance> postBroadcastResult({
+  Future<rust_multisig.ApiMultisigSigningAdvance> prepareBroadcastResult({
     required String coordinatorUrl,
     required String sessionId,
     required String signingRequestId,
@@ -551,7 +579,7 @@ class RustMultisigCoordinatorService implements MultisigCoordinatorService {
     required String txid,
     String? localStateJson,
   }) {
-    return rust_multisig.postMultisigBroadcastResult(
+    return rust_multisig.prepareMultisigBroadcastResult(
       coordinatorUrl: coordinatorUrl,
       sessionId: sessionId,
       signingRequestId: signingRequestId,
