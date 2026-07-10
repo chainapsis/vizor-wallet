@@ -15,6 +15,7 @@ import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
+import 'pay_selected_asset_store.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
@@ -84,15 +85,21 @@ class SwapNotifier extends Notifier<SwapState> {
         if (previous == next) return;
         if (previous != null) {
           unawaited(_persistCurrentIntents(accountUuid: previous));
-          unawaited(
-            _persistComposerPreferences(
-              _currentComposerPreferences,
-              accountUuid: previous,
-            ),
-          );
+          // In Pay mode the composer state carries Pay's direction/payout
+          // asset, which must not overwrite the previous account's saved
+          // swap composer selection.
+          if (!state.payMode) {
+            unawaited(
+              _persistComposerPreferences(
+                _currentComposerPreferences,
+                accountUuid: previous,
+              ),
+            );
+          }
         }
         _clearAccountScopedTransientState();
         unawaited(_restoreComposerPreferences(accountUuid: next));
+        unawaited(_restorePaySelectedAsset(accountUuid: next));
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -110,6 +117,7 @@ class SwapNotifier extends Notifier<SwapState> {
     ref.onDispose(priceRefreshTimer.cancel);
     final activeAccountUuid = _activeAccountUuidOrNull;
     unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
+    unawaited(_restorePaySelectedAsset(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
     unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
@@ -363,6 +371,7 @@ class SwapNotifier extends Notifier<SwapState> {
     );
     if (supportedAsset == null) return;
     ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
+    unawaited(_persistPaySelectedAsset(supportedAsset));
     // Mobile Pay still collects the recipient first and therefore preserves
     // it by default. Desktop Pay is amount-first and opts into clearing a
     // stale address when the selected chain changes.
@@ -405,7 +414,11 @@ class SwapNotifier extends Notifier<SwapState> {
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
-    unawaited(_persistComposerPreferences(_currentComposerPreferences));
+    unawaited(
+      state.payMode
+          ? _persistSlippageOnlyPreference(normalized)
+          : _persistComposerPreferences(_currentComposerPreferences),
+    );
   }
 
   Future<void> useMaxZecAmount() async {
@@ -1736,6 +1749,50 @@ class SwapNotifier extends Notifier<SwapState> {
             accountUuid: scopedAccountUuid,
             preferences: preferences,
           );
+    } catch (_) {}
+  }
+
+  Future<void> _persistPaySelectedAsset(SwapAsset asset) async {
+    final accountUuid = _activeAccountUuidOrNull?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    try {
+      await ref
+          .read(paySelectedAssetStoreProvider)
+          .saveSelectedAsset(accountUuid: accountUuid, asset: asset);
+    } catch (_) {}
+  }
+
+  Future<void> _restorePaySelectedAsset({String? accountUuid}) async {
+    final scopedAccountUuid = (accountUuid ?? _activeAccountUuidOrNull)?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    try {
+      final saved = await ref
+          .read(paySelectedAssetStoreProvider)
+          .loadSelectedAsset(accountUuid: scopedAccountUuid);
+      if (saved == null) return;
+      if (!_isAccountActive(scopedAccountUuid)) return;
+      ref.read(paySelectedAssetProvider.notifier).select(saved);
+    } catch (_) {}
+  }
+
+  /// Slippage is shared with Pay, but Pay's direction/payout asset must not
+  /// overwrite the saved swap composer selection — only the stored slippage
+  /// field is updated, and nothing is written when no swap preferences exist.
+  Future<void> _persistSlippageOnlyPreference(int slippageBps) async {
+    final accountUuid = _activeAccountUuidOrNull?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    try {
+      final store = ref.read(swapComposerPreferencesStoreProvider);
+      final saved = await store.loadPreferences(accountUuid: accountUuid);
+      if (saved == null) return;
+      await store.savePreferences(
+        accountUuid: accountUuid,
+        preferences: SwapComposerPreferences(
+          direction: saved.direction,
+          externalAsset: saved.externalAsset,
+          slippageBps: slippageBps,
+        ),
+      );
     } catch (_) {}
   }
 

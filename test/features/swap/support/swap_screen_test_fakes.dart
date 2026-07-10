@@ -836,15 +836,22 @@ class _FakeSwapAccountNotifier extends AccountNotifier {
 }
 
 class _FakeSwapPersistenceStore
-    implements SwapActivityStore, SwapComposerPreferencesStore {
+    implements
+        SwapActivityStore,
+        SwapComposerPreferencesStore,
+        PaySelectedAssetStore {
   _FakeSwapPersistenceStore({
     List<SwapIntent> initialIntents = const [],
     SwapComposerPreferences? initialPreferences,
     Map<String, SwapComposerPreferences> initialPreferencesByAccount = const {},
+    SwapAsset? initialPayAsset,
   }) : savedIntents = [...initialIntents],
        savedPreferences = initialPreferences {
     if (initialPreferences != null) {
       _preferencesByAccount['account-1'] = initialPreferences;
+    }
+    if (initialPayAsset != null) {
+      _payAssetByAccount['account-1'] = initialPayAsset;
     }
     _preferencesByAccount.addAll(initialPreferencesByAccount);
     for (final intent in initialIntents) {
@@ -862,14 +869,17 @@ class _FakeSwapPersistenceStore
   var loadCount = 0;
   var loadPreferencesCount = 0;
   var savePreferencesCount = 0;
+  var savePayAssetCount = 0;
   final saveSnapshots = <List<SwapIntent>>[];
   final loadedAccounts = <String>[];
   final savedAccounts = <String>[];
   List<SwapIntent> savedIntents;
   SwapComposerPreferences? savedPreferences;
+  SwapAsset? savedPayAsset;
   final _legacyIntents = <SwapIntent>[];
   final _intentsByAccount = <String, List<SwapIntent>>{};
   final _preferencesByAccount = <String, SwapComposerPreferences>{};
+  final _payAssetByAccount = <String, SwapAsset>{};
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
@@ -921,6 +931,21 @@ class _FakeSwapPersistenceStore
     savePreferencesCount++;
     savedPreferences = preferences;
     _preferencesByAccount[accountUuid] = preferences;
+  }
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    return _payAssetByAccount[accountUuid];
+  }
+
+  @override
+  Future<void> saveSelectedAsset({
+    required String accountUuid,
+    required SwapAsset asset,
+  }) async {
+    savePayAssetCount++;
+    savedPayAsset = asset;
+    _payAssetByAccount[accountUuid] = asset;
   }
 }
 

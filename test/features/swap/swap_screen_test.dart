@@ -42,6 +42,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
@@ -2921,6 +2922,98 @@ void main() {
 
     expect(container.read(swapStateProvider).payMode, isTrue);
     expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+  });
+
+  testWidgets('pay persists its asset separately and shares only slippage', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPreferences: const SwapComposerPreferences(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.dai,
+        slippageBps: 150,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    final savesBeforePay = sessionStore.savePreferencesCount;
+
+    notifier.preparePayFromShieldedZec();
+    notifier.selectPayExternalAsset(SwapAsset.sol);
+    await tester.pump();
+
+    // The payout asset lands in the Pay-scoped store only.
+    expect(sessionStore.savedPayAsset, SwapAsset.sol);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+
+    notifier.updateSlippageBps(200);
+    await tester.pump();
+
+    // Slippage is shared with swap, but Pay must not overwrite the saved
+    // swap composer direction/asset.
+    expect(sessionStore.savedPreferences?.slippageBps, 200);
+    expect(
+      sessionStore.savedPreferences?.direction,
+      SwapDirection.zecToExternal,
+    );
+    expect(sessionStore.savedPreferences?.externalAsset, SwapAsset.dai);
+
+    notifier.prepareSwapComposer();
+    await tester.pump();
+
+    final restored = container.read(swapStateProvider);
+    expect(restored.payMode, isFalse);
+    expect(restored.externalAsset, SwapAsset.dai);
+    expect(restored.slippageBps, 200);
+  });
+
+  testWidgets('pay restores its saved payout asset on startup', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPayAsset: SwapAsset.sol,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    container.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+    await tester.pump();
+
+    final state = container.read(swapStateProvider);
+    expect(state.payMode, isTrue);
+    expect(state.externalAsset, SwapAsset.sol);
   });
 
   testWidgets('account switch closes open swap activity detail', (
@@ -8359,6 +8452,7 @@ Widget _routerHarness(
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
       ),
+      paySelectedAssetStoreProvider.overrideWithValue(effectiveSessionStore),
       if (seedSwapActivityFixtures) ...[
         swapInitialIntentsProvider.overrideWithValue(fixtureIntents),
       ],
