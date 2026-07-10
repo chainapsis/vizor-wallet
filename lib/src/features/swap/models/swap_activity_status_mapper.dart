@@ -448,6 +448,9 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       : null;
 
   if (payMode) {
+    final timestamp = _swapActivityTimestampLabel(
+      terminal ? intent.completedAt ?? intent.createdAt : intent.createdAt,
+    );
     return _swapActivityPayDetails(
       intent,
       sourceSymbol: sourceSymbol,
@@ -455,6 +458,8 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       depositTxHash: depositTxHash,
       destinationChainTxHash: destinationChainTxHash,
       payRateText: payRateText,
+      timestamp: timestamp,
+      txIdRow: txIdRow,
       failed: failed,
       refundAddress: refundAddress,
       sourceAsset: sourceAsset,
@@ -633,6 +638,8 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   required String? depositTxHash,
   required String? destinationChainTxHash,
   required String? payRateText,
+  required String? timestamp,
+  required SwapStatusDetailRowData? txIdRow,
   required bool failed,
   required String? refundAddress,
   required SwapAsset? sourceAsset,
@@ -680,6 +687,22 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
+    if (kAppFormFactor == AppFormFactor.mobile) ...[
+      if (timestamp != null)
+        SwapStatusDetailRowData(label: 'Timestamp', value: timestamp),
+      ?txIdRow,
+      SwapStatusDetailRowData(
+        label: 'Converted from',
+        value: intent.sellAmount,
+      ),
+      if (feeText != null)
+        SwapStatusDetailRowData(
+          label: 'Tx fee',
+          value: feeText,
+          help: true,
+          helpTooltip: swapTotalFeesTooltip,
+        ),
+    ],
   ];
 }
 

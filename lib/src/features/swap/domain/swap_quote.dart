@@ -2,6 +2,10 @@ import 'swap_asset.dart';
 import 'swap_direction.dart';
 import 'swap_fiat_value_basis.dart';
 
+/// Safety window before a provider quote's hard expiry. Starting an intent
+/// inside this window is rejected because execution may not finish in time.
+const kSwapQuoteStartExpiryBuffer = Duration(seconds: 5);
+
 class SwapQuoteRequest {
   const SwapQuoteRequest({
     required this.direction,
@@ -209,6 +213,16 @@ class SwapQuote {
   final String? rateTextOverride;
   final SwapProviderRefundInfo? providerRefundInfo;
   final SwapFiatValueBasis? fiatValueBasis;
+
+  /// Deadline used by review countdowns and the start gate. Provider quote
+  /// expiries reserve [kSwapQuoteStartExpiryBuffer]; deposit-only deadlines
+  /// do not need the provider execution buffer.
+  DateTime? get actionDeadline {
+    final providerDeadline = quoteExpiresAt;
+    return providerDeadline == null
+        ? depositInstruction.deadline
+        : providerDeadline.subtract(kSwapQuoteStartExpiryBuffer);
+  }
 
   String get pairText => '${sellAsset.symbol} -> ${receiveAsset.symbol}';
   String get sellAmountText =>
