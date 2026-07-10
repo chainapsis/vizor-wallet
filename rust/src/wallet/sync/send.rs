@@ -194,7 +194,7 @@ pub(crate) struct KeystoneMigrationSigningRequest {
 /// payload; the wallet re-applies these via [`super::pczt::apply_sigs_and_extract`].
 pub(crate) struct KeystoneSignedMigrationMessage {
     pub id: String,
-    pub sigs: Vec<pczt::roles::signer::OrchardSpendAuthSignature>,
+    pub sigs: Vec<pczt::roles::signer::SpendAuthSignature>,
 }
 
 pub(crate) struct KeystoneMigrationProofStatus {
@@ -2740,7 +2740,7 @@ fn reset_single_qr_request_after_failed_completion(request_id: &str) {
 fn signed_migration_messages_by_id(
     request_id: &str,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
-) -> Result<HashMap<String, Vec<pczt::roles::signer::OrchardSpendAuthSignature>>, String> {
+) -> Result<HashMap<String, Vec<pczt::roles::signer::SpendAuthSignature>>, String> {
     if signed_messages.is_empty() {
         return Err(format!(
             "Keystone returned no signed messages for request {request_id}"

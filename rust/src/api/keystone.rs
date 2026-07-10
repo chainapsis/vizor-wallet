@@ -78,11 +78,11 @@ pub struct KeystoneSigResult {
     pub results: Vec<KeystoneMsgSig>,
 }
 
-/// Reshape a PCZT [`OrchardSpendAuthSignature`] into the FRB-boundary form.
+/// Reshape a PCZT [`SpendAuthSignature`] into the FRB-boundary form.
 ///
-/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
+/// [`SpendAuthSignature`]: pczt::roles::signer::SpendAuthSignature
 fn action_sig_to_api(
-    action: &pczt::roles::signer::OrchardSpendAuthSignature,
+    action: &pczt::roles::signer::SpendAuthSignature,
 ) -> Result<KeystoneActionSig, String> {
     let pool = match action.value_pool() {
         orchard::ValuePool::Orchard => 0,
@@ -101,18 +101,41 @@ fn action_sig_to_api(
 /// Dart consumes.
 fn sig_result_to_api(
     decoded: pczt::roles::signer::batch::BatchSignResponse,
+    request_id: Vec<u8>,
+    message_ids: Vec<Vec<u8>>,
 ) -> Result<KeystoneSigResult, String> {
+    if request_id.is_empty() {
+        return Err("Zcash batch request id must not be empty".to_string());
+    }
+    if decoded.signatures().len() != message_ids.len() {
+        return Err(format!(
+            "Keystone returned {} signature lists for {} requested messages",
+            decoded.signatures().len(),
+            message_ids.len()
+        ));
+    }
+
+    let mut seen_ids = std::collections::HashSet::new();
+    for message_id in &message_ids {
+        if message_id.is_empty() {
+            return Err("Zcash batch message id must not be empty".to_string());
+        }
+        if !seen_ids.insert(message_id) {
+            return Err("Zcash batch message ids must be unique".to_string());
+        }
+    }
+
     Ok(KeystoneSigResult {
         version: pczt::roles::signer::batch::VERSION,
-        request_id: decoded.request_id().to_vec(),
+        request_id,
         results: decoded
-            .results()
+            .signatures()
             .iter()
-            .map(|msg| {
+            .zip(message_ids)
+            .map(|(signatures, message_id)| {
                 Ok(KeystoneMsgSig {
-                    message_id: msg.message_id().to_vec(),
-                    sigs: msg
-                        .signatures()
+                    message_id,
+                    sigs: signatures
                         .iter()
                         .map(action_sig_to_api)
                         .collect::<Result<Vec<_>, String>>()?,
@@ -124,12 +147,19 @@ fn sig_result_to_api(
 
 /// Decode the Postcard payload returned from a compact
 /// `zcash-batch-sig-result` UR into flat FRB structs. The wallet-layer decode
-/// applies correlation policy on top of the upstream PCZT wire types; this
-/// wrapper only reshapes fixed-size signatures into the `Vec<u8>` form FRB
-/// carries.
-pub fn decode_zcash_batch_sign_response(postcard: Vec<u8>) -> Result<KeystoneSigResult, String> {
+/// validates the upstream PCZT wire types; the application supplies the current
+/// request and ordered message ids to correlate the ordered signature lists.
+pub fn decode_zcash_batch_sign_response(
+    postcard: Vec<u8>,
+    request_id: String,
+    message_ids: Vec<String>,
+) -> Result<KeystoneSigResult, String> {
     let decoded = keystone::decode_zcash_batch_sign_response(&postcard)?;
-    sig_result_to_api(decoded)
+    sig_result_to_api(
+        decoded,
+        request_id.into_bytes(),
+        message_ids.into_iter().map(String::into_bytes).collect(),
+    )
 }
 
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact
@@ -140,11 +170,12 @@ pub fn decode_zcash_sign_result_cbor_as_sig_result(
     cbor: Vec<u8>,
 ) -> Result<KeystoneSigResult, String> {
     let decoded = keystone::decode_zcash_sign_result_cbor(&cbor)?;
-    let results = decoded
+    let request_id = decoded.request_id.into_bytes();
+    let messages = decoded
         .results
         .into_iter()
         .map(|message| {
-            Ok(pczt::roles::signer::batch::BatchSignResponseMessage::new(
+            Ok((
                 message.id.into_bytes(),
                 crate::wallet::sync::extract_compact_sigs_from_signed_pczt(
                     &message.signed_pczt_bytes,
@@ -152,11 +183,13 @@ pub fn decode_zcash_sign_result_cbor_as_sig_result(
             ))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let (message_ids, signatures) = messages.into_iter().unzip();
 
-    sig_result_to_api(pczt::roles::signer::batch::BatchSignResponse::new(
-        decoded.request_id.into_bytes(),
-        results,
-    ))
+    sig_result_to_api(
+        pczt::roles::signer::batch::BatchSignResponse::new(signatures),
+        request_id,
+        message_ids,
+    )
 }
 
 /// Return the Sapling and Orchard nullifiers spent by a PCZT.
@@ -210,4 +243,49 @@ pub fn decode_pczt_from_cbor(cbor: Vec<u8>) -> Result<Vec<u8>, String> {
 pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>, String> {
     let (_seed_fp, infos) = keystone::decode_accounts_ur(&ur_string)?;
     Ok(infos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_response_uses_application_correlation_in_request_order() {
+        let response = pczt::roles::signer::batch::BatchSignResponse::new(vec![
+            vec![pczt::roles::signer::SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                0,
+                [0x11; 64],
+            )],
+            vec![pczt::roles::signer::SpendAuthSignature::from_parts(
+                orchard::ValuePool::Ironwood,
+                3,
+                [0x22; 64],
+            )],
+        ]);
+
+        let decoded = sig_result_to_api(
+            response,
+            b"request-1".to_vec(),
+            vec![b"message-1".to_vec(), b"message-2".to_vec()],
+        )
+        .unwrap();
+
+        assert_eq!(decoded.request_id, b"request-1");
+        assert_eq!(decoded.results[0].message_id, b"message-1");
+        assert_eq!(decoded.results[0].sigs[0].pool, 0);
+        assert_eq!(decoded.results[1].message_id, b"message-2");
+        assert_eq!(decoded.results[1].sigs[0].pool, 1);
+    }
+
+    #[test]
+    fn compact_response_rejects_correlation_count_mismatch() {
+        let response = pczt::roles::signer::batch::BatchSignResponse::new(vec![vec![]]);
+
+        let error = sig_result_to_api(response, b"request-1".to_vec(), vec![])
+            .err()
+            .unwrap();
+
+        assert!(error.contains("1 signature lists for 0 requested messages"));
+    }
 }

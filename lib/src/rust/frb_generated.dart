@@ -276,6 +276,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
     required List<int> postcard,
+    required String requestId,
+    required List<String> messageIds,
   });
 
   Future<ZcashBatchSignResult> crateApiKeystoneDecodeZcashSignResultCbor({
@@ -2158,12 +2160,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
     required List<int> postcard,
+    required String requestId,
+    required List<String> messageIds,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(postcard, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_String(messageIds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2176,7 +2182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta,
-        argValues: [postcard],
+        argValues: [postcard, requestId, messageIds],
         apiImpl: this,
       ),
     );
@@ -2185,7 +2191,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta =>
       const TaskConstMeta(
         debugName: "decode_zcash_batch_sign_response",
-        argNames: ["postcard"],
+        argNames: ["postcard", "requestId", "messageIds"],
       );
 
   @override

@@ -1116,7 +1116,7 @@ fn to_wallet_signed_messages(
                             action.action_index
                         )
                     })?;
-                    Ok(pczt::roles::signer::OrchardSpendAuthSignature::from_parts(
+                    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
                         value_pool,
                         action_index,
                         sig,

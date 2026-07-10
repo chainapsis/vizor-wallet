@@ -72,35 +72,35 @@ url = "2.5.8"
 # Zcash core
 [dependencies.zcash_primitives]
 version = "0.29.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 
 [dependencies.zcash_address]
 version = "0.13.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 
 [dependencies.zcash_keys]
 version = "0.15.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.10.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.9.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 
 [dependencies.zcash_client_backend]
 version = "0.23"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 features = [
     "orchard",
     "transparent-inputs",
@@ -112,34 +112,31 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 version = "0.21"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "7c1139c1d87d51f06fe30d28983e1285ad4b7351"
+rev = "7b06abca5a98ea85fe59392767a547445db15f8c"
 package = "zcash_voting"
 
-# Must match the orchard node used by zcash_client_sqlite / zcash_voting to
-# avoid type conflicts. The `[patch.crates-io]` below redirects the whole graph
-# onto the Orchard PCZT recompute branch plus the internal-scope dummy-ciphertext
-# guard, with the padded DEFAULT and opt-in DEFAULT_UNPADDED, byte-identical to
-# the firmware, so the graph resolves to a single orchard node.
+# Must match the Orchard release used by the pinned librustzcash and
+# zcash_voting revisions to avoid type conflicts.
 [dependencies.orchard]
-version = "0.15.0-pre.2"
+version = "0.15.0"
 
 # Proofs
 [dependencies.zcash_proofs]
 version = "0.29.0-pre.0"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 
 [dependencies.pczt]
 version = "0.7"
-git = "https://github.com/zakura-core/librustzcash"
-rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095"
+git = "https://github.com/zcash/librustzcash"
+rev = "878db2074ae8ac2682d3e6c61c00f7018b6adc0c"
 features = [
     "orchard",
     "io-finalizer",
@@ -172,34 +169,15 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "7c1139c1d87d51f06fe30d28983e1285ad4b7351"
+rev = "7b06abca5a98ea85fe59392767a547445db15f8c"
 package = "vote-commitment-tree"
 
-# Redirect every crates.io `orchard` requirement (this crate's direct dep plus
-# the transitive ones from zcash_voting / voting-circuits / librustzcash) onto
-# the pczt-recompute head so the graph resolves to a single orchard node,
-# matching the librustzcash and firmware pins.
 [patch.crates-io]
-orchard = { git = "https://github.com/zcash/orchard", rev = "475ef0ff77d45aebff93cb039d639250d82518a3" }
 # vote-commitment-tree still needs the retained-checkpoint API from the
 # unreleased shardtree 0.6 line. librustzcash uses released shardtree 0.7, so
 # both versions intentionally remain in the graph.
 shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "decefc469dbf1e686b20b7e7dcaa7cb4f122125b" }
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "decefc469dbf1e686b20b7e7dcaa7cb4f122125b" }
-
-# Keep the direct wallet dependencies and the copies pulled in through
-# zcash_voting on one librustzcash source while this PCZT API is awaiting a
-# crate release.
-[patch."https://github.com/zcash/librustzcash"]
-pczt = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_address = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_client_backend = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_client_sqlite = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_keys = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_primitives = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_proofs = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_protocol = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
-zcash_transparent = { git = "https://github.com/zakura-core/librustzcash", rev = "01e3dfe946ff3e01acfaa33cd4d19e0b7a85f095" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(zcash_unstable, values("nu6.3"))', 'cfg(ironwood_masquerade)'] }

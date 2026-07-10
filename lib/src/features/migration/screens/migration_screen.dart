@@ -671,7 +671,11 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     });
 
     try {
-      final result = await _decodeKeystoneSignedMigrationQr(signedQr);
+      final result = await _decodeKeystoneSignedMigrationQr(
+        signedQr,
+        request,
+        chunkIndex,
+      );
       if (!_keystoneSessionIsCurrent(session)) {
         return;
       }
@@ -1025,11 +1029,18 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   /// spend-authorization signatures from its signed PCZTs.
   Future<rust_keystone.KeystoneSigResult> _decodeKeystoneSignedMigrationQr(
     MigrationSignedQrResult signedQr,
+    rust_sync.KeystoneMigrationSigningRequest request,
+    int chunkIndex,
   ) {
     switch (signedQr.urType) {
       case _keystoneBatchSigResultUrType:
         return rust_keystone.decodeZcashBatchSignResponse(
           postcard: signedQr.cbor,
+          requestId: request.requestId,
+          messageIds: _keystoneChunkMessages(
+            request,
+            chunkIndex,
+          ).map((message) => message.id).toList(growable: false),
         );
       case _keystoneSignResultUrType:
         return rust_keystone.decodeZcashSignResultCborAsSigResult(

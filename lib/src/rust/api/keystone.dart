@@ -57,13 +57,16 @@ Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
 
 /// Decode the Postcard payload returned from a compact
 /// `zcash-batch-sig-result` UR into flat FRB structs. The wallet-layer decode
-/// applies correlation policy on top of the upstream PCZT wire types; this
-/// wrapper only reshapes fixed-size signatures into the `Vec<u8>` form FRB
-/// carries.
+/// validates the upstream PCZT wire types; the application supplies the current
+/// request and ordered message ids to correlate the ordered signature lists.
 Future<KeystoneSigResult> decodeZcashBatchSignResponse({
   required List<int> postcard,
+  required String requestId,
+  required List<String> messageIds,
 }) => RustLib.instance.api.crateApiKeystoneDecodeZcashBatchSignResponse(
   postcard: postcard,
+  requestId: requestId,
+  messageIds: messageIds,
 );
 
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact

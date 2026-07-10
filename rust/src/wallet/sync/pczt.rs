@@ -601,7 +601,7 @@ pub(crate) fn extract_transaction_from_pczt(
 /// This is the equivalent of [`extract_transaction_from_pczt`] for the compact
 /// path: instead of receiving a full redacted signed PCZT back from the device
 /// and combining it, the device returns only the produced spend-authorization
-/// signatures (decoded into [`OrchardSpendAuthSignature`]s).
+/// signatures (decoded into [`SpendAuthSignature`]s).
 /// We load the proofs-PCZT the wallet already holds into the [`Signer`] role
 /// and re-apply each signature by (pool, action index).
 /// [`Signer::apply_orchard_spend_auth_signature`] verifies each signature
@@ -615,11 +615,11 @@ pub(crate) fn extract_transaction_from_pczt(
 /// carries a non-empty Sapling bundle (see the module docstring); migration
 /// PCZTs are Orchard/Ironwood-only and pass `None`.
 ///
-/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
+/// [`SpendAuthSignature`]: pczt::roles::signer::SpendAuthSignature
 /// [`Signer`]: pczt::roles::signer::Signer
 pub(crate) fn apply_sigs_and_extract(
     pczt_with_proofs_bytes: &[u8],
-    sigs: &[pczt::roles::signer::OrchardSpendAuthSignature],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<ExtractedPcztTransaction, String> {
@@ -656,7 +656,7 @@ pub(crate) fn apply_sigs_and_extract(
 }
 
 /// Read the spend-authorization signatures out of a fully-signed PCZT as a
-/// compact [`OrchardSpendAuthSignature`] list — the inverse of
+/// compact [`SpendAuthSignature`] list — the inverse of
 /// [`apply_sigs_and_extract`]'s input.
 ///
 /// This is the local-signing analogue of decoding a device's compact
@@ -667,10 +667,10 @@ pub(crate) fn apply_sigs_and_extract(
 /// Ironwood action whose spend carries a `spend_auth_sig` is emitted with its
 /// pool and action index; actions without a signature are skipped.
 ///
-/// [`OrchardSpendAuthSignature`]: pczt::roles::signer::OrchardSpendAuthSignature
+/// [`SpendAuthSignature`]: pczt::roles::signer::SpendAuthSignature
 pub(crate) fn extract_compact_sigs_from_signed_pczt(
     signed_pczt_bytes: &[u8],
-) -> Result<Vec<pczt::roles::signer::OrchardSpendAuthSignature>, String> {
+) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
     use pczt::roles::signer::extract_orchard_spend_auth_signatures;
 
     let pczt =
@@ -1046,7 +1046,7 @@ mod tests {
             extract_transaction_from_pczt, ironwood_orchard_proving_key, redact_pczt_for_signer,
         };
         use orchard::tree::MerkleHashOrchard;
-        use pczt::roles::signer::OrchardSpendAuthSignature;
+        use pczt::roles::signer::SpendAuthSignature;
         use pczt::roles::{
             creator::Creator, io_finalizer::IoFinalizer, prover::Prover, signer::Signer,
             updater::Updater,
@@ -1308,7 +1308,7 @@ mod tests {
                 extract_compact_sigs_from_signed_pczt(&signed_pczt.serialize().unwrap())
                     .expect("extract compact sigs from signed PCZT");
             assert!(
-                extracted_sigs.contains(&OrchardSpendAuthSignature::from_parts(
+                extracted_sigs.contains(&SpendAuthSignature::from_parts(
                     orchard::ValuePool::Orchard,
                     spend_index,
                     sig_bytes,
@@ -1318,7 +1318,7 @@ mod tests {
 
             // NEW path: hand the SAME signature to the compact path as a
             // (pool, action_index, sig) list and apply it onto the proofs clone.
-            let sigs = vec![OrchardSpendAuthSignature::from_parts(
+            let sigs = vec![SpendAuthSignature::from_parts(
                 orchard::ValuePool::Orchard,
                 spend_index,
                 sig_bytes,
