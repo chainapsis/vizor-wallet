@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _recentAddress = '0x1111111111111111111111111111111111111111';
 const _unknownAddress = '0x2222222222222222222222222222222222222222';
+const _solanaAddress = '4Nd1mYQx4jJXAWe3zUKgnQz5pFa9qTqfjEBWWWk3tS9e';
 
 final _contact = AddressBookContact(
   id: 'mike',
@@ -109,6 +110,26 @@ const _amountState = SwapState(
 );
 
 void main() {
+  test('recipient contact lookup preserves case-sensitive addresses', () {
+    final contact = AddressBookContact(
+      id: 'solana',
+      label: 'Solana contact',
+      network: AddressBookNetwork.solana,
+      address: _solanaAddress,
+      profilePictureId: 'pfp-01',
+      createdAtMs: 0,
+      updatedAtMs: 0,
+    );
+
+    expect(
+      payRecipientContactForAddress(
+        [contact],
+        _solanaAddress.replaceFirst('N', 'n'),
+      ),
+      isNull,
+    );
+  });
+
   group('PayAddContactModal', () {
     testWidgets('waits for persistence and recovers from a save failure', (
       tester,

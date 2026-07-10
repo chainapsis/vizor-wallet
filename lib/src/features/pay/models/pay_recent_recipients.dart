@@ -1,4 +1,5 @@
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../swap/domain/swap_direction.dart';
 import '../../swap/domain/swap_intent_status.dart';
@@ -22,7 +23,8 @@ class PayRecentRecipient {
 
 /// Derives the "Recently sent" list for [network] from past swap/pay intents:
 /// outgoing (ZEC -> external) recipients whose address is valid on [network],
-/// deduplicated case-insensitively, most recent first.
+/// deduplicated using the destination network's address semantics, most recent
+/// first.
 List<PayRecentRecipient> payRecentRecipients({
   required List<SwapIntent> intents,
   required AddressBookNetwork network,
@@ -36,7 +38,7 @@ List<PayRecentRecipient> payRecentRecipients({
     if (address.isEmpty) continue;
     if (addressFormatIssue(network, address) != null) continue;
     final usedAt = intent.completedAt ?? intent.updatedAt ?? intent.createdAt;
-    final key = address.toLowerCase();
+    final key = normalizedAddressBookAddress(network, address);
     final existing = byAddress[key];
     if (existing != null &&
         (usedAt == null ||
@@ -114,10 +116,13 @@ AddressBookContact? payContactForAddress(
   AddressBookNetwork network,
   String address,
 ) {
-  final needle = address.trim().toLowerCase();
+  final needle = normalizedAddressBookAddress(network, address);
   if (needle.isEmpty) return null;
   for (final contact in payCompatibleContacts(contacts, network)) {
-    if (contact.address.trim().toLowerCase() == needle) return contact;
+    if (normalizedAddressBookAddress(contact.network, contact.address) ==
+        needle) {
+      return contact;
+    }
   }
   return null;
 }

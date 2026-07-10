@@ -180,6 +180,27 @@ void main() {
       expect(recents.single.lastUsedAt, DateTime(2026, 7, 7));
     });
 
+    test('preserves case-distinct recipients on case-sensitive networks', () {
+      final caseVariant = _solana.replaceFirst('N', 'n');
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'original',
+            recipient: _solana,
+            createdAt: DateTime(2026, 7, 1),
+          ),
+          _intent(
+            id: 'case-variant',
+            recipient: caseVariant,
+            createdAt: DateTime(2026, 7, 2),
+          ),
+        ],
+        network: AddressBookNetwork.solana,
+      );
+
+      expect(recents.map((recent) => recent.address), [caseVariant, _solana]);
+    });
+
     test('caps the list at the limit', () {
       final recents = payRecentRecipients(
         intents: [
@@ -282,6 +303,17 @@ void main() {
       );
       expect(
         payContactForAddress([ethContact], AddressBookNetwork.ethereum, _evmB),
+        isNull,
+      );
+    });
+
+    test('keeps contact matching case-sensitive outside EVM and NEAR', () {
+      expect(
+        payContactForAddress(
+          [solContact],
+          AddressBookNetwork.solana,
+          _solana.replaceFirst('N', 'n'),
+        ),
         isNull,
       );
     });

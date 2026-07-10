@@ -7,6 +7,7 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
 
@@ -64,16 +65,13 @@ class PayRecipientStep extends StatelessWidget {
               ))
                 recent,
           ];
-    final matchedRecentAddresses = {
-      for (final recent in matchedRecents) recent.address.trim().toLowerCase(),
-    };
     final matchedContacts = !hasInput
         ? contacts
         : [
             for (final contact in contacts)
               if (_payContactMatchesQuery(contact, typed) &&
-                  !matchedRecentAddresses.contains(
-                    contact.address.trim().toLowerCase(),
+                  !matchedRecents.any(
+                    (recent) => _payContactHasAddress(contact, recent.address),
                   ))
                 contact,
           ];
@@ -216,12 +214,16 @@ AddressBookContact? payRecipientContactForAddress(
   Iterable<AddressBookContact> contacts,
   String address,
 ) {
-  final needle = address.trim().toLowerCase();
-  if (needle.isEmpty) return null;
   for (final contact in contacts) {
-    if (contact.address.trim().toLowerCase() == needle) return contact;
+    if (_payContactHasAddress(contact, address)) return contact;
   }
   return null;
+}
+
+bool _payContactHasAddress(AddressBookContact contact, String address) {
+  final needle = normalizedAddressBookAddress(contact.network, address);
+  return needle.isNotEmpty &&
+      normalizedAddressBookAddress(contact.network, contact.address) == needle;
 }
 
 /// Bottom-pinned actions for a valid Recipient selection.
