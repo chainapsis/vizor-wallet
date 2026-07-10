@@ -460,7 +460,7 @@ class _MobileStatusChipRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final (iconName, text, color) = switch (badgeKind) {
+    final (iconName, defaultText, defaultColor) = switch (badgeKind) {
       SwapStatusBadgeKind.completed => (
         AppIcons.checkCircle,
         'Completed',
@@ -482,7 +482,16 @@ class _MobileStatusChipRow extends StatelessWidget {
         colors.text.secondary,
       ),
     };
+    final paymentInProgress =
+        paymentMode && badgeKind == SwapStatusBadgeKind.liveQuote;
+    final text = paymentInProgress ? 'In progress...' : defaultText;
+    final textColor = paymentInProgress ? colors.text.primary : defaultColor;
+    final iconColor = paymentInProgress ? colors.icon.regular : defaultColor;
+    final labelStyle = paymentMode
+        ? AppTypography.labelLarge
+        : AppTypography.labelMedium;
     return SizedBox(
+      key: paymentMode ? const ValueKey('mobile_pay_status_row') : null,
       height: 32,
       child: Row(
         children: [
@@ -490,16 +499,14 @@ class _MobileStatusChipRow extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
               'Status',
-              style: AppTypography.labelMedium.copyWith(
+              style: labelStyle.copyWith(
                 color: badgeKind == SwapStatusBadgeKind.failed
                     ? colors.text.destructive
                     : colors.text.secondary,
               ),
             ),
           ),
-          const Spacer(),
-          Flexible(
-            fit: FlexFit.loose,
+          Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.xs,
@@ -507,22 +514,30 @@ class _MobileStatusChipRow extends StatelessWidget {
                 AppSpacing.xxs,
                 AppSpacing.xxs,
               ),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
+              child: Align(
                 alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(iconName, size: 20, color: color),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      text,
-                      style: AppTypography.labelLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: color,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    key: paymentMode
+                        ? const ValueKey('mobile_pay_status_value')
+                        : null,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppIcon(iconName, size: 20, color: iconColor),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        text,
+                        style: AppTypography.labelLarge.copyWith(
+                          fontWeight: paymentMode
+                              ? FontWeight.w500
+                              : FontWeight.w600,
+                          color: textColor,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -569,22 +584,35 @@ class _MobilePaymentDetails extends StatelessWidget {
         ),
         if (timestamp != null || txId != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          if (timestamp != null) _MobileFinalDetailRow(row: timestamp),
+          if (timestamp != null)
+            _MobileFinalDetailRow(row: timestamp, paymentMode: true),
           if (timestamp != null && txId != null)
             const SizedBox(height: AppSpacing.xs),
           if (txId != null)
-            _MobileFinalDetailRow(row: txId, actionIconSize: 20),
+            _MobileFinalDetailRow(
+              row: txId,
+              paymentMode: true,
+              actionIconSize: 20,
+              actionIconColor: context.colors.icon.muted,
+            ),
         ],
         const SizedBox(height: AppSpacing.sm),
         Container(height: 1, color: context.colors.border.regular),
         const SizedBox(height: AppSpacing.sm),
         _MobileFinalDetailRow(
           row: convertedFrom,
+          paymentMode: true,
           trailingIcon: AppIcons.shieldKeyhole,
           actionIconSize: 20,
+          actionIconColor: context.colors.icon.accent,
         ),
         if (displayFee != null)
-          _MobileFinalDetailRow(row: displayFee, actionIconSize: 20),
+          _MobileFinalDetailRow(
+            row: displayFee,
+            paymentMode: true,
+            actionIconSize: 20,
+            actionIconColor: context.colors.icon.muted,
+          ),
       ],
     );
   }
@@ -747,12 +775,16 @@ class _MobileFinalDetailRow extends StatelessWidget {
   const _MobileFinalDetailRow({
     required this.row,
     this.trailingIcon,
+    this.paymentMode = false,
     this.actionIconSize = _mobileStatusDetailIconSize,
+    this.actionIconColor,
   });
 
   final SwapStatusDetailRowData row;
   final String? trailingIcon;
+  final bool paymentMode;
   final double actionIconSize;
+  final Color? actionIconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -789,9 +821,11 @@ class _MobileFinalDetailRow extends StatelessWidget {
                   displayLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
+                  style:
+                      (paymentMode
+                              ? AppTypography.labelLarge
+                              : AppTypography.labelMedium)
+                          .copyWith(color: colors.text.secondary),
                 ),
               ),
               const SizedBox(width: AppSpacing.s),
@@ -822,6 +856,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
                                 ? AppIcons.copy
                                 : AppIcons.help),
                         size: actionIconSize,
+                        color: actionIconColor,
                         tooltipMessage: row.help
                             ? row.helpTooltip ??
                                   _mobileStatusHelpTooltip(row.label)
@@ -910,11 +945,13 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
     required this.icon,
     required this.tooltipMessage,
     this.size = _mobileStatusDetailIconSize,
+    this.color,
   });
 
   final String icon;
   final String? tooltipMessage;
   final double size;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -926,7 +963,7 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
       child: AppIcon(
         icon,
         size: size,
-        color: colors.icon.regular.withValues(alpha: 0.72),
+        color: color ?? colors.icon.regular.withValues(alpha: 0.72),
       ),
     );
     final message = tooltipMessage;
