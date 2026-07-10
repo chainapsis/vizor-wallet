@@ -21,9 +21,9 @@ use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_db_with_timeout,
-        open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-        SYNC_DB_BUSY_TIMEOUT,
+        open_readonly_conn_with_timeout, open_sync_wallet_db_with_timeout,
+        open_wallet_raw_conn_with_timeout, truncate_wallet_wal_best_effort,
+        with_wallet_db_write_lock, WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
     },
     keys,
     network::WalletNetwork,
@@ -1927,6 +1927,7 @@ async fn run_sync_impl(
             e
         ),
     }
+    truncate_wallet_wal_best_effort(db_data_path);
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -1947,7 +1948,7 @@ async fn run_sync_impl(
 // ==================== Helpers ====================
 
 fn open_db(path: &str, network: WalletNetwork) -> Result<WalletDatabase, SyncError> {
-    open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT)
+    open_sync_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("DB open: {e}")))
 }
 
