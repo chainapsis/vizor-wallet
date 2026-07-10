@@ -78,6 +78,49 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets('animates an initial success phase', (tester) async {
+    await _setMobileViewport(tester);
+
+    await tester.pumpWidget(
+      _app(
+        const MobileTransactionProgressScreen(
+          phase: MobileTransactionProgressPhase.succeeded,
+          title: 'Payment submitted',
+          body: 'Your payment was submitted.',
+          canPop: true,
+          successRippleKey: ValueKey('initial_success_ripple'),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('initial_success_ripple')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('animates an initial failure phase', (tester) async {
+    await _setMobileViewport(tester);
+
+    await tester.pumpWidget(
+      _app(
+        const MobileTransactionProgressScreen(
+          phase: MobileTransactionProgressPhase.failed,
+          title: 'Payment failed',
+          body: 'Your payment could not be submitted.',
+          canPop: true,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final shake = tester.widget<Transform>(
+      find.byKey(const ValueKey('mobile_transaction_progress_failure_shake')),
+    );
+    expect(shake.transform.getTranslation().x, isNot(0));
+  });
 }
 
 Widget _app(Widget child) {

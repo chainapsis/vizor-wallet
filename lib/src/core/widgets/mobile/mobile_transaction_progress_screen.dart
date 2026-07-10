@@ -253,10 +253,20 @@ class _MobileTransactionProgressBadgeState
   static const _shakeAmplitude = 20.0;
 
   @override
+  void initState() {
+    super.initState();
+    _startTerminalAnimation(widget.phase);
+  }
+
+  @override
   void didUpdateWidget(covariant _MobileTransactionProgressBadge oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.phase == widget.phase) return;
-    switch (widget.phase) {
+    _startTerminalAnimation(widget.phase);
+  }
+
+  void _startTerminalAnimation(MobileTransactionProgressPhase phase) {
+    switch (phase) {
       case MobileTransactionProgressPhase.succeeded:
         _ripple.forward(from: 0);
       case MobileTransactionProgressPhase.failed:
@@ -351,7 +361,13 @@ class _MobileTransactionProgressBadgeState
               final dx = t <= 0 || t >= 1
                   ? 0.0
                   : math.sin(t * math.pi * 5) * _shakeAmplitude * (1 - t);
-              return Transform.translate(offset: Offset(dx, 0), child: child);
+              return Transform.translate(
+                key: const ValueKey(
+                  'mobile_transaction_progress_failure_shake',
+                ),
+                offset: Offset(dx, 0),
+                child: child,
+              );
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
