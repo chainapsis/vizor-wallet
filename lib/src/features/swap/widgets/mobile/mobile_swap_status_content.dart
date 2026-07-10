@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_activity_status_mapper.dart'
@@ -555,24 +556,31 @@ class _MobilePaymentDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timestamp = _paymentDetailRow(presentation.details, 'Timestamp');
-    final txId = _paymentDetailRow(presentation.details, 'Tx ID');
-    final convertedFrom =
-        _paymentDetailRow(presentation.details, 'Converted from') ??
-        SwapStatusDetailRowData(
-          label: 'Converted from',
-          value: presentation.payAmountText,
-        );
-    final fee =
-        _paymentDetailRow(presentation.details, 'Tx fee') ??
-        _firstPaymentFeeRow(presentation.details);
-    final displayFee = fee == null
+    final payStatus = presentation.payStatus;
+    final timestamp = payStatus == null
+        ? _paymentDetailRow(presentation.details, 'Timestamp')
+        : SwapStatusDetailRowData(
+            label: 'Timestamp',
+            value: payStatus.timestampText,
+          );
+    final txId = payStatus == null
+        ? _paymentDetailRow(presentation.details, 'Tx ID')
+        : SwapStatusDetailRowData(
+            label: 'Tx ID',
+            value: payStatus.txIdText,
+            linkUri: payStatus.txIdUri,
+          );
+    final convertedFrom = SwapStatusDetailRowData(
+      label: 'Converted from',
+      value: payStatus?.convertedFromText ?? presentation.payAmountText,
+    );
+    final displayFee = payStatus == null
         ? null
         : SwapStatusDetailRowData(
             label: 'Tx fee',
-            value: fee.value,
+            value: payStatus.transactionFeeText,
             help: true,
-            helpTooltip: fee.helpTooltip ?? swapTotalFeesTooltip,
+            helpTooltip: kTxFeeHelpTooltip,
           );
     return Column(
       key: const ValueKey('mobile_pay_status_details'),
@@ -624,17 +632,6 @@ SwapStatusDetailRowData? _paymentDetailRow(
 ) {
   for (final row in rows) {
     if (row.label == label) return row;
-  }
-  return null;
-}
-
-SwapStatusDetailRowData? _firstPaymentFeeRow(
-  Iterable<SwapStatusDetailRowData> rows,
-) {
-  for (final row in rows) {
-    if (row.label == 'Fees' || row.label == 'Network + conversion fees') {
-      return row;
-    }
   }
   return null;
 }
