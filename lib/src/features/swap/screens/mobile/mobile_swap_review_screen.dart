@@ -178,6 +178,7 @@ class _MobileSwapReviewScreenState
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
                 intent: pendingIntent,
+                returnTarget: returnTarget,
               ),
             );
             _scheduleKeystoneSigningReviewInactive();
@@ -391,11 +392,13 @@ class _MobileSwapReviewScreenState
                   AppSpacing.sm,
                   AppSpacing.md,
                 ),
-                child: widget.payMode && !inactiveReview
+                child: widget.payMode
                     ? MobilePayReviewActions(
-                        expired: swapState.quoteExpired,
+                        expired: paymentQuoteExpired,
                         starting:
-                            _startingIntent || liveSwapState.startSubmitting,
+                            !inactiveReview &&
+                            (_startingIntent || liveSwapState.startSubmitting),
+                        inactive: inactiveReview,
                         startBlockedReason: startBlockedReason,
                         onConfirm: _startIntent,
                         onRefreshQuote: _reviewAgain,

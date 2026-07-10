@@ -238,6 +238,14 @@ class _MobileSwapKeystoneSignScreenState
           broadcast: broadcast,
         );
     if (!context.mounted) return;
+    // Pay reviews land on the branded submitted screen, matching the
+    // software pay path; swap reviews keep the activity-detail landing.
+    if (widget.args.returnTarget == SwapActivityReturnTarget.pay) {
+      context.go(
+        '/pay/submitted/${Uri.encodeComponent(widget.args.intent.id)}',
+      );
+      return;
+    }
     context.go(
       swapActivityDetailUri(
         intentId: widget.args.intent.id,
