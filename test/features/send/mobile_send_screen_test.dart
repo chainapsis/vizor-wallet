@@ -297,8 +297,8 @@ Widget _amountStepWithPriceLoadingApp() {
   );
 }
 
-Widget _snapshotReviewApp({
-  required _ControllableSnapshotSyncNotifier syncNotifier,
+Widget _reviewApp({
+  required SyncNotifier syncNotifier,
   required MobileSendFeeEstimator estimateFee,
 }) {
   return ProviderScope(
@@ -721,7 +721,7 @@ void main() {
       var feeCalls = 0;
 
       await tester.pumpWidget(
-        _snapshotReviewApp(
+        _reviewApp(
           syncNotifier: syncNotifier,
           estimateFee:
               ({
@@ -767,6 +767,56 @@ void main() {
       );
     },
   );
+
+  testWidgets('failed review fee estimate exposes a working retry action', (
+    tester,
+  ) async {
+    var feeCalls = 0;
+    var feeLookupShouldFail = true;
+
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: _FakeSyncNotifier(),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              feeCalls++;
+              if (feeLookupShouldFail) {
+                throw StateError('temporary fee lookup failure');
+              }
+              return BigInt.from(10000);
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final failedFeeCalls = feeCalls;
+    expect(failedFeeCalls, greaterThanOrEqualTo(1));
+    expect(find.text('Fee unavailable. Try again.'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')))
+          .onPressed,
+      isNotNull,
+    );
+
+    feeLookupShouldFail = false;
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(feeCalls, failedFeeCalls + 1);
+    expect(find.text('Fee unavailable. Try again.'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('Confirm & Send'), findsOneWidget);
+    expect(find.text('—'), findsNothing);
+  });
 
   testWidgets('changed proposal fee requires a second confirmation', (
     tester,

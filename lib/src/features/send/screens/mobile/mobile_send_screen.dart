@@ -370,6 +370,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   BigInt? _feeZatoshi;
   _MobileSendFeeQuote? _reviewFeeQuote;
   bool _isRefreshingReviewFee = false;
+  bool _reviewFeeRetryAvailable = false;
   String? _reviewFeeNotice;
   int _feeSeq = 0;
 
@@ -720,6 +721,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _reviewFeeQuote = null;
     _feeZatoshi = null;
     _isRefreshingReviewFee = false;
+    _reviewFeeRetryAvailable = false;
     _reviewFeeNotice = null;
   }
 
@@ -809,6 +811,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _isResolvingMax = preconditionError == null;
       _maxQuote = null;
       _reviewFeeQuote = null;
+      _reviewFeeRetryAvailable = false;
       _reviewFeeNotice = null;
       _amountError = preconditionError ?? '';
       if (preconditionError != null) {
@@ -941,6 +944,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _amountError = null;
         _feeZatoshi = null;
         _reviewFeeQuote = null;
+        _reviewFeeRetryAvailable = false;
         _reviewFeeNotice = null;
       });
       return;
@@ -977,6 +981,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             amountZatoshi: zatoshi,
             feeZatoshi: fee,
           );
+          _reviewFeeRetryAvailable = false;
           _reviewFeeNotice = null;
         });
       }
@@ -1072,6 +1077,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           _feeZatoshi = null;
           _reviewFeeQuote = null;
           _isRefreshingReviewFee = false;
+          _reviewFeeRetryAvailable = false;
         });
       }
       return;
@@ -1080,6 +1086,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _feeZatoshi = null;
       _reviewFeeQuote = null;
       _isRefreshingReviewFee = true;
+      _reviewFeeRetryAvailable = false;
       _reviewFeeNotice = _isUsingCompletedSpendableSnapshot
           ? 'Finishing wallet sync.'
           : null;
@@ -1129,6 +1136,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         setState(() {
           _amountError = _notEnoughZecText;
           _isRefreshingReviewFee = false;
+          _reviewFeeRetryAvailable = false;
           _reviewFeeNotice = _notEnoughZecText;
         });
         return;
@@ -1143,6 +1151,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           feeZatoshi: fee,
         );
         _isRefreshingReviewFee = false;
+        _reviewFeeRetryAvailable = false;
         _reviewFeeNotice = null;
       });
     } catch (e) {
@@ -1161,6 +1170,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _feeZatoshi = null;
         _reviewFeeQuote = null;
         _isRefreshingReviewFee = false;
+        _reviewFeeRetryAvailable = true;
         _reviewFeeNotice = lower.contains('sync')
             ? 'Finishing wallet sync. Try again shortly.'
             : 'Fee unavailable. Try again.';
@@ -1265,12 +1275,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           amountZatoshi: amountZatoshi,
           feeZatoshi: args.feeZatoshi,
         );
+        _reviewFeeRetryAvailable = false;
         _reviewFeeNotice = 'Fee updated after sync. Review and confirm again.';
       });
       return;
     }
     setState(() {
       _feeZatoshi = args.feeZatoshi;
+      _reviewFeeRetryAvailable = false;
       _reviewFeeNotice = null;
     });
 
@@ -2511,9 +2523,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       _isConfirmingSend ||
                           _isResolvingMax ||
                           (_isMaxMode && !_hasCurrentMaxQuote) ||
-                          !_hasCurrentReviewFeeQuote
+                          (!_hasCurrentReviewFeeQuote &&
+                              !_reviewFeeRetryAvailable)
                       ? null
-                      : () => unawaited(_confirmAndSend()),
+                      : () => unawaited(
+                          _reviewFeeRetryAvailable
+                              ? _refreshReviewQuote()
+                              : _confirmAndSend(),
+                        ),
                   leading: AppIcon(
                     isHardware ? AppIcons.qr : AppIcons.plane,
                     size: 20,
@@ -2521,6 +2538,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   child: Text(
                     _isConfirmingSend
                         ? 'Preparing...'
+                        : _reviewFeeRetryAvailable
+                        ? 'Try again'
                         : _isUsingCompletedSpendableSnapshot
                         ? 'Finishing wallet sync...'
                         : _isRefreshingReviewFee
