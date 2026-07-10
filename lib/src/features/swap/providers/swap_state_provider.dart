@@ -318,6 +318,14 @@ class SwapNotifier extends Notifier<SwapState> {
     };
   }
 
+  /// The side whose fiat text is still denominated in the previous display
+  /// currency (re-expression deferred while the user types in it), or null.
+  /// Token re-derivation from fiat texts must skip this side — the digits
+  /// still mean the old currency, so reinterpreting them under the new
+  /// display would silently rescale the canonical token amount.
+  SwapAmountInputSide? get _deferredFiatSide =>
+      _fiatReexpressDeferred ? _currentFiatEntrySide : null;
+
   /// Re-expresses the stored fiat texts when the display currency unit
   /// changed; no-op while it still matches, so redundant triggers collapse.
   /// The side the user is actively typing in is preserved — clobbering an
@@ -360,7 +368,12 @@ class SwapNotifier extends Notifier<SwapState> {
     _activeFiatEntrySide = side;
     if (!_fiatReexpressDeferred) return;
     final activeSide = _currentFiatEntrySide;
-    if (activeSide == null) _fiatReexpressDeferred = false;
+    // The re-expression below settles the deferral even when focus moved to
+    // the other side: the newly-active side's text was already re-expressed
+    // when the currency changed (only the then-focused side was preserved),
+    // so afterwards no fiat text is stale and [_deferredFiatSide] must stop
+    // excluding the active side from token re-derivation.
+    _fiatReexpressDeferred = false;
     state = swapStateWithDerivedFiatTexts(
       fiatDisplay: _fiatDisplay,
       state,
@@ -397,6 +410,7 @@ class SwapNotifier extends Notifier<SwapState> {
       swapStateWithIndicativeCounterpart(
         swapStateWithTokenAmountsForFiatModes(
           fiatDisplay: _fiatDisplay,
+          staleFiatTextSide: _deferredFiatSide,
           state.copyWith(
             externalAsset: supportedAsset,
             reviewVisible: false,
@@ -550,6 +564,7 @@ class SwapNotifier extends Notifier<SwapState> {
       nextState = swapStateWithTokenAmountsForFiatModes(
         nextState,
         fiatDisplay: _fiatDisplay,
+        staleFiatTextSide: _deferredFiatSide,
       );
       if (nextState.reviewQuote == null) {
         nextState = swapStateWithIndicativeCounterpart(nextState);

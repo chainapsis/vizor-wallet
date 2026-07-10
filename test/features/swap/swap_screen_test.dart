@@ -3566,6 +3566,77 @@ void main() {
     expect(_fieldText(tester, 'swap_amount_field'), '8000');
   });
 
+  testWidgets('price refresh does not reinterpret a deferred fiat entry in '
+      'the new currency', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingSwapProvider(const [100]);
+    final testFiatDisplay = StateProvider<FiatDisplay>((_) => kUsdFiatDisplay);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        priceRefreshInterval: const Duration(seconds: 1),
+        extraOverrides: [
+          fiatDisplayProvider.overrideWith((ref) => ref.watch(testFiatDisplay)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await tester.pumpAndSettle();
+
+    container
+        .read(swapStateProvider.notifier)
+        .toggleFiatInputMode(SwapAmountInputSide.pay);
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+
+    // Focus the pay field while it is in fiat mode so the currency change
+    // below defers its re-expression.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_amount_field')));
+    await tester.pump();
+
+    container.read(testFiatDisplay.notifier).state = const FiatDisplay(
+      currency: FiatCurrency(code: 'inr', symbol: '₹', maxDecimals: 1),
+      usdToCurrencyRate: 80,
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).amountText, '1');
+
+    // A supported-asset price refresh lands while the re-expression is still
+    // deferred. The "100" on screen still means $100, so the refresh must
+    // not reinterpret it as ₹100 and rescale the token amount.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).amountFiatText, '100');
+    expect(container.read(swapStateProvider).amountText, '1');
+    expect(_fieldText(tester, 'swap_amount_field'), '100');
+
+    // Blur still re-expresses the entry from the canonical token amount.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).amountFiatText, '8000');
+    expect(container.read(swapStateProvider).amountText, '1');
+  });
+
   testWidgets('leaving the swap surfaces releases the market-data poller', (
     tester,
   ) async {

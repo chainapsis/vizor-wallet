@@ -73,12 +73,18 @@ SwapState swapStateWithDerivedFiatTexts(
   );
 }
 
+/// [staleFiatTextSide] marks a side whose fiat text is not denominated in
+/// [fiatDisplay] (currency re-expression deferred while the user types in
+/// it); its token amount is kept as-is instead of being re-derived from
+/// digits that still mean the previous currency.
 SwapState swapStateWithTokenAmountsForFiatModes(
   SwapState current, {
   FiatDisplay fiatDisplay = kUsdFiatDisplay,
+  SwapAmountInputSide? staleFiatTextSide,
 }) {
   var next = current;
-  if (next.amountInputMode == SwapAmountInputMode.fiat) {
+  if (staleFiatTextSide != SwapAmountInputSide.pay &&
+      next.amountInputMode == SwapAmountInputMode.fiat) {
     final tokenText = swapPayTokenTextFromFiatInput(
       next,
       next.amountFiatText,
@@ -86,7 +92,8 @@ SwapState swapStateWithTokenAmountsForFiatModes(
     );
     next = next.copyWith(amountText: tokenText ?? '');
   }
-  if (next.receiveAmountInputMode == SwapAmountInputMode.fiat) {
+  if (staleFiatTextSide != SwapAmountInputSide.receive &&
+      next.receiveAmountInputMode == SwapAmountInputMode.fiat) {
     final tokenText = swapReceiveTokenTextFromFiatInput(
       next,
       next.receiveFiatText,
