@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -330,11 +332,19 @@ void main() {
     );
     // Icon-only 60px pay entry per Figma 5407:152492.
     expect(payIcon.size, 20);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('home_desktop_pay_button')),
+        matching: find.byType(Tooltip),
+      ),
+      findsNothing,
+    );
     expect(payRect.width, moreOrLessEquals(60, epsilon: 0.1));
     expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
     expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
     expect(receiveRect.left, greaterThan(sendRect.right));
     expect(payRect.left, greaterThan(receiveRect.right));
+    expect(find.byType(PayIntroductionBadgeTarget), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
     await _pumpUntilPresent(tester, find.byType(PayScreen));
@@ -359,6 +369,71 @@ void main() {
     expect(state.receiveAmountText, isEmpty);
     expect(state.destinationText, isEmpty);
   });
+
+  testWidgets('home desktop hides pay when swap is disabled', (tester) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: false,
+        payIntroductionBadgeStore: badgeStore,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('home_desktop_pay_button')), findsNothing);
+    expect(find.byType(PayIntroductionBadgeTarget), findsNothing);
+    expect(badgeStore.markCount, 0);
+  });
+
+  testWidgets(
+    'home shows NEW once while keeping the Pay callout after return',
+    (tester) async {
+      final badgeStore = _FakePayIntroductionBadgeStore();
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          payIntroductionBadgeStore: badgeStore,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      );
+      await _pumpUntilPresent(tester, find.text('NEW'));
+
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(find.text('NEW'), findsOneWidget);
+      expect(badgeStore.markCount, 1);
+
+      await tester.tap(find.byKey(const ValueKey('home_desktop_send_button')));
+      await _pumpUntilPresent(tester, find.byType(SendScreen));
+      await tester.tap(find.byKey(const ValueKey('send_pane_back_button')));
+      for (
+        var i = 0;
+        i < 20 && find.byType(SendScreen).evaluate().isNotEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.byType(SendScreen), findsNothing);
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(find.text('Pay in USDC'), findsOneWidget);
+      expect(find.text('NEW'), findsNothing);
+      expect(badgeStore.markCount, 1);
+    },
+  );
 
   testWidgets('home desktop see all action opens activity screen', (
     tester,
@@ -677,6 +752,9 @@ Widget _appHarness(
   double? priceChange24hPct,
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
+  PayIntroductionBadgeStore payIntroductionBadgeStore =
+      const _SeenPayIntroductionBadgeStore(),
+  bool payIntroductionBadgePersistenceEnabled = true,
   ThemeMode themeMode = ThemeMode.system,
 }) {
   return ProviderScope(
@@ -694,6 +772,12 @@ Widget _appHarness(
       ),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(syncState ?? _syncedSyncState),
+      ),
+      payIntroductionBadgeStoreProvider.overrideWithValue(
+        payIntroductionBadgeStore,
+      ),
+      payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
+        payIntroductionBadgePersistenceEnabled,
       ),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
@@ -749,6 +833,30 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   @override
   Future<ZecMarketData?> fetchMarketData() async {
     return ZecMarketData(usdPrice: 70, change24hPct: change24hPct);
+  }
+}
+
+class _SeenPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  const _SeenPayIntroductionBadgeStore();
+
+  @override
+  Future<bool> hasSeen() async => true;
+
+  @override
+  Future<void> markSeen() async {}
+}
+
+class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  bool seen = false;
+  int markCount = 0;
+
+  @override
+  Future<bool> hasSeen() async => seen;
+
+  @override
+  Future<void> markSeen() async {
+    seen = true;
+    markCount += 1;
   }
 }
 

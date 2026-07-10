@@ -56,6 +56,7 @@ class SwapState {
     this.supportedExternalAssets = swapExternalAssets,
     this.indicativeExternalPerZec = const {},
     this.indicativeUsdPrices = const {},
+    this.pricingLoading = false,
     this.reviewQuote,
     this.reviewAddressPlan,
     this.reviewAccountUuid,
@@ -90,6 +91,10 @@ class SwapState {
   final List<SwapAsset> supportedExternalAssets;
   final Map<SwapAsset, double> indicativeExternalPerZec;
   final Map<SwapAsset, double> indicativeUsdPrices;
+
+  /// True only while the supported-asset/indicative-price snapshot is being
+  /// loaded or refreshed. Live review quote submission uses [quoteLoading].
+  final bool pricingLoading;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
   final String? reviewAccountUuid;
@@ -267,6 +272,7 @@ class SwapState {
     List<SwapAsset>? supportedExternalAssets,
     Map<SwapAsset, double>? indicativeExternalPerZec,
     Map<SwapAsset, double>? indicativeUsdPrices,
+    bool? pricingLoading,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
     String? reviewAccountUuid,
@@ -312,6 +318,7 @@ class SwapState {
       indicativeExternalPerZec:
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,
+      pricingLoading: pricingLoading ?? this.pricingLoading,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
       reviewAddressPlan: clearReview
           ? null

@@ -25,6 +25,23 @@ final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
   return const [];
 });
 
+/// Session-only memory for Pay's payout asset. This deliberately lives apart
+/// from persisted Swap composer preferences so moving between the two flows
+/// cannot overwrite either selection.
+class PaySelectedAssetNotifier extends Notifier<SwapAsset> {
+  @override
+  SwapAsset build() => SwapAsset.usdc;
+
+  void select(SwapAsset asset) {
+    state = asset;
+  }
+}
+
+final paySelectedAssetProvider =
+    NotifierProvider<PaySelectedAssetNotifier, SwapAsset>(
+      PaySelectedAssetNotifier.new,
+    );
+
 sealed class SwapStartResult {
   const SwapStartResult(this.intentId);
 
@@ -44,6 +61,7 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
+  var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
 
@@ -103,6 +121,7 @@ class SwapNotifier extends Notifier<SwapState> {
       externalAsset: SwapAsset.usdc,
       reviewVisible: false,
       intents: [],
+      pricingLoading: true,
     ).copyWith(
       intents: initialIntents,
       selectedIntentId: initialIntents.isEmpty ? null : initialIntents.first.id,
@@ -223,6 +242,12 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void preparePayFromShieldedZec() {
     _clearReviewState();
+    final rememberedAsset = ref.read(paySelectedAssetProvider);
+    final supportedAssets = state.supportedExternalAssets;
+    final payAsset =
+        _supportedAssetFor(rememberedAsset, supportedAssets) ??
+        _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
+        (supportedAssets.isEmpty ? rememberedAsset : supportedAssets.first);
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
         state.copyWith(
@@ -234,7 +259,7 @@ class SwapNotifier extends Notifier<SwapState> {
           receiveAmountInputMode: SwapAmountInputMode.token,
           amountFiatText: '',
           receiveFiatText: '',
-          externalAsset: SwapAsset.usdc,
+          externalAsset: payAsset,
           destinationText: '',
           reviewVisible: false,
           depositTxHashText: '',
@@ -328,16 +353,21 @@ class SwapNotifier extends Notifier<SwapState> {
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
   }
 
-  void selectPayExternalAsset(SwapAsset asset) {
+  void selectPayExternalAsset(
+    SwapAsset asset, {
+    bool clearDestinationOnChainChange = false,
+  }) {
     final supportedAsset = _supportedAssetFor(
       asset,
       state.supportedExternalAssets,
     );
     if (supportedAsset == null) return;
-    // Pay collects the recipient address first, then lets the user confirm the
-    // destination network/token. Preserve the typed address when changing
-    // chains; the generic swap composer clears it because that flow is
-    // token-first.
+    ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
+    // Mobile Pay still collects the recipient first and therefore preserves
+    // it by default. Desktop Pay is amount-first and opts into clearing a
+    // stale address when the selected chain changes.
+    final chainChanged =
+        supportedAsset.chainTicker != state.externalAsset.chainTicker;
     _clearReviewState();
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
@@ -345,6 +375,9 @@ class SwapNotifier extends Notifier<SwapState> {
           state.copyWith(
             externalAsset: supportedAsset,
             reviewVisible: false,
+            destinationText: clearDestinationOnChainChange && chainChanged
+                ? ''
+                : null,
             payMode: true,
           ),
         ),
@@ -458,6 +491,13 @@ class SwapNotifier extends Notifier<SwapState> {
   Future<void> _loadSupportedExternalAssets({
     bool forceRefreshPrices = false,
   }) async {
+    final generation = ++_pricingLoadGeneration;
+    // build() starts the initial load before the notifier's state is assigned.
+    // Yield once so both that first load and later refreshes use the same state
+    // transition without reading an uninitialized notifier.
+    await Future<void>.value();
+    if (generation != _pricingLoadGeneration) return;
+    state = state.copyWith(pricingLoading: true);
     try {
       final provider = ref.read(swapIntentProvider);
       final pricingProvider = provider is SwapPricingProvider
@@ -471,13 +511,20 @@ class SwapNotifier extends Notifier<SwapState> {
       final liveAssets = pricing?.supportedExternalAssets.isNotEmpty == true
           ? pricing!.supportedExternalAssets
           : await provider.listSupportedExternalAssets();
+      if (generation != _pricingLoadGeneration) return;
       final supported = [
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
       ];
       if (supported.isEmpty) return;
+      final rememberedAsset = state.payMode
+          ? ref.read(paySelectedAssetProvider)
+          : state.externalAsset;
       final selected =
-          _supportedAssetFor(state.externalAsset, supported) ?? supported.first;
+          _supportedAssetFor(rememberedAsset, supported) ?? supported.first;
+      if (state.payMode) {
+        ref.read(paySelectedAssetProvider.notifier).select(selected);
+      }
       final selectedChanged = selected != state.externalAsset;
       var nextState = state.copyWith(
         supportedExternalAssets: supported,
@@ -502,6 +549,10 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (_) {
       // Keep the static fallback so the swap flow remains usable offline.
+    } finally {
+      if (generation == _pricingLoadGeneration) {
+        state = state.copyWith(pricingLoading: false);
+      }
     }
   }
 

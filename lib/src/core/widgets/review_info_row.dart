@@ -72,6 +72,7 @@ class ReviewInfoRow extends StatelessWidget {
     this.onTrailingAction,
     this.valueFit,
     this.valueStyle,
+    this.rowHeight = ReviewInfoRow.height,
     super.key,
   });
 
@@ -119,6 +120,10 @@ class ReviewInfoRow extends StatelessWidget {
   /// send/status screens keep the default 32.
   final TextStyle? valueStyle;
 
+  /// Optional component height override. Pay review rows use the compact
+  /// 76px variant; the send/status component remains 90px by default.
+  final double rowHeight;
+
   /// Row height pinned by the Figma `_Review Info` component.
   static const height = 90.0;
 
@@ -131,9 +136,12 @@ class ReviewInfoRow extends StatelessWidget {
               decoration: struckThrough ? TextDecoration.lineThrough : null,
               decorationColor: struckThrough ? colors.text.accent : null,
             );
+    final labelRowHeight = rowHeight < ReviewInfoRow.height
+        ? 14.0
+        : AppSpacing.md;
 
     return SizedBox(
-      height: height,
+      height: rowHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -149,7 +157,7 @@ class ReviewInfoRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  height: AppSpacing.md,
+                  height: labelRowHeight,
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(

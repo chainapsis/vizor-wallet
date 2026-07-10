@@ -31,10 +31,16 @@ class PayWizardStepper extends StatelessWidget {
         children
           ..add(const SizedBox(width: AppSpacing.xs))
           ..add(
-            AppIcon(
-              AppIcons.chevronForward,
-              size: 16,
-              color: colors.icon.muted,
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Center(
+                child: AppIcon(
+                  AppIcons.chevronForward,
+                  size: 16,
+                  color: colors.icon.muted,
+                ),
+              ),
             ),
           )
           ..add(const SizedBox(width: AppSpacing.xs));
@@ -87,50 +93,37 @@ class _PayWizardStepChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final active = state == _PayWizardStepState.active;
-    final row = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (state == _PayWizardStepState.completed)
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 16,
-                color: colors.icon.muted,
-              ),
-            ),
-          )
-        else
+    final row = Opacity(
+      opacity: active ? 1 : 0.5,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Container(
+            key: ValueKey('pay_wizard_step_icon_$index'),
             width: 24,
             height: 24,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: active
-                  ? colors.background.inverse
-                  : colors.background.neutralSubtleOpacity,
+              color: colors.background.raised,
               shape: BoxShape.circle,
             ),
-            child: Text(
-              '${index + 1}',
-              style: AppTypography.labelMedium.copyWith(
-                color: active ? colors.text.inverse : colors.text.secondary,
-              ),
-            ),
+            child: state == _PayWizardStepState.completed
+                ? AppIcon(AppIcons.check, size: 16, color: colors.icon.accent)
+                : Text(
+                    '${index + 1}',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
           ),
-        const SizedBox(width: AppSpacing.xs),
-        Text(
-          label,
-          key: ValueKey('pay_wizard_step_label_$index'),
-          style: active
-              ? AppTypography.labelLarge.copyWith(color: colors.text.accent)
-              : AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-        ),
-      ],
+          const SizedBox(width: 10),
+          Text(
+            label,
+            key: ValueKey('pay_wizard_step_label_$index'),
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ],
+      ),
     );
     if (onTap == null) return row;
     return MouseRegion(

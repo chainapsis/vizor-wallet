@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -41,6 +43,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
   var _profilePictureId = kDefaultProfilePictureId;
   var _pickingPicture = false;
   var _saving = false;
+  String? _saveError;
 
   @override
   void initState() {
@@ -62,8 +65,23 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
 
   void _save() {
     if (!_canSave) return;
-    setState(() => _saving = true);
-    widget.onSave(_labelController.text.trim(), _profilePictureId);
+    unawaited(_saveContact());
+  }
+
+  Future<void> _saveContact() async {
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      await widget.onSave(_labelController.text.trim(), _profilePictureId);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = "Couldn't save this contact. Try again.";
+      });
+    }
   }
 
   @override
@@ -131,7 +149,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
           const SizedBox(height: AppSpacing.md),
           AppTextField(
             key: const ValueKey('pay_add_contact_label_field'),
-            label: 'Address Label',
+            label: 'Address label',
             controller: _labelController,
             hintText: 'Add label 1-20 characters',
             autofocus: true,
@@ -145,7 +163,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Chain & Address',
+                  'Chain & address',
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -183,6 +201,19 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
               color: colors.text.accent,
             ),
           ),
+          if (_saveError != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              _saveError!,
+              key: const ValueKey('pay_add_contact_save_error'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           AppModalActions(
             cancelKey: const ValueKey('pay_add_contact_cancel_button'),

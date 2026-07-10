@@ -43,6 +43,7 @@ import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
+import '../widgets/pay_floating_badge.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -388,6 +389,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final isImporting =
         !widget.sync.hasAccountScopedData && widget.sync.failure == null;
     final hasBalance = widget.sync.totalBalance > BigInt.zero;
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
 
     return _HomeDesktopPane(
       isImporting: isImporting,
@@ -409,10 +411,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onShieldBalancePressed: widget.onShieldBalancePressed,
       onSend: () => context.push('/send'),
       onReceive: () => context.push('/receive'),
-      onPay: () {
-        ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
-        context.push('/pay');
-      },
+      onPay: swapFeatureEnabled
+          ? () {
+              ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+              context.push('/pay');
+            }
+          : null,
       onActivity: () => context.push('/activity'),
     );
   }
@@ -919,7 +923,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
-  final VoidCallback onPay;
+  final VoidCallback? onPay;
   final VoidCallback onActivity;
 
   static const _referencePaneHeight = 704.0;
@@ -1179,7 +1183,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
-  final VoidCallback onPay;
+  final VoidCallback? onPay;
 
   @override
   State<_HomeDesktopBalanceCard> createState() =>
@@ -1413,23 +1417,23 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     primary: false,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                // Icon-only pay entry — Figma 5407:152492: fixed 60px pill,
-                // dollar-circle glyph, "Pay in USDC" surfaced via tooltip.
-                SizedBox(
-                  width: 60,
-                  child: Tooltip(
-                    message: 'Pay in USDC',
-                    child: _HomeDesktopActionButton(
-                      key: const ValueKey('home_desktop_pay_button'),
-                      icon: AppIcons.paid,
-                      label: 'Pay in USDC',
-                      compact: true,
-                      onTap: widget.onPay,
-                      primary: false,
+                if (widget.onPay != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  // Icon-only pay entry — Figma 5407:152492: fixed 60px pill.
+                  SizedBox(
+                    width: 60,
+                    child: PayIntroductionBadgeTarget(
+                      child: _HomeDesktopActionButton(
+                        key: const ValueKey('home_desktop_pay_button'),
+                        icon: AppIcons.paid,
+                        label: 'Pay in USDC',
+                        compact: true,
+                        onTap: widget.onPay!,
+                        primary: false,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
         ],

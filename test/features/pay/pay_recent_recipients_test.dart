@@ -10,21 +10,32 @@ const _solana = '4Nd1mYQx4jJXAWe3zUKgnQz5pFa9qTqfjEBWWWk3tS9e';
 SwapIntent _intent({
   required String id,
   required String? recipient,
+  String sellAmount = '1 ZEC',
+  String receiveEstimate = '10 USDC',
   SwapDirection direction = SwapDirection.zecToExternal,
+  SwapIntentStatus status = SwapIntentStatus.complete,
+  String? depositTxHash,
+  String? destinationChainTxHash,
+  String? broadcastStatus,
   DateTime? createdAt,
+  DateTime? updatedAt,
   DateTime? completedAt,
 }) {
   return SwapIntent(
     id: id,
     pair: 'ZEC -> USDC',
-    sellAmount: '1 ZEC',
-    receiveEstimate: '10 USDC',
+    sellAmount: sellAmount,
+    receiveEstimate: receiveEstimate,
     provider: 'NEAR Intents',
-    status: SwapIntentStatus.complete,
+    status: status,
     nextAction: '',
     direction: direction,
+    depositTxHash: depositTxHash,
+    destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: recipient,
+    broadcastStatus: broadcastStatus,
     createdAt: createdAt,
+    updatedAt: updatedAt,
     completedAt: completedAt,
   );
 }
@@ -44,6 +55,8 @@ void main() {
             _intent(
               id: 'new',
               recipient: _evmB,
+              sellAmount: '1.24 ZEC',
+              receiveEstimate: ' ~24.0000 USDC ',
               createdAt: DateTime(2026, 7, 5),
             ),
             _intent(id: 'wrong-chain', recipient: _solana),
@@ -59,8 +72,91 @@ void main() {
         );
 
         expect(recents.map((r) => r.address), [_evmB, _evmA]);
+        expect(recents.first.amountText, '-24 USDC');
       },
     );
+
+    test('keeps only completed or destination-chain-evidenced payouts', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'failed',
+            recipient: _evmB,
+            status: SwapIntentStatus.failed,
+            depositTxHash: 'failed-deposit',
+            destinationChainTxHash: 'stale-failed-payout',
+            updatedAt: DateTime(2026, 7, 9),
+          ),
+          _intent(
+            id: 'refunded',
+            recipient: _evmB,
+            status: SwapIntentStatus.refunded,
+            depositTxHash: 'refunded-deposit',
+            updatedAt: DateTime(2026, 7, 8),
+          ),
+          _intent(
+            id: 'expired',
+            recipient: _evmB,
+            status: SwapIntentStatus.expired,
+            createdAt: DateTime(2026, 7, 7),
+          ),
+          _intent(
+            id: 'unsent',
+            recipient: _evmB,
+            status: SwapIntentStatus.awaitingDeposit,
+            createdAt: DateTime(2026, 7, 6),
+          ),
+          _intent(
+            id: 'source-deposit-only',
+            recipient: _evmB,
+            status: SwapIntentStatus.processing,
+            depositTxHash: 'zec-deposit-tx',
+            updatedAt: DateTime(2026, 7, 6),
+          ),
+          _intent(
+            id: 'payout-broadcast',
+            recipient: _evmA,
+            status: SwapIntentStatus.processing,
+            receiveEstimate: '18.50 USDC',
+            depositTxHash: 'zec-deposit-tx',
+            destinationChainTxHash: 'usdc-payout-tx',
+            createdAt: DateTime(2026, 7, 4),
+            updatedAt: DateTime(2026, 7, 5),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+      );
+
+      expect(recents, hasLength(1));
+      expect(recents.single.address, _evmA);
+      expect(recents.single.amountText, '-18.5 USDC');
+      expect(recents.single.lastUsedAt, DateTime(2026, 7, 5));
+    });
+
+    test('a newer failed attempt does not replace a completed recipient', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'completed',
+            recipient: _evmA,
+            receiveEstimate: '12 USDC',
+            completedAt: DateTime(2026, 7, 5),
+          ),
+          _intent(
+            id: 'failed',
+            recipient: _evmA,
+            receiveEstimate: '99 USDC',
+            status: SwapIntentStatus.failed,
+            createdAt: DateTime(2026, 7, 8),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+      );
+
+      expect(recents, hasLength(1));
+      expect(recents.single.amountText, '-12 USDC');
+      expect(recents.single.lastUsedAt, DateTime(2026, 7, 5));
+    });
 
     test('deduplicates by address keeping the most recent use', () {
       final recents = payRecentRecipients(

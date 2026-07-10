@@ -1,9 +1,13 @@
-import 'package:flutter/material.dart' show Material, MaterialApp;
+import 'package:flutter/material.dart' show Material, MaterialApp, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon_hover_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/pay_amount_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_review_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
@@ -19,6 +23,16 @@ final _contact = AddressBookContact(
   network: AddressBookNetwork.ethereum,
   address: _contactAddress,
   profilePictureId: 'pfp-01',
+  createdAtMs: 0,
+  updatedAtMs: 0,
+);
+
+final _recentContact = AddressBookContact(
+  id: 'recent-mike',
+  label: 'Recent Mike',
+  network: AddressBookNetwork.ethereum,
+  address: _recentAddress,
+  profilePictureId: 'pfp-02',
   createdAtMs: 0,
   updatedAtMs: 0,
 );
@@ -44,8 +58,9 @@ Widget _recipientStep({
   ValueChanged<String>? onChooseRecipient,
   VoidCallback? onSelectRecipient,
   VoidCallback? onAddToContacts,
+  String? quoteError,
 }) {
-  return PayRecipientStep(
+  final step = PayRecipientStep(
     controller: TextEditingController(text: typedAddress),
     typedAddress: typedAddress,
     addressError: addressError,
@@ -55,8 +70,19 @@ Widget _recipientStep({
     onAddressChanged: (_) {},
     onOpenScanner: () {},
     onChooseRecipient: onChooseRecipient ?? (_) {},
+  );
+  final actions = PayRecipientActions(
+    typedAddress: typedAddress,
+    addressError: addressError,
+    contacts: contacts,
+    busy: false,
+    quoteError: quoteError,
     onSelectRecipient: onSelectRecipient ?? () {},
     onAddToContacts: onAddToContacts ?? () {},
+  );
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [step, if (actions.visible) actions],
   );
 }
 
@@ -69,7 +95,269 @@ SwapQuote _payQuote() {
   );
 }
 
+const _amountState = SwapState(
+  direction: SwapDirection.zecToExternal,
+  quoteMode: SwapQuoteMode.exactOutput,
+  amountText: '0.25',
+  receiveAmountText: '25',
+  receiveFiatText: '25.00',
+  destinationText: '',
+  externalAsset: SwapAsset.usdc,
+  reviewVisible: false,
+  intents: [],
+  payMode: true,
+);
+
 void main() {
+  group('PayAddContactModal', () {
+    testWidgets('waits for persistence and recovers from a save failure', (
+      tester,
+    ) async {
+      var attempts = 0;
+      await tester.pumpWidget(
+        _harness(
+          PayAddContactModal(
+            network: AddressBookNetwork.ethereum,
+            address: _unknownAddress,
+            onCancel: () {},
+            onSave: (_, _) async {
+              attempts += 1;
+              throw StateError('save failed');
+            },
+          ),
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_add_contact_label_field')),
+        'Mike',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_add_contact_save_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(attempts, 1);
+      expect(
+        find.text("Couldn't save this contact. Try again."),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_add_contact_save_button')),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('PayAmountStep', () {
+    testWidgets('shows zero values without loading skeletons before input', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          PayAmountStep(
+            state: _amountState.copyWith(
+              amountText: '',
+              receiveAmountText: '',
+              receiveFiatText: '',
+              pricingLoading: true,
+            ),
+            controller: controller,
+            focusNode: focusNode,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
+            onOpenAssetSelector: () {},
+          ),
+        ),
+      );
+
+      expect(find.text(r'$ 0'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('pay_estimated_spend')))
+            .data,
+        '0',
+      );
+      expect(
+        find.byKey(const ValueKey('pay_amount_counterpart_loading')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_estimated_spend_loading')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'animates conversion placeholders while the pricing snapshot refreshes',
+      (tester) async {
+        final controller = TextEditingController(text: '25');
+        final focusNode = FocusNode();
+        addTearDown(controller.dispose);
+        addTearDown(focusNode.dispose);
+
+        await tester.pumpWidget(
+          _harness(
+            PayAmountStep(
+              state: _amountState.copyWith(pricingLoading: true),
+              controller: controller,
+              focusNode: focusNode,
+              onAmountChanged: (_) {},
+              onFiatAmountChanged: (_) {},
+              onToggleFiatInputMode: () {},
+              onOpenAssetSelector: () {},
+            ),
+          ),
+        );
+
+        expect(
+          find.byKey(const ValueKey('pay_amount_counterpart_loading')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('pay_estimated_spend_loading')),
+          findsOneWidget,
+        );
+        final firstPainter = tester
+            .widget<CustomPaint>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('pay_amount_counterpart_loading'),
+                ),
+                matching: find.byType(CustomPaint),
+              ),
+            )
+            .painter;
+
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final nextPainter = tester
+            .widget<CustomPaint>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('pay_amount_counterpart_loading'),
+                ),
+                matching: find.byType(CustomPaint),
+              ),
+            )
+            .painter;
+        expect(identical(firstPainter, nextPainter), isFalse);
+      },
+    );
+
+    testWidgets('does not use review quote loading for amount placeholders', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '25');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          PayAmountStep(
+            state: _amountState.copyWith(quoteLoading: true),
+            controller: controller,
+            focusNode: focusNode,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
+            onOpenAssetSelector: () {},
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('pay_amount_counterpart_loading')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_estimated_spend_loading')),
+        findsNothing,
+      );
+      expect(find.text(r'$25.00'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('pay_estimated_spend')))
+            .data,
+        '0.25',
+      );
+    });
+
+    testWidgets('matches the desktop amount card geometry and typography', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '25');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          PayAmountStep(
+            state: _amountState,
+            controller: controller,
+            focusNode: focusNode,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
+            onOpenAssetSelector: () {},
+          ),
+        ),
+      );
+
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pay_amount_card'))).height,
+        316,
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pay_amount_step'))).height,
+        416,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('pay_amount_input')))
+            .style
+            ?.fontSize,
+        AppTypography.displayLarge.fontSize,
+      );
+    });
+
+    testWidgets('uses the fixed-width action and shared validation contract', (
+      tester,
+    ) async {
+      var continued = false;
+      await tester.pumpWidget(
+        _harness(
+          Center(
+            child: PayAmountAction(
+              state: _amountState,
+              onContinue: () => continued = true,
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('pay_amount_continue_button')))
+            .width,
+        196,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      expect(continued, isTrue);
+    });
+  });
+
   group('PayWizardStepper', () {
     testWidgets('marks completed, active, and upcoming steps', (tester) async {
       var tapped = -1;
@@ -86,6 +374,13 @@ void main() {
       expect(find.text('1'), findsNothing);
       expect(find.text('2'), findsOneWidget);
       expect(find.text('3'), findsOneWidget);
+      final activeIcon = tester.widget<Container>(
+        find.byKey(const ValueKey('pay_wizard_step_icon_1')),
+      );
+      expect(
+        (activeIcon.decoration! as BoxDecoration).color,
+        AppThemeData.light.colors.background.raised,
+      );
 
       await tester.tap(find.byKey(const ValueKey('pay_wizard_step_back_0')));
       expect(tapped, 0);
@@ -107,14 +402,19 @@ void main() {
   });
 
   group('PayRecipientStep', () {
-    testWidgets('empty input shows recents and contacts, no CTA', (
+    testWidgets('empty input decorates recent contacts and shows no CTA', (
       tester,
     ) async {
       await tester.pumpWidget(
         _harness(
           _recipientStep(
-            contacts: [_contact],
-            recents: const [PayRecentRecipient(address: _recentAddress)],
+            contacts: [_contact, _recentContact],
+            recents: const [
+              PayRecentRecipient(
+                address: _recentAddress,
+                amountText: '-24 USDC',
+              ),
+            ],
           ),
         ),
       );
@@ -125,6 +425,21 @@ void main() {
       );
       expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
       expect(find.text('Mike'), findsOneWidget);
+      expect(find.text('Recent Mike'), findsWidgets);
+      expect(find.text('-24 USDC'), findsOneWidget);
+      final userIcon = tester.widget<AppIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('pay_recipient_search_field')),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.user,
+          ),
+        ),
+      );
+      expect(userIcon.color, AppThemeData.light.colors.icon.regular);
+      final scanButton = tester.widget<AppIconHoverButton>(
+        find.byKey(const ValueKey('pay_recipient_scan_button')),
+      );
+      expect(scanButton.iconColor, AppThemeData.light.colors.icon.regular);
       expect(
         find.byKey(const ValueKey('pay_select_recipient_button')),
         findsNothing,
@@ -187,6 +502,73 @@ void main() {
       );
     });
 
+    testWidgets(
+      'recent result wins over the same contact and bypasses eager validation',
+      (tester) async {
+        await tester.pumpWidget(
+          _harness(
+            _recipientStep(
+              typedAddress: 'recent mike',
+              addressError: 'Not a valid Ethereum address.',
+              contacts: [_recentContact],
+              recents: const [
+                PayRecentRecipient(
+                  address: _recentAddress,
+                  amountText: '-24 USDC',
+                ),
+              ],
+            ),
+          ),
+        );
+
+        expect(
+          find.byKey(const ValueKey('pay_recent_recipients_card')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
+        expect(find.text('Recent Mike'), findsOneWidget);
+        expect(find.text('-24 USDC'), findsOneWidget);
+        expect(find.text('Not a valid Ethereum address.'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('pay_select_recipient_button')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('exact recent contact keeps recent selected state', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _recentAddress,
+            contacts: [_recentContact],
+            recents: const [
+              PayRecentRecipient(
+                address: _recentAddress,
+                amountText: '-24 USDC',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('pay_recent_recipients_card')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('unknown valid address shows the new-address notice', (
       tester,
     ) async {
@@ -213,6 +595,10 @@ void main() {
         find.byKey(const ValueKey('pay_add_to_contacts_button')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('invalid address disables continue and shows the error', (
@@ -234,19 +620,53 @@ void main() {
       );
     });
 
-    testWidgets('tapping a contact row chooses that recipient', (tester) async {
-      String? chosen;
+    testWidgets('quote failures stay visible beside the recipient actions', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _harness(
           _recipientStep(
+            typedAddress: _unknownAddress,
+            quoteError: 'Unable to fetch a quote. Try again.',
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('pay_recipient_quote_error')),
+        findsOneWidget,
+      );
+      expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('row selection does not request review until the CTA', (
+      tester,
+    ) async {
+      String? chosen;
+      var reviewRequested = false;
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _contactAddress,
             contacts: [_contact],
             onChooseRecipient: (address) => chosen = address,
+            onSelectRecipient: () => reviewRequested = true,
           ),
         ),
       );
 
       await tester.tap(find.text('Mike'));
       expect(chosen, _contactAddress);
+      expect(reviewRequested, isFalse);
+
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      expect(reviewRequested, isTrue);
     });
   });
 
@@ -271,6 +691,7 @@ void main() {
         starting: starting,
         startBlockedReason: startBlockedReason,
         startError: null,
+        onShowFullAddress: () {},
         onConfirm: onConfirm ?? () {},
         onReviewAgain: onReviewAgain ?? () {},
       );
@@ -287,7 +708,10 @@ void main() {
       expect(find.text('Converted amount'), findsOneWidget);
       expect(find.textContaining('Quote expires in'), findsOneWidget);
       expect(find.textContaining('1:30'), findsOneWidget);
-      expect(find.text('Confirm & Pay'), findsOneWidget);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pay_review_step'))).height,
+        428,
+      );
     });
 
     testWidgets('unknown recipient shows the wallet placeholder copy', (
@@ -297,34 +721,66 @@ void main() {
       expect(find.text('Unknown address'), findsOneWidget);
     });
 
-    testWidgets('show full address toggle reveals the address', (tester) async {
-      await tester.pumpWidget(_harness(reviewStep()));
-
-      expect(
-        find.byKey(const ValueKey('pay_review_full_address')),
-        findsNothing,
+    testWidgets('show full address delegates to the screen overlay', (
+      tester,
+    ) async {
+      var opened = false;
+      await tester.pumpWidget(
+        _harness(
+          PayReviewStep(
+            quote: _payQuote(),
+            recipientAddress: _contactAddress,
+            recipientContact: null,
+            payingFiatText: r'$100.10',
+            convertedFiatText: r'$100.10',
+            expiresInText: '1:30',
+            expired: false,
+            starting: false,
+            startBlockedReason: null,
+            startError: null,
+            onShowFullAddress: () => opened = true,
+            onConfirm: () {},
+            onReviewAgain: () {},
+          ),
+        ),
       );
+
+      expect(find.text(_contactAddress), findsNothing);
       await tester.tap(
         find.byKey(const ValueKey('pay_review_show_full_address')),
       );
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey('pay_review_full_address')),
-        findsOneWidget,
-      );
-      expect(find.text('Hide full address'), findsOneWidget);
+      expect(opened, isTrue);
     });
 
-    testWidgets('expired quote swaps the CTA for review again', (tester) async {
+    testWidgets('expired quote uses refresh treatment', (tester) async {
       var reviewedAgain = false;
       await tester.pumpWidget(
         _harness(
-          reviewStep(expired: true, onReviewAgain: () => reviewedAgain = true),
+          Column(
+            children: [
+              reviewStep(expired: true),
+              PayReviewAction(
+                expired: true,
+                starting: false,
+                startBlockedReason: null,
+                onConfirm: () {},
+                onReviewAgain: () => reviewedAgain = true,
+              ),
+            ],
+          ),
         ),
       );
 
       expect(find.text('Quote expired'), findsOneWidget);
-      await tester.tap(find.text('Review again'));
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('pay_review_converted_opacity')),
+            )
+            .opacity,
+        0.5,
+      );
+      await tester.tap(find.text('Refresh the quote'));
       expect(reviewedAgain, isTrue);
     });
 
@@ -334,13 +790,22 @@ void main() {
       var confirmed = false;
       await tester.pumpWidget(
         _harness(
-          reviewStep(
-            startBlockedReason: 'not enough',
-            onConfirm: () => confirmed = true,
+          Column(
+            children: [
+              reviewStep(startBlockedReason: 'not enough'),
+              PayReviewAction(
+                expired: false,
+                starting: false,
+                startBlockedReason: 'not enough',
+                onConfirm: () => confirmed = true,
+                onReviewAgain: () {},
+              ),
+            ],
           ),
         ),
       );
 
+      expect(find.text('not enough'), findsOneWidget);
       await tester.tap(find.text('Not enough ZEC'), warnIfMissed: false);
       expect(confirmed, isFalse);
     });

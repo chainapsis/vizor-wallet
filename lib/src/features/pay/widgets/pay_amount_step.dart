@@ -10,15 +10,17 @@ import '../../swap/models/swap_models.dart';
 import '../../swap/widgets/swap_asset_icon.dart';
 import '../models/pay_amount_input.dart';
 
-/// Figma Young Serif Medium 40 amount style — larger than the serif display
-/// tokens, specific to the pay amount input (spec-form-a §3b).
-const _payAmountInputTextStyle = TextStyle(
-  fontFamily: 'Young Serif',
-  fontWeight: FontWeight.w500,
-  fontSize: 40,
-  height: 1.2,
-  fontFeatures: [FontFeature.enable('case')],
-);
+const _payAmountSkeletonPeriod = Duration(milliseconds: 1200);
+
+/// Whether the Amount step can advance. Kept beside the widget so the
+/// bottom-pinned CTA and the amount surface share one validation contract.
+bool payAmountCanContinue(SwapState state) {
+  final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
+  return hasAmount &&
+      state.quoteAmountPrecisionError == null &&
+      !state.quoteLoading &&
+      !state.pricingLoading;
+}
 
 /// Step 1 "Amount" of the desktop pay wizard (Form Option A) — Figma
 /// 6133:124896: "Paying in" asset selector, centered serif amount input with
@@ -32,7 +34,6 @@ class PayAmountStep extends StatelessWidget {
     required this.onFiatAmountChanged,
     required this.onToggleFiatInputMode,
     required this.onOpenAssetSelector,
-    required this.onContinue,
     super.key,
   });
 
@@ -43,7 +44,6 @@ class PayAmountStep extends StatelessWidget {
   final ValueChanged<String> onFiatAmountChanged;
   final VoidCallback onToggleFiatInputMode;
   final VoidCallback onOpenAssetSelector;
-  final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -53,9 +53,6 @@ class PayAmountStep extends StatelessWidget {
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final precisionError = state.quoteAmountPrecisionError;
     final quoteError = precisionError ?? state.quoteError;
-    final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
-    final canContinue =
-        hasAmount && precisionError == null && !state.quoteLoading;
     final counterpartText = inputIsFiat
         ? (state.receiveAmountText.trim().isEmpty
               ? null
@@ -63,196 +60,236 @@ class PayAmountStep extends StatelessWidget {
         : (state.receiveFiatText.trim().isEmpty
               ? null
               : state.receiveFiatText.trim());
+    final inputText = inputIsFiat
+        ? state.receiveFiatText.trim()
+        : state.receiveAmountText.trim();
+    final hasInput = inputText.isNotEmpty;
+    final counterpartLoading = hasInput && state.pricingLoading;
     final estimatedZecText = state.amountText.trim();
+    final estimatedSpendLoading = hasInput && state.pricingLoading;
 
-    return Column(
+    return Padding(
       key: const ValueKey('pay_amount_step'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.md,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.base,
-            borderRadius: BorderRadius.circular(AppRadii.large),
-            boxShadow: appSurfaceShadow(colors),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Paying in',
-                    style: AppTypography.labelLarge.copyWith(
-                      fontWeight: FontWeight.w400,
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                  const Spacer(),
-                  _PayAssetSelector(asset: asset, onTap: onOpenAssetSelector),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxInputWidth = (constraints.maxWidth - 120)
-                      .clamp(56.0, 240.0)
-                      .toDouble();
-                  return AnimatedBuilder(
-                    animation: controller,
-                    builder: (context, _) {
-                      final amountStyle = _payAmountInputTextStyle.copyWith(
-                        color: colors.text.accent,
-                      );
-                      final inputWidth = payAmountInputWidth(
-                        context: context,
-                        text: controller.text,
-                        style: amountStyle,
-                        maxWidth: maxInputWidth,
-                      );
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          SizedBox(
-                            width: inputWidth,
-                            child: TextField(
-                              key: const ValueKey('pay_amount_input'),
-                              controller: controller,
-                              focusNode: focusNode,
-                              autofocus: true,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              textInputAction: TextInputAction.next,
-                              inputFormatters: [
-                                const CommaToDotInputFormatter(),
-                                PayDecimalAmountInputFormatter(
-                                  maxFractionDigits: inputIsFiat
-                                      ? 2
-                                      : asset.decimals,
-                                ),
-                              ],
-                              onChanged: inputIsFiat
-                                  ? onFiatAmountChanged
-                                  : onAmountChanged,
-                              textAlign: TextAlign.center,
-                              style: amountStyle,
-                              cursorColor: colors.text.accent,
-                              decoration: InputDecoration.collapsed(
-                                hintText: '0',
-                                hintStyle: _payAmountInputTextStyle.copyWith(
-                                  color: colors.text.muted,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Text(
-                              inputIsFiat ? 'USD' : asset.symbol,
-                              key: const ValueKey('pay_amount_unit'),
-                              style: AppTypography.displaySmall.copyWith(
-                                color: colors.text.muted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.s),
-              Center(
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    key: const ValueKey('pay_amount_fiat_toggle'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onToggleFiatInputMode,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppIcon(
-                          AppIcons.doubleArrowVertical,
-                          size: 20,
-                          color: colors.icon.regular,
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('pay_amount_card'),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.md,
+            ),
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(AppRadii.xLarge),
+              boxShadow: appSurfaceShadow(colors),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      Text(
+                        'Paying in',
+                        style: AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
+                          color: colors.text.secondary,
                         ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        if (counterpartText != null)
-                          Text(
-                            inputIsFiat
-                                ? counterpartText
-                                : '\$$counterpartText',
-                            key: const ValueKey('pay_amount_counterpart'),
-                            style: AppTypography.labelLarge.copyWith(
-                              fontWeight: FontWeight.w400,
-                              color: colors.text.secondary,
-                            ),
-                          )
-                        else ...[
-                          Text(
-                            inputIsFiat ? asset.symbol : r'$',
-                            style: AppTypography.labelLarge.copyWith(
-                              fontWeight: FontWeight.w400,
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          const _PaySkeletonBar(width: 48),
-                        ],
-                      ],
-                    ),
+                      ),
+                      const Spacer(),
+                      _PayAssetSelector(
+                        asset: asset,
+                        onTap: onOpenAssetSelector,
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: AppSpacing.xxs,
-                      children: [
-                        Text(
-                          'Estimated spend',
-                          style: AppTypography.labelLarge.copyWith(
-                            fontWeight: FontWeight.w400,
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                        if (estimatedZecText.isEmpty)
-                          const _PaySkeletonBar(width: 48)
-                        else
-                          Text(
-                            estimatedZecText,
-                            key: const ValueKey('pay_estimated_spend'),
-                            style: AppTypography.labelLarge.copyWith(
-                              fontWeight: FontWeight.w400,
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        Text(
-                          'ZEC',
-                          style: AppTypography.labelLarge.copyWith(
-                            fontWeight: FontWeight.w400,
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: AppSpacing.s),
+                SizedBox(
+                  height: 132,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      SizedBox(
+                        height: 64,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final maxInputWidth = (constraints.maxWidth - 120)
+                                .clamp(56.0, 240.0)
+                                .toDouble();
+                            return AnimatedBuilder(
+                              animation: controller,
+                              builder: (context, _) {
+                                final amountStyle = AppTypography.displayLarge
+                                    .copyWith(color: colors.text.accent);
+                                final inputWidth = payAmountInputWidth(
+                                  context: context,
+                                  text: controller.text,
+                                  style: amountStyle,
+                                  maxWidth: maxInputWidth,
+                                );
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    SizedBox(
+                                      width: inputWidth,
+                                      child: TextField(
+                                        key: const ValueKey('pay_amount_input'),
+                                        controller: controller,
+                                        focusNode: focusNode,
+                                        autofocus: true,
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        textInputAction: TextInputAction.next,
+                                        inputFormatters: [
+                                          const CommaToDotInputFormatter(),
+                                          PayDecimalAmountInputFormatter(
+                                            maxFractionDigits: inputIsFiat
+                                                ? 2
+                                                : asset.decimals,
+                                          ),
+                                        ],
+                                        onChanged: inputIsFiat
+                                            ? onFiatAmountChanged
+                                            : onAmountChanged,
+                                        textAlign: TextAlign.center,
+                                        style: amountStyle,
+                                        cursorColor: colors.text.accent,
+                                        decoration: InputDecoration.collapsed(
+                                          hintText: '0',
+                                          hintStyle: AppTypography.displayLarge
+                                              .copyWith(
+                                                color: colors.text.muted,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 2),
+                                      child: Text(
+                                        inputIsFiat ? 'USD' : asset.symbol,
+                                        key: const ValueKey('pay_amount_unit'),
+                                        style: AppTypography.displaySmall
+                                            .copyWith(color: colors.text.muted),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          key: const ValueKey('pay_amount_fiat_toggle'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onToggleFiatInputMode,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AppIcon(
+                                AppIcons.doubleArrowVertical,
+                                size: 20,
+                                color: colors.icon.regular,
+                              ),
+                              const SizedBox(width: AppSpacing.xxs),
+                              if (!hasInput)
+                                Text(
+                                  inputIsFiat ? '0 ${asset.symbol}' : r'$ 0',
+                                  key: const ValueKey('pay_amount_counterpart'),
+                                  style: AppTypography.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w400,
+                                    color: colors.text.secondary,
+                                  ),
+                                )
+                              else if (!counterpartLoading)
+                                Text(
+                                  inputIsFiat
+                                      ? counterpartText ?? '-- ${asset.symbol}'
+                                      : '\$${counterpartText ?? '--'}',
+                                  key: const ValueKey('pay_amount_counterpart'),
+                                  style: AppTypography.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w400,
+                                    color: colors.text.secondary,
+                                  ),
+                                )
+                              else ...[
+                                Text(
+                                  inputIsFiat ? asset.symbol : r'$',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w400,
+                                    color: colors.text.secondary,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xxs),
+                                const _PaySkeletonBar(
+                                  key: ValueKey(
+                                    'pay_amount_counterpart_loading',
+                                  ),
+                                  width: 48,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: AppSpacing.xxs,
+                          children: [
+                            Text(
+                              'Estimated spend',
+                              style: AppTypography.labelLarge.copyWith(
+                                fontWeight: FontWeight.w400,
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                            if (estimatedSpendLoading)
+                              const _PaySkeletonBar(
+                                key: ValueKey('pay_estimated_spend_loading'),
+                                width: 48,
+                              )
+                            else
+                              Text(
+                                estimatedZecText.isEmpty
+                                    ? (hasInput ? '--' : '0')
+                                    : estimatedZecText,
+                                key: const ValueKey('pay_estimated_spend'),
+                                style: AppTypography.labelLarge.copyWith(
+                                  fontWeight: FontWeight.w400,
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                            Text(
+                              'ZEC',
+                              style: AppTypography.labelLarge.copyWith(
+                                fontWeight: FontWeight.w400,
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
                       const SwapAssetIcon(
                         asset: SwapAsset.zec,
                         size: 32,
@@ -267,62 +304,83 @@ class PayAmountStep extends StatelessWidget {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Paying from your ',
-                style: AppTypography.labelLarge.copyWith(
-                  fontWeight: FontWeight.w400,
-                  color: colors.text.secondary,
                 ),
-              ),
-              AppIcon(
-                AppIcons.shieldKeyhole,
-                size: 20,
-                color: colors.icon.regular,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Shielded balance',
-                style: AppTypography.labelLarge.copyWith(
-                  fontWeight: FontWeight.w400,
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (quoteError != null) ...[
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            quoteError,
-            key: const ValueKey('pay_amount_error'),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.destructive,
+              ],
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            height: 28,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Paying from your',
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
+                        color: colors.text.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AppIcon(
+                      AppIcons.shieldKeyhole,
+                      size: 20,
+                      color: colors.icon.regular,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Shielded balance',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (quoteError != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              quoteError,
+              key: const ValueKey('pay_amount_error'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
         ],
-        const SizedBox(height: AppSpacing.md),
-        AppButton(
-          key: const ValueKey('pay_amount_continue_button'),
-          variant: AppButtonVariant.primary,
-          size: AppButtonSize.large,
-          expand: true,
-          onPressed: canContinue ? onContinue : null,
-          child: const Text('Continue'),
-        ),
-      ],
+      ),
+    );
+  }
+}
+
+/// Bottom-pinned action for the Amount step.
+class PayAmountAction extends StatelessWidget {
+  const PayAmountAction({
+    required this.state,
+    required this.onContinue,
+    super.key,
+  });
+
+  final SwapState state;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      key: const ValueKey('pay_amount_continue_button'),
+      variant: AppButtonVariant.primary,
+      size: AppButtonSize.large,
+      minWidth: 196,
+      onPressed: payAmountCanContinue(state) ? onContinue : null,
+      child: const Text('Continue'),
     );
   }
 }
@@ -380,20 +438,135 @@ class _PayAssetSelector extends StatelessWidget {
   }
 }
 
-class _PaySkeletonBar extends StatelessWidget {
-  const _PaySkeletonBar({required this.width});
+class _PaySkeletonBar extends StatefulWidget {
+  const _PaySkeletonBar({required this.width, super.key});
 
   final double width;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 12,
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-      ),
+  State<_PaySkeletonBar> createState() => _PaySkeletonBarState();
+}
+
+class _PaySkeletonBarState extends State<_PaySkeletonBar>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(
+      vsync: this,
+      duration: _payAmountSkeletonPeriod,
     );
+  }
+
+  bool get _shouldAnimate {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return false;
+    return TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = _controller;
+    if (_shouldAnimate) {
+      if (!_activeController.isAnimating) _activeController.repeat();
+      return;
+    }
+    if (controller != null) {
+      controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final baseColor = colors.background.overlay.withValues(alpha: 0.15);
+    final highlightColor = colors.background.raised;
+    return SizedBox(
+      width: widget.width,
+      height: 12,
+      child: _shouldAnimate
+          ? AnimatedBuilder(
+              animation: _activeController,
+              builder: (context, _) => CustomPaint(
+                painter: _PaySkeletonPainter(
+                  progress: _activeController.value,
+                  baseColor: baseColor,
+                  highlightColor: highlightColor,
+                ),
+              ),
+            )
+          : CustomPaint(
+              painter: _PaySkeletonPainter(
+                progress: 0,
+                baseColor: baseColor,
+                highlightColor: highlightColor,
+                animate: false,
+              ),
+            ),
+    );
+  }
+}
+
+class _PaySkeletonPainter extends CustomPainter {
+  const _PaySkeletonPainter({
+    required this.progress,
+    required this.baseColor,
+    required this.highlightColor,
+    this.animate = true,
+  });
+
+  final double progress;
+  final Color baseColor;
+  final Color highlightColor;
+  final bool animate;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(AppRadii.full));
+    if (!animate) {
+      final shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [highlightColor, baseColor],
+      ).createShader(rect);
+      canvas.drawRRect(rrect, Paint()..shader = shader);
+      return;
+    }
+
+    canvas.drawRRect(rrect, Paint()..color = baseColor);
+    canvas.save();
+    canvas.clipRRect(rrect);
+    final sweepWidth = size.width * 1.6;
+    final left = -sweepWidth + progress * (size.width + sweepWidth);
+    final sweepRect = Rect.fromLTWH(left, 0, sweepWidth, size.height);
+    final shader = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: [
+        baseColor.withValues(alpha: 0),
+        highlightColor,
+        baseColor.withValues(alpha: 0),
+      ],
+      stops: const [0, 0.5, 1],
+    ).createShader(sweepRect);
+    canvas.drawRect(sweepRect, Paint()..shader = shader);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _PaySkeletonPainter oldDelegate) {
+    return progress != oldDelegate.progress ||
+        baseColor != oldDelegate.baseColor ||
+        highlightColor != oldDelegate.highlightColor ||
+        animate != oldDelegate.animate;
   }
 }

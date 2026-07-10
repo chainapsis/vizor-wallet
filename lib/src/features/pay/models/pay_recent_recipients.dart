@@ -1,14 +1,22 @@
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../swap/domain/swap_direction.dart';
+import '../../swap/domain/swap_intent_status.dart';
 import '../../swap/models/swap_intent.dart';
+import '../../swap/models/swap_token_amount_formatting.dart';
+import '../../swap/widgets/swap_amount_text.dart';
 
 /// An external address this wallet previously paid or swapped to, surfaced in
 /// the pay recipient step's "Recently sent" list — Figma 6241:85245.
 class PayRecentRecipient {
-  const PayRecentRecipient({required this.address, this.lastUsedAt});
+  const PayRecentRecipient({
+    required this.address,
+    this.amountText,
+    this.lastUsedAt,
+  });
 
   final String address;
+  final String? amountText;
   final DateTime? lastUsedAt;
 }
 
@@ -23,10 +31,11 @@ List<PayRecentRecipient> payRecentRecipients({
   final byAddress = <String, PayRecentRecipient>{};
   for (final intent in intents) {
     if (intent.direction != SwapDirection.zecToExternal) continue;
+    if (!_hasPayPayoutEvidence(intent)) continue;
     final address = intent.oneClickRecipient?.trim() ?? '';
     if (address.isEmpty) continue;
     if (addressFormatIssue(network, address) != null) continue;
-    final usedAt = intent.completedAt ?? intent.createdAt;
+    final usedAt = intent.completedAt ?? intent.updatedAt ?? intent.createdAt;
     final key = address.toLowerCase();
     final existing = byAddress[key];
     if (existing != null &&
@@ -35,7 +44,12 @@ List<PayRecentRecipient> payRecentRecipients({
                 !usedAt.isAfter(existing.lastUsedAt!)))) {
       continue;
     }
-    byAddress[key] = PayRecentRecipient(address: address, lastUsedAt: usedAt);
+    final payoutAmount = _payRecentAmountText(intent.receiveEstimate);
+    byAddress[key] = PayRecentRecipient(
+      address: address,
+      amountText: payoutAmount.isEmpty ? null : payoutAmount,
+      lastUsedAt: usedAt,
+    );
   }
   final entries = byAddress.values.toList()
     ..sort((a, b) {
@@ -47,6 +61,36 @@ List<PayRecentRecipient> payRecentRecipients({
       return bt.compareTo(at);
     });
   return entries.take(limit).toList();
+}
+
+String _payRecentAmountText(String value) {
+  final compact = compactSwapAmountText(value.trim());
+  if (compact.isEmpty) return '';
+  final separator = compact.indexOf(' ');
+  final formatted = separator < 0
+      ? swapTrimDecimal(compact)
+      : '${swapTrimDecimal(compact.substring(0, separator))}'
+            '${compact.substring(separator)}';
+  // This list represents outgoing payouts. Keep the direction visible while
+  // using the final receive asset/amount (for example, `-24 USDC` for a
+  // ZEC -> USDC Pay), rather than the deposited ZEC amount.
+  return formatted.startsWith('-') ? formatted : '-$formatted';
+}
+
+bool _hasPayPayoutEvidence(SwapIntent intent) {
+  return switch (intent.status) {
+    SwapIntentStatus.complete => true,
+    SwapIntentStatus.awaitingDeposit ||
+    SwapIntentStatus.awaitingExternalDeposit ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.providerStatusUnknown =>
+      intent.destinationChainTxHash?.trim().isNotEmpty ?? false,
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => false,
+  };
 }
 
 /// Contacts whose network can receive on [network]: the same chain, or any

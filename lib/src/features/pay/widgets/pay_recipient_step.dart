@@ -23,8 +23,6 @@ class PayRecipientStep extends StatelessWidget {
     required this.onAddressChanged,
     required this.onOpenScanner,
     required this.onChooseRecipient,
-    required this.onSelectRecipient,
-    required this.onAddToContacts,
     super.key,
   });
 
@@ -45,35 +43,43 @@ class PayRecipientStep extends StatelessWidget {
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
 
-  /// Row tap: commit this address and continue to review.
+  /// Row tap: commit this address as the selected recipient. Quote/review
+  /// starts only from the explicit "Select recipient" action.
   final ValueChanged<String> onChooseRecipient;
-
-  /// CTA with the typed address.
-  final VoidCallback onSelectRecipient;
-  final VoidCallback onAddToContacts;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final typed = typedAddress.trim();
     final hasInput = typed.isNotEmpty;
-    final valid = hasInput && addressError == null;
-    final contactMatch = valid ? _contactForAddress(typed) : null;
-    final recentMatch = valid && contactMatch == null
-        ? _recentForAddress(typed)
-        : null;
-    final unknownAddress = valid && contactMatch == null && recentMatch == null;
-
-    final matchedContacts = !hasInput
-        ? contacts
-        : contactMatch != null
-        ? [contactMatch]
-        : const <AddressBookContact>[];
+    final validDestination = hasInput && addressError == null;
     final matchedRecents = !hasInput
         ? recents
-        : contactMatch == null && recentMatch != null
-        ? [recentMatch]
-        : const <PayRecentRecipient>[];
+        : [
+            for (final recent in recents)
+              if (_payRecentMatchesQuery(
+                recent,
+                payRecipientContactForAddress(contacts, recent.address),
+                typed,
+              ))
+                recent,
+          ];
+    final matchedRecentAddresses = {
+      for (final recent in matchedRecents) recent.address.trim().toLowerCase(),
+    };
+    final matchedContacts = !hasInput
+        ? contacts
+        : [
+            for (final contact in contacts)
+              if (_payContactMatchesQuery(contact, typed) &&
+                  !matchedRecentAddresses.contains(
+                    contact.address.trim().toLowerCase(),
+                  ))
+                contact,
+          ];
+    final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
+    final unknownAddress = validDestination && !hasMatches;
+    final showAddressError = hasInput && addressError != null && !hasMatches;
 
     return Column(
       key: const ValueKey('pay_recipient_step'),
@@ -85,13 +91,14 @@ class PayRecipientStep extends StatelessWidget {
           showLabel: false,
           controller: controller,
           hintText: 'Paste an address or scan QR code',
-          leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.muted),
-          leadingSlotWidth: 40,
+          leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.regular),
+          leadingSlotWidth: 32,
           trailing: AppIconHoverButton(
             key: const ValueKey('pay_recipient_scan_button'),
             icon: AppIcons.qr,
             semanticLabel: 'Scan QR code',
             iconSize: 20,
+            iconColor: colors.icon.regular,
             onTap: onOpenScanner,
           ),
           trailingSlotWidth: 40,
@@ -100,36 +107,41 @@ class PayRecipientStep extends StatelessWidget {
           textStyle: AppTypography.codeMedium.copyWith(
             color: colors.text.accent,
           ),
-          tone: hasInput && addressError != null
+          tone: showAddressError
               ? AppTextFieldTone.destructive
               : AppTextFieldTone.neutral,
-          messageText: hasInput && addressError != null ? addressError : null,
+          messageText: showAddressError ? addressError : null,
         ),
         const SizedBox(height: AppSpacing.s),
         if (unknownAddress)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
-            child: Column(
-              key: const ValueKey('pay_recipient_new_address_notice'),
-              children: [
-                AppIcon(AppIcons.users, size: 32, color: colors.icon.muted),
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  'New address detected.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
+          SizedBox(
+            height: 310,
+            child: Center(
+              child: SizedBox(
+                width: 256,
+                child: Column(
+                  key: const ValueKey('pay_recipient_new_address_notice'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(AppIcons.users, size: 20, color: colors.icon.muted),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'New address detected.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                    Text(
+                      "You haven't interacted with this address before.",
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  "You haven't interacted with this address before.",
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+              ),
             ),
           )
         else ...[
@@ -141,8 +153,12 @@ class PayRecipientStep extends StatelessWidget {
                 for (final recent in matchedRecents)
                   _PayRecipientRow(
                     key: ValueKey('pay_recent_${recent.address}'),
-                    contact: null,
+                    contact: payRecipientContactForAddress(
+                      contacts,
+                      recent.address,
+                    ),
                     address: recent.address,
+                    amountText: recent.amountText,
                     timeLabel: payRecentTimeLabel(recent.lastUsedAt),
                     onTap: busy
                         ? null
@@ -162,6 +178,7 @@ class PayRecipientStep extends StatelessWidget {
                     key: ValueKey('pay_contact_${contact.id}'),
                     contact: contact,
                     address: contact.address,
+                    amountText: null,
                     timeLabel: null,
                     onTap: busy
                         ? null
@@ -170,49 +187,121 @@ class PayRecipientStep extends StatelessWidget {
               ],
             ),
         ],
-        const SizedBox(height: AppSpacing.md),
-        if (valid && contactMatch == null)
-          Center(
-            child: AppButton(
-              key: const ValueKey('pay_add_to_contacts_button'),
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.small,
-              onPressed: busy ? null : onAddToContacts,
-              child: const Text('Add to Contacts'),
-            ),
-          ),
-        if (valid) ...[
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            key: const ValueKey('pay_select_recipient_button'),
-            variant: AppButtonVariant.primary,
-            size: AppButtonSize.large,
-            expand: true,
-            onPressed: busy ? null : onSelectRecipient,
-            child: Text(busy ? 'Fetching quote' : 'Select Recipient'),
-          ),
-        ],
       ],
     );
   }
+}
 
-  /// Contacts arrive pre-filtered to compatible networks, so address equality
-  /// is the only remaining check.
-  AddressBookContact? _contactForAddress(String typed) {
-    final needle = typed.toLowerCase();
-    for (final contact in contacts) {
-      if (contact.address.trim().toLowerCase() == needle) return contact;
-    }
-    return null;
+bool _payContactMatchesQuery(AddressBookContact contact, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return contact.address.trim().toLowerCase().contains(needle) ||
+      contact.label.trim().toLowerCase().contains(needle);
+}
+
+bool _payRecentMatchesQuery(
+  PayRecentRecipient recent,
+  AddressBookContact? contact,
+  String query,
+) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return true;
+  return recent.address.trim().toLowerCase().contains(needle) ||
+      (contact?.label.trim().toLowerCase().contains(needle) ?? false);
+}
+
+/// Contacts arrive pre-filtered to compatible networks, so address equality
+/// is the only remaining check.
+AddressBookContact? payRecipientContactForAddress(
+  Iterable<AddressBookContact> contacts,
+  String address,
+) {
+  final needle = address.trim().toLowerCase();
+  if (needle.isEmpty) return null;
+  for (final contact in contacts) {
+    if (contact.address.trim().toLowerCase() == needle) return contact;
+  }
+  return null;
+}
+
+/// Bottom-pinned actions for a valid Recipient selection.
+class PayRecipientActions extends StatelessWidget {
+  const PayRecipientActions({
+    required this.typedAddress,
+    required this.addressError,
+    required this.contacts,
+    required this.busy,
+    required this.quoteError,
+    required this.onSelectRecipient,
+    required this.onAddToContacts,
+    super.key,
+  });
+
+  final String typedAddress;
+  final String? addressError;
+  final List<AddressBookContact> contacts;
+  final bool busy;
+  final String? quoteError;
+  final VoidCallback onSelectRecipient;
+  final VoidCallback onAddToContacts;
+
+  bool get visible {
+    final typed = typedAddress.trim();
+    return typed.isNotEmpty && addressError == null;
   }
 
-  PayRecentRecipient? _recentForAddress(String typed) {
-    final needle = typed.toLowerCase();
-    for (final recent in recents) {
-      if (recent.address.trim().toLowerCase() == needle) return recent;
-    }
-    return null;
+  @override
+  Widget build(BuildContext context) {
+    final typed = typedAddress.trim();
+    final contact = payRecipientContactForAddress(contacts, typed);
+    final canAddContact = contact == null;
+
+    return Column(
+      key: const ValueKey('pay_recipient_actions'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (quoteError != null) ...[
+          SizedBox(
+            width: PayWizardActionMetrics.width,
+            child: Text(
+              quoteError!,
+              key: const ValueKey('pay_recipient_quote_error'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+        ],
+        if (canAddContact) ...[
+          AppButton(
+            key: const ValueKey('pay_add_to_contacts_button'),
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.large,
+            minWidth: PayWizardActionMetrics.width,
+            onPressed: busy ? null : onAddToContacts,
+            child: const Text('Add to contacts'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+        ],
+        AppButton(
+          key: const ValueKey('pay_select_recipient_button'),
+          variant: AppButtonVariant.primary,
+          size: AppButtonSize.large,
+          minWidth: PayWizardActionMetrics.width,
+          onPressed: busy ? null : onSelectRecipient,
+          child: Text(busy ? 'Fetching quote' : 'Select recipient'),
+        ),
+      ],
+    );
   }
+}
+
+abstract final class PayWizardActionMetrics {
+  static const double width = 196;
 }
 
 class _PayRecipientListCard extends StatelessWidget {
@@ -235,20 +324,23 @@ class _PayRecipientListCard extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        border: Border.all(color: colors.border.subtleOpacity),
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          ...children,
+          for (var index = 0; index < children.length; index++) ...[
+            if (index > 0) const SizedBox(height: AppSpacing.xs),
+            children[index],
+          ],
         ],
       ),
     );
@@ -259,6 +351,7 @@ class _PayRecipientRow extends StatelessWidget {
   const _PayRecipientRow({
     required this.contact,
     required this.address,
+    required this.amountText,
     required this.timeLabel,
     required this.onTap,
     super.key,
@@ -266,6 +359,7 @@ class _PayRecipientRow extends StatelessWidget {
 
   final AddressBookContact? contact;
   final String address;
+  final String? amountText;
   final String? timeLabel;
   final VoidCallback? onTap;
 
@@ -293,13 +387,13 @@ class _PayRecipientRow extends StatelessWidget {
               height: 32,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: colors.background.inverse,
+                color: colors.background.neutralSubtleOpacity,
                 shape: BoxShape.circle,
               ),
               child: AppIcon(
                 AppIcons.wallet,
                 size: 16,
-                color: colors.icon.inverse,
+                color: colors.icon.accent,
               ),
             ),
           const SizedBox(width: AppSpacing.xs),
@@ -313,7 +407,7 @@ class _PayRecipientRow extends StatelessWidget {
                     contact!.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMediumStrong.copyWith(
+                    style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
@@ -321,25 +415,42 @@ class _PayRecipientRow extends StatelessWidget {
                   compactAddress,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: contact != null
-                      ? AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
-                        )
-                      : AppTypography.bodyMedium.copyWith(
-                          color: colors.text.accent,
-                        ),
+                  style: AppTypography.labelLarge.copyWith(
+                    fontWeight: contact != null
+                        ? FontWeight.w400
+                        : FontWeight.w500,
+                    color: contact != null
+                        ? colors.text.secondary
+                        : colors.text.accent,
+                  ),
                 ),
               ],
             ),
           ),
-          if (timeLabel != null) ...[
+          if (amountText != null || timeLabel != null) ...[
             const SizedBox(width: AppSpacing.xs),
-            Text(
-              timeLabel!,
-              maxLines: 1,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (amountText != null)
+                  Text(
+                    amountText!,
+                    maxLines: 1,
+                    style: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: colors.text.accent,
+                    ),
+                  ),
+                if (timeLabel != null)
+                  Text(
+                    timeLabel!,
+                    maxLines: 1,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+              ],
             ),
           ],
         ],
