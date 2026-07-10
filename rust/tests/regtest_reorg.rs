@@ -17,6 +17,16 @@ fn wallet_scanned_tip(db_path: &Path) -> (u64, Vec<u8>) {
     .expect("wallet must have a scanned tip")
 }
 
+/// Send APIs return the conventional display txid (reversed byte order),
+/// while `TransactionInfo.txid_hex` intentionally exposes the wallet DB's
+/// raw txid bytes. Convert only for history lookup; zcashd RPCs still use the
+/// original display form.
+fn wallet_history_txid(display_txid: &str) -> String {
+    let mut bytes = hex::decode(display_txid).expect("valid display txid");
+    bytes.reverse();
+    hex::encode(bytes)
+}
+
 /// A reorg recovery is only complete when the wallet can spend again.
 /// A successful post-reorg send proves that the reconstructed note tree,
 /// witness, and anchor are accepted by the consensus node.
@@ -151,6 +161,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
         "parent funding must use a single transaction"
     );
     let parent_txid = parent_parts[0];
+    let parent_history_txid = wallet_history_txid(parent_txid);
     mine_blocks(10);
     sync_wallet(&sender_db);
     assert!(
@@ -172,6 +183,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
         "child spend must use a single transaction"
     );
     let child_txid = child_parts[0];
+    let child_history_txid = wallet_history_txid(child_txid);
 
     // Parent and child are each mined in the first block of a ten-block run.
     // The parent therefore sits at old_tip - 19; replacing twenty blocks
@@ -184,7 +196,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
     assert!(
         receiver_mined
             .iter()
-            .any(|tx| tx.txid_hex == child_txid && tx.mined_height > 0),
+            .any(|tx| tx.txid_hex == child_history_txid && tx.mined_height > 0),
         "receiver must first observe the child transaction mined on the old branch"
     );
     assert!(
@@ -208,7 +220,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
     let sender_history = get_transaction_history(&sender_db, &sender.account_uuid);
     let orphaned_parent = sender_history
         .iter()
-        .find(|tx| tx.txid_hex == parent_txid)
+        .find(|tx| tx.txid_hex == parent_history_txid)
         .expect("sender must retain the orphaned incoming parent transaction");
     assert_eq!(
         orphaned_parent.mined_height, 0,
@@ -216,7 +228,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
     );
     let orphaned_child = sender_history
         .iter()
-        .find(|tx| tx.txid_hex == child_txid)
+        .find(|tx| tx.txid_hex == child_history_txid)
         .expect("sender must retain the locally-created orphan child transaction");
     assert_eq!(
         orphaned_child.mined_height, 0,
@@ -224,7 +236,10 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
     );
 
     let receiver_history = get_transaction_history(&receiver_db, &receiver.account_uuid);
-    if let Some(receiver_orphan) = receiver_history.iter().find(|tx| tx.txid_hex == child_txid) {
+    if let Some(receiver_orphan) = receiver_history
+        .iter()
+        .find(|tx| tx.txid_hex == child_history_txid)
+    {
         assert_eq!(
             receiver_orphan.mined_height, 0,
             "orphaned incoming transaction must no longer be marked mined"
@@ -243,7 +258,7 @@ fn orphaned_send_is_unmined_and_receiver_loses_spendable_note() {
     let expired_history = get_transaction_history(&sender_db, &sender.account_uuid);
     let expired = expired_history
         .iter()
-        .find(|tx| tx.txid_hex == child_txid)
+        .find(|tx| tx.txid_hex == child_history_txid)
         .expect("sender must retain expired transaction history");
     assert!(
         expired.expired_unmined,
