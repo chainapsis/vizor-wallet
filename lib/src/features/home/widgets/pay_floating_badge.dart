@@ -24,8 +24,7 @@ class PayIntroductionNewGate extends ConsumerStatefulWidget {
       _PayIntroductionNewGateState();
 }
 
-class _PayIntroductionNewGateState
-    extends ConsumerState<PayIntroductionNewGate>
+class _PayIntroductionNewGateState extends ConsumerState<PayIntroductionNewGate>
     with WidgetsBindingObserver {
   bool _checkStarted = false;
   bool _showNew = false;
@@ -171,26 +170,24 @@ class PayIntroductionBadgeTarget extends ConsumerWidget {
   }
 }
 
-/// Figma `PAY Floating Badge` (6251:92829 light / 6251:92807 dark).
-class PayFloatingBadge extends StatefulWidget {
-  const PayFloatingBadge({
+/// Loops the ambient float shared by the desktop and mobile Pay coins:
+/// a 6px ease-in-out bob repeated with reverse, suspended while [animate]
+/// is false or the platform requests reduced motion.
+class PayCoinFloatMotion extends StatefulWidget {
+  const PayCoinFloatMotion({
     super.key,
+    required this.child,
     this.animate = true,
-    this.showGlow = true,
-    this.showNew = true,
   });
 
-  static const size = Size(169, 137);
-
+  final Widget child;
   final bool animate;
-  final bool showGlow;
-  final bool showNew;
 
   @override
-  State<PayFloatingBadge> createState() => _PayFloatingBadgeState();
+  State<PayCoinFloatMotion> createState() => _PayCoinFloatMotionState();
 }
 
-class _PayFloatingBadgeState extends State<PayFloatingBadge>
+class _PayCoinFloatMotionState extends State<PayCoinFloatMotion>
     with SingleTickerProviderStateMixin {
   static const _motionDuration = Duration(milliseconds: 1800);
   static const _floatDistance = 6.0;
@@ -225,7 +222,7 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
   }
 
   @override
-  void didUpdateWidget(covariant PayFloatingBadge oldWidget) {
+  void didUpdateWidget(covariant PayCoinFloatMotion oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.animate != widget.animate) {
       _syncAnimation();
@@ -255,11 +252,48 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
 
   @override
   Widget build(BuildContext context) {
+    final animation = _coinOffset;
+    if (animation == null || _controller?.isAnimating != true) {
+      return Transform.translate(
+        key: const ValueKey('pay_floating_badge_coin_motion'),
+        offset: Offset.zero,
+        child: widget.child,
+      );
+    }
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) => Transform.translate(
+        key: const ValueKey('pay_floating_badge_coin_motion'),
+        offset: Offset(0, animation.value),
+        child: child,
+      ),
+      child: widget.child,
+    );
+  }
+}
+
+/// Figma `PAY Floating Badge` (6251:92829 light / 6251:92807 dark).
+class PayFloatingBadge extends StatelessWidget {
+  const PayFloatingBadge({
+    super.key,
+    this.animate = true,
+    this.showGlow = true,
+    this.showNew = true,
+  });
+
+  static const size = Size(169, 137);
+
+  final bool animate;
+  final bool showGlow;
+  final bool showNew;
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = context.appTheme == AppThemeData.dark;
     final textColor = context.colors.text.inverse;
 
     return Semantics(
-      label: widget.showNew ? 'New: Pay in USDC' : 'Pay in USDC',
+      label: showNew ? 'New: Pay in USDC' : 'Pay in USDC',
       container: true,
       child: ExcludeSemantics(
         child: SizedBox.fromSize(
@@ -268,7 +302,7 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              if (widget.showGlow)
+              if (showGlow)
                 const Positioned(
                   left: 60,
                   top: 65,
@@ -281,9 +315,9 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
                 top: 0,
                 width: 68,
                 height: 68,
-                child: _AnimatedPayCoin(
-                  controller: _controller,
-                  offset: _coinOffset,
+                child: PayCoinFloatMotion(
+                  animate: animate,
+                  child: const _PayCoinImage(),
                 ),
               ),
               Positioned(
@@ -306,7 +340,7 @@ class _PayFloatingBadgeState extends State<PayFloatingBadge>
                   style: AppTypography.labelLarge.copyWith(color: textColor),
                 ),
               ),
-              if (widget.showNew) ...[
+              if (showNew) ...[
                 Positioned(
                   left: 83,
                   top: 108,
@@ -350,34 +384,6 @@ class _PayFloatingGlow extends StatelessWidget {
           BoxShadow(color: Color(0xFF1C7ADE), blurRadius: 100),
         ],
       ),
-    );
-  }
-}
-
-class _AnimatedPayCoin extends StatelessWidget {
-  const _AnimatedPayCoin({required this.controller, required this.offset});
-
-  final AnimationController? controller;
-  final Animation<double>? offset;
-
-  @override
-  Widget build(BuildContext context) {
-    final animation = offset;
-    if (animation == null || controller?.isAnimating != true) {
-      return Transform.translate(
-        key: const ValueKey('pay_floating_badge_coin_motion'),
-        offset: Offset.zero,
-        child: const _PayCoinImage(),
-      );
-    }
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) => Transform.translate(
-        key: const ValueKey('pay_floating_badge_coin_motion'),
-        offset: Offset(0, animation.value),
-        child: child,
-      ),
-      child: const _PayCoinImage(),
     );
   }
 }
