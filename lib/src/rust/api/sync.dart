@@ -1176,6 +1176,15 @@ class WalletBalance {
   final BigInt saplingPending;
   final BigInt orchardPending;
 
+  /// Wallet-created change that has not reached the trusted confirmation depth.
+  final BigInt changePendingConfirmation;
+
+  /// Other received value awaiting confirmations or additional witness scanning.
+  final BigInt valuePendingSpendability;
+
+  /// Notes at or below the ZIP-317 marginal fee, excluded from normal spendability.
+  final BigInt uneconomicValue;
+
   /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
 
@@ -1189,6 +1198,9 @@ class WalletBalance {
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.changePendingConfirmation,
+    required this.valuePendingSpendability,
+    required this.uneconomicValue,
     required this.spendable,
     required this.total,
   });
@@ -1201,6 +1213,9 @@ class WalletBalance {
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      changePendingConfirmation.hashCode ^
+      valuePendingSpendability.hashCode ^
+      uneconomicValue.hashCode ^
       spendable.hashCode ^
       total.hashCode;
 
@@ -1215,6 +1230,9 @@ class WalletBalance {
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          changePendingConfirmation == other.changePendingConfirmation &&
+          valuePendingSpendability == other.valuePendingSpendability &&
+          uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
           total == other.total;
 }

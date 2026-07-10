@@ -42,6 +42,9 @@ pub(crate) struct WalletBalance {
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    pub change_pending_confirmation: u64,
+    pub value_pending_spendability: u64,
+    pub uneconomic_value: u64,
 }
 
 pub fn get_wallet_balance(
@@ -56,20 +59,34 @@ pub fn get_wallet_balance(
         .map_err(|e| format!("{e}"))?
     {
         Some(s) => match s.account_balances().get(&target_id) {
-            Some(b) => Ok(WalletBalance {
-                transparent: u64::from(b.unshielded_balance().spendable_value()),
-                sapling: u64::from(b.sapling_balance().spendable_value()),
-                orchard: u64::from(b.orchard_balance().spendable_value()),
-                transparent_pending: u64::from(
-                    b.unshielded_balance().change_pending_confirmation(),
-                ) + u64::from(
-                    b.unshielded_balance().value_pending_spendability(),
-                ),
-                sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation())
-                    + u64::from(b.sapling_balance().value_pending_spendability()),
-                orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation())
-                    + u64::from(b.orchard_balance().value_pending_spendability()),
-            }),
+            Some(b) => {
+                let transparent_change =
+                    u64::from(b.unshielded_balance().change_pending_confirmation());
+                let sapling_change = u64::from(b.sapling_balance().change_pending_confirmation());
+                let orchard_change = u64::from(b.orchard_balance().change_pending_confirmation());
+                let transparent_pending =
+                    u64::from(b.unshielded_balance().value_pending_spendability());
+                let sapling_pending = u64::from(b.sapling_balance().value_pending_spendability());
+                let orchard_pending = u64::from(b.orchard_balance().value_pending_spendability());
+
+                Ok(WalletBalance {
+                    transparent: u64::from(b.unshielded_balance().spendable_value()),
+                    sapling: u64::from(b.sapling_balance().spendable_value()),
+                    orchard: u64::from(b.orchard_balance().spendable_value()),
+                    transparent_pending: transparent_change + transparent_pending,
+                    sapling_pending: sapling_change + sapling_pending,
+                    orchard_pending: orchard_change + orchard_pending,
+                    change_pending_confirmation: transparent_change
+                        + sapling_change
+                        + orchard_change,
+                    value_pending_spendability: transparent_pending
+                        + sapling_pending
+                        + orchard_pending,
+                    uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
+                        + u64::from(b.sapling_balance().uneconomic_value())
+                        + u64::from(b.orchard_balance().uneconomic_value()),
+                })
+            }
             None => Ok(WalletBalance {
                 transparent: 0,
                 sapling: 0,
@@ -77,6 +94,9 @@ pub fn get_wallet_balance(
                 transparent_pending: 0,
                 sapling_pending: 0,
                 orchard_pending: 0,
+                change_pending_confirmation: 0,
+                value_pending_spendability: 0,
+                uneconomic_value: 0,
             }),
         },
         None => Ok(WalletBalance {
@@ -86,6 +106,9 @@ pub fn get_wallet_balance(
             transparent_pending: 0,
             sapling_pending: 0,
             orchard_pending: 0,
+            change_pending_confirmation: 0,
+            value_pending_spendability: 0,
+            uneconomic_value: 0,
         }),
     }
 }

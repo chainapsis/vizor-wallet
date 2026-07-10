@@ -7281,8 +7281,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return WalletBalance(
       transparent: dco_decode_u_64(arr[0]),
       sapling: dco_decode_u_64(arr[1]),
@@ -7290,8 +7290,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       transparentPending: dco_decode_u_64(arr[3]),
       saplingPending: dco_decode_u_64(arr[4]),
       orchardPending: dco_decode_u_64(arr[5]),
-      spendable: dco_decode_u_64(arr[6]),
-      total: dco_decode_u_64(arr[7]),
+      changePendingConfirmation: dco_decode_u_64(arr[6]),
+      valuePendingSpendability: dco_decode_u_64(arr[7]),
+      uneconomicValue: dco_decode_u_64(arr[8]),
+      spendable: dco_decode_u_64(arr[9]),
+      total: dco_decode_u_64(arr[10]),
     );
   }
 
@@ -9340,6 +9343,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_transparentPending = sse_decode_u_64(deserializer);
     var var_saplingPending = sse_decode_u_64(deserializer);
     var var_orchardPending = sse_decode_u_64(deserializer);
+    var var_changePendingConfirmation = sse_decode_u_64(deserializer);
+    var var_valuePendingSpendability = sse_decode_u_64(deserializer);
+    var var_uneconomicValue = sse_decode_u_64(deserializer);
     var var_spendable = sse_decode_u_64(deserializer);
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
@@ -9349,6 +9355,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       transparentPending: var_transparentPending,
       saplingPending: var_saplingPending,
       orchardPending: var_orchardPending,
+      changePendingConfirmation: var_changePendingConfirmation,
+      valuePendingSpendability: var_valuePendingSpendability,
+      uneconomicValue: var_uneconomicValue,
       spendable: var_spendable,
       total: var_total,
     );
@@ -11044,6 +11053,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.transparentPending, serializer);
     sse_encode_u_64(self.saplingPending, serializer);
     sse_encode_u_64(self.orchardPending, serializer);
+    sse_encode_u_64(self.changePendingConfirmation, serializer);
+    sse_encode_u_64(self.valuePendingSpendability, serializer);
+    sse_encode_u_64(self.uneconomicValue, serializer);
     sse_encode_u_64(self.spendable, serializer);
     sse_encode_u_64(self.total, serializer);
   }

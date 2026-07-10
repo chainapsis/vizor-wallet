@@ -340,6 +340,12 @@ pub struct WalletBalance {
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    /// Wallet-created change that has not reached the trusted confirmation depth.
+    pub change_pending_confirmation: u64,
+    /// Other received value awaiting confirmations or additional witness scanning.
+    pub value_pending_spendability: u64,
+    /// Notes at or below the ZIP-317 marginal fee, excluded from normal spendability.
+    pub uneconomic_value: u64,
     /// Sum of spendable shielded balances. Use this for "available to send".
     pub spendable: u64,
     /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
@@ -549,6 +555,9 @@ pub fn get_balance(
             transparent_pending: b.transparent_pending,
             sapling_pending: b.sapling_pending,
             orchard_pending: b.orchard_pending,
+            change_pending_confirmation: b.change_pending_confirmation,
+            value_pending_spendability: b.value_pending_spendability,
+            uneconomic_value: b.uneconomic_value,
             spendable,
             total: total_spendable + pending,
         })

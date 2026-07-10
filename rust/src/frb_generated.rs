@@ -6935,6 +6935,9 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_transparentPending = <u64>::sse_decode(deserializer);
         let mut var_saplingPending = <u64>::sse_decode(deserializer);
         let mut var_orchardPending = <u64>::sse_decode(deserializer);
+        let mut var_changePendingConfirmation = <u64>::sse_decode(deserializer);
+        let mut var_valuePendingSpendability = <u64>::sse_decode(deserializer);
+        let mut var_uneconomicValue = <u64>::sse_decode(deserializer);
         let mut var_spendable = <u64>::sse_decode(deserializer);
         let mut var_total = <u64>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
@@ -6944,6 +6947,9 @@ impl SseDecode for crate::api::sync::WalletBalance {
             transparent_pending: var_transparentPending,
             sapling_pending: var_saplingPending,
             orchard_pending: var_orchardPending,
+            change_pending_confirmation: var_changePendingConfirmation,
+            value_pending_spendability: var_valuePendingSpendability,
+            uneconomic_value: var_uneconomicValue,
             spendable: var_spendable,
             total: var_total,
         };
@@ -8829,6 +8835,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.transparent_pending.into_into_dart().into_dart(),
             self.sapling_pending.into_into_dart().into_dart(),
             self.orchard_pending.into_into_dart().into_dart(),
+            self.change_pending_confirmation
+                .into_into_dart()
+                .into_dart(),
+            self.value_pending_spendability.into_into_dart().into_dart(),
+            self.uneconomic_value.into_into_dart().into_dart(),
             self.spendable.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
         ]
@@ -10276,6 +10287,9 @@ impl SseEncode for crate::api::sync::WalletBalance {
         <u64>::sse_encode(self.transparent_pending, serializer);
         <u64>::sse_encode(self.sapling_pending, serializer);
         <u64>::sse_encode(self.orchard_pending, serializer);
+        <u64>::sse_encode(self.change_pending_confirmation, serializer);
+        <u64>::sse_encode(self.value_pending_spendability, serializer);
+        <u64>::sse_encode(self.uneconomic_value, serializer);
         <u64>::sse_encode(self.spendable, serializer);
         <u64>::sse_encode(self.total, serializer);
     }
