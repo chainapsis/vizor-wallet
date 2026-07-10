@@ -1,9 +1,12 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -88,6 +91,115 @@ class _PreparedPayNotifier extends SwapNotifier {
     reviewVisible: false,
     intents: [],
     payMode: true,
+  );
+}
+
+class _DelayedPayReviewNotifier extends SwapNotifier {
+  _DelayedPayReviewNotifier({this.fail = false});
+
+  final bool fail;
+  final Completer<void> _quoteCompleter = Completer<void>();
+  int _requestGeneration = 0;
+
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '0.025',
+    receiveAmountText: '10',
+    destinationText: '0x1111111111111111111111111111111111111111',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
+  );
+
+  @override
+  Future<void> showReview() async {
+    final generation = ++_requestGeneration;
+    state = state.copyWith(
+      reviewVisible: false,
+      quoteLoading: true,
+      clearReview: true,
+      clearQuoteError: true,
+    );
+    await _quoteCompleter.future;
+    if (generation != _requestGeneration) return;
+
+    if (fail) {
+      state = state.copyWith(
+        reviewVisible: false,
+        quoteLoading: false,
+        quoteError: 'Unable to fetch a quote. Try again.',
+        clearReview: true,
+      );
+      return;
+    }
+
+    state = state.copyWith(
+      reviewVisible: true,
+      reviewQuote: SwapQuote.estimate(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        mode: SwapQuoteMode.exactOutput,
+        amount: 10,
+        externalPerZec: 400,
+      ),
+      reviewAddressPlan: const SwapAddressPlan(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        userExternalAddress: '0x1111111111111111111111111111111111111111',
+        walletZecAddress: 'u1payreview',
+        oneClickRecipient: '0x1111111111111111111111111111111111111111',
+        oneClickRefundTo: 'u1payreview',
+      ),
+      reviewAccountUuid: 'account-1',
+      quoteLoading: false,
+      clearQuoteError: true,
+    );
+  }
+
+  @override
+  void cancelReviewQuote() {
+    _requestGeneration++;
+    state = state.copyWith(
+      reviewVisible: false,
+      quoteLoading: false,
+      clearReview: true,
+      clearQuoteError: true,
+    );
+  }
+
+  void completeQuote() => _quoteCompleter.complete();
+
+  bool get quoteLoading => state.quoteLoading;
+  bool get reviewVisible => state.reviewVisible;
+}
+
+Widget _routedPayApp(GoRouter router, _DelayedPayReviewNotifier notifier) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      swapStateProvider.overrideWith(() => notifier),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) => AppTheme(
+        data: AppThemeData.dark,
+        child: child ?? const SizedBox.shrink(),
+      ),
+    ),
   );
 }
 
@@ -307,5 +419,98 @@ void main() {
     final state = container.read(swapStateProvider);
     expect(state.externalAsset, SwapAsset.sol);
     expect(state.destinationText, isEmpty);
+  });
+
+  testWidgets('leaving recipient while quote loads cannot open review later', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _DelayedPayReviewNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, _) => const Scaffold(body: Text('Pay review route')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+    );
+    await tester.pump();
+
+    expect(find.text('Fetching quote'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pump();
+    expect(find.text('Pay in USDC'), findsOneWidget);
+
+    notifier.completeQuote();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pay review route'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_amount_step')),
+      findsOneWidget,
+    );
+    expect(notifier.quoteLoading, isFalse);
+    expect(notifier.reviewVisible, isFalse);
+  });
+
+  testWidgets('quote failures are shown on the active recipient step', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _DelayedPayReviewNotifier(fail: true);
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, _) => const Scaffold(body: Text('Pay review route')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+    );
+    await tester.pump();
+
+    notifier.completeQuote();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_pay_recipient_quote_error')),
+      findsOneWidget,
+    );
+    expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Pay review route'), findsNothing);
   });
 }
