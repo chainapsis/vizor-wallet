@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -84,6 +84,19 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+
+const PREFETCH_DEPTH_FOREGROUND: usize = 4;
+const PREFETCH_DEPTH_BACKGROUND: usize = 2;
+
+/// The resident-memory estimate applies a conservative multiplier to the
+/// encoded compact-block size to account for decoded vectors and allocations.
+const PREFETCH_DECODED_MEMORY_FACTOR: u64 = 3;
+const PREFETCH_WIRE_FLOOR_BYTES_PER_BLOCK: u64 = 5 * 1024;
+const PREFETCH_SANDBLASTING_WIRE_BYTES_PER_BLOCK: u64 = 90 * 1024;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const PREFETCH_RESIDENT_BUDGET: u64 = 128 * 1024 * 1024;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const PREFETCH_RESIDENT_BUDGET: u64 = 32 * 1024 * 1024;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
@@ -146,6 +159,140 @@ fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     }
 
     default_batch_size
+}
+
+fn env_override_clamped(name: &str, default: u64, min: u64, max: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|value| value.clamp(min, max))
+        .unwrap_or(default)
+}
+
+fn effective_prefetch_depth(running_mode: u8) -> usize {
+    let default = if running_mode == 2 {
+        PREFETCH_DEPTH_BACKGROUND
+    } else {
+        PREFETCH_DEPTH_FOREGROUND
+    };
+    env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 1, 16) as usize
+}
+
+fn can_spawn_prefetch(
+    queued_batches: usize,
+    depth: usize,
+    queued_blocks: u64,
+    next_batch_blocks: u64,
+    estimated_wire_bytes_per_block: u64,
+    resident_budget: u64,
+) -> bool {
+    if queued_batches >= depth {
+        return false;
+    }
+    // Preserve at least one look-ahead batch even when the preceding batch
+    // was unusually large. The chain's sandblasting batch cap bounds that
+    // single-batch overshoot.
+    if queued_batches == 0 {
+        return true;
+    }
+    queued_blocks
+        .saturating_add(next_batch_blocks)
+        .saturating_mul(estimated_wire_bytes_per_block)
+        .saturating_mul(PREFETCH_DECODED_MEMORY_FACTOR)
+        < resident_budget
+}
+
+fn prefetch_wire_floor(start: BlockHeight) -> u64 {
+    let height = u32::from(start);
+    if (SANDBLASTING_START..SANDBLASTING_END).contains(&height) {
+        PREFETCH_SANDBLASTING_WIRE_BYTES_PER_BLOCK
+    } else {
+        PREFETCH_WIRE_FLOOR_BYTES_PER_BLOCK
+    }
+}
+
+struct DownloadedBatch {
+    block_source: block_source::MemoryBlockSource,
+    from_state: chain::ChainState,
+    canonical_end_hash_at_fetch: BlockHash,
+    synthetic_start_anchor: bool,
+}
+
+fn compact_hash(bytes: &[u8], context: &str) -> Result<BlockHash, String> {
+    BlockHash::try_from_slice(bytes)
+        .ok_or_else(|| format!("{context} hash has {} bytes, expected 32", bytes.len()))
+}
+
+/// Validates that blocks, the starting frontier, and the canonical state at
+/// the batch end all describe one contiguous branch before the batch is
+/// handed to `scan_cached_blocks`.
+fn validate_downloaded_batch(
+    batch: &DownloadedBatch,
+    start: BlockHeight,
+    end_exclusive: BlockHeight,
+) -> Result<(), String> {
+    let expected_count = u32::from(end_exclusive).saturating_sub(u32::from(start)) as usize;
+    if batch.block_source.block_count() != expected_count {
+        return Err(format!(
+            "batch {}..{} returned {} blocks, expected {expected_count}",
+            u32::from(start),
+            u32::from(end_exclusive),
+            batch.block_source.block_count(),
+        ));
+    }
+
+    let first = batch
+        .block_source
+        .first_block()
+        .ok_or_else(|| "batch is empty".to_string())?;
+    let last = batch
+        .block_source
+        .last_block()
+        .ok_or_else(|| "batch is empty".to_string())?;
+    if first.height != u32::from(start) as u64
+        || last.height != u32::from(end_exclusive).saturating_sub(1) as u64
+    {
+        return Err(format!(
+            "batch boundary heights are {}..{}, expected {}..{}",
+            first.height,
+            last.height,
+            u32::from(start),
+            u32::from(end_exclusive) - 1,
+        ));
+    }
+
+    if !batch.synthetic_start_anchor {
+        let first_prev = compact_hash(&first.prev_hash, "first block prev")?;
+        if first_prev != batch.from_state.block_hash() {
+            return Err(format!(
+                "first block at {} does not extend the fetched start state",
+                first.height
+            ));
+        }
+    }
+
+    for pair in batch.block_source.blocks().windows(2) {
+        let previous = &pair[0];
+        let next = &pair[1];
+        let previous_hash = compact_hash(&previous.hash, "previous block")?;
+        let next_prev = compact_hash(&next.prev_hash, "next block prev")?;
+        if next.height != previous.height.saturating_add(1) || next_prev != previous_hash {
+            return Err(format!(
+                "compact block chain is discontinuous between heights {} and {}",
+                previous.height, next.height
+            ));
+        }
+    }
+
+    let last_hash = compact_hash(&last.hash, "last block")?;
+    if last_hash != batch.canonical_end_hash_at_fetch {
+        return Err(format!(
+            "last block at {} does not match the canonical end state",
+            last.height
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(debug_assertions)]
@@ -1230,25 +1377,7 @@ async fn run_sync_impl(
     const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
     let mut last_tip_refresh = std::time::Instant::now();
 
-    // Prefetched block source from the previous iteration.
-    // When the scan loop processes a range that spans multiple batches,
-    // we kick off a background download of the next batch while running
-    // enhancement / resubmit / progress reporting for the current
-    // batch. This overlaps network I/O (download) with CPU-bound
-    // work (enhancement) and unrelated gRPC calls (resubmit), matching
-    // the SDK's `.buffer(1)` pipelining pattern in
-    // `CompactBlockProcessor.kt:1666`.
-    //
-    // `None` on the first iteration and whenever the previous batch
-    // was the last in its range (so there's nothing to prefetch until
-    // `suggest_scan_ranges` runs again).
-    type PrefetchResult =
-        Result<crate::wallet::sync_engine::block_source::MemoryBlockSource, SyncError>;
-    /// Prefetched block download state. Implements `Drop` to
-    /// abort the spawned tokio task when the loop exits for any
-    /// reason (cancel, mode change, error, break, reorg
-    /// `continue`) so detached downloads can't outlive the sync
-    /// session and leak network traffic after shutdown.
+    type PrefetchResult = Result<DownloadedBatch, SyncError>;
     struct Prefetch {
         handle: Option<tokio::task::JoinHandle<PrefetchResult>>,
         start: BlockHeight,
@@ -1261,7 +1390,18 @@ async fn run_sync_impl(
             }
         }
     }
-    let mut prefetch: Option<Prefetch> = None;
+    let prefetch_depth = effective_prefetch_depth(running_mode);
+    let mut prefetch: VecDeque<Prefetch> = VecDeque::new();
+    let mut estimated_wire_bytes_per_block = 0u64;
+    let mut fetch_wait_total = std::time::Duration::ZERO;
+    let mut fetch_batches = 0u64;
+    let mut stale_prefetches = 0u64;
+    log::info!(
+        "[{}] sync: prefetch depth={}, resident budget={} MiB",
+        elapsed(),
+        prefetch_depth,
+        PREFETCH_RESIDENT_BUDGET / (1024 * 1024),
+    );
 
     // 5. Sync loop
     loop {
@@ -1330,7 +1470,7 @@ async fn run_sync_impl(
                     force_witness_check_this_run = true;
                     initial_total = repair_pending_blocks;
                     prev_remaining = repair_pending_blocks;
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     &mut client,
@@ -1343,7 +1483,7 @@ async fn run_sync_impl(
                     force_witness_check_this_run = true;
                     initial_total = repair_pending_blocks;
                     prev_remaining = repair_pending_blocks;
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else {
                     ensure_complete_scan_state(&db, current_tip_height)?;
@@ -1423,52 +1563,91 @@ async fn run_sync_impl(
             batch_size,
         );
 
-        // Download blocks into memory — or use the prefetched data
-        // from the previous iteration if it matches this batch.
-        let block_source = if let Some(mut pf) = prefetch.take() {
-            if pf.start == start && pf.end == end {
-                // Prefetch matches. Take the handle out of the
-                // Option so Drop doesn't abort a completed task.
-                let handle = pf.handle.take().expect("prefetch handle present");
-                match handle.await {
-                    Ok(Ok(bs)) => {
-                        log::debug!(
-                            "[{}] sync: using prefetched blocks for {}-{}",
-                            elapsed(),
-                            u32::from(start),
-                            u32::from(end) - 1,
-                        );
-                        bs
-                    }
-                    _ => {
-                        // Prefetch failed — download synchronously.
-                        log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1).await?
+        let front_matches = prefetch
+            .front()
+            .map(|candidate| candidate.start == start && candidate.end == end)
+            .unwrap_or(false);
+        let fetch_wait_start = std::time::Instant::now();
+        let batch = if front_matches {
+            let mut prefetched = prefetch.pop_front().expect("matching front exists");
+            let handle = prefetched.handle.take().expect("prefetch handle exists");
+            match handle.await {
+                Ok(Ok(candidate)) => {
+                    match prefetched_batch_is_current(&mut client, &candidate, end).await {
+                        Ok(true) => candidate,
+                        Ok(false) => {
+                            stale_prefetches += 1;
+                            log::warn!(
+                                "[{}] sync: prefetched batch {}-{} was orphaned; downloading fresh",
+                                elapsed(),
+                                u32::from(start),
+                                u32::from(end) - 1,
+                            );
+                            prefetch.clear();
+                            download_batch(client.clone(), network, start, end).await?
+                        }
+                        Err(e) => {
+                            stale_prefetches += 1;
+                            log::warn!(
+                                "[{}] sync: could not revalidate prefetched batch {}-{} ({e}); downloading fresh",
+                                elapsed(),
+                                u32::from(start),
+                                u32::from(end) - 1,
+                            );
+                            prefetch.clear();
+                            download_batch(client.clone(), network, start, end).await?
+                        }
                     }
                 }
-            } else {
-                // Range changed (reorg, priority switch, etc.) —
-                // Drop the Prefetch, which aborts the background task.
-                drop(pf);
-                download_blocks(&mut client, start, end - 1).await?
+                Ok(Err(e)) => {
+                    log::warn!(
+                        "[{}] sync: prefetch download failed ({e}); downloading fresh",
+                        elapsed()
+                    );
+                    prefetch.clear();
+                    download_batch(client.clone(), network, start, end).await?
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[{}] sync: prefetch task failed to join ({e}); downloading fresh",
+                        elapsed()
+                    );
+                    prefetch.clear();
+                    download_batch(client.clone(), network, start, end).await?
+                }
             }
         } else {
-            download_blocks(&mut client, start, end - 1).await?
+            // The first batch, a range/priority change, or a rewind cannot
+            // safely reuse predictions from the previous queue.
+            prefetch.clear();
+            download_batch(client.clone(), network, start, end).await?
         };
+        let fetch_wait = fetch_wait_start.elapsed();
+        fetch_wait_total += fetch_wait;
+        fetch_batches += 1;
+        if batch.block_source.block_count() > 0 {
+            estimated_wire_bytes_per_block =
+                (batch.block_source.wire_bytes() / batch.block_source.block_count() as u64).max(1);
+        }
+        log::debug!(
+            "[{}] sync: batch {} fetch-wait {:.0}ms ({} blocks, {} KiB wire)",
+            elapsed(),
+            u32::from(start),
+            fetch_wait.as_secs_f64() * 1000.0,
+            batch.block_source.block_count(),
+            batch.block_source.wire_bytes() / 1024,
+        );
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
         }
 
-        // Get tree state
-        let from_state = if should_use_empty_chain_state(&network, start)? {
-            chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
-        } else {
-            let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
-            ts.to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
-        };
+        let DownloadedBatch {
+            block_source,
+            from_state,
+            ..
+        } = batch;
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -1685,7 +1864,7 @@ async fn run_sync_impl(
                         initial_total = post_rewind_pending;
                         prev_remaining = post_rewind_pending;
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -1874,32 +2053,44 @@ async fn run_sync_impl(
         #[cfg(debug_assertions)]
         maybe_sleep_for_e2e_sync_batch_delay().await;
 
-        // Prefetch: if the current range still has blocks beyond
-        // `end`, kick off a background download of the next batch
-        // now, while the next loop iteration does suggest_scan_ranges
-        // + phase bookkeeping + (potentially) enhancement for the
-        // batch we just finished. The download runs on a cloned
-        // gRPC client so it doesn't conflict with the main client's
-        // unary RPCs (tree_state, get_latest_block, etc.).
-        //
-        // When the range is exhausted (end == range.end), we skip
-        // the prefetch — the next range comes from
-        // suggest_scan_ranges() which needs the DB state the current
-        // scan just committed, and we can't predict it in advance.
-        if end < range.block_range().end && !cancel.load(Ordering::Relaxed) {
-            let pf_start = end;
-            // Recompute batch_size for the prefetch range in case
-            // it crosses a sandblasting boundary differently.
-            let pf_batch = batch_size_for_range(base_batch_size, pf_start, range.block_range().end);
-            let pf_end = std::cmp::min(pf_start + pf_batch, range.block_range().end);
-            let mut pf_client = client.clone();
-            prefetch = Some(Prefetch {
-                start: pf_start,
-                end: pf_end,
-                handle: Some(tokio::spawn(async move {
-                    download_blocks(&mut pf_client, pf_start, pf_end - 1).await
-                })),
-            });
+        // Refill a contiguous look-ahead queue. The most recently measured
+        // wire density is multiplied by a decoded-memory factor before the
+        // resident budget is checked.
+        if !cancel.load(Ordering::Relaxed) {
+            let range_end = range.block_range().end;
+            let mut prefetch_start = prefetch.back().map(|item| item.end).unwrap_or(end);
+            while prefetch_start < range_end {
+                let prefetch_batch =
+                    batch_size_for_range(base_batch_size, prefetch_start, range_end);
+                let prefetch_end = std::cmp::min(prefetch_start + prefetch_batch, range_end);
+                let next_batch_blocks =
+                    u32::from(prefetch_end).saturating_sub(u32::from(prefetch_start)) as u64;
+                let queued_blocks = prefetch
+                    .iter()
+                    .map(|item| u32::from(item.end).saturating_sub(u32::from(item.start)) as u64)
+                    .sum();
+                if !can_spawn_prefetch(
+                    prefetch.len(),
+                    prefetch_depth,
+                    queued_blocks,
+                    next_batch_blocks,
+                    estimated_wire_bytes_per_block.max(prefetch_wire_floor(prefetch_start)),
+                    PREFETCH_RESIDENT_BUDGET,
+                ) {
+                    break;
+                }
+
+                let batch_client = client.clone();
+                let batch_start = prefetch_start;
+                prefetch.push_back(Prefetch {
+                    start: batch_start,
+                    end: prefetch_end,
+                    handle: Some(tokio::spawn(async move {
+                        download_batch(batch_client, network, batch_start, prefetch_end).await
+                    })),
+                });
+                prefetch_start = prefetch_end;
+            }
         }
     }
 
@@ -1910,6 +2101,13 @@ async fn run_sync_impl(
         elapsed(),
         final_scanned_height,
         final_tip_height,
+    );
+    log::info!(
+        "[{}] sync: fetch wait {:.2}s across {} batches (stale prefetches={})",
+        elapsed(),
+        fetch_wait_total.as_secs_f64(),
+        fetch_batches,
+        stale_prefetches,
     );
     match transparent_receive_cache::refresh_all_from_wallet_db(
         db_data_path,
@@ -1993,6 +2191,86 @@ fn should_use_empty_chain_state(
     Ok(start <= sapling_activation_height)
 }
 
+async fn fetch_validated_chain_state(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: BlockHeight,
+) -> Result<chain::ChainState, SyncError> {
+    let state = get_tree_state(client, u32::from(height) as u64)
+        .await?
+        .to_chain_state()
+        .map_err(|e| SyncError::parse(format!("parse tree state at {height}: {e}")))?;
+    if state.block_height() != height {
+        return Err(SyncError::net(format!(
+            "lightwalletd returned tree state for {}, requested {height}",
+            state.block_height()
+        )));
+    }
+    Ok(state)
+}
+
+async fn fetch_batch_start_state(
+    client: &mut CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
+    start: BlockHeight,
+) -> Result<(chain::ChainState, bool), SyncError> {
+    if should_use_empty_chain_state(&network, start)? {
+        Ok((
+            chain::ChainState::empty(start - 1, BlockHash([0; 32])),
+            true,
+        ))
+    } else {
+        Ok((fetch_validated_chain_state(client, start - 1).await?, false))
+    }
+}
+
+/// Downloads blocks and both boundary states concurrently. Boundary
+/// validation happens before returning, so even the initial synchronous batch
+/// cannot mix compact blocks and a tree frontier from different forks.
+async fn download_batch(
+    client: CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
+    start: BlockHeight,
+    end_exclusive: BlockHeight,
+) -> Result<DownloadedBatch, SyncError> {
+    let mut blocks_client = client.clone();
+    let mut start_client = client.clone();
+    let mut end_client = client;
+    let end_height = end_exclusive - 1;
+
+    let (block_source, (from_state, synthetic_start_anchor), end_state) = tokio::try_join!(
+        download_blocks(&mut blocks_client, start, end_height),
+        fetch_batch_start_state(&mut start_client, network, start),
+        fetch_validated_chain_state(&mut end_client, end_height),
+    )?;
+
+    let batch = DownloadedBatch {
+        block_source,
+        from_state,
+        canonical_end_hash_at_fetch: end_state.block_hash(),
+        synthetic_start_anchor,
+    };
+    validate_downloaded_batch(&batch, start, end_exclusive)
+        .map_err(|e| SyncError::net(format!("inconsistent downloaded batch: {e}")))?;
+    Ok(batch)
+}
+
+/// Re-checks a prefetched batch immediately before consumption. A successful
+/// prefetch may be several scan batches old; this closes the window where a
+/// reorg could otherwise leave a mutually consistent but orphaned batch in
+/// memory.
+async fn prefetched_batch_is_current(
+    client: &mut CompactTxStreamerClient<Channel>,
+    batch: &DownloadedBatch,
+    end_exclusive: BlockHeight,
+) -> Result<bool, SyncError> {
+    let current = fetch_validated_chain_state(client, end_exclusive - 1).await?;
+    Ok(prefetched_batch_matches_state(batch, &current))
+}
+
+fn prefetched_batch_matches_state(batch: &DownloadedBatch, current: &chain::ChainState) -> bool {
+    current.block_hash() == batch.canonical_end_hash_at_fetch
+}
+
 // ==================== Tests ====================
 //
 // Error-taxonomy tests now live alongside their types in `error.rs`. The
@@ -2004,6 +2282,119 @@ fn should_use_empty_chain_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_downloaded_batch() -> DownloadedBatch {
+        use zcash_client_backend::proto::compact_formats::CompactBlock;
+
+        let anchor_hash = BlockHash([0; 32]);
+        let first_hash = BlockHash([1; 32]);
+        let last_hash = BlockHash([2; 32]);
+        DownloadedBatch {
+            block_source: block_source::MemoryBlockSource::new(vec![
+                CompactBlock {
+                    height: 10,
+                    hash: first_hash.0.to_vec(),
+                    prev_hash: anchor_hash.0.to_vec(),
+                    ..Default::default()
+                },
+                CompactBlock {
+                    height: 11,
+                    hash: last_hash.0.to_vec(),
+                    prev_hash: first_hash.0.to_vec(),
+                    ..Default::default()
+                },
+            ]),
+            from_state: chain::ChainState::empty(BlockHeight::from_u32(9), anchor_hash),
+            canonical_end_hash_at_fetch: last_hash,
+            synthetic_start_anchor: false,
+        }
+    }
+
+    #[test]
+    fn downloaded_batch_requires_matching_start_and_end_boundaries() {
+        let mut batch = test_downloaded_batch();
+        assert!(validate_downloaded_batch(
+            &batch,
+            BlockHeight::from_u32(10),
+            BlockHeight::from_u32(12)
+        )
+        .is_ok());
+
+        batch.canonical_end_hash_at_fetch = BlockHash([9; 32]);
+        assert!(validate_downloaded_batch(
+            &batch,
+            BlockHeight::from_u32(10),
+            BlockHeight::from_u32(12)
+        )
+        .unwrap_err()
+        .contains("canonical end state"));
+
+        let mut batch = test_downloaded_batch();
+        batch.block_source = block_source::MemoryBlockSource::new(vec![
+            zcash_client_backend::proto::compact_formats::CompactBlock {
+                height: 10,
+                hash: vec![1; 32],
+                prev_hash: vec![7; 32],
+                ..Default::default()
+            },
+            zcash_client_backend::proto::compact_formats::CompactBlock {
+                height: 11,
+                hash: vec![2; 32],
+                prev_hash: vec![1; 32],
+                ..Default::default()
+            },
+        ]);
+        assert!(validate_downloaded_batch(
+            &batch,
+            BlockHeight::from_u32(10),
+            BlockHeight::from_u32(12)
+        )
+        .unwrap_err()
+        .contains("start state"));
+    }
+
+    #[test]
+    fn prefetched_batch_rejects_a_reorged_end_state() {
+        let batch = test_downloaded_batch();
+        let same_fork =
+            chain::ChainState::empty(BlockHeight::from_u32(11), batch.canonical_end_hash_at_fetch);
+        let replacement_fork =
+            chain::ChainState::empty(BlockHeight::from_u32(11), BlockHash([8; 32]));
+
+        assert!(prefetched_batch_matches_state(&batch, &same_fork));
+        assert!(!prefetched_batch_matches_state(&batch, &replacement_fork));
+    }
+
+    #[test]
+    fn prefetch_budget_counts_estimated_decoded_memory() {
+        assert!(can_spawn_prefetch(0, 4, 10_000, 10_000, 10_000, 1));
+        assert!(can_spawn_prefetch(1, 4, 10, 10, 100, 10_000));
+        assert!(!can_spawn_prefetch(1, 4, 10, 10, 400, 10_000));
+        assert!(!can_spawn_prefetch(4, 4, 0, 1, 1, u64::MAX));
+    }
+
+    #[test]
+    fn sandblasting_floor_prevents_mobile_queue_overshoot() {
+        let start = BlockHeight::from_u32(SANDBLASTING_START);
+        let estimate = prefetch_wire_floor(start);
+        let one_batch_blocks = BATCH_SIZE_SANDBLASTING as u64;
+        assert!(can_spawn_prefetch(
+            0,
+            PREFETCH_DEPTH_BACKGROUND,
+            0,
+            one_batch_blocks,
+            estimate,
+            32 * 1024 * 1024,
+        ));
+        assert!(!can_spawn_prefetch(
+            1,
+            PREFETCH_DEPTH_BACKGROUND,
+            one_batch_blocks,
+            one_batch_blocks,
+            estimate,
+            32 * 1024 * 1024,
+        ));
+    }
 
     #[test]
     fn empty_chain_state_uses_network_activation_height() {
