@@ -5,27 +5,27 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/pay_introduction_badge_store.dart';
 
-/// Wraps the desktop Pay button with its persistent floating callout.
-///
-/// Coin, label, and glow remain visible. Only the `NEW` marker is persisted as
-/// seen and dismissed after navigation/app backgrounding.
-class PayIntroductionBadgeTarget extends ConsumerStatefulWidget {
-  const PayIntroductionBadgeTarget({
+/// Drives the one-shot `NEW` marker visibility for the Pay introduction,
+/// shared by the desktop and mobile Home callouts: shows it only on the
+/// first-ever view (persisted via [PayIntroductionBadgeStore]) and hides it
+/// once the user navigates away, switches tabs, or backgrounds the app.
+class PayIntroductionNewGate extends ConsumerStatefulWidget {
+  const PayIntroductionNewGate({
     super.key,
-    required this.child,
+    required this.builder,
     this.enabled = true,
   });
 
-  final Widget child;
+  final Widget Function(BuildContext context, bool showNew) builder;
   final bool enabled;
 
   @override
-  ConsumerState<PayIntroductionBadgeTarget> createState() =>
-      _PayIntroductionBadgeTargetState();
+  ConsumerState<PayIntroductionNewGate> createState() =>
+      _PayIntroductionNewGateState();
 }
 
-class _PayIntroductionBadgeTargetState
-    extends ConsumerState<PayIntroductionBadgeTarget>
+class _PayIntroductionNewGateState
+    extends ConsumerState<PayIntroductionNewGate>
     with WidgetsBindingObserver {
   bool _checkStarted = false;
   bool _showNew = false;
@@ -40,7 +40,7 @@ class _PayIntroductionBadgeTargetState
   }
 
   @override
-  void didUpdateWidget(covariant PayIntroductionBadgeTarget oldWidget) {
+  void didUpdateWidget(covariant PayIntroductionNewGate oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.enabled) {
       _showNew = false;
@@ -72,7 +72,9 @@ class _PayIntroductionBadgeTargetState
   void _startCheckIfNeeded() {
     if (!widget.enabled || _checkStarted) return;
     _checkStarted = true;
-    Future<void>(() async {
+    // Microtask (not a zero-duration timer) so widget tests that only flush
+    // microtasks between pumps never see a pending timer from this gate.
+    Future<void>.microtask(() async {
       if (ref.read(payIntroductionBadgePersistenceEnabledProvider)) {
         final store = ref.read(payIntroductionBadgeStoreProvider);
         try {
@@ -110,36 +112,61 @@ class _PayIntroductionBadgeTargetState
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      key: const ValueKey('pay_introduction_badge_target'),
-      clipBehavior: Clip.none,
-      children: [
-        if (widget.enabled)
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 60,
-            height: 44,
-            child: IgnorePointer(child: _PayFloatingGlow()),
-          ),
-        widget.child,
-        if (widget.enabled)
-          Positioned(
-            // In the Home frame (5407:152492), the 169px badge frame starts
-            // at the Pay button's left edge and overflows to its right.
-            left: 0,
-            top: -65,
-            child: IgnorePointer(
-              child: ExcludeSemantics(
-                child: PayFloatingBadge(
-                  animate: ref.watch(payIntroductionBadgeMotionEnabledProvider),
-                  showGlow: false,
-                  showNew: _showNew,
+    return widget.builder(context, widget.enabled && _showNew);
+  }
+}
+
+/// Wraps the desktop Pay button with its persistent floating callout.
+///
+/// Coin, label, and glow remain visible. Only the `NEW` marker is persisted as
+/// seen and dismissed after navigation/app backgrounding.
+class PayIntroductionBadgeTarget extends ConsumerWidget {
+  const PayIntroductionBadgeTarget({
+    super.key,
+    required this.child,
+    this.enabled = true,
+  });
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PayIntroductionNewGate(
+      enabled: enabled,
+      builder: (context, showNew) => Stack(
+        key: const ValueKey('pay_introduction_badge_target'),
+        clipBehavior: Clip.none,
+        children: [
+          if (enabled)
+            const Positioned(
+              left: 0,
+              top: 0,
+              width: 60,
+              height: 44,
+              child: IgnorePointer(child: _PayFloatingGlow()),
+            ),
+          child,
+          if (enabled)
+            Positioned(
+              // In the Home frame (5407:152492), the 169px badge frame starts
+              // at the Pay button's left edge and overflows to its right.
+              left: 0,
+              top: -65,
+              child: IgnorePointer(
+                child: ExcludeSemantics(
+                  child: PayFloatingBadge(
+                    animate: ref.watch(
+                      payIntroductionBadgeMotionEnabledProvider,
+                    ),
+                    showGlow: false,
+                    showNew: showNew,
+                  ),
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
