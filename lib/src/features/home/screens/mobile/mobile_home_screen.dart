@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
@@ -33,6 +35,7 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
+import '../../widgets/pay_floating_badge.dart';
 import 'mobile_keystone_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -474,6 +477,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         ? fixedPrivacyMask()
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
+    final payEnabled = ref.watch(swapFeatureEnabledProvider);
 
     void openPay() {
       ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
@@ -597,40 +601,46 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      DecoratedBox(
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xFF1C7ADE),
-                              blurRadius: 60,
-                              spreadRadius: 20,
-                            ),
-                            BoxShadow(
-                              color: Color(0xFF1C7ADE),
-                              blurRadius: 100,
-                            ),
-                          ],
-                        ),
-                        child: SizedBox(
-                          width: _mobileHomeActionButtonHeight,
-                          height: _mobileHomeActionButtonHeight,
-                          child: Semantics(
-                            button: true,
-                            label: 'Pay',
-                            child: AppButton(
-                              key: const ValueKey('mobile_home_pay'),
-                              minWidth: _mobileHomeActionButtonHeight,
-                              height: _mobileHomeActionButtonHeight,
-                              contentPadding: EdgeInsets.zero,
-                              variant: AppButtonVariant.secondary,
-                              onPressed: openPay,
-                              child: const _ButtonIcon(AppIcons.coins),
+                      // The Pay entry follows the swap feature flag: pay
+                      // rides the swap engine, so a server-side swap disable
+                      // hides the button and its callout, mirroring desktop's
+                      // `onPay == null` gating.
+                      if (payEnabled) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        DecoratedBox(
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xFF1C7ADE),
+                                blurRadius: 60,
+                                spreadRadius: 20,
+                              ),
+                              BoxShadow(
+                                color: Color(0xFF1C7ADE),
+                                blurRadius: 100,
+                              ),
+                            ],
+                          ),
+                          child: SizedBox(
+                            width: _mobileHomeActionButtonHeight,
+                            height: _mobileHomeActionButtonHeight,
+                            child: Semantics(
+                              button: true,
+                              label: 'Pay',
+                              child: AppButton(
+                                key: const ValueKey('mobile_home_pay'),
+                                minWidth: _mobileHomeActionButtonHeight,
+                                height: _mobileHomeActionButtonHeight,
+                                contentPadding: EdgeInsets.zero,
+                                variant: AppButtonVariant.secondary,
+                                onPressed: openPay,
+                                child: const _ButtonIcon(AppIcons.coins),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   )
                 else
@@ -651,17 +661,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ),
               ],
             ),
-            if (hasBalance) ...[
+            if (hasBalance && payEnabled) ...[
               Positioned(
                 right: 41,
                 top: 172,
                 width: 118,
                 height: 65,
                 child: IgnorePointer(
-                  child: Image.asset(
-                    'assets/illustrations/pay_home_badges.png',
-                    key: const ValueKey('mobile_home_pay_badges'),
-                    fit: BoxFit.contain,
+                  child: PayIntroductionNewGate(
+                    builder: (context, showNew) =>
+                        _MobilePayBadges(showNew: showNew),
                   ),
                 ),
               ),
@@ -697,7 +706,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ],
                 ),
               ),
-            if (hasBalance)
+            if (hasBalance && payEnabled)
               Positioned(
                 right: 43,
                 top: -35,
@@ -1200,6 +1209,80 @@ class _ButtonIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppIcon(iconName, size: 20);
+  }
+}
+
+/// The Pay introduction callout — Figma `PAY Floating Badge`
+/// (6261:126485): the persistent `Pay in USDC` chip with the one-shot
+/// `NEW` pill below it. Drawn as widgets (not a raster) so the copy stays
+/// real text and the pill reuses the shared `pay_floating_new.svg` shape;
+/// [PayIntroductionNewGate] supplies the desktop-consistent dismissal.
+class _MobilePayBadges extends StatelessWidget {
+  const _MobilePayBadges({required this.showNew});
+
+  final bool showNew;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: showNew ? 'New: Pay in USDC' : 'Pay in USDC',
+      container: true,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          key: const ValueKey('mobile_home_pay_badges'),
+          width: 118,
+          height: 65,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                width: 118,
+                height: 34,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C7ADE),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 14,
+                top: 8,
+                child: Text(
+                  'Pay in USDC',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: const Color(0xFFFFFFFF),
+                  ),
+                ),
+              ),
+              if (showNew) ...[
+                Positioned(
+                  left: 40,
+                  top: 36,
+                  width: 55,
+                  height: 29,
+                  child: SvgPicture.asset(
+                    'assets/illustrations/pay_floating_new.svg',
+                  ),
+                ),
+                Positioned(
+                  left: 49,
+                  top: 42,
+                  child: Text(
+                    'NEW',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: const Color(0xFFFFFFFF),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

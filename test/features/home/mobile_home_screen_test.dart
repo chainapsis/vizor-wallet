@@ -11,8 +11,10 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -38,6 +40,18 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async => data;
+}
+
+/// In-memory badge store: keeps the Pay `NEW` gate off the platform
+/// SharedPreferences channel (which would leave pending timers behind).
+class _SeenPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  const _SeenPayIntroductionBadgeStore();
+
+  @override
+  Future<bool> hasSeen() async => true;
+
+  @override
+  Future<void> markSeen() async {}
 }
 
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
@@ -79,6 +93,7 @@ Widget _app(
     change24hPct: 13.12,
   ),
   FakeSyncNotifier? syncNotifier,
+  bool? swapEnabled,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -113,6 +128,11 @@ Widget _app(
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
       ),
+      payIntroductionBadgeStoreProvider.overrideWithValue(
+        const _SeenPayIntroductionBadgeStore(),
+      ),
+      if (swapEnabled != null)
+        swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -398,6 +418,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
+  });
+
+  testWidgets('hides the pay entry and callout when swap is disabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        swapEnabled: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
+    // Send/Receive remain.
+    expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);
   });
 
   testWidgets('uses the mobile Rest illustration canvas for empty activity', (
