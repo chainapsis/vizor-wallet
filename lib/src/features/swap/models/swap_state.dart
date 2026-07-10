@@ -4,7 +4,7 @@ import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
 
-const defaultSwapSlippageBps = 100;
+const defaultSwapSlippageBps = 200;
 const swapSlippagePresetBps = <int>[50, 100, 200];
 const swapQuoteDifferenceWarningThreshold = 0.05;
 

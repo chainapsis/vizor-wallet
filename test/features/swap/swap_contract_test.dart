@@ -4,6 +4,32 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 void main() {
   const validEvmRecipient = '0x52908400098527886E0F7030069857D2E4169EE7';
 
+  test('defaults Swap and Pay composers to 2% slippage', () {
+    const swapState = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [],
+    );
+    const payState = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [],
+      payMode: true,
+    );
+
+    expect(defaultSwapSlippageBps, 200);
+    expect(swapState.slippageBps, 200);
+    expect(payState.slippageBps, 200);
+  });
+
   test('blocks review when token amount exceeds asset decimals', () {
     const state = SwapState(
       direction: SwapDirection.zecToExternal,
