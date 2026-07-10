@@ -279,5 +279,11 @@ Future<void> _pumpMobileHomeUseCase(
       home: Builder(builder: builder),
     ),
   );
-  await tester.pumpAndSettle();
+  // Bounded pumps instead of pumpAndSettle: the Pay coin float loops
+  // forever, so the tree never settles (same approach as
+  // home_use_cases_test). Two long pumps cover the accounts-sheet
+  // entrance animation.
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pump(const Duration(milliseconds: 400));
 }

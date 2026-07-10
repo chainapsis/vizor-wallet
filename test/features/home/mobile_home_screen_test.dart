@@ -131,6 +131,9 @@ Widget _app(
       payIntroductionBadgeStoreProvider.overrideWithValue(
         const _SeenPayIntroductionBadgeStore(),
       ),
+      // The coin float loops forever; keep it off so pumpAndSettle-based
+      // tests can settle (mirrors the desktop suites' motion seam).
+      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
@@ -359,6 +362,7 @@ void main() {
 
     expect(privacyButtonRect.size, const Size(32, 32));
     expect(privacyIcon.size, 16);
+    expect(payIcon.name, AppIcons.paid);
     expect(payIcon.size, 20);
     expect(find.bySemanticsLabel('Pay'), findsOneWidget);
     expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));

@@ -34,6 +34,7 @@ import '../../../activity/widgets/activity_feed.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/pay_introduction_badge_store.dart';
 import '../../services/transparent_shielding_service.dart';
 import '../../widgets/pay_floating_badge.dart';
 import 'mobile_keystone_shield_screen.dart';
@@ -635,7 +636,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                                 contentPadding: EdgeInsets.zero,
                                 variant: AppButtonVariant.secondary,
                                 onPressed: openPay,
-                                child: const _ButtonIcon(AppIcons.coins),
+                                child: const _ButtonIcon(AppIcons.paid),
                               ),
                             ),
                           ),
@@ -713,10 +714,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 width: 80,
                 height: 80,
                 child: IgnorePointer(
-                  child: Image.asset(
-                    'assets/illustrations/pay_coin.png',
-                    key: const ValueKey('mobile_home_pay_coin'),
-                    fit: BoxFit.contain,
+                  child: PayCoinFloatMotion(
+                    animate: ref.watch(
+                      payIntroductionBadgeMotionEnabledProvider,
+                    ),
+                    child: Image.asset(
+                      'assets/illustrations/pay_coin.png',
+                      key: const ValueKey('mobile_home_pay_coin'),
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
               ),
