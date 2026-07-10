@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -123,7 +124,7 @@ void main() {
     expect(find.text('Full address'), findsOneWidget);
     expect(find.text('Payment progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('In progress...'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('Tx ID'), findsOneWidget);
     expect(find.text('Converted from'), findsOneWidget);
@@ -139,6 +140,53 @@ void main() {
           .getSize(find.byKey(const ValueKey('mobile_swap_status_card')))
           .width,
       361,
+    );
+
+    final statusLabel = tester.widget<Text>(find.text('Status'));
+    final statusValue = tester.widget<Text>(find.text('In progress...'));
+    expect(statusLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(statusLabel.style?.fontWeight, AppTypography.labelLarge.fontWeight);
+    expect(statusValue.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(statusValue.style?.fontWeight, FontWeight.w500);
+    expect(statusValue.style?.color, AppThemeData.light.colors.text.primary);
+
+    final statusRowRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_pay_status_row')),
+    );
+    final statusValueRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_pay_status_value')),
+    );
+    expect(
+      statusValueRect.right,
+      closeTo(statusRowRect.right - AppSpacing.xxs, 0.01),
+      reason: 'the icon and status copy must be pinned to the right edge',
+    );
+
+    final detailLabels = ['Timestamp', 'Tx ID', 'Converted from', 'Tx fee'];
+    for (final label in detailLabels) {
+      final labelText = tester.widget<Text>(find.text(label));
+      expect(
+        labelText.style?.fontSize,
+        AppTypography.labelLarge.fontSize,
+        reason: '$label should use the Pay detail label token',
+      );
+    }
+
+    expect(
+      tester.widget<AppIcon>(_appIcon(AppIcons.loader)).color,
+      AppThemeData.light.colors.icon.regular,
+    );
+    expect(
+      tester.widget<AppIcon>(_appIcon(AppIcons.arrowTopRight)).color,
+      AppThemeData.light.colors.icon.muted,
+    );
+    expect(
+      tester.widget<AppIcon>(_appIcon(AppIcons.shieldKeyhole)).color,
+      AppThemeData.light.colors.icon.accent,
+    );
+    expect(
+      tester.widget<AppIcon>(_appIcon(AppIcons.help)).color,
+      AppThemeData.light.colors.icon.muted,
     );
   });
 
@@ -196,6 +244,13 @@ void main() {
     final swap = _intent(status: SwapIntentStatus.processing, payMode: false);
     expect(mobileSwapActivityTitle(_state(), swap), 'Swap in progress...');
   });
+}
+
+Finder _appIcon(String name) {
+  return find.byWidgetPredicate(
+    (widget) => widget is AppIcon && widget.name == name,
+    description: 'AppIcon($name)',
+  );
 }
 
 SwapState _state() {
