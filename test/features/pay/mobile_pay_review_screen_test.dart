@@ -146,7 +146,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byType(MobilePaySubmittedScreen), findsOneWidget);
     expect(
