@@ -1724,7 +1724,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (delay > Duration.zero) {
         await Future<void>.delayed(delay);
       }
-      if (gen != _syncGen ||
+      if (!ref.mounted ||
+          gen != _syncGen ||
           epoch != _sensitiveStateEpoch ||
           _requiresUnlock ||
           accountUuid != _getActiveAccountUuid()) {
