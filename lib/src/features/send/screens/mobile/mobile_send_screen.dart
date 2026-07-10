@@ -112,6 +112,36 @@ class _MobileSendMaxQuote {
   final BigInt feeZatoshi;
 }
 
+class _MobileSendFeeQuote {
+  const _MobileSendFeeQuote({
+    required this.accountUuid,
+    required this.address,
+    required this.memo,
+    required this.amountZatoshi,
+    required this.feeZatoshi,
+  });
+
+  final String accountUuid;
+  final String address;
+  final String memo;
+  final BigInt amountZatoshi;
+  final BigInt feeZatoshi;
+
+  bool matches({
+    required String? accountUuid,
+    required String address,
+    required String memo,
+    required BigInt? amountZatoshi,
+    required BigInt? feeZatoshi,
+  }) {
+    return this.accountUuid == accountUuid &&
+        this.address == address &&
+        this.memo == memo &&
+        this.amountZatoshi == amountZatoshi &&
+        this.feeZatoshi == feeZatoshi;
+  }
+}
+
 class MobileSendAmountArgs {
   const MobileSendAmountArgs({
     required this.sendFlowId,
@@ -338,6 +368,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // Review state.
   String _memo = '';
   BigInt? _feeZatoshi;
+  _MobileSendFeeQuote? _reviewFeeQuote;
+  bool _isRefreshingReviewFee = false;
+  String? _reviewFeeNotice;
   int _feeSeq = 0;
 
   // Failure state.
@@ -385,6 +418,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           _feeZatoshi = BigInt.from(10000);
         }
         _seedInitialMaxQuote();
+        _seedInitialReviewFeeQuote();
       } else if (_amountText.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_validateAmount());
@@ -492,6 +526,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactPictureId = null;
       }
       _addressType = '';
+      _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
     unawaited(_validateAddress());
@@ -623,7 +658,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (_fiatAmountText.isEmpty) {
           _amountText = '';
           _amountError = '';
-          _feeZatoshi = null;
+          _invalidateReviewFeeQuote();
           _clearMaxMode();
         }
         _setAmountControllerText(_fiatAmountText);
@@ -663,6 +698,45 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  void _seedInitialReviewFeeQuote() {
+    if (_isMaxMode) return;
+    final accountUuid = _activeAccountUuid;
+    final amountZatoshi = parseZecAmount(_amountText.trim());
+    final feeZatoshi = _feeZatoshi;
+    if (accountUuid == null || amountZatoshi == null || feeZatoshi == null) {
+      return;
+    }
+    _reviewFeeQuote = _MobileSendFeeQuote(
+      accountUuid: accountUuid,
+      address: _addressController.text.trim(),
+      memo: _effectiveMemo,
+      amountZatoshi: amountZatoshi,
+      feeZatoshi: feeZatoshi,
+    );
+  }
+
+  void _invalidateReviewFeeQuote() {
+    _feeSeq++;
+    _reviewFeeQuote = null;
+    _feeZatoshi = null;
+    _isRefreshingReviewFee = false;
+    _reviewFeeNotice = null;
+  }
+
+  bool get _hasCurrentReviewFeeQuote {
+    if (_isUsingCompletedSpendableSnapshot) return false;
+    if (_isMaxMode) return _hasCurrentMaxQuote;
+    final quote = _reviewFeeQuote;
+    if (quote == null || _isRefreshingReviewFee) return false;
+    return quote.matches(
+      accountUuid: _activeAccountUuid,
+      address: _addressController.text.trim(),
+      memo: _effectiveMemo,
+      amountZatoshi: parseZecAmount(_amountText.trim()),
+      feeZatoshi: _feeZatoshi,
+    );
+  }
+
   void _clearMaxMode() {
     _maxSeq++;
     _isMaxMode = false;
@@ -677,6 +751,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     setState(() {
       _amountText = value.trim();
+      _invalidateReviewFeeQuote();
       if (_isMaxMode) {
         _clearMaxMode();
       }
@@ -692,6 +767,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _amountText = zatoshi == null
           ? ''
           : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+      _invalidateReviewFeeQuote();
       if (_isMaxMode) {
         _clearMaxMode();
       }
@@ -732,6 +808,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _isMaxMode = true;
       _isResolvingMax = preconditionError == null;
       _maxQuote = null;
+      _reviewFeeQuote = null;
+      _reviewFeeNotice = null;
       _amountError = preconditionError ?? '';
       if (preconditionError != null) {
         _feeZatoshi = null;
@@ -792,6 +870,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _fiatAmountText = fiatText;
         _amountError = null;
         _feeZatoshi = estimate.feeZatoshi;
+        _reviewFeeNotice = null;
         _isResolvingMax = false;
         _maxQuote = _MobileSendMaxQuote(
           accountUuid: accountUuid,
@@ -861,6 +940,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _amountError = null;
         _feeZatoshi = null;
+        _reviewFeeQuote = null;
+        _reviewFeeNotice = null;
       });
       return;
     }
@@ -889,6 +970,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         setState(() {
           _amountError = null;
           _feeZatoshi = fee;
+          _reviewFeeQuote = _MobileSendFeeQuote(
+            accountUuid: accountUuid,
+            address: _addressController.text.trim(),
+            memo: _effectiveMemo,
+            amountZatoshi: zatoshi,
+            feeZatoshi: fee,
+          );
+          _reviewFeeNotice = null;
         });
       }
     } catch (e) {
@@ -956,27 +1045,126 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return _estimateReviewFee();
   }
 
+  bool _isCurrentReviewFeeRequest({
+    required int seq,
+    required String accountUuid,
+    required String address,
+    required String memo,
+    required BigInt amountZatoshi,
+  }) {
+    return mounted &&
+        seq == _feeSeq &&
+        accountUuid == _activeAccountUuid &&
+        address == _addressController.text.trim() &&
+        memo == _effectiveMemo &&
+        amountZatoshi == parseZecAmount(_amountText.trim());
+  }
+
   Future<void> _estimateReviewFee() async {
     final seq = ++_feeSeq;
     final zatoshi = parseZecAmount(_amountText.trim());
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (zatoshi == null || accountUuid == null) return;
+    final address = _addressController.text.trim();
+    final memo = _effectiveMemo;
+    if (zatoshi == null || accountUuid == null) {
+      if (mounted) {
+        setState(() {
+          _feeZatoshi = null;
+          _reviewFeeQuote = null;
+          _isRefreshingReviewFee = false;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _feeZatoshi = null;
+      _reviewFeeQuote = null;
+      _isRefreshingReviewFee = true;
+      _reviewFeeNotice = _isUsingCompletedSpendableSnapshot
+          ? 'Finishing wallet sync.'
+          : null;
+    });
     try {
+      await ref
+          .read(syncProvider.notifier)
+          .waitForAuthoritativeSpendable(accountUuid: accountUuid);
+      if (!_isCurrentReviewFeeRequest(
+        seq: seq,
+        accountUuid: accountUuid,
+        address: address,
+        memo: memo,
+        amountZatoshi: zatoshi,
+      )) {
+        return;
+      }
       final dbPath = await widget.loadWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted || seq != _feeSeq) return;
+      if (!_isCurrentReviewFeeRequest(
+        seq: seq,
+        accountUuid: accountUuid,
+        address: address,
+        memo: memo,
+        amountZatoshi: zatoshi,
+      )) {
+        return;
+      }
       final fee = await (widget.estimateFee ?? rust_sync.estimateFee)(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
-        toAddress: _addressController.text.trim(),
+        toAddress: address,
         amountZatoshi: zatoshi,
-        memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        memo: memo.isNotEmpty ? memo : null,
       );
-      if (!mounted || seq != _feeSeq) return;
-      setState(() => _feeZatoshi = fee);
+      if (!_isCurrentReviewFeeRequest(
+        seq: seq,
+        accountUuid: accountUuid,
+        address: address,
+        memo: memo,
+        amountZatoshi: zatoshi,
+      )) {
+        return;
+      }
+      if (zatoshi + fee > _spendable) {
+        setState(() {
+          _amountError = _notEnoughZecText;
+          _isRefreshingReviewFee = false;
+          _reviewFeeNotice = _notEnoughZecText;
+        });
+        return;
+      }
+      setState(() {
+        _feeZatoshi = fee;
+        _reviewFeeQuote = _MobileSendFeeQuote(
+          accountUuid: accountUuid,
+          address: address,
+          memo: memo,
+          amountZatoshi: zatoshi,
+          feeZatoshi: fee,
+        );
+        _isRefreshingReviewFee = false;
+        _reviewFeeNotice = null;
+      });
     } catch (e) {
       log('MobileSend: review fee estimate failed (non-blocking): $e');
+      if (!_isCurrentReviewFeeRequest(
+        seq: seq,
+        accountUuid: accountUuid,
+        address: address,
+        memo: memo,
+        amountZatoshi: zatoshi,
+      )) {
+        return;
+      }
+      final lower = e.toString().toLowerCase();
+      setState(() {
+        _feeZatoshi = null;
+        _reviewFeeQuote = null;
+        _isRefreshingReviewFee = false;
+        _reviewFeeNotice = lower.contains('sync')
+            ? 'Finishing wallet sync. Try again shortly.'
+            : 'Fee unavailable. Try again.';
+      });
     }
   }
 
@@ -1008,6 +1196,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
+    if (!_hasCurrentReviewFeeQuote) {
+      unawaited(_refreshReviewQuote());
+      return;
+    }
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
     final isHardware = ref
@@ -1015,6 +1207,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         .isHardwareAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
+    final reviewedFeeZatoshi = _feeZatoshi!;
+    final address = _addressController.text.trim();
+    final memo = _effectiveMemo;
 
     setState(() {
       _isConfirmingSend = true;
@@ -1028,10 +1223,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         loadDbPath: widget.loadWalletDbPath,
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
-        address: _addressController.text.trim(),
+        address: address,
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
-        memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        memo: memo.isNotEmpty ? memo : null,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');
@@ -1053,7 +1248,31 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
       return;
     }
-    setState(() => _feeZatoshi = args.feeZatoshi);
+    if (args.feeZatoshi != reviewedFeeZatoshi) {
+      await discardSendProposal(
+        proposalId: args.proposalId,
+        sendFlowId: _sendFlowId,
+        logContext: 'MobileSend(fee changed after review)',
+      );
+      if (!mounted) return;
+      setState(() {
+        _isConfirmingSend = false;
+        _feeZatoshi = args.feeZatoshi;
+        _reviewFeeQuote = _MobileSendFeeQuote(
+          accountUuid: accountUuid,
+          address: address,
+          memo: memo,
+          amountZatoshi: amountZatoshi,
+          feeZatoshi: args.feeZatoshi,
+        );
+        _reviewFeeNotice = 'Fee updated after sync. Review and confirm again.';
+      });
+      return;
+    }
+    setState(() {
+      _feeZatoshi = args.feeZatoshi;
+      _reviewFeeNotice = null;
+    });
 
     KeystoneBroadcastArgs? keystone;
     if (isHardware) {
@@ -1232,7 +1451,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           if (!mounted) return;
           if (_step == _SendStep.amount && _amountText.trim().isNotEmpty) {
             unawaited(_validateAmount());
-          } else if (_step == _SendStep.review) {
+          } else if (_step == _SendStep.review &&
+              !_isRefreshingReviewFee &&
+              !_hasCurrentReviewFeeQuote) {
             unawaited(_refreshReviewQuote());
           }
         });
@@ -2261,6 +2482,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     onMemoTap: () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),
                   ),
+                  if (_reviewFeeNotice != null) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    Text(
+                      _reviewFeeNotice!,
+                      key: const ValueKey('mobile_send_review_fee_notice'),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2278,7 +2510,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   onPressed:
                       _isConfirmingSend ||
                           _isResolvingMax ||
-                          (_isMaxMode && !_hasCurrentMaxQuote)
+                          (_isMaxMode && !_hasCurrentMaxQuote) ||
+                          !_hasCurrentReviewFeeQuote
                       ? null
                       : () => unawaited(_confirmAndSend()),
                   leading: AppIcon(
@@ -2288,6 +2521,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   child: Text(
                     _isConfirmingSend
                         ? 'Preparing...'
+                        : _isUsingCompletedSpendableSnapshot
+                        ? 'Finishing wallet sync...'
+                        : _isRefreshingReviewFee
+                        ? 'Calculating fee...'
+                        : !_hasCurrentReviewFeeQuote
+                        ? 'Fee unavailable'
                         : isHardware
                         ? 'Confirm with Keystone'
                         : 'Confirm & Send',
