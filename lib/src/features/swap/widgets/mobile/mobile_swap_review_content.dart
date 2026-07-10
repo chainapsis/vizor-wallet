@@ -353,7 +353,7 @@ class MobileSwapReviewActions extends StatelessWidget {
             child: GestureDetector(
               key: const ValueKey('swap_review_cancel_button'),
               behavior: HitTestBehavior.opaque,
-              onTap: onCancelReview,
+              onTap: starting ? null : onCancelReview,
               child: SizedBox(
                 height: AppButtonSizing.largeHeight,
                 child: Center(

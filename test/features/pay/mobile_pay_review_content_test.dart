@@ -212,6 +212,7 @@ void main() {
       warnIfMissed: false,
     );
     expect(confirmed, 1);
+    expect(cancelled, 1);
 
     await tester.pumpWidget(
       _harness(
@@ -230,7 +231,12 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
       warnIfMissed: false,
     );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_review_cancel_button')),
+      warnIfMissed: false,
+    );
     expect(confirmed, 1);
+    expect(cancelled, 1);
 
     await tester.pumpWidget(
       _harness(

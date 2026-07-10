@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -108,58 +110,96 @@ void main() {
     );
   });
 
-  testWidgets('confirmed software payment opens the submitted handoff', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(393, 852);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'payment start blocks cancel, top back, and system back before handoff',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final router = GoRouter(
-      initialLocation: '/pay/review',
-      routes: [
-        GoRoute(
-          path: '/pay/review',
-          builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
-        ),
-        GoRoute(
-          path: '/pay/submitted/:intentId',
-          builder: (_, state) => MobilePaySubmittedScreen(
-            intentId: state.pathParameters['intentId'] ?? '',
+      final router = GoRouter(
+        initialLocation: '/pay/review',
+        routes: [
+          GoRoute(
+            path: '/pay/review',
+            builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
           ),
+          GoRoute(
+            path: '/pay/submitted/:intentId',
+            builder: (_, state) => MobilePaySubmittedScreen(
+              intentId: state.pathParameters['intentId'] ?? '',
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      late _DelayedStartingPayReviewNotifier swapNotifier;
+      await tester.pumpWidget(
+        _app(
+          router,
+          quoteLifetime: const Duration(minutes: 5),
+          swapNotifier: () {
+            swapNotifier = _DelayedStartingPayReviewNotifier();
+            return swapNotifier;
+          },
         ),
-        GoRoute(path: '/pay', builder: (_, _) => const SizedBox.shrink()),
-      ],
-    );
-    addTearDown(router.dispose);
+      );
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(
-      _app(
-        router,
-        quoteLifetime: const Duration(minutes: 5),
-        swapNotifier: _StartingPayReviewNotifier.new,
-      ),
-    );
-    await tester.pump();
+      expect(find.bySemanticsLabel('Back'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
+      );
+      await tester.pump();
 
-    expect(find.byType(MobilePaySubmittedScreen), findsOneWidget);
-    expect(
-      tester
-          .widget<MobilePaySubmittedScreen>(
-            find.byType(MobilePaySubmittedScreen),
-          )
-          .intentId,
-      'intent-123',
-    );
-    expect(tester.takeException(), isNull);
-  });
+      final cancel = find.byKey(
+        const ValueKey('mobile_pay_review_cancel_button'),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
+          matching: find.text('Paying'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(cancel).onPressed, isNull);
+      expect(find.bySemanticsLabel('Back'), findsNothing);
+      expect(
+        tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+        isFalse,
+      );
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/pay/review',
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/pay/review',
+      );
+
+      swapNotifier.completeStart(const SwapStartedActivity('intent-123'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(find.byType(MobilePaySubmittedScreen), findsOneWidget);
+      expect(
+        tester
+            .widget<MobilePaySubmittedScreen>(
+              find.byType(MobilePaySubmittedScreen),
+            )
+            .intentId,
+        'intent-123',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _app(
@@ -259,12 +299,18 @@ class _ExpiringPayReviewNotifier extends SwapNotifier {
   }
 }
 
-class _StartingPayReviewNotifier extends _ExpiringPayReviewNotifier {
-  _StartingPayReviewNotifier() : super(const Duration(minutes: 5));
+class _DelayedStartingPayReviewNotifier extends _ExpiringPayReviewNotifier {
+  _DelayedStartingPayReviewNotifier() : super(const Duration(minutes: 5));
+
+  final _startCompleter = Completer<SwapStartResult?>();
+
+  void completeStart(SwapStartResult result) {
+    _startCompleter.complete(result);
+  }
 
   @override
   Future<SwapStartResult?> startIntent() async {
-    return const SwapStartedActivity('intent-123');
+    return _startCompleter.future;
   }
 }
 
