@@ -25,6 +25,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.controller,
     required this.typedAddress,
     required this.addressError,
+    this.quoteError,
     required this.contacts,
     required this.recents,
     required this.busy,
@@ -40,6 +41,7 @@ class MobilePayRecipientStep extends StatefulWidget {
   final TextEditingController controller;
   final String typedAddress;
   final String? addressError;
+  final String? quoteError;
   final List<AddressBookContact> contacts;
   final List<PayRecentRecipient> recents;
   final bool busy;
@@ -177,6 +179,19 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (widget.quoteError != null) ...[
+                  Text(
+                    widget.quoteError!,
+                    key: const ValueKey('mobile_pay_recipient_quote_error'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: context.colors.text.destructive,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                ],
                 if (unknownAddress) ...[
                   AppButton(
                     key: const ValueKey('mobile_pay_add_to_contacts_button'),
