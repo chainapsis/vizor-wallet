@@ -228,12 +228,15 @@ class _DividerLine extends StatelessWidget {
   }
 }
 
-/// Bottom-pinned actions for the active, submitting, blocked, and expired Pay
-/// review states.
+/// Bottom-pinned actions for the active, submitting, blocked, expired, and
+/// inactive Pay review states. The inactive variant mirrors
+/// [MobileSwapReviewActions]: a lone return button after Keystone signing
+/// left this review without a live quote.
 class MobilePayReviewActions extends StatelessWidget {
   const MobilePayReviewActions({
     required this.expired,
     required this.starting,
+    this.inactive = false,
     required this.startBlockedReason,
     required this.onConfirm,
     required this.onRefreshQuote,
@@ -243,6 +246,7 @@ class MobilePayReviewActions extends StatelessWidget {
 
   final bool expired;
   final bool starting;
+  final bool inactive;
   final String? startBlockedReason;
   final VoidCallback onConfirm;
   final VoidCallback onRefreshQuote;
@@ -251,19 +255,25 @@ class MobilePayReviewActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocked = startBlockedReason != null;
-    final primaryLabel = expired
+    final primaryLabel = inactive
+        ? 'Return to pay'
+        : expired
         ? 'Refresh quote'
         : blocked
         ? 'Not enough ZEC'
         : starting
         ? 'Paying'
         : 'Confirm & pay';
-    final primaryAction = expired
+    final primaryAction = inactive
+        ? onCancel
+        : expired
         ? onRefreshQuote
         : blocked || starting
         ? null
         : onConfirm;
-    final primaryKey = expired
+    final primaryKey = inactive
+        ? const ValueKey('mobile_pay_review_return_to_pay_button')
+        : expired
         ? const ValueKey('mobile_pay_review_refresh_quote_button')
         : const ValueKey('mobile_pay_review_confirm_button');
 
@@ -276,7 +286,7 @@ class MobilePayReviewActions extends StatelessWidget {
           expand: true,
           constrainContent: true,
           onPressed: primaryAction,
-          leading: blocked || starting
+          leading: inactive || blocked || starting
               ? null
               : AppIcon(
                   expired ? AppIcons.renew : AppIcons.paid,
@@ -284,15 +294,17 @@ class MobilePayReviewActions extends StatelessWidget {
                 ),
           child: Text(primaryLabel),
         ),
-        const SizedBox(height: AppSpacing.s),
-        AppButton(
-          key: const ValueKey('mobile_pay_review_cancel_button'),
-          variant: AppButtonVariant.ghost,
-          expand: true,
-          constrainContent: true,
-          onPressed: onCancel,
-          child: const Text('Cancel'),
-        ),
+        if (!inactive) ...[
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            key: const ValueKey('mobile_pay_review_cancel_button'),
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            constrainContent: true,
+            onPressed: onCancel,
+            child: const Text('Cancel'),
+          ),
+        ],
       ],
     );
   }
