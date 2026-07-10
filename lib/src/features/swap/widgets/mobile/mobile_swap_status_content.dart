@@ -478,7 +478,7 @@ class _MobileStatusChipRow extends StatelessWidget {
       ),
       SwapStatusBadgeKind.liveQuote => (
         AppIcons.loader,
-        paymentMode ? 'In progress...' : 'In progress',
+        'In progress',
         colors.text.secondary,
       ),
     };
