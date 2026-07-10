@@ -254,6 +254,36 @@ void main() {
     }
   });
 
+  test('uses paid copy only when a terminal Pay moved funds', () {
+    SwapActivityStatusPresentation presentation({String? depositTxHash}) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.expired,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          depositTxHash: depositTxHash,
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    final undeposited = presentation();
+    expect(undeposited.payLabel, 'You pay');
+    expect(undeposited.details.map((row) => row.label), contains('You pay'));
+    expect(
+      undeposited.details.map((row) => row.label),
+      isNot(contains('You paid')),
+    );
+
+    final deposited = presentation(depositTxHash: 'zec-deposit-txid');
+    expect(deposited.payLabel, 'You paid');
+    expect(deposited.details.map((row) => row.label), contains('You paid'));
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in

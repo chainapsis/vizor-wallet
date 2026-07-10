@@ -183,7 +183,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     payAmountText: intent.sellAmount,
     receiveAmountText: intent.receiveEstimate,
     payLabel: payMode
-        ? intent.status.isTerminal
+        ? _payIntentShowsPaidCopy(intent)
               ? 'You paid'
               : 'You pay'
         : "You're paying",
@@ -211,6 +211,11 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     // shared status page. Keep the shared progress tabs available for mobile.
     showTabs: !intent.status.isTerminal,
   );
+}
+
+bool _payIntentShowsPaidCopy(SwapIntent intent) {
+  return intent.status == SwapIntentStatus.complete ||
+      intent.hasConfirmedDepositEvidence;
 }
 
 PayActivityStatusPresentation? _payActivityStatusPresentation(
@@ -629,6 +634,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   required Iterable<AddressBookContact> addressBookContacts,
 }) {
   final terminal = intent.status.isTerminal;
+  final paid = _payIntentShowsPaidCopy(intent);
   final feeText = _firstNonEmpty([
     intent.totalFeesText,
     intent.swapFeeText,
@@ -636,7 +642,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   ]);
   return [
     SwapStatusDetailRowData(
-      label: terminal ? 'You paid' : 'You pay',
+      label: paid ? 'You paid' : 'You pay',
       value: intent.sellAmount,
     ),
     if (payRateText != null)
