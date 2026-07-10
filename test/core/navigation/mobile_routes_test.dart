@@ -14,13 +14,16 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
@@ -70,6 +73,9 @@ Widget _app(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     swapFeatureEnabledProvider.overrideWithValue(swapFeatureEnabled),
+    // The coin bob loops forever, which would break pumpAndSettle here;
+    // motion itself is covered by pay_floating_badge_test.
+    payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
     // Funded so the home tab shows the Send action used by the push
     // test.
     syncProvider.overrideWith(
@@ -265,6 +271,26 @@ void main() {
       tester.element(find.byType(MobilePaySubmittedScreen)),
     );
     expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+  });
+
+  testWidgets('pay route forwards prepared-composer navigation state', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    unawaited(
+      router.push<void>(
+        '/pay',
+        extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final screen = tester.widget<MobilePayScreen>(find.byType(MobilePayScreen));
+    expect(screen.preservePreparedComposer, isTrue);
   });
 }
 

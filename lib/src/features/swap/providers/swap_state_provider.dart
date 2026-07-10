@@ -377,9 +377,9 @@ class SwapNotifier extends Notifier<SwapState> {
       ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
       unawaited(_persistPaySelectedAsset(supportedAsset));
     }
-    // Mobile Pay still collects the recipient first and therefore preserves
-    // it by default. Desktop Pay is amount-first and opts into clearing a
-    // stale address when the selected chain changes.
+    // Pay surfaces that select the payout asset before the recipient opt into
+    // clearing a stale address when the selected chain changes. The default
+    // remains non-destructive for state restoration and other internal calls.
     final chainChanged =
         supportedAsset.chainTicker != state.externalAsset.chainTicker;
     _clearReviewState();

@@ -1,7 +1,8 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp, Scaffold, TextField;
+import 'package:flutter/material.dart'
+    show BoxDecoration, MaterialApp, Scaffold, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -99,6 +100,16 @@ void main() {
         tester.getSize(find.byKey(const ValueKey('mobile_pay_amount_card'))),
         const Size(361, 240),
       );
+      expect(
+        tester
+            .getRect(find.byKey(const ValueKey('mobile_pay_amount_card')))
+            .top,
+        16,
+      );
+      final card = tester.widget<Container>(
+        find.byKey(const ValueKey('mobile_pay_amount_card')),
+      );
+      expect((card.decoration! as BoxDecoration).boxShadow, isNull);
       expect(find.text('Paying in'), findsOneWidget);
       expect(find.text('USDC'), findsNWidgets(2));
       expect(find.text('Ethereum'), findsOneWidget);
@@ -111,6 +122,8 @@ void main() {
       );
       expect(amountInput.controller?.text, '12');
       expect(amountInput.textAlign, TextAlign.center);
+      expect(amountInput.cursorWidth, 3);
+      expect(amountInput.cursorRadius, const Radius.circular(AppRadii.full));
 
       expect(
         tester.getSize(
@@ -137,30 +150,91 @@ void main() {
       expect(continued, isTrue);
     });
 
+    testWidgets('routes amount editing and shows zero values before input', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      String? tokenAmount;
+      String? fiatAmount;
+      var toggled = false;
+      await _pumpStep(
+        tester,
+        MobilePayAmountStep(
+          state: _amountState.copyWith(
+            amountText: '',
+            receiveAmountText: '',
+            receiveFiatText: '',
+            pricingLoading: true,
+          ),
+          controller: controller,
+          focusNode: focusNode,
+          zecAvailableZatoshi: BigInt.from(10 * 100000000),
+          onAmountChanged: (value) => tokenAmount = value,
+          onFiatAmountChanged: (value) => fiatAmount = value,
+          onToggleFiatInputMode: () => toggled = true,
+          onOpenAssetSelector: () {},
+          slippageLabel: '0.5%',
+          onOpenSlippage: () {},
+          onContinue: () {},
+        ),
+      );
+
+      final continueButton = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+      );
+      expect(continueButton.onPressed, isNull);
+      expect(find.text(r'$ 0'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('mobile_pay_estimated_zec')),
+            )
+            .data,
+        '0',
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_pay_amount_counterpart_skeleton')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_pay_estimated_skeleton')),
+        findsNothing,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '3.5',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_amount_mode_toggle')),
+      );
+      expect(tokenAmount, '3.5');
+      expect(fiatAmount, isNull);
+      expect(toggled, isTrue);
+    });
+
     testWidgets(
-      'routes amount editing by input mode and disables empty state',
+      'shows conversion skeletons and disables continue while pricing refreshes',
       (tester) async {
-        final controller = TextEditingController();
+        final controller = TextEditingController(text: '12');
         final focusNode = FocusNode();
         addTearDown(controller.dispose);
         addTearDown(focusNode.dispose);
 
-        String? tokenAmount;
-        String? fiatAmount;
-        var toggled = false;
         await _pumpStep(
           tester,
           MobilePayAmountStep(
-            state: _amountState.copyWith(
-              receiveAmountText: '',
-              receiveFiatText: '',
-            ),
+            state: _amountState.copyWith(pricingLoading: true),
             controller: controller,
             focusNode: focusNode,
             zecAvailableZatoshi: BigInt.from(10 * 100000000),
-            onAmountChanged: (value) => tokenAmount = value,
-            onFiatAmountChanged: (value) => fiatAmount = value,
-            onToggleFiatInputMode: () => toggled = true,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
             onOpenAssetSelector: () {},
             slippageLabel: '0.5%',
             onOpenSlippage: () {},
@@ -168,27 +242,76 @@ void main() {
           ),
         );
 
-        final continueButton = tester.widget<AppButton>(
-          find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+        expect(
+          find.byKey(const ValueKey('mobile_pay_amount_counterpart_skeleton')),
+          findsOneWidget,
         );
-        expect(continueButton.onPressed, isNull);
         expect(
           find.byKey(const ValueKey('mobile_pay_estimated_skeleton')),
           findsOneWidget,
         );
-
-        await tester.enterText(
-          find.byKey(const ValueKey('mobile_pay_amount_input')),
-          '3.5',
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+              )
+              .onPressed,
+          isNull,
         );
-        await tester.tap(
-          find.byKey(const ValueKey('mobile_pay_amount_mode_toggle')),
-        );
-        expect(tokenAmount, '3.5');
-        expect(fiatAmount, isNull);
-        expect(toggled, isTrue);
       },
     );
+
+    testWidgets('keeps settled values during review quote loading', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '12');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayAmountStep(
+          state: _amountState.copyWith(quoteLoading: true),
+          controller: controller,
+          focusNode: focusNode,
+          zecAvailableZatoshi: BigInt.from(10 * 100000000),
+          onAmountChanged: (_) {},
+          onFiatAmountChanged: (_) {},
+          onToggleFiatInputMode: () {},
+          onOpenAssetSelector: () {},
+          slippageLabel: '0.5%',
+          onOpenSlippage: () {},
+          onContinue: () {},
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('mobile_pay_amount_counterpart_skeleton')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_pay_estimated_skeleton')),
+        findsNothing,
+      );
+      expect(find.text(r'$24.50'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('mobile_pay_estimated_zec')),
+            )
+            .data,
+        '1.2',
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
   });
 
   group('MobilePayRecipientStep', () {
@@ -329,6 +452,46 @@ void main() {
       expect(
         find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('replaces Continue while the payment quote is loading', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: _recipient);
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: _recipient,
+          addressError: null,
+          contacts: const [],
+          recents: [_recents.first],
+          busy: true,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      final continueButton = find.byKey(
+        const ValueKey('mobile_pay_recipient_continue_button'),
+      );
+      expect(find.text('Fetching quote'), findsOneWidget);
+      expect(find.text('Continue'), findsNothing);
+      expect(tester.widget<AppButton>(continueButton).onPressed, isNull);
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('mobile_pay_recipient_input')),
+            )
+            .enabled,
+        isFalse,
       );
     });
 

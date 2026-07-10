@@ -52,16 +52,11 @@ class MobilePayAmountStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final precisionError = state.quoteAmountPrecisionError;
-    final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
     final balanceExceeded = payAmountExceedsAvailableZec(
       state,
       zecAvailableZatoshi,
     );
-    final canContinue =
-        hasAmount &&
-        precisionError == null &&
-        !state.quoteLoading &&
-        !balanceExceeded;
+    final canContinue = payAmountCanContinue(state) && !balanceExceeded;
     final errorText = precisionError ?? state.quoteError;
 
     return Column(
@@ -72,7 +67,7 @@ class MobilePayAmountStep extends StatelessWidget {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
-              AppSpacing.s,
+              AppSpacing.sm,
               AppSpacing.sm,
               AppSpacing.sm,
             ),
@@ -89,7 +84,7 @@ class MobilePayAmountStep extends StatelessWidget {
                   onOpenAssetSelector: onOpenAssetSelector,
                 ),
                 const SizedBox(height: AppSpacing.md),
-                _EstimatedZecRow(state: state, hasAmount: hasAmount),
+                _EstimatedZecRow(state: state),
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
                   Text(
@@ -184,7 +179,6 @@ class _MobilePayAmountCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(_amountCardRadius),
-        boxShadow: appSurfaceShadow(colors),
       ),
       child: Column(
         children: [
@@ -309,6 +303,8 @@ class _MobilePayAmountField extends StatelessWidget {
     final counterpart = inputIsFiat
         ? state.receiveAmountText.trim()
         : state.receiveFiatText.trim();
+    final hasInput = _payAmountInputText(state).isNotEmpty;
+    final counterpartLoading = hasInput && state.pricingLoading;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
@@ -361,6 +357,10 @@ class _MobilePayAmountField extends StatelessWidget {
                               textAlign: TextAlign.center,
                               style: amountStyle,
                               cursorColor: colors.text.accent,
+                              cursorWidth: 3,
+                              cursorRadius: const Radius.circular(
+                                AppRadii.full,
+                              ),
                               decoration: InputDecoration.collapsed(
                                 hintText: '0',
                                 hintStyle: amountStyle.copyWith(
@@ -406,7 +406,15 @@ class _MobilePayAmountField extends StatelessWidget {
                       color: colors.icon.regular,
                     ),
                     const SizedBox(width: AppSpacing.xxs),
-                    if (counterpart.isEmpty) ...[
+                    if (!hasInput)
+                      Text(
+                        inputIsFiat ? '0 ${asset.symbol}' : r'$ 0',
+                        key: const ValueKey('mobile_pay_amount_counterpart'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      )
+                    else if (counterpartLoading) ...[
                       Text(
                         inputIsFiat ? asset.symbol : r'$',
                         style: AppTypography.labelLarge.copyWith(
@@ -420,8 +428,9 @@ class _MobilePayAmountField extends StatelessWidget {
                     ] else
                       Text(
                         inputIsFiat
-                            ? '$counterpart ${asset.symbol}'
-                            : '\$$counterpart',
+                            ? '${counterpart.isEmpty ? '--' : counterpart} ${asset.symbol}'
+                            : '\$${counterpart.isEmpty ? '--' : counterpart}',
+                        key: const ValueKey('mobile_pay_amount_counterpart'),
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -438,16 +447,16 @@ class _MobilePayAmountField extends StatelessWidget {
 }
 
 class _EstimatedZecRow extends StatelessWidget {
-  const _EstimatedZecRow({required this.state, required this.hasAmount});
+  const _EstimatedZecRow({required this.state});
 
   final SwapState state;
-  final bool hasAmount;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final estimated = state.amountText.trim();
-    final showEstimate = hasAmount && estimated.isNotEmpty;
+    final hasInput = _payAmountInputText(state).isNotEmpty;
+    final estimateLoading = hasInput && state.pricingLoading;
     final labelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.primary,
     );
@@ -459,15 +468,15 @@ class _EstimatedZecRow extends StatelessWidget {
         children: [
           Text('Estimated:', style: labelStyle),
           const SizedBox(width: AppSpacing.xs),
-          if (showEstimate)
-            Text(
-              estimated,
-              key: const ValueKey('mobile_pay_estimated_zec'),
-              style: labelStyle.copyWith(color: colors.text.accent),
-            )
-          else
+          if (estimateLoading)
             const _MobilePaySkeletonBar(
               key: ValueKey('mobile_pay_estimated_skeleton'),
+            )
+          else
+            Text(
+              estimated.isEmpty ? (hasInput ? '--' : '0') : estimated,
+              key: const ValueKey('mobile_pay_estimated_zec'),
+              style: labelStyle.copyWith(color: colors.text.accent),
             ),
           const SizedBox(width: AppSpacing.xs),
           Text(
@@ -487,6 +496,13 @@ class _EstimatedZecRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _payAmountInputText(SwapState state) {
+  return (state.receiveAmountInputMode == SwapAmountInputMode.fiat
+          ? state.receiveFiatText
+          : state.receiveAmountText)
+      .trim();
 }
 
 class _MobilePaySkeletonBar extends StatelessWidget {

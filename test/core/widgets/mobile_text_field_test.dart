@@ -78,6 +78,42 @@ void main() {
     expect(trailingTapCount, 1);
     expect(focusNode.hasFocus, isFalse);
   });
+
+  testWidgets('disabled field ignores both shell and text input taps', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: '0xrecipient');
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    Widget field({required bool enabled}) => _ThemedHarness(
+      child: SizedBox(
+        width: 320,
+        child: MobileTextField(
+          controller: controller,
+          focusNode: focusNode,
+          enabled: enabled,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(field(enabled: true));
+    await tester.tap(find.byType(MobileTextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.pumpWidget(field(enabled: false));
+    await tester.pump();
+
+    await tester.tap(find.byType(MobileTextField));
+    await tester.pump();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(focusNode.hasFocus, isFalse);
+    expect(controller.text, '0xrecipient');
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _ThemedHarness extends StatelessWidget {
