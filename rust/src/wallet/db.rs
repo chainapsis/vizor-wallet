@@ -35,7 +35,7 @@ const SYNC_CONN_CACHE_SIZE: i64 = -65_536; // 64 MiB
 const SYNC_CONN_CACHE_SIZE: i64 = -32_768; // 32 MiB
 
 const SYNC_CONN_WAL_AUTOCHECKPOINT_PAGES: i64 = 10_000;
-const WALLET_CONN_MMAP_BYTES: i64 = 268_435_456; // 256 MiB
+const SYNC_CONN_MMAP_BYTES: i64 = 268_435_456; // 256 MiB
 
 pub(crate) fn open_wallet_db_with_timeout(
     db_path: &str,
@@ -89,10 +89,6 @@ fn configure_wallet_connection(
 ) -> Result<(), String> {
     conn.busy_timeout(timeout)
         .map_err(|e| format!("Failed to configure wallet DB busy timeout: {e}"))?;
-    conn.pragma_update(None, "mmap_size", WALLET_CONN_MMAP_BYTES)
-        .map_err(|e| format!("Failed to set wallet DB mmap_size: {e}"))?;
-    conn.pragma_update(None, "temp_store", "MEMORY")
-        .map_err(|e| format!("Failed to set wallet DB temp_store: {e}"))?;
     if ensure_wal {
         let journal_mode: String = conn
             .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
@@ -105,6 +101,10 @@ fn configure_wallet_connection(
     }
     if matches!(tuning, ConnTuning::Sync) {
         debug_assert!(ensure_wal, "sync tuning requires WAL mode");
+        conn.pragma_update(None, "mmap_size", SYNC_CONN_MMAP_BYTES)
+            .map_err(|e| format!("Failed to set wallet DB mmap_size: {e}"))?;
+        conn.pragma_update(None, "temp_store", "MEMORY")
+            .map_err(|e| format!("Failed to set wallet DB temp_store: {e}"))?;
         conn.pragma_update(None, "cache_size", SYNC_CONN_CACHE_SIZE)
             .map_err(|e| format!("Failed to set wallet DB cache_size: {e}"))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
@@ -263,13 +263,15 @@ mod tests {
             SYNC_CONN_WAL_AUTOCHECKPOINT_PAGES
         );
         assert_eq!(pragma_i64(&conn, "temp_store"), 2); // MEMORY
-        assert_eq!(pragma_i64(&conn, "mmap_size"), WALLET_CONN_MMAP_BYTES);
+        assert_eq!(pragma_i64(&conn, "mmap_size"), SYNC_CONN_MMAP_BYTES);
     }
 
     #[test]
     fn interactive_tuning_keeps_durable_defaults() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let default_temp_store = pragma_i64(&conn, "temp_store");
+        let default_mmap_size = pragma_i64(&conn, "mmap_size");
 
         configure_wallet_connection(
             &conn,
@@ -281,8 +283,8 @@ mod tests {
 
         assert_eq!(pragma_i64(&conn, "synchronous"), 2); // FULL
         assert_eq!(pragma_i64(&conn, "wal_autocheckpoint"), 1_000);
-        assert_eq!(pragma_i64(&conn, "temp_store"), 2);
-        assert_eq!(pragma_i64(&conn, "mmap_size"), WALLET_CONN_MMAP_BYTES);
+        assert_eq!(pragma_i64(&conn, "temp_store"), default_temp_store);
+        assert_eq!(pragma_i64(&conn, "mmap_size"), default_mmap_size);
     }
 
     #[test]
