@@ -3016,6 +3016,52 @@ void main() {
     expect(state.externalAsset, SwapAsset.sol);
   });
 
+  testWidgets('account switch resets pay asset memory when none is saved', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPayAsset: SwapAsset.sol,
+    );
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+
+    // account-2 has no saved pay asset: the memory must reset instead of
+    // leaking account-1's selection into the next Pay open.
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+
+    await container.read(accountProvider.notifier).switchAccount('account-1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+  });
+
   testWidgets('account switch closes open swap activity detail', (
     tester,
   ) async {

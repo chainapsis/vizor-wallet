@@ -30,8 +30,10 @@ final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
 /// from persisted Swap composer preferences so moving between the two flows
 /// cannot overwrite either selection.
 class PaySelectedAssetNotifier extends Notifier<SwapAsset> {
+  static const defaultAsset = SwapAsset.usdc;
+
   @override
-  SwapAsset build() => SwapAsset.usdc;
+  SwapAsset build() => defaultAsset;
 
   void select(SwapAsset asset) {
     state = asset;
@@ -1769,9 +1771,12 @@ class SwapNotifier extends Notifier<SwapState> {
       final saved = await ref
           .read(paySelectedAssetStoreProvider)
           .loadSelectedAsset(accountUuid: scopedAccountUuid);
-      if (saved == null) return;
       if (!_isAccountActive(scopedAccountUuid)) return;
-      ref.read(paySelectedAssetProvider.notifier).select(saved);
+      // No saved value must reset the memory: keeping the previous account's
+      // selection would leak it into this account's Pay flow.
+      ref
+          .read(paySelectedAssetProvider.notifier)
+          .select(saved ?? PaySelectedAssetNotifier.defaultAsset);
     } catch (_) {}
   }
 
