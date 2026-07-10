@@ -213,7 +213,15 @@ class _SwapActivityDetailSurfaceState
   }
 
   void _reviewFreshQuote() {
+    final selectedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
     ref.read(swapStateProvider.notifier).prepareRetryFromSelectedIntent();
+    if (selectedIntent?.payMode ?? false) {
+      context.go(
+        '/pay',
+        extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+      );
+      return;
+    }
     context.go('/swap');
   }
 

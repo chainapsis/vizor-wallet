@@ -48,6 +48,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_addres
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -711,13 +712,14 @@ void main() {
           ),
         ],
       );
+      final router = GoRouter(
+        initialLocation: '/activity/swap/expired-deposit?from=swap',
+        routes: [_swapRoute(), _swapActivityRoute()],
+      );
 
       await tester.pumpWidget(
         _routerHarness(
-          GoRouter(
-            initialLocation: '/activity/swap/expired-deposit?from=swap',
-            routes: [_swapRoute(), _swapActivityRoute()],
-          ),
+          router,
           seedSwapActivityFixtures: false,
           sessionStore: sessionStore,
         ),
@@ -744,8 +746,63 @@ void main() {
 
       expect(timeoutRect.width, 340);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
+
+      await tester.tap(find.text('Restart swap'));
+      await tester.pumpAndSettle();
+
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/swap');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      expect(container.read(swapStateProvider).payMode, isFalse);
     },
   );
+
+  testWidgets('expired Pay restart returns to the prepared Pay composer', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final router = GoRouter(
+      initialLocation: '/activity/swap/expired-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'expired-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '2.45125 ZEC',
+          receiveEstimate: '990 USDC',
+          payMode: true,
+        );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await tester.pumpAndSettle();
+
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+    expect(find.byType(PayScreen), findsOneWidget);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.payMode, isTrue);
+    expect(state.externalAsset, SwapAsset.usdc);
+    expect(state.receiveAmountText, '990');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+  });
 
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
@@ -8549,6 +8606,19 @@ GoRoute _swapRoute() {
     routes: [
       GoRoute(path: 'review', builder: (_, _) => const SwapReviewScreen()),
     ],
+  );
+}
+
+GoRoute _payRoute() {
+  return GoRoute(
+    path: '/pay',
+    builder: (_, state) {
+      final args = state.extra;
+      return PayScreen(
+        preservePreparedComposer:
+            args is PayComposerNavigationArgs && args.preservePreparedComposer,
+      );
+    },
   );
 }
 

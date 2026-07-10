@@ -733,7 +733,16 @@ List<RouteBase> _desktopRoutes() => [
       return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
     },
   ),
-  GoRoute(path: '/pay', builder: (_, _) => const PayScreen()),
+  GoRoute(
+    path: '/pay',
+    builder: (_, state) {
+      final args = state.extra;
+      return PayScreen(
+        preservePreparedComposer:
+            args is PayComposerNavigationArgs && args.preservePreparedComposer,
+      );
+    },
+  ),
   GoRoute(
     path: '/pay/review',
     builder: (_, _) => const SwapReviewScreen(payMode: true),

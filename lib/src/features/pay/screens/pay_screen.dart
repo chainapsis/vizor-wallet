@@ -47,7 +47,9 @@ enum _PayModalSurface {
 enum _PayWizardStep { amount, recipient, review }
 
 class PayScreen extends ConsumerStatefulWidget {
-  const PayScreen({super.key});
+  const PayScreen({this.preservePreparedComposer = false, super.key});
+
+  final bool preservePreparedComposer;
 
   @override
   ConsumerState<PayScreen> createState() => _PayScreenState();
@@ -75,7 +77,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     _recipientController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      final preparedState = ref.read(swapStateProvider);
+      if (!widget.preservePreparedComposer || !preparedState.payMode) {
+        ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      }
       setState(() => _wizardStep = _PayWizardStep.amount);
     });
   }

@@ -35,6 +35,12 @@ enum SwapActivityReturnTarget {
   }
 }
 
+class PayComposerNavigationArgs {
+  const PayComposerNavigationArgs({required this.preservePreparedComposer});
+
+  final bool preservePreparedComposer;
+}
+
 const swapActivityReturnQueryKey = 'from';
 const swapActivitySignQueryKey = 'sign';
 const swapActivitySignZecDepositValue = 'zecDeposit';

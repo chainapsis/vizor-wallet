@@ -920,19 +920,25 @@ class SwapNotifier extends Notifier<SwapState> {
     final externalAsset = intent.externalAsset;
     if (direction == null || externalAsset == null) return;
 
-    final amountText = intent.sellAmount.split(' ').first.trim();
+    final retryingPay =
+        intent.payMode && direction == SwapDirection.zecToExternal;
+    final sellAmountText = intent.sellAmount.split(' ').first.trim();
+    final receiveAmountText = intent.receiveEstimate.split(' ').first.trim();
     final destinationText = direction.sendsZec
         ? intent.oneClickRecipient ?? ''
         : intent.oneClickRefundTo ?? '';
-    if (amountText.isEmpty || destinationText.isEmpty) return;
+    final inputAmountText = retryingPay ? receiveAmountText : sellAmountText;
+    if (inputAmountText.isEmpty || destinationText.isEmpty) return;
 
     _quoteGeneration++;
     state = state.copyWith(
       direction: direction,
       externalAsset: externalAsset,
-      quoteMode: _inputQuoteModeForDirection(direction),
-      amountText: amountText,
-      receiveAmountText: '',
+      quoteMode: retryingPay
+          ? SwapQuoteMode.exactOutput
+          : _inputQuoteModeForDirection(direction),
+      amountText: retryingPay ? '' : sellAmountText,
+      receiveAmountText: retryingPay ? receiveAmountText : '',
       amountInputMode: SwapAmountInputMode.token,
       receiveAmountInputMode: SwapAmountInputMode.token,
       amountFiatText: '',
@@ -941,6 +947,7 @@ class SwapNotifier extends Notifier<SwapState> {
       reviewVisible: false,
       quoteLoading: false,
       depositTxHashText: '',
+      payMode: retryingPay,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
