@@ -1,5 +1,9 @@
 use std::{
-    sync::{Mutex, OnceLock},
+    path::Path,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
     time::{Duration, Instant},
 };
 
@@ -133,8 +137,20 @@ fn apply_optional_pragma(conn: &rusqlite::Connection, name: &str, value: impl ru
 /// can make TRUNCATE report busy; that is harmless and is retried after the
 /// next successful sync rather than failing this one.
 pub(crate) fn truncate_wallet_wal_best_effort(db_path: &str) {
+    if !Path::new(db_path).exists() {
+        log::info!("wallet DB WAL truncate skipped (wallet DB no longer exists)");
+        return;
+    }
+
     let outcome = (|| -> Result<(i64, i64, i64), String> {
-        let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open: {e}"))?;
+        // A detached checkpoint can outlive the wallet that scheduled it. Do
+        // not use Connection::open here: its CREATE flag would resurrect an
+        // empty DB after wallet reset deleted the randomized path.
+        let conn = rusqlite::Connection::open_with_flags(
+            db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )
+        .map_err(|e| format!("open existing DB: {e}"))?;
         conn.busy_timeout(READ_DB_BUSY_TIMEOUT)
             .map_err(|e| format!("busy_timeout: {e}"))?;
         conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
@@ -150,8 +166,58 @@ pub(crate) fn truncate_wallet_wal_best_effort(db_path: &str) {
         Ok((_, wal_frames, checkpointed)) => log::info!(
             "wallet DB WAL truncate skipped (busy; {checkpointed}/{wal_frames} frames checkpointed)"
         ),
+        Err(_) if !Path::new(db_path).exists() => {
+            log::info!("wallet DB WAL truncate skipped (wallet DB was removed)")
+        }
         Err(e) => log::warn!("wallet DB WAL truncate failed (harmless): {e}"),
     }
+}
+
+fn wal_checkpoint_generation() -> &'static AtomicU64 {
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    &GENERATION
+}
+
+fn wal_checkpoint_gate() -> &'static Mutex<()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(()))
+}
+
+fn lock_wal_checkpoint_gate() -> std::sync::MutexGuard<'static, ()> {
+    wal_checkpoint_gate().lock().unwrap_or_else(|poisoned| {
+        log::error!("wallet DB WAL checkpoint gate poisoned; continuing");
+        poisoned.into_inner()
+    })
+}
+
+/// Starts a best-effort checkpoint without extending the sync call's lifetime.
+/// The checkpoint gate makes reset either invalidate a not-yet-started task or
+/// wait for an already-open checkpoint connection before deleting the DB.
+pub(crate) fn spawn_wallet_wal_checkpoint(db_path: String) {
+    // This read must not wait for an earlier checkpoint; sync completion stays
+    // detached even when two successful syncs finish in quick succession.
+    let generation = wal_checkpoint_generation().load(Ordering::Acquire);
+    if let Err(e) = std::thread::Builder::new()
+        .name("zcash-wal-checkpoint".into())
+        .spawn(move || {
+            let _gate = lock_wal_checkpoint_gate();
+            if wal_checkpoint_generation().load(Ordering::Acquire) != generation {
+                log::info!("wallet DB WAL checkpoint skipped (wallet reset pending)");
+                return;
+            }
+            truncate_wallet_wal_best_effort(&db_path);
+        })
+    {
+        log::warn!("wallet DB WAL checkpoint thread could not start (harmless): {e}");
+    }
+}
+
+/// Prevents checkpoints scheduled for the current wallet generation from
+/// opening the DB after this returns. The caller must have stopped sync first,
+/// so no new checkpoint for this generation can be scheduled concurrently.
+pub(crate) fn quiesce_wallet_wal_checkpoint_for_reset() {
+    let _gate = lock_wal_checkpoint_gate();
+    wal_checkpoint_generation().fetch_add(1, Ordering::AcqRel);
 }
 
 pub(crate) fn with_wallet_db_write_lock<T>(
@@ -314,6 +380,17 @@ mod tests {
         assert!(std::fs::metadata(&wal_path).unwrap().len() > 0);
         truncate_wallet_wal_best_effort(db_path);
         assert_eq!(std::fs::metadata(&wal_path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn truncate_wallet_wal_best_effort_does_not_create_a_missing_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("deleted-wallet.db");
+        assert!(!db_path.exists());
+
+        truncate_wallet_wal_best_effort(db_path.to_str().unwrap());
+
+        assert!(!db_path.exists());
     }
 
     #[test]

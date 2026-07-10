@@ -22,8 +22,8 @@ use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use crate::wallet::{
     db::{
         open_readonly_conn_with_timeout, open_sync_wallet_db_with_timeout,
-        open_wallet_raw_conn_with_timeout, truncate_wallet_wal_best_effort,
-        with_wallet_db_write_lock, WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
+        open_wallet_raw_conn_with_timeout, spawn_wallet_wal_checkpoint, with_wallet_db_write_lock,
+        WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
     },
     keys,
     network::WalletNetwork,
@@ -2600,13 +2600,7 @@ async fn run_sync_impl(
     // detached OS thread so the sync call and SYNC_RUNNING flag can finish
     // independently after the user-visible completion event is delivered.
     drop(db);
-    let checkpoint_path = db_data_path.to_string();
-    if let Err(e) = std::thread::Builder::new()
-        .name("zcash-wal-checkpoint".into())
-        .spawn(move || truncate_wallet_wal_best_effort(&checkpoint_path))
-    {
-        log::warn!("wallet DB WAL checkpoint thread could not start (harmless): {e}");
-    }
+    spawn_wallet_wal_checkpoint(db_data_path.to_string());
 
     Ok(())
 }
