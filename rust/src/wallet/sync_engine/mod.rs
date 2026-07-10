@@ -1597,7 +1597,7 @@ async fn run_sync_impl(
             let handle = prefetched.handle.take().expect("prefetch handle exists");
             match handle.await {
                 Ok(Ok(candidate)) => {
-                    match prefetched_batch_is_current(&mut client, &candidate, end).await {
+                    match prefetched_batch_is_current(&mut client, network, &candidate, end).await {
                         Ok(true) => candidate,
                         Ok(false) => {
                             stale_prefetches += 1;
@@ -2310,18 +2310,47 @@ async fn download_batch(
     let (block_source, (from_state, synthetic_start_anchor), end_state) = tokio::try_join!(
         download_blocks(&mut blocks_client, start, end_height),
         fetch_batch_start_state(&mut start_client, network, start),
-        fetch_validated_chain_state(&mut end_client, end_height),
+        fetch_batch_end_state(&mut end_client, network, end_height),
     )?;
+
+    // lightwalletd does not expose a meaningful commitment-tree state before
+    // Sapling activation. In that era the compact-block stream is still
+    // canonical, so use its final block hash for boundary/reorg validation and
+    // avoid an RPC that some lightwalletd versions reject outright.
+    let canonical_end_hash_at_fetch = match end_state {
+        Some(state) => state.block_hash(),
+        None => {
+            let last = block_source
+                .last_block()
+                .ok_or_else(|| SyncError::net("empty compact-block batch"))?;
+            compact_hash(&last.hash, "last block")
+                .map_err(|e| SyncError::net(format!("invalid pre-Sapling batch: {e}")))?
+        }
+    };
 
     let batch = DownloadedBatch {
         block_source,
         from_state,
-        canonical_end_hash_at_fetch: end_state.block_hash(),
+        canonical_end_hash_at_fetch,
         synthetic_start_anchor,
     };
     validate_downloaded_batch(&batch, start, end_exclusive)
         .map_err(|e| SyncError::net(format!("inconsistent downloaded batch: {e}")))?;
     Ok(batch)
+}
+
+async fn fetch_batch_end_state(
+    client: &mut CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
+    end_height: BlockHeight,
+) -> Result<Option<chain::ChainState>, SyncError> {
+    if should_use_empty_chain_state(&network, end_height)? {
+        Ok(None)
+    } else {
+        fetch_validated_chain_state(client, end_height)
+            .await
+            .map(Some)
+    }
 }
 
 /// Re-checks a prefetched batch immediately before consumption. A successful
@@ -2330,9 +2359,16 @@ async fn download_batch(
 /// memory.
 async fn prefetched_batch_is_current(
     client: &mut CompactTxStreamerClient<Channel>,
+    network: WalletNetwork,
     batch: &DownloadedBatch,
     end_exclusive: BlockHeight,
 ) -> Result<bool, SyncError> {
+    if should_use_empty_chain_state(&network, end_exclusive - 1)? {
+        // There is no canonical tree-state RPC before Sapling. A fork in this
+        // historical range is still caught by scan_cached_blocks' continuity
+        // checks when the batch is consumed.
+        return Ok(true);
+    }
     let current = fetch_validated_chain_state(client, end_exclusive - 1).await?;
     Ok(prefetched_batch_matches_state(batch, &current))
 }
