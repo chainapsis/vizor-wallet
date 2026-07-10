@@ -2594,13 +2594,19 @@ async fn run_sync_impl(
     };
     progress_fn(final_progress);
 
-    // Completion must not wait behind a potentially busy checkpoint. Drop the
-    // long-lived sync connection first, then perform best-effort WAL
-    // maintenance on the blocking pool after the user-visible completion
-    // event has been delivered.
+    // Completion must not wait behind a potentially busy checkpoint. Both the
+    // FRB and iOS FFI entry points create a Tokio runtime per sync call, and
+    // dropping that runtime waits for its `spawn_blocking` tasks. Use a
+    // detached OS thread so the sync call and SYNC_RUNNING flag can finish
+    // independently after the user-visible completion event is delivered.
     drop(db);
     let checkpoint_path = db_data_path.to_string();
-    tokio::task::spawn_blocking(move || truncate_wallet_wal_best_effort(&checkpoint_path));
+    if let Err(e) = std::thread::Builder::new()
+        .name("zcash-wal-checkpoint".into())
+        .spawn(move || truncate_wallet_wal_best_effort(&checkpoint_path))
+    {
+        log::warn!("wallet DB WAL checkpoint thread could not start (harmless): {e}");
+    }
 
     Ok(())
 }
