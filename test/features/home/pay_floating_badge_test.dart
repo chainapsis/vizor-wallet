@@ -57,7 +57,7 @@ void main() {
     );
   });
 
-  testWidgets('coin floats gently and stays still under reduce motion', (
+  testWidgets('coin bobs once and stays still under reduce motion', (
     tester,
   ) async {
     await _pumpBadge(
@@ -67,6 +67,8 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 900));
     expect(_coinTranslationY(tester), lessThan(0));
+    await tester.pumpAndSettle();
+    expect(_coinTranslationY(tester), 0);
 
     await _pumpBadge(
       tester,
@@ -105,6 +107,29 @@ void main() {
     expect(find.text('Pay in USDC'), findsOneWidget);
     expect(find.text('NEW'), findsNothing);
     expect(store.markCount, 1);
+  });
+
+  testWidgets('persistent callout keeps the coin motion after NEW is seen', (
+    tester,
+  ) async {
+    final store = _FakePayIntroductionBadgeStore()..seen = true;
+    await _pumpTarget(
+      tester,
+      store,
+      persistenceEnabled: true,
+      disableAnimations: false,
+    );
+
+    expect(find.text('NEW'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(_coinTranslationY(tester), lessThan(0));
+  });
+
+  testWidgets('target excludes decorative callout semantics', (tester) async {
+    final store = _FakePayIntroductionBadgeStore()..seen = true;
+    await _pumpTarget(tester, store, persistenceEnabled: true);
+
+    expect(find.bySemanticsLabel('Pay in USDC'), findsNothing);
   });
 
   testWidgets('QA mode bypasses the seen store so the badge can be reviewed', (
@@ -181,6 +206,7 @@ Future<void> _pumpTarget(
   WidgetTester tester,
   PayIntroductionBadgeStore store, {
   bool persistenceEnabled = false,
+  bool disableAnimations = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -192,7 +218,9 @@ Future<void> _pumpTarget(
       ],
       child: MaterialApp(
         home: MediaQuery(
-          data: const MediaQueryData().copyWith(disableAnimations: true),
+          data: const MediaQueryData().copyWith(
+            disableAnimations: disableAnimations,
+          ),
           child: const AppTheme(
             data: AppThemeData.light,
             child: Center(
@@ -205,7 +233,9 @@ Future<void> _pumpTarget(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await tester.pump();
+  await tester.pump();
+  if (disableAnimations) await tester.pumpAndSettle();
 }
 
 Future<void> _pumpNavigableTarget(
