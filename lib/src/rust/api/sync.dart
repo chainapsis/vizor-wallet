@@ -1169,6 +1169,7 @@ class TxDataRequest {
 }
 
 class WalletBalance {
+  final WalletBalanceAvailability availability;
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
@@ -1192,6 +1193,7 @@ class WalletBalance {
   final BigInt total;
 
   const WalletBalance({
+    required this.availability,
     required this.transparent,
     required this.sapling,
     required this.orchard,
@@ -1207,6 +1209,7 @@ class WalletBalance {
 
   @override
   int get hashCode =>
+      availability.hashCode ^
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
@@ -1224,6 +1227,7 @@ class WalletBalance {
       identical(this, other) ||
       other is WalletBalance &&
           runtimeType == other.runtimeType &&
+          availability == other.availability &&
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
@@ -1235,4 +1239,10 @@ class WalletBalance {
           uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
           total == other.total;
+}
+
+enum WalletBalanceAvailability {
+  available,
+  summaryUnavailable,
+  accountUnavailable,
 }

@@ -111,11 +111,11 @@ class SyncState {
   resolveSpendableDisplay({
     required SyncState? previous,
     required BigInt authoritativeSpendable,
-    required bool didFetchBalance,
+    required bool hasAuthoritativeBalance,
     required bool syncComplete,
   }) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) {
-      if (!syncComplete || !didFetchBalance) {
+      if (!syncComplete || !hasAuthoritativeBalance) {
         return (
           balance: previous!.displaySpendableBalance,
           freshness: SpendableBalanceFreshness.lastCompletedSync,
@@ -329,6 +329,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   static const _displayBlockDuration = Duration(milliseconds: 20);
   static const _maxIncompleteDisplayPercentage = 0.999;
+  static const _authoritativeBalanceRecoveryDelays = <Duration>[
+    Duration.zero,
+    Duration(milliseconds: 250),
+    Duration(milliseconds: 500),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
 
   final Future<String> Function() _walletDbPathResolver;
   late final BackgroundSyncDelegate _bgDelegate;
@@ -346,6 +353,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
   int _balanceReadVersion = 0;
+  int _authoritativeBalanceVersion = 0;
+  Future<void>? _authoritativeBalanceRecovery;
   // Mempool observer subscription. Started in `startSync` and
   // cancelled in `stopSync`, so its lifetime matches the
   // foreground-sync lifetime even though the Rust side manages
@@ -496,6 +505,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _clearAccountScopedStateFor(String? accountUuid) {
     ++_balanceReadVersion;
+    _authoritativeBalanceRecovery = null;
     final prev = state.value;
     if (prev == null) return;
     state = AsyncData(prev.withoutAccountScopedData(accountUuid: accountUuid));
@@ -564,6 +574,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     ++_progressEventVersion;
     ++_balanceReadVersion;
+    _authoritativeBalanceRecovery = null;
     _isSyncing = true;
     _lastLoggedHeight = 0;
     _lastForegroundSyncProgress = null;
@@ -708,7 +719,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   _finalizeEndedAtTipSyncState(lastProgress);
                   _bgDelegate.onSyncDone();
                   _startPolling();
-                  unawaited(_refreshBalance());
+                  unawaited(_reconcileBalanceAfterSyncCompletion());
                 } else {
                   log('Sync: stream ended without isComplete, cleaning up');
                   _stopMempoolObserver();
@@ -1474,7 +1485,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
-    var didFetchBalance = false;
+    var hasAuthoritativeBalance = false;
     var didFetchRecentTxs = false;
     int? balanceReadVersion;
     var recentTxs =
@@ -1487,16 +1498,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           network: network,
           accountUuid: accountUuid,
         );
-        transparent = balance.transparent;
-        sapling = balance.sapling;
-        orchard = balance.orchard;
-        transparentPending = balance.transparentPending;
-        saplingPending = balance.saplingPending;
-        orchardPending = balance.orchardPending;
-        spendable = balance.spendable;
-        total = balance.total;
-        didFetchBalance = true;
-        _logSpendableDropBreakdown(balance, scopedPrev);
+        if (balance.availability ==
+            rust_sync.WalletBalanceAvailability.available) {
+          transparent = balance.transparent;
+          sapling = balance.sapling;
+          orchard = balance.orchard;
+          transparentPending = balance.transparentPending;
+          saplingPending = balance.saplingPending;
+          orchardPending = balance.orchardPending;
+          spendable = balance.spendable;
+          total = balance.total;
+          hasAuthoritativeBalance = true;
+          _logSpendableDropBreakdown(balance, scopedPrev);
+        } else {
+          _logUnavailableBalance(balance.availability, accountUuid);
+        }
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
       }
@@ -1540,9 +1556,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final balanceReadIsCurrent =
         balanceReadVersion == null || balanceReadVersion == _balanceReadVersion;
     final useFetchedBalance =
-        useFetchedAccountData && didFetchBalance && balanceReadIsCurrent;
+        useFetchedAccountData &&
+        hasAuthoritativeBalance &&
+        balanceReadIsCurrent;
     final useFetchedRecentTxs =
         useFetchedAccountData && didFetchRecentTxs && balanceReadIsCurrent;
+    if (useFetchedBalance) {
+      ++_authoritativeBalanceVersion;
+    }
     final stateScopedPrev = _previousScopedState(state.value, stateAccountUuid);
     final hasBalanceData =
         useFetchedBalance || (stateScopedPrev?.hasBalanceData ?? false);
@@ -1577,7 +1598,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final spendableDisplay = SyncState.resolveSpendableDisplay(
       previous: stateScopedPrev,
       authoritativeSpendable: nextSpendableBalance,
-      didFetchBalance: useFetchedBalance,
+      hasAuthoritativeBalance: useFetchedBalance,
       syncComplete: event.isComplete,
     );
 
@@ -1654,10 +1675,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _isSyncing = false;
       _bgDelegate.onSyncDone();
       _startPolling();
-      if (!useFetchedBalance &&
-          spendableDisplay.freshness ==
-              SpendableBalanceFreshness.lastCompletedSync) {
-        unawaited(_refreshBalance());
+      if (!useFetchedBalance) {
+        unawaited(_ensureAuthoritativeBalanceRecovery());
       }
     }
   }
@@ -1675,6 +1694,65 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> refreshAfterUnlock() => _refreshBalance();
 
+  Future<void> _reconcileBalanceAfterSyncCompletion() =>
+      _ensureAuthoritativeBalanceRecovery();
+
+  Future<void> _ensureAuthoritativeBalanceRecovery() {
+    final existing = _authoritativeBalanceRecovery;
+    if (existing != null) return existing;
+
+    final recovery = _runAuthoritativeBalanceRecovery();
+    _authoritativeBalanceRecovery = recovery;
+    unawaited(
+      recovery.whenComplete(() {
+        if (identical(_authoritativeBalanceRecovery, recovery)) {
+          _authoritativeBalanceRecovery = null;
+        }
+      }),
+    );
+    return recovery;
+  }
+
+  Future<void> _runAuthoritativeBalanceRecovery() async {
+    final gen = _syncGen;
+    final epoch = _sensitiveStateEpoch;
+    final accountUuid = _getActiveAccountUuid();
+    final startingVersion = _authoritativeBalanceVersion;
+    if (accountUuid == null) return;
+
+    for (final delay in _authoritativeBalanceRecoveryDelays) {
+      if (delay > Duration.zero) {
+        await Future<void>.delayed(delay);
+      }
+      if (gen != _syncGen ||
+          epoch != _sensitiveStateEpoch ||
+          _requiresUnlock ||
+          accountUuid != _getActiveAccountUuid()) {
+        return;
+      }
+      if (_authoritativeBalanceVersion > startingVersion) return;
+
+      final current = _previousScopedState(state.value, accountUuid);
+      final syncInProgress =
+          (current?.isSyncing ?? false) ||
+          (current?.isBackgroundMode ?? false) ||
+          rust_sync.isSyncRunning();
+      if (syncInProgress) continue;
+
+      try {
+        await _refreshBalance();
+      } catch (e, st) {
+        log('SyncNotifier: authoritative balance recovery failed: $e\n$st');
+      }
+      if (_authoritativeBalanceVersion > startingVersion) return;
+    }
+
+    log(
+      'SyncNotifier: authoritative balance still unavailable after '
+      'bounded recovery (account=$accountUuid)',
+    );
+  }
+
   /// Waits until a UI-only completed-sync snapshot has been reconciled with
   /// the latest Rust balance. Editing can continue while the snapshot is
   /// visible, but proposal and Max operations call this before treating the
@@ -1689,6 +1767,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (!(initial?.isUsingCompletedSpendableSnapshot ?? false)) {
       return;
     }
+    var requestedRecovery = false;
 
     while (true) {
       if (_requiresUnlock) {
@@ -1710,8 +1789,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           (scoped?.isSyncing ?? false) ||
           (scoped?.isBackgroundMode ?? false) ||
           rust_sync.isSyncRunning();
-      if (!syncInProgress) {
-        await _refreshBalance();
+      if (!syncInProgress && !requestedRecovery) {
+        requestedRecovery = true;
+        await _ensureAuthoritativeBalanceRecovery();
         final refreshed = _previousScopedState(state.value, accountUuid);
         if (!(refreshed?.isUsingCompletedSpendableSnapshot ?? false)) {
           return;
@@ -1754,7 +1834,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
-    var didFetchBalance = false;
+    var hasAuthoritativeBalance = false;
     var didFetchRecentTxs = false;
     try {
       final balance = await rust_sync.getBalance(
@@ -1762,16 +1842,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         network: network,
         accountUuid: accountUuid,
       );
-      transparent = balance.transparent;
-      sapling = balance.sapling;
-      orchard = balance.orchard;
-      transparentPending = balance.transparentPending;
-      saplingPending = balance.saplingPending;
-      orchardPending = balance.orchardPending;
-      spendable = balance.spendable;
-      total = balance.total;
-      didFetchBalance = true;
-      _logSpendableDropBreakdown(balance, scopedPrev);
+      if (balance.availability ==
+          rust_sync.WalletBalanceAvailability.available) {
+        transparent = balance.transparent;
+        sapling = balance.sapling;
+        orchard = balance.orchard;
+        transparentPending = balance.transparentPending;
+        saplingPending = balance.saplingPending;
+        orchardPending = balance.orchardPending;
+        spendable = balance.spendable;
+        total = balance.total;
+        hasAuthoritativeBalance = true;
+        _logSpendableDropBreakdown(balance, scopedPrev);
+      } else {
+        _logUnavailableBalance(balance.availability, accountUuid);
+      }
     } catch (e) {
       _logRefreshReadError(
         label: 'balance',
@@ -1823,6 +1908,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('SyncNotifier: discarding superseded balance refresh');
       return;
     }
+    if (hasAuthoritativeBalance) {
+      ++_authoritativeBalanceVersion;
+    }
 
     // Commit against the latest state so a slow balance/history refresh
     // cannot roll sync progress or completion metadata back to the snapshot
@@ -1839,7 +1927,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final spendableDisplay = SyncState.resolveSpendableDisplay(
       previous: accountFallback,
       authoritativeSpendable: nextSpendableBalance,
-      didFetchBalance: didFetchBalance,
+      hasAuthoritativeBalance: hasAuthoritativeBalance,
       syncComplete: syncComplete,
     );
 
@@ -1847,7 +1935,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       SyncState(
         accountUuid: accountUuid,
         hasBalanceData:
-            didFetchBalance || (accountFallback?.hasBalanceData ?? false),
+            hasAuthoritativeBalance ||
+            (accountFallback?.hasBalanceData ?? false),
         hasRecentTransactionsData:
             didFetchRecentTxs ||
             (accountFallback?.hasRecentTransactionsData ?? false),
@@ -1913,6 +2002,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       'valuePending=${balance.valuePendingSpendability}, '
       'uneconomic=${balance.uneconomicValue}, '
       'display=${previous?.displaySpendableBalance})',
+    );
+  }
+
+  void _logUnavailableBalance(
+    rust_sync.WalletBalanceAvailability availability,
+    String accountUuid,
+  ) {
+    log(
+      'SyncNotifier: wallet balance is temporarily unavailable '
+      '(availability=${availability.name}, account=$accountUuid)',
     );
   }
 

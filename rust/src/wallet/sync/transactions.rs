@@ -35,7 +35,15 @@ use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
 
 // ======================== Balance ========================
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WalletBalanceAvailability {
+    Available,
+    SummaryUnavailable,
+    AccountUnavailable,
+}
+
 pub(crate) struct WalletBalance {
+    pub availability: WalletBalanceAvailability,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -45,6 +53,24 @@ pub(crate) struct WalletBalance {
     pub change_pending_confirmation: u64,
     pub value_pending_spendability: u64,
     pub uneconomic_value: u64,
+}
+
+impl WalletBalance {
+    fn unavailable(availability: WalletBalanceAvailability) -> Self {
+        debug_assert_ne!(availability, WalletBalanceAvailability::Available);
+        Self {
+            availability,
+            transparent: 0,
+            sapling: 0,
+            orchard: 0,
+            transparent_pending: 0,
+            sapling_pending: 0,
+            orchard_pending: 0,
+            change_pending_confirmation: 0,
+            value_pending_spendability: 0,
+            uneconomic_value: 0,
+        }
+    }
 }
 
 pub fn get_wallet_balance(
@@ -70,6 +96,7 @@ pub fn get_wallet_balance(
                 let orchard_pending = u64::from(b.orchard_balance().value_pending_spendability());
 
                 Ok(WalletBalance {
+                    availability: WalletBalanceAvailability::Available,
                     transparent: u64::from(b.unshielded_balance().spendable_value()),
                     sapling: u64::from(b.sapling_balance().spendable_value()),
                     orchard: u64::from(b.orchard_balance().spendable_value()),
@@ -87,29 +114,13 @@ pub fn get_wallet_balance(
                         + u64::from(b.orchard_balance().uneconomic_value()),
                 })
             }
-            None => Ok(WalletBalance {
-                transparent: 0,
-                sapling: 0,
-                orchard: 0,
-                transparent_pending: 0,
-                sapling_pending: 0,
-                orchard_pending: 0,
-                change_pending_confirmation: 0,
-                value_pending_spendability: 0,
-                uneconomic_value: 0,
-            }),
+            None => Ok(WalletBalance::unavailable(
+                WalletBalanceAvailability::AccountUnavailable,
+            )),
         },
-        None => Ok(WalletBalance {
-            transparent: 0,
-            sapling: 0,
-            orchard: 0,
-            transparent_pending: 0,
-            sapling_pending: 0,
-            orchard_pending: 0,
-            change_pending_confirmation: 0,
-            value_pending_spendability: 0,
-            uneconomic_value: 0,
-        }),
+        None => Ok(WalletBalance::unavailable(
+            WalletBalanceAvailability::SummaryUnavailable,
+        )),
     }
 }
 
@@ -1557,6 +1568,26 @@ mod tests {
     //! first.
     use super::*;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn unavailable_wallet_balance_is_zero_but_not_available() {
+        for availability in [
+            WalletBalanceAvailability::SummaryUnavailable,
+            WalletBalanceAvailability::AccountUnavailable,
+        ] {
+            let balance = WalletBalance::unavailable(availability);
+            assert_eq!(balance.availability, availability);
+            assert_eq!(balance.transparent, 0);
+            assert_eq!(balance.sapling, 0);
+            assert_eq!(balance.orchard, 0);
+            assert_eq!(balance.transparent_pending, 0);
+            assert_eq!(balance.sapling_pending, 0);
+            assert_eq!(balance.orchard_pending, 0);
+            assert_eq!(balance.change_pending_confirmation, 0);
+            assert_eq!(balance.value_pending_spendability, 0);
+            assert_eq!(balance.uneconomic_value, 0);
+        }
+    }
 
     /// Build a throwaway SQLite database with a minimal
     /// `v_transactions` table and return its `NamedTempFile`

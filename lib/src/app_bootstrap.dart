@@ -564,6 +564,13 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       network: network,
       accountUuid: accountUuid,
     );
+    if (balance.availability !=
+        rust_sync.WalletBalanceAvailability.available) {
+      throw StateError(
+        'Wallet balance unavailable during bootstrap: '
+        '${balance.availability.name}',
+      );
+    }
     final recentTransactions = await rust_sync.getTransactionHistory(
       dbPath: dbPath,
       network: network,

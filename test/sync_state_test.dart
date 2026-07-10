@@ -89,7 +89,7 @@ void main() {
     final resolved = SyncState.resolveSpendableDisplay(
       previous: previous,
       authoritativeSpendable: BigInt.zero,
-      didFetchBalance: true,
+      hasAuthoritativeBalance: true,
       syncComplete: false,
     );
 
@@ -107,13 +107,13 @@ void main() {
     final spent = SyncState.resolveSpendableDisplay(
       previous: previous,
       authoritativeSpendable: BigInt.zero,
-      didFetchBalance: true,
+      hasAuthoritativeBalance: true,
       syncComplete: true,
     );
     final unchanged = SyncState.resolveSpendableDisplay(
       previous: previous,
       authoritativeSpendable: BigInt.from(50),
-      didFetchBalance: true,
+      hasAuthoritativeBalance: true,
       syncComplete: true,
     );
 
@@ -133,7 +133,7 @@ void main() {
     final resolved = SyncState.resolveSpendableDisplay(
       previous: previous,
       authoritativeSpendable: BigInt.zero,
-      didFetchBalance: false,
+      hasAuthoritativeBalance: false,
       syncComplete: true,
     );
 

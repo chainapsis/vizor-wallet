@@ -333,7 +333,14 @@ pub struct SyncProgress {
     pub is_syncing: bool,
 }
 
+pub enum WalletBalanceAvailability {
+    Available,
+    SummaryUnavailable,
+    AccountUnavailable,
+}
+
 pub struct WalletBalance {
+    pub availability: WalletBalanceAvailability,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -545,10 +552,22 @@ pub fn get_balance(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        let availability = match b.availability {
+            wallet_sync::WalletBalanceAvailability::Available => {
+                WalletBalanceAvailability::Available
+            }
+            wallet_sync::WalletBalanceAvailability::SummaryUnavailable => {
+                WalletBalanceAvailability::SummaryUnavailable
+            }
+            wallet_sync::WalletBalanceAvailability::AccountUnavailable => {
+                WalletBalanceAvailability::AccountUnavailable
+            }
+        };
         let spendable = b.sapling + b.orchard;
         let total_spendable = b.transparent + b.sapling + b.orchard;
         let pending = b.transparent_pending + b.sapling_pending + b.orchard_pending;
         Ok(WalletBalance {
+            availability,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,

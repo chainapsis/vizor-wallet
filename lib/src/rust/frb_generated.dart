@@ -7281,21 +7281,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return WalletBalance(
-      transparent: dco_decode_u_64(arr[0]),
-      sapling: dco_decode_u_64(arr[1]),
-      orchard: dco_decode_u_64(arr[2]),
-      transparentPending: dco_decode_u_64(arr[3]),
-      saplingPending: dco_decode_u_64(arr[4]),
-      orchardPending: dco_decode_u_64(arr[5]),
-      changePendingConfirmation: dco_decode_u_64(arr[6]),
-      valuePendingSpendability: dco_decode_u_64(arr[7]),
-      uneconomicValue: dco_decode_u_64(arr[8]),
-      spendable: dco_decode_u_64(arr[9]),
-      total: dco_decode_u_64(arr[10]),
+      availability: dco_decode_wallet_balance_availability(arr[0]),
+      transparent: dco_decode_u_64(arr[1]),
+      sapling: dco_decode_u_64(arr[2]),
+      orchard: dco_decode_u_64(arr[3]),
+      transparentPending: dco_decode_u_64(arr[4]),
+      saplingPending: dco_decode_u_64(arr[5]),
+      orchardPending: dco_decode_u_64(arr[6]),
+      changePendingConfirmation: dco_decode_u_64(arr[7]),
+      valuePendingSpendability: dco_decode_u_64(arr[8]),
+      uneconomicValue: dco_decode_u_64(arr[9]),
+      spendable: dco_decode_u_64(arr[10]),
+      total: dco_decode_u_64(arr[11]),
     );
+  }
+
+  @protected
+  WalletBalanceAvailability dco_decode_wallet_balance_availability(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return WalletBalanceAvailability.values[raw as int];
   }
 
   @protected
@@ -9337,6 +9346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   WalletBalance sse_decode_wallet_balance(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_availability = sse_decode_wallet_balance_availability(deserializer);
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
@@ -9349,6 +9359,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_spendable = sse_decode_u_64(deserializer);
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
+      availability: var_availability,
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
@@ -9361,6 +9372,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       spendable: var_spendable,
       total: var_total,
     );
+  }
+
+  @protected
+  WalletBalanceAvailability sse_decode_wallet_balance_availability(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return WalletBalanceAvailability.values[inner];
   }
 
   @protected
@@ -11047,6 +11067,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_wallet_balance(WalletBalance self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_wallet_balance_availability(self.availability, serializer);
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);
@@ -11058,6 +11079,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.uneconomicValue, serializer);
     sse_encode_u_64(self.spendable, serializer);
     sse_encode_u_64(self.total, serializer);
+  }
+
+  @protected
+  void sse_encode_wallet_balance_availability(
+    WalletBalanceAvailability self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

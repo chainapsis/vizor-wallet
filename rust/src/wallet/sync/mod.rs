@@ -71,6 +71,7 @@ pub use transactions::{
 pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
     TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

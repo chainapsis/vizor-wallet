@@ -528,6 +528,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WalletBalance dco_decode_wallet_balance(dynamic raw);
 
   @protected
+  WalletBalanceAvailability dco_decode_wallet_balance_availability(dynamic raw);
+
+  @protected
   WalletCreationResult dco_decode_wallet_creation_result(dynamic raw);
 
   @protected
@@ -1149,6 +1152,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalletBalance sse_decode_wallet_balance(SseDeserializer deserializer);
+
+  @protected
+  WalletBalanceAvailability sse_decode_wallet_balance_availability(
+    SseDeserializer deserializer,
+  );
 
   @protected
   WalletCreationResult sse_decode_wallet_creation_result(
@@ -1923,6 +1931,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_wallet_balance(WalletBalance self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_wallet_balance_availability(
+    WalletBalanceAvailability self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_wallet_creation_result(
