@@ -35,6 +35,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use futures::StreamExt;
+use tokio::sync::mpsc;
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
@@ -52,6 +53,12 @@ use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
 use super::{lwd, SyncError, WalletDatabase};
+
+const ADDRESS_TX_CHANNEL_CAPACITY: usize = 4;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const DEFAULT_ENHANCEMENT_CONCURRENCY: u64 = 8;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const DEFAULT_ENHANCEMENT_CONCURRENCY: u64 = 4;
 
 /// Drains `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Network fetches run
@@ -358,23 +365,23 @@ where
             .collect();
         n_addr_reqs += addr_items.len() as u64;
 
-        // Same as-they-arrive application for the address streams: each
-        // completed address's transactions are applied before the next
-        // result is awaited, so live memory is bounded by the
-        // ~`concurrency` in-flight per-address fetches rather than every
-        // address's parsed history at once.
+        // Each address fetch owns a bounded channel. The network task parses
+        // one transaction and sends it immediately; the caller applies items
+        // serially while other addresses continue up to the channel bound.
+        // This prevents a single heavily-used transparent address from
+        // accumulating its entire history in a Vec before the first DB write.
         let mut addr_stream = futures::stream::iter(addr_items)
             .map(|(addr_str, start, end)| {
                 let mut c = client.clone();
-                async move { fetch_address_txs(&mut c, addr_str, start, end, should_exit).await }
+                async move { start_address_txs(&mut c, addr_str, start, end, should_exit).await }
             })
             .buffer_unordered(concurrency);
         while let Some(result) = addr_stream.next().await {
             if should_exit() {
                 break 'rounds;
             }
-            let txs = match result {
-                Ok(Some(txs)) => txs,
+            let mut fetch = match result {
+                Ok(Some(fetch)) => fetch,
                 Ok(None) => break 'rounds,
                 Err(e) => {
                     // One address's history stream failing must not discard
@@ -388,7 +395,24 @@ where
                     continue;
                 }
             };
-            for (mined_height, tx) in txs {
+            loop {
+                let next = tokio::select! {
+                    item = fetch.receiver.recv() => item,
+                    _ = wait_until_exit(should_exit) => break 'rounds,
+                };
+                let Some(next) = next else {
+                    break;
+                };
+                let (mined_height, tx) = match next {
+                    Ok(item) => item,
+                    Err(e) => {
+                        log::warn!(
+                            "sync: address history stream failed (continuing with other addresses): {e}"
+                        );
+                        round_network_error = true;
+                        break;
+                    }
+                };
                 if should_exit() {
                     break 'rounds;
                 }
@@ -435,23 +459,42 @@ where
 }
 
 /// Concurrency for the enhancement network fetches. Overridable via
-/// `ZCASH_SYNC_ENHANCE_CONCURRENCY` for benchmark sweeps; defaults to 8,
-/// clamped to `[1, 32]`.
+/// `ZCASH_SYNC_ENHANCE_CONCURRENCY` for benchmark sweeps; defaults to 8 on
+/// desktop and 4 on mobile, clamped to `[1, 32]`.
 fn enhancement_concurrency() -> usize {
-    super::env_override_clamped("ZCASH_SYNC_ENHANCE_CONCURRENCY", 8, 1, 32) as usize
+    super::env_override_clamped(
+        "ZCASH_SYNC_ENHANCE_CONCURRENCY",
+        DEFAULT_ENHANCEMENT_CONCURRENCY,
+        1,
+        32,
+    ) as usize
 }
 
 /// Stream a transparent address's transaction history in `[start, end]`
 /// and parse each returned transaction. Network-only (no DB writes) so it
 /// can run concurrently with other address scans; the caller applies the
 /// results serially under the wallet-DB write lock.
-async fn fetch_address_txs<ShouldExit>(
+struct AddressTxFetch {
+    receiver: mpsc::Receiver<Result<(Option<BlockHeight>, Transaction), SyncError>>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for AddressTxFetch {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+/// Starts a transparent-address history stream and forwards parsed
+/// transactions through a bounded channel. The returned task is aborted when
+/// the consumer stops early (cancel, mode switch, or a failed sibling).
+async fn start_address_txs<ShouldExit>(
     client: &mut CompactTxStreamerClient<Channel>,
     address: String,
     start: u64,
     end: u64,
     should_exit: &ShouldExit,
-) -> Result<Option<Vec<(Option<BlockHeight>, Transaction)>>, SyncError>
+) -> Result<Option<AddressTxFetch>, SyncError>
 where
     ShouldExit: Fn() -> bool + Sync,
 {
@@ -463,32 +506,39 @@ where
         return Ok(None);
     };
     let mut stream = stream_result?;
-    let mut out = Vec::new();
-    loop {
-        let next = tokio::select! {
-            result = lwd::next_stream_message(&mut stream, "get_taddress_txids stream") => {
-                Some(result)
-            }
-            _ = wait_until_exit(should_exit) => None,
-        };
-        let Some(next) = next else {
-            return Ok(None);
-        };
-        match next {
-            Ok(Some(raw)) => {
-                if !raw.data.is_empty() {
-                    let mined_height = mined_height_from_raw_height(raw.height)?;
+    let (sender, receiver) = mpsc::channel(ADDRESS_TX_CHANNEL_CAPACITY);
+    let handle = tokio::spawn(async move {
+        loop {
+            match lwd::next_stream_message(&mut stream, "get_taddress_txids stream").await {
+                Ok(Some(raw)) => {
+                    if raw.data.is_empty() {
+                        continue;
+                    }
+                    let mined_height = match mined_height_from_raw_height(raw.height) {
+                        Ok(height) => height,
+                        Err(e) => {
+                            let _ = sender.send(Err(e)).await;
+                            break;
+                        }
+                    };
                     match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                        Ok(tx) => out.push((mined_height, tx)),
+                        Ok(tx) => {
+                            if sender.send(Ok((mined_height, tx))).await.is_err() {
+                                break;
+                            }
+                        }
                         Err(e) => log::warn!("sync: Transaction::read (addr) failed: {e}"),
                     }
                 }
+                Ok(None) => break,
+                Err(e) => {
+                    let _ = sender.send(Err(e)).await;
+                    break;
+                }
             }
-            Ok(None) => break,
-            Err(e) => return Err(e),
         }
-    }
-    Ok(Some(out))
+    });
+    Ok(Some(AddressTxFetch { receiver, handle }))
 }
 
 async fn fill_missing_transparent_fee<ShouldExit>(
