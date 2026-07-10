@@ -4,6 +4,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
@@ -39,8 +40,6 @@ class MobilePayReviewContent extends StatefulWidget {
 }
 
 class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
-  var _showFullAddress = false;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -97,26 +96,21 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                 bottomLeftText: contact == null
                     ? 'Unknown address'
                     : compactRecipient,
-                trailingActionLabel: _showFullAddress
-                    ? 'Hide address'
-                    : 'Full address',
+                trailingActionLabel: 'Full address',
                 trailingActionKey: const ValueKey(
                   'mobile_pay_review_full_address_button',
                 ),
-                onTrailingAction: () =>
-                    setState(() => _showFullAddress = !_showFullAddress),
-              ),
-              if (_showFullAddress) ...[
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  widget.recipientAddress,
-                  key: const ValueKey('mobile_pay_review_full_address'),
-                  textAlign: TextAlign.center,
-                  style: AppTypography.codeMedium.copyWith(
-                    color: colors.text.secondary,
+                onTrailingAction: () => showMobileAddressVerifySheet(
+                  context,
+                  title: '${quote.receiveAsset.chainLabel} address',
+                  address: widget.recipientAddress,
+                  leading: SwapAssetIcon(
+                    asset: quote.receiveAsset,
+                    size: 32,
+                    showChainBadge: false,
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),

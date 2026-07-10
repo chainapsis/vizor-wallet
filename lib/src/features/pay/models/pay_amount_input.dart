@@ -44,6 +44,15 @@ double payAmountInputWidth({
   return (painter.width + AppSpacing.sm).clamp(56.0, maxWidth).toDouble();
 }
 
+/// Whether the Pay amount step can advance on either form factor.
+bool payAmountCanContinue(SwapState state) {
+  final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
+  return hasAmount &&
+      state.quoteAmountPrecisionError == null &&
+      !state.quoteLoading &&
+      !state.pricingLoading;
+}
+
 /// Whether the quote's estimated ZEC spend meets or exceeds the spendable
 /// balance (>= keeps headroom for the network fee).
 bool payAmountExceedsAvailableZec(SwapState state, BigInt availableZatoshi) {

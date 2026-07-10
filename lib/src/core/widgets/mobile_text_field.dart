@@ -37,6 +37,7 @@ class MobileTextField extends StatefulWidget {
     this.hintStyle,
     this.height,
     this.radius,
+    this.enabled = true,
     super.key,
   });
 
@@ -84,6 +85,9 @@ class MobileTextField extends StatefulWidget {
   /// Optional radius override for one-off embedded field variants.
   final double? radius;
 
+  /// Whether the field and its outer tap target accept input.
+  final bool enabled;
+
   @override
   State<MobileTextField> createState() => _MobileTextFieldState();
 }
@@ -105,6 +109,9 @@ class _MobileTextFieldState extends State<MobileTextField> {
       oldWidget.focusNode.removeListener(_onFocusChanged);
       widget.focusNode.addListener(_onFocusChanged);
     }
+    if (oldWidget.enabled && !widget.enabled) {
+      widget.focusNode.unfocus();
+    }
   }
 
   @override
@@ -119,10 +126,12 @@ class _MobileTextFieldState extends State<MobileTextField> {
   }
 
   void _handleShellTapDown(TapDownDetails details) {
+    if (!widget.enabled) return;
     _pendingShellTapGlobalPosition = details.globalPosition;
   }
 
   void _requestFocusFromShell() {
+    if (!widget.enabled) return;
     final tapPosition = _pendingShellTapGlobalPosition;
     _pendingShellTapGlobalPosition = null;
     if (tapPosition != null && _isInsideTextFieldRegion(tapPosition)) {
@@ -176,8 +185,8 @@ class _MobileTextFieldState extends State<MobileTextField> {
     ];
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTapDown: _handleShellTapDown,
-      onTap: _requestFocusFromShell,
+      onTapDown: widget.enabled ? _handleShellTapDown : null,
+      onTap: widget.enabled ? _requestFocusFromShell : null,
       child: Container(
         // Mobile input metrics (AppInputSizing → 60px tall, radius 16); desktop
         // resolves these to 46 / 12. The surface fill, the focus-only inverse
@@ -212,6 +221,7 @@ class _MobileTextFieldState extends State<MobileTextField> {
                     key: widget.fieldKey,
                     controller: widget.controller,
                     focusNode: widget.focusNode,
+                    enabled: widget.enabled,
                     onChanged: widget.onChanged,
                     onSubmitted: widget.onSubmitted,
                     textInputAction: widget.textInputAction,

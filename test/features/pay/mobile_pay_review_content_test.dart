@@ -107,29 +107,32 @@ void main() {
     expect(convertedRect.top - summaryRect.bottom, 86);
   });
 
-  testWidgets('reveals the full address and supports an unknown recipient', (
+  testWidgets('opens the shared full-address sheet for an unknown recipient', (
     tester,
   ) async {
     await tester.pumpWidget(_harness(_content(contact: null)));
 
     expect(find.text('Unknown address'), findsOneWidget);
     expect(find.text('0x5290 ... 69EE7'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('mobile_pay_review_full_address')),
-      findsNothing,
-    );
-
     await tester.tap(
       find.byKey(const ValueKey('mobile_pay_review_full_address_button')),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const ValueKey('mobile_pay_review_full_address')),
+      find.byKey(const ValueKey('mobile_address_verify_chunks')),
       findsOneWidget,
     );
-    expect(find.text(_recipientAddress), findsOneWidget);
-    expect(find.text('Hide address'), findsOneWidget);
+    expect(find.text('Ethereum address'), findsOneWidget);
+    expect(find.text('0x529'), findsOneWidget);
+    expect(find.text('Hide address'), findsNothing);
+
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_address_verify_chunks')),
+      findsNothing,
+    );
   });
 
   testWidgets('uses expired styling and dark semantic surfaces', (

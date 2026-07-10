@@ -62,7 +62,9 @@ const _payTextFieldMessageReserve = AppSpacing.md;
 const _payTokenVisibleLimit = 4;
 
 class MobilePayScreen extends ConsumerStatefulWidget {
-  const MobilePayScreen({super.key});
+  const MobilePayScreen({this.preservePreparedComposer = false, super.key});
+
+  final bool preservePreparedComposer;
 
   @override
   ConsumerState<MobilePayScreen> createState() => _MobilePayScreenState();
@@ -85,7 +87,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     _recipientController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      final preparedState = ref.read(swapStateProvider);
+      if (!widget.preservePreparedComposer || !preparedState.payMode) {
+        ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      }
       setState(() => _step = _MobilePayStep.amount);
     });
   }
@@ -140,7 +145,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   }
 
   void _handleAssetSelected(SwapAsset asset) {
-    ref.read(swapStateProvider.notifier).selectPayExternalAsset(asset);
+    ref
+        .read(swapStateProvider.notifier)
+        .selectPayExternalAsset(asset, clearDestinationOnChainChange: true);
     _closePayModal();
   }
 
@@ -225,22 +232,18 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 onCancel: _closePayModal,
               ),
             };
+            // Match the Swap modal route exactly: only the bottom card is
+            // hit-testable, so taps in the empty area reach the dismissible
+            // dialog barrier instead of being swallowed by a full-screen
+            // scroll view.
             return SafeArea(
               bottom: false,
-              child: LayoutBuilder(
-                builder: (context, constraints) => SingleChildScrollView(
-                  reverse: true,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [MobileModalCard(child: content)],
-                    ),
-                  ),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  MobileModalCard(child: content),
+                ],
               ),
             );
           },
@@ -322,6 +325,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         bottom: false,
         child: Column(
           children: [
+            if (_step == _MobilePayStep.amount)
+              const SizedBox(height: AppSpacing.s),
             MobileTopNav.back(title: title, onBack: back),
             Expanded(
               child: MobileBottomSafeArea(

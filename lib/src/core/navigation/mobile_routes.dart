@@ -196,8 +196,17 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/pay',
-      pageBuilder: (context, state) =>
-          CupertinoPage(key: state.pageKey, child: const MobilePayScreen()),
+      pageBuilder: (context, state) {
+        final args = state.extra;
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobilePayScreen(
+            preservePreparedComposer:
+                args is PayComposerNavigationArgs &&
+                args.preservePreparedComposer,
+          ),
+        );
+      },
     ),
     // Same path as the desktop transaction status route so the shared
     // redirect guard and deep links treat them identically.

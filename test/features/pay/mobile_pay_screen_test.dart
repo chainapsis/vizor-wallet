@@ -9,6 +9,10 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -40,10 +44,15 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _app() {
+Widget _app({
+  bool preservePreparedComposer = false,
+  bool usePreparedComposer = false,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (usePreparedComposer)
+        swapStateProvider.overrideWith(_PreparedPayNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           SyncState(
@@ -57,8 +66,28 @@ Widget _app() {
       ),
     ],
     child: MaterialApp(
-      home: AppTheme(data: AppThemeData.dark, child: const MobilePayScreen()),
+      home: AppTheme(
+        data: AppThemeData.dark,
+        child: MobilePayScreen(
+          preservePreparedComposer: preservePreparedComposer,
+        ),
+      ),
     ),
+  );
+}
+
+class _PreparedPayNotifier extends SwapNotifier {
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '',
+    receiveAmountText: '25',
+    destinationText: 'So11111111111111111111111111111111111111112',
+    externalAsset: SwapAsset.sol,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
   );
 }
 
@@ -92,6 +121,10 @@ void main() {
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_pay_amount_card'))),
       const Size(361, 240),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('mobile_pay_amount_card'))).top,
+      closeTo(100, 0.01),
     );
     expect(
       find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
@@ -175,10 +208,12 @@ void main() {
     );
 
     tester.view.resetViewInsets();
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_pay_add_contact_cancel')),
-    );
+    await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_pay_add_contact_card')),
+      findsNothing,
+    );
 
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
@@ -193,5 +228,84 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_amount_input')),
     );
     expect(amountInput.controller?.text, '10');
+  });
+
+  testWidgets('Pay reuses the Swap asset and slippage sheets', (tester) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_pay_asset_selector')));
+    await tester.pump();
+    expect(find.byType(MobileSwapAssetSelectorModal), findsOneWidget);
+
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapAssetSelectorModal), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
+    await tester.pump();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsOneWidget);
+
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+  });
+
+  testWidgets('prepared Pay retry keeps its amount, asset, and recipient', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(
+      _app(preservePreparedComposer: true, usePreparedComposer: true),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final input = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+    );
+    expect(input.controller?.text, '25');
+    expect(find.text('SOL'), findsWidgets);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobilePayScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.externalAsset, SwapAsset.sol);
+    expect(state.receiveAmountText, '25');
+    expect(
+      state.destinationText,
+      'So11111111111111111111111111111111111111112',
+    );
+  });
+
+  testWidgets('changing the payout chain clears the previous recipient', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobilePayScreen)),
+      listen: false,
+    );
+    container
+        .read(swapStateProvider.notifier)
+        .updateDestination('0x1111111111111111111111111111111111111111');
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_pay_asset_selector')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(ValueKey('swap_asset_row_${SwapAsset.sol.identityKey}')),
+    );
+    await tester.pump();
+
+    final state = container.read(swapStateProvider);
+    expect(state.externalAsset, SwapAsset.sol);
+    expect(state.destinationText, isEmpty);
   });
 }
