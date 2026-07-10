@@ -66,6 +66,9 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
       throw StateError('Swap deposit address is missing');
     }
     await _rejectTexDepositForKeystone(depositAddress);
+    await _ref
+        .read(syncProvider.notifier)
+        .waitForAuthoritativeSpendable(accountUuid: accountUuid);
 
     final amountZatoshi = zecDepositAmountZatoshiForIntent(intent);
     final dbPath = await getWalletDbPath();

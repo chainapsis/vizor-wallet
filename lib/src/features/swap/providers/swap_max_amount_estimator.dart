@@ -23,12 +23,15 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
 
   @override
   Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
+    await _ref
+        .read(syncProvider.notifier)
+        .waitForAuthoritativeSpendable(accountUuid: accountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointProvider);
     final sync = (_ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
       accountUuid,
     );
-    final spendableZatoshi = sync.spendableBalance;
+    final spendableZatoshi = sync.displaySpendableBalance;
     final estimateAddress = await _ref
         .read(receiveAddressServiceProvider)
         .loadTransparentReceiveAddress(accountUuid: accountUuid);

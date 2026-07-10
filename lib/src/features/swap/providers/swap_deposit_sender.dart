@@ -42,6 +42,9 @@ class RustSwapDepositSender implements SwapDepositSender {
       throw StateError('Only ZEC deposits can be sent by this wallet');
     }
 
+    await _ref
+        .read(syncProvider.notifier)
+        .waitForAuthoritativeSpendable(accountUuid: accountUuid);
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -71,6 +74,9 @@ class RustSwapDepositSender implements SwapDepositSender {
       throw StateError('Only ZEC deposits can be sent by this wallet');
     }
 
+    await _ref
+        .read(syncProvider.notifier)
+        .waitForAuthoritativeSpendable(accountUuid: accountUuid);
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;

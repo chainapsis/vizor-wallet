@@ -83,6 +83,9 @@ Future<SendReviewArgs> proposeSendTransfer({
   String? memo,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
+  await ref
+      .read(syncProvider.notifier)
+      .waitForAuthoritativeSpendable(accountUuid: accountUuid);
   final dbPath = await loadDbPath();
   final endpoint = ref.read(rpcEndpointProvider);
   final proposal = await rust_sync.proposeSend(
@@ -126,6 +129,10 @@ Future<void> discardSendProposal({
 
 String friendlyProposeSendError(String raw) {
   final lower = raw.toLowerCase();
+  if (lower.contains('wallet sync is still finishing') ||
+      lower.contains('wallet sync failed before balance refresh')) {
+    return 'Finishing wallet sync. Try again shortly.';
+  }
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
     return 'Insufficient shielded balance to cover amount and fee.';
   }

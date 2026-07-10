@@ -36,8 +36,7 @@ import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../widgets/send_recipient_resolver.dart';
-import '../../widgets/send_review_layout.dart'
-    show SendReviewContactRecipient;
+import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -582,7 +581,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     return (ref.read(syncProvider).value ?? SyncState())
         .scopedToAccount(accountUuid)
-        .spendableBalance;
+        .displaySpendableBalance;
+  }
+
+  bool get _isUsingCompletedSpendableSnapshot {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    return (ref.read(syncProvider).value ?? SyncState())
+        .scopedToAccount(accountUuid)
+        .isUsingCompletedSpendableSnapshot;
   }
 
   String? get _activeAccountUuid =>
@@ -734,6 +740,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (preconditionError != null || accountUuid == null) return;
 
     try {
+      await ref
+          .read(syncProvider.notifier)
+          .waitForAuthoritativeSpendable(accountUuid: accountUuid);
+      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
       final dbPath = await widget.loadWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
@@ -845,6 +855,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     if (zatoshi > _spendable) {
       setState(() => _amountError = _notEnoughZecText);
+      return;
+    }
+    if (_isUsingCompletedSpendableSnapshot) {
+      setState(() {
+        _amountError = null;
+        _feeZatoshi = null;
+      });
       return;
     }
     // Block Continue until the fee estimate confirms the total fits —
@@ -1195,6 +1212,32 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    ref.watch(
+      syncProvider.select((value) {
+        final sync = (value.value ?? SyncState()).scopedToAccount(accountUuid);
+        return (sync.displaySpendableBalance, sync.displaySpendableFreshness);
+      }),
+    );
+    ref.listen(
+      syncProvider.select((value) {
+        final sync = (value.value ?? SyncState()).scopedToAccount(accountUuid);
+        return (sync.displaySpendableBalance, sync.displaySpendableFreshness);
+      }),
+      (previous, next) {
+        if (previous == next) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_step == _SendStep.amount && _amountText.trim().isNotEmpty) {
+            unawaited(_validateAmount());
+          } else if (_step == _SendStep.review) {
+            unawaited(_refreshReviewQuote());
+          }
+        });
+      },
+    );
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
     final showRecipientFieldLayer =
