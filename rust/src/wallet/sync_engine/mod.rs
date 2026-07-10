@@ -85,8 +85,14 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
 
-const PREFETCH_DEPTH_FOREGROUND: usize = 4;
-const PREFETCH_DEPTH_BACKGROUND: usize = 2;
+// Each prefetched batch performs a compact-block stream plus boundary
+// tree-state validation. A depth greater than one therefore multiplies
+// lightwalletd RPC pressure without improving scan throughput on the
+// single-threaded mobile runtime. Keep one look-ahead by default; operators
+// can opt into a deeper queue after measuring their endpoint and memory
+// budget, or set it to zero to disable prefetching entirely.
+const PREFETCH_DEPTH_FOREGROUND: usize = 1;
+const PREFETCH_DEPTH_BACKGROUND: usize = 1;
 
 /// The resident-memory estimate applies a conservative multiplier to the
 /// encoded compact-block size to account for decoded vectors and allocations.
@@ -176,7 +182,7 @@ fn effective_prefetch_depth(running_mode: u8) -> usize {
     } else {
         PREFETCH_DEPTH_FOREGROUND
     };
-    env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 1, 16) as usize
+    env_override_clamped("ZCASH_SYNC_PREFETCH_DEPTH", default as u64, 0, 16) as usize
 }
 
 fn effective_resubmit_every() -> u64 {
