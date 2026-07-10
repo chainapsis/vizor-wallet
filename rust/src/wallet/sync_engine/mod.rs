@@ -1516,6 +1516,36 @@ async fn run_sync_impl(
                     prefetch.clear();
                     continue;
                 } else {
+                    // The resubmit/tip-refresh pass is intentionally
+                    // cadence-gated during long quiet scans. Before claiming
+                    // completion, obtain an authoritative tip once more so a
+                    // block mined since the last cadence tick cannot be
+                    // silently omitted from the scan queue.
+                    let final_tip = get_latest_block(&mut client).await?;
+                    let final_tip_height =
+                        block_height_from_u64(final_tip.height, "final lightwalletd tip height")?;
+                    let final_tip_height_u64 = u32::from(final_tip_height) as u64;
+                    if final_tip_height_u64 != current_tip_height {
+                        with_wallet_db_write_lock(
+                            "sync_engine.update_chain_tip.completion_refresh",
+                            || {
+                                db.update_chain_tip(final_tip_height).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "update_chain_tip({final_tip_height_u64}) before completion: {e}"
+                                    ))
+                                })
+                            },
+                        )?;
+                        log::info!(
+                            "[{}] sync: completion tip advanced {} -> {}; rescanning newly queued ranges",
+                            elapsed(),
+                            current_tip_height,
+                            final_tip_height_u64,
+                        );
+                        current_tip_height = final_tip_height_u64;
+                        prefetch.clear();
+                        continue;
+                    }
                     ensure_complete_scan_state(&db, current_tip_height)?;
                     break;
                 }
