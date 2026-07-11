@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
@@ -109,6 +110,77 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'refresh keeps payment review visible until the replacement quote arrives',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final router = GoRouter(
+        initialLocation: '/pay/review',
+        routes: [
+          GoRoute(
+            path: '/pay/review',
+            builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
+          ),
+          GoRoute(path: '/pay', builder: (_, _) => const Text('Pay composer')),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      late _DelayedRefreshingPayReviewNotifier swapNotifier;
+      await tester.pumpWidget(
+        _app(
+          router,
+          quoteLifetime: const Duration(seconds: 4),
+          swapNotifier: () {
+            swapNotifier = _DelayedRefreshingPayReviewNotifier();
+            return swapNotifier;
+          },
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('mobile_pay_review_content')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_review_refresh_quote_button')),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/pay/review',
+      );
+      expect(swapNotifier.preserveCurrentReviewRequested, isTrue);
+      expect(
+        find.byKey(const ValueKey('mobile_pay_review_content')),
+        findsOneWidget,
+      );
+
+      swapNotifier.completeRefresh();
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/pay/review',
+      );
+      expect(
+        tester
+            .widget<MobilePayReviewContent>(find.byType(MobilePayReviewContent))
+            .quote
+            .receiveAmount,
+        12,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'payment start blocks cancel, top back, and system back before handoff',
@@ -311,6 +383,52 @@ class _DelayedStartingPayReviewNotifier extends _ExpiringPayReviewNotifier {
   @override
   Future<SwapStartResult?> startIntent() async {
     return _startCompleter.future;
+  }
+}
+
+class _DelayedRefreshingPayReviewNotifier extends _ExpiringPayReviewNotifier {
+  _DelayedRefreshingPayReviewNotifier() : super(const Duration(seconds: 4));
+
+  final _refreshCompleter = Completer<void>();
+  bool preserveCurrentReviewRequested = false;
+
+  void completeRefresh() {
+    _refreshCompleter.complete();
+  }
+
+  @override
+  Future<void> showReview({bool preserveCurrentReview = false}) async {
+    preserveCurrentReviewRequested = preserveCurrentReview;
+    final reviewAddressPlan = state.reviewAddressPlan;
+    final reviewAccountUuid = state.reviewAccountUuid;
+    final keepCurrentReview =
+        preserveCurrentReview &&
+        state.reviewVisible &&
+        state.reviewQuote != null &&
+        state.reviewAddressPlan != null;
+    state = state.copyWith(
+      reviewVisible: keepCurrentReview,
+      quoteLoading: true,
+      clearReview: !keepCurrentReview,
+      clearQuoteError: true,
+    );
+    await _refreshCompleter.future;
+    state = state.copyWith(
+      reviewVisible: true,
+      reviewQuote: SwapQuote.estimate(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        mode: SwapQuoteMode.exactOutput,
+        amount: 12,
+        externalPerZec: 400,
+        quoteExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      ),
+      reviewAddressPlan: reviewAddressPlan,
+      reviewAccountUuid: reviewAccountUuid,
+      quoteLoading: false,
+      quoteExpired: false,
+      clearQuoteError: true,
+    );
   }
 }
 

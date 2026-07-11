@@ -115,7 +115,7 @@ class _DelayedPayReviewNotifier extends SwapNotifier {
   );
 
   @override
-  Future<void> showReview() async {
+  Future<void> showReview({bool preserveCurrentReview = false}) async {
     final generation = ++_requestGeneration;
     state = state.copyWith(
       reviewVisible: false,

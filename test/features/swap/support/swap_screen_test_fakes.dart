@@ -513,6 +513,26 @@ class _DelayedQuoteSwapProvider extends _FakeSwapProvider {
   }
 }
 
+class _DelayedRefreshQuoteSwapProvider extends _FakeSwapProvider {
+  final _refreshGate = Completer<void>();
+  var _quoteCount = 0;
+
+  void completeRefresh() {
+    if (!_refreshGate.isCompleted) {
+      _refreshGate.complete();
+    }
+  }
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    _quoteCount += 1;
+    if (_quoteCount > 1) {
+      await _refreshGate.future;
+    }
+    return super.quote(request);
+  }
+}
+
 class _FailingStartSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapIntentSnapshot> startSwap(SwapQuote quote) async {
