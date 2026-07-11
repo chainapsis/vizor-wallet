@@ -135,8 +135,18 @@ class _MobilePaySubmittedScreenState
     );
     final intentMissing =
         swapState.intents.swapIntentById(widget.intentId) == null;
+    // A persisted intent can outlive its unawaited deposit sender. Only a
+    // route-scoped submitting flag proves that this screen should stay locked.
+    final hasActiveSubmission =
+        swapState.selectedIntentId == widget.intentId &&
+        swapState.depositSubmitting;
     final paymentUnavailable =
         intentMissing &&
+        _restoreGraceElapsed &&
+        baseProgress.phase == MobileTransactionProgressPhase.inProgress;
+    final submissionInterrupted =
+        !intentMissing &&
+        !hasActiveSubmission &&
         _restoreGraceElapsed &&
         baseProgress.phase == MobileTransactionProgressPhase.inProgress;
     final progress = paymentUnavailable
@@ -144,6 +154,10 @@ class _MobilePaySubmittedScreenState
             phase: MobileTransactionProgressPhase.failed,
             notice:
                 "We couldn't load this payment. Check Activity for its latest status.",
+          )
+        : submissionInterrupted
+        ? const MobilePayDepositProgress(
+            phase: MobileTransactionProgressPhase.pending,
           )
         : baseProgress;
     final terminal =

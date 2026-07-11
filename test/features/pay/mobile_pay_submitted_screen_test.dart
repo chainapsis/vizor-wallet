@@ -189,6 +189,16 @@ void main() {
       tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
       isFalse,
     );
+
+    await tester.pump(kMobilePayIntentRestoreGrace);
+    await tester.pump();
+
+    expect(find.text('Submitting payment...'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_submitted_done')), findsNothing);
+    expect(
+      tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+      isFalse,
+    );
   });
 
   testWidgets('missing intent releases the restoring screen after a grace', (
@@ -223,6 +233,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('activity'), findsOneWidget);
   });
+
+  testWidgets(
+    'restored inactive intent becomes uncertain after the restore grace',
+    (tester) async {
+      await _setMobileViewport(tester);
+      final state = _state(intent: _intent());
+      final router = _router(AppThemeData.light);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(_app(router, state));
+      await tester.pump();
+
+      expect(find.text('Submitting payment...'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pay_submitted_done')), findsNothing);
+      expect(
+        tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+        isFalse,
+      );
+
+      await tester.pump(kMobilePayIntentRestoreGrace);
+      await tester.pump();
+
+      expect(find.text('Payment status\nuncertain'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pay_submitted_done')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_submitted_activity')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+        isTrue,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('pay_submitted_activity')));
+      await tester.pumpAndSettle();
+      expect(find.text('activity:intent-1:pay'), findsOneWidget);
+    },
+  );
 
   testWidgets('uncertain broadcast shows its notice and Activity action', (
     tester,
