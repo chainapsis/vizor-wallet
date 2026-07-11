@@ -574,7 +574,7 @@ class SwapNotifier extends Notifier<SwapState> {
     }
   }
 
-  Future<void> showReview() async {
+  Future<void> showReview({bool preserveCurrentReview = false}) async {
     if (!state.canReviewQuote) return;
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -590,11 +590,16 @@ class SwapNotifier extends Notifier<SwapState> {
     final amountText = state.quoteAmountText;
     final generation = ++_quoteGeneration;
     final preferences = _currentComposerPreferences;
+    final keepCurrentReview =
+        preserveCurrentReview &&
+        state.reviewVisible &&
+        state.reviewQuote != null &&
+        state.reviewAddressPlan != null;
 
     state = state.copyWith(
-      reviewVisible: false,
+      reviewVisible: keepCurrentReview,
       quoteLoading: true,
-      clearReview: true,
+      clearReview: !keepCurrentReview,
       clearQuoteError: true,
     );
 

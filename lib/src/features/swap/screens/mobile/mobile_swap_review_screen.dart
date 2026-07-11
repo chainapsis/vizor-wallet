@@ -124,7 +124,9 @@ class _MobileSwapReviewScreenState
 
   void _reviewAgain() {
     unawaited(() async {
-      await ref.read(swapStateProvider.notifier).showReview();
+      await ref
+          .read(swapStateProvider.notifier)
+          .showReview(preserveCurrentReview: true);
       if (!mounted) return;
       final next = ref.read(swapStateProvider);
       if (!next.reviewVisible ||
