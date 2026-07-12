@@ -99,6 +99,23 @@ void main() {
             status: SwapIntentStatus.depositObserved,
             originChainTxHash: 'origin-txid',
           ),
+          // Provider progress states prove that a deposit exists even when
+          // the status payload omits transaction hashes.
+          _pendingCountRecord(
+            id: 'processing-without-hash',
+            status: SwapIntentStatus.processing,
+          ),
+          _pendingCountRecord(
+            id: 'incomplete-without-hash',
+            status: SwapIntentStatus.incompleteDeposit,
+          ),
+          // A positive provider-reported amount must also prevent the local
+          // deadline resolver from expiring and unblocking the account.
+          _pendingCountRecord(
+            id: 'amount-only-deposit',
+            depositDeadline: past,
+            depositedAmountText: '0.0025 ZEC',
+          ),
           // User claimed the deposit (pressed "I've deposited"), still within
           // deadline -> ZEC may be incoming -> counted.
           _pendingCountRecord(
@@ -119,10 +136,9 @@ void main() {
         swapPendingIntentCountProvider('account-1').future,
       );
 
-      // clean-broadcast, deposit-observed, the claimed deposit, and
-      // storage-failed-broadcast (tx reached network) all have funds that
-      // could strand at the account address.
-      expect(count, 4);
+      // Broadcast evidence, provider status/amount evidence, and the claimed
+      // deposit all represent funds that could strand at the account address.
+      expect(count, 7);
     },
   );
 
@@ -162,6 +178,7 @@ SwapIntentRecord _pendingCountRecord({
   DateTime? depositDeadline,
   String? depositTxHash,
   String? originChainTxHash,
+  String? depositedAmountText,
   String? broadcastStatus,
   DateTime? depositClaimedAt,
 }) {
@@ -179,6 +196,9 @@ SwapIntentRecord _pendingCountRecord({
     depositDeadline: depositDeadline,
     depositTxHash: depositTxHash,
     originChainTxHash: originChainTxHash,
+    providerRefundInfo: depositedAmountText == null
+        ? null
+        : SwapProviderRefundInfo(depositedAmountText: depositedAmountText),
     broadcastStatus: broadcastStatus,
     depositClaimedAt: depositClaimedAt,
     createdAt: createdAt,

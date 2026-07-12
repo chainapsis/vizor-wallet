@@ -1706,6 +1706,45 @@ void main() {
     ]);
   });
 
+  testWidgets('failed Pay activity skips the unused full-history fee lookup', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final requests = <({String accountUuid, String walletTxid})>[];
+    final payIntent = _persistedIntent(
+      id: 'pay-failed-no-fee-content',
+      txHash: null,
+      originChainTxHash: depositDisplayOrder,
+      status: SwapIntentStatus.failed,
+    ).copyWith(payMode: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation:
+              '/activity/swap/pay-failed-no-fee-content?from=activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        payDepositTransactionLoader:
+            ({required accountUuid, required walletTxid}) async {
+              requests.add((accountUuid: accountUuid, walletTxid: walletTxid));
+              return null;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pay_activity_status_content')),
+      findsNothing,
+    );
+    expect(requests, isEmpty);
+  });
+
   testWidgets('status details render address book labels with addresses', (
     tester,
   ) async {

@@ -214,51 +214,16 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
 }
 
 bool _payIntentShowsPaidCopy(SwapIntent intent) {
-  final providerStatusConfirmsDeposit = switch (intent.status) {
-    SwapIntentStatus.depositObserved ||
-    SwapIntentStatus.processing ||
-    SwapIntentStatus.incompleteDeposit ||
-    SwapIntentStatus.complete ||
-    SwapIntentStatus.refunded => true,
-    _ => false,
-  };
-  if (providerStatusConfirmsDeposit) return true;
-  if (intent.status == SwapIntentStatus.failed) {
-    return (intent.originChainTxHash?.trim().isNotEmpty ?? false) ||
-        _hasPositiveProviderAmount(
-          intent.providerRefundInfo?.depositedAmountText,
-        );
-  }
+  if (intent.hasProviderObservedDepositEvidence) return true;
+  if (intent.status == SwapIntentStatus.failed) return false;
   return intent.hasConfirmedDepositEvidence;
-}
-
-bool _hasPositiveProviderAmount(String? amountText) {
-  final normalized = amountText?.trim();
-  if (normalized == null || normalized.isEmpty) return false;
-  final numericText = normalized
-      .split(RegExp(r'\s+'))
-      .first
-      .replaceAll(',', '');
-  final amount = double.tryParse(numericText);
-  return amount != null && amount.isFinite && amount > 0;
 }
 
 PayActivityStatusPresentation? _payActivityStatusPresentation(
   SwapIntent intent, {
   BigInt? confirmedDepositFeeZatoshi,
 }) {
-  final phase = switch (intent.status) {
-    SwapIntentStatus.complete => PayActivityStatusPhase.completed,
-    SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit ||
-    SwapIntentStatus.depositObserved ||
-    SwapIntentStatus.processing ||
-    SwapIntentStatus.providerStatusUnknown => PayActivityStatusPhase.inProgress,
-    SwapIntentStatus.incompleteDeposit ||
-    SwapIntentStatus.refunded ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.failed => null,
-  };
+  final phase = payActivityStatusPhaseFor(intent.status);
   if (phase == null) return null;
 
   final timestamp = phase == PayActivityStatusPhase.completed
@@ -290,6 +255,21 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
         ? ZecAmount.fromZatoshi(confirmedDepositFeeZatoshi).fee.toString()
         : 'Not reported',
   );
+}
+
+PayActivityStatusPhase? payActivityStatusPhaseFor(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.complete => PayActivityStatusPhase.completed,
+    SwapIntentStatus.awaitingDeposit ||
+    SwapIntentStatus.awaitingExternalDeposit ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.providerStatusUnknown => PayActivityStatusPhase.inProgress,
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => null,
+  };
 }
 
 String _swapActivityStatusTitle(SwapIntent intent) {

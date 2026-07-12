@@ -57,7 +57,8 @@ final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
       .where(
         (intent) =>
             !intent.status.isTerminal &&
-            (intent.hasConfirmedDepositEvidence ||
+            (intent.hasProviderObservedDepositEvidence ||
+                intent.hasConfirmedDepositEvidence ||
                 intent.depositClaimedAt != null),
       )
       .length;

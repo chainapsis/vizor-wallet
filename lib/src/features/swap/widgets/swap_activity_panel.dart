@@ -774,11 +774,15 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     final depositTxid = _payDepositTxid(intent);
+    final recipientAddress = intent.oneClickRecipient?.trim();
     final accountUuid = intent.accountUuid?.trim();
     final shouldLoadPayDeposit =
         widget.layout == SwapActivityDetailLayout.desktop &&
         intent.payMode &&
         intent.direction == SwapDirection.zecToExternal &&
+        payActivityStatusPhaseFor(intent.status) != null &&
+        recipientAddress != null &&
+        recipientAddress.isNotEmpty &&
         depositTxid != null &&
         depositTxid.isNotEmpty &&
         accountUuid != null &&
@@ -787,11 +791,8 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     if (shouldLoadPayDeposit) {
       depositTransaction = ref.watch(
         syncProvider.select(
-          (sync) => _recentPayDepositTransaction(
-            sync.value,
-            intent,
-            depositTxid,
-          ),
+          (sync) =>
+              _recentPayDepositTransaction(sync.value, intent, depositTxid),
         ),
       );
       depositTransaction ??= ref
@@ -858,7 +859,6 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     }
 
     final payStatus = presentation.payStatus;
-    final recipientAddress = intent.oneClickRecipient?.trim();
     if (payStatus != null &&
         recipientAddress != null &&
         recipientAddress.isNotEmpty) {

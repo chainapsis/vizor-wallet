@@ -36,17 +36,11 @@ class SwapActivityRowItem {
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
     final depositedAmountText = record.providerRefundInfo?.depositedAmountText;
-    final hasProviderDepositFields =
-        (record.originChainTxHash?.trim().isNotEmpty ?? false) ||
-        _isPositiveSwapAmount(depositedAmountText);
-    final providerObservedByStatus = switch (record.status) {
-      SwapIntentStatus.depositObserved ||
-      SwapIntentStatus.processing ||
-      SwapIntentStatus.complete ||
-      SwapIntentStatus.incompleteDeposit ||
-      SwapIntentStatus.refunded => true,
-      _ => false,
-    };
+    final hasProviderDepositEvidence = swapHasProviderObservedDepositEvidence(
+      status: record.status,
+      originChainTxHash: record.originChainTxHash,
+      depositedAmountText: depositedAmountText,
+    );
     final acceptsLocalBroadcastEvidence =
         record.status != SwapIntentStatus.failed &&
         record.status != SwapIntentStatus.expired;
@@ -73,8 +67,7 @@ class SwapActivityRowItem {
               ? swapChainTxidToWalletTxidHex(record.originChainTxHash)
               : null),
       hasConfirmedDepositEvidence:
-          hasProviderDepositFields ||
-          providerObservedByStatus ||
+          hasProviderDepositEvidence ||
           (acceptsLocalBroadcastEvidence &&
               swapHasConfirmedDepositEvidence(
                 originChainTxHash: record.originChainTxHash,

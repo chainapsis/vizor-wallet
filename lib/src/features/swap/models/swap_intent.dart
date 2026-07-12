@@ -311,6 +311,13 @@ class SwapIntent {
     broadcastStatus: broadcastStatus,
   );
 
+  bool get hasProviderObservedDepositEvidence =>
+      swapHasProviderObservedDepositEvidence(
+        status: status,
+        originChainTxHash: originChainTxHash,
+        depositedAmountText: providerRefundInfo?.depositedAmountText,
+      );
+
   SwapIntent copyWith({
     String? id,
     String? pair,
@@ -454,4 +461,36 @@ bool swapHasConfirmedDepositEvidence({
   final notOnNetwork =
       broadcastStatus == SwapDepositBroadcastStatus.pendingBroadcast;
   return has(originChainTxHash) || (has(depositTxHash) && !notOnNetwork);
+}
+
+/// Provider evidence that a source-chain deposit exists even when the status
+/// response omits its transaction hash. Provider states after
+/// `PENDING_DEPOSIT` establish the same fact, while failed/expired records
+/// require an origin hash or a positive reported amount.
+bool swapHasProviderObservedDepositEvidence({
+  required SwapIntentStatus status,
+  String? originChainTxHash,
+  String? depositedAmountText,
+}) {
+  if (originChainTxHash?.trim().isNotEmpty ?? false) return true;
+  if (_isPositiveSwapAmountText(depositedAmountText)) return true;
+  return switch (status) {
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.complete ||
+    SwapIntentStatus.refunded => true,
+    _ => false,
+  };
+}
+
+bool _isPositiveSwapAmountText(String? amountText) {
+  final normalized = amountText?.trim();
+  if (normalized == null || normalized.isEmpty) return false;
+  final numericText = normalized
+      .split(RegExp(r'\s+'))
+      .first
+      .replaceAll(',', '');
+  final amount = double.tryParse(numericText);
+  return amount != null && amount.isFinite && amount > 0;
 }
