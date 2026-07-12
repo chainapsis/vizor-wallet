@@ -13,6 +13,7 @@ SwapIntent _intent({
   String sellAmount = '1 ZEC',
   String receiveEstimate = '10 USDC',
   SwapDirection direction = SwapDirection.zecToExternal,
+  SwapAsset externalAsset = SwapAsset.usdc,
   SwapIntentStatus status = SwapIntentStatus.complete,
   String? depositTxHash,
   String? destinationChainTxHash,
@@ -30,6 +31,7 @@ SwapIntent _intent({
     status: status,
     nextAction: '',
     direction: direction,
+    externalAsset: externalAsset,
     depositTxHash: depositTxHash,
     destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: recipient,
@@ -187,11 +189,13 @@ void main() {
           _intent(
             id: 'original',
             recipient: _solana,
+            externalAsset: SwapAsset.sol,
             createdAt: DateTime(2026, 7, 1),
           ),
           _intent(
             id: 'case-variant',
             recipient: caseVariant,
+            externalAsset: SwapAsset.sol,
             createdAt: DateTime(2026, 7, 2),
           ),
         ],
@@ -199,6 +203,47 @@ void main() {
       );
 
       expect(recents.map((recent) => recent.address), [caseVariant, _solana]);
+    });
+
+    test('keeps only recipients from the selected rail', () {
+      const dogecoinAddress = 'DExampleDogecoinRecipient';
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'ethereum',
+            recipient: _evmA,
+            externalAsset: SwapAsset.usdc,
+          ),
+          _intent(
+            id: 'solana',
+            recipient: _solana,
+            externalAsset: SwapAsset.sol,
+          ),
+          _intent(
+            id: 'dogecoin',
+            recipient: dogecoinAddress,
+            externalAsset: SwapAsset.doge,
+          ),
+        ],
+        network: AddressBookNetwork.dogecoin,
+      );
+
+      expect(recents.map((recent) => recent.address), [dogecoinAddress]);
+    });
+
+    test('treats EVM rails as compatible', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'ethereum',
+            recipient: _evmA,
+            externalAsset: SwapAsset.usdc,
+          ),
+        ],
+        network: AddressBookNetwork.base,
+      );
+
+      expect(recents.map((recent) => recent.address), [_evmA]);
     });
 
     test('caps the list at the limit', () {

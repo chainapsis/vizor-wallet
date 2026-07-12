@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_s
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -60,6 +61,22 @@ final _completedSwapIntent = SwapIntent(
   externalAsset: SwapAsset.usdc,
   depositAddress: 't1completed-deposit',
   accountUuid: 'account-1',
+);
+
+final _expiredPayIntent = SwapIntent(
+  id: 'pay-mobile-expired',
+  pair: 'ZEC -> USDC',
+  sellAmount: '1.0000 ZEC',
+  receiveEstimate: '70.00 USDC',
+  provider: 'NEAR Intents',
+  status: SwapIntentStatus.expired,
+  nextAction: 'Start a fresh quote.',
+  direction: SwapDirection.zecToExternal,
+  externalAsset: SwapAsset.usdc,
+  depositAddress: 't1expired-pay-deposit',
+  oneClickRecipient: '0x1111111111111111111111111111111111111111',
+  accountUuid: 'account-1',
+  payMode: true,
 );
 
 void main() {
@@ -109,6 +126,43 @@ void main() {
       find.descendant(of: header, matching: find.text("You're receiving")),
       findsNothing,
     );
+  });
+
+  testWidgets('expired mobile Pay restarts in the supported Swap route', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: '/activity/swap/${_expiredPayIntent.id}',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+        GoRoute(
+          path: '/swap',
+          builder: (_, _) => const Material(child: MobileSwapScreen()),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(router, activityIntents: [_expiredPayIntent]));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restart swap'), findsOneWidget);
+    await tester.tap(find.text('Restart swap'));
+    await tester.pumpAndSettle();
+
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/swap');
+    expect(find.byType(MobileSwapScreen), findsOneWidget);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSwapScreen)),
+      listen: false,
+    );
+    expect(container.read(swapStateProvider).payMode, isFalse);
   });
 
   testWidgets('hardware ZEC deposit opens mobile Keystone signing route', (

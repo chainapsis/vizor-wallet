@@ -214,8 +214,15 @@ class _SwapActivityDetailSurfaceState
 
   void _reviewFreshQuote() {
     final selectedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
+    final retryingPay = selectedIntent?.payMode ?? false;
+    if (retryingPay && widget.layout == SwapActivityDetailLayout.mobile) {
+      // Pay is desktop-only. Mobile has no /pay route, so offer the supported
+      // Swap composer without preparing or persisting dormant Pay state.
+      context.go('/swap');
+      return;
+    }
     ref.read(swapStateProvider.notifier).prepareRetryFromSelectedIntent();
-    if (selectedIntent?.payMode ?? false) {
+    if (retryingPay) {
       context.go(
         '/pay',
         extra: const PayComposerNavigationArgs(preservePreparedComposer: true),

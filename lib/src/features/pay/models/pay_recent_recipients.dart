@@ -34,6 +34,14 @@ List<PayRecentRecipient> payRecentRecipients({
   for (final intent in intents) {
     if (intent.direction != SwapDirection.zecToExternal) continue;
     if (!_hasPayPayoutEvidence(intent)) continue;
+    final sourceAsset = intent.externalAsset;
+    final sourceNetwork = sourceAsset == null
+        ? null
+        : AddressBookNetwork.tryFromChainTicker(sourceAsset.chainTicker);
+    if (sourceNetwork == null ||
+        !_payNetworksAreCompatible(sourceNetwork, network)) {
+      continue;
+    }
     final address = intent.oneClickRecipient?.trim() ?? '';
     if (address.isEmpty) continue;
     if (addressFormatIssue(network, address) != null) continue;
@@ -63,6 +71,13 @@ List<PayRecentRecipient> payRecentRecipients({
       return bt.compareTo(at);
     });
   return entries.take(limit).toList();
+}
+
+bool _payNetworksAreCompatible(
+  AddressBookNetwork source,
+  AddressBookNetwork destination,
+) {
+  return source == destination || (source.isEvm && destination.isEvm);
 }
 
 String _payRecentAmountText(String value) {
