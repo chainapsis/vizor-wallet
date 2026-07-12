@@ -394,7 +394,7 @@ void main() {
   });
 
   testWidgets(
-    'home shows NEW once while keeping the Pay callout after return',
+    'home hides the treatment after Pay click and restores it on hover',
     (tester) async {
       final badgeStore = _FakePayIntroductionBadgeStore();
       await tester.pumpWidget(
@@ -414,24 +414,51 @@ void main() {
 
       expect(find.byType(PayFloatingBadge), findsOneWidget);
       expect(find.text('NEW'), findsOneWidget);
-      expect(badgeStore.markCount, 1);
+      expect(badgeStore.markCount, 0);
 
-      await tester.tap(find.byKey(const ValueKey('home_desktop_send_button')));
-      await _pumpUntilPresent(tester, find.byType(SendScreen));
-      await tester.tap(find.byKey(const ValueKey('send_pane_back_button')));
+      await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
+      await _pumpUntilPresent(tester, find.byType(PayScreen));
+      expect(badgeStore.markCount, 1);
+      await tester.tap(find.byKey(const ValueKey('pay_wizard_back_link')));
       for (
         var i = 0;
-        i < 20 && find.byType(SendScreen).evaluate().isNotEmpty;
+        i < 20 && find.byType(PayScreen).evaluate().isNotEmpty;
         i++
       ) {
         await tester.pump(const Duration(milliseconds: 50));
       }
 
-      expect(find.byType(SendScreen), findsNothing);
-      expect(find.byType(PayFloatingBadge), findsOneWidget);
-      expect(find.text('Pay in USDC'), findsOneWidget);
+      expect(find.byType(PayScreen), findsNothing);
+      expect(find.byType(PayFloatingBadge), findsNothing);
+      expect(find.text('Pay in USDC'), findsNothing);
       expect(find.text('NEW'), findsNothing);
       expect(badgeStore.markCount, 1);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer();
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('home_desktop_pay_button'))),
+      );
+      await tester.pump();
+
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_floating_badge_glow')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_floating_badge_coin')),
+        findsOneWidget,
+      );
+      expect(find.text('Pay in USDC'), findsOneWidget);
+      expect(find.text('NEW'), findsOneWidget);
+
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+
+      expect(find.byType(PayFloatingBadge), findsNothing);
+      expect(find.text('Pay in USDC'), findsNothing);
+      expect(find.text('NEW'), findsNothing);
     },
   );
 
@@ -753,7 +780,7 @@ Widget _appHarness(
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
   PayIntroductionBadgeStore payIntroductionBadgeStore =
-      const _SeenPayIntroductionBadgeStore(),
+      const _ClickedPayIntroductionBadgeStore(),
   bool payIntroductionBadgePersistenceEnabled = true,
   ThemeMode themeMode = ThemeMode.system,
 }) {
@@ -839,26 +866,26 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   }
 }
 
-class _SeenPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  const _SeenPayIntroductionBadgeStore();
+class _ClickedPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  const _ClickedPayIntroductionBadgeStore();
 
   @override
-  Future<bool> hasSeen() async => true;
+  Future<bool> hasClickedPay() async => true;
 
   @override
-  Future<void> markSeen() async {}
+  Future<void> markPayClicked() async {}
 }
 
 class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  bool seen = false;
+  bool clicked = false;
   int markCount = 0;
 
   @override
-  Future<bool> hasSeen() async => seen;
+  Future<bool> hasClickedPay() async => clicked;
 
   @override
-  Future<void> markSeen() async {
-    seen = true;
+  Future<void> markPayClicked() async {
+    clicked = true;
     markCount += 1;
   }
 }

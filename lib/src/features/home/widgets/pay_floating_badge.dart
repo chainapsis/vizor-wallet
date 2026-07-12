@@ -5,10 +5,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/pay_introduction_badge_store.dart';
 
-/// Wraps the desktop Pay button with its persistent floating callout.
+/// Wraps the desktop Pay button with its floating introduction.
 ///
-/// Coin, label, and glow remain visible. Only the `NEW` marker is persisted as
-/// seen and dismissed after navigation/app backgrounding.
+/// Before the first Pay activation, the full treatment is always visible.
+/// Afterwards it returns only while the Pay button is hovered.
 class PayIntroductionBadgeTarget extends ConsumerStatefulWidget {
   const PayIntroductionBadgeTarget({
     super.key,
@@ -25,121 +25,51 @@ class PayIntroductionBadgeTarget extends ConsumerStatefulWidget {
 }
 
 class _PayIntroductionBadgeTargetState
-    extends ConsumerState<PayIntroductionBadgeTarget>
-    with WidgetsBindingObserver {
-  bool _checkStarted = false;
-  bool _showNew = false;
-  bool? _tickerWasEnabled;
-  bool? _routeWasCurrent;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _startCheckIfNeeded();
-  }
-
-  @override
-  void didUpdateWidget(covariant PayIntroductionBadgeTarget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!widget.enabled) {
-      _showNew = false;
-      return;
-    }
-    _startCheckIfNeeded();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final tickerEnabled = TickerMode.valuesOf(context).enabled;
-    final routeIsCurrent = ModalRoute.of(context)?.isCurrent ?? true;
-    if ((_tickerWasEnabled == true && !tickerEnabled) ||
-        (_routeWasCurrent == true && !routeIsCurrent)) {
-      _showNew = false;
-    }
-    _tickerWasEnabled = tickerEnabled;
-    _routeWasCurrent = routeIsCurrent;
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      _hide();
-    }
-  }
-
-  void _startCheckIfNeeded() {
-    if (!widget.enabled || _checkStarted) return;
-    _checkStarted = true;
-    Future<void>(() async {
-      if (ref.read(payIntroductionBadgePersistenceEnabledProvider)) {
-        final store = ref.read(payIntroductionBadgeStoreProvider);
-        try {
-          if (await store.hasSeen()) return;
-          // Persist first: once the user has seen this introduction, a process
-          // exit must not make it appear again on the next launch.
-          await store.markSeen();
-        } catch (error) {
-          debugPrint('Pay introduction badge persistence failed: $error');
-          return;
-        }
-      }
-      if (!mounted || !widget.enabled) return;
-      final lifecycleState = WidgetsBinding.instance.lifecycleState;
-      if (lifecycleState != null &&
-          lifecycleState != AppLifecycleState.resumed) {
-        return;
-      }
-      if (!TickerMode.valuesOf(context).enabled) return;
-      if (ModalRoute.of(context)?.isCurrent == false) return;
-      setState(() => _showNew = true);
-    });
-  }
-
-  void _hide() {
-    if (!_showNew || !mounted) return;
-    setState(() => _showNew = false);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
+    extends ConsumerState<PayIntroductionBadgeTarget> {
+  var _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      key: const ValueKey('pay_introduction_badge_target'),
-      clipBehavior: Clip.none,
-      children: [
-        if (widget.enabled)
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 60,
-            height: 44,
-            child: IgnorePointer(child: _PayFloatingGlow()),
-          ),
-        widget.child,
-        if (widget.enabled)
-          Positioned(
-            // In the Home frame (5407:152492), the 169px badge frame starts
-            // at the Pay button's left edge and overflows to its right.
-            left: 0,
-            top: -65,
-            child: IgnorePointer(
-              child: ExcludeSemantics(
-                child: PayFloatingBadge(
-                  animate: ref.watch(payIntroductionBadgeMotionEnabledProvider),
-                  showGlow: false,
-                  showNew: _showNew,
+    final clicked = ref.watch(payIntroductionBadgeClickedProvider).value;
+    final showIntroduction =
+        widget.enabled && (clicked == false || (clicked == true && _hovered));
+    return MouseRegion(
+      key: const ValueKey('pay_introduction_badge_hover_target'),
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Stack(
+        key: const ValueKey('pay_introduction_badge_target'),
+        clipBehavior: Clip.none,
+        children: [
+          if (showIntroduction)
+            const Positioned(
+              left: 0,
+              top: 0,
+              width: 60,
+              height: 44,
+              child: IgnorePointer(child: _PayFloatingGlow()),
+            ),
+          widget.child,
+          if (showIntroduction)
+            Positioned(
+              // In the Home frame (5407:152492), the 169px badge frame starts
+              // at the Pay button's left edge and overflows to its right.
+              left: 0,
+              top: -65,
+              child: IgnorePointer(
+                child: ExcludeSemantics(
+                  child: PayFloatingBadge(
+                    animate: ref.watch(
+                      payIntroductionBadgeMotionEnabledProvider,
+                    ),
+                    showGlow: false,
+                    showNew: true,
+                  ),
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

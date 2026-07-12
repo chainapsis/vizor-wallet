@@ -41,6 +41,7 @@ import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
+import '../services/pay_introduction_badge_store.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/pay_floating_badge.dart';
@@ -413,6 +414,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onReceive: () => context.push('/receive'),
       onPay: swapFeatureEnabled
           ? () {
+              ref
+                  .read(payIntroductionBadgeClickedProvider.notifier)
+                  .markClicked();
               ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
               context.push('/pay');
             }

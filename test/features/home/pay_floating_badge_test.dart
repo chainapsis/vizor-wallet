@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,16 +10,16 @@ import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_s
 import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
 
 void main() {
-  test('SharedPreferences store remembers the Pay introduction', () async {
+  test('SharedPreferences store remembers a Pay button click', () async {
     SharedPreferences.setMockInitialValues({});
     const store = SharedPreferencesPayIntroductionBadgeStore();
 
-    expect(await store.hasSeen(), isFalse);
-    await store.markSeen();
-    expect(await store.hasSeen(), isTrue);
+    expect(await store.hasClickedPay(), isFalse);
+    await store.markPayClicked();
+    expect(await store.hasClickedPay(), isTrue);
 
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool(payIntroductionBadgeSeenStorageKey), isTrue);
+    expect(prefs.getBool(payIntroductionButtonClickedStorageKey), isTrue);
   });
 
   testWidgets('floating badge matches the Figma geometry and light colors', (
@@ -83,14 +85,24 @@ void main() {
     expect(_coinTranslationY(tester), 0);
   });
 
-  testWidgets('target persists NEW before showing and omits it on restart', (
+  testWidgets('target keeps the full treatment until Pay is clicked', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore();
     await _pumpTarget(tester, store, persistenceEnabled: true);
 
     expect(find.byType(PayFloatingBadge), findsOneWidget);
-    expect(store.markCount, 1);
+    expect(
+      find.byKey(const ValueKey('pay_floating_badge_glow')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pay_floating_badge_coin')),
+      findsOneWidget,
+    );
+    expect(find.text('Pay in USDC'), findsOneWidget);
+    expect(find.text('NEW'), findsOneWidget);
+    expect(store.markCount, 0);
     final targetRect = tester.getRect(
       find.byKey(const ValueKey('pay_introduction_badge_target')),
     );
@@ -104,50 +116,80 @@ void main() {
       Rect.fromLTWH(targetRect.left, targetRect.top, 60, 44),
     );
 
-    await tester.pumpWidget(const SizedBox());
-    await _pumpTarget(tester, store, persistenceEnabled: true);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayIntroductionBadgeTarget)),
+      listen: false,
+    );
+    container.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+    await tester.pumpAndSettle();
 
-    expect(find.byType(PayFloatingBadge), findsOneWidget);
-    expect(find.text('Pay in USDC'), findsOneWidget);
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_glow')), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_coin')), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
     expect(find.text('NEW'), findsNothing);
     expect(store.markCount, 1);
   });
 
-  testWidgets('persistent callout keeps the coin motion after NEW is seen', (
+  testWidgets('clicked target shows the full treatment only while hovered', (
     tester,
   ) async {
-    final store = _FakePayIntroductionBadgeStore()..seen = true;
-    await _pumpTarget(
-      tester,
-      store,
-      persistenceEnabled: true,
-      disableAnimations: false,
-    );
+    final store = _FakePayIntroductionBadgeStore()..clicked = true;
+    await _pumpTarget(tester, store, persistenceEnabled: true);
 
+    expect(find.byType(PayFloatingBadge), findsNothing);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(
+      tester.getCenter(
+        find.byKey(const ValueKey('pay_introduction_badge_target')),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(PayFloatingBadge), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_floating_badge_glow')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pay_floating_badge_coin')),
+      findsOneWidget,
+    );
+    expect(find.text('Pay in USDC'), findsOneWidget);
+    expect(find.text('NEW'), findsOneWidget);
+
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_glow')), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_coin')), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
     expect(find.text('NEW'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(_coinTranslationY(tester), lessThan(0));
   });
 
   testWidgets('target excludes decorative callout semantics', (tester) async {
-    final store = _FakePayIntroductionBadgeStore()..seen = true;
+    final store = _FakePayIntroductionBadgeStore();
     await _pumpTarget(tester, store, persistenceEnabled: true);
 
     expect(find.bySemanticsLabel('Pay in USDC'), findsNothing);
   });
 
-  testWidgets('QA mode bypasses the seen store so the badge can be reviewed', (
-    tester,
-  ) async {
-    final store = _FakePayIntroductionBadgeStore()..seen = true;
-    await _pumpTarget(tester, store);
+  testWidgets(
+    'QA mode bypasses the clicked store so the badge can be reviewed',
+    (tester) async {
+      final store = _FakePayIntroductionBadgeStore()..clicked = true;
+      await _pumpTarget(tester, store);
 
-    expect(find.byType(PayFloatingBadge), findsOneWidget);
-    expect(find.text('NEW'), findsOneWidget);
-    expect(store.markCount, 0);
-  });
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(find.text('NEW'), findsOneWidget);
+      expect(store.markCount, 0);
+    },
+  );
 
-  testWidgets('NEW stays dismissed after navigating away and back', (
+  testWidgets('navigation without a Pay click keeps the full treatment', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore();
@@ -173,7 +215,7 @@ void main() {
     );
     expect(find.byType(PayFloatingBadge), findsOneWidget);
     expect(find.text('Pay in USDC'), findsOneWidget);
-    expect(find.text('NEW'), findsNothing);
+    expect(find.text('NEW'), findsOneWidget);
     expect(store.markCount, 0);
   });
 }
@@ -271,15 +313,15 @@ Future<void> _pumpNavigableTarget(
 }
 
 class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  bool seen = false;
+  bool clicked = false;
   int markCount = 0;
 
   @override
-  Future<bool> hasSeen() async => seen;
+  Future<bool> hasClickedPay() async => clicked;
 
   @override
-  Future<void> markSeen() async {
+  Future<void> markPayClicked() async {
     markCount += 1;
-    seen = true;
+    clicked = true;
   }
 }
