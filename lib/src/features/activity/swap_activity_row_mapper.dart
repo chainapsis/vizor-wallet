@@ -28,6 +28,7 @@ class SwapActivityRowItem {
     this.updatedAt,
     this.receiveWalletTxidHex,
     this.depositWalletTxidHex,
+    this.hasConfirmedDepositEvidence = false,
     this.depositedAmountText,
     this.refundedAmountText,
     this.payMode = false,
@@ -56,6 +57,13 @@ class SwapActivityRowItem {
           (record.direction == SwapDirection.zecToExternal
               ? swapChainTxidToWalletTxidHex(record.originChainTxHash)
               : null),
+      hasConfirmedDepositEvidence:
+          swapHasConfirmedDepositEvidence(
+            originChainTxHash: record.originChainTxHash,
+            depositTxHash: record.depositTxHash,
+            broadcastStatus: record.broadcastStatus,
+          ) ||
+          _isPositiveSwapAmount(record.providerRefundInfo?.depositedAmountText),
       depositedAmountText: record.providerRefundInfo?.depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
@@ -83,6 +91,12 @@ class SwapActivityRowItem {
   /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
   /// suppress the duplicate standalone Sent row.
   final String? depositWalletTxidHex;
+
+  /// Whether the deposit is known to have reached (or potentially reached)
+  /// the network. Kept separate from [depositWalletTxidHex]: a locally-created
+  /// pending broadcast has a txid without confirmed evidence, while a provider
+  /// may report an amount without returning a matchable txid.
+  final bool hasConfirmedDepositEvidence;
 
   /// Provider-reported amount actually detected at the deposit address.
   final String? depositedAmountText;
@@ -277,9 +291,9 @@ String _payActivityAmountText(
     );
   }
   final depositedAmount = item.depositedAmountText?.trim();
+  final hasProviderDepositAmount = _isPositiveSwapAmount(depositedAmount);
   final showsDepositDebit =
-      ((item.depositWalletTxidHex?.trim().isNotEmpty ?? false) ||
-          _isPositiveSwapAmount(depositedAmount)) &&
+      _payActivityRepresentsDepositDebit(item) &&
       (item.status == SwapIntentStatus.failed ||
           item.status == SwapIntentStatus.incompleteDeposit);
   final showsRefundAmount = item.status == SwapIntentStatus.refunded;
@@ -292,11 +306,20 @@ String _payActivityAmountText(
       ? (refundedAmount?.isNotEmpty ?? false)
             ? refundedAmount!
             : item.sellAmountText.trim()
+      : hasProviderDepositAmount &&
+            (item.status == SwapIntentStatus.failed ||
+                item.status == SwapIntentStatus.incompleteDeposit)
+      ? depositedAmount!
       : item.receiveEstimateText.trim();
   if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
     return '-$amount';
   }
   return amount.isEmpty ? '--' : amount;
+}
+
+bool _payActivityRepresentsDepositDebit(SwapActivityRowItem item) {
+  return item.hasConfirmedDepositEvidence &&
+      (item.depositWalletTxidHex?.trim().isNotEmpty ?? false);
 }
 
 bool _isPositiveSwapAmount(String? amountText) {
@@ -369,14 +392,17 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
   return item.status == SwapIntentStatus.refunded;
 }
 
-/// Whether the swap row itself represents the outgoing ZEC deposit, so the
-/// feed may suppress the duplicate standalone Sent row. Refunded and
-/// timed-out rows render their amount unsigned (no outgoing sign), so the
-/// standalone Sent transaction must stay visible there — otherwise the feed
-/// would show a refund credit with no matching debit.
+/// Whether the swap row represents the outgoing ZEC deposit, so the feed may
+/// suppress the duplicate standalone Sent row. Pay rows additionally require
+/// confirmed evidence and a matchable txid; provider amount-only recovery must
+/// leave the standalone Sent row as the sole signed debit.
 bool swapActivityRowAbsorbsDepositLeg(SwapActivityRowItem item) {
-  return item.status != SwapIntentStatus.expired &&
-      !_swapActivityReturnsFunds(item);
+  if (item.status == SwapIntentStatus.expired ||
+      _swapActivityReturnsFunds(item)) {
+    return false;
+  }
+  final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
+  return !payMode || _payActivityRepresentsDepositDebit(item);
 }
 
 /// Swap intents matched against the on-chain transaction list: which
