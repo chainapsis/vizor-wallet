@@ -236,6 +236,7 @@ class PayRecipientActions extends StatelessWidget {
     required this.quoteError,
     required this.onSelectRecipient,
     required this.onAddToContacts,
+    this.enabled = true,
     super.key,
   });
 
@@ -243,6 +244,7 @@ class PayRecipientActions extends StatelessWidget {
   final String? addressError;
   final List<AddressBookContact> contacts;
   final bool busy;
+  final bool enabled;
   final String? quoteError;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
@@ -294,7 +296,7 @@ class PayRecipientActions extends StatelessWidget {
           variant: AppButtonVariant.primary,
           size: AppButtonSize.large,
           minWidth: PayWizardActionMetrics.width,
-          onPressed: busy ? null : onSelectRecipient,
+          onPressed: busy || !enabled ? null : onSelectRecipient,
           child: Text(busy ? 'Fetching quote' : 'Select recipient'),
         ),
       ],

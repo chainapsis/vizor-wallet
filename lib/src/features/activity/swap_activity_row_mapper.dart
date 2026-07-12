@@ -28,6 +28,7 @@ class SwapActivityRowItem {
     this.updatedAt,
     this.receiveWalletTxidHex,
     this.depositWalletTxidHex,
+    this.refundedAmountText,
     this.payMode = false,
   });
 
@@ -50,6 +51,7 @@ class SwapActivityRowItem {
         record.destinationChainTxHash,
       ),
       depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
+      refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
     );
   }
@@ -75,6 +77,9 @@ class SwapActivityRowItem {
   /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
   /// suppress the duplicate standalone Sent row.
   final String? depositWalletTxidHex;
+
+  /// Provider-reported amount actually returned to the source wallet.
+  final String? refundedAmountText;
 
   final bool payMode;
 }
@@ -267,8 +272,13 @@ String _payActivityAmountText(
       (item.status == SwapIntentStatus.failed ||
           item.status == SwapIntentStatus.incompleteDeposit);
   final showsRefundAmount = item.status == SwapIntentStatus.refunded;
-  final amount = showsDepositDebit || showsRefundAmount
+  final refundedAmount = item.refundedAmountText?.trim();
+  final amount = showsDepositDebit
       ? item.sellAmountText.trim()
+      : showsRefundAmount
+      ? (refundedAmount?.isNotEmpty ?? false)
+            ? refundedAmount!
+            : item.sellAmountText.trim()
       : item.receiveEstimateText.trim();
   if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
     return '-$amount';

@@ -3710,6 +3710,55 @@ void main() {
     expect(find.text('Ethereum USDC'), findsNothing);
   });
 
+  testWidgets('swap composer explains an unsupported restored asset', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final baseUsdc = SwapAsset.live(
+      assetId: 'removed-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialPreferences: SwapComposerPreferences(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: baseUsdc,
+          ),
+        ),
+        swapProvider: _FakeSwapProvider(supportedAssets: const []),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('USDC on Base is not currently supported.'),
+      findsOneWidget,
+    );
+    final reviewButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_review_button')),
+    );
+    expect(reviewButton.onPressed, isNull);
+  });
+
   testWidgets('swap asset selector exposes multi-chain external assets', (
     tester,
   ) async {

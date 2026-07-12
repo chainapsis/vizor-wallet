@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Material, MaterialApp, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon_hover_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -60,6 +61,7 @@ Widget _recipientStep({
   VoidCallback? onSelectRecipient,
   VoidCallback? onAddToContacts,
   String? quoteError,
+  bool actionsEnabled = true,
 }) {
   final step = PayRecipientStep(
     controller: TextEditingController(text: typedAddress),
@@ -77,6 +79,7 @@ Widget _recipientStep({
     addressError: addressError,
     contacts: contacts,
     busy: false,
+    enabled: actionsEnabled,
     quoteError: quoteError,
     onSelectRecipient: onSelectRecipient ?? () {},
     onAddToContacts: onAddToContacts ?? () {},
@@ -662,6 +665,32 @@ void main() {
         find.byKey(const ValueKey('pay_select_recipient_button')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('unsupported asset disables recipient review with an error', (
+      tester,
+    ) async {
+      var reviewRequested = false;
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _unknownAddress,
+            quoteError: 'USDC on Base is not currently supported.',
+            actionsEnabled: false,
+            onSelectRecipient: () => reviewRequested = true,
+          ),
+        ),
+      );
+
+      expect(
+        find.text('USDC on Base is not currently supported.'),
+        findsOneWidget,
+      );
+      final button = tester.widget<AppButton>(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      expect(button.onPressed, isNull);
+      expect(reviewRequested, isFalse);
     });
 
     testWidgets('row selection does not request review until the CTA', (
