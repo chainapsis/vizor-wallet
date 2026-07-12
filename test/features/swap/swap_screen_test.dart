@@ -2995,6 +2995,59 @@ void main() {
     expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
   });
 
+  testWidgets(
+    'swap falls back to USDC without preferences and preserves Pay asset',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          sessionStore: sessionStore,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+
+      notifier.preparePayFromShieldedZec();
+      notifier.selectPayExternalAsset(SwapAsset.sol);
+      await tester.pump();
+
+      expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+
+      notifier.prepareSwapComposer();
+
+      // The fallback is synchronous, so Pay's asset never flashes in Swap
+      // while the optional persisted preferences are loading.
+      var swapState = container.read(swapStateProvider);
+      expect(swapState.payMode, isFalse);
+      expect(swapState.direction, SwapDirection.zecToExternal);
+      expect(swapState.externalAsset, SwapAsset.usdc);
+
+      await tester.pump();
+
+      swapState = container.read(swapStateProvider);
+      expect(swapState.externalAsset, SwapAsset.usdc);
+      expect(sessionStore.savedPreferences, isNull);
+
+      notifier.preparePayFromShieldedZec();
+      await tester.pump();
+
+      expect(container.read(swapStateProvider).payMode, isTrue);
+      expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    },
+  );
+
   testWidgets('pay persists its asset separately and shares only slippage', (
     tester,
   ) async {

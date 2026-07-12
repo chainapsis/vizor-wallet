@@ -286,9 +286,15 @@ class SwapNotifier extends Notifier<SwapState> {
   void prepareSwapComposer() {
     if (!state.payMode) return;
     _clearReviewState();
+    final supportedAssets = state.supportedExternalAssets;
+    final defaultSwapAsset =
+        _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
+        (supportedAssets.isEmpty ? SwapAsset.usdc : supportedAssets.first);
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
         state.copyWith(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: defaultSwapAsset,
           quoteMode: SwapQuoteMode.exactInput,
           amountText: '',
           receiveAmountText: '',
