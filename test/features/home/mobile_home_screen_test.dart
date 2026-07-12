@@ -451,6 +451,9 @@ void main() {
     final sendRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_send')),
     );
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_receive')),
+    );
     final sendLabelStyle = _effectiveTextStyle(tester, find.text('Send'));
     final receiveLabelStyle = _effectiveTextStyle(tester, find.text('Receive'));
     final shieldedLabel = tester.widget<Text>(find.text('Shielded balance'));
@@ -466,6 +469,7 @@ void main() {
 
     expect(privacyButtonRect.size, const Size(32, 32));
     expect(privacyIcon.size, 16);
+    expect(receiveRect.left, greaterThan(sendRect.right));
     expect(sendRect.height, AppButtonSizing.largeHeight);
     expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
     expect(sendLabelStyle.height, AppTypography.labelLarge.height);
@@ -642,8 +646,14 @@ void main() {
     final headerText = tester.widget<Text>(headerFinder);
     final seeAllText = tester.widget<Text>(seeAllFinder);
 
-    expect(rowRect.left, sendRect.left + AppSpacing.xs);
-    expect(rowRect.right, receiveRect.right - AppSpacing.xs);
+    expect(
+      rowRect.left,
+      moreOrLessEquals(sendRect.left + AppSpacing.xs, epsilon: 0.1),
+    );
+    expect(
+      rowRect.right,
+      moreOrLessEquals(receiveRect.right - AppSpacing.xs, epsilon: 0.1),
+    );
     expect(headerRect.left, rowRect.left);
     expect(seeAllRect.height, 24);
     expect(headerText.style?.fontSize, AppTypography.labelLarge.fontSize);

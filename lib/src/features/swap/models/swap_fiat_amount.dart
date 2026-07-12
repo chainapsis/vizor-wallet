@@ -22,7 +22,7 @@ double? swapUsdUnitPriceFromPrices(
   final direct = _usableUnitPrice(usdPrices[asset]);
   if (direct != null) return direct;
   for (final entry in usdPrices.entries) {
-    if (entry.key.hasSameMarketAs(asset)) {
+    if (entry.key.hasSamePricingMarketAs(asset)) {
       final price = _usableUnitPrice(entry.value);
       if (price != null) return price;
     }
@@ -63,7 +63,7 @@ String? swapTokenAmountTextFromFiatText(
   if (fiatAmount == null || fiatAmount <= 0) return '';
   final usdUnitPrice = swapUsdUnitPriceForAsset(state, asset: asset);
   if (usdUnitPrice == null || usdUnitPrice <= 0) return null;
-  return asset.formatAmountDown(fiatAmount / usdUnitPrice);
+  return asset.formatAmountDownForInput(fiatAmount / usdUnitPrice);
 }
 
 /// Token-equivalent meta line shown while the card is in fiat input mode.

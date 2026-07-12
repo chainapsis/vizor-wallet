@@ -33,6 +33,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.onCopy,
     this.showTitle = true,
     this.addressBookContacts = const [],
+    this.payMode = false,
     super.key,
   });
 
@@ -58,6 +59,7 @@ class SwapReviewPageContent extends StatelessWidget {
   /// The mobile host renders its own top-nav title; it hides this
   /// inline one so "Review swap" doesn't appear twice.
   final bool showTitle;
+  final bool payMode;
 
   @override
   Widget build(BuildContext context) {
@@ -70,8 +72,8 @@ class SwapReviewPageContent extends StatelessWidget {
         children: [
           if (showTitle) ...[
             Text(
-              'Review swap',
-              key: const ValueKey('swap_review_title'),
+              payMode ? 'Confirm payment' : 'Review swap',
+              key: ValueKey(payMode ? 'pay_review_title' : 'swap_review_title'),
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
                 fontWeight: FontWeight.w600,
@@ -80,16 +82,24 @@ class SwapReviewPageContent extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.base),
           ],
-          SwapReviewInfo(
-            pay: _paySideData(),
-            receive: _receiveSideData(),
-            onCopy: onCopy,
-          ),
-          const SizedBox(height: AppSpacing.base),
-          _SwapReviewDetailCard(
-            quote: quote,
-            slippageToleranceTextOverride: slippageToleranceTextOverride,
-          ),
+          if (payMode && quote.direction.sendsZec)
+            _PayReviewCard(
+              quote: quote,
+              addressPlan: addressPlan,
+              onCopy: onCopy,
+            )
+          else ...[
+            SwapReviewInfo(
+              pay: _paySideData(),
+              receive: _receiveSideData(),
+              onCopy: onCopy,
+            ),
+            const SizedBox(height: AppSpacing.base),
+            _SwapReviewDetailCard(
+              quote: quote,
+              slippageToleranceTextOverride: slippageToleranceTextOverride,
+            ),
+          ],
           if (amountWarning != null) ...[
             const SizedBox(height: AppSpacing.sm),
             _ReviewNotice(
@@ -123,9 +133,11 @@ class SwapReviewPageContent extends StatelessWidget {
     if (sendsZec) {
       return SwapReviewInfoSideData(
         asset: quote.sellAsset,
-        label: "You're paying",
+        label: payMode ? 'You pay' : "You're paying",
         amountText: quote.sellAmountText,
-        detailText: payFiatTextOverride ?? _payFiatText(quote),
+        detailText: payMode
+            ? 'Privately, from shielded balance'
+            : payFiatTextOverride ?? _payFiatText(quote),
       );
     }
     final refundAddress = addressPlan.oneClickRefundTo.trim();
@@ -154,7 +166,7 @@ class SwapReviewPageContent extends StatelessWidget {
     final recipientAddress = addressPlan.userExternalAddress.trim();
     return SwapReviewInfoSideData(
       asset: quote.receiveAsset,
-      label: "You're receiving",
+      label: payMode ? 'Recipient gets' : "You're receiving",
       amountText: quote.receiveEstimateText,
       detailText:
           'To: ${_contactAwareAddressText(recipientAddress, quote.receiveAsset)} '
@@ -177,6 +189,183 @@ class SwapReviewPageContent extends StatelessWidget {
   }
 }
 
+class _PayReviewCard extends StatelessWidget {
+  const _PayReviewCard({
+    required this.quote,
+    required this.addressPlan,
+    required this.onCopy,
+  });
+
+  final SwapQuote quote;
+  final SwapAddressPlan addressPlan;
+  final ValueChanged<String>? onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final recipientAddress = addressPlan.userExternalAddress.trim();
+    final feeText = quote.totalFeesText?.trim();
+    return ReviewWrapCard(
+      key: const ValueKey('pay_review_summary'),
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Recipient gets',
+              textAlign: TextAlign.center,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.text.secondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                quote.receiveEstimateText,
+                maxLines: 1,
+                style: appSerifDisplayStyle(
+                  color: colors.text.accent,
+                ).copyWith(fontSize: 46, height: 1),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            _PayRecipientPill(
+              asset: quote.receiveAsset,
+              address: recipientAddress,
+              onCopy: onCopy,
+            ),
+          ],
+        ),
+        const ReviewWrapDivider(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'You pay',
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '≈ ${quote.sellAmountText}',
+                      maxLines: 1,
+                      style: appSerifDisplayStyle(
+                        color: colors.text.accent,
+                      ).copyWith(fontSize: 20, height: 1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: colors.icon.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    'Privately, from shielded balance',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const ReviewWrapDivider(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ReviewListRow(label: 'Rate', value: quote.rateText),
+            if (feeText != null && feeText.isNotEmpty)
+              ReviewListRow(label: 'Network + conversion fees', value: feeText),
+            ReviewListRow(label: 'Quote holds', value: quote.expiryLabel),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PayRecipientPill extends StatelessWidget {
+  const _PayRecipientPill({
+    required this.asset,
+    required this.address,
+    required this.onCopy,
+  });
+
+  final SwapAsset asset;
+  final String address;
+  final ValueChanged<String>? onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final copyable = address.isNotEmpty && onCopy != null;
+    return Center(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: copyable ? () => onCopy!(address) : null,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 300),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xxs,
+          ),
+          decoration: ShapeDecoration(
+            color: colors.background.neutralSubtleOpacity,
+            shape: const StadiumBorder(),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  '${asset.chainLabel} · ${compactSwapAddress(address)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ),
+              if (copyable) ...[
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(
+                  AppIcons.copy,
+                  size: AppIconSize.medium,
+                  color: colors.icon.regular,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SwapReviewPageActions extends StatelessWidget {
   const SwapReviewPageActions({
     required this.expired,
@@ -186,6 +375,8 @@ class SwapReviewPageActions extends StatelessWidget {
     required this.onCancelReview,
     required this.onReviewAgain,
     required this.onStartIntent,
+    this.payMode = false,
+    this.receiveAmountText,
     super.key,
   });
 
@@ -196,16 +387,24 @@ class SwapReviewPageActions extends StatelessWidget {
   final VoidCallback onCancelReview;
   final VoidCallback onReviewAgain;
   final VoidCallback onStartIntent;
+  final bool payMode;
+  final String? receiveAmountText;
 
   @override
   Widget build(BuildContext context) {
-    final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
+    final startingLabel = payMode
+        ? 'Paying'
+        : sendsZec
+        ? 'Sending'
+        : 'Locking quote';
     final primaryLabel = expired
         ? 'Review again'
         : startBlockedReason != null
         ? 'Not enough ZEC'
         : starting
         ? startingLabel
+        : payMode
+        ? _payReviewActionLabel(receiveAmountText)
         : 'Confirm swap';
     final showPrimaryArrow =
         !expired && !starting && startBlockedReason == null;
@@ -230,7 +429,9 @@ class SwapReviewPageActions extends StatelessWidget {
             size: AppButtonSize.large,
             minWidth: 196,
             leading: showPrimaryArrow
-                ? const AppIcon(AppIcons.swapArrows)
+                ? payMode
+                      ? const AppIcon(AppIcons.coins)
+                      : const AppIcon(AppIcons.swapArrows)
                 : null,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 184),
@@ -254,6 +455,11 @@ class SwapReviewPageActions extends StatelessWidget {
       ),
     );
   }
+}
+
+String _payReviewActionLabel(String? receiveAmountText) {
+  final amount = compactSwapAmountText(receiveAmountText ?? '').trim();
+  return amount.isEmpty ? 'Confirm payment' : 'Pay $amount';
 }
 
 /// Figma 'Review Wrap': the slippage / minimum / fee summary card, built on

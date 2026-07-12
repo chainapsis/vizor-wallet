@@ -17,7 +17,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
-import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
@@ -58,6 +59,7 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 
 Widget _app({
   _MobileDelayedQuoteSwapProvider? swapProvider,
+  SwapComposerPreferencesStore? composerPreferencesStore,
   List<AddressBookContact> addressBookContacts = const [],
 }) => ProviderScope(
   overrides: [
@@ -67,6 +69,10 @@ Widget _app({
     ),
     if (swapProvider != null)
       swapIntentProvider.overrideWithValue(swapProvider),
+    if (composerPreferencesStore != null)
+      swapComposerPreferencesStoreProvider.overrideWithValue(
+        composerPreferencesStore,
+      ),
     syncProvider.overrideWith(
       () => FakeSyncNotifier(
         SyncState(
@@ -444,6 +450,38 @@ void main() {
     },
   );
 
+  testWidgets('unsupported restored asset shows why review is unavailable', (
+    tester,
+  ) async {
+    final baseUsdc = SwapAsset.live(
+      assetId: 'removed-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    await tester.pumpWidget(
+      _app(
+        swapProvider: _MobileDelayedQuoteSwapProvider(
+          supportedAssets: const [],
+        ),
+        composerPreferencesStore: _MobileComposerPreferencesStore(
+          SwapComposerPreferences(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: baseUsdc,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('USDC on Base is not currently supported.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('address editor remember toggle has no nickname or avatar form', (
     tester,
   ) async {
@@ -567,7 +605,10 @@ Future<void> _setNarrowMobileViewport(WidgetTester tester) async {
 }
 
 class _MobileDelayedQuoteSwapProvider implements SwapProvider {
+  _MobileDelayedQuoteSwapProvider({this.supportedAssets = swapExternalAssets});
+
   final _quoteGate = Completer<void>();
+  final List<SwapAsset> supportedAssets;
 
   void completeQuote() {
     if (!_quoteGate.isCompleted) _quoteGate.complete();
@@ -578,7 +619,7 @@ class _MobileDelayedQuoteSwapProvider implements SwapProvider {
 
   @override
   Future<List<SwapAsset>> listSupportedExternalAssets() async =>
-      swapExternalAssets;
+      supportedAssets;
 
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
@@ -626,6 +667,25 @@ class _MobileDelayedQuoteSwapProvider implements SwapProvider {
       providerLabel: providerLabel,
     );
     return SwapIntentSnapshot.fromQuote(quote, id: depositAddress);
+  }
+}
+
+class _MobileComposerPreferencesStore implements SwapComposerPreferencesStore {
+  _MobileComposerPreferencesStore(this.preferences);
+
+  SwapComposerPreferences? preferences;
+
+  @override
+  Future<SwapComposerPreferences?> loadPreferences({
+    required String accountUuid,
+  }) async => preferences;
+
+  @override
+  Future<void> savePreferences({
+    required String accountUuid,
+    required SwapComposerPreferences preferences,
+  }) async {
+    this.preferences = preferences;
   }
 }
 

@@ -52,6 +52,7 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -314,6 +315,7 @@ String? appRedirect({
   final isUnlockFlow = isUnlock || isLostPassword;
   final isSwap =
       state.matchedLocation.startsWith('/swap') ||
+      state.matchedLocation.startsWith('/pay') ||
       state.matchedLocation.startsWith('/activity/swap');
   final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
@@ -730,6 +732,20 @@ List<RouteBase> _desktopRoutes() => [
       final extra = state.extra;
       return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
     },
+  ),
+  GoRoute(
+    path: '/pay',
+    builder: (_, state) {
+      final args = state.extra;
+      return PayScreen(
+        preservePreparedComposer:
+            args is PayComposerNavigationArgs && args.preservePreparedComposer,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/pay/review',
+    builder: (_, _) => const SwapReviewScreen(payMode: true),
   ),
   GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
   GoRoute(path: '/swap/review', builder: (_, _) => const SwapReviewScreen()),

@@ -4,7 +4,7 @@ import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
 
-const defaultSwapSlippageBps = 100;
+const defaultSwapSlippageBps = 200;
 const swapSlippagePresetBps = <int>[50, 100, 200];
 const swapQuoteDifferenceWarningThreshold = 0.05;
 
@@ -56,6 +56,7 @@ class SwapState {
     this.supportedExternalAssets = swapExternalAssets,
     this.indicativeExternalPerZec = const {},
     this.indicativeUsdPrices = const {},
+    this.pricingLoading = false,
     this.reviewQuote,
     this.reviewAddressPlan,
     this.reviewAccountUuid,
@@ -70,6 +71,7 @@ class SwapState {
     this.depositTxHashText = '',
     this.depositSubmitting = false,
     this.selectedIntentId,
+    this.payMode = false,
   });
 
   final SwapDirection direction;
@@ -89,6 +91,10 @@ class SwapState {
   final List<SwapAsset> supportedExternalAssets;
   final Map<SwapAsset, double> indicativeExternalPerZec;
   final Map<SwapAsset, double> indicativeUsdPrices;
+
+  /// True only while the supported-asset/indicative-price snapshot is being
+  /// loaded or refreshed. Live review quote submission uses [quoteLoading].
+  final bool pricingLoading;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
   final String? reviewAccountUuid;
@@ -103,6 +109,7 @@ class SwapState {
   final String depositTxHashText;
   final bool depositSubmitting;
   final String? selectedIntentId;
+  final bool payMode;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -190,11 +197,27 @@ class SwapState {
     return addressFormatIssue(network, trimmed);
   }
 
+  bool get externalAssetIsSupported {
+    for (final candidate in supportedExternalAssets) {
+      if (candidate == externalAsset ||
+          candidate.hasSameMarketAs(externalAsset)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? get externalAssetSupportError {
+    if (pricingLoading || externalAssetIsSupported) return null;
+    return '${externalAsset.symbol} on ${externalAsset.chainLabel} is not currently supported.';
+  }
+
   bool get canReviewQuote =>
       quoteAmount != null &&
       quoteAmountPrecisionError == null &&
       draftAddressPlan != null &&
       destinationAddressFormatError == null &&
+      externalAssetIsSupported &&
       !quoteLoading;
 
   bool get canSubmitDepositTx =>
@@ -265,6 +288,7 @@ class SwapState {
     List<SwapAsset>? supportedExternalAssets,
     Map<SwapAsset, double>? indicativeExternalPerZec,
     Map<SwapAsset, double>? indicativeUsdPrices,
+    bool? pricingLoading,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
     String? reviewAccountUuid,
@@ -279,6 +303,7 @@ class SwapState {
     String? depositTxHashText,
     bool? depositSubmitting,
     String? selectedIntentId,
+    bool? payMode,
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearStatusError = false,
@@ -309,6 +334,7 @@ class SwapState {
       indicativeExternalPerZec:
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,
+      pricingLoading: pricingLoading ?? this.pricingLoading,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
       reviewAddressPlan: clearReview
           ? null
@@ -331,6 +357,7 @@ class SwapState {
       selectedIntentId: clearSelectedIntent
           ? null
           : selectedIntentId ?? this.selectedIntentId,
+      payMode: payMode ?? this.payMode,
     );
   }
 }

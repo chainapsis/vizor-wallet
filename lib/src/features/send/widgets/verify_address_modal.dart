@@ -19,7 +19,7 @@ enum VerifyAddressModalVariant {
 }
 
 /// Address pool copy/icon used by the unknown-recipient modal header.
-enum VerifyAddressModalAddressKind { shielded, transparent }
+enum VerifyAddressModalAddressKind { shielded, transparent, external }
 
 /// The address verification modal opened from "Show full address" on the
 /// send review screen (and later the received receipt).
@@ -124,6 +124,10 @@ class VerifyAddressModal extends StatelessWidget {
           VerifyAddressModalAddressKind.transparent => (
             AppIcons.transparentBalance,
             'Unknown transparent address',
+          ),
+          VerifyAddressModalAddressKind.external => (
+            AppIcons.wallet,
+            'Recipient address',
           ),
         };
         return Row(

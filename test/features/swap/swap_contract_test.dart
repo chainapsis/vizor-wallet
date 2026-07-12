@@ -4,6 +4,32 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 void main() {
   const validEvmRecipient = '0x52908400098527886E0F7030069857D2E4169EE7';
 
+  test('defaults Swap and Pay composers to 2% slippage', () {
+    const swapState = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [],
+    );
+    const payState = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [],
+      payMode: true,
+    );
+
+    expect(defaultSwapSlippageBps, 200);
+    expect(swapState.slippageBps, 200);
+    expect(payState.slippageBps, 200);
+  });
+
   test('blocks review when token amount exceeds asset decimals', () {
     const state = SwapState(
       direction: SwapDirection.zecToExternal,
@@ -48,6 +74,45 @@ void main() {
 
     expect(fixed.destinationAddressFormatError, isNull);
     expect(fixed.canReviewQuote, isTrue);
+  });
+
+  test('blocks review until the selected dynamic asset is supported', () {
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'saved-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final liveBaseUsdc = SwapAsset.live(
+      assetId: 'live-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final state = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '100',
+      destinationText: validEvmRecipient,
+      externalAsset: savedBaseUsdc,
+      reviewVisible: false,
+      intents: const [],
+      quoteMode: SwapQuoteMode.exactOutput,
+      supportedExternalAssets: const [SwapAsset.usdc],
+    );
+
+    expect(state.externalAssetIsSupported, isFalse);
+    expect(
+      state.externalAssetSupportError,
+      'USDC on Base is not currently supported.',
+    );
+    expect(state.canReviewQuote, isFalse);
+
+    final supported = state.copyWith(supportedExternalAssets: [liveBaseUsdc]);
+
+    expect(supported.externalAssetIsSupported, isTrue);
+    expect(supported.externalAssetSupportError, isNull);
+    expect(supported.canReviewQuote, isTrue);
   });
 
   test(

@@ -28,9 +28,22 @@ class SwapActivityRowItem {
     this.updatedAt,
     this.receiveWalletTxidHex,
     this.depositWalletTxidHex,
+    this.hasConfirmedDepositEvidence = false,
+    this.depositedAmountText,
+    this.refundedAmountText,
+    this.payMode = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
+    final depositedAmountText = record.providerRefundInfo?.depositedAmountText;
+    final hasProviderDepositEvidence = swapHasProviderObservedDepositEvidence(
+      status: record.status,
+      originChainTxHash: record.originChainTxHash,
+      depositedAmountText: depositedAmountText,
+    );
+    final acceptsLocalBroadcastEvidence =
+        record.status != SwapIntentStatus.failed &&
+        record.status != SwapIntentStatus.expired;
     return SwapActivityRowItem(
       intentId: record.id,
       providerLabel: record.providerLabel,
@@ -48,7 +61,22 @@ class SwapActivityRowItem {
       receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
         record.destinationChainTxHash,
       ),
-      depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
+      depositWalletTxidHex:
+          swapChainTxidToWalletTxidHex(record.depositTxHash) ??
+          (record.direction == SwapDirection.zecToExternal
+              ? swapChainTxidToWalletTxidHex(record.originChainTxHash)
+              : null),
+      hasConfirmedDepositEvidence:
+          hasProviderDepositEvidence ||
+          (acceptsLocalBroadcastEvidence &&
+              swapHasConfirmedDepositEvidence(
+                originChainTxHash: record.originChainTxHash,
+                depositTxHash: record.depositTxHash,
+                broadcastStatus: record.broadcastStatus,
+              )),
+      depositedAmountText: depositedAmountText,
+      refundedAmountText: record.providerRefundInfo?.refundedAmountText,
+      payMode: record.payMode,
     );
   }
 
@@ -73,6 +101,20 @@ class SwapActivityRowItem {
   /// Wallet-order txid of our ZEC deposit broadcast (ZEC→external), used to
   /// suppress the duplicate standalone Sent row.
   final String? depositWalletTxidHex;
+
+  /// Whether the deposit is known to have reached (or potentially reached)
+  /// the network. Kept separate from [depositWalletTxidHex]: a locally-created
+  /// pending broadcast has a txid without confirmed evidence, while a provider
+  /// may report an amount without returning a matchable txid.
+  final bool hasConfirmedDepositEvidence;
+
+  /// Provider-reported amount actually detected at the deposit address.
+  final String? depositedAmountText;
+
+  /// Provider-reported amount actually returned to the source wallet.
+  final String? refundedAmountText;
+
+  final bool payMode;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -99,23 +141,30 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
     stableId: 'swap:${item.intentId}',
-    title: _swapActivityTitle(item.status),
-    leadingIconName: AppIcons.swapArrows,
+    title: payMode
+        ? _payActivityTitle(item.status)
+        : _swapActivityTitle(item.status),
+    leadingIconName: payMode ? AppIcons.coins : AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
-    subtitle: returnsFunds
+    subtitle: payMode
+        ? _payActivitySubtitle(receiveAsset)
+        : returnsFunds
         ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
-      _swapActivityAmountText(
-        item,
-        includeSign: !(returnsFunds || timedOut),
-        privacyModeEnabled: privacyModeEnabled,
-      ),
+      payMode
+          ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)
+          : _swapActivityAmountText(
+              item,
+              includeSign: !(returnsFunds || timedOut),
+              privacyModeEnabled: privacyModeEnabled,
+            ),
     ),
     amountIconName: returnsFunds ? AppIcons.uturnUp : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
@@ -168,6 +217,9 @@ List<ActivityRowData> _swapActivityChildRows({
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
+  if (item.payMode && direction == SwapDirection.zecToExternal) {
+    return const [];
+  }
   if (item.status != SwapIntentStatus.complete) return const [];
 
   final colors = context.colors;
@@ -237,6 +289,77 @@ String _swapActivityReceiveAmountText(
   return '+$amount';
 }
 
+String _payActivityAmountText(
+  SwapActivityRowItem item, {
+  required bool privacyModeEnabled,
+}) {
+  if (privacyModeEnabled) {
+    return hideAmountIfPrivacyMode(
+      '',
+      privacyModeEnabled: true,
+      maskLength: _swapActivityAmountPrivacyMaskLength,
+    );
+  }
+  final depositedAmount = item.depositedAmountText?.trim();
+  final hasProviderDepositAmount = _isPositiveSwapAmount(depositedAmount);
+  final showsDepositDebit =
+      _payActivityRepresentsDepositDebit(item) &&
+      (item.status == SwapIntentStatus.failed ||
+          item.status == SwapIntentStatus.incompleteDeposit);
+  final showsRefundAmount = item.status == SwapIntentStatus.refunded;
+  final refundedAmount = item.refundedAmountText?.trim();
+  final amount = showsDepositDebit
+      ? hasProviderDepositAmount
+            ? depositedAmount!
+            : item.sellAmountText.trim()
+      : showsRefundAmount
+      ? (refundedAmount?.isNotEmpty ?? false)
+            ? refundedAmount!
+            : item.sellAmountText.trim()
+      : hasProviderDepositAmount &&
+            (item.status == SwapIntentStatus.failed ||
+                item.status == SwapIntentStatus.incompleteDeposit)
+      ? depositedAmount!
+      : item.receiveEstimateText.trim();
+  if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
+    return '-$amount';
+  }
+  return amount.isEmpty ? '--' : amount;
+}
+
+bool _payActivityRepresentsDepositDebit(SwapActivityRowItem item) {
+  return item.hasConfirmedDepositEvidence &&
+      (item.depositWalletTxidHex?.trim().isNotEmpty ?? false);
+}
+
+bool _isPositiveSwapAmount(String? amountText) {
+  if (amountText == null || amountText.isEmpty) return false;
+  final numericText = amountText
+      .split(RegExp(r'\s+'))
+      .first
+      .replaceAll(',', '');
+  final amount = double.tryParse(numericText);
+  return amount != null && amount.isFinite && amount > 0;
+}
+
+String _payActivityTitle(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.complete => 'Paid',
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.refunded => 'Payment failed',
+    _ => 'Payment in progress',
+  };
+}
+
+String _payActivitySubtitle(SwapAsset? receiveAsset) {
+  final network = receiveAsset?.chainLabel;
+  if (network == null || network.isEmpty) {
+    return 'from shielded ZEC';
+  }
+  return 'from shielded ZEC · $network';
+}
+
 String _swapActivityStatusText(
   SwapIntentStatus status,
   _SwapActivityProgress? progress,
@@ -279,14 +402,17 @@ bool _swapActivityReturnsFunds(SwapActivityRowItem item) {
   return item.status == SwapIntentStatus.refunded;
 }
 
-/// Whether the swap row itself represents the outgoing ZEC deposit, so the
-/// feed may suppress the duplicate standalone Sent row. Refunded and
-/// timed-out rows render their amount unsigned (no outgoing sign), so the
-/// standalone Sent transaction must stay visible there — otherwise the feed
-/// would show a refund credit with no matching debit.
+/// Whether the swap row represents the outgoing ZEC deposit, so the feed may
+/// suppress the duplicate standalone Sent row. Pay rows additionally require
+/// confirmed evidence and a matchable txid; provider amount-only recovery must
+/// leave the standalone Sent row as the sole signed debit.
 bool swapActivityRowAbsorbsDepositLeg(SwapActivityRowItem item) {
-  return item.status != SwapIntentStatus.expired &&
-      !_swapActivityReturnsFunds(item);
+  if (item.status == SwapIntentStatus.expired ||
+      _swapActivityReturnsFunds(item)) {
+    return false;
+  }
+  final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
+  return !payMode || _payActivityRepresentsDepositDebit(item);
 }
 
 /// Swap intents matched against the on-chain transaction list: which
@@ -340,7 +466,9 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
       if (receiveHex != null && txHex == receiveHex) {
         receiveTxByIntent[item.intentId] = tx;
         absorbedTxidHexes.add(txHex);
-      } else if (depositHex != null && txHex == depositHex) {
+      } else if (depositHex != null &&
+          txHex == depositHex &&
+          !tx.expiredUnmined) {
         absorbedTxidHexes.add(txHex);
       }
     }

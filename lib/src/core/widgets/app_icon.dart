@@ -70,6 +70,7 @@ abstract final class AppIcons {
   static const moneyBag = 'money_bag';
   static const night = 'night';
   static const options = 'options';
+  static const paid = 'paid';
   static const plane = 'plane';
   static const plus = 'plus';
   static const qr = 'qr';

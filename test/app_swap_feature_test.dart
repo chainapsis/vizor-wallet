@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
@@ -215,6 +216,9 @@ Widget _appHarness(
         _bootstrap(initialLocation, network: network),
       ),
       syncProvider.overrideWith(() => FakeSyncNotifier(_syncedSyncState)),
+      // The coin bob loops forever, which would break pumpAndSettle here;
+      // motion itself is covered by pay_floating_badge_test.
+      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapFeatureOverride != null)
         swapFeatureOverride
       else if (swapEnabled != null)

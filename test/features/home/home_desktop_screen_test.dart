@@ -11,12 +11,15 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
+import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
@@ -294,6 +297,173 @@ void main() {
 
     expect(find.byType(ReceiveScreen), findsOneWidget);
   });
+
+  testWidgets('home desktop pay action opens exact-output pay screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sendRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_send_button')),
+    );
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_receive_button')),
+    );
+    final payRect = tester.getRect(
+      find.byKey(const ValueKey('home_desktop_pay_button')),
+    );
+    final payIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('home_desktop_pay_button')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    // Icon-only 60px pay entry per Figma 5407:152492.
+    expect(payIcon.size, 20);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('home_desktop_pay_button')),
+        matching: find.byType(Tooltip),
+      ),
+      findsNothing,
+    );
+    expect(payRect.width, moreOrLessEquals(60, epsilon: 0.1));
+    expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
+    expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
+    expect(receiveRect.left, greaterThan(sendRect.right));
+    expect(payRect.left, greaterThan(receiveRect.right));
+    expect(find.byType(PayIntroductionBadgeTarget), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
+    await _pumpUntilPresent(tester, find.byType(PayScreen));
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+    );
+    final state = container.read(swapStateProvider);
+    expect(find.byType(PayScreen), findsOneWidget);
+    // The wizard opens on the amount-first step.
+    expect(find.byKey(const ValueKey('pay_wizard_title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_amount_step')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_amount_input')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      findsNothing,
+    );
+    expect(state.direction, SwapDirection.zecToExternal);
+    expect(state.quoteMode, SwapQuoteMode.exactOutput);
+    expect(state.payMode, isTrue);
+    expect(state.amountText, isEmpty);
+    expect(state.receiveAmountText, isEmpty);
+    expect(state.destinationText, isEmpty);
+  });
+
+  testWidgets('home desktop hides pay when swap is disabled', (tester) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: false,
+        payIntroductionBadgeStore: badgeStore,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('home_desktop_pay_button')), findsNothing);
+    expect(find.byType(PayIntroductionBadgeTarget), findsNothing);
+    expect(badgeStore.markCount, 0);
+  });
+
+  testWidgets(
+    'home hides the treatment after Pay click and restores it on hover',
+    (tester) async {
+      final badgeStore = _FakePayIntroductionBadgeStore();
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          payIntroductionBadgeStore: badgeStore,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      );
+      await _pumpUntilPresent(tester, find.text('NEW'));
+
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(find.text('NEW'), findsOneWidget);
+      expect(badgeStore.markCount, 0);
+
+      await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
+      await _pumpUntilPresent(tester, find.byType(PayScreen));
+      expect(badgeStore.markCount, 1);
+      await tester.tap(find.byKey(const ValueKey('pay_wizard_back_link')));
+      for (
+        var i = 0;
+        i < 20 && find.byType(PayScreen).evaluate().isNotEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.byType(PayScreen), findsNothing);
+      expect(find.byType(PayFloatingBadge), findsNothing);
+      expect(find.text('Pay in USDC'), findsNothing);
+      expect(find.text('NEW'), findsNothing);
+      expect(badgeStore.markCount, 1);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer();
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('home_desktop_pay_button'))),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+
+      expect(find.byType(PayFloatingBadge), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_floating_badge_glow')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_floating_badge_coin')),
+        findsOneWidget,
+      );
+      expect(find.text('Pay in USDC'), findsOneWidget);
+      expect(find.text('NEW'), findsOneWidget);
+
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 121));
+      await tester.pump();
+
+      expect(find.byType(PayFloatingBadge), findsNothing);
+      expect(find.text('Pay in USDC'), findsNothing);
+      expect(find.text('NEW'), findsNothing);
+    },
+  );
 
   testWidgets('home desktop see all action opens activity screen', (
     tester,
@@ -612,6 +782,9 @@ Widget _appHarness(
   double? priceChange24hPct,
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
+  PayIntroductionBadgeStore payIntroductionBadgeStore =
+      const _ClickedPayIntroductionBadgeStore(),
+  bool payIntroductionBadgePersistenceEnabled = true,
   ThemeMode themeMode = ThemeMode.system,
 }) {
   return ProviderScope(
@@ -630,6 +803,15 @@ Widget _appHarness(
       syncProvider.overrideWith(
         () => FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
+      payIntroductionBadgeStoreProvider.overrideWithValue(
+        payIntroductionBadgeStore,
+      ),
+      payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
+        payIntroductionBadgePersistenceEnabled,
+      ),
+      // The coin bob loops forever, which would break pumpAndSettle here;
+      // motion itself is covered by pay_floating_badge_test.
+      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
@@ -684,6 +866,30 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   @override
   Future<ZecMarketData?> fetchMarketData() async {
     return ZecMarketData(usdPrice: 70, change24hPct: change24hPct);
+  }
+}
+
+class _ClickedPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  const _ClickedPayIntroductionBadgeStore();
+
+  @override
+  Future<bool> hasClickedPay() async => true;
+
+  @override
+  Future<void> markPayClicked() async {}
+}
+
+class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  bool clicked = false;
+  int markCount = 0;
+
+  @override
+  Future<bool> hasClickedPay() async => clicked;
+
+  @override
+  Future<void> markPayClicked() async {
+    clicked = true;
+    markCount += 1;
   }
 }
 
