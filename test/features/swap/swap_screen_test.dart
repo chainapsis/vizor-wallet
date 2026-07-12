@@ -818,6 +818,163 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
   });
 
+  testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
+    await _setDesktopViewport(tester);
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'saved-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final liveBaseUsdc = SwapAsset.live(
+      assetId: 'live-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final router = GoRouter(
+      initialLocation: '/activity/swap/dynamic-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'dynamic-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '1.5000 ZEC',
+          receiveEstimate: '100 USDC',
+          externalAsset: savedBaseUsdc,
+          payMode: true,
+        );
+    final sessionStore = _DelayedPayAssetLoadSwapPersistenceStore(
+      initialIntents: [payIntent],
+      initialPayAsset: SwapAsset.usdc,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: swapProvider,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await _pumpUntilPresent(tester, find.byType(PayScreen));
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    var state = container.read(swapStateProvider);
+    expect(state.externalAsset, savedBaseUsdc);
+    expect(state.receiveAmountText, '100');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    swapProvider.completeSupportedAssets([liveBaseUsdc]);
+    await tester.pumpAndSettle();
+
+    state = container.read(swapStateProvider);
+    expect(state.externalAsset, liveBaseUsdc);
+    expect(state.receiveAmountText, '100');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    // A Pay preference load that started before the retry must not overwrite
+    // the intent-pinned asset when it finishes later.
+    sessionStore.completePayAssetLoad();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).externalAsset, liveBaseUsdc);
+    expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
+  });
+
+  testWidgets('Pay retry does not substitute an unsupported asset', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'removed-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final router = GoRouter(
+      initialLocation: '/activity/swap/removed-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'removed-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '1.5000 ZEC',
+          receiveEstimate: '100 USDC',
+          externalAsset: savedBaseUsdc,
+          payMode: true,
+        );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: swapProvider,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await tester.pump();
+    swapProvider.completeSupportedAssets(const [SwapAsset.usdc]);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.externalAsset, savedBaseUsdc);
+    expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
+    expect(
+      state.externalAssetSupportError,
+      'USDC on Base is not currently supported.',
+    );
+    expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
   ) async {

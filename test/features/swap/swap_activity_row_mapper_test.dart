@@ -190,6 +190,10 @@ void main() {
                   context: context,
                   item: item(SwapIntentStatus.failed, deposited: false),
                 ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.refunded),
+                ),
               ];
               return const SizedBox.shrink();
             },
@@ -202,6 +206,7 @@ void main() {
       '-4.0000 ZEC',
       '-4.0000 ZEC',
       '100.00 USDC',
+      '4.0000 ZEC',
     ]);
   });
 

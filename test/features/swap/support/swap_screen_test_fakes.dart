@@ -237,6 +237,19 @@ class _FakeSwapProvider implements SwapProvider {
   }
 }
 
+class _DeferredSupportedAssetsSwapProvider extends _FakeSwapProvider {
+  final _supportedAssetsCompleter = Completer<List<SwapAsset>>();
+
+  void completeSupportedAssets(List<SwapAsset> assets) {
+    _supportedAssetsCompleter.complete(assets);
+  }
+
+  @override
+  Future<List<SwapAsset>> listSupportedExternalAssets() {
+    return _supportedAssetsCompleter.future;
+  }
+}
+
 SwapFiatValueBasis _fakeFiatValueBasis(SwapQuote quote) {
   return SwapFiatValueBasis(
     capturedAt: DateTime.utc(2026, 5, 7, 10),
@@ -975,6 +988,27 @@ class _DelayedLoadSwapPersistenceStore extends _FakeSwapPersistenceStore {
     final gate = _loadGates.putIfAbsent(accountUuid, Completer<void>.new);
     await gate.future;
     return records;
+  }
+}
+
+class _DelayedPayAssetLoadSwapPersistenceStore
+    extends _FakeSwapPersistenceStore {
+  _DelayedPayAssetLoadSwapPersistenceStore({
+    required super.initialIntents,
+    required super.initialPayAsset,
+  });
+
+  final _loadGate = Completer<void>();
+
+  void completePayAssetLoad() {
+    _loadGate.complete();
+  }
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    final loaded = await super.loadSelectedAsset(accountUuid: accountUuid);
+    await _loadGate.future;
+    return loaded;
   }
 }
 

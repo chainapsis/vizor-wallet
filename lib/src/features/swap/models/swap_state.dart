@@ -197,11 +197,27 @@ class SwapState {
     return addressFormatIssue(network, trimmed);
   }
 
+  bool get externalAssetIsSupported {
+    for (final candidate in supportedExternalAssets) {
+      if (candidate == externalAsset ||
+          candidate.hasSameMarketAs(externalAsset)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? get externalAssetSupportError {
+    if (pricingLoading || externalAssetIsSupported) return null;
+    return '${externalAsset.symbol} on ${externalAsset.chainLabel} is not currently supported.';
+  }
+
   bool get canReviewQuote =>
       quoteAmount != null &&
       quoteAmountPrecisionError == null &&
       draftAddressPlan != null &&
       destinationAddressFormatError == null &&
+      externalAssetIsSupported &&
       !quoteLoading;
 
   bool get canSubmitDepositTx =>

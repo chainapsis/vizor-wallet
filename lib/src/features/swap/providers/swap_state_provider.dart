@@ -67,6 +67,7 @@ class SwapNotifier extends Notifier<SwapState> {
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
+  SwapAsset? _payRetryAsset;
 
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
@@ -252,6 +253,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void preparePayFromShieldedZec() {
     _clearReviewState();
+    _payRetryAsset = null;
     final rememberedAsset = ref.read(paySelectedAssetProvider);
     final supportedAssets = state.supportedExternalAssets;
     final payAsset =
@@ -286,6 +288,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void prepareSwapComposer() {
     if (!state.payMode) return;
     _clearReviewState();
+    _payRetryAsset = null;
     final supportedAssets = state.supportedExternalAssets;
     final defaultSwapAsset =
         _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
@@ -379,6 +382,7 @@ class SwapNotifier extends Notifier<SwapState> {
       state.supportedExternalAssets,
     );
     if (supportedAsset == null) return;
+    _payRetryAsset = null;
     if (rememberSelection) {
       ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
       unawaited(_persistPaySelectedAsset(supportedAsset));
@@ -541,13 +545,25 @@ class SwapNotifier extends Notifier<SwapState> {
           if (asset != SwapAsset.zec) asset,
       ];
       if (supported.isEmpty) return;
+      final retryAsset = state.payMode ? _payRetryAsset : null;
+      final supportedRetryAsset = retryAsset == null
+          ? null
+          : _supportedAssetFor(retryAsset, supported);
       final rememberedAsset = state.payMode
           ? ref.read(paySelectedAssetProvider)
           : state.externalAsset;
-      final selected =
-          _supportedAssetFor(rememberedAsset, supported) ?? supported.first;
+      final retryUnsupported =
+          retryAsset != null && supportedRetryAsset == null;
+      final selected = retryUnsupported
+          ? retryAsset
+          : supportedRetryAsset ??
+                _supportedAssetFor(rememberedAsset, supported) ??
+                supported.first;
       if (state.payMode) {
         ref.read(paySelectedAssetProvider.notifier).select(selected);
+        if (supportedRetryAsset != null && selected != rememberedAsset) {
+          unawaited(_persistPaySelectedAsset(selected));
+        }
       }
       final selectedChanged = selected != state.externalAsset;
       var nextState = state.copyWith(
@@ -557,7 +573,7 @@ class SwapNotifier extends Notifier<SwapState> {
         indicativeUsdPrices: pricing?.usdPrices ?? state.indicativeUsdPrices,
         externalAsset: selected,
         reviewVisible: selectedChanged ? false : state.reviewVisible,
-        clearReview: selectedChanged,
+        clearReview: selectedChanged || retryUnsupported,
         clearQuoteError: true,
       );
       nextState = swapStateWithTokenAmountsForFiatModes(nextState);
@@ -935,21 +951,8 @@ class SwapNotifier extends Notifier<SwapState> {
         : intent.oneClickRefundTo ?? '';
     final inputAmountText = retryingPay ? receiveAmountText : sellAmountText;
     if (inputAmountText.isEmpty || destinationText.isEmpty) return;
-    final supportedAssets = state.supportedExternalAssets;
-    final selectedExternalAsset = retryingPay
-        ? supportedAssets.isEmpty
-              ? externalAsset
-              : _supportedAssetFor(externalAsset, supportedAssets) ??
-                    _supportedAssetFor(
-                      ref.read(paySelectedAssetProvider),
-                      supportedAssets,
-                    ) ??
-                    _supportedAssetFor(
-                      PaySelectedAssetNotifier.defaultAsset,
-                      supportedAssets,
-                    ) ??
-                    supportedAssets.first
-        : externalAsset;
+    final selectedExternalAsset = externalAsset;
+    _payRetryAsset = retryingPay ? externalAsset : null;
     if (retryingPay) {
       ref.read(paySelectedAssetProvider.notifier).select(selectedExternalAsset);
       unawaited(_persistPaySelectedAsset(selectedExternalAsset));
@@ -1552,6 +1555,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void _clearAccountScopedTransientState() {
     _quoteGeneration++;
     _accountScopeGeneration++;
+    _payRetryAsset = null;
     state = state.copyWith(
       amountText: '',
       receiveAmountText: '',
@@ -1807,6 +1811,10 @@ class SwapNotifier extends Notifier<SwapState> {
           .read(paySelectedAssetStoreProvider)
           .loadSelectedAsset(accountUuid: scopedAccountUuid);
       if (!_isAccountActive(scopedAccountUuid)) return;
+      // A retry is pinned to the intent's original payout rail. Ignore a
+      // slower restore of the ordinary Pay preference so it cannot overwrite
+      // the prepared retry after navigation.
+      if (state.payMode && _payRetryAsset != null) return;
       final restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
       // No saved value must reset the memory: keeping the previous account's
       // selection would leak it into this account's Pay flow.

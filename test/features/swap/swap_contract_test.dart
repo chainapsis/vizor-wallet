@@ -76,6 +76,45 @@ void main() {
     expect(fixed.canReviewQuote, isTrue);
   });
 
+  test('blocks review until the selected dynamic asset is supported', () {
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'saved-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final liveBaseUsdc = SwapAsset.live(
+      assetId: 'live-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final state = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '100',
+      destinationText: validEvmRecipient,
+      externalAsset: savedBaseUsdc,
+      reviewVisible: false,
+      intents: const [],
+      quoteMode: SwapQuoteMode.exactOutput,
+      supportedExternalAssets: const [SwapAsset.usdc],
+    );
+
+    expect(state.externalAssetIsSupported, isFalse);
+    expect(
+      state.externalAssetSupportError,
+      'USDC on Base is not currently supported.',
+    );
+    expect(state.canReviewQuote, isFalse);
+
+    final supported = state.copyWith(supportedExternalAssets: [liveBaseUsdc]);
+
+    expect(supported.externalAssetIsSupported, isTrue);
+    expect(supported.externalAssetSupportError, isNull);
+    expect(supported.canReviewQuote, isTrue);
+  });
+
   test(
     'formats slippage amounts using token decimals before display floors',
     () {

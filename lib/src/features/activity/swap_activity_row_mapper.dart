@@ -266,7 +266,8 @@ String _payActivityAmountText(
       (item.depositWalletTxidHex?.trim().isNotEmpty ?? false) &&
       (item.status == SwapIntentStatus.failed ||
           item.status == SwapIntentStatus.incompleteDeposit);
-  final amount = showsDepositDebit
+  final showsRefundAmount = item.status == SwapIntentStatus.refunded;
+  final amount = showsDepositDebit || showsRefundAmount
       ? item.sellAmountText.trim()
       : item.receiveEstimateText.trim();
   if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {

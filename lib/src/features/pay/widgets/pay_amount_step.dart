@@ -18,6 +18,7 @@ bool payAmountCanContinue(SwapState state) {
   final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
   return hasAmount &&
       state.quoteAmountPrecisionError == null &&
+      state.externalAssetIsSupported &&
       !state.quoteLoading &&
       !state.pricingLoading;
 }
@@ -52,7 +53,8 @@ class PayAmountStep extends StatelessWidget {
     final inputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final precisionError = state.quoteAmountPrecisionError;
-    final quoteError = precisionError ?? state.quoteError;
+    final quoteError =
+        precisionError ?? state.externalAssetSupportError ?? state.quoteError;
     final counterpartText = inputIsFiat
         ? (state.receiveAmountText.trim().isEmpty
               ? null
