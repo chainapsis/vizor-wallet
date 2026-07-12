@@ -4145,7 +4145,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(sessionStore.savedPreferences?.slippageBps, isNull);
-    expect(find.text('2%'), findsNothing);
+    expect(find.text('2%'), findsOneWidget);
   });
 
   testWidgets('draft conversion uses refreshed 1Click token prices', (
