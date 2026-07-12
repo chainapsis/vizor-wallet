@@ -330,7 +330,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     }
 
     final quoteError =
-        swapState.quoteAmountPrecisionError ?? swapState.quoteError;
+        swapState.quoteAmountPrecisionError ??
+        swapState.externalAssetSupportError ??
+        swapState.quoteError;
 
     // While the amount number-pad is open, the leading nav button becomes a
     // close (X) that dismisses the keyboard instead of a back chevron.

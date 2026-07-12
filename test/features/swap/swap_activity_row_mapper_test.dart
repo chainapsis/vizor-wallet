@@ -160,6 +160,7 @@ void main() {
               SwapActivityRowItem item(
                 SwapIntentStatus status, {
                 bool deposited = true,
+                String? depositedAmountText,
                 String? refundedAmountText,
               }) {
                 return SwapActivityRowItem(
@@ -173,6 +174,7 @@ void main() {
                   depositWalletTxidHex: deposited
                       ? 'wallet-order-deposit'
                       : null,
+                  depositedAmountText: depositedAmountText,
                   refundedAmountText: refundedAmountText,
                   payMode: true,
                   activityTimestamp: null,
@@ -186,7 +188,10 @@ void main() {
                 ),
                 buildSwapActivityRow(
                   context: context,
-                  item: item(SwapIntentStatus.incompleteDeposit),
+                  item: item(
+                    SwapIntentStatus.incompleteDeposit,
+                    depositedAmountText: '1.2500 ZEC',
+                  ),
                 ),
                 buildSwapActivityRow(
                   context: context,
@@ -213,7 +218,7 @@ void main() {
 
     expect(rows.map((row) => row.amountText), [
       '-4.0000 ZEC',
-      '-4.0000 ZEC',
+      '-1.2500 ZEC',
       '100.00 USDC',
       '4.0000 ZEC',
       '0.0100 ZEC',
@@ -432,6 +437,7 @@ void main() {
         externalAsset: SwapAsset.usdc,
         depositTxHash: 'zec-deposit-txid',
         providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '0.0028 ZEC',
           refundedAmountText: '0.0025 ZEC',
         ),
         payMode: true,
@@ -449,6 +455,7 @@ void main() {
     expect(item.direction, SwapDirection.zecToExternal);
     expect(item.externalAsset, SwapAsset.usdc);
     expect(item.depositTxHash, 'zec-deposit-txid');
+    expect(item.depositedAmountText, '0.0028 ZEC');
     expect(item.refundedAmountText, '0.0025 ZEC');
     expect(item.payMode, isTrue);
     expect(item.activityTimestamp, createdAt);
