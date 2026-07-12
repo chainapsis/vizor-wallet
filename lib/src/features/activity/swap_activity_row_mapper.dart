@@ -35,6 +35,21 @@ class SwapActivityRowItem {
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
+    final depositedAmountText = record.providerRefundInfo?.depositedAmountText;
+    final hasProviderDepositFields =
+        (record.originChainTxHash?.trim().isNotEmpty ?? false) ||
+        _isPositiveSwapAmount(depositedAmountText);
+    final providerObservedByStatus = switch (record.status) {
+      SwapIntentStatus.depositObserved ||
+      SwapIntentStatus.processing ||
+      SwapIntentStatus.complete ||
+      SwapIntentStatus.incompleteDeposit ||
+      SwapIntentStatus.refunded => true,
+      _ => false,
+    };
+    final acceptsLocalBroadcastEvidence =
+        record.status != SwapIntentStatus.failed &&
+        record.status != SwapIntentStatus.expired;
     return SwapActivityRowItem(
       intentId: record.id,
       providerLabel: record.providerLabel,
@@ -58,13 +73,15 @@ class SwapActivityRowItem {
               ? swapChainTxidToWalletTxidHex(record.originChainTxHash)
               : null),
       hasConfirmedDepositEvidence:
-          swapHasConfirmedDepositEvidence(
-            originChainTxHash: record.originChainTxHash,
-            depositTxHash: record.depositTxHash,
-            broadcastStatus: record.broadcastStatus,
-          ) ||
-          _isPositiveSwapAmount(record.providerRefundInfo?.depositedAmountText),
-      depositedAmountText: record.providerRefundInfo?.depositedAmountText,
+          hasProviderDepositFields ||
+          providerObservedByStatus ||
+          (acceptsLocalBroadcastEvidence &&
+              swapHasConfirmedDepositEvidence(
+                originChainTxHash: record.originChainTxHash,
+                depositTxHash: record.depositTxHash,
+                broadcastStatus: record.broadcastStatus,
+              )),
+      depositedAmountText: depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
     );
@@ -299,7 +316,7 @@ String _payActivityAmountText(
   final showsRefundAmount = item.status == SwapIntentStatus.refunded;
   final refundedAmount = item.refundedAmountText?.trim();
   final amount = showsDepositDebit
-      ? (depositedAmount?.isNotEmpty ?? false)
+      ? hasProviderDepositAmount
             ? depositedAmount!
             : item.sellAmountText.trim()
       : showsRefundAmount
@@ -456,7 +473,9 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
       if (receiveHex != null && txHex == receiveHex) {
         receiveTxByIntent[item.intentId] = tx;
         absorbedTxidHexes.add(txHex);
-      } else if (depositHex != null && txHex == depositHex) {
+      } else if (depositHex != null &&
+          txHex == depositHex &&
+          !tx.expiredUnmined) {
         absorbedTxidHexes.add(txHex);
       }
     }

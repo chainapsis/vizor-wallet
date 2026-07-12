@@ -284,6 +284,48 @@ void main() {
     expect(deposited.details.map((row) => row.label), contains('You paid'));
   });
 
+  test('failed Pay copy requires provider-observed deposit evidence', () {
+    SwapActivityStatusPresentation presentation({
+      String? depositTxHash,
+      String? originChainTxHash,
+      String? depositedAmountText,
+    }) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.failed,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          depositTxHash: depositTxHash,
+          originChainTxHash: originChainTxHash,
+          providerRefundInfo: depositedAmountText == null
+              ? null
+              : SwapProviderRefundInfo(
+                  depositedAmountText: depositedAmountText,
+                ),
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    expect(
+      presentation(depositTxHash: 'local-broadcast-txid').payLabel,
+      'You pay',
+    );
+    expect(
+      presentation(originChainTxHash: 'provider-origin-txid').payLabel,
+      'You paid',
+    );
+    expect(
+      presentation(depositedAmountText: '0.7500 ZEC').payLabel,
+      'You paid',
+    );
+    expect(presentation(depositedAmountText: '0 ZEC').payLabel, 'You pay');
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in

@@ -214,8 +214,25 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
 }
 
 bool _payIntentShowsPaidCopy(SwapIntent intent) {
-  return intent.status == SwapIntentStatus.complete ||
-      intent.hasConfirmedDepositEvidence;
+  if (intent.status == SwapIntentStatus.complete) return true;
+  if (intent.status == SwapIntentStatus.failed) {
+    return (intent.originChainTxHash?.trim().isNotEmpty ?? false) ||
+        _hasPositiveProviderAmount(
+          intent.providerRefundInfo?.depositedAmountText,
+        );
+  }
+  return intent.hasConfirmedDepositEvidence;
+}
+
+bool _hasPositiveProviderAmount(String? amountText) {
+  final normalized = amountText?.trim();
+  if (normalized == null || normalized.isEmpty) return false;
+  final numericText = normalized
+      .split(RegExp(r'\s+'))
+      .first
+      .replaceAll(',', '');
+  final amount = double.tryParse(numericText);
+  return amount != null && amount.isFinite && amount > 0;
 }
 
 PayActivityStatusPresentation? _payActivityStatusPresentation(

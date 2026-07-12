@@ -222,6 +222,13 @@ void main() {
                 ),
                 buildSwapActivityRow(
                   context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    depositedAmountText: '0 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
                   item: item(SwapIntentStatus.refunded),
                 ),
                 buildSwapActivityRow(
@@ -245,6 +252,7 @@ void main() {
       '100.00 USDC',
       '0.7500 ZEC',
       '100.00 USDC',
+      '-4.0000 ZEC',
       '4.0000 ZEC',
       '0.0100 ZEC',
     ]);
@@ -532,6 +540,31 @@ void main() {
         externalAsset: SwapAsset.usdc,
         depositTxHash: depositDisplayOrder,
         broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        payMode: true,
+      ),
+    );
+
+    expect(item.depositWalletTxidHex, isNotNull);
+    expect(item.hasConfirmedDepositEvidence, isFalse);
+    expect(swapActivityRowAbsorbsDepositLeg(item), isFalse);
+  });
+
+  test('does not confirm a failed Pay from local broadcast evidence alone', () {
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final item = SwapActivityRowItem.fromRecord(
+      const SwapIntentRecord(
+        id: 'failed-local-broadcast',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: SwapIntentStatus.failed,
+        nextAction: 'Payment failed',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositTxHash: depositDisplayOrder,
+        broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
         payMode: true,
       ),
     );
@@ -918,6 +951,8 @@ void main() {
       required SwapIntentStatus status,
       String? destinationChainTxHash,
       String? depositTxHash,
+      bool payMode = false,
+      bool hasConfirmedDepositEvidence = false,
     }) {
       return SwapActivityRowItem(
         intentId: id,
@@ -934,14 +969,19 @@ void main() {
           destinationChainTxHash,
         ),
         depositWalletTxidHex: swapChainTxidToWalletTxidHex(depositTxHash),
+        hasConfirmedDepositEvidence: hasConfirmedDepositEvidence,
+        payMode: payMode,
       );
     }
 
-    rust_sync.TransactionInfo tx(String txidHex) {
+    rust_sync.TransactionInfo tx(
+      String txidHex, {
+      bool expiredUnmined = false,
+    }) {
       return rust_sync.TransactionInfo(
         txidHex: txidHex,
-        minedHeight: BigInt.from(2000000),
-        expiredUnmined: false,
+        minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(2000000),
+        expiredUnmined: expiredUnmined,
         accountBalanceDelta: 0,
         fee: BigInt.zero,
         blockTime: BigInt.from(1800000000),
@@ -996,6 +1036,21 @@ void main() {
       transactions: [depositTx],
     );
     expect(refunded.absorbs(depositTx), isFalse);
+
+    final expiredPayDeposit = tx(depositWalletOrder, expiredUnmined: true);
+    final expiredPay = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'pay-expired-unmined',
+          status: SwapIntentStatus.failed,
+          depositTxHash: depositDisplayOrder,
+          payMode: true,
+          hasConfirmedDepositEvidence: true,
+        ),
+      ],
+      transactions: [expiredPayDeposit],
+    );
+    expect(expiredPay.absorbs(expiredPayDeposit), isFalse);
 
     // Unmatched hashes absorb nothing.
     final unmatched = matchSwapActivityLegAbsorption(
