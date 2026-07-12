@@ -326,6 +326,38 @@ void main() {
     expect(presentation(depositedAmountText: '0 ZEC').payLabel, 'You pay');
   });
 
+  test('provider deposit statuses use paid copy without a tx hash', () {
+    SwapActivityStatusPresentation presentation(SwapIntentStatus status) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    for (final status in [
+      SwapIntentStatus.depositObserved,
+      SwapIntentStatus.processing,
+      SwapIntentStatus.incompleteDeposit,
+      SwapIntentStatus.refunded,
+    ]) {
+      final result = presentation(status);
+      expect(result.payLabel, 'You paid', reason: status.name);
+      expect(
+        result.details.map((row) => row.label),
+        contains('You paid'),
+        reason: status.name,
+      );
+    }
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in

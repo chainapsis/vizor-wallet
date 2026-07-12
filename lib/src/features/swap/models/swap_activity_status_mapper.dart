@@ -214,7 +214,15 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
 }
 
 bool _payIntentShowsPaidCopy(SwapIntent intent) {
-  if (intent.status == SwapIntentStatus.complete) return true;
+  final providerStatusConfirmsDeposit = switch (intent.status) {
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.complete ||
+    SwapIntentStatus.refunded => true,
+    _ => false,
+  };
+  if (providerStatusConfirmsDeposit) return true;
   if (intent.status == SwapIntentStatus.failed) {
     return (intent.originChainTxHash?.trim().isNotEmpty ?? false) ||
         _hasPositiveProviderAmount(
