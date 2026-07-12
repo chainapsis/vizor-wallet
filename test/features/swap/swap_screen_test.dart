@@ -1665,7 +1665,8 @@ void main() {
     final requests = <({String accountUuid, String walletTxid})>[];
     final payIntent = _persistedIntent(
       id: 'pay-archived-confirmed-fee',
-      txHash: depositDisplayOrder,
+      txHash: null,
+      originChainTxHash: depositDisplayOrder,
     ).copyWith(payMode: true);
 
     await tester.pumpWidget(
@@ -9192,7 +9193,8 @@ Widget _statusTestPage({
 
 SwapIntent _persistedIntent({
   required String id,
-  required String txHash,
+  required String? txHash,
+  String? originChainTxHash,
   String? depositAddress,
   SwapIntentStatus status = SwapIntentStatus.processing,
   String? nextAction,
@@ -9212,6 +9214,7 @@ SwapIntent _persistedIntent({
     depositAddress: depositAddress ?? id,
     depositMemo: 'memo-7',
     depositTxHash: txHash,
+    originChainTxHash: originChainTxHash,
     providerQuoteId: 'quote-1',
     oneClickRecipient: '0x52908400098527886e0f7030069857d2e4169ee7',
     oneClickRefundTo: 'u1refund',

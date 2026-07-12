@@ -51,7 +51,11 @@ class SwapActivityRowItem {
       receiveWalletTxidHex: swapChainTxidToWalletTxidHex(
         record.destinationChainTxHash,
       ),
-      depositWalletTxidHex: swapChainTxidToWalletTxidHex(record.depositTxHash),
+      depositWalletTxidHex:
+          swapChainTxidToWalletTxidHex(record.depositTxHash) ??
+          (record.direction == SwapDirection.zecToExternal
+              ? swapChainTxidToWalletTxidHex(record.originChainTxHash)
+              : null),
       depositedAmountText: record.providerRefundInfo?.depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
@@ -272,12 +276,13 @@ String _payActivityAmountText(
       maskLength: _swapActivityAmountPrivacyMaskLength,
     );
   }
+  final depositedAmount = item.depositedAmountText?.trim();
   final showsDepositDebit =
-      (item.depositWalletTxidHex?.trim().isNotEmpty ?? false) &&
+      ((item.depositWalletTxidHex?.trim().isNotEmpty ?? false) ||
+          _isPositiveSwapAmount(depositedAmount)) &&
       (item.status == SwapIntentStatus.failed ||
           item.status == SwapIntentStatus.incompleteDeposit);
   final showsRefundAmount = item.status == SwapIntentStatus.refunded;
-  final depositedAmount = item.depositedAmountText?.trim();
   final refundedAmount = item.refundedAmountText?.trim();
   final amount = showsDepositDebit
       ? (depositedAmount?.isNotEmpty ?? false)
@@ -292,6 +297,16 @@ String _payActivityAmountText(
     return '-$amount';
   }
   return amount.isEmpty ? '--' : amount;
+}
+
+bool _isPositiveSwapAmount(String? amountText) {
+  if (amountText == null || amountText.isEmpty) return false;
+  final numericText = amountText
+      .split(RegExp(r'\s+'))
+      .first
+      .replaceAll(',', '');
+  final amount = double.tryParse(numericText);
+  return amount != null && amount.isFinite && amount > 0;
 }
 
 String _payActivityTitle(SwapIntentStatus status) {

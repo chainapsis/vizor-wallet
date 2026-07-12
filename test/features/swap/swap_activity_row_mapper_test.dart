@@ -195,7 +195,19 @@ void main() {
                 ),
                 buildSwapActivityRow(
                   context: context,
-                  item: item(SwapIntentStatus.failed, deposited: false),
+                  item: item(
+                    SwapIntentStatus.failed,
+                    deposited: false,
+                    depositedAmountText: '0 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    deposited: false,
+                    depositedAmountText: '0.7500 ZEC',
+                  ),
                 ),
                 buildSwapActivityRow(
                   context: context,
@@ -220,6 +232,7 @@ void main() {
       '-4.0000 ZEC',
       '-1.2500 ZEC',
       '100.00 USDC',
+      '-0.7500 ZEC',
       '4.0000 ZEC',
       '0.0100 ZEC',
     ]);
@@ -461,6 +474,34 @@ void main() {
     expect(item.activityTimestamp, createdAt);
     expect(item.lastStatusCheckedAt, checkedAt);
   });
+
+  test(
+    'uses provider origin txid when the local Pay checkpoint is missing',
+    () {
+      const originDisplayOrder =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      final item = swapActivityRowItemsFromRecords([
+        const SwapIntentRecord(
+          id: 'provider-recovered-pay',
+          providerLabel: 'NEAR Intents',
+          pairText: 'ZEC -> USDC',
+          sellAmountText: '1.5000 ZEC',
+          receiveEstimateText: '105.25 USDC',
+          status: SwapIntentStatus.failed,
+          nextAction: 'Payment failed',
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          originChainTxHash: originDisplayOrder,
+          payMode: true,
+        ),
+      ]).single;
+
+      expect(
+        item.depositWalletTxidHex,
+        swapChainTxidToWalletTxidHex(originDisplayOrder),
+      );
+    },
+  );
 
   testWidgets('keeps completed swap row timestamp separate from receive leg', (
     tester,

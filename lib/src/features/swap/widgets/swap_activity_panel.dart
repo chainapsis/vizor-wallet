@@ -773,7 +773,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     );
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
-    final depositTxid = intent.depositTxHash?.trim();
+    final depositTxid = _payDepositTxid(intent);
     final accountUuid = intent.accountUuid?.trim();
     final shouldLoadPayDeposit =
         widget.layout == SwapActivityDetailLayout.desktop &&
@@ -787,7 +787,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     if (shouldLoadPayDeposit) {
       depositTransaction = ref.watch(
         syncProvider.select(
-          (sync) => _recentPayDepositTransaction(sync.value, intent),
+          (sync) => _recentPayDepositTransaction(
+            sync.value,
+            intent,
+            depositTxid,
+          ),
         ),
       );
       depositTransaction ??= ref
@@ -927,16 +931,28 @@ BigInt? _confirmedPayDepositFeeZatoshi(rust_sync.TransactionInfo? transaction) {
 rust_sync.TransactionInfo? _recentPayDepositTransaction(
   SyncState? syncState,
   SwapIntent intent,
+  String? depositTxid,
 ) {
   if (syncState == null || syncState.accountUuid != intent.accountUuid) {
     return null;
   }
-  final walletTxid = swapChainTxidToWalletTxidHex(intent.depositTxHash);
+  final walletTxid = swapChainTxidToWalletTxidHex(depositTxid);
   if (walletTxid == null) return null;
   for (final transaction in syncState.recentTransactions) {
     if (transaction.txidHex.toLowerCase() == walletTxid) return transaction;
   }
   return null;
+}
+
+String? _payDepositTxid(SwapIntent intent) {
+  final localDepositTxid = intent.depositTxHash?.trim();
+  if (localDepositTxid != null && localDepositTxid.isNotEmpty) {
+    return localDepositTxid;
+  }
+  final providerDepositTxid = intent.originChainTxHash?.trim();
+  return providerDepositTxid == null || providerDepositTxid.isEmpty
+      ? null
+      : providerDepositTxid;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.
