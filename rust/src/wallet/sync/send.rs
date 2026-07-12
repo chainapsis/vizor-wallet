@@ -3275,7 +3275,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
     target_height: BlockHeight,
     orchard_anchor: orchard::Anchor,
 ) -> Builder<P, ()> {
-    Builder::new_with_ironwood_bundle_type(
+    Builder::new_with_orchard_pool_bundle_type(
         network,
         target_height,
         BuildConfig::Standard {
@@ -3285,6 +3285,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
+        orchard::ValuePool::Ironwood,
         orchard::builder::BundleType::UNPADDED,
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
