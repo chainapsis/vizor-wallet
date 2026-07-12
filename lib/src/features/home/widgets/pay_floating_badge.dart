@@ -5,6 +5,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/pay_introduction_badge_store.dart';
 
+const _payIntroductionFadeInDuration = Duration(milliseconds: 180);
+const _payIntroductionFadeOutDuration = Duration(milliseconds: 120);
+
 /// Wraps the desktop Pay button with its floating introduction.
 ///
 /// Before the first Pay activation, the full treatment is always visible.
@@ -41,21 +44,26 @@ class _PayIntroductionBadgeTargetState
         key: const ValueKey('pay_introduction_badge_target'),
         clipBehavior: Clip.none,
         children: [
-          if (showIntroduction)
-            const Positioned(
-              left: 0,
-              top: 0,
-              width: 60,
-              height: 44,
-              child: IgnorePointer(child: _PayFloatingGlow()),
+          Positioned(
+            left: 0,
+            top: 0,
+            width: 60,
+            height: 44,
+            child: _PayIntroductionFade(
+              key: const ValueKey('pay_introduction_glow_fade'),
+              visible: showIntroduction,
+              child: const IgnorePointer(child: _PayFloatingGlow()),
             ),
+          ),
           widget.child,
-          if (showIntroduction)
-            Positioned(
-              // In the Home frame (5407:152492), the 169px badge frame starts
-              // at the Pay button's left edge and overflows to its right.
-              left: 0,
-              top: -65,
+          Positioned(
+            // In the Home frame (5407:152492), the 169px badge frame starts
+            // at the Pay button's left edge and overflows to its right.
+            left: 0,
+            top: -65,
+            child: _PayIntroductionFade(
+              key: const ValueKey('pay_introduction_badge_fade'),
+              visible: showIntroduction,
               child: IgnorePointer(
                 child: ExcludeSemantics(
                   child: PayFloatingBadge(
@@ -68,8 +76,112 @@ class _PayIntroductionBadgeTargetState
                 ),
               ),
             ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _PayIntroductionFade extends StatefulWidget {
+  const _PayIntroductionFade({
+    required this.visible,
+    required this.child,
+    super.key,
+  });
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  State<_PayIntroductionFade> createState() => _PayIntroductionFadeState();
+}
+
+class _PayIntroductionFadeState extends State<_PayIntroductionFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late bool _renderChild;
+  var _animationsDisabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _renderChild = widget.visible;
+    _controller = AnimationController(
+      vsync: this,
+      value: widget.visible ? 1 : 0,
+    )..addStatusListener(_handleStatusChanged);
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animationsDisabled =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (_animationsDisabled == animationsDisabled) return;
+    _animationsDisabled = animationsDisabled;
+    _syncVisibility();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PayIntroductionFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible != widget.visible) {
+      _syncVisibility();
+    }
+  }
+
+  void _syncVisibility() {
+    if (widget.visible) {
+      _renderChild = true;
+      if (_animationsDisabled) {
+        _controller.value = 1;
+      } else {
+        _controller.duration = _payIntroductionFadeInDuration;
+        _controller.forward();
+      }
+      return;
+    }
+    if (_animationsDisabled) {
+      _renderChild = false;
+      _controller.value = 0;
+    } else {
+      _controller.duration = _payIntroductionFadeOutDuration;
+      _controller.reverse();
+    }
+  }
+
+  void _handleStatusChanged(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed ||
+        widget.visible ||
+        !_renderChild ||
+        !mounted) {
+      return;
+    }
+    setState(() => _renderChild = false);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeStatusListener(_handleStatusChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_renderChild) return const SizedBox.shrink();
+    return FadeTransition(
+      key: const ValueKey('pay_introduction_visible_fade'),
+      opacity: _opacity,
+      child: widget.child,
     );
   }
 }

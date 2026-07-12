@@ -170,6 +170,43 @@ void main() {
     expect(find.text('NEW'), findsNothing);
   });
 
+  testWidgets('clicked target fades the treatment on hover transitions', (
+    tester,
+  ) async {
+    final store = _FakePayIntroductionBadgeStore()..clicked = true;
+    await _pumpTarget(
+      tester,
+      store,
+      persistenceEnabled: true,
+      disableAnimations: false,
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(
+      tester.getCenter(
+        find.byKey(const ValueKey('pay_introduction_badge_target')),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+
+    expect(_badgeFadeOpacity(tester), inExclusiveRange(0, 1));
+
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(_badgeFadeOpacity(tester), 1);
+
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(_badgeFadeOpacity(tester), inExclusiveRange(0, 1));
+
+    await tester.pump(const Duration(milliseconds: 61));
+    await tester.pump();
+    expect(find.byType(PayFloatingBadge), findsNothing);
+  });
+
   testWidgets('target excludes decorative callout semantics', (tester) async {
     final store = _FakePayIntroductionBadgeStore();
     await _pumpTarget(tester, store, persistenceEnabled: true);
@@ -225,6 +262,16 @@ double _coinTranslationY(WidgetTester tester) {
     find.byKey(const ValueKey('pay_floating_badge_coin_motion')),
   );
   return transform.transform.getTranslation().y;
+}
+
+double _badgeFadeOpacity(WidgetTester tester) {
+  final fade = tester.widget<FadeTransition>(
+    find.descendant(
+      of: find.byKey(const ValueKey('pay_introduction_badge_fade')),
+      matching: find.byKey(const ValueKey('pay_introduction_visible_fade')),
+    ),
+  );
+  return fade.opacity.value;
 }
 
 Future<void> _pumpBadge(

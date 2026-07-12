@@ -440,6 +440,7 @@ void main() {
         tester.getCenter(find.byKey(const ValueKey('home_desktop_pay_button'))),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
 
       expect(find.byType(PayFloatingBadge), findsOneWidget);
       expect(
@@ -454,6 +455,8 @@ void main() {
       expect(find.text('NEW'), findsOneWidget);
 
       await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 121));
       await tester.pump();
 
       expect(find.byType(PayFloatingBadge), findsNothing);
