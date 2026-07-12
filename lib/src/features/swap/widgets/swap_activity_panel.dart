@@ -807,19 +807,23 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       ),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
+      final terminal = !presentation.showTabs;
+      final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: presentation.payLabel,
+          label: !paymentMode && terminal ? 'You paid' : presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: presentation.receiveLabel,
+          label: !paymentMode && terminal
+              ? 'You received'
+              : presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient

@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_s
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -47,12 +48,67 @@ final _hardwareIntent = SwapIntent(
   accountUuid: 'account-1',
 );
 
+final _completedSwapIntent = SwapIntent(
+  id: 'swap-mobile-completed',
+  pair: 'ZEC -> USDC',
+  sellAmount: '1.0000 ZEC',
+  receiveEstimate: '70.00 USDC',
+  provider: 'NEAR Intents',
+  status: SwapIntentStatus.complete,
+  nextAction: 'Swap completed.',
+  direction: SwapDirection.zecToExternal,
+  externalAsset: SwapAsset.usdc,
+  depositAddress: 't1completed-deposit',
+  accountUuid: 'account-1',
+);
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('completed mobile swap uses terminal header labels', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: '/activity/swap/${_completedSwapIntent.id}',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(router, activityIntents: [_completedSwapIntent]),
+    );
+    await tester.pumpAndSettle();
+
+    final header = find.byType(MobileSwapReviewHeader);
+    expect(
+      find.descendant(of: header, matching: find.text('You paid')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: header, matching: find.text('You received')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: header, matching: find.text("You're paying")),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: header, matching: find.text("You're receiving")),
+      findsNothing,
+    );
   });
 
   testWidgets('hardware ZEC deposit opens mobile Keystone signing route', (
@@ -477,8 +533,10 @@ Widget _app(
   _FakeSwapProvider? swapProvider,
   SwapNotifier Function()? swapNotifier,
   SwapHardwareSigningService? hardwareSigningService,
+  List<SwapIntent>? activityIntents,
 }) {
-  final activityStore = _FakeSwapActivityStore([_hardwareIntent]);
+  final intents = activityIntents ?? [_hardwareIntent];
+  final activityStore = _FakeSwapActivityStore(intents);
   final preferencesStore = _FakeSwapComposerPreferencesStore();
   return ProviderScope(
     overrides: [
@@ -488,7 +546,7 @@ Widget _app(
         _FakeAddressBookRepository(),
       ),
       if (swapNotifier != null) swapStateProvider.overrideWith(swapNotifier),
-      swapInitialIntentsProvider.overrideWithValue([_hardwareIntent]),
+      swapInitialIntentsProvider.overrideWithValue(intents),
       swapActivityStoreProvider.overrideWithValue(activityStore),
       swapComposerPreferencesStoreProvider.overrideWithValue(preferencesStore),
       swapIntentProvider.overrideWithValue(swapProvider ?? _FakeSwapProvider()),
