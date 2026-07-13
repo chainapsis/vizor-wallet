@@ -479,8 +479,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
+    final payIntroductionClicked = ref
+        .watch(payIntroductionBadgeClickedProvider)
+        .value;
+    final showPayIntroduction = payEnabled && payIntroductionClicked == false;
 
     void openPay() {
+      ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
       ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
       context.push('/pay');
     }
@@ -609,19 +614,22 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       if (payEnabled) ...[
                         const SizedBox(width: AppSpacing.xs),
                         DecoratedBox(
-                          decoration: const BoxDecoration(
+                          key: const ValueKey('mobile_home_pay_glow'),
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0xFF1C7ADE),
-                                blurRadius: 60,
-                                spreadRadius: 20,
-                              ),
-                              BoxShadow(
-                                color: Color(0xFF1C7ADE),
-                                blurRadius: 100,
-                              ),
-                            ],
+                            boxShadow: showPayIntroduction
+                                ? const [
+                                    BoxShadow(
+                                      color: Color(0xFF1C7ADE),
+                                      blurRadius: 60,
+                                      spreadRadius: 20,
+                                    ),
+                                    BoxShadow(
+                                      color: Color(0xFF1C7ADE),
+                                      blurRadius: 100,
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: SizedBox(
                             width: _mobileHomeActionButtonHeight,
@@ -662,18 +670,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ),
               ],
             ),
-            if (hasBalance && payEnabled) ...[
+            if (hasBalance && showPayIntroduction) ...[
               Positioned(
                 right: 41,
                 top: 172,
                 width: 118,
                 height: 65,
-                child: IgnorePointer(
-                  child: PayIntroductionNewGate(
-                    builder: (context, showNew) =>
-                        _MobilePayBadges(showNew: showNew),
-                  ),
-                ),
+                child: const IgnorePointer(child: _MobilePayBadges()),
               ),
             ],
           ],
@@ -707,7 +710,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ],
                 ),
               ),
-            if (hasBalance && payEnabled)
+            if (hasBalance && showPayIntroduction)
               Positioned(
                 right: 43,
                 top: -35,
@@ -1219,19 +1222,15 @@ class _ButtonIcon extends StatelessWidget {
 }
 
 /// The Pay introduction callout — Figma `PAY Floating Badge`
-/// (6261:126485): the persistent `Pay in USDC` chip with the one-shot
-/// `NEW` pill below it. Drawn as widgets (not a raster) so the copy stays
-/// real text and the pill reuses the shared `pay_floating_new.svg` shape;
-/// [PayIntroductionNewGate] supplies the desktop-consistent dismissal.
+/// (6261:126485). Like desktop, the whole treatment remains until the first
+/// Pay activation; mobile has no hover state for bringing it back afterwards.
 class _MobilePayBadges extends StatelessWidget {
-  const _MobilePayBadges({required this.showNew});
-
-  final bool showNew;
+  const _MobilePayBadges();
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: showNew ? 'New: Pay in USDC' : 'Pay in USDC',
+      label: 'New: Pay in USDC',
       container: true,
       child: ExcludeSemantics(
         child: SizedBox(
@@ -1263,27 +1262,25 @@ class _MobilePayBadges extends StatelessWidget {
                   ),
                 ),
               ),
-              if (showNew) ...[
-                Positioned(
-                  left: 40,
-                  top: 36,
-                  width: 55,
-                  height: 29,
-                  child: SvgPicture.asset(
-                    'assets/illustrations/pay_floating_new.svg',
+              Positioned(
+                left: 40,
+                top: 36,
+                width: 55,
+                height: 29,
+                child: SvgPicture.asset(
+                  'assets/illustrations/pay_floating_new.svg',
+                ),
+              ),
+              Positioned(
+                left: 49,
+                top: 42,
+                child: Text(
+                  'NEW',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: const Color(0xFFFFFFFF),
                   ),
                 ),
-                Positioned(
-                  left: 49,
-                  top: 42,
-                  child: Text(
-                    'NEW',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: const Color(0xFFFFFFFF),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ],
           ),
         ),

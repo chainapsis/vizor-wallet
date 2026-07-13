@@ -25,7 +25,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_s
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
-import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -129,9 +128,10 @@ void main() {
     );
   });
 
-  testWidgets('expired mobile Pay restarts in the supported Swap route', (
+  testWidgets('expired mobile Pay returns to the prepared Pay composer', (
     tester,
   ) async {
+    PayComposerNavigationArgs? navigationArgs;
     final router = GoRouter(
       initialLocation: '/activity/swap/${_expiredPayIntent.id}',
       routes: [
@@ -144,8 +144,17 @@ void main() {
           ),
         ),
         GoRoute(
-          path: '/swap',
-          builder: (_, _) => const Material(child: MobileSwapScreen()),
+          path: '/pay',
+          builder: (_, state) {
+            final args = state.extra;
+            navigationArgs = args is PayComposerNavigationArgs ? args : null;
+            return Consumer(
+              builder: (_, ref, _) => SizedBox(
+                key: const ValueKey('prepared_mobile_pay_composer'),
+                child: Text(ref.watch(swapStateProvider).receiveAmountText),
+              ),
+            );
+          },
         ),
       ],
     );
@@ -157,13 +166,23 @@ void main() {
     await tester.tap(find.text('Restart swap'));
     await tester.pumpAndSettle();
 
-    expect(router.routerDelegate.currentConfiguration.uri.path, '/swap');
-    expect(find.byType(MobileSwapScreen), findsOneWidget);
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+    expect(
+      find.byKey(const ValueKey('prepared_mobile_pay_composer')),
+      findsOneWidget,
+    );
+    expect(navigationArgs?.preservePreparedComposer, isTrue);
     final container = ProviderScope.containerOf(
-      tester.element(find.byType(MobileSwapScreen)),
+      tester.element(
+        find.byKey(const ValueKey('prepared_mobile_pay_composer')),
+      ),
       listen: false,
     );
-    expect(container.read(swapStateProvider).payMode, isFalse);
+    final state = container.read(swapStateProvider);
+    expect(state.payMode, isTrue);
+    expect(state.externalAsset, _expiredPayIntent.externalAsset);
+    expect(state.receiveAmountText, '70.00');
+    expect(state.destinationText, _expiredPayIntent.oneClickRecipient);
   });
 
   testWidgets('hardware ZEC deposit opens mobile Keystone signing route', (

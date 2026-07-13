@@ -29,6 +29,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.contacts,
     required this.recents,
     required this.busy,
+    this.enabled = true,
     required this.externalAsset,
     required this.onAddressChanged,
     required this.onOpenScanner,
@@ -45,6 +46,7 @@ class MobilePayRecipientStep extends StatefulWidget {
   final List<AddressBookContact> contacts;
   final List<PayRecentRecipient> recents;
   final bool busy;
+  final bool enabled;
   final SwapAsset externalAsset;
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
@@ -205,7 +207,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                 AppButton(
                   key: const ValueKey('mobile_pay_recipient_continue_button'),
                   expand: true,
-                  onPressed: widget.busy ? null : widget.onSelectRecipient,
+                  onPressed: widget.busy || !widget.enabled
+                      ? null
+                      : widget.onSelectRecipient,
                   child: Text(widget.busy ? 'Fetching quote' : 'Continue'),
                 ),
               ],

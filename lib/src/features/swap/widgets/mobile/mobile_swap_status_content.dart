@@ -82,7 +82,7 @@ class MobileSwapStatusContent extends StatelessWidget {
                     progressIndex: presentation.progressIndex,
                     badgeKind: presentation.badgeKind,
                   )
-                : presentation.paymentMode
+                : presentation.paymentMode && presentation.payStatus != null
                 ? _MobilePaymentDetails(presentation: presentation)
                 : _MobileTransactionDetails(rows: presentation.details),
           ),
@@ -90,7 +90,7 @@ class MobileSwapStatusContent extends StatelessWidget {
           if (presentation.paymentMode) const SizedBox(height: 48),
           _StatusCard(
             key: const ValueKey('mobile_swap_status_card'),
-            child: presentation.paymentMode
+            child: presentation.paymentMode && presentation.payStatus != null
                 ? _MobilePaymentDetails(presentation: presentation)
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,6 +123,7 @@ class MobilePayStatusHeader extends StatelessWidget {
     required this.amountText,
     required this.fiatText,
     required this.recipientAddress,
+    this.label = "You're paying",
     this.recipientName,
     this.recipientProfilePictureId,
     super.key,
@@ -132,6 +133,7 @@ class MobilePayStatusHeader extends StatelessWidget {
   final String amountText;
   final String fiatText;
   final String recipientAddress;
+  final String label;
   final String? recipientName;
   final String? recipientProfilePictureId;
 
@@ -161,7 +163,7 @@ class MobilePayStatusHeader extends StatelessWidget {
                 size: 40,
                 showChainBadge: !asset.isNativeZec,
               ),
-              label: "You're paying",
+              label: label,
               headline: amountText,
               bottomText: fiatText,
             ),
@@ -485,7 +487,7 @@ class _MobileStatusChipRow extends StatelessWidget {
     };
     final paymentInProgress =
         paymentMode && badgeKind == SwapStatusBadgeKind.liveQuote;
-    final text = paymentInProgress ? 'In progress...' : defaultText;
+    final text = defaultText;
     final textColor = paymentInProgress ? colors.text.primary : defaultColor;
     final iconColor = paymentInProgress ? colors.icon.regular : defaultColor;
     final labelStyle = paymentMode

@@ -215,12 +215,6 @@ class _SwapActivityDetailSurfaceState
   void _reviewFreshQuote() {
     final selectedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
     final retryingPay = selectedIntent?.payMode ?? false;
-    if (retryingPay && widget.layout == SwapActivityDetailLayout.mobile) {
-      // Pay is desktop-only. Mobile has no /pay route, so offer the supported
-      // Swap composer without preparing or persisting dormant Pay state.
-      context.go('/swap');
-      return;
-    }
     ref.read(swapStateProvider.notifier).prepareRetryFromSelectedIntent();
     if (retryingPay) {
       context.go(
@@ -834,6 +828,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final payStatus = presentation.payStatus;
       final recipientContact = hasRecipient
           ? addressBookContactForSwapAsset(
               contacts: addressBookContacts,
@@ -844,11 +839,15 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
-        paymentHeader: presentation.paymentMode && hasRecipient
+        paymentHeader:
+            presentation.paymentMode && payStatus != null && hasRecipient
             ? MobilePayStatusHeader(
                 asset: presentation.receiveAsset,
                 amountText: trimSwapAmountText(presentation.receiveAmountText),
                 fiatText: presentation.receiveFiatText,
+                label: payStatus.phase == PayActivityStatusPhase.completed
+                    ? 'You paid'
+                    : "You're paying",
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,

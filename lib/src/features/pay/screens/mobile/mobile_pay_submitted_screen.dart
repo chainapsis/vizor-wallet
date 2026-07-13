@@ -29,6 +29,12 @@ MobilePayDepositProgress mobilePayDepositProgressFor({
   final txHash = _nonEmpty(intent?.depositTxHash);
   final broadcastStatus = _nonEmpty(intent?.broadcastStatus);
 
+  if (intent?.hasProviderObservedDepositEvidence ?? false) {
+    return const MobilePayDepositProgress(
+      phase: MobileTransactionProgressPhase.succeeded,
+    );
+  }
+
   if (txHash != null) {
     if (broadcastStatus == null ||
         broadcastStatus == SwapDepositBroadcastStatus.broadcasted) {

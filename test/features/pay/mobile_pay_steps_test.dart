@@ -312,6 +312,45 @@ void main() {
         isNull,
       );
     });
+
+    testWidgets('blocks an unsupported Pay rail and shows its error', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '12');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayAmountStep(
+          state: _amountState.copyWith(supportedExternalAssets: const []),
+          controller: controller,
+          focusNode: focusNode,
+          zecAvailableZatoshi: BigInt.from(10 * 100000000),
+          onAmountChanged: (_) {},
+          onFiatAmountChanged: (_) {},
+          onToggleFiatInputMode: () {},
+          onOpenAssetSelector: () {},
+          slippageLabel: '0.5%',
+          onOpenSlippage: () {},
+          onContinue: () {},
+        ),
+      );
+
+      expect(
+        find.text('USDC on Ethereum is not currently supported.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
   });
 
   group('MobilePayRecipientStep', () {
@@ -492,6 +531,48 @@ void main() {
             )
             .enabled,
         isFalse,
+      );
+    });
+
+    testWidgets('shows support errors and blocks recipient continuation', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: _recipient);
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: _recipient,
+          addressError: null,
+          quoteError: 'USDC on Base is not currently supported.',
+          contacts: const [],
+          recents: [_recents.first],
+          busy: false,
+          enabled: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(
+        find.text('USDC on Base is not currently supported.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(
+                const ValueKey('mobile_pay_recipient_continue_button'),
+              ),
+            )
+            .onPressed,
+        isNull,
       );
     });
 

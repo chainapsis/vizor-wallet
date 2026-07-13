@@ -64,6 +64,37 @@ void main() {
     expect(legacy.phase, MobileTransactionProgressPhase.succeeded);
   });
 
+  test('maps provider-observed deposits to submitted after restore', () {
+    final providerHash = mobilePayDepositProgressFor(
+      state: _state(
+        intent: _intent(
+          status: SwapIntentStatus.failed,
+          originChainTxHash: 'provider-origin-txid',
+        ),
+      ),
+      intentId: 'intent-1',
+    );
+    final providerAmount = mobilePayDepositProgressFor(
+      state: _state(
+        intent: _intent(
+          status: SwapIntentStatus.failed,
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '0.025 ZEC',
+          ),
+        ),
+      ),
+      intentId: 'intent-1',
+    );
+    final observedStatus = mobilePayDepositProgressFor(
+      state: _state(intent: _intent(status: SwapIntentStatus.depositObserved)),
+      intentId: 'intent-1',
+    );
+
+    expect(providerHash.phase, MobileTransactionProgressPhase.succeeded);
+    expect(providerAmount.phase, MobileTransactionProgressPhase.succeeded);
+    expect(observedStatus.phase, MobileTransactionProgressPhase.succeeded);
+  });
+
   test('maps uncertain broadcast outcomes without claiming success', () {
     for (final status in [
       SwapDepositBroadcastStatus.pendingBroadcast,
@@ -363,6 +394,9 @@ SwapIntent _intent({
   String? broadcastStatus,
   String? broadcastNotice,
   String? statusError,
+  SwapIntentStatus status = SwapIntentStatus.awaitingDeposit,
+  String? originChainTxHash,
+  SwapProviderRefundInfo? providerRefundInfo,
 }) {
   return SwapIntent(
     id: 'intent-1',
@@ -370,11 +404,13 @@ SwapIntent _intent({
     sellAmount: '0.025 ZEC',
     receiveEstimate: '10 USDC',
     provider: 'NEAR Intents',
-    status: SwapIntentStatus.awaitingDeposit,
+    status: status,
     nextAction: 'Submit deposit',
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositTxHash: depositTxHash,
+    originChainTxHash: originChainTxHash,
+    providerRefundInfo: providerRefundInfo,
     broadcastStatus: broadcastStatus,
     broadcastNotice: broadcastNotice,
     statusError: statusError,

@@ -101,11 +101,12 @@ SwapActivityStatusPresentation _presentation({required bool completed}) {
 Widget _content({required bool completed}) {
   return MobileSwapStatusContent(
     presentation: _presentation(completed: completed),
-    paymentHeader: const MobilePayStatusHeader(
+    paymentHeader: MobilePayStatusHeader(
       asset: SwapAsset.usdc,
       amountText: '990 USDC',
       fiatText: r'$250.12',
       recipientAddress: _recipient,
+      label: completed ? 'You paid' : "You're paying",
       recipientName: 'Mike',
       recipientProfilePictureId: 'pfp-08',
     ),
@@ -135,7 +136,7 @@ void main() {
     expect(find.text('Full address'), findsOneWidget);
     expect(find.text('Payment progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
-    expect(find.text('In progress...'), findsOneWidget);
+    expect(find.text('In progress'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('Tx ID'), findsOneWidget);
     expect(find.text('Converted from'), findsOneWidget);
@@ -157,7 +158,7 @@ void main() {
     );
 
     final statusLabel = tester.widget<Text>(find.text('Status'));
-    final statusValue = tester.widget<Text>(find.text('In progress...'));
+    final statusValue = tester.widget<Text>(find.text('In progress'));
     expect(statusLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(statusLabel.style?.fontWeight, AppTypography.labelLarge.fontWeight);
     expect(statusValue.style?.fontSize, AppTypography.labelLarge.fontSize);
@@ -214,6 +215,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('You paid'), findsOneWidget);
     expect(find.text('Payment progress'), findsNothing);
     expect(find.text('Transaction details'), findsNothing);
 
@@ -224,6 +226,61 @@ void main() {
       find.byKey(const ValueKey('mobile_swap_status_card')),
     );
     expect(card.top - header.bottom, 76);
+  });
+
+  testWidgets('failed Pay renders shared paid and refund evidence', (
+    tester,
+  ) async {
+    final intent = _intent(
+      status: SwapIntentStatus.failed,
+      depositTxHash: null,
+      originChainTxHash: 'provider-origin-txid',
+      providerRefundInfo: const SwapProviderRefundInfo(
+        depositedAmountText: '4.125 ZEC',
+        refundedAmountText: '4.100 ZEC',
+      ),
+    ).copyWith(oneClickRefundTo: 'u1refund-address');
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      intent,
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapStatusContent(
+          presentation: presentation,
+          payHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.payLabel,
+            amountText: presentation.payAmountText,
+            asset: presentation.payAsset,
+          ),
+          receiveHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.receiveLabel,
+            amountText: presentation.receiveAmountText,
+            asset: presentation.receiveAsset,
+          ),
+          activeTab: SwapStatusTab.details,
+          detailsExpanded: false,
+          onTabChanged: (_) {},
+          onToggleDetails: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(presentation.payStatus, isNull);
+    expect(find.text('You paid'), findsWidgets);
+    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_header')),
+      findsNothing,
+    );
+    expect(find.text('ZEC refunded to'), findsOneWidget);
+    expect(find.text('Fees'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_details')),
+      findsNothing,
+    );
   });
 
   test(
@@ -264,7 +321,9 @@ void main() {
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       final intent = _intent(
         status: SwapIntentStatus.processing,
-      ).copyWith(accountUuid: 'account-1', depositTxHash: depositTxid);
+        depositTxHash: null,
+        originChainTxHash: depositTxid,
+      ).copyWith(accountUuid: 'account-1');
       final state = SwapState(
         direction: SwapDirection.zecToExternal,
         amountText: '',
@@ -374,7 +433,13 @@ SwapState _state() {
   );
 }
 
-SwapIntent _intent({required SwapIntentStatus status, bool payMode = true}) {
+SwapIntent _intent({
+  required SwapIntentStatus status,
+  bool payMode = true,
+  String? depositTxHash = 'zec-shielded-spend-txid',
+  String? originChainTxHash,
+  SwapProviderRefundInfo? providerRefundInfo,
+}) {
   return SwapIntent(
     id: 'mobile-pay-status',
     pair: 'ZEC -> USDC',
@@ -386,8 +451,10 @@ SwapIntent _intent({required SwapIntentStatus status, bool payMode = true}) {
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: '0123123124512512',
-    depositTxHash: 'zec-shielded-spend-txid',
+    depositTxHash: depositTxHash,
     nearIntentHash: 'near-intent-hash',
+    originChainTxHash: originChainTxHash,
+    providerRefundInfo: providerRefundInfo,
     oneClickRecipient: _recipient,
     totalFeesText: '0.0125 ZEC',
     createdAt: DateTime.utc(2026, 5, 20, 13, 20),

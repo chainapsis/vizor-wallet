@@ -57,7 +57,8 @@ class MobilePayAmountStep extends StatelessWidget {
       zecAvailableZatoshi,
     );
     final canContinue = payAmountCanContinue(state) && !balanceExceeded;
-    final errorText = precisionError ?? state.quoteError;
+    final errorText =
+        precisionError ?? state.externalAssetSupportError ?? state.quoteError;
 
     return Column(
       key: const ValueKey('mobile_pay_amount_step'),

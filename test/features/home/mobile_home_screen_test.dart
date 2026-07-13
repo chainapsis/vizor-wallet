@@ -42,16 +42,21 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   Future<ZecMarketData?> fetchMarketData() async => data;
 }
 
-/// In-memory badge store: keeps the Pay `NEW` gate off the platform
-/// SharedPreferences channel (which would leave pending timers behind).
-class _SeenPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  const _SeenPayIntroductionBadgeStore();
+/// In-memory clicked-state store for the shared desktop/mobile Pay intro.
+class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  _FakePayIntroductionBadgeStore({this.clicked = false});
+
+  bool clicked;
+  int markCount = 0;
 
   @override
-  Future<bool> hasSeen() async => true;
+  Future<bool> hasClickedPay() async => clicked;
 
   @override
-  Future<void> markSeen() async {}
+  Future<void> markPayClicked() async {
+    markCount += 1;
+    clicked = true;
+  }
 }
 
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
@@ -94,6 +99,7 @@ Widget _app(
   ),
   FakeSyncNotifier? syncNotifier,
   bool? swapEnabled,
+  PayIntroductionBadgeStore? badgeStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -129,7 +135,7 @@ Widget _app(
         _FakeMarketDataSource(marketData),
       ),
       payIntroductionBadgeStoreProvider.overrideWithValue(
-        const _SeenPayIntroductionBadgeStore(),
+        badgeStore ?? _FakePayIntroductionBadgeStore(),
       ),
       // The coin float loops forever; keep it off so pumpAndSettle-based
       // tests can settle (mirrors the desktop suites' motion seam).
@@ -412,8 +418,12 @@ void main() {
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
     await tester.pumpWidget(
-      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        badgeStore: badgeStore,
+      ),
     );
     await tester.pump();
     await tester.pump();
@@ -422,6 +432,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
+    expect(badgeStore.clicked, isTrue);
+    expect(badgeStore.markCount, 1);
+  });
+
+  testWidgets('hides the mobile Pay introduction after Pay was activated', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        badgeStore: _FakePayIntroductionBadgeStore(clicked: true),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
+    final glow = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('mobile_home_pay_glow')),
+    );
+    expect((glow.decoration as BoxDecoration).boxShadow, isNull);
   });
 
   testWidgets('hides the pay entry and callout when swap is disabled', (

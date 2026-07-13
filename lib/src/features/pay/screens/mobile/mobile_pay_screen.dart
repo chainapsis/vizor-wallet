@@ -340,10 +340,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     controller: _recipientController,
                     typedAddress: swapState.destinationText,
                     addressError: swapState.destinationAddressFormatError,
-                    quoteError: swapState.quoteError,
+                    quoteError:
+                        swapState.externalAssetSupportError ??
+                        swapState.quoteError,
                     contacts: contacts,
                     recents: recents,
                     busy: swapState.quoteLoading,
+                    enabled: swapState.externalAssetIsSupported,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: swapNotifier.updateDestination,
                     onOpenScanner: () =>
