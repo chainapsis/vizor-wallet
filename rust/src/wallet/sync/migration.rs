@@ -129,7 +129,7 @@ pub(crate) fn plan_denominations(
         return Ok(DenominationPlan {
             migration_outputs: outputs,
             orchard_change: None,
-            prep_fee_zatoshi,
+            split_fee_zatoshi,
             migration_fee_zatoshi,
             total_input_zatoshi,
             total_migratable_zatoshi,

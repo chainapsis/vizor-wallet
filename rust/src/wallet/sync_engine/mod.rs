@@ -32,7 +32,7 @@ use crate::wallet::{
 
 use {
     ::transparent::{
-        address::Script,
+        address::{Script, TransparentAddress},
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -765,6 +765,29 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
+fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
+    #[cfg(ironwood_masquerade)]
+    if network == WalletNetwork::Main {
+        return WalletNetwork::Test;
+    }
+
+    network
+}
+
+fn transparent_address_for_query(
+    address: &str,
+    source_network: WalletNetwork,
+    query_network: WalletNetwork,
+) -> Result<String, String> {
+    if source_network == query_network {
+        return Ok(address.to_string());
+    }
+
+    TransparentAddress::decode(&source_network, address)
+        .map(|address| address.encode(&query_network))
+        .map_err(|e| format!("decode transparent address {address}: {e}"))
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
@@ -790,12 +813,18 @@ async fn refresh_utxos(
                 u64::from(u32::from(safety_start_height))
             });
 
-        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let query_network = transparent_utxo_query_network(network);
+        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
+        for address in &mut external_addresses {
+            address.address =
+                transparent_address_for_query(&address.address, network, query_network)
+                    .map_err(SyncError::parse)?;
+        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -870,7 +899,7 @@ async fn refresh_utxos(
             .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
-            .map(|(addr, _)| addr.encode(&network))
+            .map(|(addr, _)| addr.encode(&query_network))
             .filter(|addr| !external_selected.contains(addr.as_str()))
             .collect();
 
@@ -2074,15 +2103,16 @@ mod tests {
 
     #[test]
     fn empty_chain_state_uses_network_activation_height() {
+        let main_sapling_activation = WalletNetwork::Main
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("mainnet Sapling activation height");
         assert!(
-            should_use_empty_chain_state(&WalletNetwork::Main, BlockHeight::from_u32(419_200))
+            should_use_empty_chain_state(&WalletNetwork::Main, main_sapling_activation).unwrap()
+        );
+        assert!(
+            !should_use_empty_chain_state(&WalletNetwork::Main, main_sapling_activation + 1)
                 .unwrap()
         );
-        assert!(!should_use_empty_chain_state(
-            &WalletNetwork::Main,
-            BlockHeight::from_u32(419_201)
-        )
-        .unwrap());
 
         assert!(
             should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(1))
@@ -2091,6 +2121,23 @@ mod tests {
         assert!(
             !should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(141))
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn transparent_query_address_reencodes_mainnet_as_testnet() {
+        let address = TransparentAddress::PublicKeyHash([7; 20]);
+        let mainnet = address.encode(&WalletNetwork::Main);
+
+        let testnet =
+            transparent_address_for_query(&mainnet, WalletNetwork::Main, WalletNetwork::Test)
+                .unwrap();
+
+        assert!(mainnet.starts_with("t1"));
+        assert!(testnet.starts_with("tm"));
+        assert_eq!(
+            TransparentAddress::decode(&WalletNetwork::Test, &testnet).unwrap(),
+            address,
         );
     }
 

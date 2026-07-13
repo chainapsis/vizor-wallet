@@ -114,4 +114,20 @@ mod tests {
             Some(BlockHeight::from_u32(120))
         );
     }
+
+    #[cfg(ironwood_masquerade)]
+    #[test]
+    fn masquerade_main_keeps_mainnet_identity_with_test_chain_activation_heights() {
+        let network = WalletNetwork::Main;
+
+        assert_eq!(network.network_type(), NetworkType::Main);
+        assert_eq!(
+            network.activation_height(NetworkUpgrade::Sapling),
+            Some(BlockHeight::from_u32(1))
+        );
+        assert_eq!(
+            network.activation_height(NetworkUpgrade::Nu6_3),
+            Some(BlockHeight::from_u32(5000))
+        );
+    }
 }
