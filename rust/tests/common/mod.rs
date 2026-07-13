@@ -141,6 +141,10 @@ pub fn sync_wallet(db_path: &Path) {
     .expect("run_full_sync_blocking");
 }
 
+pub fn get_sync_status(db_path: &Path) -> sync_api::SyncProgress {
+    sync_api::get_sync_status(path_str(db_path), REGTEST_NETWORK.into()).expect("get_sync_status")
+}
+
 pub fn get_balance(db_path: &Path, account_uuid: &str) -> sync_api::WalletBalance {
     sync_api::get_balance(
         path_str(db_path),

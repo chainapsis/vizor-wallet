@@ -1922,6 +1922,36 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else {
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                    {
+                        log::info!(
+                            "[{}] sync: cancel/mode observed before final enhancement, exiting",
+                            elapsed(),
+                        );
+                        return Ok(());
+                    }
+
+                    // Scanning and enhancement commit independently. A prior
+                    // attempt can therefore leave no scan ranges while still
+                    // having transaction status/detail work queued. Run the
+                    // same bounded enhancement pass used after scan batches
+                    // before marking this tip complete. Do not require the
+                    // DB-derived queue to become physically empty: a
+                    // successfully-polled GetStatus request for an unmined
+                    // transparent transaction can legitimately remain queued.
+                    run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                    {
+                        log::info!(
+                            "[{}] sync: cancel/mode observed after final enhancement, exiting",
+                            elapsed(),
+                        );
+                        return Ok(());
+                    }
+
                     ensure_complete_scan_state(&db, current_tip_height)?;
                     break;
                 }

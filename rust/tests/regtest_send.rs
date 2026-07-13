@@ -2,8 +2,86 @@ mod common;
 
 use common::{
     add_account_with_birthday, create_wallet, ensure_regtest_up, exclusive_regtest, execute_send,
-    fund_wallet, get_balance, get_transaction_history, mine_blocks, sync_wallet,
+    fund_wallet, get_balance, get_sync_status, get_transaction_history, mine_blocks, sync_wallet,
 };
+
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn no_range_sync_refreshes_pending_status_and_completes() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    let (sender_dir, sender_wallet) = create_wallet("Pending Sender");
+    let sender_db = sender_dir.path().join("zcash_wallet.db");
+    let (_receiver_dir, receiver_wallet) = create_wallet("Pending Receiver");
+
+    fund_wallet(&sender_wallet.unified_address, "2.0");
+    sync_wallet(&sender_db);
+
+    let txid = execute_send(
+        &sender_db,
+        &sender_wallet.account_uuid,
+        &sender_wallet.mnemonic,
+        &receiver_wallet.unified_address,
+        50_000_000,
+    );
+    assert!(!txid.is_empty(), "execute_proposal should return a txid");
+
+    let conn = rusqlite::Connection::open(&sender_db).expect("open wallet db");
+    let pending_scan_ranges: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM scan_queue WHERE priority > 10",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query pending scan ranges");
+    assert_eq!(
+        pending_scan_ranges, 0,
+        "the status refresh must exercise the no-range completion path"
+    );
+    let confirmed_before: Option<i64> = conn
+        .query_row(
+            "SELECT confirmed_unmined_at_height
+             FROM transactions
+             WHERE mined_height IS NULL
+             ORDER BY id_tx DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query pending transaction before sync");
+    assert_eq!(confirmed_before, None);
+    drop(conn);
+
+    // Do not mine a block. The second sync has no scan work, but its final
+    // bounded enhancement pass must still poll the pending transaction.
+    sync_wallet(&sender_db);
+
+    let status = get_sync_status(&sender_db);
+    assert!(
+        status.is_complete,
+        "pending GetStatus must not block completion"
+    );
+    assert_eq!(status.scanned_height, status.chain_tip_height);
+
+    let conn = rusqlite::Connection::open(&sender_db).expect("open wallet db");
+    let (mined_height, confirmed_after): (Option<i64>, Option<i64>) = conn
+        .query_row(
+            "SELECT mined_height, confirmed_unmined_at_height
+             FROM transactions
+             WHERE mined_height IS NULL
+             ORDER BY id_tx DESC
+             LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("query pending transaction after sync");
+    assert_eq!(mined_height, None);
+    assert!(
+        confirmed_after.is_some(),
+        "the no-range enhancement pass should update pending status"
+    );
+}
 
 #[test]
 #[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
