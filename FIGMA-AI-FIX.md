@@ -8,6 +8,66 @@ This documentation covers only the Vizor design system in
 It does not document product flows, feature mockups, WIP screens, QA pages, or
 implementation behavior.
 
+The topic documents under `figma-ai-fix/` remain design-system-only. The
+workflow below governs how product screens are identified and safely copied
+when the user explicitly requests a Figma change; it does not add those product
+screens to the design-system documentation.
+
+## Screen matching and approval gate
+
+Unless the user specifies another source, find the Figma screen corresponding
+to the code in
+[Vizor Design System AI Test](https://www.figma.com/design/HJxo289BJD7R6tz0OoGSQu/Vizor--Design-System--AI-Test-?node-id=5572-69081&m=dev).
+
+Treat every match as a candidate until the user approves it. Before copying or
+editing anything:
+
+1. Report the Figma page name, screen or component name, node ID, direct URL,
+   and the concrete reason it matches the code.
+2. If more than one candidate is plausible, report the candidates instead of
+   choosing one silently.
+3. Explicitly tell the user that nothing has been copied or edited yet and ask
+   whether the identified screen or component is the intended target.
+4. Wait for explicit approval. Do not copy or edit the candidate before that
+   approval.
+
+Use this confirmation format:
+
+```markdown
+I found the likely matching Figma screen:
+
+- Page:
+- Screen/component:
+- Node ID:
+- URL:
+- Match rationale:
+
+I have not copied or edited anything yet. Is this the correct screen/component
+to use?
+```
+
+## Copy-only editing policy
+
+Existing Figma screens and components are immutable. Never rename, delete,
+move, reparent, detach, resize, restyle, or otherwise mutate an existing source
+node. Do not modify an existing component's variants, properties, auto-layout,
+text, fills, effects, variables, styles, or main component. Shared assets that
+could change an existing screen are also immutable.
+
+After the user approves the target:
+
+1. Copy only the approved screen or component into the
+   [AI Test page](https://www.figma.com/design/HJxo289BJD7R6tz0OoGSQu/Vizor--Design-System--AI-Test-?node-id=8001-32299&m=dev).
+2. Apply every requested change only to that new copy and its descendants.
+3. If a nested shared component must change, copy that component into the AI
+   Test page too, then retarget only the copied screen's instance to the copied
+   component. Never change the original main component.
+4. If the requested change would require mutating anything outside the copied
+   subtree, stop and ask the user before continuing.
+5. Before reporting completion, verify that every mutated node is a descendant
+   of the approved copy on the AI Test page and that all original nodes remain
+   unchanged.
+
 Read [source and scope](figma-ai-fix/00-source-and-scope.md) first. Then read
 only the topic documents needed for the requested Figma change.
 
