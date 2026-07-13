@@ -95,7 +95,6 @@ MigrationViewState? migrationViewStateFromRustPhase(String? phase) {
       MigrationViewState.waitingForSpendableOrchard,
     'ready_to_prepare' => MigrationViewState.planningDenominations,
     'planning_denominations' => MigrationViewState.planningDenominations,
-    'preparing_denominations' => MigrationViewState.preparingDenominations,
     'waiting_denom_confirmations' =>
       MigrationViewState.waitingDenomConfirmations,
     'ready_to_migrate' => MigrationViewState.readyToMigrate,
@@ -160,7 +159,7 @@ bool migrationHasBroadcastedUnconfirmedTransactions(
   return (status?.broadcastedTxCount ?? 0) > 0;
 }
 
-bool migrationHasPendingPrepBroadcast(rust_sync.MigrationStatus? status) {
+bool migrationHasPendingSplitStages(rust_sync.MigrationStatus? status) {
   return (status?.pendingPrepTxCount ?? 0) > 0;
 }
 
@@ -177,7 +176,7 @@ bool migrationShouldRunBroadcastTick(
   rust_sync.MigrationStatus? status,
   DateTime now,
 ) {
-  return migrationHasPendingPrepBroadcast(status) ||
+  return migrationHasPendingSplitStages(status) ||
       migrationHasDueScheduledBroadcast(status, now) ||
       migrationSignedChildrenMayFinalize(status);
 }
@@ -188,7 +187,7 @@ bool migrationShouldWarnBeforeClose(rust_sync.MigrationStatus? status) {
           )?.needsKeepOpenWarning ??
           false) ||
       migrationHasScheduledPendingBroadcasts(status) ||
-      migrationHasPendingPrepBroadcast(status) ||
+      migrationHasPendingSplitStages(status) ||
       migrationHasBroadcastedUnconfirmedTransactions(status) ||
       migrationHasSignedChildPczts(status);
 }

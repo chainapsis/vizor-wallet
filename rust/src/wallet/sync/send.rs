@@ -44,10 +44,7 @@ use std::time::Instant;
 use rand::{rngs::OsRng, Rng};
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::error::{QueryError, ShardTreeError};
-use transparent::{
-    address::TransparentAddress, builder::TransparentSigningSet, bundle::OutPoint,
-    keys::TransparentKeyScope,
-};
+use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
     GreedyInputSelector, InputSelector, SpendPolicy,
 };
@@ -847,35 +844,6 @@ pub async fn migrate_orchard_to_ironwood(
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
     if let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? {
-        if super::migration::pending_prep_tx_for_run(
-            db_path,
-            &run.run_id,
-            pending_password.as_slice(),
-            pending_salt_base64,
-        )?
-        .is_some()
-        {
-            drop(seed);
-            let prep_broadcast = broadcast_pending_migration_prep_tx(
-                db_path,
-                lightwalletd_url,
-                network,
-                &run.run_id,
-                pending_password.as_slice(),
-                pending_salt_base64,
-            )
-            .await?
-            .ok_or("Migration prep transaction disappeared before broadcast")?;
-            let result = migration_result_from_prep_broadcast(
-                prep_broadcast,
-                run.target_values_zatoshi.len() as u32,
-                0,
-                run.target_values_zatoshi.iter().sum(),
-            );
-            drop(migration_guard);
-            return Ok(result);
-        }
-
         match advance_staged_denomination_run(
             db_path,
             lightwalletd_url,
@@ -926,71 +894,7 @@ pub async fn migrate_orchard_to_ironwood(
                 drop(migration_guard);
                 return result;
             }
-            StagedDenominationAdvance::NotStaged => {}
         }
-
-        if super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count == 0
-            && super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0
-        {
-            drop(seed);
-            if !run_may_finalize_presigned_migration_children(&run) {
-                let result = prepared_notes_not_spendable_result(
-                    run.target_values_zatoshi.len() as u32,
-                    run.target_values_zatoshi.iter().sum(),
-                );
-                drop(migration_guard);
-                return Ok(result);
-            }
-            let finalized = finalize_presigned_migration_children(
-                db_path,
-                network,
-                account_uuid,
-                &run.run_id,
-                pending_password.as_slice(),
-                pending_salt_base64,
-            )?;
-            if !finalized {
-                let result = prepared_notes_not_spendable_result(
-                    run.target_values_zatoshi.len() as u32,
-                    run.target_values_zatoshi.iter().sum(),
-                );
-                drop(migration_guard);
-                return Ok(result);
-            }
-            let result = broadcast_due_scheduled_migration_txs(
-                db_path,
-                lightwalletd_url,
-                network,
-                &run.run_id,
-                pending_password.as_slice(),
-                pending_salt_base64,
-                run.target_values_zatoshi.len() as u32,
-                run.target_values_zatoshi.iter().sum(),
-            )
-            .await;
-            drop(migration_guard);
-            return result;
-        }
-        let action = prepare_active_migration_resume(
-            db_path,
-            network,
-            account_uuid,
-            run,
-            seed,
-            pending_password.as_slice(),
-            pending_salt_base64,
-        )?;
-        let result = execute_active_migration_resume_action(
-            action,
-            db_path,
-            lightwalletd_url,
-            network,
-            pending_password.as_slice(),
-            pending_salt_base64,
-        )
-        .await;
-        drop(migration_guard);
-        return result;
     }
 
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
@@ -1037,12 +941,12 @@ pub async fn migrate_orchard_to_ironwood(
     .await?
     else {
         return Err(
-            "Migration denomination split was staged without a prep transaction".to_string(),
+            "Migration denomination split has no broadcastable root transaction".to_string(),
         );
     };
     drop(migration_guard);
 
-    Ok(migration_result_from_prep_broadcast(
+    Ok(migration_result_from_split_broadcast(
         broadcast,
         prepared_count,
         fee_zatoshi,
@@ -1071,24 +975,6 @@ pub async fn broadcast_due_orchard_migration_transactions(
         });
     };
 
-    if let Some(prep_broadcast) = broadcast_pending_migration_prep_tx(
-        db_path,
-        lightwalletd_url,
-        network,
-        &run.run_id,
-        pending_password.as_slice(),
-        pending_salt_base64,
-    )
-    .await?
-    {
-        return Ok(migration_result_from_prep_broadcast(
-            prep_broadcast,
-            run.target_values_zatoshi.len() as u32,
-            0,
-            run.target_values_zatoshi.iter().sum(),
-        ));
-    }
-
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
@@ -1101,7 +987,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
     .await?
     {
         StagedDenominationAdvance::Waiting(result) => return Ok(result),
-        StagedDenominationAdvance::Ready | StagedDenominationAdvance::NotStaged => {}
+        StagedDenominationAdvance::Ready => {}
     }
 
     let signed_child_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
@@ -1330,11 +1216,11 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     .await?
     else {
         return Err(
-            "Migration denomination split was staged without a prep transaction".to_string(),
+            "Migration denomination split has no broadcastable root transaction".to_string(),
         );
     };
 
-    Ok(migration_result_from_prep_broadcast(
+    Ok(migration_result_from_split_broadcast(
         broadcast,
         prepared_refs.len() as u32,
         stored.split_stages.iter().try_fold(0u64, |total, stage| {
@@ -1608,11 +1494,11 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     .await?
     else {
         return Err(
-            "Migration denomination split was staged without a prep transaction".to_string(),
+            "Migration denomination split has no broadcastable root transaction".to_string(),
         );
     };
 
-    Ok(migration_result_from_prep_broadcast(
+    Ok(migration_result_from_split_broadcast(
         broadcast,
         prepared_refs.len() as u32,
         stored
@@ -1636,12 +1522,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     if prepared_notes.is_empty() {
         return Err("Migration run has no prepared denomination notes".to_string());
     }
-    let mut pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    if pending_totals.total_count > 0
-        && super::migration::clear_retriable_pending_txs(db_path, &run)?
-    {
-        pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    }
+    let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
     if pending_totals.total_count > 0 {
         return Err("Migration transactions are already signed and scheduled".to_string());
     }
@@ -1864,167 +1745,6 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     ))
 }
 
-// Returns a non-secret action for the async caller. Any software signing needed
-// while resuming an active run happens before this function returns.
-fn prepare_active_migration_resume(
-    db_path: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
-    run: super::migration::ActiveRun,
-    seed: SecretVec<u8>,
-    pending_password: &[u8],
-    pending_salt_base64: &str,
-) -> Result<ActiveMigrationResumeAction, String> {
-    let fallback_total_count = run.target_values_zatoshi.len() as u32;
-    let fallback_migrated_zatoshi = run.target_values_zatoshi.iter().sum();
-
-    if matches!(
-        run.phase.as_str(),
-        super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS
-            | super::migration::PHASE_READY_TO_MIGRATE
-            | super::migration::PHASE_FAILED_RECOVERABLE
-    ) {
-        let mut pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-        if pending_totals.total_count > 0
-            && super::migration::clear_retriable_pending_txs(db_path, &run)?
-        {
-            pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-        }
-        if pending_totals.total_count == 0 {
-            let prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
-            if prepared_notes.is_empty() {
-                drop(seed);
-                return Err("Migration run has no prepared denomination notes".to_string());
-            }
-            if !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
-                drop(seed);
-                return Ok(ActiveMigrationResumeAction::Return(
-                    prepared_notes_not_spendable_result(
-                        fallback_total_count,
-                        fallback_migrated_zatoshi,
-                    ),
-                ));
-            }
-
-            let pending =
-                match with_wallet_db_write_lock("send.migration.create_exact_notes", move || {
-                    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-                    let mut pending = Vec::with_capacity(prepared_notes.len());
-                    for note_ref in &prepared_notes {
-                        let Some(tx) = create_orchard_to_ironwood_transaction_from_note(
-                            db_path,
-                            network,
-                            &usk,
-                            account_uuid,
-                            note_ref,
-                        )?
-                        else {
-                            return Ok(None);
-                        };
-                        pending.push(tx);
-                    }
-                    Ok::<_, String>(Some(pending))
-                }) {
-                    Ok(Some(pending)) => pending,
-                    Ok(None) => {
-                        mark_prepared_notes_waiting(db_path, &run.run_id)?;
-                        return Ok(ActiveMigrationResumeAction::Return(
-                            prepared_notes_not_spendable_result(
-                                fallback_total_count,
-                                fallback_migrated_zatoshi,
-                            ),
-                        ));
-                    }
-                    Err(e) if is_orchard_witness_not_ready_error(&e) => {
-                        mark_prepared_notes_waiting(db_path, &run.run_id)?;
-                        return Ok(ActiveMigrationResumeAction::Return(
-                            prepared_notes_not_spendable_result(
-                                fallback_total_count,
-                                fallback_migrated_zatoshi,
-                            ),
-                        ));
-                    }
-                    Err(e) => return Err(e),
-                };
-
-            let pending_inserts = pending
-                .iter()
-                .map(|tx| super::migration::PendingMigrationTxInsert {
-                    txid_hex: tx.txid_hex.clone(),
-                    raw_tx: tx.raw_tx.clone(),
-                    target_height: tx.target_height,
-                    expiry_height: tx.expiry_height,
-                    value_zatoshi: tx.migrated_zatoshi,
-                    fee_zatoshi: tx.fee_zatoshi,
-                    selected_note: tx.selected_note.clone(),
-                    metadata: super::migration::PendingMigrationTxMetadata {
-                        tx_kind: "migration".to_string(),
-                        funding_account_uuid: account_uuid.to_string(),
-                        selected_note: tx.selected_note.clone(),
-                    },
-                })
-                .collect::<Vec<_>>();
-            super::migration::insert_pending_txs(
-                db_path,
-                &run.run_id,
-                pending_inserts,
-                pending_password,
-                pending_salt_base64,
-            )?;
-            let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-            return Ok(ActiveMigrationResumeAction::Return(
-                migration_result_from_pending_totals(
-                    totals,
-                    super::migration::PHASE_BROADCAST_SCHEDULED,
-                    Some(
-                        "Migration transactions were signed and scheduled for delayed broadcast."
-                            .to_string(),
-                    ),
-                    fallback_total_count,
-                    fallback_migrated_zatoshi,
-                ),
-            ));
-        }
-    }
-
-    drop(seed);
-    Ok(ActiveMigrationResumeAction::BroadcastDue {
-        run_id: run.run_id,
-        fallback_total_count,
-        fallback_migrated_zatoshi,
-    })
-}
-
-async fn execute_active_migration_resume_action(
-    action: ActiveMigrationResumeAction,
-    db_path: &str,
-    lightwalletd_url: &str,
-    network: WalletNetwork,
-    pending_password: &[u8],
-    pending_salt_base64: &str,
-) -> Result<IronwoodMigrationResult, String> {
-    match action {
-        ActiveMigrationResumeAction::Return(result) => Ok(result),
-        ActiveMigrationResumeAction::BroadcastDue {
-            run_id,
-            fallback_total_count,
-            fallback_migrated_zatoshi,
-        } => {
-            broadcast_due_scheduled_migration_txs(
-                db_path,
-                lightwalletd_url,
-                network,
-                &run_id,
-                pending_password,
-                pending_salt_base64,
-                fallback_total_count,
-                fallback_migrated_zatoshi,
-            )
-            .await
-        }
-    }
-}
-
 fn is_orchard_witness_not_ready_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("read orchard witnesses")
@@ -2068,7 +1788,6 @@ fn prepared_notes_not_spendable_result(
 }
 
 enum StagedDenominationAdvance {
-    NotStaged,
     Waiting(IronwoodMigrationResult),
     Ready,
 }
@@ -2150,7 +1869,10 @@ async fn advance_staged_denomination_run(
         pending_salt_base64,
     )?;
     if stages.is_empty() {
-        return Ok(StagedDenominationAdvance::NotStaged);
+        return Err(format!(
+            "Migration state invariant failed: active run {} has no denomination stages",
+            run.run_id
+        ));
     }
 
     let fallback_total_count = u32::try_from(run.target_values_zatoshi.len())
@@ -2173,7 +1895,7 @@ async fn advance_staged_denomination_run(
     .await?
     {
         return Ok(StagedDenominationAdvance::Waiting(
-            migration_result_from_prep_broadcast(
+            migration_result_from_split_broadcast(
                 broadcast,
                 fallback_total_count,
                 split_fee_zatoshi,
@@ -2205,7 +1927,7 @@ async fn advance_staged_denomination_run(
             .await?
             .ok_or("Finalized denomination stage was not pending broadcast")?;
             return Ok(StagedDenominationAdvance::Waiting(
-                migration_result_from_prep_broadcast(
+                migration_result_from_split_broadcast(
                     broadcast,
                     fallback_total_count,
                     split_fee_zatoshi,
@@ -2379,25 +2101,6 @@ struct PreparedSoftwareMigrationRun {
     signed_children: Vec<super::migration::SignedMigrationPcztInsert>,
     fee_zatoshi: u64,
     total_migratable_zatoshi: u64,
-}
-
-enum ActiveMigrationResumeAction {
-    Return(IronwoodMigrationResult),
-    BroadcastDue {
-        run_id: String,
-        fallback_total_count: u32,
-        fallback_migrated_zatoshi: u64,
-    },
-}
-
-struct CreatedPendingMigrationTx {
-    txid_hex: String,
-    raw_tx: Vec<u8>,
-    target_height: u32,
-    expiry_height: u32,
-    fee_zatoshi: u64,
-    migrated_zatoshi: u64,
-    selected_note: super::migration::PreparedOrchardNoteRef,
 }
 
 #[derive(Clone)]
@@ -3842,167 +3545,6 @@ fn sign_orchard_migration_pczt_with_usk(
         .map_err(|e| format!("Serialize signed migration PCZT: {e:?}"))
 }
 
-fn create_orchard_to_ironwood_transaction_from_note(
-    db_path: &str,
-    network: WalletNetwork,
-    usk: &UnifiedSpendingKey,
-    account_uuid: &str,
-    note_ref: &super::migration::PreparedOrchardNoteRef,
-) -> Result<Option<CreatedPendingMigrationTx>, String> {
-    if note_ref.note_version != 2 {
-        return Err("Prepared migration note is not an Orchard V2 note".to_string());
-    }
-
-    let mut db = open_wallet_db(db_path, network)?;
-    let account_id = parse_account_uuid(account_uuid)?;
-    let ufvk = usk.to_unified_full_viewing_key();
-    let account_for_key = db
-        .get_account_for_ufvk(&ufvk)
-        .map_err(|e| format!("{e}"))?
-        .ok_or("Spending key not recognized")?
-        .id();
-    if account_for_key != account_id {
-        return Err("Spending key does not match migration account".to_string());
-    }
-
-    let orchard_fvk = ufvk
-        .orchard()
-        .cloned()
-        .ok_or("Orchard spending key not available")?;
-    let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
-    let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
-    let memo = MemoBytes::empty();
-
-    let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
-        .map_err(|e| format!("Failed to read anchor height: {e}"))?
-        .ok_or("Wallet must sync before migrating denominations")?;
-
-    let txid = parse_txid_hex(&note_ref.txid_hex)?;
-    let selected = db
-        .get_spendable_note(
-            &txid,
-            ShieldedProtocol::Orchard,
-            note_ref.output_index,
-            target_height,
-        )
-        .map_err(|e| format!("Failed to revalidate prepared note: {e}"))?;
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let orchard_note = match selected.note() {
-        Note::Orchard { note, .. } => *note,
-        Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
-    };
-    if orchard_note.version() != orchard::note::NoteVersion::V2 {
-        return Err("Prepared note revalidated as non-V2 Orchard".to_string());
-    }
-    let selected_value: Zatoshis = orchard_note
-        .value()
-        .inner()
-        .try_into()
-        .map_err(|e| format!("Prepared note value invalid: {e}"))?;
-    if u64::from(selected_value) != note_ref.value_zatoshi {
-        return Err("Prepared note value changed during revalidation".to_string());
-    }
-
-    let orchard_selected = ReceivedNote::from_parts(
-        *selected.internal_note_id(),
-        *selected.txid(),
-        selected.output_index(),
-        orchard_note,
-        selected.spending_key_scope(),
-        selected.note_commitment_tree_position(),
-        selected.mined_height(),
-        selected.max_shielding_input_height(),
-    );
-    let (orchard_anchor, orchard_inputs) = orchard_witnesses(
-        &mut db,
-        anchor_height,
-        std::slice::from_ref(&orchard_selected),
-    )?;
-    let fee_rule = ConservativeZip317FeeRule;
-    let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
-
-        for (note, merkle_path) in orchard_inputs.iter() {
-            builder
-                .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                    orchard_fvk.clone(),
-                    *note,
-                    merkle_path.clone(),
-                )
-                .map_err(|e| format!("Add migration Orchard spend failed: {e}"))?;
-        }
-        builder
-            .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                internal_ovk.clone(),
-                recipient,
-                ironwood_amount,
-                memo.clone(),
-            )
-            .map_err(|e| format!("Add migration Ironwood output failed: {e}"))?;
-        Ok::<_, String>(builder)
-    };
-
-    let builder_with_minimum_amount = make_builder(
-        Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
-            .map_err(|_| "Bad migration minimum output")?,
-    )?;
-    let fee_amount = builder_with_minimum_amount
-        .get_fee(&fee_rule)
-        .map_err(|e| format!("Failed to estimate exact-note migration fee: {e}"))?;
-    if selected_value <= fee_amount {
-        return Ok(None);
-    }
-    let migrated_amount: Zatoshis = (selected_value - fee_amount)
-        .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
-    let builder = if migrated_amount
-        == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
-            .map_err(|_| "Bad migration minimum output")?
-    {
-        builder_with_minimum_amount
-    } else {
-        make_builder(migrated_amount)?
-    };
-
-    let transparent_signing_set = TransparentSigningSet::new();
-    let sapling_extsks = &[usk.sapling().clone(), usk.sapling().derive_internal()];
-    let orchard_saks = &[usk.orchard().into()];
-    let spend_prover = NoOpSpendProver;
-    let output_prover = NoOpOutputProver;
-    let build_result = builder
-        .build(
-            &transparent_signing_set,
-            sapling_extsks,
-            orchard_saks,
-            rand_core::OsRng,
-            &spend_prover,
-            &output_prover,
-            &fee_rule,
-        )
-        .map_err(|e| format!("Build exact-note migration TX failed: {e}"))?;
-    let txid = build_result.transaction().txid();
-    let mut raw_tx = Vec::new();
-    build_result
-        .transaction()
-        .write(&mut raw_tx)
-        .map_err(|e| format!("Serialize exact-note migration TX failed: {e}"))?;
-    let target_height_u32: u32 = target_height.into();
-    let expiry_height = u32::from(build_result.transaction().expiry_height());
-
-    Ok(Some(CreatedPendingMigrationTx {
-        txid_hex: format!("{txid}"),
-        raw_tx,
-        target_height: target_height_u32,
-        expiry_height,
-        fee_zatoshi: u64::from(fee_amount),
-        migrated_zatoshi: u64::from(migrated_amount),
-        selected_note: note_ref.clone(),
-    }))
-}
-
 fn create_orchard_to_ironwood_pczt_from_note(
     db_path: &str,
     network: WalletNetwork,
@@ -5323,59 +4865,6 @@ fn finalize_ready_denomination_stages(
     Ok(promoted)
 }
 
-async fn broadcast_pending_migration_prep_tx(
-    db_path: &str,
-    lightwalletd_url: &str,
-    network: WalletNetwork,
-    run_id: &str,
-    pending_password: &[u8],
-    pending_salt_base64: &str,
-) -> Result<Option<CreatedBroadcastResult>, String> {
-    let Some(prep_tx) = super::migration::pending_prep_tx_for_run(
-        db_path,
-        run_id,
-        pending_password,
-        pending_salt_base64,
-    )?
-    else {
-        return Ok(None);
-    };
-
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message = format!("Denomination split broadcast could not start: {e}");
-            return Ok(Some(CreatedBroadcastResult {
-                txids: prep_tx.txid_hex,
-                status: CreatedBroadcastResult::PENDING_BROADCAST,
-                broadcasted_count: 0,
-                total_count: 1,
-                message: Some(message),
-            }));
-        }
-    };
-
-    if let Err(e) = broadcast_raw_transaction(&mut client, &prep_tx.raw_tx).await {
-        let message = format!("Denomination split broadcast failed: {e}");
-        return Ok(Some(CreatedBroadcastResult {
-            txids: prep_tx.txid_hex,
-            status: CreatedBroadcastResult::PENDING_BROADCAST,
-            broadcasted_count: 0,
-            total_count: 1,
-            message: Some(message),
-        }));
-    }
-
-    record_accepted_prep_migration_tx(
-        db_path,
-        network,
-        run_id,
-        &prep_tx,
-        decrypt_and_store_migration_tx,
-    )
-    .map(Some)
-}
-
 async fn broadcast_pending_denomination_stages(
     db_path: &str,
     lightwalletd_url: &str,
@@ -5617,85 +5106,6 @@ fn migration_storage_retry_message(tx_label: &str, txid_hex: &str, error: &str) 
     )
 }
 
-fn record_accepted_prep_migration_tx<F>(
-    db_path: &str,
-    network: WalletNetwork,
-    run_id: &str,
-    prep_tx: &super::migration::MigrationPrepTx,
-    store_tx: F,
-) -> Result<CreatedBroadcastResult, String>
-where
-    F: FnOnce(&str, WalletNetwork, &[u8]) -> Result<(), String>,
-{
-    if let Err(e) = store_tx(db_path, network, &prep_tx.raw_tx) {
-        let result = migration_prep_storage_retry_result(prep_tx.txid_hex.clone(), &e);
-        if let Some(message) = &result.message {
-            log::warn!("migration: {message}");
-            if let Err(mark_err) = super::migration::mark_run_phase(
-                db_path,
-                run_id,
-                super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
-                Some(message),
-            ) {
-                log::warn!(
-                    "migration: could not persist denomination split retry message: {mark_err}"
-                );
-            }
-        }
-        return Ok(result);
-    }
-
-    let phase = match super::migration::mark_prep_tx_broadcasted(db_path, run_id) {
-        Ok(phase) => phase,
-        Err(e) => {
-            let message = format!(
-                "Denomination split broadcast was accepted, but local state update failed: {e}"
-            );
-            log::warn!(
-                "migration: broadcast denomination split {} but could not mark it broadcasted: {}",
-                prep_tx.txid_hex,
-                e
-            );
-            return Ok(CreatedBroadcastResult {
-                txids: prep_tx.txid_hex.clone(),
-                status: CreatedBroadcastResult::PENDING_BROADCAST,
-                broadcasted_count: 0,
-                total_count: 1,
-                message: Some(message),
-            });
-        }
-    };
-    let status = if phase == super::migration::PHASE_READY_TO_MIGRATE {
-        super::migration::PHASE_READY_TO_MIGRATE
-    } else {
-        super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS
-    };
-    let message = if status == super::migration::PHASE_READY_TO_MIGRATE {
-        "Denomination notes are ready. Continue migration.".to_string()
-    } else {
-        "Denomination notes were created. Migration will continue after confirmation.".to_string()
-    };
-
-    Ok(CreatedBroadcastResult {
-        txids: prep_tx.txid_hex.clone(),
-        status,
-        broadcasted_count: 1,
-        total_count: 1,
-        message: Some(message),
-    })
-}
-
-fn migration_prep_storage_retry_result(txid_hex: String, error: &str) -> CreatedBroadcastResult {
-    let message = migration_storage_retry_message("Denomination split", &txid_hex, error);
-    CreatedBroadcastResult {
-        txids: txid_hex,
-        status: CreatedBroadcastResult::PENDING_BROADCAST,
-        broadcasted_count: 0,
-        total_count: 1,
-        message: Some(message),
-    }
-}
-
 fn record_accepted_scheduled_migration_tx<F>(
     db_path: &str,
     network: WalletNetwork,
@@ -5750,7 +5160,7 @@ fn migration_result_from_pending_totals(
     }
 }
 
-fn migration_result_from_prep_broadcast(
+fn migration_result_from_split_broadcast(
     result: CreatedBroadcastResult,
     fallback_total_count: u32,
     fee_zatoshi: u64,
@@ -6283,6 +5693,36 @@ mod tests {
         }
     }
 
+    fn migration_test_stage(
+        input_txid_hex: &str,
+        output_txid_hex: &str,
+    ) -> migration::DenominationStageInsert {
+        migration::DenominationStageInsert {
+            stage_index: 0,
+            base_pczt: vec![0xa0],
+            sigs: Vec::new(),
+            raw_tx: Some(vec![1, 2, 3, 4]),
+            expected_txid_hex: output_txid_hex.to_string(),
+            target_height: 90,
+            expiry_height: 120,
+            fee_zatoshi: 10_000,
+            status: migration::DenominationStageStatus::Pending,
+            inputs: vec![migration::DenominationStageInputRef {
+                txid_hex: input_txid_hex.to_string(),
+                output_index: 0,
+                value_zatoshi: 120_000,
+                note_version: 2,
+                nullifier_hex: None,
+            }],
+            outputs: vec![migration::DenominationStageOutputRef {
+                output_index: 0,
+                value_zatoshi: 100_000,
+                note_version: 2,
+                kind: migration::DenominationStageOutputKind::Migration,
+            }],
+        }
+    }
+
     #[test]
     fn parse_txid_hex_accepts_display_order_hex() {
         let txid_hex = "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd";
@@ -6805,8 +6245,8 @@ mod tests {
     }
 
     #[test]
-    fn prep_broadcast_result_preserves_status_and_migrated_amount() {
-        let result = migration_result_from_prep_broadcast(
+    fn split_broadcast_result_preserves_status_and_migrated_amount() {
+        let result = migration_result_from_split_broadcast(
             CreatedBroadcastResult {
                 txids: "abc123,def456".to_string(),
                 status: CreatedBroadcastResult::PARTIAL_BROADCAST,
@@ -6832,127 +6272,29 @@ mod tests {
     }
 
     #[test]
-    fn prep_storage_failure_after_acceptance_leaves_prep_tx_retryable() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path = db_path.to_string_lossy().to_string();
-        let txid_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-        let raw_tx = vec![1, 2, 3, 4];
-        let plan = migration_test_plan();
-        let prepared_notes = vec![migration_test_note(txid_hex)];
-        let run_id = migration::create_run_with_prepared_notes_and_prep_tx(
-            &db_path,
-            MIGRATION_TEST_ACCOUNT,
-            WalletNetwork::Test,
-            &plan,
-            &prepared_notes,
-            true,
-            txid_hex,
-            raw_tx.clone(),
-            MIGRATION_TEST_PASSWORD,
-            MIGRATION_TEST_SALT,
-        )
-        .unwrap();
-        let prep_tx = migration::pending_prep_tx_for_run(
-            &db_path,
-            &run_id,
-            MIGRATION_TEST_PASSWORD,
-            MIGRATION_TEST_SALT,
-        )
-        .unwrap()
-        .unwrap();
-
-        let result = record_accepted_prep_migration_tx(
-            &db_path,
-            WalletNetwork::Test,
-            &run_id,
-            &prep_tx,
-            |_db_path, _network, _raw_tx| Err("db busy".to_string()),
-        )
-        .unwrap();
-
-        assert_eq!(result.txids, txid_hex);
-        assert_eq!(result.status, CreatedBroadcastResult::PENDING_BROADCAST);
-        assert_eq!(result.broadcasted_count, 0);
-        assert_eq!(result.total_count, 1);
-        let message = result.message.as_deref().unwrap();
-        assert!(message.contains("accepted by lightwalletd"));
-        assert!(message.contains("Vizor will retry"));
-        assert_eq!(
-            migration::pending_prep_tx_for_run(
-                &db_path,
-                &run_id,
-                MIGRATION_TEST_PASSWORD,
-                MIGRATION_TEST_SALT,
-            )
-            .unwrap()
-            .unwrap()
-            .txid_hex,
-            txid_hex
-        );
-        let active =
-            migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test)
-                .unwrap()
-                .unwrap();
-        assert_eq!(active.phase, migration::PHASE_WAITING_DENOM_CONFIRMATIONS);
-        assert_eq!(active.last_error.as_deref(), Some(message));
-        migration::mark_run_phase(
-            &db_path,
-            &run_id,
-            migration::PHASE_READY_TO_MIGRATE,
-            Some("ready before retry"),
-        )
-        .unwrap();
-
-        let result = record_accepted_prep_migration_tx(
-            &db_path,
-            WalletNetwork::Test,
-            &run_id,
-            &prep_tx,
-            |_db_path, _network, _raw_tx| Ok(()),
-        )
-        .unwrap();
-
-        assert_eq!(result.txids, txid_hex);
-        assert_eq!(result.status, migration::PHASE_READY_TO_MIGRATE);
-        assert_eq!(result.broadcasted_count, 1);
-        assert!(migration::pending_prep_tx_for_run(
-            &db_path,
-            &run_id,
-            MIGRATION_TEST_PASSWORD,
-            MIGRATION_TEST_SALT,
-        )
-        .unwrap()
-        .is_none());
-        let active =
-            migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test)
-                .unwrap()
-                .unwrap();
-        assert_eq!(active.phase, migration::PHASE_READY_TO_MIGRATE);
-        assert_eq!(active.last_error, None);
-    }
-
-    #[test]
     fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
+        let denomination_input_txid =
+            "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f";
         let selected_note_txid = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
         let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
         let selected_note = migration_test_note(selected_note_txid);
         let plan = migration_test_plan();
-        let run_id = migration::create_run_with_prepared_notes_and_signed_children(
+        let run_id = migration::create_run_with_staged_denominations_and_signed_children(
             &db_path,
             MIGRATION_TEST_ACCOUNT,
             WalletNetwork::Test,
             &plan,
             &[selected_note.clone()],
-            true,
             Vec::new(),
+            vec![migration_test_stage(
+                denomination_input_txid,
+                selected_note_txid,
+            )],
             MIGRATION_TEST_PASSWORD,
             MIGRATION_TEST_SALT,
-            None,
-            None,
         )
         .unwrap();
         migration::insert_pending_txs(
