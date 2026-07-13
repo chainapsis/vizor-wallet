@@ -101,15 +101,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
       }
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Allow the Ironwood mainnet-masquerade endpoint too: it runs as networkName=main
-      // (so isLocalIronwoodTestnetEndpoint is true under kZcashIronwoodMasquerade) but is a
-      // private Ironwood test chain, not real mainnet.
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        throw MigrationBatchError(
-          'Select a testnet endpoint before migrating.',
-        );
-      }
       final dbPath = await getWalletDbPath();
       final migrationNetworkName = endpoint.walletNetworkName;
       final security = ref.read(appSecurityProvider.notifier);
@@ -312,11 +303,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
       if (account == null || accountUuid == null) return;
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Masquerade endpoint counts as an Ironwood test chain (see the gate in runBatch).
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        return;
-      }
       final dbPath = await getWalletDbPath();
       final security = ref.read(appSecurityProvider.notifier);
       final password = security.requireSessionPasswordForNativeSecretUse();

@@ -432,14 +432,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       }
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Allow the Ironwood mainnet-masquerade endpoint too (networkName=main but a private
-      // Ironwood test chain; isLocalIronwoodTestnetEndpoint is true under kZcashIronwoodMasquerade).
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        throw const _KeystoneMigrationError(
-          'Select a testnet endpoint before migrating.',
-        );
-      }
       final networkName = endpoint.walletNetworkName;
       final lightwalletdUrl = endpoint.normalizedLightwalletdUrl;
       if (!_keystoneSessionIdentityIsCurrent(session)) {

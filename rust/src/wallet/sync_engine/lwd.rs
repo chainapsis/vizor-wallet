@@ -30,7 +30,7 @@ use zcash_client_backend::{
         TreeState, TxFilter,
     },
 };
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
@@ -56,12 +56,12 @@ fn status_to_network_error(label: &str, status: Status) -> SyncError {
     SyncError::net(format!("{label}: {status}"))
 }
 
-pub(super) fn ironwood_sync_enabled(network: WalletNetwork) -> bool {
-    matches!(network, WalletNetwork::LocalIronwoodTestnet)
+pub(super) fn ironwood_sync_enabled(network: WalletNetwork, height: BlockHeight) -> bool {
+    network.is_nu_active(NetworkUpgrade::Nu6_3, height)
 }
 
-fn compact_block_pool_types(network: WalletNetwork) -> Vec<i32> {
-    if ironwood_sync_enabled(network) {
+fn compact_block_pool_types(network: WalletNetwork, end_height: BlockHeight) -> Vec<i32> {
+    if ironwood_sync_enabled(network, end_height) {
         vec![
             service::PoolType::Sapling as i32,
             service::PoolType::Orchard as i32,
@@ -291,8 +291,9 @@ pub(super) async fn download_subtree_roots(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     network: WalletNetwork,
+    chain_tip: BlockHeight,
 ) -> Result<(), SyncError> {
-    let ironwood_enabled = ironwood_sync_enabled(network);
+    let ironwood_enabled = ironwood_sync_enabled(network, chain_tip);
     let (sap_start, orch_start, ironwood_start) = {
         let summary = db
             .get_wallet_summary(ConfirmationsPolicy::default())
@@ -510,7 +511,7 @@ pub(super) async fn download_blocks(
                 height: u32::from(end) as u64,
                 hash: vec![],
             }),
-            pool_types: compact_block_pool_types(network),
+            pool_types: compact_block_pool_types(network, end),
         })),
     )
     .await
@@ -529,18 +530,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn explicit_ironwood_pool_requests_are_local_only() {
-        assert_eq!(
-            compact_block_pool_types(WalletNetwork::LocalIronwoodTestnet),
-            vec![
-                service::PoolType::Sapling as i32,
-                service::PoolType::Orchard as i32,
-                service::PoolType::Ironwood as i32,
-            ]
-        );
+    fn explicit_ironwood_pool_requests_follow_nu6_3_activation() {
+        let all_shielded_pools = vec![
+            service::PoolType::Sapling as i32,
+            service::PoolType::Orchard as i32,
+            service::PoolType::Ironwood as i32,
+        ];
 
-        assert!(compact_block_pool_types(WalletNetwork::Main).is_empty());
-        assert!(compact_block_pool_types(WalletNetwork::Test).is_empty());
-        assert!(compact_block_pool_types(WalletNetwork::Regtest).is_empty());
+        for network in [WalletNetwork::Main, WalletNetwork::LocalIronwoodTestnet] {
+            let activation = network
+                .activation_height(NetworkUpgrade::Nu6_3)
+                .expect("NU6.3 activation height");
+
+            assert!(compact_block_pool_types(network, activation - 1).is_empty());
+            assert_eq!(
+                compact_block_pool_types(network, activation),
+                all_shielded_pools,
+            );
+        }
     }
 }
