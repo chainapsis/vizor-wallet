@@ -81,6 +81,31 @@ void main() {
     );
   });
 
+  test('polling restarts until explicit sync completion is recorded', () {
+    final finalizing = SyncState(
+      isSyncComplete: false,
+      percentage: 1.0,
+      scannedHeight: 100,
+      chainTipHeight: 100,
+    );
+
+    expect(shouldStartSyncForPolledTip(finalizing, 100), isTrue);
+    expect(
+      shouldStartSyncForPolledTip(
+        finalizing.copyWith(isSyncComplete: true),
+        100,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldStartSyncForPolledTip(
+        finalizing.copyWith(isSyncComplete: true),
+        101,
+      ),
+      isTrue,
+    );
+  });
+
   test('sync failure preserves the completed spendable snapshot', () {
     final syncing = SyncState(
       spendableBalance: BigInt.zero,

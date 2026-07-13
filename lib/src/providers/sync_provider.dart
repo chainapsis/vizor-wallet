@@ -396,6 +396,12 @@ class WalletMutationSyncPause {
       hadActiveSync || hadPolling || hadBackgroundSync || hadMempoolObserver;
 }
 
+@visibleForTesting
+bool shouldStartSyncForPolledTip(SyncState? current, int latestTipHeight) {
+  return !(current?.isSyncComplete ?? false) ||
+      latestTipHeight > (current?.chainTipHeight ?? 0);
+}
+
 class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({Future<String> Function()? walletDbPathResolver})
     : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
@@ -1282,13 +1288,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final tip = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .getLatestBlockHeight();
-      final lastSynced = state.value?.chainTipHeight ?? 0;
-      final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
+      final current = state.value;
+      final lastSynced = current?.chainTipHeight ?? 0;
+      final syncComplete = current?.isSyncComplete ?? false;
       if (gen != _syncGen || epoch != _sensitiveStateEpoch || _requiresUnlock) {
         log('AutoSync: skipping restart after lock transition');
         return;
       }
-      if (!syncComplete || tip.toInt() > lastSynced) {
+      if (shouldStartSyncForPolledTip(current, tip.toInt())) {
         log(
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',
         );
