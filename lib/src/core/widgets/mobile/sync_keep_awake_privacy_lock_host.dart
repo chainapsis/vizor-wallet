@@ -373,8 +373,8 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
       SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeStatusLockup(
         iconName: AppIcons.checkCircle,
         iconKey: ValueKey('sync_keep_awake_privacy_done_check'),
-        title: 'Synced',
-        body: 'Synced successfully.\nYou can unlock Vizor.',
+        title: 'Sync Complete',
+        body: 'Unlock Vizor to continue',
         success: true,
       ),
       SyncKeepAwakePrivacyLockMode.interrupted =>
@@ -703,8 +703,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
       SyncKeepAwakePrivacyLockMode.interrupted =>
         'Sync paused. Unlock Vizor to continue.',
       SyncKeepAwakePrivacyLockMode.hidden ||
-      SyncKeepAwakePrivacyLockMode.syncing =>
-        'Vizor is syncing, stick around ...',
+      SyncKeepAwakePrivacyLockMode.syncing => 'Unlock to continue',
     };
   }
 }
@@ -829,7 +828,7 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                   child: SizedBox(
                     width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
                     child: Text(
-                      'Vizor is syncing,\nstick around ...',
+                      'Vizor is syncing',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.primary,

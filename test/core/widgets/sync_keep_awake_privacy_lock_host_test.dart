@@ -102,7 +102,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
     expect(find.text('25%'), findsOneWidget);
     expect(find.text('Unlock Vizor'), findsOneWidget);
   });
@@ -127,7 +127,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 80));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+    expect(find.text('Vizor is syncing'), findsNothing);
   });
 
   testWidgets('recent interaction delays the privacy screen', (tester) async {
@@ -147,12 +147,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 30));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+    expect(find.text('Vizor is syncing'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 30));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
   });
 
   testWidgets(
@@ -174,17 +174,17 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(minutes: 5));
 
-      expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+      expect(find.text('Vizor is syncing'), findsNothing);
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
 
-      expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+      expect(find.text('Vizor is syncing'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 60));
       await tester.pump();
 
-      expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+      expect(find.text('Vizor is syncing'), findsOneWidget);
     },
   );
 
@@ -203,14 +203,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump(const Duration(minutes: 5));
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
   });
 
   testWidgets('passcode confirmation clears the virtual privacy lock', (
@@ -248,7 +248,7 @@ void main() {
 
     expect(find.text('Welcome Back'), findsOneWidget);
     expect(find.text('25% Syncing...'), findsOneWidget);
-    expect(find.text('Vizor is syncing, stick around ...'), findsOneWidget);
+    expect(find.text('Unlock to continue'), findsOneWidget);
     expect(find.byType(PasscodeNumpad), findsOneWidget);
     expect(find.bySemanticsLabel('Passcode help'), findsNothing);
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
@@ -501,7 +501,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump();
 
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
 
     syncNotifier.emit(
       _sync(
@@ -520,12 +520,9 @@ void main() {
       container.read(syncKeepAwakePrivacyLockModeProvider),
       SyncKeepAwakePrivacyLockMode.done,
     );
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
-    expect(find.text('Synced'), findsOneWidget);
-    expect(
-      find.text('Synced successfully.\nYou can unlock Vizor.'),
-      findsOneWidget,
-    );
+    expect(find.text('Vizor is syncing'), findsNothing);
+    expect(find.text('Sync Complete'), findsOneWidget);
+    expect(find.text('Unlock Vizor to continue'), findsOneWidget);
     expect(find.text('Unlock Vizor'), findsOneWidget);
   });
 
@@ -565,7 +562,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('Sync Complete'), findsOneWidget);
 
     syncNotifier.emit(
       _sync(
@@ -583,9 +580,9 @@ void main() {
       container.read(syncKeepAwakePrivacyLockModeProvider),
       SyncKeepAwakePrivacyLockMode.syncing,
     );
-    expect(find.text('Synced'), findsNothing);
+    expect(find.text('Sync Complete'), findsNothing);
     expect(find.text('0%'), findsOneWidget);
-    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    expect(find.text('Vizor is syncing'), findsOneWidget);
 
     syncNotifier.emit(
       _sync(
@@ -603,7 +600,7 @@ void main() {
       container.read(syncKeepAwakePrivacyLockModeProvider),
       SyncKeepAwakePrivacyLockMode.done,
     );
-    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('Sync Complete'), findsOneWidget);
     expect(find.text('Unlock Vizor'), findsOneWidget);
   });
 
@@ -649,11 +646,8 @@ void main() {
         container.read(syncKeepAwakePrivacyLockModeProvider),
         SyncKeepAwakePrivacyLockMode.interrupted,
       );
-      expect(find.text('Synced'), findsNothing);
-      expect(
-        find.text('Synced successfully.\nYou can unlock Vizor.'),
-        findsNothing,
-      );
+      expect(find.text('Sync Complete'), findsNothing);
+      expect(find.text('Unlock Vizor to continue'), findsNothing);
       expect(find.text('Sync paused'), findsOneWidget);
       expect(find.text('Unlock Vizor to continue.'), findsOneWidget);
       expect(find.text('Unlock Vizor'), findsOneWidget);
@@ -684,7 +678,7 @@ void main() {
     final checkRect = tester.getRect(
       find.byKey(const ValueKey('sync_keep_awake_privacy_done_check')),
     );
-    final titleRect = tester.getRect(find.text('Synced'));
+    final titleRect = tester.getRect(find.text('Sync Complete'));
     final buttonRect = tester.getRect(
       find.byKey(const ValueKey('sync_keep_awake_privacy_unlock_button')),
     );

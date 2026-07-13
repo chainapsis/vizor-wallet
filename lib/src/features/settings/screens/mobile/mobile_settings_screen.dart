@@ -501,9 +501,8 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   final VoidCallback onToggle;
 
   static const _description =
-      'Keep the screen active while Vizor is syncing. This will make long '
-      'syncs easier. For security, the screen will lock with passcode after '
-      '1 minute of inactivity.';
+      'Prevents your phone from sleeping so sync can finish faster. The app '
+      'still locks after 1 minute of inactivity.';
 
   @override
   Widget build(BuildContext context) {
