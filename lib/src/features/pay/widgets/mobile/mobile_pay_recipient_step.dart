@@ -207,6 +207,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                 AppButton(
                   key: const ValueKey('mobile_pay_recipient_continue_button'),
                   expand: true,
+                  leading: widget.busy ? const AppIcon(AppIcons.loader) : null,
                   onPressed: widget.busy || !widget.enabled
                       ? null
                       : widget.onSelectRecipient,

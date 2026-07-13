@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
@@ -524,6 +525,17 @@ void main() {
       expect(find.text('Fetching quote'), findsOneWidget);
       expect(find.text('Continue'), findsNothing);
       expect(tester.widget<AppButton>(continueButton).onPressed, isNull);
+      final loader = find.descendant(
+        of: continueButton,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      );
+      expect(loader, findsOneWidget);
+      expect(
+        tester.getCenter(loader).dx,
+        lessThan(tester.getCenter(find.text('Fetching quote')).dx),
+      );
       expect(
         tester
             .widget<TextField>(

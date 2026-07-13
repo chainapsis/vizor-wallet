@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
@@ -454,6 +455,15 @@ void main() {
     await tester.pump();
 
     expect(find.text('Fetching quote'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pump();
     expect(find.text('Pay in USDC'), findsOneWidget);
