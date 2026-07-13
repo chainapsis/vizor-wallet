@@ -250,6 +250,35 @@ class WalletMutationSyncPause {
       hadActiveSync || hadPolling || hadBackgroundSync || hadMempoolObserver;
 }
 
+@visibleForTesting
+Future<void> recordSyncFailureAndRefreshCommittedState({
+  required Object error,
+  required void Function(Object error) recordFailure,
+  required Future<void> Function() refreshCommittedState,
+  required void Function(Object error, StackTrace stackTrace) onRefreshError,
+}) async {
+  // Record first so the user sees the failure even if a DB read is slow. The
+  // refresh path merges against the latest SyncState and preserves this error.
+  recordFailure(error);
+  try {
+    await refreshCommittedState();
+  } catch (e, st) {
+    onRefreshError(e, st);
+  }
+}
+
+@visibleForTesting
+bool syncFailureWasRecordedWhileProgressAwaited({
+  required SyncState? beforeAwait,
+  required SyncState? current,
+}) {
+  final currentFailure = current?.failure;
+  if (currentFailure == null) return false;
+
+  return !identical(currentFailure, beforeAwait?.failure) ||
+      current?.lastSyncFailedAt != beforeAwait?.lastSyncFailedAt;
+}
+
 class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({Future<String> Function()? walletDbPathResolver})
     : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
@@ -669,7 +698,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _startPolling();
       return;
     }
-    _recordSyncFailure(error);
+    // A sync error can arrive after scan/enhancement already committed useful
+    // wallet rows. In particular, the final enhancement drain may store one
+    // transaction and then fail on a sibling request. Refresh from the DB so
+    // the failure state does not strand those committed balances/history until
+    // the next successful sync or app restart.
+    await recordSyncFailureAndRefreshCommittedState(
+      error: error,
+      recordFailure: _recordSyncFailure,
+      refreshCommittedState: _refreshBalance,
+      onRefreshError: (e, st) {
+        log('Sync: post-failure wallet refresh failed: $e\n$st');
+      },
+    );
   }
 
   void _recordSyncFailure(Object error) {
@@ -1403,7 +1444,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     final stateAccountUuid = _getActiveAccountUuid();
     final useFetchedAccountData = accountUuid == stateAccountUuid;
-    final stateScopedPrev = _previousScopedState(state.value, stateAccountUuid);
+    // Read the latest state after the async DB calls. A stream error can be
+    // recorded while this progress handler is awaiting; preserve that failure
+    // instead of letting this older progress event clear it on completion.
+    final currentState = state.value;
+    final preserveConcurrentFailure =
+        syncFailureWasRecordedWhileProgressAwaited(
+          beforeAwait: prev,
+          current: currentState,
+        );
+    final stateScopedPrev = _previousScopedState(
+      currentState,
+      stateAccountUuid,
+    );
     final hasBalanceData = useFetchedAccountData
         ? didFetchBalance || (stateScopedPrev?.hasBalanceData ?? false)
         : stateScopedPrev?.hasBalanceData ?? false;
@@ -1484,12 +1537,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         totalBalance: useFetchedAccountData
             ? total ?? stateScopedPrev?.totalBalance
             : stateScopedPrev?.totalBalance,
+        failure: preserveConcurrentFailure ? currentState?.failure : null,
+        error: preserveConcurrentFailure ? currentState?.error : null,
         recentTransactions: useFetchedAccountData
             ? recentTxs
             : stateScopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: syncStartedAt,
         lastSyncCompletedAt: syncCompletedAt,
-        lastSyncFailedAt: prev?.lastSyncFailedAt,
+        lastSyncFailedAt: currentState?.lastSyncFailedAt,
         phase: event.phase,
       ),
     );

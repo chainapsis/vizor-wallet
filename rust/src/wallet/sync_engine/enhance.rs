@@ -72,9 +72,10 @@ const DEFAULT_ENHANCEMENT_CONCURRENCY: u64 = 4;
 /// Returns an [`EnhancementOutcome`]: `stored` counts transactions applied
 /// via `decrypt_and_store_transaction` for `Enhancement` and
 /// address-scoped requests — the ones that add user-visible history data
-/// (memos, sent-tx recipients, transparent history rows) — and the caller
-/// folds a non-zero count into the batch's `has_new_tx` progress flag so
-/// the Dart side refreshes the visible history. `GetStatus` re-stores of a
+/// (memos, sent-tx recipients, transparent history rows). Post-batch callers
+/// fold a non-zero count into `has_new_tx`; if the final drain later returns
+/// an error, Dart refreshes committed DB state before retaining the failure.
+/// `GetStatus` re-stores of a
 /// still-pending tx are deliberately NOT counted: those requests persist
 /// while the tx is unmined and would otherwise flag `has_new_tx` on every
 /// pass without anything user-visible changing. `drained` tells the caller
