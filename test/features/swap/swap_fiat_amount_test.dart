@@ -67,6 +67,55 @@ void main() {
     );
   });
 
+  test('converts fiat through same-market live token variants', () {
+    final weth = SwapAsset.live(
+      assetId: 'nep141:eth-weth.omft.near',
+      symbol: 'WETH',
+      blockchain: 'eth',
+      decimals: 18,
+    );
+    final gtUsdc = SwapAsset.live(
+      assetId: 'nep141:base-gtusdcp.omft.near',
+      symbol: 'gtUSDCp',
+      blockchain: 'base',
+      decimals: 18,
+    );
+    final state = _stateWithUsdPrices({
+      SwapAsset.zec: 70,
+      SwapAsset.eth: 2500,
+      SwapAsset.usdc: 1,
+    });
+
+    expect(
+      swapTokenAmountTextFromFiatText(state, asset: weth, fiatAmountText: '10'),
+      '0.0040',
+    );
+    expect(
+      swapTokenAmountTextFromFiatText(
+        state,
+        asset: gtUsdc,
+        fiatAmountText: '25',
+      ),
+      '25.00',
+    );
+  });
+
+  test('fiat conversion preserves small high-value token amounts', () {
+    final xaut = SwapAsset.live(
+      assetId:
+          'nep141:eth-0x68749665ff8d2d112fa859aa293f07a622782f38.omft.near',
+      symbol: 'XAUT',
+      blockchain: 'eth',
+      decimals: 6,
+    );
+    final state = _stateWithUsdPrices({SwapAsset.zec: 70, xaut: 3000});
+
+    expect(
+      swapTokenAmountTextFromFiatText(state, asset: xaut, fiatAmountText: '1'),
+      '0.000333',
+    );
+  });
+
   test('does not derive fiat values from route rates without unit prices', () {
     final state = _stateWithUsdRate(70, zecUsdPrice: null, usdcUsdPrice: null);
 
@@ -146,6 +195,20 @@ SwapState _stateWithUsdRate(
     reviewVisible: false,
     intents: const [],
     indicativeExternalPerZec: {SwapAsset.usdc: usdcPerZec},
+    indicativeUsdPrices: usdPrices,
+  );
+}
+
+SwapState _stateWithUsdPrices(Map<SwapAsset, double> usdPrices) {
+  return SwapState(
+    direction: SwapDirection.zecToExternal,
+    amountText: '',
+    receiveAmountText: '',
+    destinationText: '',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: const [],
+    indicativeExternalPerZec: const {},
     indicativeUsdPrices: usdPrices,
   );
 }

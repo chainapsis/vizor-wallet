@@ -4,10 +4,10 @@
 //! iterate compact blocks one at a time. Historically librustzcash
 //! wallets pointed that input at an on-disk SQLite cache
 //! (`FsBlockDb`). We deliberately skip the file-cache step and keep a
-//! single batch of compact blocks in memory:
+//! bounded set of compact-block batches in memory:
 //!
-//!   1. Batches are bounded (≤300 blocks on desktop, ≤100 on mobile),
-//!      so the memory footprint is small and predictable.
+//!   1. Batch count and estimated decoded size are bounded by the sync
+//!      engine's prefetch policy.
 //!   2. Avoiding the cache DB means one less file format to keep in
 //!      sync with librustzcash migrations and one less thing to clear
 //!      on reorg / rewind.
@@ -32,11 +32,36 @@ use zcash_protocol::consensus::BlockHeight;
 /// `scan_cached_blocks` call.
 pub(super) struct MemoryBlockSource {
     blocks: Vec<CompactBlock>,
+    wire_bytes: u64,
 }
 
 impl MemoryBlockSource {
     pub(super) fn new(blocks: Vec<CompactBlock>) -> Self {
-        Self { blocks }
+        let wire_bytes = blocks
+            .iter()
+            .map(|block| prost::Message::encoded_len(block) as u64)
+            .sum();
+        Self { blocks, wire_bytes }
+    }
+
+    pub(super) fn wire_bytes(&self) -> u64 {
+        self.wire_bytes
+    }
+
+    pub(super) fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
+
+    pub(super) fn first_block(&self) -> Option<&CompactBlock> {
+        self.blocks.first()
+    }
+
+    pub(super) fn last_block(&self) -> Option<&CompactBlock> {
+        self.blocks.last()
+    }
+
+    pub(super) fn blocks(&self) -> &[CompactBlock] {
+        &self.blocks
     }
 }
 
@@ -85,5 +110,33 @@ impl chain::BlockSource for MemoryBlockSource {
             count += 1;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn records_wire_size_and_boundaries() {
+        let first = CompactBlock {
+            height: 10,
+            hash: vec![1; 32],
+            prev_hash: vec![0; 32],
+            ..Default::default()
+        };
+        let last = CompactBlock {
+            height: 11,
+            hash: vec![2; 32],
+            prev_hash: vec![1; 32],
+            ..Default::default()
+        };
+
+        let source = MemoryBlockSource::new(vec![first, last]);
+
+        assert_eq!(source.block_count(), 2);
+        assert!(source.wire_bytes() >= 128);
+        assert_eq!(source.first_block().unwrap().height, 10);
+        assert_eq!(source.last_block().unwrap().height, 11);
     }
 }

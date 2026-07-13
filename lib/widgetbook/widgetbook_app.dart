@@ -16,7 +16,9 @@ import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
+import 'home_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
+import 'pay_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
 import 'review_components_use_cases.dart';
@@ -271,6 +273,15 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Home',
               children: [
                 WidgetbookComponent(
+                  name: 'Desktop Pay badge',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'New feature',
+                      builder: buildPayFloatingBadgeUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
@@ -474,6 +485,62 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Transparent sheet',
                       builder: buildReceiveMobileTransparentSheetUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Pay',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop wizard',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Amount empty',
+                      builder: buildPayAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient recent contact',
+                      builder: buildPayRecipientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient new address',
+                      builder: buildPayRecipientNewAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review quote',
+                      builder: buildPayReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review expired',
+                      builder: buildPayReviewExpiredUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Desktop modals',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Asset selector',
+                      builder: buildPayAssetSelectorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Add contact',
+                      builder: buildPayAddContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Desktop status',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'In progress',
+                      builder: buildPayInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Completed',
+                      builder: buildPayCompletedUseCase,
                     ),
                   ],
                 ),

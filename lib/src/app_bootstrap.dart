@@ -61,6 +61,8 @@ class AppBootstrapState {
     required this.passwordRotationRecoveryFailed,
     this.swapEnabledOverrideCachedForRelease = false,
     this.biometricUnlockEnabled = false,
+    this.syncKeepAwakeEnabled = false,
+    this.syncKeepAwakePromptSeen = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -73,6 +75,8 @@ class AppBootstrapState {
   final ThemeMode themeMode;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
+  final bool syncKeepAwakeEnabled;
+  final bool syncKeepAwakePromptSeen;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -127,6 +131,7 @@ class AppSyncSnapshot {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    this.isSyncComplete = false,
     required this.transparentBalance,
     required this.saplingBalance,
     required this.orchardBalance,
@@ -146,6 +151,7 @@ class AppSyncSnapshot {
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
+  final bool isSyncComplete;
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
@@ -227,6 +233,16 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
     final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
+    final syncKeepAwakeEnabled = await _readPlainBool(
+      storage,
+      key: kSyncKeepAwakeEnabledKey,
+      label: 'sync keep-awake enabled flag',
+    );
+    final syncKeepAwakePromptSeen = await _readPlainBool(
+      storage,
+      key: kSyncKeepAwakePromptSeenKey,
+      label: 'sync keep-awake prompt seen flag',
+    );
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -325,6 +341,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
+      syncKeepAwakeEnabled: syncKeepAwakeEnabled,
+      syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -474,12 +492,24 @@ Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
 Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
   // The enabled flag is written via writePlain (unencrypted), so it must be
   // read back via readPlain to match the biometric unlock provider's storage.
+  return _readPlainBool(
+    storage,
+    key: _biometricUnlockEnabledKey,
+    label: 'biometric unlock flag',
+  );
+}
+
+Future<bool> _readPlainBool(
+  AppSecureStore storage, {
+  required String key,
+  required String label,
+}) async {
   try {
-    return (await storage.readPlain(_biometricUnlockEnabledKey)) == 'true';
+    return (await storage.readPlain(key)) == 'true';
   } on SecureStorageUnavailableException {
     rethrow;
   } catch (e) {
-    log('bootstrap: failed to read biometric unlock flag: $e');
+    log('bootstrap: failed to read $label: $e');
     return false;
   }
 }
@@ -536,6 +566,12 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       network: network,
       accountUuid: accountUuid,
     );
+    if (balance.availability != rust_sync.WalletBalanceAvailability.available) {
+      throw StateError(
+        'Wallet balance unavailable during bootstrap: '
+        '${balance.availability.name}',
+      );
+    }
     final recentTransactions = await rust_sync.getTransactionHistory(
       dbPath: dbPath,
       network: network,
@@ -576,6 +612,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       percentage: percentage,
+      isSyncComplete: syncStatus.isComplete,
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
       orchardBalance: balance.orchard,

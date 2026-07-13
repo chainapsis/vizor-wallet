@@ -20,6 +20,9 @@ import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
+import 'src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
+import 'src/core/widgets/mobile/sync_keep_awake_native_host.dart';
+import 'src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -49,6 +52,7 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -311,6 +315,7 @@ String? appRedirect({
   final isUnlockFlow = isUnlock || isLostPassword;
   final isSwap =
       state.matchedLocation.startsWith('/swap') ||
+      state.matchedLocation.startsWith('/pay') ||
       state.matchedLocation.startsWith('/activity/swap');
   final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
@@ -728,6 +733,20 @@ List<RouteBase> _desktopRoutes() => [
       return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
     },
   ),
+  GoRoute(
+    path: '/pay',
+    builder: (_, state) {
+      final args = state.extra;
+      return PayScreen(
+        preservePreparedComposer:
+            args is PayComposerNavigationArgs && args.preservePreparedComposer,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/pay/review',
+    builder: (_, _) => const SwapReviewScreen(payMode: true),
+  ),
   GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
   GoRoute(path: '/swap/review', builder: (_, _) => const SwapReviewScreen()),
   GoRoute(
@@ -893,20 +912,28 @@ class ZcashWalletApp extends ConsumerWidget {
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
-                    child: GestureDetector(
-                      onTap: () {
-                        // Leaf-only: skip when the primary focus is a
-                        // `FocusScopeNode` rather than a concrete `FocusNode`.
-                        // Unfocusing the scope itself strips the scope's
-                        // "most-recently-focused child" memory, which leaves the
-                        // next Tab with no deterministic starting point.
-                        final primary = FocusManager.instance.primaryFocus;
-                        if (primary != null && primary is! FocusScopeNode) {
-                          primary.unfocus();
-                        }
-                      },
-                      behavior: HitTestBehavior.translucent,
-                      child: child!,
+                    child: SyncKeepAwakeNativeHost(
+                      child: SyncKeepAwakePrivacyLockHost(
+                        child: SyncKeepAwakeInteractionListener(
+                          child: GestureDetector(
+                            onTap: () {
+                              // Leaf-only: skip when the primary focus is a
+                              // `FocusScopeNode` rather than a concrete `FocusNode`.
+                              // Unfocusing the scope itself strips the scope's
+                              // "most-recently-focused child" memory, which leaves the
+                              // next Tab with no deterministic starting point.
+                              final primary =
+                                  FocusManager.instance.primaryFocus;
+                              if (primary != null &&
+                                  primary is! FocusScopeNode) {
+                                primary.unfocus();
+                              }
+                            },
+                            behavior: HitTestBehavior.translucent,
+                            child: child!,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

@@ -68,6 +68,23 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SCREEN_AWAKE_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setEnabled" -> {
+                    val enabled = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean
+                    if (enabled == null) {
+                        result.error("bad_args", "Expected enabled argument.", null)
+                    } else {
+                        setScreenAwakeEnabled(enabled)
+                        result.success(null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -133,9 +150,18 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private fun setScreenAwakeEnabled(enabled: Boolean) {
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
+        private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
     }
 }

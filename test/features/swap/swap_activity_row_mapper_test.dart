@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -105,6 +106,156 @@ void main() {
     expect(row!.leadingProgressValue, 0.25);
     expect(row!.timestampText, isNot('--'));
     expect(row!.childRows, isEmpty);
+  });
+
+  testWidgets('maps pay records as payment activity rows', (tester) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: const SwapActivityRowItem(
+                  intentId: 'pay-usdc',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '4.0000 ZEC',
+                  receiveEstimateText: '100.00 USDC',
+                  status: SwapIntentStatus.complete,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  payMode: true,
+                  activityTimestamp: null,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Paid');
+    expect(row!.subtitle, 'from shielded ZEC · Ethereum');
+    expect(row!.leadingIconName, AppIcons.coins);
+    expect(row!.amountText, '100.00 USDC');
+    expect(row!.statusText, 'Completed');
+    expect(row!.leadingProgressValue, isNull);
+    expect(row!.childRows, isEmpty);
+  });
+
+  testWidgets('unsuccessful Pay rows show a debit only after deposit', (
+    tester,
+  ) async {
+    late List<ActivityRowData> rows;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              SwapActivityRowItem item(
+                SwapIntentStatus status, {
+                bool hasDepositTxid = true,
+                bool hasConfirmedDepositEvidence = true,
+                String? depositedAmountText,
+                String? refundedAmountText,
+              }) {
+                return SwapActivityRowItem(
+                  intentId: 'pay-${status.name}-$hasDepositTxid',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '4.0000 ZEC',
+                  receiveEstimateText: '100.00 USDC',
+                  status: status,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  depositWalletTxidHex: hasDepositTxid
+                      ? 'wallet-order-deposit'
+                      : null,
+                  hasConfirmedDepositEvidence: hasConfirmedDepositEvidence,
+                  depositedAmountText: depositedAmountText,
+                  refundedAmountText: refundedAmountText,
+                  payMode: true,
+                  activityTimestamp: null,
+                );
+              }
+
+              rows = [
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.failed),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.incompleteDeposit,
+                    depositedAmountText: '1.2500 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    hasDepositTxid: false,
+                    hasConfirmedDepositEvidence: false,
+                    depositedAmountText: '0 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    hasDepositTxid: false,
+                    depositedAmountText: '0.7500 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    hasConfirmedDepositEvidence: false,
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.failed,
+                    depositedAmountText: '0 ZEC',
+                  ),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(SwapIntentStatus.refunded),
+                ),
+                buildSwapActivityRow(
+                  context: context,
+                  item: item(
+                    SwapIntentStatus.refunded,
+                    refundedAmountText: '0.0100 ZEC',
+                  ),
+                ),
+              ];
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows.map((row) => row.amountText), [
+      '-4.0000 ZEC',
+      '-1.2500 ZEC',
+      '100.00 USDC',
+      '0.7500 ZEC',
+      '100.00 USDC',
+      '-4.0000 ZEC',
+      '4.0000 ZEC',
+      '0.0100 ZEC',
+    ]);
   });
 
   testWidgets('mobile swap activity rows compact large amounts', (
@@ -318,6 +469,11 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         depositTxHash: 'zec-deposit-txid',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '0.0028 ZEC',
+          refundedAmountText: '0.0025 ZEC',
+        ),
+        payMode: true,
         createdAt: createdAt,
         updatedAt: updatedAt,
         lastStatusCheckedAt: checkedAt,
@@ -332,9 +488,118 @@ void main() {
     expect(item.direction, SwapDirection.zecToExternal);
     expect(item.externalAsset, SwapAsset.usdc);
     expect(item.depositTxHash, 'zec-deposit-txid');
+    expect(item.depositedAmountText, '0.0028 ZEC');
+    expect(item.refundedAmountText, '0.0025 ZEC');
+    expect(item.payMode, isTrue);
     expect(item.activityTimestamp, createdAt);
     expect(item.lastStatusCheckedAt, checkedAt);
   });
+
+  test(
+    'uses provider origin txid when the local Pay checkpoint is missing',
+    () {
+      const originDisplayOrder =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      final item = swapActivityRowItemsFromRecords([
+        const SwapIntentRecord(
+          id: 'provider-recovered-pay',
+          providerLabel: 'NEAR Intents',
+          pairText: 'ZEC -> USDC',
+          sellAmountText: '1.5000 ZEC',
+          receiveEstimateText: '105.25 USDC',
+          status: SwapIntentStatus.failed,
+          nextAction: 'Payment failed',
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          originChainTxHash: originDisplayOrder,
+          payMode: true,
+        ),
+      ]).single;
+
+      expect(
+        item.depositWalletTxidHex,
+        swapChainTxidToWalletTxidHex(originDisplayOrder),
+      );
+      expect(item.hasConfirmedDepositEvidence, isTrue);
+    },
+  );
+
+  test('does not confirm a locally-created pending broadcast', () {
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final item = SwapActivityRowItem.fromRecord(
+      const SwapIntentRecord(
+        id: 'pending-pay-broadcast',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: SwapIntentStatus.failed,
+        nextAction: 'Payment failed',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositTxHash: depositDisplayOrder,
+        broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        payMode: true,
+      ),
+    );
+
+    expect(item.depositWalletTxidHex, isNotNull);
+    expect(item.hasConfirmedDepositEvidence, isFalse);
+    expect(swapActivityRowAbsorbsDepositLeg(item), isFalse);
+  });
+
+  test('does not confirm a failed Pay from local broadcast evidence alone', () {
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final item = SwapActivityRowItem.fromRecord(
+      const SwapIntentRecord(
+        id: 'failed-local-broadcast',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1.5000 ZEC',
+        receiveEstimateText: '105.25 USDC',
+        status: SwapIntentStatus.failed,
+        nextAction: 'Payment failed',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositTxHash: depositDisplayOrder,
+        broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+        payMode: true,
+      ),
+    );
+
+    expect(item.depositWalletTxidHex, isNotNull);
+    expect(item.hasConfirmedDepositEvidence, isFalse);
+    expect(swapActivityRowAbsorbsDepositLeg(item), isFalse);
+  });
+
+  test(
+    'keeps amount-only provider recovery separate from the wallet debit',
+    () {
+      final item = SwapActivityRowItem.fromRecord(
+        const SwapIntentRecord(
+          id: 'amount-only-provider-recovery',
+          providerLabel: 'NEAR Intents',
+          pairText: 'ZEC -> USDC',
+          sellAmountText: '1.5000 ZEC',
+          receiveEstimateText: '105.25 USDC',
+          status: SwapIntentStatus.failed,
+          nextAction: 'Payment failed',
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          providerRefundInfo: SwapProviderRefundInfo(
+            depositedAmountText: '0.7500 ZEC',
+          ),
+          payMode: true,
+        ),
+      );
+
+      expect(item.hasConfirmedDepositEvidence, isTrue);
+      expect(item.depositWalletTxidHex, isNull);
+      expect(swapActivityRowAbsorbsDepositLeg(item), isFalse);
+    },
+  );
 
   testWidgets('keeps completed swap row timestamp separate from receive leg', (
     tester,
@@ -686,6 +951,8 @@ void main() {
       required SwapIntentStatus status,
       String? destinationChainTxHash,
       String? depositTxHash,
+      bool payMode = false,
+      bool hasConfirmedDepositEvidence = false,
     }) {
       return SwapActivityRowItem(
         intentId: id,
@@ -702,14 +969,19 @@ void main() {
           destinationChainTxHash,
         ),
         depositWalletTxidHex: swapChainTxidToWalletTxidHex(depositTxHash),
+        hasConfirmedDepositEvidence: hasConfirmedDepositEvidence,
+        payMode: payMode,
       );
     }
 
-    rust_sync.TransactionInfo tx(String txidHex) {
+    rust_sync.TransactionInfo tx(
+      String txidHex, {
+      bool expiredUnmined = false,
+    }) {
       return rust_sync.TransactionInfo(
         txidHex: txidHex,
-        minedHeight: BigInt.from(2000000),
-        expiredUnmined: false,
+        minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(2000000),
+        expiredUnmined: expiredUnmined,
         accountBalanceDelta: 0,
         fee: BigInt.zero,
         blockTime: BigInt.from(1800000000),
@@ -764,6 +1036,21 @@ void main() {
       transactions: [depositTx],
     );
     expect(refunded.absorbs(depositTx), isFalse);
+
+    final expiredPayDeposit = tx(depositWalletOrder, expiredUnmined: true);
+    final expiredPay = matchSwapActivityLegAbsorption(
+      swapItems: [
+        itemWith(
+          id: 'pay-expired-unmined',
+          status: SwapIntentStatus.failed,
+          depositTxHash: depositDisplayOrder,
+          payMode: true,
+          hasConfirmedDepositEvidence: true,
+        ),
+      ],
+      transactions: [expiredPayDeposit],
+    );
+    expect(expiredPay.absorbs(expiredPayDeposit), isFalse);
 
     // Unmatched hashes absorb nothing.
     final unmatched = matchSwapActivityLegAbsorption(

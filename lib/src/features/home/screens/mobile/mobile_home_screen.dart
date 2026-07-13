@@ -8,6 +8,7 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
@@ -18,6 +19,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
+import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
@@ -88,6 +90,7 @@ class MobileHomeScreen extends ConsumerWidget {
               ],
             ),
           ),
+          const _SyncKeepAwakePromptHost(),
         ],
       ),
     );
@@ -121,6 +124,231 @@ const _mobileHomeBalanceTickerStyle = TextStyle(
 );
 
 const _mobileHomeActionButtonHeight = AppButtonSizing.largeHeight;
+
+class _SyncKeepAwakePromptHost extends ConsumerStatefulWidget {
+  const _SyncKeepAwakePromptHost();
+
+  @override
+  ConsumerState<_SyncKeepAwakePromptHost> createState() =>
+      _SyncKeepAwakePromptHostState();
+}
+
+class _SyncKeepAwakePromptHostState
+    extends ConsumerState<_SyncKeepAwakePromptHost> {
+  SyncKeepAwakeEtaSample? _etaSample;
+  DateTime? _promptRequestedForRun;
+  var _showingPrompt = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _evaluateCurrentSync();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(syncProvider, (_, next) {
+      final sync = next.asData?.value;
+      if (sync != null) _evaluateSync(sync);
+    });
+    ref.listen(syncKeepAwakeProvider, (previous, next) {
+      _evaluateCurrentSync();
+    });
+
+    return const SizedBox.shrink();
+  }
+
+  void _evaluateCurrentSync() {
+    final sync = ref.read(syncProvider).value;
+    if (sync != null) _evaluateSync(sync);
+  }
+
+  void _evaluateSync(SyncState sync) {
+    if (!sync.isSyncing ||
+        sync.lastSyncStartedAt != _etaSample?.syncStartedAt) {
+      _etaSample = null;
+    }
+
+    final estimate = estimateSyncKeepAwakeEta(
+      sync,
+      now: DateTime.now(),
+      previousSample: _etaSample,
+    );
+    if (estimate.sample != null) {
+      _etaSample = estimate.sample;
+    }
+
+    final startedAt = sync.lastSyncStartedAt;
+    if (_showingPrompt ||
+        startedAt == null ||
+        _promptRequestedForRun == startedAt) {
+      return;
+    }
+    final settings = ref.read(syncKeepAwakeProvider);
+    if (settings.enabled ||
+        settings.promptSeen ||
+        estimate.remaining == null ||
+        estimate.remaining! < kSyncKeepAwakePromptEtaThreshold) {
+      return;
+    }
+
+    _promptRequestedForRun = startedAt;
+    unawaited(_showPrompt());
+  }
+
+  Future<void> _showPrompt() async {
+    _showingPrompt = true;
+    try {
+      await ref.read(syncKeepAwakeProvider.notifier).markPromptSeen();
+      if (!mounted) return;
+      final enableKeepAwake = await showAppMobileSheet<bool>(
+        context: context,
+        builder: (sheetContext) => _SyncKeepAwakePromptSheet(
+          onKeepAwake: () => Navigator.of(sheetContext).pop(true),
+          onMaybeLater: () => Navigator.of(sheetContext).pop(false),
+        ),
+      );
+      if (!mounted || enableKeepAwake != true) return;
+      await ref
+          .read(syncKeepAwakeProvider.notifier)
+          .setEnabled(true, markPromptSeen: false);
+    } finally {
+      if (mounted) {
+        setState(() => _showingPrompt = false);
+      } else {
+        _showingPrompt = false;
+      }
+    }
+  }
+}
+
+class _SyncKeepAwakePromptSheet extends StatelessWidget {
+  const _SyncKeepAwakePromptSheet({
+    required this.onKeepAwake,
+    required this.onMaybeLater,
+  });
+
+  final VoidCallback onKeepAwake;
+  final VoidCallback onMaybeLater;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.accent,
+    );
+
+    return MobileModalScaffold(
+      key: const ValueKey('mobile_sync_keep_awake_prompt_sheet'),
+      title: 'Keep screen awake during sync?',
+      onClose: onMaybeLater,
+      bodyGap: AppSpacing.xxs,
+      bottomPadding: AppSpacing.base,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'This will make long syncs much easier.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SyncKeepAwakePromptBullet(
+                iconName: AppIcons.cog,
+                text: 'You can turn it on and off in settings anytime.',
+                textStyle: bodyStyle.copyWith(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              _SyncKeepAwakePromptBullet(
+                iconName: AppIcons.lock,
+                text:
+                    'After 1 minute of inactivity, the screen will be locked '
+                    'with the passcode while syncing continues in the '
+                    'background.',
+                textStyle: bodyStyle,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_sync_keep_awake_prompt_enable'),
+            expand: true,
+            constrainContent: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+            ),
+            leading: const AppIcon(AppIcons.day),
+            onPressed: onKeepAwake,
+            child: const Text(
+              'Keep screen awake',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            key: const ValueKey('mobile_sync_keep_awake_prompt_later'),
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            constrainContent: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+            ),
+            onPressed: onMaybeLater,
+            child: const Text(
+              'Maybe later',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncKeepAwakePromptBullet extends StatelessWidget {
+  const _SyncKeepAwakePromptBullet({
+    required this.iconName,
+    required this.text,
+    required this.textStyle,
+  });
+
+  final String iconName;
+  final String text;
+  final TextStyle textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 32,
+          child: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xxs),
+            child: Center(
+              child: AppIcon(
+                iconName,
+                size: 20,
+                color: context.colors.icon.accent,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Expanded(child: Text(text, style: textStyle)),
+      ],
+    );
+  }
+}
 
 class _ImportingBackground extends StatelessWidget {
   const _ImportingBackground();
@@ -329,10 +557,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 child: AppButton(
                   key: const ValueKey('mobile_home_send'),
                   expand: true,
+                  constrainContent: true,
                   onPressed: () => context.push('/send'),
                   leading: const _ButtonIcon(AppIcons.plane),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Send'),
+                  child: const Text(
+                    'Send',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
@@ -340,11 +573,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 child: AppButton(
                   key: const ValueKey('mobile_home_receive'),
                   expand: true,
+                  constrainContent: true,
                   variant: AppButtonVariant.secondary,
                   onPressed: () => context.push('/receive'),
                   leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                   height: _mobileHomeActionButtonHeight,
-                  child: const Text('Receive'),
+                  child: const Text(
+                    'Receive',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],

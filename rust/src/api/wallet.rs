@@ -1,6 +1,6 @@
 use std::panic;
 
-use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+use crate::wallet::{db, keys, network::WalletNetwork, transparent_receive_cache};
 use tonic::{transport::Channel, Request};
 use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
@@ -843,6 +843,13 @@ pub fn mnemonic_word_list() -> Vec<String> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn wallet_exists(db_path: String) -> bool {
     keys::wallet_exists(&db_path)
+}
+
+/// Wait for an active detached WAL checkpoint, then invalidate any checkpoint
+/// that has not opened the wallet DB yet. Sync must already be stopped.
+#[flutter_rust_bridge::frb(sync)]
+pub fn quiesce_wallet_wal_checkpoint_for_reset() {
+    db::quiesce_wallet_wal_checkpoint_for_reset();
 }
 
 /// Ensure an existing wallet database has the schema required by this build.

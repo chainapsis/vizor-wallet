@@ -65,6 +65,15 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   bool _addressEditorDraftRemember = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(swapStateProvider.notifier).prepareSwapComposer();
+    });
+  }
+
+  @override
   void dispose() {
     _swapModal.dispose();
     super.dispose();
@@ -304,7 +313,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       ),
     );
     final zecAvailableText = ZecAmount.fromZatoshi(
-      sync.spendableBalance,
+      sync.displaySpendableBalance,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
 
     void openReview() {
@@ -321,7 +330,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     }
 
     final quoteError =
-        swapState.quoteAmountPrecisionError ?? swapState.quoteError;
+        swapState.quoteAmountPrecisionError ??
+        swapState.externalAssetSupportError ??
+        swapState.quoteError;
 
     // While the amount number-pad is open, the leading nav button becomes a
     // close (X) that dismisses the keyboard instead of a back chevron.
@@ -404,7 +415,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           Expanded(
                             child: _MobileSwapReviewButton(
                               state: swapState,
-                              zecAvailableZatoshi: sync.spendableBalance,
+                              zecAvailableZatoshi: sync.displaySpendableBalance,
                               onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),
