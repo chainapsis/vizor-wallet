@@ -32,12 +32,20 @@ void main() {
   test('only a completed account snapshot is eligible for preservation', () {
     final completed = SyncState(
       hasBalanceData: true,
+      isSyncComplete: true,
+      percentage: 1.0,
       scannedHeight: 100,
       chainTipHeight: 100,
       spendableBalance: BigInt.from(50),
     );
 
     expect(SyncState.shouldPreserveCompletedSpendable(completed), isTrue);
+    expect(
+      SyncState.shouldPreserveCompletedSpendable(
+        completed.copyWith(isSyncComplete: false),
+      ),
+      isFalse,
+    );
     expect(
       SyncState.shouldPreserveCompletedSpendable(
         completed.copyWith(scannedHeight: 99),

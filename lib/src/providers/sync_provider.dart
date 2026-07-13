@@ -34,6 +34,11 @@ class SyncState {
   bool get hasAccountScopedData => hasBalanceData && hasRecentTransactionsData;
   final bool isSyncing;
   final bool isBackgroundMode;
+
+  /// True only after bootstrap confirms a fully scanned wallet or the current
+  /// sync run emits its successful completion event. Unlike height equality,
+  /// this cannot be set by the final non-complete scan progress event.
+  final bool isSyncComplete;
   final double percentage;
   final double displayPercentage;
   final double displayTargetPercentage;
@@ -85,6 +90,7 @@ class SyncState {
       transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
 
   bool get isSyncedToTip =>
+      isSyncComplete &&
       failure == null &&
       error == null &&
       !isSyncing &&
@@ -98,6 +104,7 @@ class SyncState {
   static bool shouldPreserveCompletedSpendable(SyncState? previous) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) return true;
     return (previous?.hasBalanceData ?? false) &&
+        (previous?.isSyncComplete ?? false) &&
         (previous?.displaySpendableFreshness ??
                 SpendableBalanceFreshness.authoritative) ==
             SpendableBalanceFreshness.authoritative &&
@@ -205,6 +212,7 @@ class SyncState {
     bool? hasRecentTransactionsData,
     this.isSyncing = false,
     this.isBackgroundMode = false,
+    this.isSyncComplete = false,
     this.percentage = 0,
     double? displayPercentage,
     double? displayTargetPercentage,
@@ -256,6 +264,7 @@ class SyncState {
     bool? hasRecentTransactionsData,
     bool? isSyncing,
     bool? isBackgroundMode,
+    bool? isSyncComplete,
     double? percentage,
     double? displayPercentage,
     double? displayTargetPercentage,
@@ -295,6 +304,7 @@ class SyncState {
           this.hasRecentTransactionsData,
       isSyncing: isSyncing ?? this.isSyncing,
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
+      isSyncComplete: isSyncComplete ?? this.isSyncComplete,
       percentage: percentage ?? this.percentage,
       displayPercentage: displayPercentage ?? this.displayPercentage,
       displayTargetPercentage:
@@ -352,6 +362,7 @@ class SyncState {
       hasRecentTransactionsData: false,
       isSyncing: isSyncing,
       isBackgroundMode: isBackgroundMode,
+      isSyncComplete: isSyncComplete,
       percentage: percentage,
       displayPercentage: displayPercentage,
       displayTargetPercentage: displayTargetPercentage,
@@ -507,11 +518,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         initial.accountUuid != null &&
         initial.accountUuid == initialAccountUuid &&
         initial.hasAccountScopedData;
+    final initialSyncComplete =
+        initial.chainTipHeight > 0 &&
+        initial.scannedHeight >= initial.chainTipHeight &&
+        initial.percentage >= 1.0;
     return SyncState(
       accountUuid: initialAccountUuid,
       hasAccountScopedData: initialBelongsToActiveAccount,
       isSyncing: false,
       isBackgroundMode: false,
+      isSyncComplete: initialSyncComplete,
       percentage: initial.percentage,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
@@ -658,6 +674,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             scopedPrev?.hasRecentTransactionsData ?? false,
         isSyncing: true,
         isBackgroundMode: false,
+        isSyncComplete: false,
         percentage: 0.0,
         scannedHeight: previousScannedHeight,
         chainTipHeight: nextChainTipHeight,
@@ -855,6 +872,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             scopedPrev?.hasRecentTransactionsData ?? false,
         failure: failure,
         error: failure.rawMessage,
+        isSyncComplete: false,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -959,6 +977,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             scopedPrev?.hasRecentTransactionsData ?? false,
         isSyncing: false,
         isBackgroundMode: false,
+        isSyncComplete: prev?.isSyncComplete ?? false,
         percentage: prev?.percentage ?? 0.0,
         displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
@@ -1244,6 +1263,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       base.copyWith(
         isSyncing: false,
         isBackgroundMode: _bgDelegate.isActive,
+        isSyncComplete: true,
         percentage: 1.0,
         displayPercentage: 1.0,
         displayTargetPercentage: 1.0,
@@ -1665,6 +1685,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isSyncing: event.isSyncing && !event.isComplete,
         isBackgroundMode:
             (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
+        isSyncComplete: event.isComplete,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
         displayTargetPercentage: event.displayTargetPercentage,
@@ -2023,6 +2044,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             (accountFallback?.hasRecentTransactionsData ?? false),
         isSyncing: current?.isSyncing ?? false,
         isBackgroundMode: current?.isBackgroundMode ?? _bgDelegate.isActive,
+        isSyncComplete: current?.isSyncComplete ?? false,
         percentage: current?.percentage ?? 0.0,
         displayPercentage:
             current?.displayPercentage ?? current?.percentage ?? 0.0,
