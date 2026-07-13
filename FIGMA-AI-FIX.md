@@ -19,6 +19,13 @@ Unless the user specifies another source, find the Figma screen corresponding
 to the code in
 [Vizor Design System AI Test](https://www.figma.com/design/HJxo289BJD7R6tz0OoGSQu/Vizor--Design-System--AI-Test-?node-id=5572-69081&m=dev).
 
+If no confident match can be found in that default location, do not force a
+match, select a merely similar screen or component, or expand the search to
+other Figma pages without the user's direction. Report that no confident match
+was found, summarize the location and candidates checked, and wait for the
+user to provide another location or target before copying or editing anything.
+Treat an uncertain candidate the same as no match.
+
 Treat every match as a candidate until the user approves it. Before copying or
 editing anything:
 
