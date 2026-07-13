@@ -37,54 +37,37 @@ void main() {
       spendableBalance: BigInt.from(50),
     );
 
+    expect(SyncState.shouldPreserveCompletedSpendable(completed), isTrue);
     expect(
       SyncState.shouldPreserveCompletedSpendable(
-        previous: completed,
-        requested: true,
-      ),
-      isTrue,
-    );
-    expect(
-      SyncState.shouldPreserveCompletedSpendable(
-        previous: completed,
-        requested: false,
+        completed.copyWith(scannedHeight: 99),
       ),
       isFalse,
     );
     expect(
       SyncState.shouldPreserveCompletedSpendable(
-        previous: completed.copyWith(scannedHeight: 99),
-        requested: true,
+        completed.copyWith(hasBalanceData: false),
       ),
       isFalse,
     );
     expect(
       SyncState.shouldPreserveCompletedSpendable(
-        previous: completed.copyWith(hasBalanceData: false),
-        requested: true,
-      ),
-      isFalse,
-    );
-    expect(
-      SyncState.shouldPreserveCompletedSpendable(
-        previous: completed.copyWith(
+        completed.copyWith(
           scannedHeight: 99,
           displaySpendableFreshness:
               SpendableBalanceFreshness.lastCompletedSync,
         ),
-        requested: true,
       ),
       isTrue,
     );
     expect(
       SyncState.shouldPreserveCompletedSpendable(
-        previous: completed.copyWith(
+        completed.copyWith(
           spendableBalance: BigInt.zero,
           displaySpendableBalance: BigInt.from(50),
           displaySpendableFreshness:
               SpendableBalanceFreshness.lastCompletedSync,
         ),
-        requested: false,
       ),
       isTrue,
     );

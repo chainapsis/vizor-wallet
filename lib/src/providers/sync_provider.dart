@@ -95,12 +95,8 @@ class SyncState {
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
 
-  static bool shouldPreserveCompletedSpendable({
-    required SyncState? previous,
-    required bool requested,
-  }) {
+  static bool shouldPreserveCompletedSpendable(SyncState? previous) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) return true;
-    if (!requested) return false;
     return (previous?.hasBalanceData ?? false) &&
         (previous?.displaySpendableFreshness ??
                 SpendableBalanceFreshness.authoritative) ==
@@ -626,10 +622,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   /// Fire-and-forget: sets up FRB stream and returns immediately.
   /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
-  void startSync({
-    int? latestTipHeight,
-    bool preserveCompletedSpendable = false,
-  }) {
+  void startSync({int? latestTipHeight}) {
     if (_requiresUnlock) {
       log('Sync: locked, skipping foreground sync start');
       return;
@@ -656,10 +649,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? previousChainTipHeight
         : math.max(previousChainTipHeight, latestTipHeight);
     final canPreserveCompletedSpendable =
-        SyncState.shouldPreserveCompletedSpendable(
-          previous: scopedPrev,
-          requested: preserveCompletedSpendable,
-        );
+        SyncState.shouldPreserveCompletedSpendable(scopedPrev);
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -844,11 +834,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (switched) {
       log('Sync: retrying foreground sync with fallback endpoint');
       final current = state.value;
-      startSync(
-        latestTipHeight: current?.chainTipHeight,
-        preserveCompletedSpendable:
-            current?.isUsingCompletedSpendableSnapshot ?? false,
-      );
+      startSync(latestTipHeight: current?.chainTipHeight);
       _startPolling();
       return;
     }
@@ -1299,11 +1285,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         log(
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',
         );
-        startSync(
-          latestTipHeight: tip.toInt(),
-          preserveCompletedSpendable:
-              syncComplete && lastSynced > 0 && tip.toInt() > lastSynced,
-        );
+        startSync(latestTipHeight: tip.toInt());
       }
     } catch (e) {
       log('AutoSync: tip check failed: $e');
