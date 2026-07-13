@@ -148,15 +148,12 @@ fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
 fn orchard_circuit_version_for_consensus_branch(
     consensus_branch_id: u32,
 ) -> orchard::circuit::OrchardCircuitVersion {
-    #[cfg(zcash_unstable = "nu6.3")]
     if matches!(
         zcash_protocol::consensus::BranchId::try_from(consensus_branch_id),
         Ok(zcash_protocol::consensus::BranchId::Nu6_3)
     ) {
         return ironwood_orchard_circuit_version();
     }
-    #[cfg(not(zcash_unstable = "nu6.3"))]
-    let _ = consensus_branch_id;
     orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2
 }
 
@@ -289,7 +286,6 @@ pub fn add_proofs_to_pczt(
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     if prover.requires_ironwood_proof() {
         prover = prover
             .create_ironwood_proof(ironwood_orchard_proving_key())
@@ -456,18 +452,15 @@ fn apply_signer_redaction(
             );
         });
 
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        redactor = redactor.redact_ironwood_with(|mut r| {
-            redact_bundle(
-                &mut r,
-                orchard::note::NoteVersion::V3,
-                for_batch,
-                elide,
-                ironwood_dummy_spends,
-            );
-        });
-    }
+    redactor = redactor.redact_ironwood_with(|mut r| {
+        redact_bundle(
+            &mut r,
+            orchard::note::NoteVersion::V3,
+            for_batch,
+            elide,
+            ironwood_dummy_spends,
+        );
+    });
 
     redactor
         .redact_sapling_with(|mut r| {
@@ -1039,7 +1032,6 @@ mod tests {
         // NU6.3 selects the post-NU6.3 circuit from the branch alone — the tx
         // version is not consulted, so a post-activation legacy-V5 PCZT gets
         // the same keys as a V6 one (both carry `orchard_v3`-format bundles).
-        #[cfg(zcash_unstable = "nu6.3")]
         assert_eq!(
             orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_3)),
             orchard::bundle::BundleVersion::orchard_v3().circuit_version(),
@@ -1084,7 +1076,6 @@ mod tests {
     // not authorizing data), so the txid match is the meaningful equivalence and
     // full raw-byte identity across two independent extractions is not
     // achievable for either path.
-    #[cfg(zcash_unstable = "nu6.3")]
     mod sigs_only_byte_identity {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.

@@ -3301,7 +3301,6 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
-            #[cfg(zcash_unstable = "nu6.3")]
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
@@ -3829,7 +3828,6 @@ fn make_orchard_split_builder(
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
-            #[cfg(zcash_unstable = "nu6.3")]
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             // Denomination prep is an ordinary private Orchard->Orchard split;
             // keep it padded like regular sends.
@@ -3838,7 +3836,6 @@ fn make_orchard_split_builder(
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
-    #[cfg(zcash_unstable = "nu6.3")]
     if network.is_nu_active(
         zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
         BlockHeight::from(target_height),
@@ -4083,7 +4080,6 @@ fn proposal_has_orchard_payment<NoteRef>(proposal: &Proposal<WalletFeeRule, Note
 /// [`propose_with_note_version_downgrade`]'s re-proposal fallback can catch it,
 /// so such sends must stay V6. Orchard *change* is unaffected (it is not a
 /// payment pool), so an Orchard→transparent V2 send still downgrades.
-#[cfg(zcash_unstable = "nu6.3")]
 fn should_downgrade_send_to_legacy_v5(
     initial: Option<TxVersion>,
     versions: &SelectedOrchardNoteVersions,
@@ -4093,17 +4089,6 @@ fn should_downgrade_send_to_legacy_v5(
         && versions.has_v2
         && !versions.has_v3
         && !has_orchard_payment
-}
-
-/// Pre-NU6.3 builds propose no V6 transactions, so there is nothing to
-/// downgrade.
-#[cfg(not(zcash_unstable = "nu6.3"))]
-fn should_downgrade_send_to_legacy_v5(
-    _initial: Option<TxVersion>,
-    _versions: &SelectedOrchardNoteVersions,
-    _has_orchard_payment: bool,
-) -> bool {
-    false
 }
 
 /// Shared pass-2 of [`propose_send`], [`estimate_fee`], and
@@ -4362,18 +4347,12 @@ fn proposed_tx_version_for_send(
     network: WalletNetwork,
     target_height: wallet::TargetHeight,
 ) -> Option<TxVersion> {
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        if network.is_nu_active(
-            consensus::NetworkUpgrade::Nu6_3,
-            BlockHeight::from(target_height),
-        ) {
-            return Some(TxVersion::V6);
-        }
+    if network.is_nu_active(
+        consensus::NetworkUpgrade::Nu6_3,
+        BlockHeight::from(target_height),
+    ) {
+        return Some(TxVersion::V6);
     }
-
-    #[cfg(not(zcash_unstable = "nu6.3"))]
-    let _ = (network, target_height);
 
     None
 }
@@ -4584,7 +4563,6 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
-#[cfg(zcash_unstable = "nu6.3")]
 fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
@@ -4601,11 +4579,6 @@ fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Resu
     }
 
     Ok(())
-}
-
-#[cfg(not(zcash_unstable = "nu6.3"))]
-fn ensure_transparent_shielding_pczt_targets_ironwood(_pczt_bytes: &[u8]) -> Result<(), String> {
-    Err("Keystone transparent shielding requires Ironwood / NU6.3 support.".to_string())
 }
 
 fn same_prepared_note_without_nullifier(
@@ -5664,7 +5637,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn send_proposals_use_v6_after_nu6_3() {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let v2_only = SelectedOrchardNoteVersions {
@@ -5686,7 +5658,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_downgrade_requires_v6_ceiling_and_v2_only_spends() {
         let versions = |has_v2, has_v3| SelectedOrchardNoteVersions { has_v2, has_v3 };
 
@@ -5917,7 +5888,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn orchard_recipient_v2_send_keeps_v6_without_rerun() {
         // V2-only spend paying a shielded-Orchard recipient: must stay V6 (a V5
         // build would fail with CrossAddressDisabled), and the re-proposal
@@ -5934,7 +5904,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn transparent_recipient_v2_send_downgrades_to_v5() {
         // Contrast with the Orchard-recipient case: a transparent recipient with
         // the same V2-only spend downgrades to V5.
@@ -5980,7 +5949,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_rerun_falls_back_to_v6_proposal_on_failure() {
         let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V2]);
         let pass1_fee = proposal_fee_zatoshi(&pass1);
@@ -6000,7 +5968,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_rerun_returns_reproposed_v5_proposal_on_success() {
         use orchard::note::NoteVersion;
 
@@ -6022,7 +5989,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v3_only_spends_keep_v6_without_rerun() {
         let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V3]);
 
@@ -6043,7 +6009,6 @@ mod tests {
     // downgraded by the shared decision, and the value send-max returns is the
     // V6-ceiling summary, unchanged by any downgrade.
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
         // The pass-1 proposal send-max builds for a V2-only spend to a
         // transparent recipient.
@@ -6085,7 +6050,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn keystone_transparent_shielding_pczt_targets_ironwood() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -6509,7 +6473,6 @@ mod tests {
     /// real spend plus the fabricated zero-value spend paired with the change
     /// output), so all of them carry the wallet `fvk` on the wire and are signable
     /// with the returned spending key.
-    #[cfg(zcash_unstable = "nu6.3")]
     fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let target_height = 120;
@@ -6565,7 +6528,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
         let (built_pczt, _sk) = built_v6_split_pczt();
         crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
@@ -6617,7 +6579,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn batch_signer_redaction_clears_spend_fvks_and_signatures() {
         use pczt::roles::redactor::Redactor;
         use pczt::roles::signer::Signer;
