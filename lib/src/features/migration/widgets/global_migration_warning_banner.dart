@@ -27,6 +27,7 @@ class GlobalMigrationWarningBanner extends ConsumerStatefulWidget {
 class _GlobalMigrationWarningBannerState
     extends ConsumerState<GlobalMigrationWarningBanner> {
   Timer? _migrationTickTimer;
+  bool _migrationTickInFlight = false;
   final Set<String> _autoAdvancedRunIds = <String>{};
 
   @override
@@ -97,9 +98,12 @@ class _GlobalMigrationWarningBannerState
   }
 
   Future<void> _tickMigrationActivity() async {
+    if (!mounted || _migrationTickInFlight) return;
+    _migrationTickInFlight = true;
     try {
       final status = ref.read(activeOrchardMigrationStatusProvider).value;
       await _maybeAutoAdvanceSoftware(status);
+      if (!mounted) return;
       if (!migrationShouldShowGlobalWarning(status)) return;
 
       final now = DateTime.now();
@@ -122,6 +126,7 @@ class _GlobalMigrationWarningBannerState
         await ref
             .read(migrationRunControllerProvider.notifier)
             .broadcastDueScheduled();
+        if (!mounted) return;
       }
 
       if (hadDueScheduledBroadcast ||
@@ -129,6 +134,7 @@ class _GlobalMigrationWarningBannerState
           hasPendingPrepBroadcast ||
           hasSignedChildren) {
         await ref.read(syncProvider.notifier).startSyncAnyway();
+        if (!mounted) return;
         ref.invalidate(activeOrchardMigrationStatusProvider);
         return;
       }
@@ -141,10 +147,13 @@ class _GlobalMigrationWarningBannerState
             .refreshAfterSend(
               transactionHistoryLimit: migrationProgressTransactionHistoryLimit,
             );
+        if (!mounted) return;
         ref.invalidate(activeOrchardMigrationStatusProvider);
       }
     } catch (e) {
       log('GlobalMigrationWarningBanner: migration activity tick failed: $e');
+    } finally {
+      _migrationTickInFlight = false;
     }
   }
 
@@ -169,6 +178,7 @@ class _GlobalMigrationWarningBannerState
     final advanced = await ref
         .read(migrationRunControllerProvider.notifier)
         .advance(MigrationRunIntent.migrating);
+    if (!mounted) return;
     if (advanced && runId != null) _autoAdvancedRunIds.add(runId);
     ref.invalidate(activeOrchardMigrationStatusProvider);
   }

@@ -122,6 +122,34 @@ pub(crate) struct ExtractedPcztTransaction {
     pub tx: Transaction,
 }
 
+/// Computes the transaction ID committed to by an IO-finalized v5 or v6 PCZT.
+///
+/// ZIP 244 transaction IDs commit only to transaction effects, so proofs and
+/// authorization data do not need to be present. Rejecting modifiable PCZTs is
+/// important here: the returned ID is only stable once every input and output
+/// set has been finalized.
+pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, String> {
+    use zcash_primitives::transaction::txid::{to_txid, TxIdDigester};
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    if pczt.global().inputs_modifiable()
+        || pczt.global().outputs_modifiable()
+        || pczt.global().shielded_modifiable()
+    {
+        return Err("PCZT IO is not finalized".to_string());
+    }
+
+    let effects = pczt
+        .into_effects()
+        .map_err(|e| format!("Extract PCZT effects: {e:?}"))?;
+    let txid_parts = effects.digest(TxIdDigester);
+    Ok(to_txid(
+        effects.version(),
+        effects.consensus_branch_id(),
+        &txid_parts,
+    ))
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     static LEGACY_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
     LEGACY_ORCHARD_PROVING_KEY.get_or_init(|| {
@@ -499,48 +527,74 @@ fn redact_pczt_for_signer_inner(
     }
 }
 
+/// Replaces a deferred v6 Orchard anchor and sets spend witnesses selected by
+/// their nullifiers.
+///
+/// Nullifiers are resolved before the PCZT is mutated. Every requested
+/// nullifier must be unique and must identify exactly one action, preventing a
+/// witness from being silently applied to the wrong spend when action order is
+/// randomized. The existing anchor is cleared because staged transactions are
+/// initially constructed with a placeholder anchor; the upstream Updater then
+/// enforces that the transaction format supports deferred anchor updates and
+/// that no proof is already present.
+pub(crate) fn set_orchard_anchor_and_witnesses<'a>(
+    pczt_bytes: &[u8],
+    anchor: orchard::Anchor,
+    spend_witnesses: impl IntoIterator<Item = (&'a str, &'a orchard::tree::MerklePath)>,
+) -> Result<Vec<u8>, String> {
+    use pczt::roles::{redactor::Redactor, updater::Updater};
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    let mut requested_nullifiers = std::collections::HashSet::new();
+    let mut witness_updates = Vec::new();
+    for (spend_nullifier_hex, witness) in spend_witnesses {
+        let spend_nullifier = parse_32_byte_hex(spend_nullifier_hex, "Orchard spend nullifier")?;
+        if !requested_nullifiers.insert(spend_nullifier) {
+            return Err("Duplicate Orchard spend nullifier requested".to_string());
+        }
+
+        let mut action_indices =
+            pczt.orchard()
+                .actions()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, action)| {
+                    (*action.spend().nullifier() == spend_nullifier).then_some(index)
+                });
+        let action_index = action_indices
+            .next()
+            .ok_or_else(|| "Orchard spend nullifier not found in PCZT".to_string())?;
+        if action_indices.next().is_some() {
+            return Err("Orchard spend nullifier matched multiple PCZT actions".to_string());
+        }
+        witness_updates.push((action_index, witness.clone()));
+    }
+    if witness_updates.is_empty() {
+        return Err("No Orchard spend witnesses provided".to_string());
+    }
+
+    let pczt = Redactor::new(pczt)
+        .redact_orchard_with(|mut redactor| redactor.clear_anchor())
+        .finish();
+    let updated = Updater::new(pczt)
+        .set_orchard_anchor(anchor)
+        .map_err(|e| format!("Set Orchard anchor in PCZT: {e}"))?
+        .set_orchard_spend_witnesses(witness_updates)
+        .map_err(|e| format!("Set Orchard witnesses in PCZT: {e}"))?
+        .finish();
+
+    updated
+        .serialize()
+        .map_err(|e| format!("Serialize updated PCZT: {e:?}"))
+}
+
 pub(crate) fn set_orchard_anchor_and_witness(
     pczt_bytes: &[u8],
     anchor: orchard::Anchor,
     witness: &orchard::tree::MerklePath,
     spend_nullifier_hex: &str,
 ) -> Result<Vec<u8>, String> {
-    use pczt::roles::updater::Updater;
-
-    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
-    let spend_nullifier = parse_32_byte_hex(spend_nullifier_hex, "Orchard spend nullifier")?;
-    let action_indices = pczt
-        .orchard()
-        .actions()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, action)| {
-            if *action.spend().nullifier() == spend_nullifier {
-                Some(index)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    let action_index = match action_indices.as_slice() {
-        [index] => *index,
-        [] => {
-            return Err("Orchard spend nullifier not found in PCZT".to_string());
-        }
-        _ => {
-            return Err("Orchard spend nullifier matched multiple PCZT actions".to_string());
-        }
-    };
-    let updated = Updater::new(pczt)
-        .set_orchard_anchor(anchor)
-        .map_err(|e| format!("Set Orchard anchor in PCZT: {e}"))?
-        .set_orchard_spend_witnesses([(action_index, witness.clone())])
-        .map_err(|e| format!("Set Orchard witness in PCZT: {e}"))?
-        .finish();
-
-    updated
-        .serialize()
-        .map_err(|e| format!("Serialize updated PCZT: {e:?}"))
+    set_orchard_anchor_and_witnesses(pczt_bytes, anchor, [(spend_nullifier_hex, witness)])
 }
 
 fn parse_32_byte_hex(value: &str, label: &str) -> Result<[u8; 32], String> {
@@ -634,6 +688,129 @@ pub(crate) fn extract_transaction_from_pczt(
     finalize_and_extract(combined, sapling_vks.as_ref())
 }
 
+/// Applies externally-produced Orchard-protocol spend-authorization
+/// signatures to a parsed PCZT.
+///
+/// This is deliberately proof-agnostic. For v6 transactions, `Signer::new`
+/// uses the pre-authorization sighash, and
+/// `Signer::apply_orchard_spend_auth_signature` verifies each signature
+/// against the selected action's `rk` before storing it.
+fn apply_compact_orchard_spend_auth_signatures(
+    pczt: pczt::Pczt,
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<pczt::Pczt, String> {
+    use pczt::roles::signer::Signer;
+
+    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
+    let mut seen_sigs = std::collections::HashSet::new();
+    for action_sig in sigs {
+        if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
+            return Err(format!(
+                "Duplicate compact signature for pool {:?} action {}",
+                action_sig.value_pool(),
+                action_sig.action_index()
+            ));
+        }
+        signer
+            .apply_orchard_spend_auth_signature(action_sig)
+            .map_err(|e| {
+                format!(
+                    "Apply {:?} signature at action {}: {e:?}",
+                    action_sig.value_pool(),
+                    action_sig.action_index()
+                )
+            })?;
+    }
+
+    Ok(signer.finish())
+}
+
+/// Verifies a compact signature response against the wallet's unredacted,
+/// IO-finalized base PCZT before any dependent transaction is broadcast.
+///
+/// The wallet-owned base has a useful invariant: the IO Finalizer has already
+/// authorized true dummy spends, while real spends that require an external
+/// signer still have no `spend_auth_sig`. Therefore `sigs` must contain exactly
+/// one unique signature for every unsigned Orchard or Ironwood action and none
+/// for an already-authorized dummy action. Every supplied signature is then
+/// cryptographically verified by the upstream [`Signer`] role.
+///
+/// This does not require proofs, spend witnesses, or finalized v6 anchors. It
+/// intentionally does not reverify the existing true-dummy signatures, which
+/// were produced locally by the IO Finalizer and are not part of the device's
+/// signing responsibility. The contract consequently requires the caller to
+/// pass the wallet's own unmodified, unredacted base PCZT rather than the
+/// signer-redacted transport copy.
+///
+/// [`Signer`]: pczt::roles::signer::Signer
+pub(crate) fn preflight_orchard_spend_auth_signatures(
+    base_pczt_bytes: &[u8],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<(), String> {
+    let pczt = pczt::Pczt::parse(base_pczt_bytes)
+        .map_err(|e| format!("Parse base PCZT for signature preflight: {e:?}"))?;
+
+    let required = unsigned_orchard_action_locations(&pczt);
+
+    let mut provided = std::collections::HashSet::new();
+    for action_sig in sigs {
+        let location = (action_sig.value_pool(), action_sig.action_index());
+        if !provided.insert(location) {
+            return Err(format!(
+                "Duplicate compact signature for pool {:?} action {}",
+                action_sig.value_pool(),
+                action_sig.action_index()
+            ));
+        }
+        if !required.contains(&location) {
+            return Err(format!(
+                "Unexpected compact signature for pool {:?} action {}; the action is absent or already authorized",
+                action_sig.value_pool(),
+                action_sig.action_index()
+            ));
+        }
+    }
+
+    if provided.len() != required.len() {
+        return Err(format!(
+            "Missing {} required compact spend-authorization signature(s)",
+            required.len() - provided.len()
+        ));
+    }
+
+    apply_compact_orchard_spend_auth_signatures(pczt, sigs).map(|_| ())
+}
+
+fn unsigned_orchard_action_locations(
+    pczt: &pczt::Pczt,
+) -> std::collections::HashSet<(orchard::ValuePool, usize)> {
+    pczt.orchard()
+        .actions()
+        .iter()
+        .enumerate()
+        .filter_map(|(action_index, action)| {
+            action
+                .spend()
+                .spend_auth_sig()
+                .is_none()
+                .then_some((orchard::ValuePool::Orchard, action_index))
+        })
+        .chain(
+            pczt.ironwood()
+                .actions()
+                .iter()
+                .enumerate()
+                .filter_map(|(action_index, action)| {
+                    action
+                        .spend()
+                        .spend_auth_sig()
+                        .is_none()
+                        .then_some((orchard::ValuePool::Ironwood, action_index))
+                }),
+        )
+        .collect()
+}
+
 /// Apply a compact, signatures-only response onto the wallet's own
 /// proofs-PCZT, then finalize and extract the transaction — the wallet side of
 /// the "signatures-only" round-trip.
@@ -663,35 +840,11 @@ pub(crate) fn apply_sigs_and_extract(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<ExtractedPcztTransaction, String> {
-    use pczt::roles::signer::Signer;
-
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
 
     let pczt = pczt::Pczt::parse(pczt_with_proofs_bytes)
         .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
-    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
-
-    let mut seen_sigs = std::collections::HashSet::new();
-    for action_sig in sigs {
-        if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
-            return Err(format!(
-                "Duplicate compact signature for pool {:?} action {}",
-                action_sig.value_pool(),
-                action_sig.action_index()
-            ));
-        }
-        signer
-            .apply_orchard_spend_auth_signature(action_sig)
-            .map_err(|e| {
-                format!(
-                    "Apply {:?} signature at action {}: {e:?}",
-                    action_sig.value_pool(),
-                    action_sig.action_index()
-                )
-            })?;
-    }
-
-    let signed = signer.finish();
+    let signed = apply_compact_orchard_spend_auth_signatures(pczt, sigs)?;
     finalize_and_extract(signed, sapling_vks.as_ref())
 }
 
@@ -715,6 +868,23 @@ pub(crate) fn extract_compact_sigs_from_signed_pczt(
         pczt::Pczt::parse(signed_pczt_bytes).map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
 
     extract_compact_sigs_from_pczt(&pczt)
+}
+
+/// Extract only signatures for actions that were unsigned in `base_pczt_bytes`.
+///
+/// Locally signed PCZTs also contain the IO Finalizer's signatures for true
+/// dummy padding spends. Those signatures are already present in the base and
+/// are not part of the compact signer response persisted by migration flows.
+pub(crate) fn extract_required_compact_sigs_from_signed_pczt(
+    base_pczt_bytes: &[u8],
+    signed_pczt_bytes: &[u8],
+) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
+    let base_pczt = pczt::Pczt::parse(base_pczt_bytes)
+        .map_err(|e| format!("Parse base PCZT for compact signature extraction: {e:?}"))?;
+    let required = unsigned_orchard_action_locations(&base_pczt);
+    let mut sigs = extract_compact_sigs_from_signed_pczt(signed_pczt_bytes)?;
+    sigs.retain(|sig| required.contains(&(sig.value_pool(), sig.action_index())));
+    Ok(sigs)
 }
 
 /// Read and validate the compact spend-authorization signature list from an
@@ -1088,7 +1258,9 @@ mod tests {
         // levels up from this nested test module.
         use super::super::{
             apply_sigs_and_extract, extract_compact_sigs_from_signed_pczt,
-            extract_transaction_from_pczt, ironwood_orchard_proving_key, redact_pczt_for_signer,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key,
+            preflight_orchard_spend_auth_signatures, redact_pczt_for_signer,
+            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -1270,6 +1442,39 @@ mod tests {
             .expect("Orchard spend should be signed")
         }
 
+        /// Produces the deferred form used by staged transactions: the PCZT is
+        /// IO-finalized but unproved, and both v6 anchors and all spend
+        /// witnesses are absent. Its true dummy spends retain their locally
+        /// created signatures, while the real Orchard spend remains unsigned.
+        fn build_deferred_base_and_valid_sig() -> (Vec<u8>, SpendAuthSignature, usize) {
+            use pczt::roles::redactor::Redactor;
+
+            let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
+            let deferred = Redactor::new(pczt::Pczt::parse(&base_bytes).unwrap())
+                .redact_orchard_with(|mut r| {
+                    r.redact_actions(|mut ar| ar.clear_spend_witness());
+                    r.clear_anchor();
+                })
+                .redact_ironwood_with(|mut r| {
+                    r.redact_actions(|mut ar| ar.clear_spend_witness());
+                    r.clear_anchor();
+                })
+                .finish();
+
+            // Signing this unproved, anchorless PCZT demonstrates that the v6
+            // pre-authorization sighash is sufficient. Preflight independently
+            // applies and verifies the resulting signature below.
+            let mut signer = Signer::new(deferred.clone()).unwrap();
+            signer.sign_orchard(spend_index, &orchard_ask).unwrap();
+            let signature = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                orchard_spend_auth_sig_bytes(&signer.finish(), spend_index),
+            );
+
+            (deferred.serialize().unwrap(), signature, spend_index)
+        }
+
         fn clear_batch_output_metadata(bytes: &[u8]) -> Vec<u8> {
             let parsed = pczt::Pczt::parse(bytes).unwrap();
             pczt::roles::redactor::Redactor::new(parsed)
@@ -1290,6 +1495,144 @@ mod tests {
                 .finish()
                 .serialize()
                 .unwrap()
+        }
+
+        #[test]
+        fn orchard_witnesses_are_matched_by_nullifier_not_request_order() {
+            use pczt::roles::redactor::Redactor;
+
+            let (base_bytes, _, _, _, _, _) = build_migration_base_pczt();
+            let base = pczt::Pczt::parse(&base_bytes).unwrap();
+            assert_eq!(base.orchard().actions().len(), 2);
+
+            let nullifiers = base
+                .orchard()
+                .actions()
+                .iter()
+                .map(|action| hex::encode(action.spend().nullifier()))
+                .collect::<Vec<_>>();
+            let zero =
+                Option::<MerkleHashOrchard>::from(MerkleHashOrchard::from_bytes(&[0; 32])).unwrap();
+            let witnesses = [
+                orchard::tree::MerklePath::from_parts(3, [zero; 32]),
+                orchard::tree::MerklePath::from_parts(7, [zero; 32]),
+            ];
+            let replacement_anchor = orchard::Anchor::empty_tree();
+
+            // Supply the nullifiers in the opposite order from the randomized
+            // action list. The nullifier helper must still place each witness on
+            // the same action as the explicit-index Updater reference below.
+            let actual = set_orchard_anchor_and_witnesses(
+                &base_bytes,
+                replacement_anchor,
+                [
+                    (nullifiers[1].as_str(), &witnesses[1]),
+                    (nullifiers[0].as_str(), &witnesses[0]),
+                ],
+            )
+            .unwrap();
+
+            let anchor_cleared = Redactor::new(base)
+                .redact_orchard_with(|mut redactor| redactor.clear_anchor())
+                .finish();
+            let expected = Updater::new(anchor_cleared)
+                .set_orchard_anchor(replacement_anchor)
+                .unwrap()
+                .set_orchard_spend_witnesses([(0, witnesses[0].clone()), (1, witnesses[1].clone())])
+                .unwrap()
+                .finish();
+            let actual = pczt::Pczt::parse(&actual).unwrap();
+            assert_eq!(actual.orchard(), expected.orchard());
+
+            let duplicate_err = set_orchard_anchor_and_witnesses(
+                &base_bytes,
+                replacement_anchor,
+                [
+                    (nullifiers[0].as_str(), &witnesses[0]),
+                    (nullifiers[0].as_str(), &witnesses[1]),
+                ],
+            )
+            .unwrap_err();
+            assert!(duplicate_err.contains("Duplicate Orchard spend nullifier"));
+        }
+
+        #[test]
+        fn io_finalized_pczt_txid_matches_extracted_transaction() {
+            let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
+            let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
+                .expect("IO-finalized PCZT effects should have a stable txid");
+
+            let pk = ironwood_orchard_proving_key();
+            let proofs = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
+                .create_orchard_proof(pk)
+                .unwrap()
+                .create_ironwood_proof(pk)
+                .unwrap()
+                .finish()
+                .serialize()
+                .unwrap();
+            let mut signer = Signer::new(pczt::Pczt::parse(&base_bytes).unwrap()).unwrap();
+            signer.sign_orchard(spend_index, &orchard_ask).unwrap();
+            let signed = redact_pczt_for_signer(&signer.finish().serialize().unwrap()).unwrap();
+            let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
+
+            assert_eq!(pre_signature_txid, extracted.txid);
+        }
+
+        #[test]
+        fn compact_signature_preflight_accepts_unproved_anchorless_v6_pczt() {
+            let (deferred_bytes, signature, spend_index) = build_deferred_base_and_valid_sig();
+            let deferred = pczt::Pczt::parse(&deferred_bytes).unwrap();
+
+            assert!(deferred.orchard().anchor().is_none());
+            assert!(deferred.ironwood().anchor().is_none());
+            assert!(deferred.orchard().actions()[spend_index]
+                .spend()
+                .spend_auth_sig()
+                .is_none());
+            assert!(deferred.ironwood().actions()[0]
+                .spend()
+                .spend_auth_sig()
+                .is_some());
+
+            preflight_orchard_spend_auth_signatures(&deferred_bytes, &[signature])
+                .expect("valid v6 signature should preflight without proofs or anchors");
+        }
+
+        #[test]
+        fn compact_signature_preflight_enforces_exact_required_set_and_validity() {
+            let (deferred_bytes, valid, spend_index) = build_deferred_base_and_valid_sig();
+
+            let missing = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[])
+                .expect_err("the real Orchard spend requires one device signature");
+            assert!(missing.contains("Missing 1 required compact spend-authorization signature"));
+
+            let duplicate = preflight_orchard_spend_auth_signatures(
+                &deferred_bytes,
+                &[valid.clone(), valid.clone()],
+            )
+            .expect_err("duplicate locations must be rejected");
+            assert!(duplicate.contains("Duplicate compact signature"));
+
+            // The Ironwood action is a true dummy spend whose signature was
+            // already created locally by IO finalization. It is deliberately
+            // outside the device-required set.
+            let dummy =
+                SpendAuthSignature::from_parts(orchard::ValuePool::Ironwood, 0, *valid.signature());
+            let unexpected = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[dummy])
+                .expect_err("a signature for an already-authorized dummy is unexpected");
+            assert!(unexpected.contains("action is absent or already authorized"));
+
+            let mut invalid_bytes = *valid.signature();
+            invalid_bytes[0] ^= 1;
+            let invalid = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                invalid_bytes,
+            );
+            let invalid = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[invalid])
+                .expect_err("an invalid signature must fail cryptographic verification");
+            assert!(invalid.contains("Apply Orchard signature"));
         }
 
         #[test]

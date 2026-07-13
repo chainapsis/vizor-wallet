@@ -1114,8 +1114,18 @@ class MigrationStatus {
   final String? activeRunId;
   final Uint64List targetValuesZatoshi;
   final int preparedNoteCount;
+
+  /// Minimum confirmation depth across the active denomination split
+  /// frontier, including parallel split roots.
   final int denominationConfirmationCount;
   final int denominationConfirmationTarget;
+
+  /// Denomination split transactions that have reached the wallet's trusted
+  /// confirmation depth, rather than transactions that are merely mined.
+  final int denominationSplitCompletedCount;
+
+  /// Total denomination split transactions planned for this migration run.
+  final int denominationSplitTotalCount;
   final int pendingTxCount;
   final int broadcastedTxCount;
   final int confirmedTxCount;
@@ -1136,6 +1146,8 @@ class MigrationStatus {
     required this.preparedNoteCount,
     required this.denominationConfirmationCount,
     required this.denominationConfirmationTarget,
+    required this.denominationSplitCompletedCount,
+    required this.denominationSplitTotalCount,
     required this.pendingTxCount,
     required this.broadcastedTxCount,
     required this.confirmedTxCount,
@@ -1158,6 +1170,8 @@ class MigrationStatus {
       preparedNoteCount.hashCode ^
       denominationConfirmationCount.hashCode ^
       denominationConfirmationTarget.hashCode ^
+      denominationSplitCompletedCount.hashCode ^
+      denominationSplitTotalCount.hashCode ^
       pendingTxCount.hashCode ^
       broadcastedTxCount.hashCode ^
       confirmedTxCount.hashCode ^
@@ -1184,6 +1198,9 @@ class MigrationStatus {
               other.denominationConfirmationCount &&
           denominationConfirmationTarget ==
               other.denominationConfirmationTarget &&
+          denominationSplitCompletedCount ==
+              other.denominationSplitCompletedCount &&
+          denominationSplitTotalCount == other.denominationSplitTotalCount &&
           pendingTxCount == other.pendingTxCount &&
           broadcastedTxCount == other.broadcastedTxCount &&
           confirmedTxCount == other.confirmedTxCount &&

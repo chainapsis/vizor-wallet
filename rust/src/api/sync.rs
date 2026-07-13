@@ -681,8 +681,15 @@ pub struct MigrationStatus {
     pub active_run_id: Option<String>,
     pub target_values_zatoshi: Vec<u64>,
     pub prepared_note_count: u32,
+    /// Minimum confirmation depth across the active denomination split
+    /// frontier, including parallel split roots.
     pub denomination_confirmation_count: u32,
     pub denomination_confirmation_target: u32,
+    /// Denomination split transactions that have reached the wallet's trusted
+    /// confirmation depth, rather than transactions that are merely mined.
+    pub denomination_split_completed_count: u32,
+    /// Total denomination split transactions planned for this migration run.
+    pub denomination_split_total_count: u32,
     pub pending_tx_count: u32,
     pub broadcasted_tx_count: u32,
     pub confirmed_tx_count: u32,
@@ -996,6 +1003,8 @@ pub fn get_orchard_migration_status(
             prepared_note_count: status.prepared_note_count,
             denomination_confirmation_count: status.denomination_confirmation_count,
             denomination_confirmation_target: status.denomination_confirmation_target,
+            denomination_split_completed_count: status.denomination_split_completed_count,
+            denomination_split_total_count: status.denomination_split_total_count,
             pending_tx_count: status.pending_tx_count,
             broadcasted_tx_count: status.broadcasted_tx_count,
             confirmed_tx_count: status.confirmed_tx_count,
