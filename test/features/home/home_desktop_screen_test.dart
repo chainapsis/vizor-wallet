@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -809,6 +810,9 @@ Widget _appHarness(
       payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
         payIntroductionBadgePersistenceEnabled,
       ),
+      paySelectedAssetStoreProvider.overrideWithValue(
+        const _FakePaySelectedAssetStore(),
+      ),
       // The coin bob loops forever, which would break pumpAndSettle here;
       // motion itself is covered by pay_floating_badge_test.
       payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
@@ -877,6 +881,21 @@ class _ClickedPayIntroductionBadgeStore implements PayIntroductionBadgeStore {
 
   @override
   Future<void> markPayClicked() async {}
+}
+
+class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
+  const _FakePaySelectedAssetStore();
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    return null;
+  }
+
+  @override
+  Future<void> saveSelectedAsset({
+    required String accountUuid,
+    required SwapAsset asset,
+  }) async {}
 }
 
 class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
