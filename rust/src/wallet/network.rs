@@ -20,6 +20,30 @@ impl WalletNetwork {
     }
 }
 
+/// Activation heights for the Ironwood mainnet-masquerade test chain (opt-in `--cfg
+/// ironwood_masquerade`, default OFF). The chain derives/encodes as mainnet (coin type 133',
+/// `u1`/`uview1`) so a normal-mode Keystone works, but it activates the network upgrades at the
+/// test chain's LOW heights, not real mainnet's. Without this override, `WalletNetwork::Main` uses
+/// `Network::MainNetwork` heights (Orchard ~1,687,104), so a sync against this low-height chain
+/// (tip ~11k) computes "Orchard not active yet → 0 blocks to scan" and the sync fatals with
+/// "wallet summary unavailable". Heights mirror the chain's `getblockchaininfo` upgrades.
+#[cfg(ironwood_masquerade)]
+fn ironwood_masquerade_activation_height(nu: NetworkUpgrade) -> Option<BlockHeight> {
+    let height = match nu {
+        NetworkUpgrade::Overwinter
+        | NetworkUpgrade::Sapling
+        | NetworkUpgrade::Blossom
+        | NetworkUpgrade::Heartwood
+        | NetworkUpgrade::Canopy => 1,
+        NetworkUpgrade::Nu5 => 2,
+        NetworkUpgrade::Nu6 => 3,
+        NetworkUpgrade::Nu6_1 => 4,
+        NetworkUpgrade::Nu6_2 => 5,
+        NetworkUpgrade::Nu6_3 => 5000,
+    };
+    Some(BlockHeight::from_u32(height))
+}
+
 fn local_ironwood_testnet_activation_height(nu: NetworkUpgrade) -> Option<BlockHeight> {
     let height = match nu {
         NetworkUpgrade::Overwinter
@@ -48,6 +72,11 @@ impl Parameters for WalletNetwork {
 
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match self {
+            // Mainnet-masquerade test build (`--cfg ironwood_masquerade`): keep Main's mainnet
+            // identity (133'/u1) but use the test chain's low activation heights so sync works.
+            #[cfg(ironwood_masquerade)]
+            Self::Main => ironwood_masquerade_activation_height(nu),
+            #[cfg(not(ironwood_masquerade))]
             Self::Main => Network::MainNetwork.activation_height(nu),
             Self::Test => Network::TestNetwork.activation_height(nu),
             Self::LocalIronwoodTestnet => local_ironwood_testnet_activation_height(nu),

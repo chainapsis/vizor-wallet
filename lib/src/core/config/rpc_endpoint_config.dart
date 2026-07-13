@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kIronwoodMasqueradeRpcEndpointPresetId = 'ironwood-masquerade';
 const kZcashDefaultRpcEndpointPresetEnvKey =
     'ZCASH_DEFAULT_RPC_ENDPOINT_PRESET';
 const kZcashDefaultRpcEndpointPresetIdRaw = String.fromEnvironment(
@@ -152,6 +153,14 @@ class RpcEndpointPreset {
 
 // Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
 // default endpoint while preserving zec.rocks as a selectable fallback.
+const kIronwoodMasqueradeRpcEndpointPreset = RpcEndpointPreset(
+  id: kIronwoodMasqueradeRpcEndpointPresetId,
+  region: 'Ironwood',
+  label: 'Ironwood Masquerade',
+  url: 'https://lwd.157.245.208.35.sslip.io:443',
+  isDefault: true,
+);
+
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
@@ -279,7 +288,13 @@ List<RpcEndpointPreset> rpcEndpointPresetsForNetwork(
 }) {
   final network = zcashNetworkFromName(networkName);
   return switch (network) {
-    ZcashNetwork.mainnet => kMainnetRpcEndpointPresets,
+    ZcashNetwork.mainnet =>
+      kZcashIronwoodMasquerade
+          ? List<RpcEndpointPreset>.unmodifiable([
+              kIronwoodMasqueradeRpcEndpointPreset,
+              ...kMainnetRpcEndpointPresets,
+            ])
+          : kMainnetRpcEndpointPresets,
     ZcashNetwork.testnet =>
       includeLocalIronwoodTestnet
           ? List<RpcEndpointPreset>.unmodifiable([
@@ -455,7 +470,7 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
   final normalized = normalizeRpcEndpointUrl(url, allowDefaultPort: true);
   final presets = networkName == null
       ? [
-          ...kMainnetRpcEndpointPresets,
+          ...rpcEndpointPresetsForNetwork(ZcashNetwork.mainnet.name),
           ...rpcEndpointPresetsForNetwork(
             ZcashNetwork.testnet.name,
             includeLocalIronwoodTestnet: includeLocalIronwoodTestnet,
@@ -475,6 +490,11 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
 }
 
 bool isLocalIronwoodTestnetEndpoint(RpcEndpointConfig config) {
+  // Mainnet-masquerade: this build runs as `main` (so it derives mainnet 133'/u1 keys for a
+  // normal-mode Keystone) but always points at the private Ironwood test chain. Treat every
+  // endpoint as the Ironwood testnet so the migration flow + Ironwood balances surface, while
+  // walletNetworkName stays "main" for derivation/keychain. See kZcashIronwoodMasquerade.
+  if (kZcashIronwoodMasquerade) return true;
   if (config.network != ZcashNetwork.testnet) return false;
   if (config.presetId == kLocalIronwoodTestnetRpcEndpointPresetId) {
     return true;
