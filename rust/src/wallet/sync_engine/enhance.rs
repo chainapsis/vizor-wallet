@@ -23,7 +23,10 @@
 //! (e.g. a newly-decrypted transaction may reveal additional parent
 //! transactions to enhance).
 
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::Display,
+};
 
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
@@ -185,51 +188,66 @@ pub(super) async fn run_enhancement(
                                 .await
                                 {
                                     Ok(Some(raw)) => {
-                                        if !raw.data.is_empty() {
-                                            let mined_height =
-                                                mined_height_from_raw_height(raw.height)?;
-                                            match Transaction::read(
-                                                &raw.data[..],
-                                                BranchId::Sapling,
-                                            ) {
-                                                Ok(tx) => {
-                                                    if let Err(e) = with_wallet_db_write_lock(
-                                                        "sync_engine.enhance.decrypt_and_store_transaction",
-                                                        || {
-                                                            decrypt_and_store_transaction(
-                                                                &network,
-                                                                db,
-                                                                &tx,
-                                                                mined_height,
-                                                            )
-                                                        },
-                                                    ) {
-                                                        log::error!(
-                                                            "sync: decrypt_and_store_transaction (addr) failed: {e}"
-                                                        );
-                                                    }
-                                                    if let Err(e) = fill_missing_transparent_fee(
-                                                        &mut fee_client,
-                                                        db_path,
-                                                        &tx,
-                                                    )
-                                                    .await
-                                                    {
-                                                        log::warn!(
-                                                            "sync: transparent fee enhancement (addr) failed for {}: {e}",
-                                                            tx.txid()
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    log::warn!(
-                                                        "sync: Transaction::read (addr) failed: {e}"
-                                                    )
-                                                }
-                                            }
+                                        if raw.data.is_empty() {
+                                            return Err(SyncError::parse(
+                                                "empty transaction in transparent address history",
+                                            ));
+                                        }
+                                        let mined_height =
+                                            mined_height_from_raw_height(raw.height)?;
+                                        let tx =
+                                            Transaction::read(&raw.data[..], BranchId::Sapling)
+                                                .map_err(|e| {
+                                                    SyncError::parse(format!(
+                                                        "Transaction::read (addr) failed: {e}"
+                                                    ))
+                                                })?;
+                                        with_wallet_db_write_lock(
+                                            "sync_engine.enhance.decrypt_and_store_transaction",
+                                            || {
+                                                decrypt_and_store_transaction(
+                                                    &network,
+                                                    db,
+                                                    &tx,
+                                                    mined_height,
+                                                )
+                                            },
+                                        )
+                                        .map_err(|e| {
+                                            SyncError::db(format!(
+                                                "decrypt_and_store_transaction (addr) failed: {e}"
+                                            ))
+                                        })?;
+                                        if let Err(e) = fill_missing_transparent_fee(
+                                            &mut fee_client,
+                                            db_path,
+                                            &tx,
+                                        )
+                                        .await
+                                        {
+                                            log::warn!(
+                                                "sync: transparent fee enhancement (addr) failed for {}: {e}",
+                                                tx.txid()
+                                            );
                                         }
                                     }
-                                    Ok(None) => break,
+                                    Ok(None) => {
+                                        notify_completed_address_check(
+                                            end_height,
+                                            |as_of_height| {
+                                                with_wallet_db_write_lock(
+                                                    "sync_engine.enhance.notify_address_checked",
+                                                    || {
+                                                        db.notify_address_checked(
+                                                            req.clone(),
+                                                            as_of_height,
+                                                        )
+                                                    },
+                                                )
+                                            },
+                                        )?;
+                                        break;
+                                    }
                                     Err(e) => return Err(e),
                                 }
                             }
@@ -241,6 +259,17 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+fn notify_completed_address_check<E: Display>(
+    end_height: BlockHeight,
+    notify: impl FnOnce(BlockHeight) -> Result<(), E>,
+) -> Result<(), SyncError> {
+    let as_of_height = u32::from(end_height)
+        .checked_sub(1)
+        .map(BlockHeight::from_u32)
+        .ok_or_else(|| SyncError::parse("transparent address range ends at height zero"))?;
+    notify(as_of_height).map_err(|e| SyncError::db(format!("notify_address_checked failed: {e}")))
 }
 
 async fn fill_missing_transparent_fee(
@@ -578,5 +607,39 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+
+    #[test]
+    fn completed_address_check_notifies_at_inclusive_end_height() {
+        let mut notified_at = None;
+
+        notify_completed_address_check(BlockHeight::from_u32(41), |height| {
+            notified_at = Some(height);
+            Ok::<_, &'static str>(())
+        })
+        .unwrap();
+
+        assert_eq!(notified_at, Some(BlockHeight::from_u32(40)));
+    }
+
+    #[test]
+    fn completed_address_check_propagates_notification_failure() {
+        let result = notify_completed_address_check(BlockHeight::from_u32(41), |_| {
+            Err::<(), _>("database write failed")
+        });
+
+        assert!(matches!(result, Err(SyncError::Db(_))));
+    }
+
+    #[test]
+    fn completed_address_check_rejects_zero_end_without_notifying() {
+        let mut called = false;
+        let result = notify_completed_address_check(BlockHeight::from_u32(0), |_| {
+            called = true;
+            Ok::<_, &'static str>(())
+        });
+
+        assert!(matches!(result, Err(SyncError::Parse(_))));
+        assert!(!called);
     }
 }
