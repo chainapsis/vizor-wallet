@@ -589,27 +589,7 @@ final class FigmaComparisonCaptureChannel {
     session = captureSession
 
     window.animationBehavior = .none
-    if NSApp.isHidden {
-      NSApp.unhide(nil)
-    }
-    if window.isMiniaturized {
-      window.deminiaturize(nil)
-    }
-    window.setIsVisible(true)
-
-    // `activate()` is the current API but cooperative activation is not
-    // guaranteed. The debug-only fallback matches window_manager's macOS
-    // implementation and makes automated comparison capture deterministic.
-    if #available(macOS 14.0, *) {
-      NSApp.activate()
-    } else {
-      NSApp.activate(ignoringOtherApps: true)
-    }
-    if !NSApp.isActive {
-      NSApp.activate(ignoringOtherApps: true)
-    }
-    window.makeKeyAndOrderFront(nil)
-    window.orderFrontRegardless()
+    presentForCapture(window)
 
     waitUntilReady(
       token: captureSession.token,
@@ -644,6 +624,12 @@ final class FigmaComparisonCaptureChannel {
       return
     }
 
+    // Activation is asynchronous and another app can win focus between the
+    // first request and AppKit publishing the new state. Reassert the entire
+    // debug-only capture state on every poll instead of merely waiting for a
+    // one-shot activation that may already have been superseded.
+    presentForCapture(window)
+
     if DispatchTime.now() >= deadline {
       restoreSession(session)
       self.session = nil
@@ -659,6 +645,28 @@ final class FigmaComparisonCaptureChannel {
     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
       self?.waitUntilReady(token: token, deadline: deadline, result: result)
     }
+  }
+
+  private func presentForCapture(_ window: NSWindow) {
+    if NSApp.isHidden {
+      NSApp.unhide(nil)
+    }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    window.setIsVisible(true)
+
+    // `activate()` is cooperative on current macOS releases. This bridge is
+    // DEBUG-only and must put the exact comparison window in the foreground
+    // before collecting evidence, so retain the force-activation fallback.
+    if #available(macOS 14.0, *) {
+      NSApp.activate()
+    }
+    if !NSApp.isActive || !window.isKeyWindow {
+      NSApp.activate(ignoringOtherApps: true)
+    }
+    window.makeKeyAndOrderFront(nil)
+    window.orderFrontRegardless()
   }
 
   private func captureWindow(

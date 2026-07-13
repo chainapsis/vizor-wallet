@@ -4,6 +4,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/screen_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -54,6 +55,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-default',
+    description: 'Mobile home with deterministic balance and activity',
+    builder: buildMobileHomeDefaultUseCase,
+    desktop: false,
+    mobile: true,
   ),
 ];
 

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_app.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_capture.dart';
+import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_scenarios.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
 void main() {
   test('comparison scenarios have stable unique IDs', () {
@@ -17,6 +19,7 @@ void main() {
         'pay-add-contact',
         'pay-in-progress',
         'pay-completed',
+        'mobile-home-default',
       ]),
     );
   });
@@ -32,7 +35,53 @@ void main() {
     );
   });
 
-  for (final scenario in figmaCompareScenarios) {
+  test(
+    'configuration resolves only scenarios supported by its form factor',
+    () {
+      const desktopConfiguration = FigmaCompareConfiguration(
+        scenarioId: 'pay-recipient',
+        themeMode: ThemeMode.dark,
+        outputPath: '/tmp/content.png',
+        logicalSize: Size(1080, 720),
+        pixelRatio: 1,
+      );
+
+      expect(
+        desktopConfiguration.resolveScenario(AppFormFactor.desktop).id,
+        'pay-recipient',
+      );
+      expect(
+        () => desktopConfiguration.resolveScenario(AppFormFactor.mobile),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('does not support mobile'),
+          ),
+        ),
+      );
+
+      const mobileConfiguration = FigmaCompareConfiguration(
+        scenarioId: 'mobile-home-default',
+        themeMode: ThemeMode.dark,
+        outputPath: '/tmp/content.png',
+        logicalSize: Size(393, 852),
+        pixelRatio: 3,
+      );
+      expect(
+        mobileConfiguration.resolveScenario(AppFormFactor.mobile).id,
+        'mobile-home-default',
+      );
+      expect(
+        () => mobileConfiguration.resolveScenario(AppFormFactor.desktop),
+        throwsStateError,
+      );
+    },
+  );
+
+  for (final scenario in figmaCompareScenarios.where(
+    (scenario) => scenario.desktop,
+  )) {
     testWidgets('${scenario.id} renders at the desktop comparison viewport', (
       tester,
     ) async {

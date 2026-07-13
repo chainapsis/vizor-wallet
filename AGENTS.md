@@ -740,27 +740,33 @@ WidgetsFlutterBinding.ensureInitialized()
 → runApp()
 ```
 
-### Figma comparison entry point
+### Figma comparison tooling
 
-For deterministic code-to-Figma screenshots, use `lib/figma_compare.dart`
-instead of temporarily rerouting the production app or capturing Widgetbook
-chrome. It reuses the production macOS window initialization and native shell
-without starting Rust, storage, sync, wallet, or network state. Registered
-states live in `lib/figma_compare/figma_compare_scenarios.dart` and must use
-deterministic dev-only mocks.
+For deterministic code-to-Figma screenshots, use the widget-test capture as
+the normal iteration path. It renders the same `FigmaCompareApp` and registered
+scenario without building Rust, CocoaPods, Xcode, or a macOS app:
 
 ```bash
-fvm flutter run -d macos -t lib/figma_compare.dart \
-  --dart-define=FIGMA_COMPARE_SCENARIO=pay-recipient \
-  --dart-define=FIGMA_COMPARE_OUTPUT=pay-recipient/content.png
+scripts/figma-compare.sh widget --scenario pay-recipient --theme dark
 ```
 
-Relative outputs go to the app sandbox's `vizor-figma-compare` temporary
-directory. The entry point emits a 1x Flutter-content PNG plus a native-window
-PNG, automatically restores a minimized window before capture, and returns it
-and the previously foreground app to their original states afterward. Full
-workflow, output paths, mobile capture, and cleanup rules are in
-`FIGMA-AI-FIX.md`.
+Use the native entry point only for final macOS window-shell and restoration
+verification:
+
+```bash
+scripts/figma-compare.sh native --scenario pay-recipient --theme dark
+```
+
+Registered states live in
+`lib/figma_compare/figma_compare_scenarios.dart` and must use deterministic
+dev-only mocks. Outputs go below the app sandbox's `vizor-figma-compare`
+temporary directory: `content.widget.png` is the fast app-content reference;
+`content.png` and `content.window.png` are the real-engine and native-window
+final evidence. The native entry point reuses production macOS window
+initialization without starting Rust, storage, sync, wallet, or network state,
+automatically restores a minimized window before capture, and returns it and
+the previously foreground app to their original states afterward. Full
+workflow, mobile capture, and cleanup rules are in `FIGMA-AI-FIX.md`.
 
 Important desktop design rule:
 

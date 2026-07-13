@@ -101,11 +101,11 @@ styling or layout temporarily to make the reference resemble the Figma copy.
 2. Determine which form factors the code change affects. Validate both desktop
    and mobile when both are affected; otherwise validate only the affected or
    explicitly requested form factor.
-3. Use `lib/figma_compare.dart` instead of the production entry point or
-   Widgetbook chrome whenever the required state is registered in
-   `lib/figma_compare/figma_compare_scenarios.dart`. This entry point reproduces
-   the production desktop window bootstrap but skips Rust, wallet, storage,
-   sync, and network initialization.
+3. Use the widget-test capture through `scripts/figma-compare.sh widget` as the
+   default iteration path whenever the required state is registered in
+   `lib/figma_compare/figma_compare_scenarios.dart`. It renders the same
+   `FigmaCompareApp` without building Rust, CocoaPods, Xcode, or a platform app.
+   Do not use Widgetbook chrome as comparison evidence.
 4. If the required state is not registered, prefer adding a deterministic
    dev-only scenario that reuses an existing Widgetbook fixture. A scenario
    must not depend on production wallet data, storage, network, or Rust state.
@@ -122,44 +122,81 @@ styling or layout temporarily to make the reference resemble the Figma copy.
 
 Always use `fvm flutter`, never bare `flutter`.
 
-- **Desktop:** Run the macOS desktop app without a mobile form-factor define,
-  using the comparison entry point and a registered deterministic scenario:
+- **Desktop, normal iteration:** Capture a registered deterministic scenario
+  through the widget-test renderer:
 
   ```bash
-  fvm flutter run -d macos -t lib/figma_compare.dart \
-    --dart-define=FIGMA_COMPARE_SCENARIO=pay-recipient \
-    --dart-define=FIGMA_COMPARE_THEME=dark \
-    --dart-define=FIGMA_COMPARE_OUTPUT=pay-recipient/content.png
+  scripts/figma-compare.sh widget \
+    --scenario pay-recipient \
+    --theme dark
   ```
 
-  A relative output path is written below the sandbox's system temporary
-  directory, normally
-  `~/Library/Containers/com.keplr.vizor/Data/tmp/vizor-figma-compare/`.
-  The command prints both resolved paths. It produces:
+  This loads the real app fonts, fixes the logical viewport to 1080x720 and DPR
+  to 1 by default, mocks only native appearance synchronization, and writes a
+  1x logical-pixel PNG:
 
-  - `content.png`: the Flutter app-content render at a deterministic 1x logical
-    pixel ratio. Use this as the primary Figma parity reference.
+  - `~/Library/Containers/com.keplr.vizor/Data/tmp/vizor-figma-compare/<scenario>/content.widget.png`
+
+  Use this app-content-only image for every normal Figma comparison and
+  correction iteration. It deliberately contains no titlebar, traffic lights,
+  native window inset, privacy overlay, or other operating-system behavior.
+  Override the logical viewport or DPR only when the target design requires it,
+  using `--width`, `--height`, and `--pixel-ratio`.
+
+- **Desktop, final native verification:** After the widget capture and copied
+  Figma screen are effectively identical, run the real macOS comparison entry
+  point once before reporting completion:
+
+  ```bash
+  scripts/figma-compare.sh native \
+    --scenario pay-recipient \
+    --theme dark
+  ```
+
+  This reproduces the production desktop window bootstrap while omitting Rust
+  runtime initialization and all wallet, storage, sync, and network startup.
+  The platform build can still compile the Rust plugin; this path is final
+  evidence, not the fast iteration path. It produces:
+
+  - `content.png`: the same app content through the real macOS Flutter engine.
   - `content.window.png`: the exact native NSWindow at its backing pixel ratio,
-    including the macOS titlebar and traffic lights. Use this only to verify the
-    production window shell, sizing, and native insets.
+    including the macOS titlebar and traffic lights.
+
+  Compare `content.widget.png` with `content.png` for any material renderer
+  difference, ignoring only minor font rasterization noise. Use
+  `content.window.png` only to verify the production window shell, sizing, and
+  native insets. A mismatch in app content must return to the normal widget
+  iteration; do not waive it merely because the native check is last.
 
   The macOS capture transaction records the current window and foreground-app
   state. If the comparison window is minimized or hidden, it deminiaturizes and
   activates the window, makes it key and visible, waits for Flutter and privacy
   state to settle, captures the exact window ID, then restores the previous
   minimized/hidden state and foreground app. Do not bypass the production
-  privacy overlay. `FIGMA_COMPARE_START_MINIMIZED=true` exists only to verify
-  this restoration behavior; it is not needed for normal captures.
+  privacy overlay. Pass `--start-minimized` only to verify this restoration
+  behavior; it is not needed for normal captures.
 
   macOS 14 and newer use ScreenCaptureKit; macOS 11-13 use the restored-window
   Core Graphics compatibility path. If Screen Recording permission is
   requested, grant it before treating the native-window capture as evidence.
-- **Mobile:** Boot an iOS Simulator and run the app with
-  `--dart-define=VIZOR_FORM_FACTOR=mobile` and a scenario explicitly marked as
-  mobile-capable. Record the simulator device, OS, orientation, and viewport,
-  then capture the same target state with deterministic data. Use
-  `xcrun simctl io <device-id> screenshot <output.png>` for the simulator
-  screenshot.
+- **Mobile:** Use the widget-test renderer first with a scenario explicitly
+  marked as mobile-capable:
+
+  ```bash
+  scripts/figma-compare.sh widget \
+    --form-factor mobile \
+    --scenario <mobile-scenario> \
+    --theme dark
+  ```
+
+  The default logical viewport is 393x852 at DPR 3; override it to match the
+  selected simulator. The widget PNG remains a 393x852 logical-pixel image.
+  After parity is reached, boot that iOS Simulator and run the same
+  deterministic state with `--dart-define=VIZOR_FORM_FACTOR=mobile`.
+  Record the simulator device, OS, orientation, and viewport, then use
+  `xcrun simctl io <device-id> screenshot <output.png>` for the required final
+  platform screenshot. The wrapper's `native` mode currently verifies macOS
+  only.
 
 Do not treat operating-system chrome as app UI. Crop or otherwise normalize
 captures to compare the same app-content bounds. Follow the repository's Figma
@@ -200,8 +237,9 @@ Before reporting completion:
 
 1. Remove every temporary route, bootstrap override, dependency override,
    mock, and other one-off capture-only code change. Never commit those
-   temporary changes. The permanent comparison entry point and reusable,
-   deterministic scenario registry are repository tooling and are not removed.
+   temporary changes. The permanent widget capture tests, comparison entry
+   point, wrapper script, and reusable deterministic scenario registry are
+   repository tooling and are not removed.
 2. Confirm that the Git state has returned to its starting condition apart
    from pre-existing user changes and any separately authorized repository
    documentation changes.
