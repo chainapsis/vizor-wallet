@@ -306,7 +306,7 @@ pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>,
 mod tests {
     use super::*;
 
-    const TEST_FIRMWARE_VERSION: &[u8] = &[1, 2, 3];
+    const TEST_FIRMWARE_VERSION: [u8; 3] = [1, 2, 3];
 
     fn encoded_compact_response(request_id: &str) -> Vec<u8> {
         use pczt::roles::signer::batch::BatchSignResponse;
@@ -315,7 +315,7 @@ mod tests {
         ur_registry::zcash::zcash_batch_sig_result::ZcashBatchSigResult::new(
             request_id.as_bytes().to_vec(),
             postcard,
-            TEST_FIRMWARE_VERSION.to_vec(),
+            TEST_FIRMWARE_VERSION,
         )
         .try_into()
         .unwrap()
@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn legacy_pczt_reads_firmware_version_stamp() {
         let version = signed_pczt_firmware_version(&test_pczt_with_firmware_version(Some(
-            TEST_FIRMWARE_VERSION,
+            &TEST_FIRMWARE_VERSION,
         )))
         .unwrap();
 
