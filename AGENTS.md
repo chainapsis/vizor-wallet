@@ -740,6 +740,28 @@ WidgetsFlutterBinding.ensureInitialized()
 → runApp()
 ```
 
+### Figma comparison entry point
+
+For deterministic code-to-Figma screenshots, use `lib/figma_compare.dart`
+instead of temporarily rerouting the production app or capturing Widgetbook
+chrome. It reuses the production macOS window initialization and native shell
+without starting Rust, storage, sync, wallet, or network state. Registered
+states live in `lib/figma_compare/figma_compare_scenarios.dart` and must use
+deterministic dev-only mocks.
+
+```bash
+fvm flutter run -d macos -t lib/figma_compare.dart \
+  --dart-define=FIGMA_COMPARE_SCENARIO=pay-recipient \
+  --dart-define=FIGMA_COMPARE_OUTPUT=pay-recipient/content.png
+```
+
+Relative outputs go to the app sandbox's `vizor-figma-compare` temporary
+directory. The entry point emits a 1x Flutter-content PNG plus a native-window
+PNG, automatically restores a minimized window before capture, and returns it
+and the previously foreground app to their original states afterward. Full
+workflow, output paths, mobile capture, and cleanup rules are in
+`FIGMA-AI-FIX.md`.
+
 Important desktop design rule:
 
 - `Scaffold.backgroundColor: Colors.transparent` is required anywhere the native acrylic/translucent shell should remain visible.

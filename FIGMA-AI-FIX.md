@@ -101,13 +101,21 @@ styling or layout temporarily to make the reference resemble the Figma copy.
 2. Determine which form factors the code change affects. Validate both desktop
    and mobile when both are affected; otherwise validate only the affected or
    explicitly requested form factor.
-3. Temporary code changes are allowed only to expose the target screen and
-   make its state reproducible. This includes a temporary direct route,
-   bootstrap state, dependency override, and deterministic mock data.
-4. Keep temporary routing and mock changes isolated from production design
-   changes. Do not alter the target's visual properties, component structure,
-   text, layout, or tokens merely to influence the comparison.
-5. Fix the content, loading or error state, theme, locale, text scale, and any
+3. Use `lib/figma_compare.dart` instead of the production entry point or
+   Widgetbook chrome whenever the required state is registered in
+   `lib/figma_compare/figma_compare_scenarios.dart`. This entry point reproduces
+   the production desktop window bootstrap but skips Rust, wallet, storage,
+   sync, and network initialization.
+4. If the required state is not registered, prefer adding a deterministic
+   dev-only scenario that reuses an existing Widgetbook fixture. A scenario
+   must not depend on production wallet data, storage, network, or Rust state.
+   Temporary production routing, bootstrap, or provider changes are a last
+   resort and must still be removed before completion.
+5. Keep comparison fixtures and any temporary routing or mock changes isolated
+   from production design changes. Do not alter the target's visual properties,
+   component structure, text, layout, or tokens merely to influence the
+   comparison.
+6. Fix the content, loading or error state, theme, locale, text scale, and any
    time-dependent data so repeated captures show the same screen.
 
 ### 2. Capture the Flutter reference on each required form factor
@@ -115,13 +123,43 @@ styling or layout temporarily to make the reference resemble the Figma copy.
 Always use `fvm flutter`, never bare `flutter`.
 
 - **Desktop:** Run the macOS desktop app without a mobile form-factor define,
-  navigate directly to the target screen, set a known window size, and capture
-  the app content. Mock data may be used when needed to reproduce the relevant
-  state.
+  using the comparison entry point and a registered deterministic scenario:
+
+  ```bash
+  fvm flutter run -d macos -t lib/figma_compare.dart \
+    --dart-define=FIGMA_COMPARE_SCENARIO=pay-recipient \
+    --dart-define=FIGMA_COMPARE_THEME=dark \
+    --dart-define=FIGMA_COMPARE_OUTPUT=pay-recipient/content.png
+  ```
+
+  A relative output path is written below the sandbox's system temporary
+  directory, normally
+  `~/Library/Containers/com.keplr.vizor/Data/tmp/vizor-figma-compare/`.
+  The command prints both resolved paths. It produces:
+
+  - `content.png`: the Flutter app-content render at a deterministic 1x logical
+    pixel ratio. Use this as the primary Figma parity reference.
+  - `content.window.png`: the exact native NSWindow at its backing pixel ratio,
+    including the macOS titlebar and traffic lights. Use this only to verify the
+    production window shell, sizing, and native insets.
+
+  The macOS capture transaction records the current window and foreground-app
+  state. If the comparison window is minimized or hidden, it deminiaturizes and
+  activates the window, makes it key and visible, waits for Flutter and privacy
+  state to settle, captures the exact window ID, then restores the previous
+  minimized/hidden state and foreground app. Do not bypass the production
+  privacy overlay. `FIGMA_COMPARE_START_MINIMIZED=true` exists only to verify
+  this restoration behavior; it is not needed for normal captures.
+
+  macOS 14 and newer use ScreenCaptureKit; macOS 11-13 use the restored-window
+  Core Graphics compatibility path. If Screen Recording permission is
+  requested, grant it before treating the native-window capture as evidence.
 - **Mobile:** Boot an iOS Simulator and run the app with
-  `--dart-define=VIZOR_FORM_FACTOR=mobile`. Record the simulator device, OS,
-  orientation, and viewport, then capture the same target state with
-  deterministic data.
+  `--dart-define=VIZOR_FORM_FACTOR=mobile` and a scenario explicitly marked as
+  mobile-capable. Record the simulator device, OS, orientation, and viewport,
+  then capture the same target state with deterministic data. Use
+  `xcrun simctl io <device-id> screenshot <output.png>` for the simulator
+  screenshot.
 
 Do not treat operating-system chrome as app UI. Crop or otherwise normalize
 captures to compare the same app-content bounds. Follow the repository's Figma
@@ -161,11 +199,19 @@ modified design-system asset.
 Before reporting completion:
 
 1. Remove every temporary route, bootstrap override, dependency override,
-   mock, and other capture-only code change. Never commit those temporary
-   changes.
+   mock, and other one-off capture-only code change. Never commit those
+   temporary changes. The permanent comparison entry point and reusable,
+   deterministic scenario registry are repository tooling and are not removed.
 2. Confirm that the Git state has returned to its starting condition apart
    from pre-existing user changes and any separately authorized repository
    documentation changes.
+   Remove generated comparison artifacts with:
+
+   ```bash
+   rm -rf "$HOME/Library/Containers/com.keplr.vizor/Data/tmp/vizor-figma-compare"
+   ```
+
+   Generated captures must never be committed.
 3. Confirm that all Figma mutations are descendants of the approved AI Test
    copy and that the source screen, all other existing screens, and the entire
    design system remain unchanged.
