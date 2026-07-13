@@ -8,7 +8,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/sync_provider.dart';
 import '../migration_copy.dart';
-import '../models/migration_timeline_model.dart';
 import '../models/migration_view_state.dart';
 import '../providers/migration_run_controller.dart';
 import '../providers/orchard_migration_status_provider.dart';
