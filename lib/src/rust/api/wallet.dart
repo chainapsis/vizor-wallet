@@ -234,11 +234,6 @@ List<String> mnemonicWordList() =>
 bool walletExists({required String dbPath}) =>
     RustLib.instance.api.crateApiWalletWalletExists(dbPath: dbPath);
 
-/// Wait for an active detached WAL checkpoint, then invalidate any checkpoint
-/// that has not opened the wallet DB yet. Sync must already be stopped.
-void quiesceWalletWalCheckpointForReset() =>
-    RustLib.instance.api.crateApiWalletQuiesceWalletWalCheckpointForReset();
-
 /// Ensure an existing wallet database has the schema required by this build.
 Future<void> ensureWalletDbMigrated({
   required String dbPath,
