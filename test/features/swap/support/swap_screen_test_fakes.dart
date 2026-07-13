@@ -660,7 +660,6 @@ class _FakeSwapDepositSender implements SwapDepositSender {
   Future<BigInt> estimateZecDepositFee({
     required String accountUuid,
     required SwapQuote quote,
-    required bool legacyV5Pczt,
   }) async {
     preflightRequests.add(
       _DepositSendRequest(
@@ -668,7 +667,6 @@ class _FakeSwapDepositSender implements SwapDepositSender {
         depositAddress: quote.depositInstruction.address,
         sellAmountText: quote.sellAmountText,
         sellAmountBaseUnits: quote.sellAmountBaseUnits,
-        legacyV5Pczt: legacyV5Pczt,
       ),
     );
     final error = preflightError;
@@ -687,7 +685,6 @@ class _FakeSwapDepositSender implements SwapDepositSender {
         depositAddress: quote.depositInstruction.address,
         sellAmountText: quote.sellAmountText,
         sellAmountBaseUnits: quote.sellAmountBaseUnits,
-        legacyV5Pczt: false,
       ),
     );
     return SwapDepositBroadcastResult(
@@ -723,7 +720,6 @@ class _DelayedSwapDepositSender extends _FakeSwapDepositSender {
         depositAddress: quote.depositInstruction.address,
         sellAmountText: quote.sellAmountText,
         sellAmountBaseUnits: quote.sellAmountBaseUnits,
-        legacyV5Pczt: false,
       ),
     );
     return _sendGate.future;

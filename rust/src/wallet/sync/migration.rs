@@ -65,7 +65,7 @@ pub(crate) const PHASE_ABANDONED: &str = "abandoned";
 pub(crate) struct DenominationPlan {
     pub migration_outputs: Vec<u64>,
     pub orchard_change: Option<u64>,
-    pub prep_fee_zatoshi: u64,
+    pub split_fee_zatoshi: u64,
     pub migration_fee_zatoshi: u64,
     pub total_input_zatoshi: u64,
     pub total_migratable_zatoshi: u64,
@@ -73,15 +73,15 @@ pub(crate) struct DenominationPlan {
 
 pub(crate) fn plan_denominations(
     total_input_zatoshi: u64,
-    prep_fee_zatoshi: u64,
+    split_fee_zatoshi: u64,
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
 ) -> Result<DenominationPlan, String> {
-    if total_input_zatoshi <= prep_fee_zatoshi {
+    if total_input_zatoshi <= split_fee_zatoshi {
         return Ok(DenominationPlan {
             migration_outputs: Vec::new(),
             orchard_change: None,
-            prep_fee_zatoshi: total_input_zatoshi,
+            split_fee_zatoshi: total_input_zatoshi,
             migration_fee_zatoshi,
             total_input_zatoshi,
             total_migratable_zatoshi: 0,
@@ -89,8 +89,8 @@ pub(crate) fn plan_denominations(
     }
 
     let available = total_input_zatoshi
-        .checked_sub(prep_fee_zatoshi)
-        .ok_or("Denomination prep fee underflow")?;
+        .checked_sub(split_fee_zatoshi)
+        .ok_or("Denomination split fee underflow")?;
 
     let whole_zec = available / ZATOSHIS_PER_ZEC;
     let mut remainder = available % ZATOSHIS_PER_ZEC;
@@ -148,7 +148,7 @@ pub(crate) fn plan_denominations(
     Ok(DenominationPlan {
         migration_outputs: outputs,
         orchard_change,
-        prep_fee_zatoshi,
+        split_fee_zatoshi,
         migration_fee_zatoshi,
         total_input_zatoshi,
         total_migratable_zatoshi,
@@ -250,7 +250,7 @@ pub(crate) struct MigrationStatus {
     pub total_count: u32,
     pub signed_child_pczt_count: u32,
     /// Staged split transactions that still need reconciliation or broadcast.
-    pub pending_prep_tx_count: u32,
+    pub pending_split_stage_count: u32,
     pub message: Option<String>,
     pub can_abandon: bool,
     pub signing_batch_limit: u32,
@@ -307,7 +307,7 @@ pub(crate) fn migration_status(
         confirmed_tx_count: 0,
         total_count: 0,
         signed_child_pczt_count: 0,
-        pending_prep_tx_count: 0,
+        pending_split_stage_count: 0,
         message: None,
         can_abandon: false,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
@@ -1397,7 +1397,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         confirmed_tx_count,
         total_count,
         signed_child_pczt_count,
-        pending_prep_tx_count: pending_split_stage_count,
+        pending_split_stage_count,
         message: run.last_error,
         can_abandon,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
@@ -2304,12 +2304,12 @@ mod tests {
     }
 
     #[test]
-    fn planner_noops_when_prep_fee_consumes_balance() {
+    fn planner_noops_when_split_fee_consumes_balance() {
         let plan = plan_denominations(5_000, 10_000, 10_000, 1).unwrap();
 
         assert!(plan.migration_outputs.is_empty());
         assert_eq!(plan.total_migratable_zatoshi, 0);
-        assert_eq!(plan.prep_fee_zatoshi, 5_000);
+        assert_eq!(plan.split_fee_zatoshi, 5_000);
     }
 
     #[test]
@@ -2333,7 +2333,7 @@ mod tests {
     }
 
     #[test]
-    fn planner_reserves_prep_fee_before_decomposition() {
+    fn planner_reserves_split_fee_before_decomposition() {
         let plan = plan_denominations(1_000_000_000, 10_000, 10_000, 1).unwrap();
 
         assert_eq!(
@@ -2470,7 +2470,7 @@ mod tests {
         let plan = DenominationPlan {
             migration_outputs: vec![ZATOSHIS_PER_ZEC],
             orchard_change: Some(MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI),
-            prep_fee_zatoshi: 10_000,
+            split_fee_zatoshi: 10_000,
             migration_fee_zatoshi: MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
             total_input_zatoshi: ZATOSHIS_PER_ZEC + 20_000,
             total_migratable_zatoshi: ZATOSHIS_PER_ZEC,
@@ -2550,7 +2550,7 @@ mod tests {
         let plan = DenominationPlan {
             migration_outputs: vec![100_000_000],
             orchard_change: None,
-            prep_fee_zatoshi: 80_000,
+            split_fee_zatoshi: 80_000,
             migration_fee_zatoshi: 10_000,
             total_input_zatoshi: 100_080_000,
             total_migratable_zatoshi: 100_000_000,
@@ -2593,8 +2593,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(lock_state, "locked");
-        assert!(!table_exists(&conn, "vizor_migration_prep_txs").unwrap());
-
         let stages =
             denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
         assert_eq!(stages.len(), 1);
@@ -2612,7 +2610,7 @@ mod tests {
         let plan = DenominationPlan {
             migration_outputs: vec![100_000_000],
             orchard_change: None,
-            prep_fee_zatoshi: 80_000,
+            split_fee_zatoshi: 80_000,
             migration_fee_zatoshi: 10_000,
             total_input_zatoshi: 100_080_000,
             total_migratable_zatoshi: 100_000_000,
@@ -3222,7 +3220,7 @@ mod tests {
         let status = status_for_run(&conn, run.clone()).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert_eq!(status.signed_child_pczt_count, 0);
-        assert_eq!(status.pending_prep_tx_count, 0);
+        assert_eq!(status.pending_split_stage_count, 0);
 
         let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
             txid_hex: txid_hex.to_string(),
@@ -3248,7 +3246,7 @@ mod tests {
         let status = status_for_run(&conn, run.clone()).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert_eq!(status.signed_child_pczt_count, 1);
-        assert_eq!(status.pending_prep_tx_count, 0);
+        assert_eq!(status.pending_split_stage_count, 0);
 
         conn.execute(
             "UPDATE orchard_received_notes SET commitment_tree_position = 0",
@@ -3258,7 +3256,7 @@ mod tests {
 
         let status = status_for_run(&conn, run).unwrap();
         assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
-        assert_eq!(status.pending_prep_tx_count, 0);
+        assert_eq!(status.pending_split_stage_count, 0);
     }
 
     #[test]

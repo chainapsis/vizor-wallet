@@ -83,7 +83,6 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String address,
   required String addressType,
   required BigInt amountZatoshi,
-  required bool legacyV5Pczt,
   String? memo,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
@@ -97,7 +96,6 @@ Future<SendReviewArgs> proposeSendTransfer({
     toAddress: address,
     amountZatoshi: amountZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
-    legacyV5Pczt: legacyV5Pczt,
   );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
@@ -419,7 +417,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           .switchToFallbackFor(
             broadcastMessageForFallback,
             endpoint: endpoint,
-            operation: isHardware ? 'keystone send broadcast' : 'send broadcast',
+            operation: isHardware
+                ? 'keystone send broadcast'
+                : 'send broadcast',
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());

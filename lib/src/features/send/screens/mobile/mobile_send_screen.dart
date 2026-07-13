@@ -33,7 +33,6 @@ import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../keystone/legacy_v5_pczt_mode.dart';
 import '../../services/send_flow.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import 'mobile_send_scan_screen.dart';
@@ -91,7 +90,6 @@ typedef MobileSendFeeEstimator =
       required String toAddress,
       required BigInt amountZatoshi,
       String? memo,
-      required bool legacyV5Pczt,
     });
 
 typedef MobileSendScanner = Future<String?> Function(BuildContext context);
@@ -787,12 +785,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         accountUuid: accountUuid,
         toAddress: address,
         memo: memo.isNotEmpty ? memo : null,
-        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
-          accountUuid: accountUuid,
-          isHardwareAccount: ref
-              .read(accountProvider.notifier)
-              .isHardwareAccount,
-        ),
       );
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
 
@@ -913,12 +905,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         toAddress: _addressController.text.trim(),
         amountZatoshi: zatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
-        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
-          accountUuid: accountUuid,
-          isHardwareAccount: ref
-              .read(accountProvider.notifier)
-              .isHardwareAccount,
-        ),
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
@@ -1010,12 +996,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         toAddress: _addressController.text.trim(),
         amountZatoshi: zatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
-        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
-          accountUuid: accountUuid,
-          isHardwareAccount: ref
-              .read(accountProvider.notifier)
-              .isHardwareAccount,
-        ),
       );
       if (!mounted || seq != _feeSeq) return;
       setState(() => _feeZatoshi = fee);
@@ -1075,12 +1055,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         address: _addressController.text.trim(),
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
-        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
-          accountUuid: accountUuid,
-          isHardwareAccount: ref
-              .read(accountProvider.notifier)
-              .isHardwareAccount,
-        ),
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
       );
     } catch (e) {

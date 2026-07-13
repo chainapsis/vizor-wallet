@@ -67,7 +67,6 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
-    required bool legacyV5Pczt,
   }) async {
     // Real fee estimation crosses the FFI boundary and takes real time;
     // the timer keeps an in-flight validation window open so tests can
@@ -83,7 +82,6 @@ class _RustApiFake implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
-    required bool legacyV5Pczt,
   }) async {
     _estimateSendMaxCalls++;
     _lastEstimateSendMaxToAddress = toAddress;
@@ -108,7 +106,6 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
-    required bool legacyV5Pczt,
   }) async {
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
@@ -610,7 +607,6 @@ void main() {
               required toAddress,
               required amountZatoshi,
               memo,
-              required legacyV5Pczt,
             }) async {
               feeCalls++;
               return feeCalls == 1 ? BigInt.from(10000) : refreshedFee;
@@ -1389,7 +1385,6 @@ void main() {
               required toAddress,
               required amountZatoshi,
               memo,
-              required legacyV5Pczt,
             }) {
               feeCalls++;
               return feeCompleter.future;

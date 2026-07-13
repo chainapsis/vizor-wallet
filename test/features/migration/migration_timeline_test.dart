@@ -61,7 +61,7 @@ rust_sync.MigrationStatus _status({
     denominationConfirmationTarget: denominationConfirmationTarget,
     pendingTxCount: scheduledBroadcasts.length,
     signedChildPcztCount: 0,
-    pendingPrepTxCount: 0,
+    pendingSplitStageCount: 0,
     broadcastedTxCount: 0,
     confirmedTxCount: confirmedTxCount,
     totalCount: totalCount ?? scheduledBroadcasts.length,

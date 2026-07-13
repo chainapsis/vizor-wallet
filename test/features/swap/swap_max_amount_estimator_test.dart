@@ -47,7 +47,7 @@ void main() {
   });
 
   test(
-    'RustSwapMaxAmountEstimator estimates hardware max with legacy PCZT',
+    'RustSwapMaxAmountEstimator estimates hardware max amount',
     () async {
       final container = ProviderContainer(
         overrides: [
@@ -69,8 +69,6 @@ void main() {
           .estimateMaxZecSellAmount(accountUuid: 'account-1');
 
       expect(max, BigInt.from(93));
-      expect(rustApi.legacyV5PcztValues, isNotEmpty);
-      expect(rustApi.legacyV5PcztValues.toSet(), {true});
     },
   );
 }
@@ -101,11 +99,7 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
 }
 
 class _RecordingRustApi implements RustLibApi {
-  final legacyV5PcztValues = <bool>[];
-
-  void reset() {
-    legacyV5PcztValues.clear();
-  }
+  void reset() {}
 
   @override
   Future<SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -114,9 +108,7 @@ class _RecordingRustApi implements RustLibApi {
     required String accountUuid,
     required String toAddress,
     String? memo,
-    required bool legacyV5Pczt,
   }) async {
-    legacyV5PcztValues.add(legacyV5Pczt);
     return SendMaxEstimateResult(
       amountZatoshi: BigInt.from(93),
       feeZatoshi: BigInt.from(7),

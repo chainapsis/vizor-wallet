@@ -7,6 +7,8 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/migration_view_state.dart';
 
+const migrationProgressTransactionHistoryLimit = 1000;
+
 /// Fingerprint of the settled sync inputs that can change the no-run
 /// migration phase. Null while a scan is running: mid-scan wallet summaries
 /// flap between spendable and pending, so they must not drive a status read.

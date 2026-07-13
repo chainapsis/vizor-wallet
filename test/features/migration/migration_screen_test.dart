@@ -7,7 +7,6 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/features/migration/providers/migration_expected_transfer_count_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/orchard_migration_status_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/migration_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -32,9 +31,6 @@ void main() {
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap),
           syncProvider.overrideWith(() => sync),
-          migrationExpectedTransferCountProvider.overrideWith(
-            _FakeMigrationExpectedTransferCountNotifier.new,
-          ),
           activeOrchardMigrationStatusProvider.overrideWith((_) async {
             statusBuildCount += 1;
             return _completeStatus;
@@ -120,7 +116,6 @@ void main() {
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       const secondTxid =
           'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-      final now = DateTime.now();
       final sync = _FakeSyncNotifier(
         _settledSyncState(
           recentTransactions: [
@@ -133,21 +128,10 @@ void main() {
           ],
         ),
       );
-      final expectedCount = MigrationExpectedTransferCount(
-        count: 30,
-        firstTxid: firstTxid,
-        startedAt: now,
-        expiresAt: now.add(const Duration(hours: 1)),
-      );
       final container = ProviderContainer(
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap),
           syncProvider.overrideWith(() => sync),
-          migrationExpectedTransferCountProvider.overrideWith(
-            () => _FakeMigrationExpectedTransferCountNotifier({
-              'account-1': expectedCount,
-            }),
-          ),
           activeOrchardMigrationStatusProvider.overrideWith(
             (_) async => _waitingStatus(firstTxid, secondTxid),
           ),
@@ -212,16 +196,6 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<void> startSyncAnyway() async {}
 }
 
-class _FakeMigrationExpectedTransferCountNotifier
-    extends MigrationExpectedTransferCountNotifier {
-  _FakeMigrationExpectedTransferCountNotifier([this.initial = const {}]);
-
-  final Map<String, MigrationExpectedTransferCount> initial;
-
-  @override
-  Map<String, MigrationExpectedTransferCount> build() => initial;
-}
-
 SyncState _settledSyncState({
   List<rust_sync.TransactionInfo>? recentTransactions,
 }) {
@@ -283,7 +257,7 @@ rust_sync.MigrationStatus _waitingStatus(String firstTxid, String secondTxid) {
     confirmedTxCount: 2,
     totalCount: 30,
     signedChildPcztCount: 0,
-    pendingPrepTxCount: 0,
+    pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 8,
     broadcastWindowSeconds: BigInt.from(180),
@@ -316,7 +290,7 @@ final _completeStatus = rust_sync.MigrationStatus(
   confirmedTxCount: 1,
   totalCount: 1,
   signedChildPcztCount: 0,
-  pendingPrepTxCount: 0,
+  pendingSplitStageCount: 0,
   canAbandon: false,
   signingBatchLimit: 8,
   broadcastWindowSeconds: BigInt.from(60),
