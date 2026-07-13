@@ -117,6 +117,12 @@ Untagged tests may run in either lane and must be lane-agnostic:
   `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Only `lib/main.dart` asserts the match.
 
+## Editing Figma
+
+When the user explicitly asks you to modify a Figma file or design, read
+`FIGMA-AI-FIX.md` completely before starting and use it as the instructions and
+reference for that work.
+
 ## Figma Layer Interpretation
 
 When reading or implementing Figma designs, distinguish app UI from
