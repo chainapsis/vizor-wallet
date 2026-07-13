@@ -155,6 +155,64 @@ void main() {
     expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
   });
 
+  testWidgets(
+    'background time does not trigger an immediate privacy lock on resume',
+    (tester) async {
+      _setMobileViewport(tester);
+      await tester.pumpWidget(
+        _app(
+          syncNotifier: FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      );
+      await _settleInitialSync(tester);
+
+      await tester.pump(const Duration(milliseconds: 30));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 5));
+
+      expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 49));
+
+      expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 2));
+      await tester.pump();
+
+      expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an existing privacy lock remains latched across background', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        syncNotifier: FakeSyncNotifier(
+          _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+        ),
+      ),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump(const Duration(minutes: 5));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
+  });
+
   testWidgets('passcode confirmation clears the virtual privacy lock', (
     tester,
   ) async {

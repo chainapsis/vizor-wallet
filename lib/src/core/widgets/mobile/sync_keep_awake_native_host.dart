@@ -24,24 +24,57 @@ class SyncKeepAwakeNativeHost extends ConsumerStatefulWidget {
 
 class _SyncKeepAwakeNativeHostState
     extends ConsumerState<SyncKeepAwakeNativeHost> {
+  AppLifecycleListener? _lifecycleListener;
+  bool _isInForeground = true;
   bool _lastRequestedEnabled = false;
   bool _lastAppliedEnabled = false;
   Future<void> _nativeQueue = Future<void>.value();
 
   @override
+  void initState() {
+    super.initState();
+    if (kAppFormFactor != AppFormFactor.mobile) return;
+
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    _isInForeground =
+        lifecycleState == null || lifecycleState == AppLifecycleState.resumed;
+    _lifecycleListener = AppLifecycleListener(
+      onResume: _handleLifecycleResume,
+      onInactive: _handleLifecycleBackground,
+      onHide: _handleLifecycleBackground,
+      onPause: _handleLifecycleBackground,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (kAppFormFactor == AppFormFactor.mobile) {
-      _requestNativeState(ref.watch(syncKeepAwakeActiveProvider));
+      _requestNativeState(
+        _isInForeground && ref.watch(syncKeepAwakeActiveProvider),
+      );
     }
     return widget.child;
   }
 
   @override
   void dispose() {
+    _lifecycleListener?.dispose();
     if (_lastRequestedEnabled || _lastAppliedEnabled) {
       _requestNativeState(false, force: true);
     }
     super.dispose();
+  }
+
+  void _handleLifecycleBackground() {
+    if (!_isInForeground) return;
+    _isInForeground = false;
+    _requestNativeState(false);
+  }
+
+  void _handleLifecycleResume() {
+    if (_isInForeground) return;
+    _isInForeground = true;
+    _requestNativeState(ref.read(syncKeepAwakeActiveProvider));
   }
 
   void _requestNativeState(bool enabled, {bool force = false}) {
