@@ -114,7 +114,7 @@ class _GlobalMigrationWarningBannerState
         now,
       );
       final hasSignedChildren = migrationHasSignedChildPczts(status);
-      final hasPendingPrepBroadcast = migrationHasPendingPrepBroadcast(status);
+      final hasPendingSplitStages = migrationHasPendingSplitStages(status);
       final hadDueScheduledBroadcast = migrationHasDueScheduledBroadcast(
         status,
         now,
@@ -131,7 +131,7 @@ class _GlobalMigrationWarningBannerState
 
       if (hadDueScheduledBroadcast ||
           hasBroadcastedUnconfirmed ||
-          hasPendingPrepBroadcast ||
+          hasPendingSplitStages ||
           hasSignedChildren) {
         await ref.read(syncProvider.notifier).startSyncAnyway();
         if (!mounted) return;
@@ -140,7 +140,7 @@ class _GlobalMigrationWarningBannerState
       }
 
       if (!hasScheduledPendingBroadcasts &&
-          !hasPendingPrepBroadcast &&
+          !hasPendingSplitStages &&
           !hasSignedChildren) {
         await ref
             .read(syncProvider.notifier)

@@ -44,14 +44,12 @@ const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
-const PREP_TXS_TABLE: &str = "vizor_migration_prep_txs";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
 
 pub(crate) const PHASE_NO_ORCHARD_FUNDS: &str = "no_orchard_funds";
 pub(crate) const PHASE_WAITING_FOR_SPENDABLE_ORCHARD: &str = "waiting_for_spendable_orchard";
 pub(crate) const PHASE_READY_TO_PREPARE: &str = "ready_to_prepare";
-pub(crate) const PHASE_PREPARING_DENOMINATIONS: &str = "preparing_denominations";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
 pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
@@ -214,11 +212,6 @@ pub(crate) struct SignedMigrationPczt {
     pub metadata: PendingMigrationTxMetadata,
 }
 
-pub(crate) struct MigrationPrepTx {
-    pub txid_hex: String,
-    pub raw_tx: Vec<u8>,
-}
-
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
@@ -256,6 +249,7 @@ pub(crate) struct MigrationStatus {
     pub confirmed_tx_count: u32,
     pub total_count: u32,
     pub signed_child_pczt_count: u32,
+    /// Staged split transactions that still need reconciliation or broadcast.
     pub pending_prep_tx_count: u32,
     pub message: Option<String>,
     pub can_abandon: bool,
@@ -409,98 +403,6 @@ pub(crate) fn active_migration_run(
     active_run(&conn, account_uuid, network)
 }
 
-pub(crate) fn create_run_with_prepared_notes_and_signed_children(
-    db_path: &str,
-    account_uuid: &str,
-    network: WalletNetwork,
-    plan: &DenominationPlan,
-    prepared_notes: &[PreparedOrchardNoteRef],
-    locked: bool,
-    signed_children: Vec<SignedMigrationPcztInsert>,
-    password: &[u8],
-    salt_base64: &str,
-    prep_txid: Option<&str>,
-    prep_raw_tx: Option<Vec<u8>>,
-) -> Result<String, String> {
-    if prep_raw_tx.is_some() && prep_txid.is_none() {
-        return Err("Migration prep raw transaction requires a txid".to_string());
-    }
-
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    if let Some(run) = active_run(&conn, account_uuid, network)? {
-        return Err(format!("Migration already active: {}", run.run_id));
-    }
-
-    let run_id = new_run_id(account_uuid);
-    let now = now_ms()?;
-    let phase = if prep_txid.is_some() {
-        PHASE_WAITING_DENOM_CONFIRMATIONS
-    } else {
-        PHASE_PREPARING_DENOMINATIONS
-    };
-    let target_values_json = serde_json::to_string(&plan.migration_outputs)
-        .map_err(|e| format!("Encode migration targets: {e}"))?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration run staging: {e}"))?;
-    tx.execute(
-        &format!(
-            "INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, prep_txid, target_values_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)"
-        ),
-        params![
-            run_id,
-            account_uuid,
-            network_name(network),
-            db_path,
-            phase,
-            now,
-            prep_txid,
-            target_values_json,
-        ],
-    )
-    .map_err(|e| format!("Create migration run: {e}"))?;
-    insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, locked)?;
-    if let Some(raw_tx) = prep_raw_tx {
-        let prep_txid = prep_txid.ok_or("Migration prep raw transaction requires a txid")?;
-        insert_prep_tx_with_tx(&tx, &run_id, prep_txid, raw_tx, password, salt_base64)?;
-    }
-    insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration run staging: {e}"))?;
-    Ok(run_id)
-}
-
-pub(crate) fn create_run_with_prepared_notes_and_prep_tx(
-    db_path: &str,
-    account_uuid: &str,
-    network: WalletNetwork,
-    plan: &DenominationPlan,
-    prepared_notes: &[PreparedOrchardNoteRef],
-    locked: bool,
-    prep_txid: &str,
-    prep_raw_tx: Vec<u8>,
-    password: &[u8],
-    salt_base64: &str,
-) -> Result<String, String> {
-    create_run_with_prepared_notes_and_signed_children(
-        db_path,
-        account_uuid,
-        network,
-        plan,
-        prepared_notes,
-        locked,
-        Vec::new(),
-        password,
-        salt_base64,
-        Some(prep_txid),
-        Some(prep_raw_tx),
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     db_path: &str,
@@ -533,8 +435,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, prep_txid, target_values_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, NULL, ?7)"
+              updated_at_ms, target_values_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)"
         ),
         params![
             run_id,
@@ -634,98 +536,6 @@ fn insert_prepared_notes_with_tx(
         .map_err(|e| format!("Insert prepared migration note: {e}"))?;
     }
     Ok(())
-}
-
-fn insert_prep_tx_with_tx(
-    tx: &rusqlite::Transaction<'_>,
-    run_id: &str,
-    txid_hex: &str,
-    raw_tx: Vec<u8>,
-    password: &[u8],
-    salt_base64: &str,
-) -> Result<(), String> {
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration prep tx salt")?;
-    let encrypted_raw_tx =
-        secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, salt.as_slice())?;
-    tx.execute(
-        &format!(
-            "INSERT OR REPLACE INTO {PREP_TXS_TABLE}
-             (run_id, txid_hex, encrypted_raw_tx, status)
-             VALUES (?1, ?2, ?3, 'pending')"
-        ),
-        params![run_id, txid_hex, encrypted_raw_tx],
-    )
-    .map_err(|e| format!("Insert migration prep tx: {e}"))?;
-    Ok(())
-}
-
-pub(crate) fn pending_prep_tx_for_run(
-    db_path: &str,
-    run_id: &str,
-    password: &[u8],
-    salt_base64: &str,
-) -> Result<Option<MigrationPrepTx>, String> {
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration prep tx salt")?;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let row = conn
-        .query_row(
-            &format!(
-                "SELECT txid_hex, encrypted_raw_tx
-                 FROM {PREP_TXS_TABLE}
-                 WHERE run_id = ?1 AND status = 'pending'"
-            ),
-            params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(|e| format!("Read migration prep tx: {e}"))?;
-    let Some((txid_hex, encrypted_raw_tx)) = row else {
-        return Ok(None);
-    };
-    let raw_tx =
-        secret_payload::decrypt_payload(encrypted_raw_tx.as_bytes(), password, salt.as_slice())?;
-    Ok(Some(MigrationPrepTx {
-        txid_hex,
-        raw_tx: raw_tx.to_vec(),
-    }))
-}
-
-pub(crate) fn mark_prep_tx_broadcasted(db_path: &str, run_id: &str) -> Result<String, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration prep broadcast update: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {PREP_TXS_TABLE}
-             SET status = 'broadcasted'
-             WHERE run_id = ?1"
-        ),
-        params![run_id],
-    )
-    .map_err(|e| format!("Mark migration prep tx broadcasted: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET updated_at_ms = ?1, last_error = NULL
-             WHERE run_id = ?2"
-        ),
-        params![now, run_id],
-    )
-    .map_err(|e| format!("Clear migration prep broadcast message: {e}"))?;
-    let phase = tx
-        .query_row(
-            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
-            params![run_id],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| format!("Read migration prep broadcast phase: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration prep broadcast update: {e}"))?;
-    Ok(phase)
 }
 
 pub(crate) fn insert_pending_txs(
@@ -867,10 +677,7 @@ fn insert_signed_child_pczts_with_tx(
             password,
             salt.as_slice(),
         )?;
-        // The `encrypted_signed_pczt` column now holds the compact signatures
-        // blob (not a full signed PCZT); the column name is retained to avoid a
-        // schema migration.
-        let encrypted_signed_pczt = secret_payload::encrypt_payload(
+        let encrypted_compact_sigs = secret_payload::encrypt_payload(
             Zeroizing::new(crate::wallet::keystone::encode_compact_action_sigs(
                 &child.sigs,
             )?),
@@ -886,7 +693,7 @@ fn insert_signed_child_pczts_with_tx(
             &format!(
                 "INSERT OR REPLACE INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
-                  encrypted_signed_pczt, target_height, expiry_height,
+                  encrypted_compact_sigs, target_height, expiry_height,
                   value_zatoshi, fee_zatoshi, selected_note_json,
                   metadata_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
@@ -896,7 +703,7 @@ fn insert_signed_child_pczts_with_tx(
                 child.message_id,
                 child.child_index,
                 encrypted_base_pczt,
-                encrypted_signed_pczt,
+                encrypted_compact_sigs,
                 child.target_height,
                 child.expiry_height,
                 child.value_zatoshi,
@@ -921,7 +728,7 @@ pub(crate) fn signed_child_pczts_for_run(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT encrypted_base_pczt, encrypted_signed_pczt,
+            "SELECT encrypted_base_pczt, encrypted_compact_sigs,
                     target_height, expiry_height, value_zatoshi, fee_zatoshi,
                     selected_note_json, metadata_json
              FROM {SIGNED_CHILD_PCZTS_TABLE}
@@ -948,7 +755,7 @@ pub(crate) fn signed_child_pczts_for_run(
     for row in rows {
         let (
             encrypted_base_pczt,
-            encrypted_signed_pczt,
+            encrypted_compact_sigs,
             target_height,
             expiry_height,
             value_zatoshi,
@@ -962,7 +769,7 @@ pub(crate) fn signed_child_pczts_for_run(
             salt.as_slice(),
         )?;
         let sigs_blob = secret_payload::decrypt_payload(
-            encrypted_signed_pczt.as_bytes(),
+            encrypted_compact_sigs.as_bytes(),
             password,
             salt.as_slice(),
         )?;
@@ -1157,7 +964,7 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
 
 /// Reconciles the plaintext denomination graph against the wallet's scanned
 /// canonical chain. This needs no seed, PCZT, or encryption password, so the
-/// normal status path can repair reorg state even after every child has been
+/// normal status path can reconcile a reorg even after every child has been
 /// broadcast.
 pub(crate) fn reconcile_denomination_stage_chain_state(
     db_path: &str,
@@ -1444,75 +1251,6 @@ pub(crate) fn pending_totals_for_run(
     })
 }
 
-pub(crate) fn clear_retriable_pending_txs(db_path: &str, run: &ActiveRun) -> Result<bool, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    clear_retriable_pending_txs_with_conn(&conn, run)
-}
-
-fn clear_retriable_pending_txs_with_conn(
-    conn: &rusqlite::Connection,
-    run: &ActiveRun,
-) -> Result<bool, String> {
-    if run.phase != PHASE_FAILED_RECOVERABLE
-        || !failure_can_rebuild_pending_txs(run.last_error.as_deref())
-    {
-        return Ok(false);
-    }
-    if !table_exists(conn, PENDING_TXS_TABLE)? {
-        return Ok(false);
-    }
-
-    let scheduled_count = count_pending_with_status(conn, &run.run_id, "scheduled")?;
-    if scheduled_count == 0 {
-        return Ok(false);
-    }
-    let non_scheduled_count: u32 = conn
-        .query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = ?1 AND status != 'scheduled'"
-            ),
-            params![run.run_id],
-            |row| row.get::<_, u32>(0),
-        )
-        .map_err(|e| format!("Count non-retriable migration pending txs: {e}"))?;
-    if non_scheduled_count > 0 {
-        return Ok(false);
-    }
-
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration retry reset: {e}"))?;
-    tx.execute(
-        &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = ?1 AND status = 'scheduled'"),
-        params![run.run_id],
-    )
-    .map_err(|e| format!("Clear expired migration pending txs: {e}"))?;
-    let now = now_ms()?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![PHASE_READY_TO_MIGRATE, now, run.run_id],
-    )
-    .map_err(|e| format!("Reset migration run for retry: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration retry reset: {e}"))?;
-    Ok(true)
-}
-
-fn failure_can_rebuild_pending_txs(message: Option<&str>) -> bool {
-    let Some(message) = message else {
-        return false;
-    };
-    let lower = message.to_ascii_lowercase();
-    lower.contains("expiry") || lower.contains("expired")
-}
-
 fn scheduled_broadcasts_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -1597,7 +1335,7 @@ pub(crate) fn locked_migration_note_refs(
 
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
     let prepared_note_count = count_for_run(conn, PREPARED_NOTES_TABLE, &run.run_id)?;
-    let pending_prep_tx_count = pending_prep_tx_count_for_run(conn, &run.run_id)?;
+    let pending_split_stage_count = pending_split_stage_count_for_run(conn, &run.run_id)?;
     let pending_tx_count = count_for_run(conn, PENDING_TXS_TABLE, &run.run_id)?;
     let broadcasted_tx_count = count_pending_with_status(conn, &run.run_id, "broadcasted")?;
     let confirmed_tx_count = count_pending_with_status(conn, &run.run_id, "confirmed")?;
@@ -1634,23 +1372,12 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         } else {
             0
         }
-    } else if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        // A run created before staged denomination persistence has no stage
-        // graph. Keep its prepared-note confirmation behavior intact.
-        denomination_split_progress.frontier_confirmation_count
-    } else if prepared_note_count > 0
-        && phase != PHASE_PREPARING_DENOMINATIONS
-        && phase != PHASE_FAILED_TERMINAL
-        && phase != PHASE_ABANDONED
-    {
-        denomination_confirmation_target
     } else {
         0
     };
     let can_abandon = matches!(
         phase.as_str(),
-        PHASE_PREPARING_DENOMINATIONS
-            | PHASE_WAITING_DENOM_CONFIRMATIONS
+        PHASE_WAITING_DENOM_CONFIRMATIONS
             | PHASE_READY_TO_MIGRATE
             | PHASE_FAILED_RECOVERABLE
             | PHASE_PAUSED
@@ -1670,7 +1397,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         confirmed_tx_count,
         total_count,
         signed_child_pczt_count,
-        pending_prep_tx_count,
+        pending_prep_tx_count: pending_split_stage_count,
         message: run.last_error,
         can_abandon,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
@@ -1938,37 +1665,9 @@ fn denomination_split_progress_for_run(
 ) -> Result<DenominationSplitProgress, String> {
     let stages = denomination_stage_chain_records(conn, run_id)?;
     if stages.is_empty() {
-        let frontier_confirmation_count =
-            legacy_denomination_confirmation_count_for_run(conn, run_id)?;
-        let has_legacy_split = conn
-            .query_row(
-                &format!(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM {RUNS_TABLE} r
-                        WHERE r.run_id = ?1
-                          AND (
-                            r.prep_txid IS NOT NULL
-                            OR EXISTS(
-                                SELECT 1 FROM {PREP_TXS_TABLE} p
-                                WHERE p.run_id = r.run_id
-                            )
-                          )
-                    )"
-                ),
-                params![run_id],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(|e| format!("Read legacy denomination split state: {e}"))?;
-        let total_count = u32::from(has_legacy_split);
-        let completed_count = u32::from(
-            has_legacy_split
-                && frontier_confirmation_count >= denomination_confirmations_required(),
-        );
-        return Ok(DenominationSplitProgress {
-            frontier_confirmation_count,
-            completed_count,
-            total_count,
-        });
+        return Err(format!(
+            "Migration run {run_id} has no staged denomination transactions"
+        ));
     }
 
     let total_count = u32::try_from(stages.len())
@@ -2025,24 +1724,6 @@ fn denomination_split_progress_for_run(
         completed_count,
         total_count,
     })
-}
-
-fn legacy_denomination_confirmation_count_for_run(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-) -> Result<u32, String> {
-    let Some(confirmed) = confirmed_prepared_denomination_notes(conn, run_id)? else {
-        return Ok(0);
-    };
-    if confirmed.is_empty() {
-        return Ok(0);
-    }
-    let max_mined_height = confirmed
-        .iter()
-        .map(|(_, _, _, height)| *height)
-        .max()
-        .unwrap_or(0);
-    synced_orchard_confirmation_count(conn, max_mined_height)
 }
 
 fn confirmed_prepared_denomination_notes(
@@ -2125,26 +1806,15 @@ fn prepared_note_spend_metadata_available_for_run(
     ))
 }
 
-fn pending_prep_tx_count_for_run(conn: &rusqlite::Connection, run_id: &str) -> Result<u32, String> {
-    let legacy_pending = if table_exists(conn, PREP_TXS_TABLE)? {
-        conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM {PREP_TXS_TABLE}
-                 WHERE run_id = ?1 AND status = 'pending'"
-            ),
-            params![run_id],
-            |row| row.get::<_, u32>(0),
-        )
-        .map_err(|e| format!("Count pending migration prep txs: {e}"))?
-    } else {
-        0
-    };
-    // Keep the existing Dart retry signal active for the full staged split
-    // lifecycle. In particular, a terminal stage that has been broadcast must
-    // still trigger reconciliation while it is mined, confirmed, or reorged.
-    // Once reconciliation advances the run, only actionable pending/awaiting
-    // stages remain part of this legacy-shaped signal.
+fn pending_split_stage_count_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<u32, String> {
+    // Keep the UI retry signal active for the full staged split lifecycle. In
+    // particular, a terminal stage that has been broadcast must still trigger
+    // reconciliation while it is mined, confirmed, or reorged. Once
+    // reconciliation advances the run, only actionable pending or awaiting
+    // stages remain part of the signal.
     let staged = denomination_stage_status_counts(conn, run_id)?;
     let waiting_for_denominations = conn
         .query_row(
@@ -2163,9 +1833,7 @@ fn pending_prep_tx_count_for_run(conn: &rusqlite::Connection, run_id: &str) -> R
             .checked_add(staged.awaiting_inputs)
             .ok_or("Pending denomination stage count overflow")?
     };
-    legacy_pending
-        .checked_add(staged_retry_count)
-        .ok_or("Pending denomination stage count overflow".to_string())
+    Ok(staged_retry_count)
 }
 
 fn synced_orchard_confirmation_count(
@@ -2449,7 +2117,6 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             phase TEXT NOT NULL,
             created_at_ms INTEGER NOT NULL,
             updated_at_ms INTEGER NOT NULL,
-            prep_txid TEXT,
             target_values_json TEXT NOT NULL DEFAULT '[]',
             last_error TEXT
         );
@@ -2465,13 +2132,6 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             nullifier_hex TEXT,
             lock_state TEXT NOT NULL DEFAULT 'locked',
             PRIMARY KEY (run_id, txid_hex, output_index)
-        );
-
-        CREATE TABLE IF NOT EXISTS {PREP_TXS_TABLE} (
-            run_id TEXT PRIMARY KEY,
-            txid_hex TEXT NOT NULL,
-            encrypted_raw_tx TEXT NOT NULL,
-            status TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS {PENDING_TXS_TABLE} (
@@ -2497,7 +2157,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             message_id TEXT NOT NULL,
             child_index INTEGER NOT NULL,
             encrypted_base_pczt TEXT NOT NULL,
-            encrypted_signed_pczt TEXT NOT NULL,
+            encrypted_compact_sigs TEXT NOT NULL,
             target_height INTEGER NOT NULL,
             expiry_height INTEGER NOT NULL,
             value_zatoshi INTEGER NOT NULL,
@@ -2568,6 +2228,80 @@ fn network_name(network: WalletNetwork) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
+    const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+
+    fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
+        DenominationStageInsert {
+            stage_index: 0,
+            base_pczt: vec![0xa0],
+            sigs: Vec::new(),
+            raw_tx: Some(raw_tx),
+            expected_txid_hex: expected_txid_hex.to_string(),
+            target_height: 3_000_000,
+            expiry_height: 0,
+            fee_zatoshi: 80_000,
+            status: DenominationStageStatus::Pending,
+            inputs: vec![DenominationStageInputRef {
+                txid_hex: "aa".repeat(32),
+                output_index: 0,
+                value_zatoshi: 100_080_000,
+                note_version: 2,
+                nullifier_hex: Some("bb".repeat(32)),
+            }],
+            outputs: vec![DenominationStageOutputRef {
+                output_index: 0,
+                value_zatoshi: 100_000_000,
+                note_version: 2,
+                kind: DenominationStageOutputKind::Migration,
+            }],
+        }
+    }
+
+    fn insert_test_stage(
+        conn: &rusqlite::Connection,
+        run_id: &str,
+        expected_txid_hex: &str,
+        status: DenominationStageStatus,
+        confirmed_mined_height: Option<u32>,
+    ) {
+        let tx = conn.unchecked_transaction().unwrap();
+        insert_denomination_stages_with_tx(
+            &tx,
+            run_id,
+            vec![pending_test_stage(expected_txid_hex, vec![1, 2, 3, 4])],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+
+        match status {
+            DenominationStageStatus::Pending => {
+                assert!(confirmed_mined_height.is_none());
+            }
+            DenominationStageStatus::Broadcasted => {
+                assert!(confirmed_mined_height.is_none());
+                mark_denomination_stage_broadcasted(conn, run_id, expected_txid_hex).unwrap();
+            }
+            DenominationStageStatus::Confirmed => {
+                let mined_height = confirmed_mined_height.unwrap();
+                let block_hash = mined_height.to_le_bytes().repeat(8);
+                mark_denomination_stage_confirmed_at(
+                    conn,
+                    run_id,
+                    expected_txid_hex,
+                    mined_height,
+                    block_hash.as_slice().try_into().unwrap(),
+                )
+                .unwrap();
+            }
+            DenominationStageStatus::AwaitingInputs => {
+                panic!("pending test stages cannot move backward to awaiting inputs");
+            }
+        }
+    }
 
     #[test]
     fn planner_noops_when_prep_fee_consumes_balance() {
@@ -2741,18 +2475,16 @@ mod tests {
             total_input_zatoshi: ZATOSHIS_PER_ZEC + 20_000,
             total_migratable_zatoshi: ZATOSHIS_PER_ZEC,
         };
-        let run_id = create_run_with_prepared_notes_and_signed_children(
+        let run_id = create_run_with_staged_denominations_and_signed_children(
             &db_path,
             "account-1",
             WalletNetwork::Test,
             &plan,
             &[],
-            false,
             Vec::new(),
-            b"correct horse battery staple",
-            "AQIDBAUGBwgJCgsMDQ4PEA==",
-            None,
-            None,
+            vec![pending_test_stage(&"11".repeat(32), vec![1, 2, 3, 4])],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
         )
         .unwrap();
         mark_run_phase(&db_path, &run_id, PHASE_COMPLETE, None).unwrap();
@@ -2809,53 +2541,50 @@ mod tests {
     }
 
     #[test]
-    fn create_run_with_prep_tx_stages_pending_broadcast_state() {
+    fn create_staged_run_persists_pending_split_atomically() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
-        let txid_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let expected_txid = "11".repeat(32);
+        let raw_tx = vec![1, 2, 3, 4];
         let plan = DenominationPlan {
             migration_outputs: vec![100_000_000],
             orchard_change: None,
-            prep_fee_zatoshi: 10_000,
+            prep_fee_zatoshi: 80_000,
             migration_fee_zatoshi: 10_000,
-            total_input_zatoshi: 100_010_000,
+            total_input_zatoshi: 100_080_000,
             total_migratable_zatoshi: 100_000_000,
         };
         let prepared_notes = vec![PreparedOrchardNoteRef {
-            txid_hex: txid_hex.to_string(),
+            txid_hex: expected_txid.clone(),
             output_index: 0,
             value_zatoshi: 100_000_000,
             note_version: 2,
             nullifier_hex: None,
         }];
-        let raw_tx = vec![1, 2, 3, 4];
 
-        let run_id = create_run_with_prepared_notes_and_prep_tx(
+        let run_id = create_run_with_staged_denominations_and_signed_children(
             &db_path,
             "account-1",
             WalletNetwork::Test,
             &plan,
             &prepared_notes,
-            true,
-            txid_hex,
-            raw_tx.clone(),
-            b"correct horse battery staple",
-            "AQIDBAUGBwgJCgsMDQ4PEA==",
+            Vec::new(),
+            vec![pending_test_stage(&expected_txid, raw_tx.clone())],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
         )
         .unwrap();
 
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        let (phase, prep_txid): (String, Option<String>) = conn
+        let phase: String = conn
             .query_row(
-                &format!("SELECT phase, prep_txid FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
                 params![run_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .unwrap();
         assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
-        assert_eq!(prep_txid.as_deref(), Some(txid_hex));
-
         let lock_state: String = conn
             .query_row(
                 &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
@@ -2864,80 +2593,65 @@ mod tests {
             )
             .unwrap();
         assert_eq!(lock_state, "locked");
+        assert!(!table_exists(&conn, "vizor_migration_prep_txs").unwrap());
 
-        let prep_tx = pending_prep_tx_for_run(
-            &db_path,
-            &run_id,
-            b"correct horse battery staple",
-            "AQIDBAUGBwgJCgsMDQ4PEA==",
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(prep_tx.txid_hex, txid_hex);
-        assert_eq!(prep_tx.raw_tx, raw_tx);
+        let stages =
+            denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+        assert_eq!(stages.len(), 1);
+        assert_eq!(stages[0].expected_txid_hex, expected_txid);
+        assert_eq!(stages[0].raw_tx.as_deref(), Some(raw_tx.as_slice()));
+        assert_eq!(stages[0].status, DenominationStageStatus::Pending);
     }
 
     #[test]
-    fn create_run_with_prep_tx_rolls_back_on_encrypt_failure() {
+    fn create_staged_run_rolls_back_on_encrypt_failure() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
-        let txid_hex = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
+        let expected_txid = "11".repeat(32);
         let plan = DenominationPlan {
             migration_outputs: vec![100_000_000],
             orchard_change: None,
-            prep_fee_zatoshi: 10_000,
+            prep_fee_zatoshi: 80_000,
             migration_fee_zatoshi: 10_000,
-            total_input_zatoshi: 100_010_000,
+            total_input_zatoshi: 100_080_000,
             total_migratable_zatoshi: 100_000_000,
         };
         let prepared_notes = vec![PreparedOrchardNoteRef {
-            txid_hex: txid_hex.to_string(),
+            txid_hex: expected_txid.clone(),
             output_index: 0,
             value_zatoshi: 100_000_000,
             note_version: 2,
             nullifier_hex: None,
         }];
 
-        let err = create_run_with_prepared_notes_and_prep_tx(
+        let err = create_run_with_staged_denominations_and_signed_children(
             &db_path,
             "account-1",
             WalletNetwork::Test,
             &plan,
             &prepared_notes,
-            true,
-            txid_hex,
-            vec![1, 2, 3, 4],
-            b"correct horse battery staple",
+            Vec::new(),
+            vec![pending_test_stage(&expected_txid, vec![1, 2, 3, 4])],
+            TEST_PASSWORD,
             "not base64",
         )
         .unwrap_err();
-        assert!(err.contains("Failed to decode migration prep tx salt"));
+        assert!(err.contains("Failed to decode migration denomination stage salt"));
 
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        let run_count: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {RUNS_TABLE}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        let note_count: i64 = conn
-            .query_row(
-                &format!("SELECT COUNT(*) FROM {PREPARED_NOTES_TABLE}"),
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        let prep_count: i64 = conn
-            .query_row(
-                &format!("SELECT COUNT(*) FROM {PREP_TXS_TABLE}"),
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-
-        assert_eq!(run_count, 0);
-        assert_eq!(note_count, 0);
-        assert_eq!(prep_count, 0);
+        for table in [
+            RUNS_TABLE,
+            PREPARED_NOTES_TABLE,
+            "vizor_migration_denomination_stages",
+        ] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "{table} should be empty after rollback");
+        }
     }
 
     #[test]
@@ -3051,7 +2765,9 @@ mod tests {
         .unwrap();
 
         let run_id = "run-1";
-        let txid_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let denomination_txid_hex = "11".repeat(32);
+        let child_txid_hex =
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string();
         conn.execute(
             &format!(
                 "INSERT INTO {RUNS_TABLE}
@@ -3069,6 +2785,13 @@ mod tests {
             ],
         )
         .unwrap();
+        insert_test_stage(
+            &conn,
+            run_id,
+            &denomination_txid_hex,
+            DenominationStageStatus::Confirmed,
+            Some(17),
+        );
         conn.execute(
             &format!(
                 "INSERT INTO {PREPARED_NOTES_TABLE}
@@ -3076,7 +2799,7 @@ mod tests {
                   nullifier_hex, lock_state)
                  VALUES (?1, ?2, 0, 100000000, 2, NULL, 'locked')"
             ),
-            params![run_id, txid_hex],
+            params![run_id, denomination_txid_hex],
         )
         .unwrap();
         conn.execute(
@@ -3087,19 +2810,21 @@ mod tests {
                   selected_note_output_index, selected_note_value,
                   scheduled_at_ms, status, metadata_json)
                  VALUES (?1, ?2, 'encrypted', 10, 30, 99990000, 10000,
-                         ?2, 0, 100000000, 1, 'broadcasted', '{{}}')"
+                         ?3, 0, 100000000, 1, 'broadcasted', '{{}}')"
             ),
-            params![run_id, txid_hex],
+            params![run_id, child_txid_hex, denomination_txid_hex],
         )
         .unwrap();
 
-        let mut txid_blob = hex::decode(txid_hex).unwrap();
-        txid_blob.reverse();
-        conn.execute(
-            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 20)",
-            params![txid_blob],
-        )
-        .unwrap();
+        for (txid_hex, mined_height) in [(&denomination_txid_hex, 17), (&child_txid_hex, 20)] {
+            let mut txid_blob = hex::decode(txid_hex).unwrap();
+            txid_blob.reverse();
+            conn.execute(
+                "INSERT INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+                params![txid_blob, mined_height],
+            )
+            .unwrap();
+        }
 
         reconcile_run_confirmations(&conn, run_id).unwrap();
         let status = status_for_run(
@@ -3141,7 +2866,9 @@ mod tests {
         .unwrap();
 
         let run_id = "run-pre-trust-reorg";
-        let txid_hex = "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
+        let denomination_txid_hex = "11".repeat(32);
+        let child_txid_hex =
+            "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f".to_string();
         conn.execute(
             &format!(
                 "INSERT INTO {RUNS_TABLE}
@@ -3153,6 +2880,13 @@ mod tests {
             params![run_id, PHASE_WAITING_MIGRATION_CONFIRMATIONS],
         )
         .unwrap();
+        insert_test_stage(
+            &conn,
+            run_id,
+            &denomination_txid_hex,
+            DenominationStageStatus::Confirmed,
+            Some(17),
+        );
         conn.execute(
             &format!(
                 "INSERT INTO {PREPARED_NOTES_TABLE}
@@ -3160,7 +2894,7 @@ mod tests {
                   nullifier_hex, lock_state)
                  VALUES (?1, ?2, 0, 100000000, 2, NULL, 'locked')"
             ),
-            params![run_id, txid_hex],
+            params![run_id, denomination_txid_hex],
         )
         .unwrap();
         conn.execute(
@@ -3171,17 +2905,24 @@ mod tests {
                   selected_note_output_index, selected_note_value,
                   scheduled_at_ms, status, metadata_json)
                  VALUES (?1, ?2, 'encrypted', 10, 30, 99990000, 10000,
-                         ?2, 0, 100000000, 1, 'broadcasted', '{{}}')"
+                         ?3, 0, 100000000, 1, 'broadcasted', '{{}}')"
             ),
-            params![run_id, txid_hex],
+            params![run_id, child_txid_hex, denomination_txid_hex],
         )
         .unwrap();
 
-        let mut txid_blob = hex::decode(txid_hex).unwrap();
-        txid_blob.reverse();
+        let mut denomination_txid_blob = hex::decode(&denomination_txid_hex).unwrap();
+        denomination_txid_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 17)",
+            params![denomination_txid_blob],
+        )
+        .unwrap();
+        let mut child_txid_blob = hex::decode(&child_txid_hex).unwrap();
+        child_txid_blob.reverse();
         conn.execute(
             "INSERT INTO transactions (txid, mined_height) VALUES (?1, 20)",
-            params![txid_blob],
+            params![child_txid_blob],
         )
         .unwrap();
         conn.execute(
@@ -3212,7 +2953,7 @@ mod tests {
 
         conn.execute(
             "UPDATE transactions SET mined_height = NULL WHERE txid = ?1",
-            params![txid_blob],
+            params![child_txid_blob],
         )
         .unwrap();
         reconcile_run_confirmations(&conn, run_id).unwrap();
@@ -3445,12 +3186,13 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            &format!(
-                "INSERT INTO {PREP_TXS_TABLE}
-                 (run_id, txid_hex, encrypted_raw_tx, status)
-                 VALUES (?1, ?2, 'raw', 'pending')"
-            ),
-            params![run_id, txid_hex],
+            "INSERT INTO vizor_migration_denomination_stages
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
+              fee_zatoshi, confirmed_mined_height, confirmed_block_hash, status)
+             VALUES (?1, 0, 'base', 'sigs', 'raw', ?2, 10, 0, 80000,
+                     20, ?3, 'confirmed')",
+            params![run_id, txid_hex, 20u32.to_le_bytes().repeat(8)],
         )
         .unwrap();
 
@@ -3480,7 +3222,7 @@ mod tests {
         let status = status_for_run(&conn, run.clone()).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert_eq!(status.signed_child_pczt_count, 0);
-        assert_eq!(status.pending_prep_tx_count, 1);
+        assert_eq!(status.pending_prep_tx_count, 0);
 
         let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
             txid_hex: txid_hex.to_string(),
@@ -3494,7 +3236,7 @@ mod tests {
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
-                  encrypted_signed_pczt, target_height, expiry_height,
+                  encrypted_compact_sigs, target_height, expiry_height,
                   value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
                  VALUES (?1, 'migration-1', 0, 'base', 'signed', 10, 20,
                          99980000, 20000, ?2, '{{}}')"
@@ -3506,16 +3248,11 @@ mod tests {
         let status = status_for_run(&conn, run.clone()).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert_eq!(status.signed_child_pczt_count, 1);
-        assert_eq!(status.pending_prep_tx_count, 1);
+        assert_eq!(status.pending_prep_tx_count, 0);
 
         conn.execute(
             "UPDATE orchard_received_notes SET commitment_tree_position = 0",
             [],
-        )
-        .unwrap();
-        conn.execute(
-            &format!("UPDATE {PREP_TXS_TABLE} SET status = 'broadcasted' WHERE run_id = ?1"),
-            params![run_id],
         )
         .unwrap();
 
@@ -3551,21 +3288,17 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 1);
-        conn.execute(
-            "UPDATE vizor_migration_denomination_stages
-             SET status = 'confirmed' WHERE run_id = ?1",
-            params![run_id],
-        )
-        .unwrap();
-        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 1);
+        assert_eq!(pending_split_stage_count_for_run(&conn, run_id).unwrap(), 1);
+        mark_denomination_stage_confirmed_at(&conn, run_id, &"11".repeat(32), 20, &[0xabu8; 32])
+            .unwrap();
+        assert_eq!(pending_split_stage_count_for_run(&conn, run_id).unwrap(), 1);
 
         conn.execute(
             &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
             params![PHASE_READY_TO_MIGRATE, run_id],
         )
         .unwrap();
-        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 0);
+        assert_eq!(pending_split_stage_count_for_run(&conn, run_id).unwrap(), 0);
     }
 
     #[test]
@@ -3713,7 +3446,7 @@ mod tests {
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
-                  encrypted_signed_pczt, target_height, expiry_height,
+                  encrypted_compact_sigs, target_height, expiry_height,
                   value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
                  VALUES (?1, 'migration-1', 0, 'base', 'sigs', 10, 20,
                          99980000, 20000, ?2, '{{}}')"
@@ -3881,7 +3614,7 @@ mod tests {
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
-                  encrypted_signed_pczt, target_height, expiry_height,
+                  encrypted_compact_sigs, target_height, expiry_height,
                   value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
                  VALUES (?1, 'migration-1', 0, 'base', 'sigs', 10, 20,
                          99980000, 20000, ?2, '{{}}')"
@@ -4158,6 +3891,13 @@ mod tests {
             [],
         )
         .unwrap();
+        insert_test_stage(
+            &conn,
+            run_id,
+            txid_hex,
+            DenominationStageStatus::Broadcasted,
+            None,
+        );
 
         let run = ActiveRun {
             run_id: run_id.to_string(),
@@ -4483,6 +4223,13 @@ mod tests {
             [],
         )
         .unwrap();
+        insert_test_stage(
+            &conn,
+            run_id,
+            txid_hex,
+            DenominationStageStatus::Broadcasted,
+            None,
+        );
 
         let run = ActiveRun {
             run_id: run_id.to_string(),
@@ -4578,6 +4325,13 @@ mod tests {
             [],
         )
         .unwrap();
+        insert_test_stage(
+            &conn,
+            run_id,
+            txid_hex,
+            DenominationStageStatus::Broadcasted,
+            None,
+        );
 
         let run = ActiveRun {
             run_id: run_id.to_string(),
@@ -4601,177 +4355,6 @@ mod tests {
             .unwrap();
         assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert!(nullifier_hex.is_none());
-    }
-
-    #[test]
-    fn retry_reset_clears_unbroadcasted_expired_pending_txs() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        ensure_schema(&conn).unwrap();
-        let run = insert_failed_run(
-            &conn,
-            "run-retry",
-            Some(
-                "Migration broadcast failed. Error: transaction must not be mined greater than its expiry Height(616)",
-            ),
-        );
-        insert_prepared_note(&conn, &run.run_id);
-        insert_pending_tx(
-            &conn,
-            &run.run_id,
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "scheduled",
-        );
-        insert_pending_tx(
-            &conn,
-            &run.run_id,
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "scheduled",
-        );
-
-        assert!(clear_retriable_pending_txs_with_conn(&conn, &run).unwrap());
-
-        let pending_count: u32 = conn
-            .query_row(
-                &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(pending_count, 0);
-        let (phase, last_error): (String, Option<String>) = conn
-            .query_row(
-                &format!("SELECT phase, last_error FROM {RUNS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(phase, PHASE_READY_TO_MIGRATE);
-        assert!(last_error.is_none());
-        let lock_state: String = conn
-            .query_row(
-                &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(lock_state, "locked");
-    }
-
-    #[test]
-    fn retry_reset_refuses_partially_broadcast_expired_run() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        ensure_schema(&conn).unwrap();
-        let run = insert_failed_run(&conn, "run-partial", Some("transaction expired"));
-        insert_pending_tx(
-            &conn,
-            &run.run_id,
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "scheduled",
-        );
-        insert_pending_tx(
-            &conn,
-            &run.run_id,
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "broadcasted",
-        );
-
-        assert!(!clear_retriable_pending_txs_with_conn(&conn, &run).unwrap());
-
-        let pending_count: u32 = conn
-            .query_row(
-                &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(pending_count, 2);
-        let phase: String = conn
-            .query_row(
-                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(phase, PHASE_FAILED_RECOVERABLE);
-    }
-
-    #[test]
-    fn retry_reset_refuses_non_expiry_failures() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        ensure_schema(&conn).unwrap();
-        let run = insert_failed_run(&conn, "run-network", Some("lightwalletd unavailable"));
-        insert_pending_tx(
-            &conn,
-            &run.run_id,
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "scheduled",
-        );
-
-        assert!(!clear_retriable_pending_txs_with_conn(&conn, &run).unwrap());
-
-        let pending_count: u32 = conn
-            .query_row(
-                &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(pending_count, 1);
-    }
-
-    fn insert_failed_run(
-        conn: &rusqlite::Connection,
-        run_id: &str,
-        last_error: Option<&str>,
-    ) -> ActiveRun {
-        conn.execute(
-            &format!(
-                "INSERT INTO {RUNS_TABLE}
-                 (run_id, account_uuid, network, db_fingerprint, phase,
-                  created_at_ms, updated_at_ms, target_values_json, last_error)
-                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1,
-                         '[100000000]', ?3)"
-            ),
-            params![run_id, PHASE_FAILED_RECOVERABLE, last_error],
-        )
-        .unwrap();
-        ActiveRun {
-            run_id: run_id.to_string(),
-            phase: PHASE_FAILED_RECOVERABLE.to_string(),
-            target_values_zatoshi: vec![100_000_000],
-            last_error: last_error.map(ToString::to_string),
-        }
-    }
-
-    fn insert_prepared_note(conn: &rusqlite::Connection, run_id: &str) {
-        conn.execute(
-            &format!(
-                "INSERT INTO {PREPARED_NOTES_TABLE}
-                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
-                  nullifier_hex, lock_state)
-                 VALUES (?1,
-                         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-                         0, 100000000, 2, NULL, 'locked')"
-            ),
-            params![run_id],
-        )
-        .unwrap();
-    }
-
-    fn insert_pending_tx(conn: &rusqlite::Connection, run_id: &str, txid_hex: &str, status: &str) {
-        conn.execute(
-            &format!(
-                "INSERT INTO {PENDING_TXS_TABLE}
-                 (run_id, txid_hex, encrypted_raw_tx, target_height,
-                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
-                  selected_note_output_index, selected_note_value,
-                  scheduled_at_ms, status, metadata_json)
-                 VALUES (?1, ?2, 'encrypted', 10, 30, 99990000, 10000,
-                         ?2, 0, 100000000, 1, ?3, '{{}}')"
-            ),
-            params![run_id, txid_hex, status],
-        )
-        .unwrap();
     }
 
     const MINIMUM_OUTPUT_FOR_TEST: u64 = 1;

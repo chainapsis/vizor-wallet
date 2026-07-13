@@ -812,8 +812,8 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
           final password = security.requireSessionPasswordForNativeSecretUse();
           final saltBase64 = await security
               .requireSecretPayloadSaltForNativeSecretUse();
-          // Denominations-only completion stores the signed split as a retryable
-          // prep transaction before broadcasting it.
+          // Denominations-only completion stores the staged split graph before
+          // broadcasting every root that is ready.
           if (_keystoneStagedFallback) {
             return rust_sync.completeOrchardMigrationDenominationsPczt(
               dbPath: dbPath,

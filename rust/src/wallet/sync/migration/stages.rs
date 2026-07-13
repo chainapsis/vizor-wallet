@@ -126,8 +126,8 @@ pub(crate) struct DenominationStage {
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
     pub status: DenominationStageStatus,
-    /// The chain inclusion that descendants were proved against. A legacy
-    /// row may have no identity until the next reconciliation pass.
+    /// The chain inclusion that descendants were proved against. Confirmed
+    /// stages always store both fields; earlier stages store neither.
     pub confirmed_mined_height: Option<u32>,
     pub confirmed_block_hash: Option<Vec<u8>>,
     pub inputs: Vec<DenominationStageInputRef>,
@@ -193,9 +193,12 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
                 (status != 'awaiting_inputs' AND encrypted_raw_tx IS NOT NULL)
             ),
             CHECK (
-                (confirmed_mined_height IS NULL AND confirmed_block_hash IS NULL)
+                (status != 'confirmed'
+                 AND confirmed_mined_height IS NULL
+                 AND confirmed_block_hash IS NULL)
                 OR
-                (confirmed_mined_height IS NOT NULL
+                (status = 'confirmed'
+                 AND confirmed_mined_height IS NOT NULL
                  AND confirmed_block_hash IS NOT NULL
                  AND length(confirmed_block_hash) = 32)
             )
@@ -239,11 +242,6 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
     ))
     .map_err(|e| format!("Initialize migration denomination stage schema: {e}"))?;
 
-    // These tables predate inclusion-identity tracking on wallets that tested
-    // the first staged implementation. Keep the local schema forward compatible
-    // without requiring a full wallet migration for this feature-owned table.
-    ensure_column(conn, STAGES_TABLE, "confirmed_mined_height", "INTEGER")?;
-    ensure_column(conn, STAGES_TABLE, "confirmed_block_hash", "BLOB")?;
     Ok(())
 }
 
@@ -715,36 +713,9 @@ pub(crate) fn mark_denomination_stage_confirmed_at(
         ));
     }
 
-    let incoming_hash = block_hash.as_slice();
     match (current.1, current.2.as_deref()) {
-        (None, _) => {
-            conn.execute(
-                &format!(
-                    "UPDATE {STAGES_TABLE}
-                     SET confirmed_mined_height = ?1, confirmed_block_hash = ?2
-                     WHERE run_id = ?3 AND expected_txid_hex = ?4
-                       AND status = 'confirmed'"
-                ),
-                params![mined_height, incoming_hash, run_id, expected_txid_hex],
-            )
-            .map_err(|e| format!("Record migration denomination chain inclusion: {e}"))?;
-            Ok(())
-        }
-        (Some(stored_height), None) if stored_height == mined_height => {
-            conn.execute(
-                &format!(
-                    "UPDATE {STAGES_TABLE}
-                     SET confirmed_block_hash = ?1
-                     WHERE run_id = ?2 AND expected_txid_hex = ?3
-                       AND status = 'confirmed'"
-                ),
-                params![incoming_hash, run_id, expected_txid_hex],
-            )
-            .map_err(|e| format!("Enrich migration denomination chain inclusion: {e}"))?;
-            Ok(())
-        }
-        (Some(stored_height), stored_hash)
-            if stored_height == mined_height && stored_hash == Some(incoming_hash) =>
+        (Some(stored_height), Some(stored_hash))
+            if stored_height == mined_height && stored_hash == block_hash.as_slice() =>
         {
             Ok(())
         }
@@ -1189,16 +1160,23 @@ fn validate_stage_batch(run_id: &str, stages: &[DenominationStageInsert]) -> Res
                     stage.stage_index
                 ));
             }
-            (_, Some(raw_tx)) if !raw_tx.is_empty() => {}
-            (_, Some(_)) => {
+            (DenominationStageStatus::Pending, Some(raw_tx)) if !raw_tx.is_empty() => {}
+            (DenominationStageStatus::Pending, Some(_)) => {
                 return Err(format!(
                     "Migration denomination stage {} has an empty raw transaction",
                     stage.stage_index
                 ));
             }
-            (_, None) => {
+            (DenominationStageStatus::Pending, None) => {
                 return Err(format!(
                     "Migration denomination stage {} is {} without a raw transaction",
+                    stage.stage_index,
+                    stage.status.as_str()
+                ));
+            }
+            (DenominationStageStatus::Broadcasted | DenominationStageStatus::Confirmed, _) => {
+                return Err(format!(
+                    "Migration denomination stage {} cannot be inserted as {}",
                     stage.stage_index,
                     stage.status.as_str()
                 ));
@@ -1245,31 +1223,6 @@ fn validate_hex_32(value: &str, label: &str) -> Result<(), String> {
 
 fn count_to_u32(count: i64) -> Result<u32, String> {
     u32::try_from(count).map_err(|_| "Migration denomination stage count overflow".to_string())
-}
-
-fn ensure_column(
-    conn: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> Result<(), String> {
-    let exists = conn
-        .query_row(
-            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
-            params![table, column],
-            |_| Ok(()),
-        )
-        .optional()
-        .map_err(|e| format!("Check migration denomination column {table}.{column}: {e}"))?
-        .is_some();
-    if !exists {
-        conn.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )
-        .map_err(|e| format!("Add migration denomination column {table}.{column}: {e}"))?;
-    }
-    Ok(())
 }
 
 fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
@@ -1457,6 +1410,30 @@ mod tests {
     }
 
     #[test]
+    fn insertion_rejects_post_creation_states() {
+        let conn = setup();
+        for (stage_index, status) in [
+            (0, DenominationStageStatus::Broadcasted),
+            (1, DenominationStageStatus::Confirmed),
+        ] {
+            let mut stage = awaiting_stage(stage_index, 0x10 + stage_index as u8);
+            stage.raw_tx = Some(vec![stage_index as u8]);
+            stage.status = status;
+            let tx = conn.unchecked_transaction().unwrap();
+            let error = insert_denomination_stages_with_tx(
+                &tx,
+                "run-1",
+                vec![stage],
+                PASSWORD,
+                SALT_BASE64,
+            )
+            .unwrap_err();
+            assert!(error.contains("cannot be inserted"));
+            tx.commit().unwrap();
+        }
+    }
+
+    #[test]
     fn promotion_and_state_updates_keep_recovery_material_and_locks() {
         let conn = setup();
         let stage = awaiting_stage(0, 0x10);
@@ -1557,7 +1534,7 @@ mod tests {
         let conn = setup();
         let mut root = awaiting_stage(0, 0x10);
         root.raw_tx = Some(vec![0x10]);
-        root.status = DenominationStageStatus::Confirmed;
+        root.status = DenominationStageStatus::Pending;
         let root_txid = root.expected_txid_hex.clone();
         let root_input = (root.inputs[0].txid_hex.clone(), root.inputs[0].output_index);
         let root_base = root.base_pczt.clone();
@@ -1565,7 +1542,7 @@ mod tests {
 
         let mut child = awaiting_stage(1, 0x11);
         child.raw_tx = Some(vec![0x11]);
-        child.status = DenominationStageStatus::Confirmed;
+        child.status = DenominationStageStatus::Pending;
         child.inputs = vec![DenominationStageInputRef {
             txid_hex: root_txid.clone(),
             output_index: 0,
@@ -1574,12 +1551,13 @@ mod tests {
             nullifier_hex: None,
         }];
         let child_input = (root_txid.clone(), 0);
+        let child_txid = child.expected_txid_hex.clone();
         let child_base = child.base_pczt.clone();
         let child_sigs = child.sigs.clone();
 
         let mut independent = awaiting_stage(2, 0x12);
         independent.raw_tx = Some(vec![0x12]);
-        independent.status = DenominationStageStatus::Confirmed;
+        independent.status = DenominationStageStatus::Pending;
         let independent_txid = independent.expected_txid_hex.clone();
 
         let tx = conn.unchecked_transaction().unwrap();
@@ -1592,6 +1570,13 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
+        for (txid, height, hash) in [
+            (&root_txid, 100, [0x10; 32]),
+            (&child_txid, 101, [0x11; 32]),
+            (&independent_txid, 102, [0x12; 32]),
+        ] {
+            mark_denomination_stage_confirmed_at(&conn, "run-1", txid, height, &hash).unwrap();
+        }
         assert!(locked_denomination_stage_input_outpoints(&conn, "run-1")
             .unwrap()
             .is_empty());
@@ -1629,20 +1614,21 @@ mod tests {
         pending.raw_tx = Some(vec![0x10]);
         pending.status = DenominationStageStatus::Pending;
         let pending_txid = pending.expected_txid_hex.clone();
-        let mut broadcasted = awaiting_stage(1, 0x11);
-        broadcasted.raw_tx = Some(vec![0x11]);
-        broadcasted.status = DenominationStageStatus::Broadcasted;
-        let broadcasted_txid = broadcasted.expected_txid_hex.clone();
+        let mut to_broadcast = awaiting_stage(1, 0x11);
+        to_broadcast.raw_tx = Some(vec![0x11]);
+        to_broadcast.status = DenominationStageStatus::Pending;
+        let broadcasted_txid = to_broadcast.expected_txid_hex.clone();
         let tx = conn.unchecked_transaction().unwrap();
         insert_denomination_stages_with_tx(
             &tx,
             "run-1",
-            vec![pending, broadcasted],
+            vec![pending, to_broadcast],
             PASSWORD,
             SALT_BASE64,
         )
         .unwrap();
         tx.commit().unwrap();
+        mark_denomination_stage_broadcasted(&conn, "run-1", &broadcasted_txid).unwrap();
         assert_eq!(
             locked_denomination_stage_input_outpoints(&conn, "run-1")
                 .unwrap()
@@ -1657,59 +1643,6 @@ mod tests {
         assert!(locked_denomination_stage_input_outpoints(&conn, "run-1")
             .unwrap()
             .is_empty());
-    }
-
-    #[test]
-    fn old_stage_schema_upgrade_is_idempotent_and_rejects_partial_identity() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(&format!(
-            "CREATE TABLE {STAGES_TABLE} (
-                run_id TEXT NOT NULL,
-                stage_index INTEGER NOT NULL,
-                encrypted_base_pczt TEXT NOT NULL,
-                encrypted_compact_sigs TEXT NOT NULL,
-                encrypted_raw_tx TEXT,
-                expected_txid_hex TEXT NOT NULL,
-                target_height INTEGER NOT NULL,
-                expiry_height INTEGER NOT NULL,
-                fee_zatoshi INTEGER NOT NULL,
-                status TEXT NOT NULL,
-                PRIMARY KEY (run_id, stage_index),
-                UNIQUE (run_id, expected_txid_hex)
-             );"
-        ))
-        .unwrap();
-        ensure_schema(&conn).unwrap();
-        ensure_schema(&conn).unwrap();
-        conn.execute(
-            &format!(
-                "INSERT INTO {STAGES_TABLE}
-                 (run_id, stage_index, encrypted_base_pczt,
-                  encrypted_compact_sigs, encrypted_raw_tx,
-                  expected_txid_hex, target_height, expiry_height,
-                  fee_zatoshi, status, confirmed_mined_height)
-                 VALUES ('run-1', 0, 'base', 'sigs', 'raw', ?1,
-                         10, 0, 80000, 'confirmed', 20)"
-            ),
-            params![txid(0x11)],
-        )
-        .unwrap();
-        assert!(denomination_stage_chain_records(&conn, "run-1")
-            .unwrap_err()
-            .contains("malformed chain inclusion"));
-
-        conn.execute(
-            &format!(
-                "UPDATE {STAGES_TABLE} SET confirmed_block_hash = ?1
-                 WHERE run_id = 'run-1'"
-            ),
-            params![vec![0xabu8; 32]],
-        )
-        .unwrap();
-        let records = denomination_stage_chain_records(&conn, "run-1").unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].confirmed_mined_height, Some(20));
-        assert_eq!(records[0].confirmed_block_hash, Some(vec![0xabu8; 32]));
     }
 
     #[test]
