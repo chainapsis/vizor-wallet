@@ -103,6 +103,24 @@ void main() {
     expect(preserved.freshness, SpendableBalanceFreshness.lastCompletedSync);
   });
 
+  test('stopping sync does not release the completed spendable snapshot', () {
+    final syncing = SyncState(
+      isSyncing: true,
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final stopped = syncing.withSyncActivityStopped();
+
+    expect(stopped.spendableBalance, BigInt.zero);
+    expect(stopped.displaySpendableBalance, BigInt.from(50));
+    expect(
+      stopped.displaySpendableFreshness,
+      SpendableBalanceFreshness.lastCompletedSync,
+    );
+  });
+
   test('stale account refresh keeps newer progress metadata', () {
     final tx = _tx('f' * 64);
     final current = SyncState(
@@ -210,6 +228,44 @@ void main() {
       authoritativeSpendable: BigInt.zero,
       hasAuthoritativeBalance: false,
       syncComplete: true,
+    );
+
+    expect(resolved.balance, BigInt.from(50));
+    expect(resolved.freshness, SpendableBalanceFreshness.lastCompletedSync);
+  });
+
+  test('post-send refresh releases snapshot after an available read', () {
+    final previous = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final resolved = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.from(20),
+      hasAuthoritativeBalance: true,
+      syncComplete: false,
+      releaseSnapshotOnAuthoritativeBalance: true,
+    );
+
+    expect(resolved.balance, BigInt.from(20));
+    expect(resolved.freshness, SpendableBalanceFreshness.authoritative);
+  });
+
+  test('post-send unavailable read keeps the completed snapshot', () {
+    final previous = SyncState(
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(50),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    final resolved = SyncState.resolveSpendableDisplay(
+      previous: previous,
+      authoritativeSpendable: BigInt.zero,
+      hasAuthoritativeBalance: false,
+      syncComplete: false,
+      releaseSnapshotOnAuthoritativeBalance: true,
     );
 
     expect(resolved.balance, BigInt.from(50));

@@ -115,9 +115,13 @@ class SyncState {
     required BigInt authoritativeSpendable,
     required bool hasAuthoritativeBalance,
     required bool syncComplete,
+    bool releaseSnapshotOnAuthoritativeBalance = false,
   }) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) {
-      if (!syncComplete || !hasAuthoritativeBalance) {
+      final canReleaseSnapshot =
+          hasAuthoritativeBalance &&
+          (syncComplete || releaseSnapshotOnAuthoritativeBalance);
+      if (!canReleaseSnapshot) {
         return (
           balance: previous!.displaySpendableBalance,
           freshness: SpendableBalanceFreshness.lastCompletedSync,
@@ -128,13 +132,6 @@ class SyncState {
     return (
       balance: authoritativeSpendable,
       freshness: SpendableBalanceFreshness.authoritative,
-    );
-  }
-
-  SyncState withAuthoritativeSpendableDisplay() {
-    return copyWith(
-      displaySpendableBalance: spendableBalance,
-      displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
     );
   }
 
@@ -149,6 +146,10 @@ class SyncState {
           previous?.displaySpendableFreshness ??
           SpendableBalanceFreshness.authoritative,
     );
+  }
+
+  SyncState withSyncActivityStopped() {
+    return copyWith(isSyncing: false, isBackgroundMode: false, phase: '');
   }
 
   /// Merges account data fetched by an older progress handler without
@@ -963,6 +964,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
     final scopedPrev = _previousScopedState(prev, accountUuid);
+    final spendableDisplay = SyncState.preserveSpendableDisplay(scopedPrev);
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -986,8 +988,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
-        displaySpendableBalance: scopedPrev?.spendableBalance,
-        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        displaySpendableBalance: spendableDisplay.balance,
+        displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: scopedPrev?.totalBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
@@ -1051,11 +1053,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     final prev = state.value;
     if (prev != null) {
-      state = AsyncData(
-        prev
-            .copyWith(isSyncing: false, isBackgroundMode: false, phase: '')
-            .withAuthoritativeSpendableDisplay(),
-      );
+      state = AsyncData(prev.withSyncActivityStopped());
     }
 
     final stopped = await _waitForRustTasksToStop(
@@ -1171,11 +1169,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     final prev = state.value;
     if (prev != null) {
-      state = AsyncData(
-        prev
-            .copyWith(isSyncing: false, isBackgroundMode: false, phase: '')
-            .withAuthoritativeSpendableDisplay(),
-      );
+      state = AsyncData(prev.withSyncActivityStopped());
     }
     // `cancelFullSync` / `stopMempoolObserver` set atomics that
     // the Rust loop and the mempool observer check at their own
@@ -1791,13 +1785,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Balance Refresh ========================
 
   /// Public: refresh balance and recent transactions (e.g. after send).
-  Future<void> refreshAfterSend() async {
-    final current = state.value;
-    if (current != null) {
-      state = AsyncData(current.withAuthoritativeSpendableDisplay());
-    }
-    await _refreshBalance();
-  }
+  Future<void> refreshAfterSend() =>
+      _refreshBalance(releaseSnapshotOnAuthoritativeBalance: true);
 
   Future<void> refreshAfterUnlock() => _refreshBalance();
 
@@ -1913,7 +1902,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  Future<void> _refreshBalance() async {
+  Future<void> _refreshBalance({
+    bool releaseSnapshotOnAuthoritativeBalance = false,
+  }) async {
     if (_requiresUnlock) {
       _stopDisplayProgressTimer();
       state = AsyncData(SyncState());
@@ -2035,6 +2026,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       authoritativeSpendable: nextSpendableBalance,
       hasAuthoritativeBalance: hasAuthoritativeBalance,
       syncComplete: syncComplete,
+      releaseSnapshotOnAuthoritativeBalance:
+          releaseSnapshotOnAuthoritativeBalance,
     );
 
     state = AsyncData(
