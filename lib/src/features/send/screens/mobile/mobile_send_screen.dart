@@ -746,6 +746,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _maxQuote = null;
   }
 
+  void _invalidateMaxQuoteForSync() {
+    _validateSeq++;
+    _maxSeq++;
+    setState(() {
+      _isResolvingMax = false;
+      _maxQuote = null;
+      _reviewFeeQuote = null;
+      _feeZatoshi = null;
+      _reviewFeeRetryAvailable = false;
+      _reviewFeeNotice = null;
+    });
+  }
+
   void _handleAmountChanged(String value) {
     if (_amountInputIsUsd) {
       _handleFiatAmountChanged(value);
@@ -1481,7 +1494,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (previous == next) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          if (_step == _SendStep.amount && _amountText.trim().isNotEmpty) {
+          if (_isMaxMode) {
+            if (next.$2 == SpendableBalanceFreshness.lastCompletedSync) {
+              _invalidateMaxQuoteForSync();
+            } else {
+              unawaited(_resolveMaxEstimate());
+            }
+          } else if (_step == _SendStep.amount &&
+              _amountText.trim().isNotEmpty) {
             unawaited(_validateAmount());
           } else if (_step == _SendStep.review &&
               !_isRefreshingReviewFee &&

@@ -191,16 +191,18 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
     Duration timeout = const Duration(seconds: 30),
   }) => _authoritative.future;
 
-  void completeSync() {
+  void completeSync({BigInt? spendableBalance}) {
+    final completedSpendable = spendableBalance ?? BigInt.from(500000000);
     state = AsyncData(
       SyncState(
         accountUuid: 'account-1',
         hasAccountScopedData: true,
+        isSyncComplete: true,
         percentage: 1,
         scannedHeight: 101,
         chainTipHeight: 101,
-        spendableBalance: BigInt.from(500000000),
-        totalBalance: BigInt.from(500000000),
+        spendableBalance: completedSpendable,
+        totalBalance: completedSpendable,
       ),
     );
     if (!_authoritative.isCompleted) _authoritative.complete();
@@ -300,6 +302,10 @@ Widget _amountStepWithPriceLoadingApp() {
 Widget _reviewApp({
   required SyncNotifier syncNotifier,
   required MobileSendFeeEstimator estimateFee,
+  bool initialMaxMode = false,
+  bool refreshReviewFeeOnInit = true,
+  String initialAmount = '1.5',
+  BigInt? initialFeeZatoshi,
 }) {
   return ProviderScope(
     overrides: [
@@ -322,8 +328,10 @@ Widget _reviewApp({
           initialAmountReady: true,
           initialRecipient: _shieldedAddress,
           initialAddressType: 'unified',
-          initialAmount: '1.5',
-          refreshReviewFeeOnInit: true,
+          initialAmount: initialAmount,
+          initialFeeZatoshi: initialFeeZatoshi,
+          initialMaxMode: initialMaxMode,
+          refreshReviewFeeOnInit: refreshReviewFeeOnInit,
           estimateFee: estimateFee,
         ),
       ),
@@ -767,6 +775,58 @@ void main() {
       );
     },
   );
+
+  testWidgets('snapshot release recomputes a seeded Max quote', (tester) async {
+    final syncNotifier = _ControllableSnapshotSyncNotifier();
+    _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
+        SendMaxEstimateResult(
+          amountZatoshi: BigInt.from(399990000),
+          feeZatoshi: BigInt.from(10000),
+          needsSaplingParams: false,
+        );
+
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: syncNotifier,
+        initialMaxMode: true,
+        refreshReviewFeeOnInit: false,
+        initialAmount: '4.9999',
+        initialFeeZatoshi: BigInt.from(10000),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async => BigInt.from(10000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 0);
+    expect(find.text('Finishing wallet sync...'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')))
+          .onPressed,
+      isNull,
+    );
+
+    syncNotifier.completeSync(spendableBalance: BigInt.from(400000000));
+    await tester.pumpAndSettle();
+
+    expect(_estimateSendMaxCalls, 1);
+    expect(find.text('3.9999 ZEC'), findsOneWidget);
+    expect(find.text('Finishing wallet sync...'), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')))
+          .onPressed,
+      isNotNull,
+    );
+  });
 
   testWidgets('failed review fee estimate exposes a working retry action', (
     tester,
