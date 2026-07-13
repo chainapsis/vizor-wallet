@@ -80,6 +80,97 @@ After the user approves the target:
    of the approved copy on the AI Test page and that all original nodes remain
    unchanged.
 
+## Code-to-Figma visual parity workflow
+
+Use this workflow when the user explicitly asks to apply a design change that
+already exists in Flutter code to Figma. Complete the screen-matching,
+approval, and copy-only steps above before starting this workflow. The running
+Flutter implementation is the visual reference; never change production
+styling or layout temporarily to make the reference resemble the Figma copy.
+
+### 1. Establish an isolated, reproducible runtime reference
+
+1. Record the starting Git status and preserve all pre-existing user changes.
+2. Determine which form factors the code change affects. Validate both desktop
+   and mobile when both are affected; otherwise validate only the affected or
+   explicitly requested form factor.
+3. Temporary code changes are allowed only to expose the target screen and
+   make its state reproducible. This includes a temporary direct route,
+   bootstrap state, dependency override, and deterministic mock data.
+4. Keep temporary routing and mock changes isolated from production design
+   changes. Do not alter the target's visual properties, component structure,
+   text, layout, or tokens merely to influence the comparison.
+5. Fix the content, loading or error state, theme, locale, text scale, and any
+   time-dependent data so repeated captures show the same screen.
+
+### 2. Capture the Flutter reference on each required form factor
+
+Always use `fvm flutter`, never bare `flutter`.
+
+- **Desktop:** Run the macOS desktop app without a mobile form-factor define,
+  navigate directly to the target screen, set a known window size, and capture
+  the app content. Mock data may be used when needed to reproduce the relevant
+  state.
+- **Mobile:** Boot an iOS Simulator and run the app with
+  `--dart-define=VIZOR_FORM_FACTOR=mobile`. Record the simulator device, OS,
+  orientation, and viewport, then capture the same target state with
+  deterministic data.
+
+Do not treat operating-system chrome as app UI. Crop or otherwise normalize
+captures to compare the same app-content bounds. Follow the repository's Figma
+layer-interpretation rules for presentation-only macOS backgrounds and window
+controls.
+
+### 3. Capture and compare the Figma copy
+
+1. Set the copied Figma screen to the same viewport or frame dimensions,
+   theme, locale, content, and component state as the Flutter reference.
+2. Capture only the modified copy on the AI Test page. Never use a modified
+   original screen or design-system asset as comparison evidence.
+3. Compare the Flutter and Figma captures side by side and, when practical,
+   with a transparent overlay or image-difference view.
+4. Check at least frame and container dimensions, layout, spacing, alignment,
+   typography, colors, borders, effects, icons, images, component states,
+   clipping, wrapping, and overflow.
+5. Treat correctable layout, sizing, color, asset, and state differences as
+   mismatches. Ignore only unavoidable rendering noise such as minor native
+   font rasterization or operating-system chrome that is outside the app UI.
+
+### 4. Iterate until no actionable difference remains
+
+When a mismatch is found, modify only the approved copy on the AI Test page,
+capture that copy again, and repeat the comparison against the Flutter
+reference. Do not impose an arbitrary iteration limit. Continue until every
+required desktop and mobile capture is effectively identical and no
+correctable difference remains.
+
+The initial target approval covers visual corrections within the approved
+copied subtree. Stop and ask the user again if the target or requested scope
+changes, an edit would escape that subtree, or the work requires a missing or
+modified design-system asset.
+
+### 5. Clean up and report completion
+
+Before reporting completion:
+
+1. Remove every temporary route, bootstrap override, dependency override,
+   mock, and other capture-only code change. Never commit those temporary
+   changes.
+2. Confirm that the Git state has returned to its starting condition apart
+   from pre-existing user changes and any separately authorized repository
+   documentation changes.
+3. Confirm that all Figma mutations are descendants of the approved AI Test
+   copy and that the source screen, all other existing screens, and the entire
+   design system remain unchanged.
+4. Report the source-node URL, copied-node URL, validated platforms and
+   device/window configuration, tested UI states, comparison evidence,
+   mismatches corrected during iteration, and any remaining unavoidable
+   rendering-only differences.
+
+Report success only after all required form factors meet these completion
+conditions. If parity cannot be reached, report the concrete blocker instead
+of claiming completion.
+
 Read [source and scope](figma-ai-fix/00-source-and-scope.md) first. Then read
 only the topic documents needed for the requested Figma change.
 
