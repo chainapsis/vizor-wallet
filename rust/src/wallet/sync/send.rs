@@ -48,7 +48,9 @@ use transparent::{
     address::TransparentAddress, builder::TransparentSigningSet, bundle::OutPoint,
     keys::TransparentKeyScope,
 };
-use zcash_client_backend::data_api::wallet::input_selection::{GreedyInputSelector, InputSelector};
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, InputSelector, SpendPolicy,
+};
 use zcash_client_backend::{
     data_api::{
         error::Error as WalletError,
@@ -56,9 +58,9 @@ use zcash_client_backend::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             ConfirmationsPolicy, TargetHeight,
         },
-        Account as _, AccountMeta, Balance, InputSource, MaxSpendMode, NoteFilter, NoteRetention,
-        ReceivedNotes, TargetValue, TransparentKeyOrigin, TransparentOutputFilter,
-        WalletCommitmentTrees, WalletRead,
+        Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
+        NoteRetention, ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletCommitmentTrees,
+        WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -192,7 +194,7 @@ pub(crate) struct KeystoneMigrationSigningRequest {
 /// payload; the wallet re-applies these via [`super::pczt::apply_sigs_and_extract`].
 pub(crate) struct KeystoneSignedMigrationMessage {
     pub id: String,
-    pub sigs: Vec<crate::wallet::keystone::DecodedActionSig>,
+    pub sigs: Vec<pczt::roles::signer::SpendAuthSignature>,
 }
 
 pub(crate) struct KeystoneMigrationProofStatus {
@@ -205,6 +207,8 @@ pub(crate) struct KeystoneMigrationProofStatus {
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
+const MIGRATION_ORCHARD_ACTION_COUNT: usize = 2;
+const MIGRATION_IRONWOOD_ACTION_COUNT: usize = 1;
 static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static KEYSTONE_DENOMINATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredDenominationPczt>>> =
     OnceLock::new();
@@ -222,6 +226,10 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 
     fn should_retain_orchard(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
+        true
+    }
+
+    fn should_retain_ironwood(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
         true
     }
 }
@@ -247,6 +255,7 @@ impl FeeRule for ConservativeZip317FeeRule {
         sapling_input_count: usize,
         sapling_output_count: usize,
         orchard_action_count: usize,
+        ironwood_action_count: usize,
     ) -> Result<Zatoshis, Self::Error> {
         let transparent_input_sizes = transparent_input_sizes.into_iter().map(|size| match size {
             TransparentInputSize::Known(size) => {
@@ -263,6 +272,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            ironwood_action_count,
         )
     }
 }
@@ -306,6 +316,7 @@ pub fn propose_send(
         &BTreeSet::new(),
         &migration_locks,
         proposed_tx_version,
+        false,
     )?;
     let (proposal, stored_tx_version) =
         propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
@@ -318,6 +329,7 @@ pub fn propose_send(
                 &BTreeSet::new(),
                 &migration_locks,
                 tx_version,
+                false,
             )
         });
 
@@ -343,6 +355,8 @@ pub fn propose_send(
         StoredProposal {
             proposal,
             proposed_tx_version: stored_tx_version,
+            // Regular sends stay padded; only migration children opt in.
+            unpadded_orchard_pool_bundles: false,
             network,
             account_id,
             send_flow_id: send_flow_id.to_string(),
@@ -364,10 +378,7 @@ pub(crate) fn create_reserved_pczt_batch(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<Vec<ReservedPcztBatchItem>, String> {
-    use zcash_client_backend::data_api::wallet::{
-        create_pczt_from_proposal as zcb_create_pczt,
-        create_pczt_from_proposal_with_tx_version as zcb_create_pczt_with_tx_version,
-    };
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     if requests.is_empty() {
         return Err("Batch requires at least one request".to_string());
@@ -402,6 +413,9 @@ pub(crate) fn create_reserved_pczt_batch(
             &reserved,
             &migration_locks,
             proposed_tx_version,
+            // Migration children: count unpadded Orchard-pool bundles so the
+            // proposal fee matches the unpadded PCZT built below.
+            true,
         )
         .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
         let (proposal, decided_tx_version) = propose_with_note_version_downgrade(
@@ -421,6 +435,7 @@ pub(crate) fn create_reserved_pczt_batch(
                     &reserved,
                     &migration_locks,
                     tx_version,
+                    true,
                 )
             },
         );
@@ -432,24 +447,19 @@ pub(crate) fn create_reserved_pczt_batch(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let pczt = with_wallet_db_write_lock("send.create_reserved_pczt_batch", || {
             let mut write_db = open_wallet_db(db_path, network)?;
-            if let Some(tx_version) = decided_tx_version {
-                zcb_create_pczt_with_tx_version::<_, _, Infallible, _, Infallible, _>(
-                    &mut write_db,
-                    &network,
-                    account_id,
-                    OvkPolicy::Sender,
-                    &proposal,
-                    tx_version,
-                )
-            } else {
-                zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                    &mut write_db,
-                    &network,
-                    account_id,
-                    OvkPolicy::Sender,
-                    &proposal,
-                )
-            }
+            // The transaction version rides on the proposal now; `None` builds
+            // at the version implied by the target height.
+            let proposal_for_pczt = proposal.clone().with_proposed_version(decided_tx_version);
+            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+                &mut write_db,
+                &network,
+                account_id,
+                OvkPolicy::Sender,
+                &proposal_for_pczt,
+                // Keep the builder-derived expiry height.
+                None,
+                orchard::builder::BundleType::UNPADDED,
+            )
             .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
         })?;
         let pczt_bytes = pczt
@@ -498,6 +508,7 @@ pub fn estimate_fee(
         &BTreeSet::new(),
         &migration_locks,
         proposed_tx_version,
+        false,
     )?;
     // Same two-pass rule as `propose_send`, so the displayed estimate equals
     // the stored proposal's fee.
@@ -512,6 +523,7 @@ pub fn estimate_fee(
                 &BTreeSet::new(),
                 &migration_locks,
                 tx_version,
+                false,
             )
         });
 
@@ -534,26 +546,10 @@ pub(crate) fn estimate_send_max(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposed_tx_version =
-        proposed_tx_version_for_wallet_db(&db, network, "estimating max send")?;
-    // Deliberately NOT downgraded: send-max quotes at the pass-1 V6 ceiling so
-    // the returned max is always realizable by `propose_send`, whose own pass-1
-    // is hard-gated at V6. A V5-priced (cheaper-fee) max would quote more than
-    // `propose_send(quoted_max)` can build, failing with InsufficientFunds for
-    // V2-only wallets. Fixed-amount sends still get the V2->V5/V2-change
-    // downgrade (the primary goal).
-    //
-    // TODO: revisit once `propose_send` can retry V5 on InsufficientFunds; then
-    // send-max could quote the cheaper V5 max for V2-only spends. Same bucket as
-    // the deferred mixed-change split — for now send-max stays V6/Ironwood-change.
-    let proposal = build_send_max_proposal(
-        &mut db,
-        network,
-        account_id,
-        to_address,
-        memo_str,
-        proposed_tx_version,
-    )?;
+    // librustzcash's max-spend proposal path no longer takes a proposed tx
+    // version: the version (and its fee shape) is decided when the PCZT is
+    // created, so the quote stays aligned with what `propose_send` can build.
+    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -603,12 +599,25 @@ pub(crate) fn create_shield_transparent_pczt(
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
+        // The version-less creator pins V5; shielding must request V6
+        // explicitly once NU6.3 is active so the shielded output lands in the
+        // Ironwood pool (the fork derived this from the target height). Use
+        // the proposal's own target height rather than the synced-wallet
+        // probe: the shielding flow works from the chain tip alone.
+        let proposed_tx_version =
+            proposed_tx_version_for_send(network, proposal.min_target_height());
+        // The transaction version rides on the proposal now; `None` builds at
+        // the version implied by the target height.
+        let proposal = proposal.with_proposed_version(proposed_tx_version);
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             account_id,
             OvkPolicy::Sender,
             &proposal,
+            // Keep the builder-derived expiry height.
+            None,
+            orchard::builder::BundleType::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
         let pczt_bytes = pczt
@@ -672,7 +681,6 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                None,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -776,7 +784,12 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
-            let proposed_tx_version = stored.proposed_tx_version;
+            // The transaction version rides on the proposal now; `None` builds
+            // at the version implied by the target height.
+            let proposal = stored
+                .proposal
+                .clone()
+                .with_proposed_version(stored.proposed_tx_version);
 
             let txids = match (spend_params_path, output_params_path) {
                 (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
@@ -789,8 +802,7 @@ async fn execute_stored_proposal(
                         &prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
-                        &stored.proposal,
-                        proposed_tx_version,
+                        &proposal,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -804,8 +816,7 @@ async fn execute_stored_proposal(
                         &output_prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
-                        &stored.proposal,
-                        proposed_tx_version,
+                        &proposal,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -2147,6 +2158,7 @@ struct PredictedMigrationNote {
 
 struct BuiltPczt {
     bytes: Vec<u8>,
+    redacted_bytes: Vec<u8>,
     orchard_spend_action_indices: Vec<usize>,
 }
 
@@ -2731,7 +2743,7 @@ fn reset_single_qr_request_after_failed_completion(request_id: &str) {
 fn signed_migration_messages_by_id(
     request_id: &str,
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
-) -> Result<HashMap<String, Vec<crate::wallet::keystone::DecodedActionSig>>, String> {
+) -> Result<HashMap<String, Vec<pczt::roles::signer::SpendAuthSignature>>, String> {
     if signed_messages.is_empty() {
         return Err(format!(
             "Keystone returned no signed messages for request {request_id}"
@@ -2755,6 +2767,15 @@ fn signed_migration_messages_by_id(
     }
 
     Ok(by_id)
+}
+
+/// Captures dummy spend action indices before the IO finalizer consumes `dummy_sk`.
+fn dummy_spend_action_indices(bundle: Option<&orchard::pczt::Bundle>) -> Vec<usize> {
+    bundle
+        .into_iter()
+        .flat_map(|bundle| bundle.actions().iter().enumerate())
+        .filter_map(|(index, action)| action.spend().dummy_sk().is_some().then_some(index))
+        .collect()
 }
 
 fn pczt_from_build_result(
@@ -2790,6 +2811,10 @@ fn pczt_from_build_result(
         .iter()
         .copied()
         .collect::<HashSet<_>>();
+    let orchard_dummy_spend_action_indices =
+        dummy_spend_action_indices(build_result.pczt_parts.orchard.as_ref());
+    let ironwood_dummy_spend_action_indices =
+        dummy_spend_action_indices(build_result.pczt_parts.ironwood.as_ref());
     let created = Creator::build_from_parts(build_result.pczt_parts).ok_or("Build PCZT failed")?;
     let io_finalized = IoFinalizer::new(created)
         .finalize_io()
@@ -2824,10 +2849,18 @@ fn pczt_from_build_result(
         .map_err(|e| format!("Update Orchard PCZT derivations: {e:?}"))?
         .finish();
 
+    let bytes = pczt
+        .serialize()
+        .map_err(|e| format!("Serialize built PCZT: {e:?}"))?;
+    let redacted_bytes = super::pczt::redact_pczt_for_batch_signer(
+        &bytes,
+        &orchard_dummy_spend_action_indices,
+        &ironwood_dummy_spend_action_indices,
+    )?;
+
     Ok(BuiltPczt {
-        bytes: pczt
-            .serialize()
-            .map_err(|e| format!("Serialize built PCZT: {e:?}"))?,
+        bytes,
+        redacted_bytes,
         orchard_spend_action_indices,
     })
 }
@@ -2901,9 +2934,9 @@ fn create_orchard_denomination_split_pczt(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
-    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
-    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
+    // single spend to 2 actions, while its unpadded Ironwood output counts as
+    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -2914,7 +2947,8 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            2,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3022,11 +3056,9 @@ fn create_orchard_denomination_split_pczt(
         orchard_inputs.len(),
         split_outputs.len(),
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
-
     Ok(Some(CreatedDenominationSplitPczt {
         base_pczt: built_pczt.bytes,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         fee_zatoshi: u64::from(prep_fee),
         migrated_outputs,
         predicted_notes,
@@ -3073,9 +3105,9 @@ fn create_orchard_denomination_split_transaction(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
-    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
-    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
+    // single spend to 2 actions, while its unpadded Ironwood output counts as
+    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -3086,7 +3118,8 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            2,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3185,11 +3218,14 @@ fn create_orchard_denomination_split_transaction(
             .and_then(|bundle| {
                 bundle
                     .decrypt_output_with_key(action_index, &orchard_fvk.to_ivk(recipient_scope))
-                    .map(|(note, _, _)| Note::Orchard(note))
+                    .map(|(note, _, _)| Note::Orchard {
+                        note,
+                        pool: ::orchard::ValuePool::Orchard,
+                    })
             })
             .ok_or("Wallet-internal denomination output did not decrypt")?;
         let predicted_note = match note {
-            Note::Orchard(note) => note,
+            Note::Orchard { note, .. } => note,
             Note::Sapling(_) => {
                 return Err("Wallet-internal denomination output was Sapling".to_string())
             }
@@ -3253,6 +3289,26 @@ fn dummy_orchard_merkle_path() -> Result<orchard::tree::MerklePath, String> {
     Ok(orchard::tree::MerklePath::from_parts(0, [zero; 32]))
 }
 
+/// Builds a migration child with 2 Orchard actions and 1 Ironwood action.
+pub(super) fn migration_child_builder<P: consensus::Parameters>(
+    network: P,
+    target_height: BlockHeight,
+    orchard_anchor: orchard::Anchor,
+) -> Builder<P, ()> {
+    Builder::new(
+        network,
+        target_height,
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(orchard_anchor),
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
+            ironwood_bundle_type: orchard::builder::BundleType::UNPADDED,
+        },
+    )
+    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
+}
+
 fn create_orchard_to_ironwood_pczt_from_predicted_note(
     db_path: &str,
     network: WalletNetwork,
@@ -3294,17 +3350,8 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     };
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(dummy_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor);
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -3350,7 +3397,6 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3358,7 +3404,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
@@ -3447,7 +3493,7 @@ fn create_orchard_to_ironwood_transaction_from_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -3479,17 +3525,8 @@ fn create_orchard_to_ironwood_transaction_from_note(
     )?;
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(orchard_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -3613,7 +3650,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -3645,17 +3682,8 @@ fn create_orchard_to_ironwood_pczt_from_note(
     )?;
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(orchard_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -3709,7 +3737,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3717,7 +3744,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
@@ -3793,20 +3820,22 @@ fn make_orchard_split_builder(
     recipient: orchard::Address,
     outputs: &[u64],
     memo: &MemoBytes,
-) -> Result<Builder<'static, WalletNetwork, ()>, String> {
+) -> Result<Builder<WalletNetwork, ()>, String> {
     let mut builder = Builder::new(
         network,
         BlockHeight::from(target_height),
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
-            #[cfg(zcash_unstable = "nu6.3")]
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            // Denomination prep is an ordinary private Orchard->Orchard split;
+            // keep it padded like regular sends.
+            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
+            ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
 
-    #[cfg(zcash_unstable = "nu6.3")]
     if network.is_nu_active(
         zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
         BlockHeight::from(target_height),
@@ -3897,7 +3926,9 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None);
+    // Regular shielding transactions stay padded (`DEFAULT`); only migration
+    // children opt in to unpadded Orchard-pool bundles.
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None, false);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3907,7 +3938,7 @@ fn build_shielding_proposal(
         &from_addrs,
         account_id,
         ConfirmationsPolicy::MIN,
-        TransparentOutputFilter::All,
+        CoinbaseFilter::AllTransparentOutputs,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
@@ -3946,6 +3977,7 @@ fn propose_send_with_reserved_notes(
     reserved: &BTreeSet<ReceivedNoteId>,
     migration_locks: &BTreeSet<(String, u32)>,
     proposed_tx_version: Option<TxVersion>,
+    unpadded_orchard_pool_bundles: bool,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -3957,8 +3989,11 @@ fn propose_send_with_reserved_notes(
         reserved,
         migration_locks,
     };
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_>>(None, proposed_tx_version);
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(
+        None,
+        proposed_tx_version,
+        unpadded_orchard_pool_bundles,
+    );
 
     input_selector
         .propose_transaction(
@@ -3970,6 +4005,9 @@ fn propose_send_with_reserved_notes(
             account_id,
             request,
             &change_strategy,
+            // Reserved-note sends never fall back to transparent UTXOs
+            // (the default policy permits shielded pools only).
+            &SpendPolicy::default(),
             proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))
@@ -4001,7 +4039,7 @@ fn proposal_selected_orchard_note_versions<NoteRef>(
             .into_iter()
             .flat_map(|inputs| inputs.notes().iter())
     }) {
-        if let Note::Orchard(note) = note.note() {
+        if let Note::Orchard { note, .. } = note.note() {
             match note.version() {
                 orchard::note::NoteVersion::V2 => versions.has_v2 = true,
                 orchard::note::NoteVersion::V3 => versions.has_v3 = true,
@@ -4042,7 +4080,6 @@ fn proposal_has_orchard_payment<NoteRef>(proposal: &Proposal<WalletFeeRule, Note
 /// [`propose_with_note_version_downgrade`]'s re-proposal fallback can catch it,
 /// so such sends must stay V6. Orchard *change* is unaffected (it is not a
 /// payment pool), so an Orchard→transparent V2 send still downgrades.
-#[cfg(zcash_unstable = "nu6.3")]
 fn should_downgrade_send_to_legacy_v5(
     initial: Option<TxVersion>,
     versions: &SelectedOrchardNoteVersions,
@@ -4052,17 +4089,6 @@ fn should_downgrade_send_to_legacy_v5(
         && versions.has_v2
         && !versions.has_v3
         && !has_orchard_payment
-}
-
-/// Pre-NU6.3 builds propose no V6 transactions, so there is nothing to
-/// downgrade.
-#[cfg(not(zcash_unstable = "nu6.3"))]
-fn should_downgrade_send_to_legacy_v5(
-    _initial: Option<TxVersion>,
-    _versions: &SelectedOrchardNoteVersions,
-    _has_orchard_payment: bool,
-) -> bool {
-    false
 }
 
 /// Shared pass-2 of [`propose_send`], [`estimate_fee`], and
@@ -4075,10 +4101,9 @@ fn should_downgrade_send_to_legacy_v5(
 /// (`estimate_send_max` deliberately does NOT funnel through here — see the
 /// note there for why the quoted max stays at the V6 ceiling.)
 ///
-/// Callers must store/build with the *returned* version: it stays coupled to
-/// [`zip317_helper`]'s `.with_legacy_orchard_change()` (applied iff
-/// `Some(V5)`), so fee/change accounting matches the version used at
-/// execution time.
+/// Callers must build with the *returned* version (applied to the proposal
+/// via `with_proposed_version` at PCZT/transaction construction) so the
+/// built transaction matches the downgrade decision made here.
 fn propose_with_note_version_downgrade<NoteRef, F>(
     pass1_proposal: Proposal<WalletFeeRule, NoteRef>,
     pass1_tx_version: Option<TxVersion>,
@@ -4171,6 +4196,12 @@ impl InputSource for ReservedInputSource<'_> {
                 .filter(|note| !self.note_is_locked(note))
                 .cloned()
                 .collect(),
+            selected
+                .ironwood()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
         ))
     }
 
@@ -4191,6 +4222,12 @@ impl InputSource for ReservedInputSource<'_> {
             selected.sapling().to_vec(),
             selected
                 .orchard()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+            selected
+                .ironwood()
                 .iter()
                 .filter(|note| !self.note_is_locked(note))
                 .cloned()
@@ -4227,7 +4264,7 @@ impl InputSource for ReservedInputSource<'_> {
         address: &TransparentAddress,
         target_height: wallet::TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
-        output_filter: TransparentOutputFilter,
+        output_filter: CoinbaseFilter,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         self.inner.get_spendable_transparent_outputs(
             address,
@@ -4244,7 +4281,6 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
-    proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -4284,7 +4320,6 @@ fn build_send_max_proposal(
         memo_bytes,
         MaxSpendMode::MaxSpendable,
         ConfirmationsPolicy::default(),
-        proposed_tx_version,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
 }
@@ -4312,18 +4347,12 @@ fn proposed_tx_version_for_send(
     network: WalletNetwork,
     target_height: wallet::TargetHeight,
 ) -> Option<TxVersion> {
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        if network.is_nu_active(
-            consensus::NetworkUpgrade::Nu6_3,
-            BlockHeight::from(target_height),
-        ) {
-            return Some(TxVersion::V6);
-        }
+    if network.is_nu_active(
+        consensus::NetworkUpgrade::Nu6_3,
+        BlockHeight::from(target_height),
+    ) {
+        return Some(TxVersion::V6);
     }
-
-    #[cfg(not(zcash_unstable = "nu6.3"))]
-    let _ = (network, target_height);
 
     None
 }
@@ -4401,6 +4430,8 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            // Legacy/V5 path: no Ironwood bundle.
+            0,
         )
         .map_err(|e| format!("Max fee calculation failed: {e}"))?;
 
@@ -4415,7 +4446,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let shielded_inputs = nonempty::NonEmpty::from_vec(spendable_notes.into_vec(&RetainAllNotes))
-        .map(|notes| ShieldedInputs::from_parts(anchor_height, notes))
+        .map(ShieldedInputs::from_parts)
         .ok_or("No shielded funds available to send")?;
 
     let balance = TransactionBalance::new(vec![], fee)
@@ -4426,10 +4457,17 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         BTreeMap::from([(0usize, PoolType::TRANSPARENT)]),
         vec![],
         Some(shielded_inputs),
+        anchor_height,
         balance,
         fee_rule,
         target_height,
+        // Matches the flow's proposal policy (see zip317_helper callers).
+        ConfirmationsPolicy::default(),
         false,
+        network.is_nu_active(
+            zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
+            BlockHeight::from(target_height),
+        ),
     )
     .map_err(|e| format!("Propose transparent max failed: {e}"))
 }
@@ -4525,7 +4563,6 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
-#[cfg(zcash_unstable = "nu6.3")]
 fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
@@ -4542,11 +4579,6 @@ fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Resu
     }
 
     Ok(())
-}
-
-#[cfg(not(zcash_unstable = "nu6.3"))]
-fn ensure_transparent_shielding_pczt_targets_ironwood(_pczt_bytes: &[u8]) -> Result<(), String> {
-    Err("Keystone transparent shielding requires Ironwood / NU6.3 support.".to_string())
 }
 
 fn same_prepared_note_without_nullifier(
@@ -4592,7 +4624,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         return Ok(None);
     };
     let orchard_note = match selected.note() {
-        Note::Orchard(note) => *note,
+        Note::Orchard { note, .. } => *note,
         Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
     };
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
@@ -5403,6 +5435,7 @@ where
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
     proposed_tx_version: Option<TxVersion>,
+    unpadded_orchard_pool_bundles: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
@@ -5417,12 +5450,17 @@ fn zip317_helper<DbT: InputSource>(
             Zatoshis::const_from_u64(1000_0000),
         ),
     );
-    #[cfg(zcash_unstable = "nu6.3")]
-    let change_strategy = if matches!(proposed_tx_version, Some(TxVersion::V5)) {
-        change_strategy.with_legacy_orchard_change()
+    // Migration children only: count exactly the requested actions so the
+    // proposal's fee matches the unpadded bundle the PCZT builder produces.
+    let change_strategy = if unpadded_orchard_pool_bundles {
+        change_strategy.with_unpadded_orchard_pool_bundles()
     } else {
         change_strategy
     };
+    // No V5 legacy-change override is needed anymore: change-pool selection
+    // follows the input pools (an Orchard-input V5 send yields Orchard change)
+    // and enforces the Ironwood turnstile.
+    let _ = proposed_tx_version;
 
     (change_strategy, GreedyInputSelector::new())
 }
@@ -5599,7 +5637,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn send_proposals_use_v6_after_nu6_3() {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let v2_only = SelectedOrchardNoteVersions {
@@ -5621,7 +5658,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_downgrade_requires_v6_ceiling_and_v2_only_spends() {
         let versions = |has_v2, has_v3| SelectedOrchardNoteVersions { has_v2, has_v3 };
 
@@ -5739,7 +5775,7 @@ mod tests {
             BlockHeight::from_u32(900),
             recipient,
             None,
-            ReceivedNotes::new(sapling_notes, orchard_notes),
+            ReceivedNotes::new(sapling_notes, orchard_notes, vec![]),
             ConservativeZip317FeeRule,
         )
         .expect("fabricated proposal should build")
@@ -5796,6 +5832,9 @@ mod tests {
                 let (_, sapling_recipient) = esk.default_address();
                 Address::from(sapling_recipient).to_zcash_address(&network)
             }
+            PoolType::Shielded(ShieldedProtocol::Ironwood) => {
+                unreachable!("this fixture never requests Ironwood payments")
+            }
         };
 
         // No change: amount + fee must equal the single 100_000-zat input, or
@@ -5806,11 +5845,9 @@ mod tests {
         let request = TransactionRequest::new(vec![payment]).unwrap();
         // `ShieldedInputs` wants `ReceivedNote<_, wallet::Note>`; wrap the
         // orchard-typed note through `ReceivedNotes::into_vec` to get that form.
-        let notes = ReceivedNotes::new(vec![], vec![received_note]).into_vec(&RetainAllNotes);
-        let shielded_inputs = ShieldedInputs::from_parts(
-            BlockHeight::from_u32(900),
-            nonempty::NonEmpty::from_vec(notes).unwrap(),
-        );
+        let notes = ReceivedNotes::new(vec![], vec![received_note], vec![]).into_vec(&RetainAllNotes);
+        let shielded_inputs =
+            ShieldedInputs::from_parts(nonempty::NonEmpty::from_vec(notes).unwrap());
         let balance = TransactionBalance::new(vec![], fee).unwrap();
 
         Proposal::single_step(
@@ -5818,9 +5855,12 @@ mod tests {
             BTreeMap::from([(0usize, payment_pool)]),
             vec![],
             Some(shielded_inputs),
+            BlockHeight::from_u32(900),
             balance,
             ConservativeZip317FeeRule,
             TargetHeight::from(BlockHeight::from_u32(1_000)),
+            ConfirmationsPolicy::default(),
+            false,
             false,
         )
         .expect("fabricated payment-pool proposal should build")
@@ -5848,7 +5888,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn orchard_recipient_v2_send_keeps_v6_without_rerun() {
         // V2-only spend paying a shielded-Orchard recipient: must stay V6 (a V5
         // build would fail with CrossAddressDisabled), and the re-proposal
@@ -5865,7 +5904,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn transparent_recipient_v2_send_downgrades_to_v5() {
         // Contrast with the Orchard-recipient case: a transparent recipient with
         // the same V2-only spend downgrades to V5.
@@ -5885,19 +5923,23 @@ mod tests {
     fn proposal_selected_orchard_note_versions_detects_spent_versions() {
         use orchard::note::NoteVersion;
 
-        let v2_only = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
-            &[NoteVersion::V2],
-        ));
+        let v2_only =
+            proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(&[
+                NoteVersion::V2,
+            ]));
         assert!(v2_only.has_v2 && !v2_only.has_v3);
 
-        let v3_only = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
-            &[NoteVersion::V3],
-        ));
+        let v3_only =
+            proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(&[
+                NoteVersion::V3,
+            ]));
         assert!(!v3_only.has_v2 && v3_only.has_v3);
 
-        let mixed = proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(
-            &[NoteVersion::V2, NoteVersion::V3],
-        ));
+        let mixed =
+            proposal_selected_orchard_note_versions(&fabricated_shielded_spend_proposal(&[
+                NoteVersion::V2,
+                NoteVersion::V3,
+            ]));
         assert!(mixed.has_v2 && mixed.has_v3);
 
         // Sapling-only selection: no Orchard notes at all.
@@ -5907,7 +5949,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_rerun_falls_back_to_v6_proposal_on_failure() {
         let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V2]);
         let pass1_fee = proposal_fee_zatoshi(&pass1);
@@ -5927,7 +5968,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v5_rerun_returns_reproposed_v5_proposal_on_success() {
         use orchard::note::NoteVersion;
 
@@ -5949,7 +5989,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn v3_only_spends_keep_v6_without_rerun() {
         let pass1 = fabricated_shielded_spend_proposal(&[orchard::note::NoteVersion::V3]);
 
@@ -5970,7 +6009,6 @@ mod tests {
     // downgraded by the shared decision, and the value send-max returns is the
     // V6-ceiling summary, unchanged by any downgrade.
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
         // The pass-1 proposal send-max builds for a V2-only spend to a
         // transparent recipient.
@@ -6004,13 +6042,14 @@ mod tests {
         // meaningful rather than vacuous.
         assert_eq!(downgraded_version, Some(TxVersion::V5));
         assert_ne!(
-            summarize_send_max_proposal(&downgraded).unwrap().amount_zatoshi,
+            summarize_send_max_proposal(&downgraded)
+                .unwrap()
+                .amount_zatoshi,
             v6_summary.amount_zatoshi,
         );
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn keystone_transparent_shielding_pczt_targets_ironwood() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -6031,6 +6070,28 @@ mod tests {
         let mut db = open_wallet_db(db_path, network).unwrap();
         let tip = BlockHeight::from_u32(120);
         db.update_chain_tip(tip).unwrap();
+        // Shielding now derives the target/anchor heights from scan progress
+        // (shard-tree checkpoints) rather than the raw chain tip; checkpoint
+        // the empty Orchard tree at the tip to stand in for a scan.
+        {
+            type CheckpointError = WalletError<
+                (),
+                commitment_tree::Error,
+                (),
+                <ConservativeZip317FeeRule as FeeRule>::Error,
+                (),
+                ReceivedNoteId,
+            >;
+            let result: Result<_, CheckpointError> =
+                db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            assert!(result.unwrap(), "checkpointing the empty Sapling tree");
+            let result: Result<_, CheckpointError> =
+                db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            assert!(result.unwrap(), "checkpointing the empty Orchard tree");
+            let result: Result<_, CheckpointError> =
+                db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            result.unwrap();
+        }
 
         let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
             ReceiverRequirement::Require,
@@ -6316,6 +6377,41 @@ mod tests {
     }
 
     #[test]
+    fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
+        let orchard_actions = orchard::builder::BundleType::DEFAULT
+            .num_actions(
+                orchard::bundle::BundleVersion::orchard_v3().default_flags(),
+                1,
+                0,
+            )
+            .unwrap();
+        let ironwood_actions = orchard::builder::BundleType::UNPADDED
+            .num_actions(
+                orchard::bundle::BundleVersion::ironwood_v3().default_flags(),
+                0,
+                1,
+            )
+            .unwrap();
+
+        assert_eq!(orchard_actions, MIGRATION_ORCHARD_ACTION_COUNT);
+        assert_eq!(ironwood_actions, MIGRATION_IRONWOOD_ACTION_COUNT);
+
+        let fee = ConservativeZip317FeeRule
+            .fee_required(
+                &WalletNetwork::LocalIronwoodTestnet,
+                BlockHeight::from_u32(120),
+                std::iter::empty::<TransparentInputSize>(),
+                std::iter::empty::<usize>(),
+                0,
+                0,
+                orchard_actions,
+                ironwood_actions,
+            )
+            .unwrap();
+        assert_eq!(u64::from(fee), 15_000);
+    }
+
+    #[test]
     fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() {
         let network = WalletNetwork::Regtest;
         let height = BlockHeight::from_u32(1_000);
@@ -6339,6 +6435,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_p2pkh_fee = StandardFeeRule::Zip317
@@ -6350,6 +6447,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_undersized_fee = StandardFeeRule::Zip317
@@ -6358,6 +6456,7 @@ mod tests {
                 height,
                 undersized_inputs,
                 std::iter::empty::<usize>(),
+                0,
                 0,
                 0,
                 0,
@@ -6374,7 +6473,6 @@ mod tests {
     /// real spend plus the fabricated zero-value spend paired with the change
     /// output), so all of them carry the wallet `fvk` on the wire and are signable
     /// with the returned spending key.
-    #[cfg(zcash_unstable = "nu6.3")]
     fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let network = WalletNetwork::LocalIronwoodTestnet;
         let target_height = 120;
@@ -6430,7 +6528,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
         let (built_pczt, _sk) = built_v6_split_pczt();
         crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
@@ -6465,7 +6562,7 @@ mod tests {
             BlockHeight::from_u32(900),
             recipient,
             None,
-            ReceivedNotes::new(vec![received_note], vec![]),
+            ReceivedNotes::new(vec![received_note], vec![], vec![]),
             ConservativeZip317FeeRule,
         )
         .expect("transparent-recipient send-max should build from shielded notes");
@@ -6482,7 +6579,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(zcash_unstable = "nu6.3")]
     fn batch_signer_redaction_clears_spend_fvks_and_signatures() {
         use pczt::roles::redactor::Redactor;
         use pczt::roles::signer::Signer;
@@ -6503,9 +6599,9 @@ mod tests {
             }
             signer.finish().serialize().unwrap()
         };
+        let request = pczt::Pczt::parse(&request_bytes).unwrap();
         assert!(
-            pczt::Pczt::parse(&request_bytes)
-                .unwrap()
+            request
                 .orchard()
                 .actions()
                 .iter()
@@ -6515,7 +6611,9 @@ mod tests {
 
         let standard = crate::wallet::sync::pczt::redact_pczt_for_signer(&request_bytes).unwrap();
         let batch =
-            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes).unwrap();
+            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes, &[], &[])
+                .unwrap();
+        assert_eq!(batch, built_pczt.redacted_bytes);
 
         // The batch redaction must not send any request-time spend_auth_sig (only
         // wallet-side signatures exist before the device signs).
@@ -6528,52 +6626,107 @@ mod tests {
                 .all(|action| action.spend().spend_auth_sig().is_none()),
             "batch redaction must clear every spend_auth_sig",
         );
+        for index in 0..batch_parsed.orchard().actions().len() {
+            let without_alpha = Redactor::new(batch_parsed.clone())
+                .redact_orchard_with(|mut r| {
+                    r.redact_action(index, |mut ar| ar.clear_spend_alpha());
+                })
+                .finish()
+                .serialize()
+                .unwrap();
+            assert_ne!(
+                without_alpha, batch,
+                "every wallet-controlled split spend must retain alpha",
+            );
+        }
 
-        // Exactness: the batch redaction equals the standard signer redaction plus
-        // precisely the spend fvk + spend_auth_sig clears — no other field changes.
-        let with_extra_clears = |bytes: &[u8]| {
+        // The batch redaction additionally applies the compact-format elisions
+        // (cv_net, decryptable ciphertexts as memo plaintext, bundle bsk and
+        // anchor), so it must be meaningfully smaller than the standard signer
+        // redaction.
+        assert!(
+            batch.len() + 1_000 < standard.len(),
+            "batch redaction should elide compact-format fields ({} vs {} bytes)",
+            batch.len(),
+            standard.len(),
+        );
+        // The v6 sighash does not commit to anchors.
+        assert!(batch_parsed.orchard().anchor().is_none());
+        // Every action sheds `cv_net`. A ciphertext rides as stripped memo
+        // plaintext whenever the wire note fields can decrypt it; only a
+        // dummy output's randomized ciphertext may fail that swap and stay
+        // encrypted on the wire.
+        for action in batch_parsed.orchard().actions() {
+            assert!(action.cv_net().is_none());
+            assert!(action.output().cmx().is_none());
+            if matches!(
+                action.output().enc_ciphertext(),
+                pczt::orchard::EncCiphertext::Encrypted(_)
+            ) {
+                assert_eq!(*action.output().value(), Some(0));
+            }
+        }
+        assert!(
+            batch_parsed.orchard().actions().iter().any(|action| {
+                matches!(
+                    action.output().enc_ciphertext(),
+                    pczt::orchard::EncCiphertext::MemoPlaintext(_)
+                )
+            }),
+            "at least the real split output's ciphertext must ride as memo plaintext",
+        );
+
+        // The compact-format contract: resolving the elided fields reproduces
+        // the original values byte-identically.
+        let mut refilled = batch_parsed;
+        refilled.resolve_fields().unwrap();
+        for (reb, orig) in refilled
+            .orchard()
+            .actions()
+            .iter()
+            .zip(request.orchard().actions().iter())
+        {
+            assert_eq!(reb.cv_net(), orig.cv_net());
+            assert_eq!(reb.output().cmx(), orig.output().cmx());
+            assert_eq!(
+                reb.output().enc_ciphertext(),
+                orig.output().enc_ciphertext()
+            );
+        }
+        assert_eq!(
+            Signer::new(refilled).unwrap().shielded_sighash(),
+            Signer::new(request).unwrap().shielded_sighash(),
+        );
+
+        // Guard that the fvk clear is not vacuous: re-clearing the fvk on the batch
+        // redaction changes nothing (it was already cleared), while the standard
+        // redaction still carries the wire fvks.
+        let clear_fvks = |bytes: &[u8]| {
             let parsed = pczt::Pczt::parse(bytes).unwrap();
             Redactor::new(parsed)
                 .redact_orchard_with(|mut r| {
                     r.redact_actions(|mut ar| {
                         ar.clear_spend_fvk();
-                        ar.clear_spend_auth_sig();
                     });
                 })
                 .redact_ironwood_with(|mut r| {
                     r.redact_actions(|mut ar| {
                         ar.clear_spend_fvk();
-                        ar.clear_spend_auth_sig();
                     });
                 })
                 .finish()
                 .serialize()
                 .unwrap()
         };
-        assert_eq!(batch, with_extra_clears(&standard));
-
-        // Guard that the fvk clear is not vacuous: clearing only the signatures must
-        // not reproduce the batch redaction, i.e. the wire fvk was present and cleared.
-        let sigs_only_cleared = {
-            let parsed = pczt::Pczt::parse(&standard).unwrap();
-            Redactor::new(parsed)
-                .redact_orchard_with(|mut r| {
-                    r.redact_actions(|mut ar| {
-                        ar.clear_spend_auth_sig();
-                    });
-                })
-                .redact_ironwood_with(|mut r| {
-                    r.redact_actions(|mut ar| {
-                        ar.clear_spend_auth_sig();
-                    });
-                })
-                .finish()
-                .serialize()
-                .unwrap()
-        };
+        assert_eq!(
+            clear_fvks(&batch),
+            batch,
+            "batch redaction must already have cleared the wire spend fvks",
+        );
         assert_ne!(
-            batch, sigs_only_cleared,
-            "batch redaction must also clear the wire spend fvks",
+            clear_fvks(&standard),
+            standard,
+            "standard redaction must retain the wire spend fvks",
         );
     }
 
@@ -6646,7 +6799,6 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
-            None,
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal

@@ -1100,11 +1100,27 @@ fn to_wallet_signed_messages(
                             action.sig.len()
                         )
                     })?;
-                    Ok(crate::wallet::keystone::DecodedActionSig {
-                        pool: action.pool,
-                        action_index: action.action_index,
+                    let value_pool = match action.pool {
+                        0 => orchard::ValuePool::Orchard,
+                        1 => orchard::ValuePool::Ironwood,
+                        other => {
+                            return Err(format!(
+                                "Keystone signature for {} has unsupported pool {other}",
+                                message.id
+                            ));
+                        }
+                    };
+                    let action_index = usize::try_from(action.action_index).map_err(|_| {
+                        format!(
+                            "Keystone signature action index {} exceeds usize",
+                            action.action_index
+                        )
+                    })?;
+                    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
+                        value_pool,
+                        action_index,
                         sig,
-                    })
+                    ))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
             Ok(wallet_sync::KeystoneSignedMigrationMessage {

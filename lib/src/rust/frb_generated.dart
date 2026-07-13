@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -1309935738;
+  int get rustContentHash => -517747853;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -274,8 +274,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<Uint8List> crateApiKeystoneDecodeUrToPczt({required String urString});
 
-  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashSigResultCbor({
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
     required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
   });
 
   Future<ZcashBatchSignResult> crateApiKeystoneDecodeZcashSignResultCbor({
@@ -2156,14 +2158,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashSigResultCbor({
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
     required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(cbor, serializer);
+          sse_encode_String(expectedRequestId, serializer);
+          sse_encode_list_String(messageIds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2175,17 +2181,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_keystone_sig_result,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiKeystoneDecodeZcashSigResultCborConstMeta,
-        argValues: [cbor],
+        constMeta: kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta,
+        argValues: [cbor, expectedRequestId, messageIds],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiKeystoneDecodeZcashSigResultCborConstMeta =>
+  TaskConstMeta get kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta =>
       const TaskConstMeta(
-        debugName: "decode_zcash_sig_result_cbor",
-        argNames: ["cbor"],
+        debugName: "decode_zcash_batch_sign_response",
+        argNames: ["cbor", "expectedRequestId", "messageIds"],
       );
 
   @override
@@ -7183,7 +7189,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 3)
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return KeystoneSigResult(
-      version: dco_decode_u_32(arr[0]),
+      firmwareVersion: dco_decode_list_prim_u_8_strict(arr[0]),
       requestId: dco_decode_list_prim_u_8_strict(arr[1]),
       results: dco_decode_list_keystone_msg_sig(arr[2]),
     );
@@ -9171,11 +9177,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_version = sse_decode_u_32(deserializer);
+    var var_firmwareVersion = sse_decode_list_prim_u_8_strict(deserializer);
     var var_requestId = sse_decode_list_prim_u_8_strict(deserializer);
     var var_results = sse_decode_list_keystone_msg_sig(deserializer);
     return KeystoneSigResult(
-      version: var_version,
+      firmwareVersion: var_firmwareVersion,
       requestId: var_requestId,
       results: var_results,
     );
@@ -11529,7 +11535,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.version, serializer);
+    sse_encode_list_prim_u_8_strict(self.firmwareVersion, serializer);
     sse_encode_list_prim_u_8_strict(self.requestId, serializer);
     sse_encode_list_keystone_msg_sig(self.results, serializer);
   }

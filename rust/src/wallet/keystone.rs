@@ -5,7 +5,14 @@
 
 use ur_registry::traits::RegistryItem;
 use ur_registry::zcash::zcash_accounts::ZcashAccounts;
+use ur_registry::zcash::zcash_batch_sig_result::ZcashBatchSigResult;
 use ur_registry::zcash::zcash_pczt::ZcashPczt;
+use ur_registry::zcash::zcash_sign_batch::ZcashSignBatch;
+
+use pczt::roles::signer::{
+    batch::{BatchSignRequest, BatchSignResponse},
+    SpendAuthSignature,
+};
 
 // ==================== Data Types ====================
 
@@ -39,47 +46,7 @@ pub struct ZcashBatchSignedMessage {
     pub payload_digest_hex: String,
 }
 
-/// Pool discriminant for a decoded [`DecodedActionSig`]: an Orchard action
-/// signature. Mirrors the `zcash-batch-sig-result` wire value, narrowed to the `u8`
-/// the wallet uses internally.
-pub(crate) const DECODED_SIG_POOL_ORCHARD: u8 = 0;
-/// Pool discriminant for a decoded [`DecodedActionSig`]: an Ironwood action
-/// signature. Mirrors the `zcash-batch-sig-result` wire value, narrowed to the `u8`
-/// the wallet uses internally.
-pub(crate) const DECODED_SIG_POOL_IRONWOOD: u8 = 1;
-
-/// A wallet-layer decoding of a Keystone "signatures-only" response
-/// (`zcash-batch-sig-result`, UR tag 49207). Unlike [`ZcashBatchSignResult`], which
-/// echoes whole redacted PCZTs back, this carries only the produced
-/// signatures, correlated to each request message by id and to each spend by
-/// pool and action index. The wallet re-applies these to the proofs-PCZTs it
-/// already holds (see `sync::pczt::apply_sigs_and_extract`).
-#[derive(Debug, Clone)]
-pub struct DecodedSigResult {
-    pub version: u32,
-    pub request_id: Vec<u8>,
-    pub results: Vec<DecodedMsgSig>,
-}
-
-/// The signatures produced for a single request message, correlated by
-/// `message_id` (the same id the wallet assigned when it built the batch).
-#[derive(Debug, Clone)]
-pub struct DecodedMsgSig {
-    pub message_id: Vec<u8>,
-    pub sigs: Vec<DecodedActionSig>,
-}
-
-/// A single spend-authorization signature located by `pool`
-/// ([`DECODED_SIG_POOL_ORCHARD`] / [`DECODED_SIG_POOL_IRONWOOD`]) and the spend
-/// action's index within that pool's bundle.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedActionSig {
-    pub pool: u8,
-    pub action_index: u32,
-    pub sig: [u8; 64],
-}
-
-/// Fixed serialized size of one [`DecodedActionSig`] in the compact storage
+/// Fixed serialized size of one [`SpendAuthSignature`] in the compact storage
 /// blob: `pool` (1) + `action_index` little-endian u32 (4) + `sig` (64).
 const COMPACT_ACTION_SIG_LEN: usize = 1 + 4 + ZCASH_SIG_LEN;
 
@@ -91,23 +58,33 @@ const COMPACT_ACTION_SIG_LEN: usize = 1 + 4 + ZCASH_SIG_LEN;
 /// signatures (a handful of 69-byte records) in place of a full signed PCZT,
 /// shrinking that column substantially. The wire layout is a u32 little-endian
 /// count followed by that many `[pool:u8][action_index:u32 le][sig:64]` records.
-pub(crate) fn encode_compact_action_sigs(sigs: &[DecodedActionSig]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + sigs.len() * COMPACT_ACTION_SIG_LEN);
-    out.extend_from_slice(&(sigs.len() as u32).to_le_bytes());
+pub(crate) fn encode_compact_action_sigs(sigs: &[SpendAuthSignature]) -> Result<Vec<u8>, String> {
+    let count = u32::try_from(sigs.len())
+        .map_err(|_| "Too many compact signatures to encode".to_string())?;
+    let capacity = sigs
+        .len()
+        .checked_mul(COMPACT_ACTION_SIG_LEN)
+        .and_then(|body_len| body_len.checked_add(4))
+        .ok_or_else(|| "Compact signature blob length overflow".to_string())?;
+    let mut out = Vec::with_capacity(capacity);
+    out.extend_from_slice(&count.to_le_bytes());
     for sig in sigs {
-        out.push(sig.pool);
-        out.extend_from_slice(&sig.action_index.to_le_bytes());
-        out.extend_from_slice(&sig.sig);
+        out.push(encode_signature_pool(sig.value_pool()));
+        let action_index = u32::try_from(sig.action_index())
+            .map_err(|_| "Compact signature action index exceeds u32".to_string())?;
+        out.extend_from_slice(&action_index.to_le_bytes());
+        out.extend_from_slice(sig.signature());
     }
-    out
+    Ok(out)
 }
 
 /// Decode a compact signature blob produced by [`encode_compact_action_sigs`].
-pub(crate) fn decode_compact_action_sigs(bytes: &[u8]) -> Result<Vec<DecodedActionSig>, String> {
+pub(crate) fn decode_compact_action_sigs(bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     if bytes.len() < 4 {
         return Err("Compact signature blob is too short for its count header".to_string());
     }
-    let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+    let count = usize::try_from(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        .map_err(|_| "Compact signature count exceeds usize".to_string())?;
     let body = &bytes[4..];
     let expected = count
         .checked_mul(COMPACT_ACTION_SIG_LEN)
@@ -121,35 +98,50 @@ pub(crate) fn decode_compact_action_sigs(bytes: &[u8]) -> Result<Vec<DecodedActi
 
     let mut sigs = Vec::with_capacity(count);
     for record in body.chunks_exact(COMPACT_ACTION_SIG_LEN) {
-        let pool = record[0];
-        let action_index = u32::from_le_bytes([record[1], record[2], record[3], record[4]]);
+        let value_pool = decode_signature_pool(u32::from(record[0]))?;
+        let action_index = usize::try_from(u32::from_le_bytes([
+            record[1], record[2], record[3], record[4],
+        ]))
+        .map_err(|_| "Compact signature action index exceeds usize".to_string())?;
         let sig: [u8; ZCASH_SIG_LEN] = record[5..]
             .try_into()
             .map_err(|_| "Compact signature record has wrong signature length".to_string())?;
-        sigs.push(DecodedActionSig {
-            pool,
+        sigs.push(SpendAuthSignature::from_parts(
+            value_pool,
             action_index,
             sig,
-        });
+        ));
     }
     Ok(sigs)
 }
 
 const ZCASH_SIGN_BATCH_TYPE: &str = "zcash-sign-batch";
 const ZCASH_SIGN_BATCH_VERSION: u32 = 1;
-const ZCASH_SIGN_BATCH_NETWORK_MAINNET: u32 = 1;
-const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
+pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
-pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 35;
+// Must match the signer's `ZCASH_BATCH_MAX_MESSAGES`; the device rejects any batch
+// larger than this. Sized to fit a full migration batch.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 80;
 
-// `zcash-batch-sig-result` (UR tag 49207) wire constants. The registry CBOR shape is
-// `{1: version, 2: request_id, 3: results: [{1: message_id, 2: sigs:
-// [{1: pool, 2: action_index, 3: sig}]}]}`.
-const ZCASH_SIG_RESULT_VERSION: u32 = 1;
 const ZCASH_SIG_POOL_ORCHARD: u32 = 0;
 const ZCASH_SIG_POOL_IRONWOOD: u32 = 1;
 /// A Zcash spend-authorization signature is a 64-byte RedPallas signature.
 const ZCASH_SIG_LEN: usize = 64;
+
+fn encode_signature_pool(value_pool: orchard::ValuePool) -> u8 {
+    match value_pool {
+        orchard::ValuePool::Orchard => 0,
+        orchard::ValuePool::Ironwood => 1,
+    }
+}
+
+fn decode_signature_pool(pool: u32) -> Result<orchard::ValuePool, String> {
+    match pool {
+        ZCASH_SIG_POOL_ORCHARD => Ok(orchard::ValuePool::Orchard),
+        ZCASH_SIG_POOL_IRONWOOD => Ok(orchard::ValuePool::Ironwood),
+        other => Err(format!("Unsupported zcash-batch-sig-result pool {other}")),
+    }
+}
 
 // ==================== UR Encoding/Decoding ====================
 
@@ -229,13 +221,10 @@ pub fn pczt_spend_nullifiers(pczt_bytes: &[u8]) -> Result<Vec<String>, String> {
         nullifiers.push(format!("sapling:{}", hex::encode(spend.nullifier())));
     }
     for action in pczt.orchard().actions() {
-        // `nullifier` is optional on the wire; the wallet's own base PCZTs
-        // always carry it (this runs pre-redaction).
-        let nullifier = action
-            .spend()
-            .nullifier()
-            .ok_or("Orchard PCZT spend is missing its nullifier")?;
-        nullifiers.push(format!("orchard:{}", hex::encode(nullifier)));
+        nullifiers.push(format!(
+            "orchard:{}",
+            hex::encode(action.spend().nullifier())
+        ));
     }
 
     Ok(nullifiers)
@@ -449,16 +438,11 @@ pub fn encode_pczt_ur_parts(
     Ok(parts)
 }
 
-/// Encode several redacted PCZTs into the local `zcash-sign-batch` UR used by
-/// the Keystone batch-signing firmware branch.
-pub fn encode_zcash_sign_batch_ur_parts(
-    request_id: &str,
+/// Encode several redacted PCZTs into the versioned Postcard payload carried by
+/// a `zcash-sign-batch` UR.
+pub(crate) fn encode_zcash_sign_batch_postcard(
     messages: &[ZcashBatchMessageInput],
-    max_fragment_len: usize,
-) -> Result<Vec<String>, String> {
-    if request_id.is_empty() {
-        return Err("Zcash batch request id must not be empty".to_string());
-    }
+) -> Result<Vec<u8>, String> {
     if messages.is_empty() || messages.len() > ZCASH_SIGN_BATCH_MAX_MESSAGES {
         return Err(format!(
             "Zcash batch requires 1 to {ZCASH_SIGN_BATCH_MAX_MESSAGES} messages"
@@ -467,6 +451,7 @@ pub fn encode_zcash_sign_batch_ur_parts(
 
     let mut ids = std::collections::HashSet::new();
     let mut payloads = std::collections::HashSet::new();
+    let mut pczts = Vec::with_capacity(messages.len());
     for message in messages {
         if message.id.is_empty() {
             return Err("Zcash batch message id must not be empty".to_string());
@@ -476,55 +461,46 @@ pub fn encode_zcash_sign_batch_ur_parts(
         }
         if message.pczt_bytes.is_empty() {
             return Err(format!(
-                "Zcash batch message {} has an empty PCZT payload",
+                "Zcash batch message {} has an empty payload",
                 message.id
             ));
         }
         if !payloads.insert(message.pczt_bytes.clone()) {
-            return Err("Duplicate Zcash batch PCZT payload".to_string());
+            return Err("Duplicate Zcash batch payload".to_string());
         }
+        pczts.push(
+            pczt::Pczt::parse(&message.pczt_bytes)
+                .map_err(|e| format!("Invalid PCZT for batch message {}: {e:?}", message.id))?,
+        );
     }
 
-    let mut cbor = Vec::new();
-    let mut encoder = minicbor::Encoder::new(&mut cbor);
-    encoder
-        .map(4)
-        .map_err(|e| format!("CBOR encode batch map: {e}"))?
-        .u8(1)
-        .map_err(|e| format!("CBOR encode batch version key: {e}"))?
-        .u32(ZCASH_SIGN_BATCH_VERSION)
-        .map_err(|e| format!("CBOR encode batch version: {e}"))?
-        .u8(2)
-        .map_err(|e| format!("CBOR encode batch request id key: {e}"))?
-        .bytes(request_id.as_bytes())
-        .map_err(|e| format!("CBOR encode batch request id: {e}"))?
-        .u8(3)
-        .map_err(|e| format!("CBOR encode batch network key: {e}"))?
-        .u32(ZCASH_SIGN_BATCH_NETWORK_MAINNET)
-        .map_err(|e| format!("CBOR encode batch network: {e}"))?
-        .u8(4)
-        .map_err(|e| format!("CBOR encode batch messages key: {e}"))?
-        .array(messages.len() as u64)
-        .map_err(|e| format!("CBOR encode batch messages array: {e}"))?;
+    BatchSignRequest::new(pczts)
+        .serialize()
+        .map_err(|e| format!("Encode PCZT batch signing request: {e:?}"))
+}
 
-    for message in messages {
-        encoder
-            .map(3)
-            .map_err(|e| format!("CBOR encode message map: {e}"))?
-            .u8(1)
-            .map_err(|e| format!("CBOR encode message id key: {e}"))?
-            .bytes(message.id.as_bytes())
-            .map_err(|e| format!("CBOR encode message id: {e}"))?
-            .u8(2)
-            .map_err(|e| format!("CBOR encode message kind key: {e}"))?
-            .u32(ZCASH_SIGN_MESSAGE_KIND_PCZT_V1)
-            .map_err(|e| format!("CBOR encode message kind: {e}"))?
-            .u8(3)
-            .map_err(|e| format!("CBOR encode message payload key: {e}"))?
-            .bytes(&message.pczt_bytes)
-            .map_err(|e| format!("CBOR encode message payload: {e}"))?;
+/// Encode several redacted PCZTs into the `zcash-sign-batch` outer CBOR
+/// envelope used by the Keystone batch-signing firmware.
+pub fn encode_zcash_sign_batch_ur_parts(
+    request_id: &str,
+    messages: &[ZcashBatchMessageInput],
+    max_fragment_len: usize,
+) -> Result<Vec<String>, String> {
+    if request_id.is_empty() {
+        return Err("Zcash batch request id must not be empty".to_string());
     }
-
+    let payload_bytes = messages
+        .iter()
+        .map(|message| message.pczt_bytes.len())
+        .sum::<usize>();
+    let postcard = encode_zcash_sign_batch_postcard(messages)?;
+    let postcard_len = postcard.len();
+    let cbor: Vec<u8> = ZcashSignBatch::new(request_id.as_bytes().to_vec(), postcard)
+        .try_into()
+        .map_err(|e: ur_registry::error::URError| {
+            format!("Encode zcash-sign-batch CBOR envelope: {e:?}")
+        })?;
+    let cbor_len = cbor.len();
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
     let count = ur_part_count(ur_encoder.fragment_count());
@@ -537,7 +513,13 @@ pub fn encode_zcash_sign_batch_ur_parts(
     }
 
     log::info!(
-        "keystone: encoded Zcash sign batch into {} UR parts",
+        "keystone: encoded Zcash sign batch: messages={} payload_bytes={} postcard_bytes={} \
+         cbor_bytes={} max_fragment_len={} ur_parts={}",
+        messages.len(),
+        payload_bytes,
+        postcard_len,
+        cbor_len,
+        max_fragment_len,
         parts.len()
     );
     Ok(parts)
@@ -591,224 +573,42 @@ pub fn decode_zcash_sign_result_cbor(cbor: &[u8]) -> Result<ZcashBatchSignResult
     })
 }
 
-/// Decode the raw CBOR payload from a compact `zcash-batch-sig-result` UR (tag
-/// 49207) into flat wallet structs.
-///
-/// The decode is hand-rolled with `minicbor`, mirroring
-/// [`decode_zcash_sign_result_cbor`], because the pinned upstream `ur_registry`
-/// has no container for this type. CBOR shape validation matches the registry
-/// definition (required fields, duplicate map keys rejected, indefinite
-/// lengths rejected, trailing data rejected, unknown keys skipped), and
-/// wallet-side policy is enforced on top: a supported version, a known pool
-/// discriminant (Orchard/Ironwood), the exact 64-byte spend-authorization
-/// signature length, and no duplicate (pool, action index) within a message.
-/// The result is correlated back to the wallet's held proofs-PCZTs by
-/// `message_id` and applied via `sync::pczt::apply_sigs_and_extract`.
-pub fn decode_zcash_sig_result_cbor(cbor: &[u8]) -> Result<DecodedSigResult, String> {
-    let mut decoder = minicbor::Decoder::new(cbor);
-    let len = required_len(decoder.map(), "zcash-batch-sig-result map")?;
-    let mut version = None;
-    let mut request_id = None;
-    let mut results = None;
-
-    let mut seen_keys = Vec::new();
-    for _ in 0..len {
-        let key = decoder
-            .u8()
-            .map_err(|e| format!("CBOR decode sig result key: {e}"))?;
-        reject_duplicate_cbor_key(&mut seen_keys, key, "zcash-batch-sig-result map")?;
-        match key {
-            1 => {
-                version = Some(
-                    decoder
-                        .u32()
-                        .map_err(|e| format!("CBOR decode sig result version: {e}"))?,
-                );
-            }
-            2 => {
-                request_id = Some(
-                    decoder
-                        .bytes()
-                        .map_err(|e| format!("CBOR decode sig result request id: {e}"))?
-                        .to_vec(),
-                );
-            }
-            3 => {
-                results = Some(decode_msg_sigs(&mut decoder)?);
-            }
-            _ => decoder
-                .skip()
-                .map_err(|e| format!("CBOR skip unknown sig result field: {e}"))?,
-        }
+/// Decode the outer CBOR envelope and versioned Postcard payload from a compact
+/// `zcash-batch-sig-result` UR, returning the firmware version and echoed
+/// request id alongside the upstream response after enforcing wallet policy.
+pub fn decode_zcash_batch_sign_response(
+    cbor: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>, BatchSignResponse), String> {
+    let result = ZcashBatchSigResult::try_from(cbor.to_vec())
+        .map_err(|e| format!("Invalid zcash-batch-sig-result CBOR envelope: {e:?}"))?;
+    let firmware_version = result.get_firmware_version().to_vec();
+    if result.get_request_id().is_empty() {
+        return Err("Zcash batch result request id must not be empty".to_string());
     }
-
-    if decoder.position() != cbor.len() {
-        return Err("Trailing data after zcash-batch-sig-result".to_string());
-    }
-
-    let version = version.ok_or_else(|| "Missing zcash-batch-sig-result version".to_string())?;
-    if version != ZCASH_SIG_RESULT_VERSION {
+    let response = BatchSignResponse::parse(result.get_data())
+        .map_err(|e| format!("Invalid PCZT batch signing response: {e:?}"))?;
+    if response.signatures().is_empty()
+        || response.signatures().len() > ZCASH_SIGN_BATCH_MAX_MESSAGES
+    {
         return Err(format!(
-            "Unsupported zcash-batch-sig-result version {version}"
+            "PCZT batch signing response must contain 1 to {ZCASH_SIGN_BATCH_MAX_MESSAGES} results"
         ));
     }
 
-    Ok(DecodedSigResult {
-        version,
-        request_id: request_id
-            .ok_or_else(|| "Missing zcash-batch-sig-result request id".to_string())?,
-        results: results.ok_or_else(|| "Missing zcash-batch-sig-result results".to_string())?,
-    })
-}
-
-/// Decode the `results` array of a `zcash-batch-sig-result`: one [`DecodedMsgSig`]
-/// per signed request message.
-fn decode_msg_sigs(decoder: &mut minicbor::Decoder<'_>) -> Result<Vec<DecodedMsgSig>, String> {
-    let len = required_len(decoder.array(), "zcash-batch-sig-result results array")?;
-
-    // Do not pre-allocate from the wire-claimed length; a malformed length
-    // fails on the first missing element instead of reserving memory.
-    let mut results = Vec::new();
-    for _ in 0..len {
-        results.push(decode_msg_sig(decoder)?);
-    }
-    Ok(results)
-}
-
-/// Decode one per-message signature map (`{1: message_id, 2: sigs}`),
-/// enforcing the wallet policy documented on [`decode_zcash_sig_result_cbor`].
-fn decode_msg_sig(decoder: &mut minicbor::Decoder<'_>) -> Result<DecodedMsgSig, String> {
-    let len = required_len(decoder.map(), "zcash-msg-sig map")?;
-    let mut message_id = None;
-    let mut sigs = None;
-
-    let mut seen_keys = Vec::new();
-    for _ in 0..len {
-        let key = decoder
-            .u8()
-            .map_err(|e| format!("CBOR decode msg sig key: {e}"))?;
-        reject_duplicate_cbor_key(&mut seen_keys, key, "zcash-msg-sig map")?;
-        match key {
-            1 => {
-                message_id = Some(
-                    decoder
-                        .bytes()
-                        .map_err(|e| format!("CBOR decode msg sig message id: {e}"))?
-                        .to_vec(),
-                );
+    for signatures in response.signatures() {
+        let mut locations = std::collections::HashSet::new();
+        for signature in signatures {
+            if !locations.insert((signature.value_pool(), signature.action_index())) {
+                return Err(format!(
+                    "Duplicate PCZT signature for pool {:?} action {}",
+                    signature.value_pool(),
+                    signature.action_index()
+                ));
             }
-            2 => {
-                sigs = Some(decode_action_sigs(decoder)?);
-            }
-            _ => decoder
-                .skip()
-                .map_err(|e| format!("CBOR skip unknown msg sig field: {e}"))?,
         }
     }
 
-    Ok(DecodedMsgSig {
-        message_id: message_id.ok_or_else(|| "Missing zcash-msg-sig message id".to_string())?,
-        sigs: sigs.ok_or_else(|| "Missing zcash-msg-sig sigs".to_string())?,
-    })
-}
-
-/// Decode the `sigs` array of one message, rejecting duplicate
-/// (pool, action index) entries — a device must produce at most one
-/// spend-authorization signature per spend action.
-fn decode_action_sigs(
-    decoder: &mut minicbor::Decoder<'_>,
-) -> Result<Vec<DecodedActionSig>, String> {
-    let len = required_len(decoder.array(), "zcash-msg-sig sigs array")?;
-
-    let mut seen_sigs = std::collections::HashSet::new();
-    let mut sigs = Vec::new();
-    for _ in 0..len {
-        let sig = decode_action_sig(decoder)?;
-        if !seen_sigs.insert((sig.pool, sig.action_index)) {
-            return Err(format!(
-                "Duplicate zcash-batch-sig-result signature for pool {} action {}",
-                sig.pool, sig.action_index
-            ));
-        }
-        sigs.push(sig);
-    }
-    Ok(sigs)
-}
-
-/// Decode one action-signature map (`{1: pool, 2: action_index, 3: sig}`),
-/// enforcing a known pool discriminant and the exact 64-byte signature length.
-fn decode_action_sig(decoder: &mut minicbor::Decoder<'_>) -> Result<DecodedActionSig, String> {
-    let len = required_len(decoder.map(), "zcash-action-sig map")?;
-    let mut pool = None;
-    let mut action_index = None;
-    let mut sig = None;
-
-    let mut seen_keys = Vec::new();
-    for _ in 0..len {
-        let key = decoder
-            .u8()
-            .map_err(|e| format!("CBOR decode action sig key: {e}"))?;
-        reject_duplicate_cbor_key(&mut seen_keys, key, "zcash-action-sig map")?;
-        match key {
-            1 => {
-                pool = Some(
-                    decoder
-                        .u32()
-                        .map_err(|e| format!("CBOR decode action sig pool: {e}"))?,
-                );
-            }
-            2 => {
-                action_index = Some(
-                    decoder
-                        .u32()
-                        .map_err(|e| format!("CBOR decode action sig index: {e}"))?,
-                );
-            }
-            3 => {
-                sig = Some(
-                    decoder
-                        .bytes()
-                        .map_err(|e| format!("CBOR decode action sig bytes: {e}"))?
-                        .to_vec(),
-                );
-            }
-            _ => decoder
-                .skip()
-                .map_err(|e| format!("CBOR skip unknown action sig field: {e}"))?,
-        }
-    }
-
-    let pool = match pool.ok_or_else(|| "Missing zcash-action-sig pool".to_string())? {
-        ZCASH_SIG_POOL_ORCHARD => DECODED_SIG_POOL_ORCHARD,
-        ZCASH_SIG_POOL_IRONWOOD => DECODED_SIG_POOL_IRONWOOD,
-        other => return Err(format!("Unsupported zcash-batch-sig-result pool {other}")),
-    };
-    let action_index =
-        action_index.ok_or_else(|| "Missing zcash-action-sig action index".to_string())?;
-    let sig_bytes = sig.ok_or_else(|| "Missing zcash-action-sig sig".to_string())?;
-    let sig: [u8; ZCASH_SIG_LEN] = sig_bytes.as_slice().try_into().map_err(|_| {
-        format!(
-            "zcash-batch-sig-result signature must be {ZCASH_SIG_LEN} bytes, got {}",
-            sig_bytes.len()
-        )
-    })?;
-
-    Ok(DecodedActionSig {
-        pool,
-        action_index,
-        sig,
-    })
-}
-
-/// Reject a duplicate CBOR map key, recording each seen key. The registry
-/// definition of `zcash-batch-sig-result` rejects duplicate map keys so a re-sent
-/// field can never silently overwrite an earlier value.
-fn reject_duplicate_cbor_key(seen_keys: &mut Vec<u8>, key: u8, label: &str) -> Result<(), String> {
-    if seen_keys.contains(&key) {
-        return Err(format!("Duplicate key {key} in {label}"));
-    }
-    seen_keys.push(key);
-    Ok(())
+    Ok((firmware_version, result.get_request_id().to_vec(), response))
 }
 
 fn decode_signed_messages(
@@ -929,6 +729,46 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 mod tests {
     use super::*;
 
+    const TEST_FIRMWARE_VERSION: [u8; 3] = [1, 2, 3];
+
+    fn test_pczt(expiry_height: u32) -> pczt::Pczt {
+        use pczt::roles::creator::Creator;
+        use zcash_protocol::consensus::BranchId;
+
+        Creator::new(BranchId::Nu6.into(), expiry_height, 133, None, None)
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn test_pczt_bytes(expiry_height: u32) -> Vec<u8> {
+        test_pczt(expiry_height).serialize().unwrap()
+    }
+
+    fn decode_test_ur_parts(parts: &[String]) -> Vec<u8> {
+        let first = parts[0].to_lowercase();
+        let (kind, message) = ur::decode(&first).expect("UR should decode");
+        match kind {
+            ur::ur::Kind::SinglePart => message,
+            ur::ur::Kind::MultiPart => {
+                let mut decoder = ur::Decoder::default();
+                for part in parts {
+                    decoder
+                        .receive(&part.to_lowercase())
+                        .expect("receive UR part");
+                    if decoder.complete() {
+                        break;
+                    }
+                }
+                assert!(decoder.complete());
+                decoder
+                    .message()
+                    .expect("UR message")
+                    .expect("complete UR message")
+            }
+        }
+    }
+
     #[test]
     fn encodes_zcash_sign_batch_ur() {
         let parts = encode_zcash_sign_batch_ur_parts(
@@ -936,11 +776,11 @@ mod tests {
             &[
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
-                    pczt_bytes: b"pczt-one".to_vec(),
+                    pczt_bytes: test_pczt_bytes(1),
                 },
                 ZcashBatchMessageInput {
                     id: "tx-2".to_string(),
-                    pczt_bytes: b"pczt-two".to_vec(),
+                    pczt_bytes: test_pczt_bytes(2),
                 },
             ],
             10_000,
@@ -950,85 +790,46 @@ mod tests {
         assert_eq!(parts.len(), 1);
         assert!(parts[0].starts_with("UR:ZCASH-SIGN-BATCH/"));
 
-        let part_lower = parts[0].to_lowercase();
-        let (kind, cbor) = ur::decode(&part_lower).expect("batch UR should decode");
-        let cbor = match kind {
-            ur::ur::Kind::SinglePart => cbor,
-            ur::ur::Kind::MultiPart => {
-                let mut decoder = ur::Decoder::default();
-                decoder.receive(&part_lower).expect("receive batch UR part");
-                assert!(decoder.complete());
-                decoder
-                    .message()
-                    .expect("batch UR message")
-                    .expect("complete batch UR message")
-            }
-        };
+        let cbor = decode_test_ur_parts(&parts);
+        let envelope = ZcashSignBatch::try_from(cbor).expect("zcash-sign-batch CBOR should decode");
+        assert_eq!(envelope.get_request_id(), b"request-1");
+        let request =
+            BatchSignRequest::parse(envelope.get_data()).expect("Postcard request should decode");
+        assert_eq!(request.pczts().len(), 2);
+        assert_eq!(
+            request.pczts()[0].clone().serialize().unwrap(),
+            test_pczt_bytes(1)
+        );
+        assert_eq!(
+            request.pczts()[1].clone().serialize().unwrap(),
+            test_pczt_bytes(2)
+        );
+    }
 
-        let mut decoder = minicbor::Decoder::new(&cbor);
-        let len = required_len(decoder.map(), "test batch map").expect("map length");
-        assert_eq!(len, 4);
+    #[test]
+    fn multipart_zcash_sign_batch_preserves_outer_request_id() {
+        let parts = encode_zcash_sign_batch_ur_parts(
+            "request-multipart",
+            &[ZcashBatchMessageInput {
+                id: "tx-1".to_string(),
+                pczt_bytes: test_pczt_bytes(1),
+            }],
+            20,
+        )
+        .expect("multipart batch UR should encode");
 
-        let mut version = None;
-        let mut request_id = None;
-        let mut network = None;
-        let mut message_count = None;
-        let expected_messages: [(&str, &[u8]); 2] = [("tx-1", b"pczt-one"), ("tx-2", b"pczt-two")];
+        assert!(parts.len() > 1);
+        let envelope = ZcashSignBatch::try_from(decode_test_ur_parts(&parts))
+            .expect("multipart zcash-sign-batch CBOR should decode");
 
-        for _ in 0..len {
-            match decoder.u8().expect("field key") {
-                1 => version = Some(decoder.u32().expect("version")),
-                2 => {
-                    request_id = Some(
-                        String::from_utf8(decoder.bytes().expect("request id").to_vec()).unwrap(),
-                    );
-                }
-                3 => network = Some(decoder.u32().expect("network")),
-                4 => {
-                    let messages = required_len(decoder.array(), "test messages").expect("array");
-                    message_count = Some(messages);
-                    for expected in expected_messages.iter().take(messages as usize) {
-                        let message_len =
-                            required_len(decoder.map(), "test message map").expect("message map");
-                        assert_eq!(message_len, 3);
-
-                        let mut id = None;
-                        let mut kind = None;
-                        let mut payload = None;
-                        for _ in 0..message_len {
-                            match decoder.u8().expect("message field key") {
-                                1 => {
-                                    id = Some(
-                                        String::from_utf8(
-                                            decoder.bytes().expect("message id").to_vec(),
-                                        )
-                                        .unwrap(),
-                                    );
-                                }
-                                2 => kind = Some(decoder.u32().expect("message kind")),
-                                3 => {
-                                    payload =
-                                        Some(decoder.bytes().expect("message payload").to_vec())
-                                }
-                                6 => panic!("inbound payload digest should be omitted"),
-                                _ => decoder.skip().expect("unknown message field"),
-                            }
-                        }
-
-                        assert_eq!(id.as_deref(), Some(expected.0));
-                        assert_eq!(kind, Some(ZCASH_SIGN_MESSAGE_KIND_PCZT_V1));
-                        assert_eq!(payload.as_deref(), Some(expected.1));
-                    }
-                }
-                11 => panic!("batch atomic field should be omitted"),
-                _ => decoder.skip().expect("unknown field"),
-            }
-        }
-
-        assert_eq!(version, Some(ZCASH_SIGN_BATCH_VERSION));
-        assert_eq!(request_id.as_deref(), Some("request-1"));
-        assert_eq!(network, Some(ZCASH_SIGN_BATCH_NETWORK_MAINNET));
-        assert_eq!(message_count, Some(2));
+        assert_eq!(envelope.get_request_id(), b"request-multipart");
+        assert_eq!(
+            BatchSignRequest::parse(envelope.get_data())
+                .expect("multipart Postcard request should decode")
+                .pczts()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1047,11 +848,11 @@ mod tests {
             &[
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
-                    pczt_bytes: b"pczt-one".to_vec(),
+                    pczt_bytes: test_pczt_bytes(1),
                 },
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
-                    pczt_bytes: b"pczt-two".to_vec(),
+                    pczt_bytes: test_pczt_bytes(2),
                 },
             ],
             10_000,
@@ -1059,6 +860,21 @@ mod tests {
         .expect_err("duplicate ids should fail");
 
         assert!(err.contains("Duplicate Zcash batch message id"));
+    }
+
+    #[test]
+    fn rejects_empty_zcash_batch_request_id() {
+        let err = encode_zcash_sign_batch_ur_parts(
+            "",
+            &[ZcashBatchMessageInput {
+                id: "tx-1".to_string(),
+                pczt_bytes: test_pczt_bytes(1),
+            }],
+            10_000,
+        )
+        .expect_err("empty request id should fail");
+
+        assert_eq!(err, "Zcash batch request id must not be empty");
     }
 
     #[test]
@@ -1148,212 +964,153 @@ mod tests {
         cbor
     }
 
-    /// Encode a `zcash-batch-sig-result` CBOR payload for tests, mirroring the
-    /// registry wire shape: `{1: version, 2: request_id, 3: results:
-    /// [{1: message_id, 2: sigs: [{1: pool, 2: action_index, 3: sig}]}]}`.
-    fn encode_test_sig_result(
-        version: u32,
-        request_id: &[u8],
-        messages: &[(&[u8], Vec<(u32, u32, Vec<u8>)>)],
+    fn encode_test_sig_result_postcard(
+        messages: &[Vec<(orchard::ValuePool, usize, [u8; 64])>],
     ) -> Vec<u8> {
-        let mut cbor = Vec::new();
-        let mut encoder = minicbor::Encoder::new(&mut cbor);
+        BatchSignResponse::new(
+            messages
+                .iter()
+                .map(|signatures| {
+                    signatures
+                        .iter()
+                        .map(|(pool, action_index, signature)| {
+                            SpendAuthSignature::from_parts(*pool, *action_index, *signature)
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+        .serialize()
+        .unwrap()
+    }
 
-        encoder
-            .map(3)
-            .expect("sig result map")
-            .u8(1)
-            .expect("version key")
-            .u32(version)
-            .expect("version")
-            .u8(2)
-            .expect("request id key")
-            .bytes(request_id)
-            .expect("request id")
-            .u8(3)
-            .expect("results key")
-            .array(messages.len() as u64)
-            .expect("results array");
+    fn wrap_test_sig_result(request_id: &str, postcard: Vec<u8>) -> Vec<u8> {
+        ZcashBatchSigResult::new(
+            request_id.as_bytes().to_vec(),
+            postcard,
+            TEST_FIRMWARE_VERSION,
+        )
+        .try_into()
+        .unwrap()
+    }
 
-        for (message_id, sigs) in messages {
-            encoder
-                .map(2)
-                .expect("msg sig map")
-                .u8(1)
-                .expect("message id key")
-                .bytes(message_id)
-                .expect("message id")
-                .u8(2)
-                .expect("sigs key")
-                .array(sigs.len() as u64)
-                .expect("sigs array");
-            for (pool, action_index, sig) in sigs {
-                encoder
-                    .map(3)
-                    .expect("action sig map")
-                    .u8(1)
-                    .expect("pool key")
-                    .u32(*pool)
-                    .expect("pool")
-                    .u8(2)
-                    .expect("action index key")
-                    .u32(*action_index)
-                    .expect("action index")
-                    .u8(3)
-                    .expect("sig key")
-                    .bytes(sig)
-                    .expect("sig");
-            }
-        }
-
-        cbor
+    fn encode_test_sig_result(
+        request_id: &str,
+        messages: &[Vec<(orchard::ValuePool, usize, [u8; 64])>],
+    ) -> Vec<u8> {
+        wrap_test_sig_result(request_id, encode_test_sig_result_postcard(messages))
     }
 
     #[test]
-    fn decodes_zcash_sig_result_cbor() {
+    fn decodes_zcash_batch_sign_response() {
         let sig_a = [0x11u8; 64];
         let sig_b = [0x22u8; 64];
         let sig_c = [0x33u8; 64];
         let cbor = encode_test_sig_result(
-            ZCASH_SIG_RESULT_VERSION,
-            &[0xaa, 0xbb],
+            "request-1",
             &[
-                (
-                    b"migration-1",
-                    vec![
-                        (ZCASH_SIG_POOL_ORCHARD, 0, sig_a.to_vec()),
-                        (ZCASH_SIG_POOL_IRONWOOD, 3, sig_b.to_vec()),
-                    ],
-                ),
-                (
-                    b"migration-2",
-                    vec![(ZCASH_SIG_POOL_ORCHARD, 7, sig_c.to_vec())],
-                ),
+                vec![
+                    (orchard::ValuePool::Orchard, 0, sig_a),
+                    (orchard::ValuePool::Ironwood, 3, sig_b),
+                ],
+                vec![(orchard::ValuePool::Orchard, 7, sig_c)],
             ],
         );
 
-        let decoded = decode_zcash_sig_result_cbor(&cbor).expect("sig result should decode");
+        let (firmware_version, request_id, decoded) =
+            decode_zcash_batch_sign_response(&cbor).expect("sig result should decode");
 
-        assert_eq!(decoded.version, ZCASH_SIG_RESULT_VERSION);
-        assert_eq!(decoded.request_id, vec![0xaa, 0xbb]);
-        assert_eq!(decoded.results.len(), 2);
+        assert_eq!(firmware_version, TEST_FIRMWARE_VERSION);
+        assert_eq!(request_id, b"request-1");
+        assert_eq!(decoded.signatures().len(), 2);
 
-        assert_eq!(decoded.results[0].message_id, b"migration-1".to_vec());
-        assert_eq!(decoded.results[0].sigs.len(), 2);
-        assert_eq!(decoded.results[0].sigs[0].pool, DECODED_SIG_POOL_ORCHARD);
-        assert_eq!(decoded.results[0].sigs[0].action_index, 0);
-        assert_eq!(decoded.results[0].sigs[0].sig, sig_a);
-        assert_eq!(decoded.results[0].sigs[1].pool, DECODED_SIG_POOL_IRONWOOD);
-        assert_eq!(decoded.results[0].sigs[1].action_index, 3);
-        assert_eq!(decoded.results[0].sigs[1].sig, sig_b);
+        assert_eq!(decoded.signatures()[0].len(), 2);
+        assert_eq!(
+            decoded.signatures()[0][0].value_pool(),
+            orchard::ValuePool::Orchard
+        );
+        assert_eq!(decoded.signatures()[0][0].action_index(), 0);
+        assert_eq!(decoded.signatures()[0][0].signature(), &sig_a);
+        assert_eq!(
+            decoded.signatures()[0][1].value_pool(),
+            orchard::ValuePool::Ironwood
+        );
+        assert_eq!(decoded.signatures()[0][1].action_index(), 3);
+        assert_eq!(decoded.signatures()[0][1].signature(), &sig_b);
 
-        assert_eq!(decoded.results[1].message_id, b"migration-2".to_vec());
-        assert_eq!(decoded.results[1].sigs.len(), 1);
-        assert_eq!(decoded.results[1].sigs[0].pool, DECODED_SIG_POOL_ORCHARD);
-        assert_eq!(decoded.results[1].sigs[0].action_index, 7);
-        assert_eq!(decoded.results[1].sigs[0].sig, sig_c);
+        assert_eq!(decoded.signatures()[1].len(), 1);
+        assert_eq!(
+            decoded.signatures()[1][0].value_pool(),
+            orchard::ValuePool::Orchard
+        );
+        assert_eq!(decoded.signatures()[1][0].action_index(), 7);
+        assert_eq!(decoded.signatures()[1][0].signature(), &sig_c);
     }
 
     #[test]
-    fn rejects_zcash_sig_result_unsupported_version() {
-        let cbor = encode_test_sig_result(ZCASH_SIG_RESULT_VERSION + 1, &[0x01], &[]);
+    fn rejects_zcash_batch_sign_response_unsupported_version() {
+        let mut postcard = encode_test_sig_result_postcard(&[vec![]]);
+        postcard[4..8].copy_from_slice(&2u32.to_le_bytes());
+        let cbor = wrap_test_sig_result("request-1", postcard);
 
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("bad version should fail");
+        let err = decode_zcash_batch_sign_response(&cbor).expect_err("bad version should fail");
 
-        assert!(err.contains("Unsupported zcash-batch-sig-result version"));
+        assert!(err.contains("UnknownVersion(2)"));
     }
 
     #[test]
-    fn rejects_zcash_sig_result_unknown_pool() {
+    fn rejects_zcash_batch_sign_response_duplicate_action_signature() {
         let cbor = encode_test_sig_result(
-            ZCASH_SIG_RESULT_VERSION,
-            &[0x01],
-            &[(b"m", vec![(99, 0, vec![0x00; 64])])],
+            "request-1",
+            &[vec![
+                (orchard::ValuePool::Orchard, 0, [0x11; 64]),
+                (orchard::ValuePool::Orchard, 0, [0x22; 64]),
+            ]],
         );
 
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("unknown pool should fail");
+        let err =
+            decode_zcash_batch_sign_response(&cbor).expect_err("duplicate action should fail");
 
-        assert!(err.contains("Unsupported zcash-batch-sig-result pool"));
+        assert!(err.contains("Duplicate PCZT signature"));
     }
 
     #[test]
-    fn rejects_zcash_sig_result_bad_signature_length() {
-        // 63 bytes instead of 64.
-        let cbor = encode_test_sig_result(
-            ZCASH_SIG_RESULT_VERSION,
-            &[0x01],
-            &[(b"m", vec![(ZCASH_SIG_POOL_ORCHARD, 0, vec![0x00; 63])])],
-        );
+    fn rejects_zcash_batch_sign_response_empty_results() {
+        let cbor = encode_test_sig_result("request-1", &[]);
 
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("short sig should fail");
+        let err = decode_zcash_batch_sign_response(&cbor).expect_err("empty result should fail");
 
-        assert!(err.contains("signature must be"));
+        assert!(err.contains("must contain 1 to"));
     }
 
     #[test]
-    fn rejects_zcash_sig_result_duplicate_action_signature() {
-        let cbor = encode_test_sig_result(
-            ZCASH_SIG_RESULT_VERSION,
-            &[0x01],
-            &[(
-                b"migration-1",
-                vec![
-                    (ZCASH_SIG_POOL_ORCHARD, 0, vec![0x11; 64]),
-                    (ZCASH_SIG_POOL_ORCHARD, 0, vec![0x22; 64]),
-                ],
-            )],
-        );
+    fn rejects_zcash_batch_sign_response_trailing_data() {
+        let mut postcard = encode_test_sig_result_postcard(&[vec![]]);
+        postcard.push(0x00);
+        let cbor = wrap_test_sig_result("request-1", postcard);
 
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("duplicate action should fail");
+        let err = decode_zcash_batch_sign_response(&cbor).expect_err("trailing data should fail");
 
-        assert!(err.contains("Duplicate zcash-batch-sig-result signature"));
+        assert!(err.contains("Invalid PCZT batch signing response"));
     }
 
     #[test]
-    fn rejects_zcash_sig_result_duplicate_map_key() {
-        // map(2) { 1: 1, 1: 1 } — the version key appears twice.
-        let cbor = vec![0xa2, 0x01, 0x01, 0x01, 0x01];
+    fn rejects_zcash_batch_sign_response_empty_request_id() {
+        let cbor = encode_test_sig_result("", &[vec![]]);
 
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("duplicate key should fail");
+        let err = decode_zcash_batch_sign_response(&cbor)
+            .expect_err("empty result request id should fail");
 
-        assert!(err.contains("Duplicate key 1 in zcash-batch-sig-result map"));
-    }
-
-    #[test]
-    fn rejects_zcash_sig_result_missing_required_field() {
-        // map(2) { 1: version, 2: request id } — missing the results array.
-        let cbor = vec![0xa2, 0x01, 0x01, 0x02, 0x41, 0x01];
-
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("missing results should fail");
-
-        assert!(err.contains("Missing zcash-batch-sig-result results"));
-    }
-
-    #[test]
-    fn rejects_zcash_sig_result_trailing_data() {
-        let mut cbor = encode_test_sig_result(ZCASH_SIG_RESULT_VERSION, &[0x01], &[]);
-        cbor.push(0x00);
-
-        let err = decode_zcash_sig_result_cbor(&cbor).expect_err("trailing data should fail");
-
-        assert!(err.contains("Trailing data after zcash-batch-sig-result"));
+        assert_eq!(err, "Zcash batch result request id must not be empty");
     }
 
     #[test]
     fn compact_action_sigs_round_trip() {
         let sigs = vec![
-            DecodedActionSig {
-                pool: DECODED_SIG_POOL_ORCHARD,
-                action_index: 0,
-                sig: [0x11; 64],
-            },
-            DecodedActionSig {
-                pool: DECODED_SIG_POOL_IRONWOOD,
-                action_index: 12,
-                sig: [0x22; 64],
-            },
+            SpendAuthSignature::from_parts(orchard::ValuePool::Orchard, 0, [0x11; 64]),
+            SpendAuthSignature::from_parts(orchard::ValuePool::Ironwood, 12, [0x22; 64]),
         ];
-        let blob = encode_compact_action_sigs(&sigs);
+        let blob = encode_compact_action_sigs(&sigs).unwrap();
         // 4-byte count header + 2 records of 69 bytes each.
         assert_eq!(blob.len(), 4 + 2 * COMPACT_ACTION_SIG_LEN);
         assert_eq!(decode_compact_action_sigs(&blob).unwrap(), sigs);
@@ -1361,18 +1118,19 @@ mod tests {
 
     #[test]
     fn compact_action_sigs_empty_round_trips() {
-        let blob = encode_compact_action_sigs(&[]);
+        let blob = encode_compact_action_sigs(&[]).unwrap();
         assert_eq!(blob, vec![0, 0, 0, 0]);
         assert!(decode_compact_action_sigs(&blob).unwrap().is_empty());
     }
 
     #[test]
     fn decode_compact_action_sigs_rejects_truncated_body() {
-        let mut blob = encode_compact_action_sigs(&[DecodedActionSig {
-            pool: DECODED_SIG_POOL_ORCHARD,
-            action_index: 3,
-            sig: [0x33; 64],
-        }]);
+        let mut blob = encode_compact_action_sigs(&[SpendAuthSignature::from_parts(
+            orchard::ValuePool::Orchard,
+            3,
+            [0x33; 64],
+        )])
+        .unwrap();
         blob.pop(); // drop one signature byte
         let err = decode_compact_action_sigs(&blob).expect_err("truncated blob should fail");
         assert!(err.contains("body bytes"));

@@ -39,7 +39,7 @@ mod transactions;
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
 pub(crate) use migration::migration_status;
-pub(crate) use pczt::extract_compact_sigs_from_signed_pczt;
+pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
@@ -427,6 +427,10 @@ pub(super) struct StoredProposal {
         zcash_client_sqlite::ReceivedNoteId,
     >,
     pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
+    /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
+    /// bundles (migration children only) and the PCZT must be built with
+    /// `BundleType::UNPADDED` to balance. See `zip317_helper`.
+    pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
     pub send_flow_id: String,
