@@ -318,7 +318,9 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     return 'Get signature';
   }
 
-  bool get _keystoneCanDismiss => !_keystoneCompleting;
+  bool get _keystoneCanDismiss =>
+      _keystonePhase != KeystoneSigningModalPhase.ready &&
+      !_keystoneCompleting;
 
   String? get _keystoneRequestId => _keystoneSession?.requestId;
 
