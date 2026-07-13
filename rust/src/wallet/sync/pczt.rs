@@ -321,11 +321,17 @@ pub fn add_proofs_to_pczt(
         .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
 }
 
+#[derive(Clone, Copy)]
+struct BatchDummySpendActionIndices<'a> {
+    orchard: &'a [usize],
+    ironwood: &'a [usize],
+}
+
 /// Redact information from a PCZT that the signer role doesn't need
 /// (witnesses, proprietary metadata). Produces the bytes to send to
 /// the hardware wallet for signing.
 pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    redact_pczt_for_signer_inner(pczt_bytes, false)
+    redact_pczt_for_signer_inner(pczt_bytes, None)
 }
 
 /// Redact a PCZT for a Keystone **migration batch** request. On top of
@@ -342,6 +348,9 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 ///   PCZT retains them for the post-signing combine, so on the wire they are
 ///   pure overhead (and the device would echo them back, bloating the
 ///   response);
+/// - the spend `alpha` for constructor-identified dummy spends: the IO finalizer
+///   has already authorized them, so the device neither reads nor needs their
+///   spend randomizer. Wallet-controlled zero-value spends retain `alpha`;
 /// - the output `ock`, ZIP32 derivation metadata, and user address string, when
 ///   present: the device never reads `ock` or ZIP32 metadata while checking,
 ///   displaying, or signing migration children, and it recovers the recipient
@@ -356,22 +365,38 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 ///   `bsk`s and anchors are also cleared: the v6 sighash does not commit to
 ///   anchors and the device never verifies them, while the wallet keeps the
 ///   unredacted PCZT that owns the real anchor and `bsk` for
-///   proof/extraction. `nullifier`, `rk`, `cmx`, and `ephemeral_key` stay on
-///   the wire.
+///   proof/extraction. `cmx` is also recomputed from the output note fields and
+///   spend nullifier. `nullifier`, `rk`, and `ephemeral_key` stay on the wire.
 ///
 /// Only use this for the migration batch flow; the single-transaction hardware
 /// send keeps [`redact_pczt_for_signer`].
-pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    redact_pczt_for_signer_inner(pczt_bytes, true)
+pub fn redact_pczt_for_batch_signer(
+    pczt_bytes: &[u8],
+    orchard_dummy_spend_action_indices: &[usize],
+    ironwood_dummy_spend_action_indices: &[usize],
+) -> Result<Vec<u8>, String> {
+    redact_pczt_for_signer_inner(
+        pczt_bytes,
+        Some(BatchDummySpendActionIndices {
+            orchard: orchard_dummy_spend_action_indices,
+            ironwood: ironwood_dummy_spend_action_indices,
+        }),
+    )
 }
 
 /// Applies the signer redaction to a parsed PCZT: the standard witness /
 /// proprietary clears, the batch-only spend `fvk` / `spend_auth_sig` / output
 /// metadata clears when `for_batch` is set, and — for v6 batch requests — the
 /// upstream compact-format elisions (see [`redact_pczt_for_batch_signer`]).
-fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
+fn apply_signer_redaction(
+    pczt: pczt::Pczt,
+    batch_dummy_spends: Option<BatchDummySpendActionIndices<'_>>,
+) -> pczt::Pczt {
     use pczt::roles::redactor::Redactor;
 
+    let for_batch = batch_dummy_spends.is_some();
+    let orchard_dummy_spends = batch_dummy_spends.map_or(&[][..], |indices| indices.orchard);
+    let ironwood_dummy_spends = batch_dummy_spends.map_or(&[][..], |indices| indices.ironwood);
     // The compact elisions are v6-only: the device re-derives the elided
     // fields via the pczt crate's `resolve_fields` and the v6 sighash excludes
     // anchors, while the legacy v1 (v5) serialization requires the fields on
@@ -384,6 +409,7 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
         note_version: orchard::note::NoteVersion,
         for_batch: bool,
         elide: bool,
+        dummy_spend_action_indices: &[usize],
     ) {
         r.redact_actions(|mut ar| {
             ar.clear_spend_witness();
@@ -402,9 +428,15 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
                 // the wire note fields actually decrypt; undecryptable
                 // (randomized) ciphertexts stay on the wire.
                 ar.replace_enc_ciphertext_with_decrypted_memo_plaintext(note_version);
+                // Memo recovery above needs cmx; the device recomputes it from
+                // the retained output note fields and spend nullifier.
+                ar.clear_cmx();
             }
         });
         if elide {
+            for index in dummy_spend_action_indices {
+                r.redact_action(*index, |mut ar| ar.clear_spend_alpha());
+            }
             // Never read by the device; the wallet's stored copy retains the
             // real bsk and anchor for proof creation and extraction.
             r.clear_bsk();
@@ -415,13 +447,25 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     let mut redactor = Redactor::new(pczt)
         .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
         .redact_orchard_with(|mut r| {
-            redact_bundle(&mut r, orchard::note::NoteVersion::V2, for_batch, elide);
+            redact_bundle(
+                &mut r,
+                orchard::note::NoteVersion::V2,
+                for_batch,
+                elide,
+                orchard_dummy_spends,
+            );
         });
 
     #[cfg(zcash_unstable = "nu6.3")]
     {
         redactor = redactor.redact_ironwood_with(|mut r| {
-            redact_bundle(&mut r, orchard::note::NoteVersion::V3, for_batch, elide);
+            redact_bundle(
+                &mut r,
+                orchard::note::NoteVersion::V3,
+                for_batch,
+                elide,
+                ironwood_dummy_spends,
+            );
         });
     }
 
@@ -443,10 +487,13 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
 /// Shared body of [`redact_pczt_for_signer`] and [`redact_pczt_for_batch_signer`]:
 /// the standard signer redaction, plus the batch-only clears and compact-format
 /// elisions when `for_batch` is set.
-fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Vec<u8>, String> {
+fn redact_pczt_for_signer_inner(
+    pczt_bytes: &[u8],
+    batch_dummy_spends: Option<BatchDummySpendActionIndices<'_>>,
+) -> Result<Vec<u8>, String> {
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
 
-    let redacted = apply_signer_redaction(pczt, for_batch);
+    let redacted = apply_signer_redaction(pczt, batch_dummy_spends);
 
     if *redacted.global().tx_version() == 5 {
         pczt::v1::Pczt::try_from(redacted)
@@ -1384,21 +1431,44 @@ mod tests {
         }
 
         // The batch redaction of a migration-shaped PCZT: the upstream
-        // compact-PCZT format. Every action sheds `cv_net`, both
+        // compact-PCZT format. Every action sheds `cv_net` and `cmx`, both
         // wallet-decryptable output ciphertexts (the Ironwood migration output
         // AND the deterministic zero-value Orchard output) travel as stripped
-        // memo plaintext, and the v6 bundle anchors and `bsk`s are cleared.
-        // The sighash-committed action fields (`nullifier`, `rk`, `cmx`,
-        // `ephemeral_key`) stay on the wire. The wallet retains the unredacted
-        // PCZT for proof/extraction.
+        // memo plaintext, true dummy spends shed `alpha`, and the v6 bundle
+        // anchors and `bsk`s are cleared. The wallet retains the unredacted PCZT
+        // for proof/extraction.
         #[test]
         fn batch_redaction_elides_verified_fields_and_signs_identically() {
             use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
             use orchard::primitives::redpallas::{Signature, SpendAuth, VerificationKey};
+            use pczt::roles::redactor::Redactor;
+
+            fn finalized_dummy_spend_action_indices(bundle: &pczt::orchard::Bundle) -> Vec<usize> {
+                bundle
+                    .actions()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, action)| {
+                        action.spend().spend_auth_sig().is_some().then_some(index)
+                    })
+                    .collect()
+            }
 
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
+            let base = pczt::Pczt::parse(&base_bytes).unwrap();
+            let orchard_dummy_spend_action_indices =
+                finalized_dummy_spend_action_indices(base.orchard());
+            let ironwood_dummy_spend_action_indices =
+                finalized_dummy_spend_action_indices(base.ironwood());
+            assert_eq!(orchard_dummy_spend_action_indices.len(), 1);
+            assert_eq!(ironwood_dummy_spend_action_indices.len(), 1);
 
-            let batch = redact_pczt_for_batch_signer(&base_bytes).unwrap();
+            let batch = redact_pczt_for_batch_signer(
+                &base_bytes,
+                &orchard_dummy_spend_action_indices,
+                &ironwood_dummy_spend_action_indices,
+            )
+            .unwrap();
             // The point of the compact format: a migration child small enough
             // for a short device QR carousel. The retained bytes are dominated
             // by the still-required `out_ciphertext`s and the
@@ -1409,7 +1479,6 @@ mod tests {
                 batch.len(),
             );
 
-            let base = pczt::Pczt::parse(&base_bytes).unwrap();
             let parsed = pczt::Pczt::parse(&batch).unwrap();
             assert_eq!(
                 clear_batch_output_metadata(&batch),
@@ -1424,10 +1493,9 @@ mod tests {
             assert_eq!(parsed.orchard().actions().len(), 2);
             assert_eq!(parsed.ironwood().actions().len(), 1);
 
-            // Both pools: `cv_net` elided, the ciphertext rides as memo
-            // plaintext (proving BOTH outputs elide), and the
-            // sighash-committed fields stay on the wire, byte-identical to the
-            // base.
+            // Both pools: `cv_net` and `cmx` are elided, while the ciphertext
+            // rides as memo plaintext (proving BOTH outputs elide). The other
+            // sighash-committed fields stay byte-identical to the base.
             for (action, base_action) in parsed
                 .orchard()
                 .actions()
@@ -1449,12 +1517,41 @@ mod tests {
                 ));
                 assert_eq!(action.spend().nullifier(), base_action.spend().nullifier());
                 assert_eq!(action.spend().rk(), base_action.spend().rk());
-                assert_eq!(action.output().cmx(), base_action.output().cmx());
+                assert!(action.output().cmx().is_none());
                 assert_eq!(
                     action.output().ephemeral_key(),
                     base_action.output().ephemeral_key()
                 );
             }
+
+            let clear_alphas =
+                |pczt: pczt::Pczt, orchard_indices: &[usize], ironwood_indices: &[usize]| {
+                    let mut redactor = Redactor::new(pczt).redact_orchard_with(|mut r| {
+                        for index in orchard_indices {
+                            r.redact_action(*index, |mut ar| ar.clear_spend_alpha());
+                        }
+                    });
+                    redactor = redactor.redact_ironwood_with(|mut r| {
+                        for index in ironwood_indices {
+                            r.redact_action(*index, |mut ar| ar.clear_spend_alpha());
+                        }
+                    });
+                    redactor.finish().serialize().unwrap()
+                };
+            assert_eq!(
+                clear_alphas(
+                    parsed.clone(),
+                    &orchard_dummy_spend_action_indices,
+                    &ironwood_dummy_spend_action_indices,
+                ),
+                batch,
+                "dummy spend alphas must already be absent",
+            );
+            assert_ne!(
+                clear_alphas(parsed.clone(), &[spend_index], &[]),
+                batch,
+                "the real spend must retain alpha for the device signer",
+            );
 
             // The device path: `resolve_fields` recomputes `cv_net` from the
             // wire values and `rcv` and re-encrypts each memo plaintext from
@@ -1480,6 +1577,7 @@ mod tests {
                 )
             {
                 assert_eq!(reb.cv_net(), orig.cv_net());
+                assert_eq!(reb.output().cmx(), orig.output().cmx());
                 assert_eq!(
                     reb.output().enc_ciphertext(),
                     orig.output().enc_ciphertext()

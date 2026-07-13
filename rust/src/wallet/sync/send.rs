@@ -2158,6 +2158,7 @@ struct PredictedMigrationNote {
 
 struct BuiltPczt {
     bytes: Vec<u8>,
+    redacted_bytes: Vec<u8>,
     orchard_spend_action_indices: Vec<usize>,
 }
 
@@ -2768,6 +2769,15 @@ fn signed_migration_messages_by_id(
     Ok(by_id)
 }
 
+/// Captures dummy spend action indices before the IO finalizer consumes `dummy_sk`.
+fn dummy_spend_action_indices(bundle: Option<&orchard::pczt::Bundle>) -> Vec<usize> {
+    bundle
+        .into_iter()
+        .flat_map(|bundle| bundle.actions().iter().enumerate())
+        .filter_map(|(index, action)| action.spend().dummy_sk().is_some().then_some(index))
+        .collect()
+}
+
 fn pczt_from_build_result(
     build_result: zcash_primitives::transaction::builder::PcztResult<WalletNetwork>,
     network: WalletNetwork,
@@ -2801,6 +2811,10 @@ fn pczt_from_build_result(
         .iter()
         .copied()
         .collect::<HashSet<_>>();
+    let orchard_dummy_spend_action_indices =
+        dummy_spend_action_indices(build_result.pczt_parts.orchard.as_ref());
+    let ironwood_dummy_spend_action_indices =
+        dummy_spend_action_indices(build_result.pczt_parts.ironwood.as_ref());
     let created = Creator::build_from_parts(build_result.pczt_parts).ok_or("Build PCZT failed")?;
     let io_finalized = IoFinalizer::new(created)
         .finalize_io()
@@ -2835,10 +2849,18 @@ fn pczt_from_build_result(
         .map_err(|e| format!("Update Orchard PCZT derivations: {e:?}"))?
         .finish();
 
+    let bytes = pczt
+        .serialize()
+        .map_err(|e| format!("Serialize built PCZT: {e:?}"))?;
+    let redacted_bytes = super::pczt::redact_pczt_for_batch_signer(
+        &bytes,
+        &orchard_dummy_spend_action_indices,
+        &ironwood_dummy_spend_action_indices,
+    )?;
+
     Ok(BuiltPczt {
-        bytes: pczt
-            .serialize()
-            .map_err(|e| format!("Serialize built PCZT: {e:?}"))?,
+        bytes,
+        redacted_bytes,
         orchard_spend_action_indices,
     })
 }
@@ -3034,11 +3056,9 @@ fn create_orchard_denomination_split_pczt(
         orchard_inputs.len(),
         split_outputs.len(),
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
-
     Ok(Some(CreatedDenominationSplitPczt {
         base_pczt: built_pczt.bytes,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         fee_zatoshi: u64::from(prep_fee),
         migrated_outputs,
         predicted_notes,
@@ -3379,7 +3399,6 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3387,7 +3406,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
@@ -3720,7 +3739,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built_pczt.bytes)?;
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
@@ -3728,7 +3746,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
-        redacted_pczt,
+        redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
@@ -6632,7 +6650,9 @@ mod tests {
 
         let standard = crate::wallet::sync::pczt::redact_pczt_for_signer(&request_bytes).unwrap();
         let batch =
-            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes).unwrap();
+            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes, &[], &[])
+                .unwrap();
+        assert_eq!(batch, built_pczt.redacted_bytes);
 
         // The batch redaction must not send any request-time spend_auth_sig (only
         // wallet-side signatures exist before the device signs).
@@ -6645,6 +6665,19 @@ mod tests {
                 .all(|action| action.spend().spend_auth_sig().is_none()),
             "batch redaction must clear every spend_auth_sig",
         );
+        for index in 0..batch_parsed.orchard().actions().len() {
+            let without_alpha = Redactor::new(batch_parsed.clone())
+                .redact_orchard_with(|mut r| {
+                    r.redact_action(index, |mut ar| ar.clear_spend_alpha());
+                })
+                .finish()
+                .serialize()
+                .unwrap();
+            assert_ne!(
+                without_alpha, batch,
+                "every wallet-controlled split spend must retain alpha",
+            );
+        }
 
         // The batch redaction additionally applies the compact-format elisions
         // (cv_net, decryptable ciphertexts as memo plaintext, bundle bsk and
@@ -6664,6 +6697,7 @@ mod tests {
         // encrypted on the wire.
         for action in batch_parsed.orchard().actions() {
             assert!(action.cv_net().is_none());
+            assert!(action.output().cmx().is_none());
             if matches!(
                 action.output().enc_ciphertext(),
                 pczt::orchard::EncCiphertext::Encrypted(_)
@@ -6692,11 +6726,16 @@ mod tests {
             .zip(request.orchard().actions().iter())
         {
             assert_eq!(reb.cv_net(), orig.cv_net());
+            assert_eq!(reb.output().cmx(), orig.output().cmx());
             assert_eq!(
                 reb.output().enc_ciphertext(),
                 orig.output().enc_ciphertext()
             );
         }
+        assert_eq!(
+            Signer::new(refilled).unwrap().shielded_sighash(),
+            Signer::new(request).unwrap().shielded_sighash(),
+        );
 
         // Guard that the fvk clear is not vacuous: re-clearing the fvk on the batch
         // redaction changes nothing (it was already cleared), while the standard
