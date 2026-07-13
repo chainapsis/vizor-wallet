@@ -717,10 +717,10 @@ async fn canonical_chain_state_at(
 fn clear_unmined_note_tree_metadata(db_path: &str) -> Result<usize, SyncError> {
     with_wallet_db_write_lock("sync_engine.clear_unmined_note_tree_metadata", || {
         let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
-            .map_err(|e| SyncError::db(format!("open wallet DB for orphan-note cleanup: {e}")))?;
+            .map_err(|e| orphan_note_cleanup_error("open wallet DB", e))?;
         let tx = conn
             .transaction()
-            .map_err(|e| SyncError::db(format!("begin orphan-note cleanup: {e}")))?;
+            .map_err(|e| orphan_note_cleanup_error("begin transaction", e))?;
         let mut cleared = 0usize;
         for table in ["sapling_received_notes", "orchard_received_notes"] {
             cleared += tx
@@ -737,12 +737,25 @@ fn clear_unmined_note_tree_metadata(db_path: &str) -> Result<usize, SyncError> {
                     ),
                     [],
                 )
-                .map_err(|e| SyncError::db(format!("clear orphaned metadata in {table}: {e}")))?;
+                .map_err(|e| orphan_note_cleanup_error(&format!("clear metadata in {table}"), e))?;
         }
         tx.commit()
-            .map_err(|e| SyncError::db(format!("commit orphan-note cleanup: {e}")))?;
+            .map_err(|e| orphan_note_cleanup_error("commit transaction", e))?;
         Ok(cleared)
     })
+}
+
+fn orphan_note_cleanup_error(context: &str, error: impl std::fmt::Display) -> SyncError {
+    let message = format!("{context} for orphan-note cleanup: {error}");
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("database is locked")
+        || lower.contains("database table is locked")
+        || lower.contains("database is busy")
+    {
+        SyncError::other(message)
+    } else {
+        SyncError::db(message)
+    }
 }
 
 async fn rewind_for_canonical_tip_mismatch(
@@ -978,6 +991,7 @@ fn queue_witness_repairs_if_needed(
 async fn repair_anchor_root_mismatch_if_needed(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_path: &str,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
 ) -> Result<Option<u64>, SyncError> {
@@ -1094,6 +1108,15 @@ async fn repair_anchor_root_mismatch_if_needed(
                 continue;
             }
         };
+
+        let cleared_notes = clear_unmined_note_tree_metadata(db_path)?;
+        if cleared_notes > 0 {
+            log::info!(
+                "[{}] sync: cleared orphan-branch tree metadata from {} unmined note(s) after anchor repair",
+                elapsed(),
+                cleared_notes,
+            );
+        }
 
         let pending_blocks = pending_scan_blocks(&post_rewind_ranges);
         let first_pending =
@@ -1887,6 +1910,7 @@ async fn run_sync_impl(
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     &mut client,
                     &mut db,
+                    db_data_path,
                     current_tip_height,
                     &mut anchor_root_repair_passes_this_run,
                 )
@@ -2627,6 +2651,108 @@ mod tests {
             Err(SyncError::Continuity { at_height: 100, .. })
         ));
         assert_eq!(passes, MAX_CANONICAL_REPAIR_PASSES_PER_RUN);
+    }
+
+    #[test]
+    fn orphan_note_cleanup_clears_only_unmined_chain_metadata() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY,
+                 mined_height INTEGER
+             );
+             CREATE TABLE sapling_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 commitment_tree_position INTEGER,
+                 nf BLOB
+             );
+             CREATE TABLE orchard_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 commitment_tree_position INTEGER,
+                 nf BLOB
+             );
+             INSERT INTO transactions (id_tx, mined_height) VALUES
+                 (1, NULL),
+                 (2, 100),
+                 (3, NULL);
+             INSERT INTO sapling_received_notes
+                 (transaction_id, commitment_tree_position, nf) VALUES
+                 (1, 11, X'01'),
+                 (2, 12, X'02'),
+                 (3, NULL, NULL);
+             INSERT INTO orchard_received_notes
+                 (transaction_id, commitment_tree_position, nf) VALUES
+                 (1, 21, X'03'),
+                 (2, 22, X'04'),
+                 (3, NULL, NULL);",
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(clear_unmined_note_tree_metadata(db_path).unwrap(), 2);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        for table in ["sapling_received_notes", "orchard_received_notes"] {
+            let unmined_metadata: (Option<i64>, Option<Vec<u8>>) = conn
+                .query_row(
+                    &format!(
+                        "SELECT commitment_tree_position, nf
+                         FROM {table}
+                         WHERE transaction_id = 1"
+                    ),
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(unmined_metadata, (None, None));
+
+            let mined_metadata: (Option<i64>, Option<Vec<u8>>) = conn
+                .query_row(
+                    &format!(
+                        "SELECT commitment_tree_position, nf
+                         FROM {table}
+                         WHERE transaction_id = 2"
+                    ),
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert!(mined_metadata.0.is_some());
+            assert!(mined_metadata.1.is_some());
+
+            let orphan_witness_candidates: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*)
+                         FROM {table} rn
+                         JOIN transactions tx ON tx.id_tx = rn.transaction_id
+                         WHERE tx.mined_height IS NULL
+                         AND rn.commitment_tree_position IS NOT NULL
+                         AND rn.nf IS NOT NULL"
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(orphan_witness_candidates, 0);
+        }
+        drop(conn);
+
+        assert_eq!(clear_unmined_note_tree_metadata(db_path).unwrap(), 0);
+    }
+
+    #[test]
+    fn orphan_note_cleanup_lock_errors_are_retryable() {
+        assert!(matches!(
+            orphan_note_cleanup_error("begin transaction", "database is locked"),
+            SyncError::Other(_),
+        ));
+        assert!(matches!(
+            orphan_note_cleanup_error("begin transaction", "database is corrupt"),
+            SyncError::Db(_),
+        ));
     }
 
     #[test]
