@@ -27,6 +27,51 @@ import '../../fakes/fake_sync_notifier.dart';
 const _recipient = '0x1111111111111111111111111111111111111111';
 
 void main() {
+  testWidgets(
+    'payment review uses the completed spendable snapshot during sync',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final router = GoRouter(
+        initialLocation: '/pay/review',
+        routes: [
+          GoRoute(
+            path: '/pay/review',
+            builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        _app(
+          router,
+          quoteLifetime: const Duration(minutes: 5),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            spendableBalance: BigInt.zero,
+            displaySpendableBalance: BigInt.from(100000000),
+            displaySpendableFreshness:
+                SpendableBalanceFreshness.lastCompletedSync,
+            totalBalance: BigInt.from(100000000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final confirm = find.byKey(
+        const ValueKey('mobile_pay_review_confirm_button'),
+      );
+      expect(confirm, findsOneWidget);
+      expect(tester.widget<AppButton>(confirm).onPressed, isNotNull);
+      expect(find.text('Not enough ZEC'), findsNothing);
+    },
+  );
+
   testWidgets('payment review expires when its countdown reaches zero', (
     tester,
   ) async {
@@ -278,6 +323,7 @@ Widget _app(
   GoRouter router, {
   required Duration quoteLifetime,
   SwapNotifier Function()? swapNotifier,
+  SyncState? syncState,
 }) {
   return ProviderScope(
     overrides: [
@@ -290,12 +336,13 @@ Widget _app(
       ),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
-          SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            spendableBalance: BigInt.from(10000000000),
-            totalBalance: BigInt.from(10000000000),
-          ),
+          syncState ??
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                spendableBalance: BigInt.from(10000000000),
+                totalBalance: BigInt.from(10000000000),
+              ),
         ),
       ),
     ],

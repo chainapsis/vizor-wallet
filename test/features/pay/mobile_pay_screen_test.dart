@@ -51,6 +51,7 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 Widget _app({
   bool preservePreparedComposer = false,
   bool usePreparedComposer = false,
+  SyncState? syncState,
 }) {
   return ProviderScope(
     overrides: [
@@ -59,13 +60,14 @@ Widget _app({
         swapStateProvider.overrideWith(_PreparedPayNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
-          SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            orchardBalance: BigInt.from(14_312_000_000),
-            spendableBalance: BigInt.from(14_312_000_000),
-            totalBalance: BigInt.from(14_312_000_000),
-          ),
+          syncState ??
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                orchardBalance: BigInt.from(14_312_000_000),
+                spendableBalance: BigInt.from(14_312_000_000),
+                totalBalance: BigInt.from(14_312_000_000),
+              ),
         ),
       ),
     ],
@@ -212,6 +214,43 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  testWidgets(
+    'mobile pay amount uses the completed spendable snapshot during sync',
+    (tester) async {
+      await _setMobileViewport(tester, const Size(393, 852));
+      await tester.pumpWidget(
+        _app(
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            spendableBalance: BigInt.zero,
+            displaySpendableBalance: BigInt.from(100000000),
+            displaySpendableFreshness:
+                SpendableBalanceFreshness.lastCompletedSync,
+            totalBalance: BigInt.from(100000000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '10',
+      );
+      await tester.pump();
+
+      expect(find.text('Not enough ZEC'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_pay_recipient_step')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('mobile pay follows the amount to recipient flow', (
     tester,
   ) async {

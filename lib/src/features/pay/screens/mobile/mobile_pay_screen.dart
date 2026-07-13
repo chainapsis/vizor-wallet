@@ -322,7 +322,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     state: swapState,
                     controller: _amountController,
                     focusNode: _amountFocusNode,
-                    zecAvailableZatoshi: sync.spendableBalance,
+                    zecAvailableZatoshi: sync.displaySpendableBalance,
                     onAmountChanged: swapNotifier.updateReceiveAmount,
                     onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
                     onToggleFiatInputMode: () => swapNotifier
