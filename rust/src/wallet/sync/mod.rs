@@ -58,18 +58,13 @@ pub(crate) use send::{
     KeystoneSignedMigrationMessage,
 };
 pub(crate) use send::{
-    create_reserved_pczt_batch, create_shield_transparent_pczt, get_shield_transparent_status,
-    shield_transparent_balance,
+    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::resubmit_pending_transactions;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;
-#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
-pub(crate) use send::ReservedPcztBatchItem;
-#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
-pub(crate) use send::ReservedPcztBatchRequest;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::SendMaxEstimateResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface

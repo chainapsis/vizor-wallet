@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -15,7 +14,6 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../migration_copy.dart';
 import '../models/migration_batch.dart';
 import '../models/migration_timeline_model.dart';
-import 'migration_expected_transfer_count_provider.dart';
 import 'orchard_migration_status_provider.dart';
 
 class MigrationRunState {
@@ -60,10 +58,6 @@ bool migrationRunAdvanced(rust_sync.IronwoodMigrationResult result) {
   };
 }
 
-int? _broadcastWindowSecondsFromStatus(rust_sync.MigrationStatus? status) {
-  return status?.broadcastWindowSeconds.toInt();
-}
-
 class MigrationRunController extends Notifier<MigrationRunState> {
   Timer? _progressTimer;
   Timer? _settleTimer;
@@ -106,17 +100,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
       }
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Allow the Ironwood mainnet-masquerade endpoint too: it runs as networkName=main
-      // (so isLocalIronwoodTestnetEndpoint is true under kZcashIronwoodMasquerade) but is a
-      // private Ironwood test chain, not real mainnet.
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        throw MigrationBatchError(
-          'Select a testnet endpoint before migrating.',
-        );
-      }
-      final broadcastWindowSeconds = _currentBroadcastWindowSeconds();
-
       final dbPath = await getWalletDbPath();
       final migrationNetworkName = endpoint.walletNetworkName;
       final security = ref.read(appSecurityProvider.notifier);
@@ -139,16 +122,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
         'broadcasted=${result.broadcastedCount}/${result.totalCount} '
         'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
       );
-
-      final firstTxid = _firstTxid(result.txids);
-      if (result.totalCount > 0 && firstTxid != null) {
-        _setExpectedTransferCount(
-          accountUuid: accountUuid,
-          count: result.totalCount,
-          firstTxid: firstTxid,
-          broadcastWindowSeconds: broadcastWindowSeconds,
-        );
-      }
 
       final advanced = migrationRunAdvanced(result);
       if (advanced) {
@@ -206,29 +179,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
         ref.invalidate(activeOrchardMigrationStatusProvider);
       }
     });
-  }
-
-  int? _currentBroadcastWindowSeconds() {
-    return _broadcastWindowSecondsFromStatus(
-      ref.read(activeOrchardMigrationStatusProvider).value,
-    );
-  }
-
-  void _setExpectedTransferCount({
-    required String accountUuid,
-    required int count,
-    required String firstTxid,
-    required int? broadcastWindowSeconds,
-  }) {
-    if (broadcastWindowSeconds == null) return;
-    ref
-        .read(migrationExpectedTransferCountProvider.notifier)
-        .setCount(
-          accountUuid,
-          count,
-          firstTxid: firstTxid,
-          broadcastWindowSeconds: broadcastWindowSeconds,
-        );
   }
 
   Future<rust_sync.IronwoodMigrationResult> _runMigrationWithPrepareRetry({
@@ -352,13 +302,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
       if (account == null || accountUuid == null) return;
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Masquerade endpoint counts as an Ironwood test chain (see the gate in runBatch).
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        return;
-      }
-      final broadcastWindowSeconds = _currentBroadcastWindowSeconds();
-
       final dbPath = await getWalletDbPath();
       final security = ref.read(appSecurityProvider.notifier);
       final password = security.requireSessionPasswordForNativeSecretUse();
@@ -392,16 +335,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
         'MigrationRunController: due broadcast status=${result.status} '
         'broadcasted=${result.broadcastedCount}/${result.totalCount}',
       );
-
-      final firstTxid = _firstTxid(result.txids);
-      if (result.totalCount > 0 && firstTxid != null) {
-        _setExpectedTransferCount(
-          accountUuid: accountUuid,
-          count: result.totalCount,
-          firstTxid: firstTxid,
-          broadcastWindowSeconds: broadcastWindowSeconds,
-        );
-      }
 
       await _refreshIfAccountStillActive(accountUuid);
     } catch (e, st) {
@@ -460,14 +393,6 @@ class MigrationRunController extends Notifier<MigrationRunState> {
         .refreshAfterSend(
           transactionHistoryLimit: migrationProgressTransactionHistoryLimit,
         );
-  }
-
-  String? _firstTxid(String txids) {
-    for (final txid in txids.split(',')) {
-      final trimmed = txid.trim();
-      if (trimmed.isNotEmpty) return trimmed.toLowerCase();
-    }
-    return null;
   }
 
   String _friendlyError(Object error) {

@@ -7,7 +7,6 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../keystone/legacy_v5_pczt_mode.dart';
 import '../models/swap_amount_input_mapper.dart';
 import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
@@ -527,19 +526,11 @@ class SwapNotifier extends Notifier<SwapState> {
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
-    final legacyV5Pczt = shouldAllowLegacyV5PcztFallbackForAccount(
-      accountUuid: accountUuid,
-      isHardwareAccount: ref.read(accountProvider.notifier).isHardwareAccount,
-    );
     if (quote.direction.sendsZec) {
       try {
         await ref
             .read(swapDepositSenderProvider)
-            .estimateZecDepositFee(
-              accountUuid: accountUuid,
-              quote: quote,
-              legacyV5Pczt: legacyV5Pczt,
-            );
+            .estimateZecDepositFee(accountUuid: accountUuid, quote: quote);
       } catch (e) {
         log(
           'Swap: live ZEC deposit preflight failed '

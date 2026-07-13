@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -26,7 +25,6 @@ import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../migration_copy.dart';
 import '../models/migration_timeline_model.dart';
 import '../models/migration_view_state.dart';
-import '../providers/migration_expected_transfer_count_provider.dart';
 import '../providers/migration_run_controller.dart';
 import '../providers/orchard_migration_status_provider.dart';
 import 'migration_scan_screen.dart' show MigrationSignedQrResult;
@@ -96,27 +94,12 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       activeOrchardMigrationStatusProvider,
     );
     final migrationStatus = migrationStatusAsync.value;
-    final expectedTransferCount = ref.watch(
-      migrationExpectedTransferCountProvider,
-    );
-    final scopedExpectedTransferCount = accountUuid == null
-        ? null
-        : expectedTransferCount[accountUuid];
-    final now = DateTime.now();
     final hasUnconfirmedMigration = migrationTransactions.any(
       _isPendingMigration,
     );
-    final expectedTransferCountIsFresh =
-        scopedExpectedTransferCount != null &&
-        (!scopedExpectedTransferCount.isExpired(now) ||
-            hasUnconfirmedMigration);
-    final freshExpectedTransferCount = expectedTransferCountIsFresh
-        ? scopedExpectedTransferCount
-        : null;
-    final scopedExpectedCount = freshExpectedTransferCount?.count;
+    final scopedExpectedCount = migrationStatus?.totalCount;
     final currentRunMigrationTransactions = _currentRunMigrationTransactions(
       migrationTransactions,
-      freshExpectedTransferCount,
       migrationStatus?.scheduledBroadcasts ?? const [],
     );
     final currentRunCompletedCount = currentRunMigrationTransactions
@@ -179,10 +162,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
             isHardware &&
             timelineSendIsAwaitingScan(viewState, migrationStatus),
       );
-      final effectiveExpectedCount =
-          migrationStatus != null && migrationStatus.totalCount > 0
-          ? migrationStatus.totalCount
-          : (scopedExpectedCount ?? 0);
+      final effectiveExpectedCount = migrationStatus?.totalCount ?? 0;
       // A recoverable failure before any send is a split failure → retry stage 1;
       // a failure after sends started → retry stage 2.
       final retryIntent = timeline.split == MigrationNodeStatus.error
@@ -215,12 +195,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     );
     _syncSubmissionProgressTicker(
       _shouldTickSubmissionProgress(migrationStatus),
-    );
-    _clearExpiredExpectedTransferCount(
-      accountUuid: accountUuid,
-      expectedTransferCount: scopedExpectedTransferCount,
-      hasPendingMigration:
-          hasUnconfirmedMigration || (viewState?.hasActiveRun ?? false),
     );
     _syncKeystoneSessionContext(
       accountUuid: accountUuid,
@@ -320,8 +294,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
   }
 
   bool get _keystoneCanDismiss =>
-      _keystonePhase != KeystoneSigningModalPhase.ready &&
-      !_keystoneCompleting;
+      _keystonePhase != KeystoneSigningModalPhase.ready && !_keystoneCompleting;
 
   String? get _keystoneRequestId => _keystoneSession?.requestId;
 
@@ -458,14 +431,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       }
 
       final endpoint = ref.read(rpcEndpointProvider);
-      // Allow the Ironwood mainnet-masquerade endpoint too (networkName=main but a private
-      // Ironwood test chain; isLocalIronwoodTestnetEndpoint is true under kZcashIronwoodMasquerade).
-      if (endpoint.network != ZcashNetwork.testnet &&
-          !isLocalIronwoodTestnetEndpoint(endpoint)) {
-        throw const _KeystoneMigrationError(
-          'Select a testnet endpoint before migrating.',
-        );
-      }
       final networkName = endpoint.walletNetworkName;
       final lightwalletdUrl = endpoint.normalizedLightwalletdUrl;
       if (!_keystoneSessionIdentityIsCurrent(session)) {
@@ -873,23 +838,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
       'fee=${result.feeZatoshi} migrated=${result.migratedZatoshi}',
     );
 
-    final firstTxid = _firstTxid(result.txids);
-    final broadcastWindowSeconds = _migrationBroadcastWindowSeconds(
-      ref.read(activeOrchardMigrationStatusProvider).value,
-    );
-    if (result.totalCount > 0 &&
-        firstTxid != null &&
-        broadcastWindowSeconds != null) {
-      ref
-          .read(migrationExpectedTransferCountProvider.notifier)
-          .setCount(
-            accountUuid,
-            result.totalCount,
-            firstTxid: firstTxid,
-            broadcastWindowSeconds: broadcastWindowSeconds,
-          );
-    }
-
     final advanced = migrationRunAdvanced(result);
     // Keystone completion reaches this point only after Rust has staged the run.
     // A pending broadcast result should leave the modal and let the retry tick continue.
@@ -1115,14 +1063,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     return signedMessages;
   }
 
-  String? _firstTxid(String txids) {
-    for (final txid in txids.split(',')) {
-      final trimmed = txid.trim();
-      if (trimmed.isNotEmpty) return trimmed.toLowerCase();
-    }
-    return null;
-  }
-
   int? _migrationBroadcastWindowSeconds(rust_sync.MigrationStatus? status) {
     return status?.broadcastWindowSeconds.toInt();
   }
@@ -1216,26 +1156,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     } catch (e) {
       log('MigrationScreen: migration progress refresh failed: $e');
     }
-  }
-
-  void _clearExpiredExpectedTransferCount({
-    required String? accountUuid,
-    required MigrationExpectedTransferCount? expectedTransferCount,
-    required bool hasPendingMigration,
-  }) {
-    if (accountUuid == null ||
-        expectedTransferCount == null ||
-        hasPendingMigration ||
-        !expectedTransferCount.isExpired(DateTime.now())) {
-      return;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref
-          .read(migrationExpectedTransferCountProvider.notifier)
-          .clearCount(accountUuid);
-    });
   }
 }
 
@@ -1443,7 +1363,6 @@ List<rust_sync.TransactionInfo> _migrationTransactions(
 
 List<rust_sync.TransactionInfo> _currentRunMigrationTransactions(
   List<rust_sync.TransactionInfo> migrationTransactions,
-  MigrationExpectedTransferCount? expectedTransferCount,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts,
 ) {
   if (scheduledBroadcasts.isNotEmpty) {
@@ -1455,17 +1374,7 @@ List<rust_sync.TransactionInfo> _currentRunMigrationTransactions(
         )
         .toList(growable: false);
   }
-
-  final firstTxid = expectedTransferCount?.firstTxid.toLowerCase();
-  if (firstTxid == null) return migrationTransactions;
-
-  final firstTxIndex = migrationFirstTransactionIndex(
-    transactionTxids: migrationTransactions.map((tx) => tx.txidHex),
-    firstTxid: firstTxid,
-  );
-  if (firstTxIndex < 0) return const [];
-
-  return migrationTransactions.take(firstTxIndex + 1).toList(growable: false);
+  return migrationTransactions;
 }
 
 bool _isPendingMigration(rust_sync.TransactionInfo tx) =>

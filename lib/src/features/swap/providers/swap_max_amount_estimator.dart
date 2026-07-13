@@ -2,12 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../keystone/legacy_v5_pczt_mode.dart';
 
 final swapMaxAmountEstimatorProvider = Provider<SwapMaxAmountEstimator>((ref) {
   return RustSwapMaxAmountEstimator(ref);
@@ -33,15 +31,10 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
     final estimateAddress = await _ref
         .read(receiveAddressServiceProvider)
         .loadTransparentReceiveAddress(accountUuid: accountUuid);
-    final legacyV5Pczt = shouldAllowLegacyV5PcztFallbackForAccount(
-      accountUuid: accountUuid,
-      isHardwareAccount: _ref.read(accountProvider.notifier).isHardwareAccount,
-    );
-
     log(
       'SwapMaxAmount: estimate begin account=$accountUuid '
       'estimateAddress=${_shortSwapValue(estimateAddress)} '
-      'spendable=$spendableZatoshi legacyV5Pczt=$legacyV5Pczt',
+      'spendable=$spendableZatoshi',
     );
     final estimate = await rust_sync.estimateSendMax(
       dbPath: dbPath,
@@ -49,7 +42,6 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
       accountUuid: accountUuid,
       toAddress: estimateAddress,
       memo: null,
-      legacyV5Pczt: legacyV5Pczt,
     );
     final amountZatoshi = estimate.amountZatoshi;
     log('SwapMaxAmount: estimate complete amount=$amountZatoshi');

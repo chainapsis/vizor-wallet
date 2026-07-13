@@ -606,7 +606,8 @@ async fn repair_anchor_root_mismatch_if_needed(
     let local_orchard = db
         .with_orchard_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
         .map_err(|e| SyncError::db(format!("orchard root at {anchor_height}: {e}")))?;
-    let local_ironwood = if lwd::ironwood_sync_enabled(network) {
+    let ironwood_enabled = lwd::ironwood_sync_enabled(network, anchor_height);
+    let local_ironwood = if ironwood_enabled {
         Some(
             db.with_ironwood_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
                 .map_err(|e| SyncError::db(format!("ironwood root at {anchor_height}: {e}")))?,
@@ -628,8 +629,8 @@ async fn repair_anchor_root_mismatch_if_needed(
 
     let canonical_sapling = anchor_chain_state.final_sapling_tree().root();
     let canonical_orchard = anchor_chain_state.final_orchard_tree().root();
-    let canonical_ironwood = lwd::ironwood_sync_enabled(network)
-        .then(|| anchor_chain_state.final_ironwood_tree().root());
+    let canonical_ironwood =
+        ironwood_enabled.then(|| anchor_chain_state.final_ironwood_tree().root());
     let ironwood_roots_match = match (&local_ironwood, &canonical_ironwood) {
         // `with_ironwood_tree_mut` reports `None` when the backend tracks no
         // Ironwood tree; treat that like a missing root so repair kicks in.
@@ -1196,7 +1197,7 @@ async fn run_sync_impl(
     }
 
     // 3. Download subtree roots (incremental)
-    download_subtree_roots(&mut client, &mut db, network).await?;
+    download_subtree_roots(&mut client, &mut db, network, tip_height).await?;
 
     // Rescue pass (VZR-89): demote orphaned scan ranges left below the surviving
     // accounts' birthday by a pre-fix account deletion, so a wallet bricked by

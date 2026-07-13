@@ -200,24 +200,6 @@ void main() {
     expect(migrationTxidsMatch(historyOrder, broadcastOrder), isTrue);
   });
 
-  test('migration first transaction index accepts reversed txid order', () {
-    const firstBroadcastTxid =
-        '24fccdf39b619967ac5904743cb0f4a33b0b4d4b67b84dcee0f4ba0dc2887725';
-    const firstHistoryTxid =
-        '257788c20dbaf4e0ce4db8674b4d0b3ba3f4b03c740459ac6799619bf3cdfc24';
-
-    expect(
-      migrationFirstTransactionIndex(
-        transactionTxids: [
-          '617b461a369552df0cda9c1764dadb542e240acc433de17660fc20bc0328bf81',
-          firstHistoryTxid,
-        ],
-        firstTxid: firstBroadcastTxid,
-      ),
-      1,
-    );
-  });
-
   test('keep-open warning predicate covers progress-capable phases', () {
     const warnedStates = {
       MigrationViewState.preparingDenominations,
@@ -249,86 +231,10 @@ void main() {
     expect(migrationTxidsMatch(txid, unrelated), isFalse);
   });
 
-  test(
-    'software auto-advance fires only at ready_to_migrate, software, idle',
-    () {
-      rust_sync.MigrationStatus ready({int signedChildren = 0}) =>
-          rust_sync.MigrationStatus(
-            phase: 'ready_to_migrate',
-            targetValuesZatoshi: Uint64List(0),
-            preparedNoteCount: 0,
-            denominationSplitCompletedCount: 0,
-            denominationSplitTotalCount: 0,
-            denominationConfirmationCount: 3,
-            denominationConfirmationTarget: 3,
-            pendingTxCount: 0,
-            signedChildPcztCount: signedChildren,
-            pendingPrepTxCount: 0,
-            broadcastedTxCount: 0,
-            confirmedTxCount: 0,
-            totalCount: 4,
-            canAbandon: false,
-            signingBatchLimit: 8,
-            broadcastWindowSeconds: BigInt.from(180),
-            maxPreparedNotesPerRun: 64,
-            scheduledBroadcasts: const [],
-          );
-
-      expect(
-        migrationShouldAutoAdvanceSoftware(
-          status: ready(),
-          isHardware: false,
-          runInFlight: false,
-          alreadyAttempted: false,
-        ),
-        isTrue,
-      );
-      // hardware excluded
-      expect(
-        migrationShouldAutoAdvanceSoftware(
-          status: ready(),
-          isHardware: true,
-          runInFlight: false,
-          alreadyAttempted: false,
-        ),
-        isFalse,
-      );
-      // presigned children present -> not the software path
-      expect(
-        migrationShouldAutoAdvanceSoftware(
-          status: ready(signedChildren: 4),
-          isHardware: false,
-          runInFlight: false,
-          alreadyAttempted: false,
-        ),
-        isFalse,
-      );
-      // already attempted / in flight -> no re-fire
-      expect(
-        migrationShouldAutoAdvanceSoftware(
-          status: ready(),
-          isHardware: false,
-          runInFlight: true,
-          alreadyAttempted: false,
-        ),
-        isFalse,
-      );
-      expect(
-        migrationShouldAutoAdvanceSoftware(
-          status: ready(),
-          isHardware: false,
-          runInFlight: false,
-          alreadyAttempted: true,
-        ),
-        isFalse,
-      );
-    },
-  );
-
   test('keep-open warnings show only while migration needs attention', () {
     rust_sync.MigrationStatus status({
       required String phase,
-      int pendingPrepTxCount = 0,
+      int pendingSplitStageCount = 0,
       int signedChildPcztCount = 0,
       int broadcastedTxCount = 0,
       List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts =
@@ -343,7 +249,7 @@ void main() {
       denominationConfirmationTarget: 3,
       pendingTxCount: 0,
       signedChildPcztCount: signedChildPcztCount,
-      pendingPrepTxCount: pendingPrepTxCount,
+      pendingSplitStageCount: pendingSplitStageCount,
       broadcastedTxCount: broadcastedTxCount,
       confirmedTxCount: 0,
       totalCount: 4,
@@ -450,7 +356,7 @@ void main() {
           denominationConfirmationTarget: 3,
           pendingTxCount: 0,
           signedChildPcztCount: 0,
-          pendingPrepTxCount: 0,
+          pendingSplitStageCount: 0,
           broadcastedTxCount: broadcastedTxCount,
           confirmedTxCount: 0,
           totalCount: 30,
@@ -486,7 +392,7 @@ void main() {
             denominationConfirmationTarget: 3,
             pendingTxCount: 0,
             signedChildPcztCount: signedChildren,
-            pendingPrepTxCount: 0,
+            pendingSplitStageCount: 0,
             broadcastedTxCount: 0,
             confirmedTxCount: 0,
             totalCount: 40,

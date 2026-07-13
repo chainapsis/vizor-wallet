@@ -237,7 +237,6 @@ Future<BigInt> _estimateSendFee({
     accountUuid: accountUuid,
     toAddress: toAddress,
     amountZatoshi: amountZatoshi,
-    legacyV5Pczt: false,
   );
 }
 
@@ -305,7 +304,9 @@ Future<T> _zcashdRpc<T>(
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
-  if (tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text')))) {
+  if (tester.any(
+    find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+  )) {
     return;
   }
   await _tapWidget(tester, const ValueKey('sidebar_home_button'));
@@ -326,14 +327,19 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapWidget(tester, ValueKey('sidebar_account_popover_row_$accountUuid'));
+  await _tapWidget(
+    tester,
+    ValueKey('sidebar_account_popover_row_$accountUuid'),
+  );
   await _waitForHome(tester);
 }
 
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );

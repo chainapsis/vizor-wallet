@@ -324,16 +324,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_recoverable_commitment_bundle(dynamic raw);
 
   @protected
-  List<ReservedPcztBatchItem> dco_decode_list_reserved_pczt_batch_item(
-    dynamic raw,
-  );
-
-  @protected
-  List<ReservedPcztBatchRequest> dco_decode_list_reserved_pczt_batch_request(
-    dynamic raw,
-  );
-
-  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw);
 
   @protected
@@ -456,12 +446,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RecoverableCommitmentBundle dco_decode_recoverable_commitment_bundle(
     dynamic raw,
   );
-
-  @protected
-  ReservedPcztBatchItem dco_decode_reserved_pczt_batch_item(dynamic raw);
-
-  @protected
-  ReservedPcztBatchRequest dco_decode_reserved_pczt_batch_request(dynamic raw);
 
   @protected
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
@@ -997,16 +981,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_list_recoverable_commitment_bundle(SseDeserializer deserializer);
 
   @protected
-  List<ReservedPcztBatchItem> sse_decode_list_reserved_pczt_batch_item(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ReservedPcztBatchRequest> sse_decode_list_reserved_pczt_batch_request(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
     SseDeserializer deserializer,
   );
@@ -1153,16 +1127,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoverableCommitmentBundle sse_decode_recoverable_commitment_bundle(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ReservedPcztBatchItem sse_decode_reserved_pczt_batch_item(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ReservedPcztBatchRequest sse_decode_reserved_pczt_batch_request(
     SseDeserializer deserializer,
   );
 
@@ -1832,18 +1796,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_reserved_pczt_batch_item(
-    List<ReservedPcztBatchItem> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_reserved_pczt_batch_request(
-    List<ReservedPcztBatchRequest> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
     SseSerializer serializer,
@@ -2023,18 +1975,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_recoverable_commitment_bundle(
     RecoverableCommitmentBundle self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_reserved_pczt_batch_item(
-    ReservedPcztBatchItem self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_reserved_pczt_batch_request(
-    ReservedPcztBatchRequest self,
     SseSerializer serializer,
   );
 

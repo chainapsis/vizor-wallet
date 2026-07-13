@@ -2,12 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../keystone/legacy_v5_pczt_mode.dart';
 import '../models/swap_models.dart';
 
 final swapHardwareSigningServiceProvider = Provider<SwapHardwareSigningService>(
@@ -89,12 +87,6 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
         sendFlowId: sendFlowId,
         toAddress: depositAddress,
         amountZatoshi: amountZatoshi,
-        legacyV5Pczt: shouldAllowLegacyV5PcztFallbackForAccount(
-          accountUuid: accountUuid,
-          isHardwareAccount: _ref
-              .read(accountProvider.notifier)
-              .isHardwareAccount,
-        ),
       );
       proposalId = proposal.proposalId;
       final pcztBytes = await rust_sync.createPcztFromProposal(

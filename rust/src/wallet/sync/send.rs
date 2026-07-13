@@ -112,22 +112,6 @@ pub(crate) struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
-pub(crate) struct ReservedPcztBatchRequest {
-    pub id: String,
-    pub send_flow_id: String,
-    pub to_address: String,
-    pub amount_zatoshi: u64,
-    pub memo: Option<String>,
-}
-
-pub(crate) struct ReservedPcztBatchItem {
-    pub id: String,
-    pub pczt_with_proofs: Vec<u8>,
-    pub redacted_pczt: Vec<u8>,
-    pub fee_zatoshi: u64,
-    pub spend_nullifiers: Vec<String>,
-}
-
 pub struct ExecuteProposalResult {
     pub txids: String,
     pub status: String,
@@ -294,7 +278,6 @@ pub fn propose_send(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
-    _legacy_v5_pczt: bool,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
@@ -369,118 +352,6 @@ pub fn propose_send(
     })
 }
 
-pub(crate) fn create_reserved_pczt_batch(
-    db_path: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
-    requests: Vec<ReservedPcztBatchRequest>,
-    spend_params_path: Option<&str>,
-    output_params_path: Option<&str>,
-) -> Result<Vec<ReservedPcztBatchItem>, String> {
-    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
-
-    if requests.is_empty() {
-        return Err("Batch requires at least one request".to_string());
-    }
-
-    let db = open_wallet_db_for_read(db_path, network)?;
-    let account_id = parse_account_uuid(account_uuid)?;
-    let proposed_tx_version =
-        proposed_tx_version_for_wallet_db(&db, network, "creating a reserved batch")?;
-    let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let mut reserved = BTreeSet::new();
-    let mut items = Vec::with_capacity(requests.len());
-
-    for request in requests {
-        if request.id.is_empty() {
-            return Err("Batch message id is required".to_string());
-        }
-        if request.send_flow_id.is_empty() {
-            return Err(format!("Send flow id is required for {}", request.id));
-        }
-
-        let transaction_request = build_send_request(
-            &request.to_address,
-            request.amount_zatoshi,
-            request.memo.as_deref(),
-        )?;
-        let pass1_proposal = propose_send_with_reserved_notes(
-            &db,
-            network,
-            account_id,
-            transaction_request,
-            &reserved,
-            &migration_locks,
-            proposed_tx_version,
-            // Migration children: count unpadded Orchard-pool bundles so the
-            // proposal fee matches the unpadded PCZT built below.
-            true,
-        )
-        .map_err(|e| format!("Proposal {} failed: {e}", request.id))?;
-        let (proposal, decided_tx_version) = propose_with_note_version_downgrade(
-            pass1_proposal,
-            proposed_tx_version,
-            |tx_version| {
-                let transaction_request = build_send_request(
-                    &request.to_address,
-                    request.amount_zatoshi,
-                    request.memo.as_deref(),
-                )?;
-                propose_send_with_reserved_notes(
-                    &db,
-                    network,
-                    account_id,
-                    transaction_request,
-                    &reserved,
-                    &migration_locks,
-                    tx_version,
-                    true,
-                )
-            },
-        );
-
-        for note_ref in proposal_selected_note_refs(&proposal) {
-            reserved.insert(note_ref);
-        }
-
-        let fee_zatoshi = proposal_fee_zatoshi(&proposal);
-        let pczt = with_wallet_db_write_lock("send.create_reserved_pczt_batch", || {
-            let mut write_db = open_wallet_db(db_path, network)?;
-            // The transaction version rides on the proposal now; `None` builds
-            // at the version implied by the target height.
-            let proposal_for_pczt = proposal.clone().with_proposed_version(decided_tx_version);
-            zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-                &mut write_db,
-                &network,
-                account_id,
-                OvkPolicy::Sender,
-                &proposal_for_pczt,
-                // Keep the builder-derived expiry height.
-                None,
-                orchard::builder::BundleType::UNPADDED,
-            )
-            .map_err(|e| format!("Create PCZT {} failed: {e}", request.id))
-        })?;
-        let pczt_bytes = pczt
-            .serialize()
-            .map_err(|e| format!("Serialize PCZT {}: {e:?}", request.id))?;
-        let spend_nullifiers = crate::wallet::keystone::pczt_spend_nullifiers(&pczt_bytes)?;
-        let pczt_with_proofs =
-            super::pczt::add_proofs_to_pczt(&pczt_bytes, spend_params_path, output_params_path)?;
-        let redacted_pczt = super::pczt::redact_pczt_for_signer(&pczt_bytes)?;
-
-        items.push(ReservedPcztBatchItem {
-            id: request.id,
-            pczt_with_proofs,
-            redacted_pczt,
-            fee_zatoshi,
-            spend_nullifiers,
-        });
-    }
-
-    Ok(items)
-}
-
 /// Estimate the fee for a transfer without storing the proposal.
 /// Used for validation only — does not consume resources in
 /// `PROPOSAL_STORE`.
@@ -491,7 +362,6 @@ pub fn estimate_fee(
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
-    _legacy_v5_pczt: bool,
 ) -> Result<u64, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -541,7 +411,6 @@ pub(crate) fn estimate_send_max(
     account_uuid: &str,
     to_address: &str,
     memo_str: Option<&str>,
-    _legacy_v5_pczt: bool,
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -3769,7 +3638,7 @@ fn make_orchard_split_builder_with_type(
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            // Denomination prep is an ordinary private Orchard->Orchard split;
+            // A denomination stage is an ordinary private Orchard-to-Orchard split;
             // keep it padded like regular sends.
             orchard_bundle_type: bundle_type,
             ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
@@ -4032,8 +3901,8 @@ fn should_downgrade_send_to_legacy_v5(
         && !has_orchard_payment
 }
 
-/// Shared pass-2 of [`propose_send`], [`estimate_fee`], and
-/// [`create_reserved_pczt_batch`]: when [`should_downgrade_send_to_legacy_v5`]
+/// Shared pass-2 of [`propose_send`] and [`estimate_fee`]: when
+/// [`should_downgrade_send_to_legacy_v5`]
 /// holds for the pass-1 proposal, re-propose as legacy V5 via `repropose` and
 /// return that proposal with `Some(TxVersion::V5)`. Any re-proposal error keeps
 /// the pass-1 (V6) proposal and version instead of failing the send;
@@ -5676,7 +5545,7 @@ mod tests {
         migration::DenominationPlan {
             migration_outputs: vec![100_000],
             orchard_change: None,
-            prep_fee_zatoshi: 10_000,
+            split_fee_zatoshi: 10_000,
             migration_fee_zatoshi: 10_000,
             total_input_zatoshi: 120_000,
             total_migratable_zatoshi: 100_000,

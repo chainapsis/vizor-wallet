@@ -86,7 +86,7 @@ pub(crate) fn plan_padded_denominations(
                 u64::try_from(stage_count)
                     .map_err(|_| "Denomination stage count overflow".to_string())?,
             )
-            .ok_or("Denomination prep fee overflow")?;
+            .ok_or("Denomination split fee overflow")?;
         let denominations = super::plan_denominations(
             total_input,
             total_fee,

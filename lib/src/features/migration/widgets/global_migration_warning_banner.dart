@@ -6,13 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../../rust/api/sync.dart' as rust_sync;
 import '../migration_copy.dart';
-import '../models/migration_timeline_model.dart';
 import '../models/migration_view_state.dart';
-import '../providers/migration_expected_transfer_count_provider.dart';
 import '../providers/migration_run_controller.dart';
 import '../providers/orchard_migration_status_provider.dart';
 
@@ -28,7 +24,6 @@ class _GlobalMigrationWarningBannerState
     extends ConsumerState<GlobalMigrationWarningBanner> {
   Timer? _migrationTickTimer;
   bool _migrationTickInFlight = false;
-  final Set<String> _autoAdvancedRunIds = <String>{};
 
   @override
   void dispose() {
@@ -102,8 +97,6 @@ class _GlobalMigrationWarningBannerState
     _migrationTickInFlight = true;
     try {
       final status = ref.read(activeOrchardMigrationStatusProvider).value;
-      await _maybeAutoAdvanceSoftware(status);
-      if (!mounted) return;
       if (!migrationShouldShowGlobalWarning(status)) return;
 
       final now = DateTime.now();
@@ -155,31 +148,5 @@ class _GlobalMigrationWarningBannerState
     } finally {
       _migrationTickInFlight = false;
     }
-  }
-
-  Future<void> _maybeAutoAdvanceSoftware(
-    rust_sync.MigrationStatus? status,
-  ) async {
-    final isHardware =
-        ref.read(accountProvider).value?.activeAccount?.isHardware ?? false;
-    final runInFlight = ref.read(migrationRunControllerProvider).inFlight;
-    final runId = status?.activeRunId;
-    if (!migrationShouldAutoAdvanceSoftware(
-      status: status,
-      isHardware: isHardware,
-      runInFlight: runInFlight,
-      alreadyAttempted: runId != null && _autoAdvancedRunIds.contains(runId),
-    )) {
-      return;
-    }
-    log(
-      'GlobalMigrationWarningBanner: auto-advancing software migration stage 2',
-    );
-    final advanced = await ref
-        .read(migrationRunControllerProvider.notifier)
-        .advance(MigrationRunIntent.migrating);
-    if (!mounted) return;
-    if (advanced && runId != null) _autoAdvancedRunIds.add(runId);
-    ref.invalidate(activeOrchardMigrationStatusProvider);
   }
 }

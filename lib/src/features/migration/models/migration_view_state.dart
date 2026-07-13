@@ -113,18 +113,6 @@ MigrationViewState? migrationViewStateFromRustPhase(String? phase) {
   };
 }
 
-int migrationFirstTransactionIndex({
-  required Iterable<String> transactionTxids,
-  required String firstTxid,
-}) {
-  var index = 0;
-  for (final txid in transactionTxids) {
-    if (migrationTxidsMatch(txid, firstTxid)) return index;
-    index += 1;
-  }
-  return -1;
-}
-
 bool migrationTxidsMatch(String left, String right) {
   final normalizedLeft = _normalizeTxid(left);
   final normalizedRight = _normalizeTxid(right);
@@ -160,7 +148,7 @@ bool migrationHasBroadcastedUnconfirmedTransactions(
 }
 
 bool migrationHasPendingSplitStages(rust_sync.MigrationStatus? status) {
-  return (status?.pendingPrepTxCount ?? 0) > 0;
+  return (status?.pendingSplitStageCount ?? 0) > 0;
 }
 
 bool migrationHasSignedChildPczts(rust_sync.MigrationStatus? status) {
@@ -301,22 +289,6 @@ String _reverseTxidByteOrder(String txid) {
     reversed.write(txid.substring(i - 2, i));
   }
   return reversed.toString();
-}
-
-/// Whether the global migration tick should auto-fire software stage 2. Software
-/// reaches `ready_to_migrate` with no presigned children (those are a hardware
-/// concept), so the second stage must be kicked off for it. Hardware is excluded
-/// — its children are already presigned and promoted by the tick.
-bool migrationShouldAutoAdvanceSoftware({
-  required rust_sync.MigrationStatus? status,
-  required bool isHardware,
-  required bool runInFlight,
-  required bool alreadyAttempted,
-}) {
-  if (status == null || isHardware || runInFlight || alreadyAttempted) {
-    return false;
-  }
-  return status.phase == 'ready_to_migrate' && status.signedChildPcztCount == 0;
 }
 
 /// True when a single-QR Keystone signing request was rejected purely because
