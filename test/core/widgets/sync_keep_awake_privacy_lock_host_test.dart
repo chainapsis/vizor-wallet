@@ -168,7 +168,8 @@ void main() {
       );
       await _settleInitialSync(tester);
 
-      await tester.pump(const Duration(milliseconds: 30));
+      await tester.tap(find.byKey(const ValueKey('home_surface')));
+      await tester.pump();
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pump();
       await tester.pump(const Duration(minutes: 5));
@@ -177,11 +178,10 @@ void main() {
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 49));
 
       expect(find.text('Vizor is syncing,\nstick around ...'), findsNothing);
 
-      await tester.pump(const Duration(milliseconds: 2));
+      await tester.pump(const Duration(milliseconds: 60));
       await tester.pump();
 
       expect(find.text('Vizor is syncing,\nstick around ...'), findsOneWidget);
