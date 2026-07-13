@@ -131,6 +131,7 @@ class AppSyncSnapshot {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    this.isSyncComplete = false,
     required this.transparentBalance,
     required this.saplingBalance,
     required this.orchardBalance,
@@ -150,6 +151,7 @@ class AppSyncSnapshot {
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
+  final bool isSyncComplete;
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
@@ -564,8 +566,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       network: network,
       accountUuid: accountUuid,
     );
-    if (balance.availability !=
-        rust_sync.WalletBalanceAvailability.available) {
+    if (balance.availability != rust_sync.WalletBalanceAvailability.available) {
       throw StateError(
         'Wallet balance unavailable during bootstrap: '
         '${balance.availability.name}',
@@ -611,6 +612,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       percentage: percentage,
+      isSyncComplete: syncStatus.isComplete,
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
       orchardBalance: balance.orchard,

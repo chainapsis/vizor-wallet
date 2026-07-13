@@ -83,20 +83,24 @@ Future<SendReviewArgs> proposeSendTransfer({
   String? memo,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
-  await ref
+  final proposal = await ref
       .read(syncProvider.notifier)
-      .waitForAuthoritativeSpendable(accountUuid: accountUuid);
-  final dbPath = await loadDbPath();
-  final endpoint = ref.read(rpcEndpointProvider);
-  final proposal = await rust_sync.proposeSend(
-    dbPath: dbPath,
-    network: endpoint.networkName,
-    accountUuid: accountUuid,
-    sendFlowId: sendFlowId,
-    toAddress: address,
-    amountZatoshi: amountZatoshi,
-    memo: (memo != null && memo.isNotEmpty) ? memo : null,
-  );
+      .runWithAuthoritativeSpendable(
+        accountUuid: accountUuid,
+        operation: () async {
+          final dbPath = await loadDbPath();
+          final endpoint = ref.read(rpcEndpointProvider);
+          return rust_sync.proposeSend(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            sendFlowId: sendFlowId,
+            toAddress: address,
+            amountZatoshi: amountZatoshi,
+            memo: (memo != null && memo.isNotEmpty) ? memo : null,
+          );
+        },
+      );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
     sendFlowId: sendFlowId,

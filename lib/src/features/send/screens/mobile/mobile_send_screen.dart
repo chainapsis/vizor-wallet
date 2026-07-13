@@ -821,21 +821,29 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (preconditionError != null || accountUuid == null) return;
 
     try {
-      await ref
+      final estimate = await ref
           .read(syncProvider.notifier)
-          .waitForAuthoritativeSpendable(accountUuid: accountUuid);
-      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
-      final dbPath = await widget.loadWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
-
-      final estimate = await rust_sync.estimateSendMax(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        toAddress: address,
-        memo: memo.isNotEmpty ? memo : null,
-      );
+          .runWithAuthoritativeSpendable<rust_sync.SendMaxEstimateResult?>(
+            accountUuid: accountUuid,
+            operation: () async {
+              if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) {
+                return null;
+              }
+              final dbPath = await widget.loadWalletDbPath();
+              final endpoint = ref.read(rpcEndpointProvider);
+              if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) {
+                return null;
+              }
+              return rust_sync.estimateSendMax(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                toAddress: address,
+                memo: memo.isNotEmpty ? memo : null,
+              );
+            },
+          );
+      if (estimate == null) return;
       if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) return;
 
       if (estimate.amountZatoshi <= BigInt.zero) {
@@ -1092,37 +1100,42 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           : null;
     });
     try {
-      await ref
+      final fee = await ref
           .read(syncProvider.notifier)
-          .waitForAuthoritativeSpendable(accountUuid: accountUuid);
-      if (!_isCurrentReviewFeeRequest(
-        seq: seq,
-        accountUuid: accountUuid,
-        address: address,
-        memo: memo,
-        amountZatoshi: zatoshi,
-      )) {
-        return;
-      }
-      final dbPath = await widget.loadWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!_isCurrentReviewFeeRequest(
-        seq: seq,
-        accountUuid: accountUuid,
-        address: address,
-        memo: memo,
-        amountZatoshi: zatoshi,
-      )) {
-        return;
-      }
-      final fee = await (widget.estimateFee ?? rust_sync.estimateFee)(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        toAddress: address,
-        amountZatoshi: zatoshi,
-        memo: memo.isNotEmpty ? memo : null,
-      );
+          .runWithAuthoritativeSpendable<BigInt?>(
+            accountUuid: accountUuid,
+            operation: () async {
+              if (!_isCurrentReviewFeeRequest(
+                seq: seq,
+                accountUuid: accountUuid,
+                address: address,
+                memo: memo,
+                amountZatoshi: zatoshi,
+              )) {
+                return null;
+              }
+              final dbPath = await widget.loadWalletDbPath();
+              final endpoint = ref.read(rpcEndpointProvider);
+              if (!_isCurrentReviewFeeRequest(
+                seq: seq,
+                accountUuid: accountUuid,
+                address: address,
+                memo: memo,
+                amountZatoshi: zatoshi,
+              )) {
+                return null;
+              }
+              return (widget.estimateFee ?? rust_sync.estimateFee)(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                toAddress: address,
+                amountZatoshi: zatoshi,
+                memo: memo.isNotEmpty ? memo : null,
+              );
+            },
+          );
+      if (fee == null) return;
       if (!_isCurrentReviewFeeRequest(
         seq: seq,
         accountUuid: accountUuid,

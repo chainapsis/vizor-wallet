@@ -416,6 +416,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
   SyncProgressEvent? _lastForegroundSyncProgress;
+  Future<void>? _lastForegroundProgressHandling;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -428,6 +429,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _balanceReadVersion = 0;
   int _authoritativeBalanceVersion = 0;
   Future<void>? _authoritativeBalanceRecovery;
+  int _authoritativeSpendableOperationCount = 0;
+  bool _syncStartDeferred = false;
+  int? _deferredSyncLatestTipHeight;
   // Mempool observer subscription. Started in `startSync` and
   // cancelled in `stopSync`, so its lifetime matches the
   // foreground-sync lifetime even though the Rust side manages
@@ -467,6 +471,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
 
     ref.onDispose(() {
+      _syncStartDeferred = false;
+      _deferredSyncLatestTipHeight = null;
       rust_sync.cancelFullSync();
       _syncSub?.cancel();
       _displayProgressTimer?.cancel();
@@ -518,16 +524,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         initial.accountUuid != null &&
         initial.accountUuid == initialAccountUuid &&
         initial.hasAccountScopedData;
-    final initialSyncComplete =
-        initial.chainTipHeight > 0 &&
-        initial.scannedHeight >= initial.chainTipHeight &&
-        initial.percentage >= 1.0;
     return SyncState(
       accountUuid: initialAccountUuid,
       hasAccountScopedData: initialBelongsToActiveAccount,
       isSyncing: false,
       isBackgroundMode: false,
-      isSyncComplete: initialSyncComplete,
+      isSyncComplete: initialBelongsToActiveAccount && initial.isSyncComplete,
       percentage: initial.percentage,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
@@ -643,6 +645,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('Sync: locked, skipping foreground sync start');
       return;
     }
+    if (_authoritativeSpendableOperationCount > 0) {
+      _syncStartDeferred = true;
+      if (latestTipHeight != null) {
+        _deferredSyncLatestTipHeight = math.max(
+          _deferredSyncLatestTipHeight ?? 0,
+          latestTipHeight,
+        );
+      }
+      log(
+        'Sync: deferring foreground sync while an authoritative spendable '
+        'operation is active',
+      );
+      return;
+    }
     if (_isSyncing || rust_sync.isSyncRunning()) {
       log('Sync: already running, skipping');
       return;
@@ -653,6 +669,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _isSyncing = true;
     _lastLoggedHeight = 0;
     _lastForegroundSyncProgress = null;
+    _lastForegroundProgressHandling = null;
     _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
@@ -748,9 +765,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 phase: event.phase,
               );
               _lastForegroundSyncProgress = progress;
-              unawaited(_onSyncProgress(progress));
+              final handling = _onSyncProgress(progress);
+              _lastForegroundProgressHandling = handling;
+              unawaited(
+                handling.catchError((Object error, StackTrace stackTrace) {
+                  log(
+                    'SyncNotifier: foreground progress handling failed: $error',
+                  );
+                }),
+              );
             },
-            onDone: () {
+            onDone: () async {
               if (gen != _syncGen) {
                 log('Sync: ignoring stale stream end');
                 return;
@@ -765,38 +790,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // handoff via enableBackgroundSync). In that case
               // _isSyncing is still true and the mempool observer is
               // still running, both of which block future startSync()
-              // calls. Clean up unconditionally here; if isComplete
-              // already ran, these are no-ops.
+              // calls. Clean up only when no final event arrived; otherwise
+              // its async handler owns final cleanup.
               if (_isSyncing) {
-                final current = state.value;
                 final lastProgress = _lastForegroundSyncProgress;
-                final endedAtTipFromState =
-                    current != null &&
-                    current.percentage >= 1.0 &&
-                    current.chainTipHeight > 0 &&
-                    current.scannedHeight >= current.chainTipHeight;
-                final endedAtTipFromProgress =
-                    lastProgress != null &&
-                    lastProgress.percentage >= 1.0 &&
-                    lastProgress.chainTipHeight > 0 &&
-                    lastProgress.scannedHeight >= lastProgress.chainTipHeight;
-                final endedAtTip =
-                    rust_sync.getSyncMode() == 1 &&
-                    (endedAtTipFromState || endedAtTipFromProgress);
+                if (lastProgress?.isComplete ?? false) {
+                  log('Sync: final completion event is still being applied');
+                  try {
+                    await _lastForegroundProgressHandling;
+                  } catch (_) {
+                    // The listener logs the original error. Fall through to
+                    // cleanup without promoting height equality to complete.
+                  }
+                  if (gen != _syncGen || !_isSyncing) return;
+                }
                 _isSyncing = false;
                 _stopDisplayProgressTimer();
-                if (endedAtTip) {
-                  log(
-                    'Sync: stream ended at tip without isComplete, treating as complete',
-                  );
-                  _finalizeEndedAtTipSyncState(lastProgress);
-                  _bgDelegate.onSyncDone();
-                  _startPolling();
-                  unawaited(_reconcileBalanceAfterSyncCompletion());
-                } else {
-                  log('Sync: stream ended without isComplete, cleaning up');
-                  _stopMempoolObserver();
-                }
+                log(
+                  'Sync: stream ended without applied isComplete, cleaning up',
+                );
+                _stopMempoolObserver();
               }
             },
             onError: (e) {
@@ -946,6 +959,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   void stopSync() {
+    _syncStartDeferred = false;
+    _deferredSyncLatestTipHeight = null;
     ++_syncGen; // invalidate pending startSync callbacks
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1091,6 +1106,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    _syncStartDeferred = false;
+    _deferredSyncLatestTipHeight = null;
     ++_syncGen;
     ++_sensitiveStateEpoch;
     ++_progressEventVersion;
@@ -1245,36 +1262,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void _stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
-  }
-
-  void _finalizeEndedAtTipSyncState(SyncProgressEvent? lastProgress) {
-    final prev = state.value;
-    final completedAt = DateTime.now();
-    final chainTipHeight = math.max(
-      prev?.chainTipHeight ?? 0,
-      lastProgress?.chainTipHeight ?? 0,
-    );
-    final scannedHeight = chainTipHeight > 0
-        ? chainTipHeight
-        : math.max(prev?.scannedHeight ?? 0, lastProgress?.scannedHeight ?? 0);
-    final base = prev ?? SyncState(accountUuid: _getActiveAccountUuid());
-
-    state = AsyncData(
-      base.copyWith(
-        isSyncing: false,
-        isBackgroundMode: _bgDelegate.isActive,
-        isSyncComplete: true,
-        percentage: 1.0,
-        displayPercentage: 1.0,
-        displayTargetPercentage: 1.0,
-        displayTargetBlocks: 0,
-        scannedHeight: scannedHeight,
-        chainTipHeight: chainTipHeight,
-        lastSyncStartedAt: prev?.lastSyncStartedAt ?? completedAt,
-        lastSyncCompletedAt: completedAt,
-        phase: '',
-      ),
-    );
   }
 
   Future<void> _checkAndSync() async {
@@ -1793,9 +1780,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> refreshAfterUnlock() => _refreshBalance();
 
-  Future<void> _reconcileBalanceAfterSyncCompletion() =>
-      _ensureAuthoritativeBalanceRecovery();
-
   Future<void> _ensureAuthoritativeBalanceRecovery() {
     final existing = _authoritativeBalanceRecovery;
     if (existing != null) return existing;
@@ -1902,6 +1886,34 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         throw StateError('Wallet sync is still finishing. Try again.');
       }
       await Future<void>.delayed(pollInterval);
+    }
+  }
+
+  /// Runs a balance-sensitive operation without allowing polling or other
+  /// Dart foreground triggers to start a new sync between the authoritative
+  /// balance check and the native operation.
+  Future<T> runWithAuthoritativeSpendable<T>({
+    required String accountUuid,
+    required Future<T> Function() operation,
+  }) async {
+    await waitForAuthoritativeSpendable(accountUuid: accountUuid);
+    _authoritativeSpendableOperationCount++;
+    try {
+      // A sync may have started after the first wait returned but before this
+      // lease was acquired. Re-check while the lease prevents another start.
+      await waitForAuthoritativeSpendable(accountUuid: accountUuid);
+      return await operation();
+    } finally {
+      _authoritativeSpendableOperationCount--;
+      if (_authoritativeSpendableOperationCount == 0 &&
+          _syncStartDeferred &&
+          ref.mounted &&
+          !_requiresUnlock) {
+        final latestTipHeight = _deferredSyncLatestTipHeight;
+        _syncStartDeferred = false;
+        _deferredSyncLatestTipHeight = null;
+        startSync(latestTipHeight: latestTipHeight);
+      }
     }
   }
 

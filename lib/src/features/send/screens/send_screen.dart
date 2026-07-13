@@ -642,21 +642,25 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
     try {
-      await ref
+      final estimate = await ref
           .read(syncProvider.notifier)
-          .waitForAuthoritativeSpendable(accountUuid: accountUuid);
-      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
-      final dbPath = await ref.read(sendWalletDbPathProvider).call();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
-
-      final estimate = await rust_sync.estimateSendMax(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        toAddress: address,
-        memo: memo.isNotEmpty ? memo : null,
-      );
+          .runWithAuthoritativeSpendable<rust_sync.SendMaxEstimateResult?>(
+            accountUuid: accountUuid,
+            operation: () async {
+              if (!mounted || !_isMaxMode || seq != _maxSeq) return null;
+              final dbPath = await ref.read(sendWalletDbPathProvider).call();
+              final endpoint = ref.read(rpcEndpointProvider);
+              if (!mounted || !_isMaxMode || seq != _maxSeq) return null;
+              return rust_sync.estimateSendMax(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                toAddress: address,
+                memo: memo.isNotEmpty ? memo : null,
+              );
+            },
+          );
+      if (estimate == null) return;
 
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
 
@@ -774,29 +778,38 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
     setState(() => _amountError = null);
     try {
-      final dbPath = await ref.read(sendWalletDbPathProvider).call();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted || seq != _validateSeq) return;
       final memo = _effectiveMemo;
       final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() => _amountError = null);
         return;
       }
-      final fee = await rust_sync.estimateFee(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        toAddress: address,
-        amountZatoshi: zatoshi,
-        memo: memo.isNotEmpty ? memo : null,
-      );
+      final fee = await ref
+          .read(syncProvider.notifier)
+          .runWithAuthoritativeSpendable<BigInt?>(
+            accountUuid: accountUuid,
+            operation: () async {
+              if (!mounted || seq != _validateSeq) return null;
+              final dbPath = await ref.read(sendWalletDbPathProvider).call();
+              final endpoint = ref.read(rpcEndpointProvider);
+              if (!mounted || seq != _validateSeq) return null;
+              return rust_sync.estimateFee(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                toAddress: address,
+                amountZatoshi: zatoshi,
+                memo: memo.isNotEmpty ? memo : null,
+              );
+            },
+          );
+      if (fee == null) return;
 
       // Stale check — new input arrived while awaiting
       if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = zatoshi + fee;
-      if (totalNeeded > available) {
+      if (totalNeeded > _availableBalanceForCurrentAddress) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
         setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {

@@ -331,6 +331,7 @@ pub struct SyncProgress {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub is_syncing: bool,
+    pub is_complete: bool,
 }
 
 pub enum WalletBalanceAvailability {
@@ -540,6 +541,7 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
             scanned_height: p.scanned_height,
             chain_tip_height: p.chain_tip_height,
             is_syncing: p.is_syncing,
+            is_complete: p.is_complete,
         })
     })
 }

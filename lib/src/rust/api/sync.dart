@@ -986,16 +986,21 @@ class SyncProgress {
   final BigInt scannedHeight;
   final BigInt chainTipHeight;
   final bool isSyncing;
+  final bool isComplete;
 
   const SyncProgress({
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.isSyncing,
+    required this.isComplete,
   });
 
   @override
   int get hashCode =>
-      scannedHeight.hashCode ^ chainTipHeight.hashCode ^ isSyncing.hashCode;
+      scannedHeight.hashCode ^
+      chainTipHeight.hashCode ^
+      isSyncing.hashCode ^
+      isComplete.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1004,7 +1009,8 @@ class SyncProgress {
           runtimeType == other.runtimeType &&
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
-          isSyncing == other.isSyncing;
+          isSyncing == other.isSyncing &&
+          isComplete == other.isComplete;
 }
 
 class TransactionDetail {

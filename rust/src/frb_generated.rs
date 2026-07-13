@@ -6628,10 +6628,12 @@ impl SseDecode for crate::api::sync::SyncProgress {
         let mut var_scannedHeight = <u64>::sse_decode(deserializer);
         let mut var_chainTipHeight = <u64>::sse_decode(deserializer);
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
+        let mut var_isComplete = <bool>::sse_decode(deserializer);
         return crate::api::sync::SyncProgress {
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
             is_syncing: var_isSyncing,
+            is_complete: var_isComplete,
         };
     }
 }
@@ -8504,6 +8506,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::SyncProgress {
             self.scanned_height.into_into_dart().into_dart(),
             self.chain_tip_height.into_into_dart().into_dart(),
             self.is_syncing.into_into_dart().into_dart(),
+            self.is_complete.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -10122,6 +10125,7 @@ impl SseEncode for crate::api::sync::SyncProgress {
         <u64>::sse_encode(self.scanned_height, serializer);
         <u64>::sse_encode(self.chain_tip_height, serializer);
         <bool>::sse_encode(self.is_syncing, serializer);
+        <bool>::sse_encode(self.is_complete, serializer);
     }
 }
 
