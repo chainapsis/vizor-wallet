@@ -711,11 +711,18 @@ pub(crate) fn apply_sigs_and_extract(
 pub(crate) fn extract_compact_sigs_from_signed_pczt(
     signed_pczt_bytes: &[u8],
 ) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
-    use pczt::roles::signer::extract_orchard_spend_auth_signatures;
-
     let pczt =
         pczt::Pczt::parse(signed_pczt_bytes).map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
-    let sigs = extract_orchard_spend_auth_signatures(&pczt);
+
+    extract_compact_sigs_from_pczt(&pczt)
+}
+
+/// Read and validate the compact spend-authorization signature list from an
+/// already parsed signed PCZT.
+pub(crate) fn extract_compact_sigs_from_pczt(
+    signed_pczt: &pczt::Pczt,
+) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
+    let sigs = pczt::roles::signer::extract_orchard_spend_auth_signatures(signed_pczt);
 
     if sigs.is_empty() {
         return Err("Signed PCZT has no spend-authorization signatures".to_string());

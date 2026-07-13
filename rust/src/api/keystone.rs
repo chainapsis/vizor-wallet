@@ -2,6 +2,8 @@
 
 use crate::wallet::keystone;
 
+const KEYSTONE_FW_VERSION_PROP: &str = "keystone:fw_version";
+
 pub use crate::wallet::keystone::{
     KeystoneAccountInfo, UrDecodeResult, ZcashBatchMessageInput, ZcashBatchSignResult,
     ZcashBatchSignedMessage,
@@ -73,7 +75,9 @@ pub struct KeystoneMsgSig {
 /// wallet can re-apply them to the proofs-PCZTs it already holds (see
 /// `sync::pczt::apply_sigs_and_extract`).
 pub struct KeystoneSigResult {
-    pub version: u32,
+    /// Raw Keystone firmware version bytes reported by the signer. Current
+    /// firmware encodes this as `[major, minor, build]`.
+    pub firmware_version: Vec<u8>,
     pub request_id: Vec<u8>,
     pub results: Vec<KeystoneMsgSig>,
 }
@@ -101,9 +105,13 @@ fn action_sig_to_api(
 /// Dart consumes.
 fn sig_result_to_api(
     decoded: pczt::roles::signer::batch::BatchSignResponse,
+    firmware_version: Vec<u8>,
     request_id: Vec<u8>,
     message_ids: Vec<Vec<u8>>,
 ) -> Result<KeystoneSigResult, String> {
+    if firmware_version.is_empty() {
+        return Err("Keystone firmware version must not be empty".to_string());
+    }
     if request_id.is_empty() {
         return Err("Zcash batch request id must not be empty".to_string());
     }
@@ -126,7 +134,7 @@ fn sig_result_to_api(
     }
 
     Ok(KeystoneSigResult {
-        version: pczt::roles::signer::batch::VERSION,
+        firmware_version,
         request_id,
         results: decoded
             .signatures()
@@ -156,42 +164,86 @@ pub fn decode_zcash_batch_sign_response(
     if expected_request_id.is_empty() {
         return Err("Expected Zcash batch request id must not be empty".to_string());
     }
-    let (request_id, decoded) = keystone::decode_zcash_batch_sign_response(&cbor)?;
+    let (firmware_version, request_id, decoded) =
+        keystone::decode_zcash_batch_sign_response(&cbor)?;
     if request_id != expected_request_id.as_bytes() {
         return Err("Keystone batch result request id does not match the request".to_string());
     }
     sig_result_to_api(
         decoded,
+        firmware_version,
         request_id,
         message_ids.into_iter().map(String::into_bytes).collect(),
     )
 }
 
+fn signed_pczt_firmware_version(pczt: &pczt::Pczt) -> Result<Vec<u8>, String> {
+    let firmware_version = pczt
+        .global()
+        .proprietary()
+        .get(KEYSTONE_FW_VERSION_PROP)
+        .ok_or_else(|| {
+            format!("Signed PCZT is missing {KEYSTONE_FW_VERSION_PROP} firmware metadata")
+        })?;
+    if firmware_version.is_empty() {
+        return Err(format!(
+            "Signed PCZT has empty {KEYSTONE_FW_VERSION_PROP} firmware metadata"
+        ));
+    }
+    Ok(firmware_version.clone())
+}
+
+fn retain_consistent_firmware_version(
+    expected: &mut Option<Vec<u8>>,
+    firmware_version: Vec<u8>,
+) -> Result<(), String> {
+    match expected {
+        Some(expected) if expected != &firmware_version => {
+            Err("Keystone signed PCZTs report inconsistent firmware versions".to_string())
+        }
+        Some(_) => Ok(()),
+        None => {
+            *expected = Some(firmware_version);
+            Ok(())
+        }
+    }
+}
+
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact
 /// signature shape used by migration completion. Current ForgeBox firmware may
-/// still echo signed redacted PCZTs; the wallet only needs their
+/// still echo signed redacted PCZTs. Every returned PCZT must carry the same
+/// non-empty `keystone:fw_version` stamp. The wallet otherwise only needs their
 /// spend-authorization signatures because it already holds the proofs-PCZTs.
 pub fn decode_zcash_sign_result_cbor_as_sig_result(
     cbor: Vec<u8>,
 ) -> Result<KeystoneSigResult, String> {
     let decoded = keystone::decode_zcash_sign_result_cbor(&cbor)?;
     let request_id = decoded.request_id.into_bytes();
-    let messages = decoded
-        .results
+    let mut firmware_version = None;
+    let mut parsed_messages = Vec::with_capacity(decoded.results.len());
+    for message in decoded.results {
+        let signed_pczt = pczt::Pczt::parse(&message.signed_pczt_bytes)
+            .map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
+        retain_consistent_firmware_version(
+            &mut firmware_version,
+            signed_pczt_firmware_version(&signed_pczt)?,
+        )?;
+        parsed_messages.push((message.id.into_bytes(), signed_pczt));
+    }
+    let firmware_version = firmware_version
+        .ok_or_else(|| "Keystone signing result contains no firmware version".to_string())?;
+    let messages = parsed_messages
         .into_iter()
-        .map(|message| {
-            Ok((
-                message.id.into_bytes(),
-                crate::wallet::sync::extract_compact_sigs_from_signed_pczt(
-                    &message.signed_pczt_bytes,
-                )?,
-            ))
+        .map(|(message_id, signed_pczt)| {
+            let signatures = crate::wallet::sync::extract_compact_sigs_from_pczt(&signed_pczt)?;
+            Ok((message_id, signatures))
         })
         .collect::<Result<Vec<_>, String>>()?;
     let (message_ids, signatures) = messages.into_iter().unzip();
 
     sig_result_to_api(
         pczt::roles::signer::batch::BatchSignResponse::new(signatures),
+        firmware_version,
         request_id,
         message_ids,
     )
@@ -254,6 +306,8 @@ pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>,
 mod tests {
     use super::*;
 
+    const TEST_FIRMWARE_VERSION: &[u8] = &[1, 2, 3];
+
     fn encoded_compact_response(request_id: &str) -> Vec<u8> {
         use pczt::roles::signer::batch::BatchSignResponse;
 
@@ -261,6 +315,7 @@ mod tests {
         ur_registry::zcash::zcash_batch_sig_result::ZcashBatchSigResult::new(
             request_id.as_bytes().to_vec(),
             postcard,
+            TEST_FIRMWARE_VERSION.to_vec(),
         )
         .try_into()
         .unwrap()
@@ -275,6 +330,7 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(decoded.firmware_version, TEST_FIRMWARE_VERSION);
         assert_eq!(decoded.request_id, b"request-1");
         assert_eq!(decoded.results[0].message_id, b"message-1");
     }
@@ -312,11 +368,13 @@ mod tests {
 
         let decoded = sig_result_to_api(
             response,
+            TEST_FIRMWARE_VERSION.to_vec(),
             b"request-1".to_vec(),
             vec![b"message-1".to_vec(), b"message-2".to_vec()],
         )
         .unwrap();
 
+        assert_eq!(decoded.firmware_version, TEST_FIRMWARE_VERSION);
         assert_eq!(decoded.request_id, b"request-1");
         assert_eq!(decoded.results[0].message_id, b"message-1");
         assert_eq!(decoded.results[0].sigs[0].pool, 0);
@@ -328,10 +386,93 @@ mod tests {
     fn compact_response_rejects_correlation_count_mismatch() {
         let response = pczt::roles::signer::batch::BatchSignResponse::new(vec![vec![]]);
 
-        let error = sig_result_to_api(response, b"request-1".to_vec(), vec![])
-            .err()
-            .unwrap();
+        let error = sig_result_to_api(
+            response,
+            TEST_FIRMWARE_VERSION.to_vec(),
+            b"request-1".to_vec(),
+            vec![],
+        )
+        .err()
+        .unwrap();
 
         assert!(error.contains("1 signature lists for 0 requested messages"));
+    }
+
+    #[test]
+    fn compact_response_rejects_empty_firmware_version_before_mapping() {
+        let response = pczt::roles::signer::batch::BatchSignResponse::new(vec![vec![]]);
+
+        let error = sig_result_to_api(
+            response,
+            vec![],
+            b"request-1".to_vec(),
+            vec![b"message-1".to_vec()],
+        )
+        .err()
+        .unwrap();
+
+        assert_eq!(error, "Keystone firmware version must not be empty");
+    }
+
+    fn test_pczt_with_firmware_version(firmware_version: Option<&[u8]>) -> pczt::Pczt {
+        use pczt::roles::{creator::Creator, updater::Updater};
+        use zcash_protocol::consensus::BranchId;
+
+        let pczt = Creator::new(BranchId::Nu6.into(), 10_000_000, 133, None, None)
+            .unwrap()
+            .build()
+            .unwrap();
+        if let Some(firmware_version) = firmware_version {
+            Updater::new(pczt)
+                .update_global_with(|mut global| {
+                    global.set_proprietary(
+                        KEYSTONE_FW_VERSION_PROP.to_string(),
+                        firmware_version.to_vec(),
+                    );
+                })
+                .finish()
+        } else {
+            pczt
+        }
+    }
+
+    #[test]
+    fn legacy_pczt_requires_firmware_version_stamp() {
+        let error =
+            signed_pczt_firmware_version(&test_pczt_with_firmware_version(None)).unwrap_err();
+
+        assert!(error.contains("missing keystone:fw_version"));
+    }
+
+    #[test]
+    fn legacy_pczt_rejects_empty_firmware_version_stamp() {
+        let error =
+            signed_pczt_firmware_version(&test_pczt_with_firmware_version(Some(&[]))).unwrap_err();
+
+        assert!(error.contains("empty keystone:fw_version"));
+    }
+
+    #[test]
+    fn legacy_pczt_reads_firmware_version_stamp() {
+        let version = signed_pczt_firmware_version(&test_pczt_with_firmware_version(Some(
+            TEST_FIRMWARE_VERSION,
+        )))
+        .unwrap();
+
+        assert_eq!(version, TEST_FIRMWARE_VERSION);
+    }
+
+    #[test]
+    fn legacy_pczt_versions_must_be_consistent() {
+        let mut version = None;
+        retain_consistent_firmware_version(&mut version, TEST_FIRMWARE_VERSION.to_vec()).unwrap();
+        retain_consistent_firmware_version(&mut version, TEST_FIRMWARE_VERSION.to_vec()).unwrap();
+
+        let error = retain_consistent_firmware_version(&mut version, vec![1, 2, 4]).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Keystone signed PCZTs report inconsistent firmware versions"
+        );
     }
 }

@@ -574,13 +574,17 @@ pub fn decode_zcash_sign_result_cbor(cbor: &[u8]) -> Result<ZcashBatchSignResult
 }
 
 /// Decode the outer CBOR envelope and versioned Postcard payload from a compact
-/// `zcash-batch-sig-result` UR, returning the echoed request id alongside the
-/// upstream response after enforcing wallet policy.
+/// `zcash-batch-sig-result` UR, returning the firmware version and echoed
+/// request id alongside the upstream response after enforcing wallet policy.
 pub fn decode_zcash_batch_sign_response(
     cbor: &[u8],
-) -> Result<(Vec<u8>, BatchSignResponse), String> {
+) -> Result<(Vec<u8>, Vec<u8>, BatchSignResponse), String> {
     let result = ZcashBatchSigResult::try_from(cbor.to_vec())
         .map_err(|e| format!("Invalid zcash-batch-sig-result CBOR envelope: {e:?}"))?;
+    let firmware_version = result.get_firmware_version().to_vec();
+    if firmware_version.is_empty() {
+        return Err("Zcash batch result firmware version must not be empty".to_string());
+    }
     if result.get_request_id().is_empty() {
         return Err("Zcash batch result request id must not be empty".to_string());
     }
@@ -607,7 +611,7 @@ pub fn decode_zcash_batch_sign_response(
         }
     }
 
-    Ok((result.get_request_id().to_vec(), response))
+    Ok((firmware_version, result.get_request_id().to_vec(), response))
 }
 
 fn decode_signed_messages(
@@ -727,6 +731,8 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_FIRMWARE_VERSION: &[u8] = &[1, 2, 3];
 
     fn test_pczt(expiry_height: u32) -> pczt::Pczt {
         use pczt::roles::creator::Creator;
@@ -981,10 +987,22 @@ mod tests {
         .unwrap()
     }
 
+    fn wrap_test_sig_result_with_firmware_version(
+        request_id: &str,
+        postcard: Vec<u8>,
+        firmware_version: &[u8],
+    ) -> Vec<u8> {
+        ZcashBatchSigResult::new(
+            request_id.as_bytes().to_vec(),
+            postcard,
+            firmware_version.to_vec(),
+        )
+        .try_into()
+        .unwrap()
+    }
+
     fn wrap_test_sig_result(request_id: &str, postcard: Vec<u8>) -> Vec<u8> {
-        ZcashBatchSigResult::new(request_id.as_bytes().to_vec(), postcard)
-            .try_into()
-            .unwrap()
+        wrap_test_sig_result_with_firmware_version(request_id, postcard, TEST_FIRMWARE_VERSION)
     }
 
     fn encode_test_sig_result(
@@ -1010,9 +1028,10 @@ mod tests {
             ],
         );
 
-        let (request_id, decoded) =
+        let (firmware_version, request_id, decoded) =
             decode_zcash_batch_sign_response(&cbor).expect("sig result should decode");
 
+        assert_eq!(firmware_version, TEST_FIRMWARE_VERSION);
         assert_eq!(request_id, b"request-1");
         assert_eq!(decoded.signatures().len(), 2);
 
@@ -1094,6 +1113,17 @@ mod tests {
             .expect_err("empty result request id should fail");
 
         assert_eq!(err, "Zcash batch result request id must not be empty");
+    }
+
+    #[test]
+    fn rejects_zcash_batch_sign_response_empty_firmware_version() {
+        let postcard = encode_test_sig_result_postcard(&[vec![]]);
+        let cbor = wrap_test_sig_result_with_firmware_version("request-1", postcard, &[]);
+
+        let err = decode_zcash_batch_sign_response(&cbor)
+            .expect_err("empty firmware version should fail");
+
+        assert_eq!(err, "Zcash batch result firmware version must not be empty");
     }
 
     #[test]

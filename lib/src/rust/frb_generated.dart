@@ -7189,7 +7189,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 3)
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return KeystoneSigResult(
-      version: dco_decode_u_32(arr[0]),
+      firmwareVersion: dco_decode_list_prim_u_8_strict(arr[0]),
       requestId: dco_decode_list_prim_u_8_strict(arr[1]),
       results: dco_decode_list_keystone_msg_sig(arr[2]),
     );
@@ -9177,11 +9177,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_version = sse_decode_u_32(deserializer);
+    var var_firmwareVersion = sse_decode_list_prim_u_8_strict(deserializer);
     var var_requestId = sse_decode_list_prim_u_8_strict(deserializer);
     var var_results = sse_decode_list_keystone_msg_sig(deserializer);
     return KeystoneSigResult(
-      version: var_version,
+      firmwareVersion: var_firmwareVersion,
       requestId: var_requestId,
       results: var_results,
     );
@@ -11535,7 +11535,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.version, serializer);
+    sse_encode_list_prim_u_8_strict(self.firmwareVersion, serializer);
     sse_encode_list_prim_u_8_strict(self.requestId, serializer);
     sse_encode_list_keystone_msg_sig(self.results, serializer);
   }

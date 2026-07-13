@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../wallet/keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `sig_result_to_api`
+// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`
 
 /// Encode PCZT bytes to a UR string for QR code display.
 Future<String> encodePcztToUr({required List<int> pcztBytes}) =>
@@ -70,7 +70,8 @@ Future<KeystoneSigResult> decodeZcashBatchSignResponse({
 
 /// Decode a legacy `zcash-sign-result` response and normalize it to the compact
 /// signature shape used by migration completion. Current ForgeBox firmware may
-/// still echo signed redacted PCZTs; the wallet only needs their
+/// still echo signed redacted PCZTs. Every returned PCZT must carry the same
+/// non-empty `keystone:fw_version` stamp. The wallet otherwise only needs their
 /// spend-authorization signatures because it already holds the proofs-PCZTs.
 Future<KeystoneSigResult> decodeZcashSignResultCborAsSigResult({
   required List<int> cbor,
@@ -166,25 +167,28 @@ class KeystoneMsgSig {
 /// wallet can re-apply them to the proofs-PCZTs it already holds (see
 /// `sync::pczt::apply_sigs_and_extract`).
 class KeystoneSigResult {
-  final int version;
+  /// Raw Keystone firmware version bytes reported by the signer. Current
+  /// firmware encodes this as `[major, minor, build]`.
+  final Uint8List firmwareVersion;
   final Uint8List requestId;
   final List<KeystoneMsgSig> results;
 
   const KeystoneSigResult({
-    required this.version,
+    required this.firmwareVersion,
     required this.requestId,
     required this.results,
   });
 
   @override
-  int get hashCode => version.hashCode ^ requestId.hashCode ^ results.hashCode;
+  int get hashCode =>
+      firmwareVersion.hashCode ^ requestId.hashCode ^ results.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is KeystoneSigResult &&
           runtimeType == other.runtimeType &&
-          version == other.version &&
+          firmwareVersion == other.firmwareVersion &&
           requestId == other.requestId &&
           results == other.results;
 }
