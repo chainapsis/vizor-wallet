@@ -313,7 +313,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       ),
     );
     final zecAvailableText = ZecAmount.fromZatoshi(
-      sync.spendableBalance,
+      sync.displaySpendableBalance,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
 
     void openReview() {
@@ -415,7 +415,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           Expanded(
                             child: _MobileSwapReviewButton(
                               state: swapState,
-                              zecAvailableZatoshi: sync.spendableBalance,
+                              zecAvailableZatoshi: sync.displaySpendableBalance,
                               onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),

@@ -83,17 +83,24 @@ Future<SendReviewArgs> proposeSendTransfer({
   String? memo,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
-  final dbPath = await loadDbPath();
-  final endpoint = ref.read(rpcEndpointProvider);
-  final proposal = await rust_sync.proposeSend(
-    dbPath: dbPath,
-    network: endpoint.networkName,
-    accountUuid: accountUuid,
-    sendFlowId: sendFlowId,
-    toAddress: address,
-    amountZatoshi: amountZatoshi,
-    memo: (memo != null && memo.isNotEmpty) ? memo : null,
-  );
+  final proposal = await ref
+      .read(syncProvider.notifier)
+      .runWithAuthoritativeSpendable(
+        accountUuid: accountUuid,
+        operation: () async {
+          final dbPath = await loadDbPath();
+          final endpoint = ref.read(rpcEndpointProvider);
+          return rust_sync.proposeSend(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            sendFlowId: sendFlowId,
+            toAddress: address,
+            amountZatoshi: amountZatoshi,
+            memo: (memo != null && memo.isNotEmpty) ? memo : null,
+          );
+        },
+      );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
     sendFlowId: sendFlowId,
@@ -126,6 +133,10 @@ Future<void> discardSendProposal({
 
 String friendlyProposeSendError(String raw) {
   final lower = raw.toLowerCase();
+  if (lower.contains('wallet sync is still finishing') ||
+      lower.contains('wallet sync failed before balance refresh')) {
+    return 'Finishing wallet sync. Try again shortly.';
+  }
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
     return 'Insufficient shielded balance to cover amount and fee.';
   }

@@ -800,7 +800,7 @@ edge in `MobileBottomSafeArea`
   - Manual flow:
     - Start services: `./scripts/regtest/up.sh`
     - Run individual scenario tests: `cd rust && cargo test --test regtest_receive_sync -- --ignored --nocapture --test-threads=1`
-    - Other available targets: `regtest_send`, `regtest_import`, `regtest_multi_account`
+    - Other available targets: `regtest_send`, `regtest_import`, `regtest_multi_account`, `regtest_reorg`
     - Stop services: `./scripts/regtest/down.sh`
   - The one-shot runner streams the full test output to the terminal and also saves a copy to `.regtest-logs/regtest-rust-tests.log`.
 - `scripts/regtest/` utilities:
@@ -812,7 +812,8 @@ edge in `MobileBottomSafeArea`
   - `lib.sh` — shared helper functions used by the other regtest scripts; source it from scripts, do not run it directly.
 - Regtest prerequisites:
   - Docker Desktop / `docker compose` must be available.
-  - `grpcurl` is optional but recommended. If installed, the scripts use it to wait for `lightwalletd` gRPC readiness and chain-tip propagation; otherwise they fall back to a simpler TCP port check.
+  - `grpcurl` is optional for the general regtest utilities. If installed, the scripts use it to wait for `lightwalletd` gRPC readiness and chain-tip propagation; otherwise they fall back to a simpler TCP port check.
+  - `grpcurl` is required by `./run-regtest-rust-tests.sh` and the same-height `regtest_reorg` scenarios because they must verify that lightwalletd switched to the replacement tip hash. The one-shot runner checks this before resetting existing regtest state.
 - Debug vs Release: Rust crypto is ~5-10x slower in debug (`opt-level=0`). Use `--release` for realistic sync performance.
 
 ## Crate Versions

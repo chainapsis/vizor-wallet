@@ -818,6 +818,52 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
   });
 
+  testWidgets('Pay review uses the completed spendable snapshot during sync', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final router = GoRouter(initialLocation: '/pay', routes: [_payRoute()]);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        spendableBalance: BigInt.zero,
+        displaySpendableBalance: BigInt.from(100000000),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_review_blocked_reason')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('pay_confirm_button')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
@@ -8893,6 +8939,9 @@ Widget _routerHarness(
   SwapHardwareSigningService? hardwareSigningService,
   _FakeSwapPersistenceStore? sessionStore,
   BigInt? spendableBalance,
+  BigInt? displaySpendableBalance,
+  SpendableBalanceFreshness displaySpendableFreshness =
+      SpendableBalanceFreshness.authoritative,
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
   LoadShieldedAddress? loadShieldedAddress,
@@ -8921,6 +8970,8 @@ Widget _routerHarness(
       syncProvider.overrideWith(
         () => _FakeSwapSyncNotifier(
           spendableBalance ?? BigInt.from(10000000000),
+          displaySpendableBalance: displaySpendableBalance,
+          displaySpendableFreshness: displaySpendableFreshness,
           recentTransactions: recentTransactions,
         ),
       ),

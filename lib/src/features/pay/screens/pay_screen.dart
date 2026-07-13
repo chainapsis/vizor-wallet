@@ -290,7 +290,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         : payContactForAddress(allContacts, network, recipientAddress);
     final startBlockedReason =
         quote != null &&
-            swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+            swapReviewQuoteExceedsAvailableZec(
+              quote,
+              sync.displaySpendableBalance,
+            )
         ? "You don't have enough ZEC for this payment. Try a smaller amount."
         : null;
 

@@ -140,7 +140,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
       ),
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
+        swapReviewQuoteExceedsAvailableZec(quote, sync.displaySpendableBalance)
         ? widget.payMode
               ? "You don't have enough ZEC for this payment. Try a smaller amount."
               : "You don't have enough ZEC for this swap. Try a smaller amount."

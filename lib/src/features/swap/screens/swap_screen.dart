@@ -178,7 +178,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     );
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        sync.spendableBalance,
+        sync.displaySpendableBalance,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
@@ -260,7 +260,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           _swapModal == _SwapModalSurface.slippageSettings,
                       onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                       zecAvailableText: zecAvailableText,
-                      zecAvailableZatoshi: sync.spendableBalance,
+                      zecAvailableZatoshi: sync.displaySpendableBalance,
                       destinationContactName: swapDestinationContactFor(
                         swapState,
                         ref.watch(addressBookProvider).value?.contacts ??
@@ -289,7 +289,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         const SizedBox(height: AppSpacing.md),
                         _SwapReviewFooter(
                           state: swapState,
-                          zecAvailableZatoshi: sync.spendableBalance,
+                          zecAvailableZatoshi: sync.displaySpendableBalance,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
                         ),

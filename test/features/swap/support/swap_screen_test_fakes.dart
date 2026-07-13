@@ -23,10 +23,14 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
 class _FakeSwapSyncNotifier extends SyncNotifier {
   _FakeSwapSyncNotifier(
     this.spendableBalance, {
+    BigInt? displaySpendableBalance,
+    this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     this.recentTransactions = const [],
-  });
+  }) : displaySpendableBalance = displaySpendableBalance ?? spendableBalance;
 
   final BigInt spendableBalance;
+  final BigInt displaySpendableBalance;
+  final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
   var restartCount = 0;
 
@@ -35,6 +39,8 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     accountUuid: 'account-1',
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
+    displaySpendableBalance: displaySpendableBalance,
+    displaySpendableFreshness: displaySpendableFreshness,
     totalBalance: spendableBalance,
     recentTransactions: recentTransactions,
   );
