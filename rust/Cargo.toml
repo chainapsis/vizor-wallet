@@ -73,34 +73,34 @@ url = "2.5.8"
 [dependencies.zcash_primitives]
 version = "0.29.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_address]
 version = "0.13.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_keys]
 version = "0.15.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.10.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.9.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_client_backend]
 version = "0.24.0-rc.1"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = [
     "orchard",
     "transparent-inputs",
@@ -113,13 +113,13 @@ features = [
 [dependencies.zcash_client_sqlite]
 version = "0.22.0-rc.1"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "56873d8a961b98756b33bcf95e7bf5b7cdc20f26"
+rev = "e82d525c5bcfb447921a4e8fa060ea609b7d25db"
 package = "zcash_voting"
 
 # Must match the Orchard release used by the pinned librustzcash and
@@ -131,12 +131,12 @@ version = "0.15.0"
 [dependencies.zcash_proofs]
 version = "0.29.0-pre.0"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.pczt]
 version = "0.8.0-rc.1"
 git = "https://github.com/zcash/librustzcash"
-rev = "df733adf9a6a77e7c138f7a5e9d9a4fe2491d3a7"
+rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = [
     "orchard",
     "io-finalizer",
@@ -170,7 +170,7 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "56873d8a961b98756b33bcf95e7bf5b7cdc20f26"
+rev = "e82d525c5bcfb447921a4e8fa060ea609b7d25db"
 package = "vote-commitment-tree"
 
 [patch.crates-io]

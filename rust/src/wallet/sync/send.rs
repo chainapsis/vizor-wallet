@@ -3295,17 +3295,16 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
     target_height: BlockHeight,
     orchard_anchor: orchard::Anchor,
 ) -> Builder<P, ()> {
-    Builder::new_with_orchard_pool_bundle_type(
+    Builder::new(
         network,
         target_height,
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
+            ironwood_bundle_type: orchard::builder::BundleType::UNPADDED,
         },
-        orchard::ValuePool::Ironwood,
-        orchard::builder::BundleType::UNPADDED,
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
 }
@@ -3831,7 +3830,8 @@ fn make_orchard_split_builder(
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             // Denomination prep is an ordinary private Orchard->Orchard split;
             // keep it padded like regular sends.
-            orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
+            ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
