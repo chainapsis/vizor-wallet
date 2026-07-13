@@ -179,13 +179,8 @@ where
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(|r| match r {
-            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-            TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                address_request_is_due(req, SystemTime::now()) && req.block_range_end().is_some()
-            }
-        });
-        if !actionable {
+        let signature = actionable_request_signature(&requests, SystemTime::now());
+        if signature.is_empty() {
             drained = true;
             break;
         }
@@ -197,17 +192,6 @@ where
         // still-unmined send regenerates until it mines) and re-servicing
         // it is pure duplication: up to 3 identical full-raw-tx fetches per
         // pass, every sync cycle, for the tx's whole unmined lifetime.
-        let signature: BTreeSet<TransactionDataRequest> = requests
-            .iter()
-            .filter(|r| match r {
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                    address_request_is_due(req, SystemTime::now())
-                        && req.block_range_end().is_some()
-                }
-                _ => true,
-            })
-            .cloned()
-            .collect();
         // A GetStatus request for an unmined transaction is expected to
         // remain in the queue. It is the only repeated request that proves
         // the pass is idle: repeated Enhancement/address requests can mean
@@ -558,6 +542,18 @@ where
         }
     }
 
+    // The round limit bounds dependency expansion, but the last permitted
+    // round can itself clear the final requests. Without this read-back,
+    // `drained` remains false merely because there was no fourth iteration to
+    // observe the now-empty queue, and the completion barrier retries the
+    // entire sync despite all enhancement work having succeeded.
+    if !drained && failure.is_none() && !should_exit() {
+        let requests = db.transaction_data_requests().map_err(|e| {
+            SyncError::db(format!("transaction_data_requests after final round: {e}"))
+        })?;
+        drained = request_queue_is_drained(&requests, prev_signature.as_ref(), SystemTime::now());
+    }
+
     let total = enh_t0.elapsed();
     if total.as_millis() > 50 {
         log::info!(
@@ -618,6 +614,35 @@ fn address_request_is_supported(request: &TransactionsInvolvingAddress) -> bool 
         (request.tx_status_filter(), request.output_status_filter()),
         (TransactionStatusFilter::Mined, OutputStatusFilter::All)
     )
+}
+
+fn actionable_request_signature(
+    requests: &[TransactionDataRequest],
+    now: SystemTime,
+) -> BTreeSet<TransactionDataRequest> {
+    requests
+        .iter()
+        .filter(|request| match request {
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                address_request_is_due(request, now) && request.block_range_end().is_some()
+            }
+            _ => true,
+        })
+        .cloned()
+        .collect()
+}
+
+fn request_queue_is_drained(
+    requests: &[TransactionDataRequest],
+    previous_signature: Option<&BTreeSet<TransactionDataRequest>>,
+    now: SystemTime,
+) -> bool {
+    let signature = actionable_request_signature(requests, now);
+    signature.is_empty()
+        || (previous_signature == Some(&signature)
+            && signature
+                .iter()
+                .all(|request| matches!(request, TransactionDataRequest::GetStatus(_))))
 }
 
 /// Stream a transparent address's transaction history in `[start, end]`
@@ -1058,6 +1083,39 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn final_round_readback_accepts_only_a_verifiably_drained_queue() {
+        let now = SystemTime::now();
+        let processed_status = TransactionDataRequest::GetStatus(TxId::NULL);
+        let processed_signature = BTreeSet::from([processed_status.clone()]);
+
+        assert!(request_queue_is_drained(
+            &[],
+            Some(&processed_signature),
+            now,
+        ));
+        assert!(request_queue_is_drained(
+            &[processed_status],
+            Some(&processed_signature),
+            now,
+        ));
+
+        let newly_created = TransactionDataRequest::Enhancement(TxId::from_bytes([1; 32]));
+        assert!(!request_queue_is_drained(
+            &[newly_created],
+            Some(&processed_signature),
+            now,
+        ));
+
+        let stuck_enhancement = TransactionDataRequest::Enhancement(TxId::NULL);
+        let stuck_signature = BTreeSet::from([stuck_enhancement.clone()]);
+        assert!(!request_queue_is_drained(
+            &[stuck_enhancement],
+            Some(&stuck_signature),
+            now,
+        ));
     }
 
     #[test]
