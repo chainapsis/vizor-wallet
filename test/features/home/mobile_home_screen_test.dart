@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_stor
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -76,6 +77,17 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
   }) async {}
 }
 
+class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
+  @override
+  SyncKeepAwakeSettings build() =>
+      const SyncKeepAwakeSettings(enabled: false, promptSeen: false);
+
+  @override
+  Future<void> markPromptSeen() async {
+    state = state.copyWith(promptSeen: true);
+  }
+}
+
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
   final text = tester.widget<Text>(finder);
   final defaultStyle = DefaultTextStyle.of(tester.element(finder)).style;
@@ -115,6 +127,7 @@ Widget _app(
     change24hPct: 13.12,
   ),
   FakeSyncNotifier? syncNotifier,
+  SyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   bool? swapEnabled,
   PayIntroductionBadgeStore? badgeStore,
 }) {
@@ -147,6 +160,8 @@ Widget _app(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
+      if (syncKeepAwakeNotifier != null)
+        syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
@@ -202,6 +217,58 @@ rust_sync.TransactionInfo _tx(int index) {
 }
 
 void main() {
+  testWidgets('shows the Figma sync keep-awake prompt copy', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          percentage: 0.25,
+          displayPercentage: 0.25,
+          scannedHeight: 50,
+          chainTipHeight: 200,
+          lastSyncStartedAt: DateTime.now().subtract(
+            const Duration(minutes: 2),
+          ),
+        ),
+        syncKeepAwakeNotifier: _FakeSyncKeepAwakeNotifier(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    const lockCopy =
+        'The app locks after 1 minute of inactivity. Syncing continues behind '
+        'the lock.';
+    const settingsCopy = 'You can change this anytime in the Settings.';
+    expect(find.text('Stay awake to sync?'), findsOneWidget);
+    expect(
+      find.text(
+        'Your phone pauses syncing when screen is off. This allows sync to '
+        'finish faster.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(lockCopy), findsOneWidget);
+    expect(find.text(settingsCopy), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(lockCopy)).dy,
+      lessThan(tester.getTopLeft(find.text(settingsCopy)).dy),
+    );
+    expect(find.text('Keep screen awake'), findsOneWidget);
+    expect(find.text('Maybe later'), findsOneWidget);
+
+    await tester.tap(find.text('Maybe later'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  });
+
   testWidgets('shows the importing state before account data exists', (
     tester,
   ) async {

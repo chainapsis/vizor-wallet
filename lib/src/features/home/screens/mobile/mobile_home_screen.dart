@@ -247,7 +247,7 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_sync_keep_awake_prompt_sheet'),
-      title: 'Keep screen awake during sync?',
+      title: 'Stay awake to sync?',
       onClose: onMaybeLater,
       bodyGap: AppSpacing.xxs,
       bottomPadding: AppSpacing.base,
@@ -256,7 +256,8 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'This will make long syncs much easier.',
+            'Your phone pauses syncing when screen is off. This allows sync '
+            'to finish faster.',
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -266,18 +267,17 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _SyncKeepAwakePromptBullet(
-                iconName: AppIcons.cog,
-                text: 'You can turn it on and off in settings anytime.',
-                textStyle: bodyStyle.copyWith(fontWeight: FontWeight.w500),
+                iconName: AppIcons.lock,
+                text:
+                    'The app locks after 1 minute of inactivity. Syncing '
+                    'continues behind the lock.',
+                textStyle: bodyStyle,
               ),
               const SizedBox(height: AppSpacing.xs),
               _SyncKeepAwakePromptBullet(
-                iconName: AppIcons.lock,
-                text:
-                    'After 1 minute of inactivity, the screen will be locked '
-                    'with the passcode while syncing continues in the '
-                    'background.',
-                textStyle: bodyStyle,
+                iconName: AppIcons.cog,
+                text: 'You can change this anytime in the Settings.',
+                textStyle: bodyStyle.copyWith(fontWeight: FontWeight.w500),
               ),
             ],
           ),

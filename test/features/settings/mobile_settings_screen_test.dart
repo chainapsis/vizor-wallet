@@ -193,7 +193,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.textContaining('Keep the screen active while Vizor is syncing'),
+      find.text(
+        'Prevents your phone from sleeping so sync can finish faster. The app '
+        'still locks after 1 minute of inactivity.',
+      ),
       findsOneWidget,
     );
     // The About entry stays hidden until the legal documents are ready.
