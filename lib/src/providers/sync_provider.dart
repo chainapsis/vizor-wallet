@@ -279,6 +279,46 @@ bool syncFailureWasRecordedWhileProgressAwaited({
       current?.lastSyncFailedAt != beforeAwait?.lastSyncFailedAt;
 }
 
+@visibleForTesting
+SyncState mergeProgressDataIntoConcurrentFailure({
+  required SyncState currentFailureState,
+  required SyncState progressState,
+}) {
+  // The DB reads performed by the progress callback may contain useful rows
+  // committed immediately before the stream failed. Merge only that
+  // account-scoped data into the newer failure state; its stopped lifecycle
+  // must win over the stale progress event that initiated those reads.
+  return currentFailureState.copyWith(
+    accountUuid: progressState.accountUuid,
+    hasBalanceData: progressState.hasBalanceData,
+    hasRecentTransactionsData: progressState.hasRecentTransactionsData,
+    transparentBalance: progressState.transparentBalance,
+    saplingBalance: progressState.saplingBalance,
+    orchardBalance: progressState.orchardBalance,
+    transparentPendingBalance: progressState.transparentPendingBalance,
+    saplingPendingBalance: progressState.saplingPendingBalance,
+    orchardPendingBalance: progressState.orchardPendingBalance,
+    canShieldTransparentBalance: progressState.canShieldTransparentBalance,
+    shieldTransparentFee: progressState.shieldTransparentFee,
+    shieldTransparentAmount: progressState.shieldTransparentAmount,
+    spendableBalance: progressState.spendableBalance,
+    totalBalance: progressState.totalBalance,
+    recentTransactions: progressState.recentTransactions,
+  );
+}
+
+@visibleForTesting
+bool shouldSmoothSyncProgress({
+  required SyncProgressEvent event,
+  required bool preserveConcurrentFailure,
+  required bool isBackgroundDelegateActive,
+}) {
+  return !preserveConcurrentFailure &&
+      !event.isComplete &&
+      event.isSyncing &&
+      !isBackgroundDelegateActive;
+}
+
 class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({Future<String> Function()? walletDbPathResolver})
     : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
@@ -1487,76 +1527,84 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? 1.0
         : math.min(actualPercentage, maxDisplayPercentage);
 
-    state = AsyncData(
-      SyncState(
-        accountUuid: stateAccountUuid,
-        hasBalanceData: hasBalanceData,
-        hasRecentTransactionsData: hasRecentTransactionsData,
-        isSyncing: event.isSyncing && !event.isComplete,
-        isBackgroundMode:
-            (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
-        percentage: actualPercentage,
-        displayPercentage: displayPercentage,
-        displayTargetPercentage: event.displayTargetPercentage,
-        displayTargetBlocks: event.displayTargetBlocks,
-        scannedHeight: event.scannedHeight,
-        chainTipHeight: event.chainTipHeight,
-        transparentBalance: useFetchedAccountData
-            ? transparent ?? stateScopedPrev?.transparentBalance
-            : stateScopedPrev?.transparentBalance,
-        saplingBalance: useFetchedAccountData
-            ? sapling ?? stateScopedPrev?.saplingBalance
-            : stateScopedPrev?.saplingBalance,
-        orchardBalance: useFetchedAccountData
-            ? orchard ?? stateScopedPrev?.orchardBalance
-            : stateScopedPrev?.orchardBalance,
-        transparentPendingBalance: useFetchedAccountData
-            ? transparentPending ?? stateScopedPrev?.transparentPendingBalance
-            : stateScopedPrev?.transparentPendingBalance,
-        saplingPendingBalance: useFetchedAccountData
-            ? saplingPending ?? stateScopedPrev?.saplingPendingBalance
-            : stateScopedPrev?.saplingPendingBalance,
-        orchardPendingBalance: useFetchedAccountData
-            ? orchardPending ?? stateScopedPrev?.orchardPendingBalance
-            : stateScopedPrev?.orchardPendingBalance,
-        canShieldTransparentBalance: useFetchedAccountData
-            ? canShieldTransparentBalance ??
-                  stateScopedPrev?.canShieldTransparentBalance ??
-                  false
-            : stateScopedPrev?.canShieldTransparentBalance ?? false,
-        shieldTransparentFee: useFetchedAccountData
-            ? shieldTransparentFee ?? stateScopedPrev?.shieldTransparentFee
-            : stateScopedPrev?.shieldTransparentFee,
-        shieldTransparentAmount: useFetchedAccountData
-            ? shieldTransparentAmount ??
-                  stateScopedPrev?.shieldTransparentAmount
-            : stateScopedPrev?.shieldTransparentAmount,
-        spendableBalance: useFetchedAccountData
-            ? spendable ?? stateScopedPrev?.spendableBalance
-            : stateScopedPrev?.spendableBalance,
-        totalBalance: useFetchedAccountData
-            ? total ?? stateScopedPrev?.totalBalance
-            : stateScopedPrev?.totalBalance,
-        failure: preserveConcurrentFailure ? currentState?.failure : null,
-        error: preserveConcurrentFailure ? currentState?.error : null,
-        recentTransactions: useFetchedAccountData
-            ? recentTxs
-            : stateScopedPrev?.recentTransactions ?? const [],
-        lastSyncStartedAt: syncStartedAt,
-        lastSyncCompletedAt: syncCompletedAt,
-        lastSyncFailedAt: currentState?.lastSyncFailedAt,
-        phase: event.phase,
-      ),
+    var nextState = SyncState(
+      accountUuid: stateAccountUuid,
+      hasBalanceData: hasBalanceData,
+      hasRecentTransactionsData: hasRecentTransactionsData,
+      isSyncing: event.isSyncing && !event.isComplete,
+      isBackgroundMode:
+          (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
+      percentage: actualPercentage,
+      displayPercentage: displayPercentage,
+      displayTargetPercentage: event.displayTargetPercentage,
+      displayTargetBlocks: event.displayTargetBlocks,
+      scannedHeight: event.scannedHeight,
+      chainTipHeight: event.chainTipHeight,
+      transparentBalance: useFetchedAccountData
+          ? transparent ?? stateScopedPrev?.transparentBalance
+          : stateScopedPrev?.transparentBalance,
+      saplingBalance: useFetchedAccountData
+          ? sapling ?? stateScopedPrev?.saplingBalance
+          : stateScopedPrev?.saplingBalance,
+      orchardBalance: useFetchedAccountData
+          ? orchard ?? stateScopedPrev?.orchardBalance
+          : stateScopedPrev?.orchardBalance,
+      transparentPendingBalance: useFetchedAccountData
+          ? transparentPending ?? stateScopedPrev?.transparentPendingBalance
+          : stateScopedPrev?.transparentPendingBalance,
+      saplingPendingBalance: useFetchedAccountData
+          ? saplingPending ?? stateScopedPrev?.saplingPendingBalance
+          : stateScopedPrev?.saplingPendingBalance,
+      orchardPendingBalance: useFetchedAccountData
+          ? orchardPending ?? stateScopedPrev?.orchardPendingBalance
+          : stateScopedPrev?.orchardPendingBalance,
+      canShieldTransparentBalance: useFetchedAccountData
+          ? canShieldTransparentBalance ??
+                stateScopedPrev?.canShieldTransparentBalance ??
+                false
+          : stateScopedPrev?.canShieldTransparentBalance ?? false,
+      shieldTransparentFee: useFetchedAccountData
+          ? shieldTransparentFee ?? stateScopedPrev?.shieldTransparentFee
+          : stateScopedPrev?.shieldTransparentFee,
+      shieldTransparentAmount: useFetchedAccountData
+          ? shieldTransparentAmount ?? stateScopedPrev?.shieldTransparentAmount
+          : stateScopedPrev?.shieldTransparentAmount,
+      spendableBalance: useFetchedAccountData
+          ? spendable ?? stateScopedPrev?.spendableBalance
+          : stateScopedPrev?.spendableBalance,
+      totalBalance: useFetchedAccountData
+          ? total ?? stateScopedPrev?.totalBalance
+          : stateScopedPrev?.totalBalance,
+      failure: preserveConcurrentFailure ? currentState?.failure : null,
+      error: preserveConcurrentFailure ? currentState?.error : null,
+      recentTransactions: useFetchedAccountData
+          ? recentTxs
+          : stateScopedPrev?.recentTransactions ?? const [],
+      lastSyncStartedAt: syncStartedAt,
+      lastSyncCompletedAt: syncCompletedAt,
+      lastSyncFailedAt: currentState?.lastSyncFailedAt,
+      phase: event.phase,
     );
+    if (preserveConcurrentFailure && currentState != null) {
+      nextState = mergeProgressDataIntoConcurrentFailure(
+        currentFailureState: currentState,
+        progressState: nextState,
+      );
+    }
+    state = AsyncData(nextState);
 
-    if (event.isComplete || !event.isSyncing || _bgDelegate.isActive) {
-      _stopDisplayProgressTimer();
-    } else {
+    if (shouldSmoothSyncProgress(
+      event: event,
+      preserveConcurrentFailure: preserveConcurrentFailure,
+      isBackgroundDelegateActive: _bgDelegate.isActive,
+    )) {
       _startDisplayProgressSmoothing(
         basePercentage: displayPercentage,
         targetPercentage: event.displayTargetPercentage,
         targetBlocks: event.displayTargetBlocks,
       );
+    } else {
+      _stopDisplayProgressTimer();
     }
 
     // Handle sync completion here (not in onDone) to avoid race with async state update.
