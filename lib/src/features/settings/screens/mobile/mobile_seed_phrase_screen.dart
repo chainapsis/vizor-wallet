@@ -378,6 +378,9 @@ class _MobileSeedPhraseScreenState
       backgroundColor: colors.background.window,
       body: AppToastHost(
         child: SensitivePrivacyOverlay(
+          // Protect only in the reveal stage. The passcode gate shows no words,
+          // so blanking its screenshot and app-switcher snapshot is needless
+          // friction. Matches the `_onScreenshot` guard.
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
           controller: _privacyController,

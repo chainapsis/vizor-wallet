@@ -1,12 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/feedback/app_haptics.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/route_coverage_aware.dart';
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
+    show MobileSeedScreenshotWarningSheet;
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
@@ -18,27 +27,52 @@ import 'mobile_onboarding_scaffold.dart';
 /// tapping a suggestion, or by space/return when it's a valid BIP39
 /// word; backspace on an empty field steps back to the previous word.
 class MobileImportManualScreen extends StatefulWidget {
-  const MobileImportManualScreen({this.wordListOverride, super.key});
+  const MobileImportManualScreen({
+    this.wordListOverride,
+    this.screenshotStream,
+    this.privacyOverlayController,
+    super.key,
+  });
 
   /// Test seam — production loads the Rust BIP39 list.
   @visibleForTesting
   final List<String>? wordListOverride;
+
+  /// Test seam — production listens to the platform screenshot events.
+  @visibleForTesting
+  final Stream<void>? screenshotStream;
+
+  @visibleForTesting
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   State<MobileImportManualScreen> createState() =>
       _MobileImportManualScreenState();
 }
 
-class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
+class _MobileImportManualScreenState extends State<MobileImportManualScreen>
+    with RouteCoverageAware<MobileImportManualScreen> {
   late final List<String> _wordList;
   final List<String> _accepted = [];
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   String? _error;
 
+  StreamSubscription<void>? _screenshotSub;
+  bool _screenshotSheetShowing = false;
+  late final bool _ownsPrivacyController;
+  late final SensitivePrivacyOverlayController _privacyController;
+
   @override
   void initState() {
     super.initState();
+    _ownsPrivacyController = widget.privacyOverlayController == null;
+    _privacyController =
+        widget.privacyOverlayController ??
+        SensitivePrivacyEnvironmentController();
+    _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
+      (_) => _onScreenshot(),
+    );
     var words = widget.wordListOverride;
     if (words == null) {
       try {
@@ -54,10 +88,35 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
 
   @override
   void dispose() {
+    _screenshotSub?.cancel();
+    if (_ownsPrivacyController) _privacyController.dispose();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
+
+  Future<void> _onScreenshot() async {
+    // Only warn once a word is on screen — a typed word or an accepted word.
+    // An empty field has nothing to protect. Mirrors the reveal screens.
+    if ((_accepted.isEmpty && _typed.isEmpty) ||
+        _screenshotSheetShowing ||
+        !_isCurrentRoute ||
+        !mounted) {
+      return;
+    }
+    _screenshotSheetShowing = true;
+    unawaited(AppHaptics.privacyToggle());
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (_) => const MobileSeedScreenshotWarningSheet(),
+      );
+    } finally {
+      _screenshotSheetShowing = false;
+    }
+  }
+
+  bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
   List<String> get _suggestions {
     final prefix = _controller.text.trim().toLowerCase();
@@ -229,6 +288,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       setState(() => _error = error);
       return;
     }
+    // The shield stays engaged through the push transition and drops only once
+    // this screen is fully covered (RouteCoverageAware), so birthday and the
+    // screens after it are not blanked while the seed is no longer visible.
     context
         .push<Object?>(
           '/import/birthday',
@@ -277,90 +339,98 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     final colors = context.colors;
     final position = (_accepted.length + 1).clamp(1, kMnemonicMaxWords);
 
-    return MobileOnboardingStepScaffold(
-      progress: mobileImportProgress(1),
-      onBack: () => Navigator.of(context).maybePop(),
-      title: 'Enter your Secret Passphrase',
-      subtitle: 'Accept 12, 15, 18, 21 or 24 words',
-      // Only the CTA is pinned — it rides up above the keyboard (Figma
-      // 4746:83516). The autocomplete chips stay attached under the word
-      // field and scroll with the content. The stretch Column gives the
-      // expand:true button a tight width to fill.
-      bottomArea: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [_buildButtonRow()],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _WordField(
-            index: position,
-            controller: _controller,
-            focusNode: _focusNode,
-            hasError: _error != null,
-            onChanged: _onChanged,
-            onSubmitted: _onSubmitted,
-          ),
-          if (_suggestions.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final word in _suggestions)
-                    Padding(
-                      padding: const EdgeInsets.only(right: AppSpacing.xs),
-                      child: _SuggestionChip(
-                        word: word,
-                        onTap: () => _acceptWord(word),
+    return SensitivePrivacyOverlay(
+      // Protect only once a word is on screen — an empty field has nothing to
+      // blank. Matches the `_onScreenshot` guard. Drops once a next step has
+      // fully covered this screen so it does not blank those screens.
+      sensitiveContentVisible:
+          (_accepted.isNotEmpty || _typed.isNotEmpty) && !isCoveredByNextRoute,
+      controller: _privacyController,
+      child: MobileOnboardingStepScaffold(
+        progress: mobileImportProgress(1),
+        onBack: () => Navigator.of(context).maybePop(),
+        title: 'Enter your Secret Passphrase',
+        subtitle: 'Accept 12, 15, 18, 21 or 24 words',
+        // Only the CTA is pinned — it rides up above the keyboard (Figma
+        // 4746:83516). The autocomplete chips stay attached under the word
+        // field and scroll with the content. The stretch Column gives the
+        // expand:true button a tight width to fill.
+        bottomArea: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [_buildButtonRow()],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _WordField(
+              index: position,
+              controller: _controller,
+              focusNode: _focusNode,
+              hasError: _error != null,
+              onChanged: _onChanged,
+              onSubmitted: _onSubmitted,
+            ),
+            if (_suggestions.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.s),
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final word in _suggestions)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xs),
+                        child: _SuggestionChip(
+                          word: word,
+                          onTap: () => _acceptWord(word),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.destructive,
+                ),
               ),
-            ),
-          ],
-          if (_accepted.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              _accepted.join(' · '),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
+            ],
+            if (_accepted.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                _accepted.join(' · '),
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _stepBack,
-                child: SizedBox(
-                  height: 36,
-                  child: Center(
-                    child: Text(
-                      'Undo last word',
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
+              const SizedBox(height: AppSpacing.xs),
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _stepBack,
+                  child: SizedBox(
+                    height: 36,
+                    child: Center(
+                      child: Text(
+                        'Undo last word',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

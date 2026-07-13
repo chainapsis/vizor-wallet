@@ -293,7 +293,7 @@ void main() {
   });
 
   testWidgets(
-    'covers the revealed phrase when the privacy controller is unsafe',
+    'covers the phrase once revealed when the privacy controller is unsafe',
     (tester) async {
       final privacyController = SensitivePrivacyOverlayController(
         initiallySafe: false,
@@ -309,11 +309,13 @@ void main() {
         ),
       );
       await tester.pump();
+      // Before reveal the card shows no words, so nothing is blanked even when
+      // the controller is unsafe.
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
 
+      // Revealing the phrase turns on protection; the shield covers the words.
       await tester.tap(find.text('Reveal phrase'));
       await tester.pump();
-
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
 
       privacyController.markSafe();

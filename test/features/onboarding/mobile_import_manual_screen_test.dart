@@ -1,14 +1,19 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
@@ -45,6 +50,35 @@ Widget _routedApp() {
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _screenshotApp({
+  Stream<void>? screenshotStream,
+  SensitivePrivacyOverlayController? privacyOverlayController,
+}) {
+  return ProviderScope(
+    child: MaterialApp(
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      home: MobileImportManualScreen(
+        wordListOverride: _wordList,
+        screenshotStream: screenshotStream,
+        privacyOverlayController: privacyOverlayController,
+      ),
+    ),
+  );
+}
+
+void _muteSystemChannel(WidgetTester tester) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async => null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
     ),
   );
 }
@@ -252,6 +286,63 @@ void main() {
     expect(find.textContaining("Stopped at 'notaword'"), findsOneWidget);
     expect(find.text('Undo last word'), findsNothing);
   });
+
+  testWidgets('warns on a screenshot once a word is on screen', (tester) async {
+    final screenshots = StreamController<void>();
+    addTearDown(screenshots.close);
+    _muteSystemChannel(tester);
+
+    await tester.pumpWidget(
+      _screenshotApp(screenshotStream: screenshots.stream),
+    );
+    await tester.pump();
+
+    // Empty field — nothing to protect yet.
+    screenshots.add(null);
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_import_manual_field')),
+      'abandon',
+    );
+    await tester.pump();
+
+    screenshots.add(null);
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+    expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
+  });
+
+  testWidgets(
+    'covers the field once a word is on screen when the controller is unsafe',
+    (tester) async {
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(privacyController.dispose);
+
+      await tester.pumpWidget(
+        _screenshotApp(privacyOverlayController: privacyController),
+      );
+      await tester.pump();
+
+      // An empty field has nothing to blank, even when unsafe.
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_import_manual_field')),
+        'ab',
+      );
+      await tester.pump();
+      // A typed word turns on protection; the shield covers the field.
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+      privacyController.markSafe();
+      await tester.pump();
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    },
+  );
 }
 
 class _RustApiFake implements RustLibApi {

@@ -9,6 +9,7 @@ import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -59,7 +60,8 @@ class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileSecretPassphraseScreenState
-    extends ConsumerState<MobileSecretPassphraseScreen> {
+    extends ConsumerState<MobileSecretPassphraseScreen>
+    with RouteCoverageAware<MobileSecretPassphraseScreen> {
   String? _mnemonic;
   bool _revealed = false;
   bool _copied = false;
@@ -144,6 +146,9 @@ class _MobileSecretPassphraseScreenState
 
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
+      // The shield stays engaged through the push transition and drops only
+      // once this screen is fully covered (RouteCoverageAware), so the passcode
+      // step is not blanked while the seed is no longer visible.
       context.push(
         '/onboarding/set-passcode',
         extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
@@ -207,7 +212,12 @@ class _MobileSecretPassphraseScreenState
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
     return SensitivePrivacyOverlay(
-      sensitiveContentVisible: _revealed && _mnemonic != null,
+      // Protect only while the phrase is actually on screen. Before reveal the
+      // card shows no words, so blanking its screenshot and blurring the app
+      // switcher there is needless friction. Matches the `_onScreenshot` guard.
+      // Drops once the passcode step has fully covered this screen.
+      sensitiveContentVisible:
+          _revealed && _mnemonic != null && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: mobileCreateProgress(6),
