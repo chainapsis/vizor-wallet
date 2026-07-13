@@ -601,6 +601,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
 
+    // Sync has already been stopped by runWithSyncPausedForWalletReset. Wait
+    // for a detached WAL checkpoint that opened this DB, and invalidate one
+    // that is still queued, before deleting the randomized wallet path.
+    rust_wallet.quiesceWalletWalCheckpointForReset();
+
     var dbDeleted = false;
     try {
       await _deleteExistingDb(dbPath);

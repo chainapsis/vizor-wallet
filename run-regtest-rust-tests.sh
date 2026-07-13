@@ -31,6 +31,10 @@ Override with:
 
   SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh
 
+Prerequisites:
+
+  grpcurl    Required for deterministic same-height reorg tests.
+
 Options:
 
   --keep    Skip the final down/reset cleanup so the regtest state stays
@@ -55,6 +59,16 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# The full suite includes same-height reorg scenarios. A TCP or height-only
+# readiness check cannot distinguish the old lightwalletd tip from its
+# same-height replacement, so fail before resetting any existing regtest state
+# when the hash-capable gRPC probe is unavailable.
+if ! command -v grpcurl >/dev/null 2>&1; then
+  echo "grpcurl is required to run the full Rust regtest suite (same-height reorg verification)." >&2
+  echo "Install grpcurl and retry, or run an individual non-reorg test target manually." >&2
+  exit 1
+fi
 
 cleanup() {
   if [[ "$KEEP_STATE" -eq 1 ]]; then
@@ -149,7 +163,8 @@ echo "==> Log file: $LOG_FILE"
     regtest_receive_sync \
     regtest_send \
     regtest_import \
-    regtest_multi_account
+    regtest_multi_account \
+    regtest_reorg
   do
     cargo test --test "$test_target" -- --ignored --nocapture --test-threads=1
   done
