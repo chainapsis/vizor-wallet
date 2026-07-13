@@ -207,6 +207,8 @@ pub(crate) struct KeystoneMigrationProofStatus {
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
+const MIGRATION_ORCHARD_ACTION_COUNT: usize = 2;
+const MIGRATION_IRONWOOD_ACTION_COUNT: usize = 1;
 static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static KEYSTONE_DENOMINATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredDenominationPczt>>> =
     OnceLock::new();
@@ -2910,9 +2912,9 @@ fn create_orchard_denomination_split_pczt(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
-    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
-    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
+    // single spend to 2 actions, while its unpadded Ironwood output counts as
+    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -2923,8 +2925,8 @@ fn create_orchard_denomination_split_pczt(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
-            1,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3083,9 +3085,9 @@ fn create_orchard_denomination_split_transaction(
     })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its unpadded Orchard spend and
-    // unpadded Ironwood self-addressed output count as 2 logical actions, 10_000
-    // zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
+    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
+    // single spend to 2 actions, while its unpadded Ironwood output counts as
+    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
     // recomputes the exact per-child fee from the real builder; this estimate
     // must match it so the planned denominations balance.
     let migration_fee_estimate = fee_rule
@@ -3096,8 +3098,8 @@ fn create_orchard_denomination_split_transaction(
             std::iter::empty::<usize>(),
             0,
             0,
-            1,
-            1,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
 
@@ -3267,6 +3269,28 @@ fn dummy_orchard_merkle_path() -> Result<orchard::tree::MerklePath, String> {
     Ok(orchard::tree::MerklePath::from_parts(0, [zero; 32]))
 }
 
+/// Builds a migration child with 2 Orchard actions and 1 Ironwood action.
+pub(super) fn migration_child_builder<P: consensus::Parameters>(
+    network: P,
+    target_height: BlockHeight,
+    orchard_anchor: orchard::Anchor,
+) -> Builder<P, ()> {
+    Builder::new_with_orchard_pool_bundle_type(
+        network,
+        target_height,
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(orchard_anchor),
+            #[cfg(zcash_unstable = "nu6.3")]
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+        },
+        orchard::ValuePool::Ironwood,
+        orchard::builder::BundleType::UNPADDED,
+    )
+    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
+}
+
 fn create_orchard_to_ironwood_pczt_from_predicted_note(
     db_path: &str,
     network: WalletNetwork,
@@ -3308,19 +3332,8 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     };
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(dummy_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor);
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -3495,19 +3508,8 @@ fn create_orchard_to_ironwood_transaction_from_note(
     )?;
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(orchard_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -3663,19 +3665,8 @@ fn create_orchard_to_ironwood_pczt_from_note(
     )?;
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder = Builder::new(
-            network,
-            BlockHeight::from(target_height),
-            BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(orchard_anchor),
-                #[cfg(zcash_unstable = "nu6.3")]
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                // Migration child: 1 Orchard spend + 1 Ironwood output, unpadded.
-                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
-            },
-        )
-        .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+        let mut builder =
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -6401,6 +6392,41 @@ mod tests {
             migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
         );
         assert_eq!(active.last_error, None);
+    }
+
+    #[test]
+    fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
+        let orchard_actions = orchard::builder::BundleType::DEFAULT
+            .num_actions(
+                orchard::bundle::BundleVersion::orchard_v3().default_flags(),
+                1,
+                0,
+            )
+            .unwrap();
+        let ironwood_actions = orchard::builder::BundleType::UNPADDED
+            .num_actions(
+                orchard::bundle::BundleVersion::ironwood_v3().default_flags(),
+                0,
+                1,
+            )
+            .unwrap();
+
+        assert_eq!(orchard_actions, MIGRATION_ORCHARD_ACTION_COUNT);
+        assert_eq!(ironwood_actions, MIGRATION_IRONWOOD_ACTION_COUNT);
+
+        let fee = ConservativeZip317FeeRule
+            .fee_required(
+                &WalletNetwork::LocalIronwoodTestnet,
+                BlockHeight::from_u32(120),
+                std::iter::empty::<TransparentInputSize>(),
+                std::iter::empty::<usize>(),
+                0,
+                0,
+                orchard_actions,
+                ironwood_actions,
+            )
+            .unwrap();
+        assert_eq!(u64::from(fee), 15_000);
     }
 
     #[test]

@@ -19,8 +19,9 @@ pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 // Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
-// 2 logical actions (1 unpadded Orchard + 1 unpadded Ironwood).
-const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 10_000;
+// 3 logical actions (a 2-action padded Orchard bundle and a 1-action
+// unpadded Ironwood bundle).
+const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";

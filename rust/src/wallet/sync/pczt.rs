@@ -1054,10 +1054,7 @@ mod tests {
         use rand_core::OsRng;
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
         use zcash_note_encryption::try_note_decryption;
-        use zcash_primitives::transaction::{
-            builder::{BuildConfig, Builder, PcztResult},
-            fees::zip317,
-        };
+        use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
         use zcash_protocol::{
             consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
             memo::{Memo, MemoBytes},
@@ -1154,17 +1151,10 @@ mod tests {
 
             // Build a v6 transaction that spends Orchard and outputs to Ironwood
             // (the migration shape).
-            let mut builder = Builder::new(
+            let mut builder = crate::wallet::sync::send::migration_child_builder(
                 Nu6_3Network,
                 10_000_000.into(),
-                BuildConfig::Standard {
-                    sapling_anchor: None,
-                    orchard_anchor: Some(anchor),
-                    ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                    // Migration-shaped fixture: 1 unpadded Orchard spend + 1
-                    // unpadded Ironwood output, matching the pipeline.
-                    orchard_pool_bundle_type: ::orchard::builder::BundleType::UNPADDED,
-                },
+                anchor,
             );
             builder
                 .add_orchard_spend::<zip317::FeeRule>(orchard_fvk.clone(), note, merkle_path)
@@ -1173,9 +1163,9 @@ mod tests {
                 .add_ironwood_output::<zip317::FeeRule>(
                     Some(orchard_ovk),
                     recipient,
-                    // 1_000_000 input - the 10_000 ZIP-317 fee (2 logical
-                    // actions: 1 unpadded Orchard + 1 unpadded Ironwood).
-                    Zatoshis::const_from_u64(990_000),
+                    // 1_000_000 input - the 15_000 ZIP-317 fee (3 logical
+                    // actions: 2 padded Orchard + 1 unpadded Ironwood).
+                    Zatoshis::const_from_u64(985_000),
                     MemoBytes::empty(),
                 )
                 .unwrap();
@@ -1431,7 +1421,7 @@ mod tests {
             // are elided; the wallet's retained PCZT owns the real anchors.
             assert!(parsed.orchard().anchor().is_none());
             assert!(parsed.ironwood().anchor().is_none());
-            assert_eq!(parsed.orchard().actions().len(), 1);
+            assert_eq!(parsed.orchard().actions().len(), 2);
             assert_eq!(parsed.ironwood().actions().len(), 1);
 
             // Both pools: `cv_net` elided, the ciphertext rides as memo
