@@ -427,6 +427,32 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets(
+    'completed sync snapshot stays available while live value is zero',
+    (tester) async {
+      await _setDesktopViewport(tester);
+
+      await tester.pumpWidget(
+        _sendHarness(
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(100000000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('send_amount_error_text')),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -777,6 +803,9 @@ Widget _sendHarness({
   AddressBookRepository? addressBookRepository,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
+  BigInt? displaySpendableBalance,
+  SpendableBalanceFreshness displaySpendableFreshness =
+      SpendableBalanceFreshness.authoritative,
   BigInt? transparentBalance,
   double? zecUsdPrice = 70,
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
@@ -804,6 +833,8 @@ Widget _sendHarness({
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
+          displaySpendableBalance: displaySpendableBalance,
+          displaySpendableFreshness: displaySpendableFreshness,
           transparentBalance: transparentBalance ?? BigInt.zero,
         ),
       ),
@@ -929,10 +960,14 @@ final _hardwareBootstrap = AppBootstrapState(
 class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
+    required this.displaySpendableBalance,
+    required this.displaySpendableFreshness,
     required this.transparentBalance,
   });
 
   final BigInt spendableBalance;
+  final BigInt? displaySpendableBalance;
+  final SpendableBalanceFreshness displaySpendableFreshness;
   final BigInt transparentBalance;
 
   @override
@@ -940,6 +975,8 @@ class _FakeSyncNotifier extends SyncNotifier {
     accountUuid: 'account-1',
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
+    displaySpendableBalance: displaySpendableBalance,
+    displaySpendableFreshness: displaySpendableFreshness,
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,
   );
