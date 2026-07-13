@@ -35,10 +35,37 @@ abstract final class MigrationCopy {
   static const splitActive = 'Splitting funds…';
   static String splitDone(int count) => 'Done · $count standard notes';
   static const splitDoneGeneric = 'Done';
-  static const confirmTitle = 'Confirm split';
+  static String splitTransactionsPrepared(int count) =>
+      '$count split ${count == 1 ? 'transaction' : 'transactions'} prepared';
+  static String confirmTitle(int splitTotal) =>
+      splitTotal > 1 ? 'Confirm splits' : 'Confirm split';
+  static String splitProgress(int completed, int total) {
+    if (total <= 0) return 'No splits needed';
+    final safeCompleted = completed.clamp(0, total).toInt();
+    final splitNoun = total == 1 ? 'split' : 'splits';
+    final remaining = total - safeCompleted;
+    final remainingNoun = remaining == 1 ? 'split' : 'splits';
+    final progress = '$safeCompleted of $total $splitNoun complete';
+    return remaining > 0
+        ? '$progress · $remaining $remainingNoun remaining'
+        : progress;
+  }
+
   static String confirmActive(int count, int target) =>
-      'Confirming… $count of $target';
-  static const confirmDone = 'Confirmed';
+      currentSplitConfirmations(count, target);
+  static String currentSplitConfirmations(
+    int confirmationCount,
+    int confirmationTarget,
+  ) {
+    final confirmationNoun = confirmationTarget == 1
+        ? 'confirmation'
+        : 'confirmations';
+    return 'Current confirmation round · $confirmationCount of '
+        '$confirmationTarget $confirmationNoun';
+  }
+
+  static String confirmDone(int completed, int total) =>
+      total > 0 ? splitProgress(completed, total) : 'Confirmed';
   static const sendTitle = 'Send shares';
   static const sendConfirmingTitle = 'Confirming shares';
   static const sendScanCta = 'Scan to sign the sends';

@@ -7610,8 +7610,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 20)
+      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -7619,19 +7619,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       preparedNoteCount: dco_decode_u_32(arr[3]),
       denominationConfirmationCount: dco_decode_u_32(arr[4]),
       denominationConfirmationTarget: dco_decode_u_32(arr[5]),
-      pendingTxCount: dco_decode_u_32(arr[6]),
-      broadcastedTxCount: dco_decode_u_32(arr[7]),
-      confirmedTxCount: dco_decode_u_32(arr[8]),
-      totalCount: dco_decode_u_32(arr[9]),
-      signedChildPcztCount: dco_decode_u_32(arr[10]),
-      pendingPrepTxCount: dco_decode_u_32(arr[11]),
-      message: dco_decode_opt_String(arr[12]),
-      canAbandon: dco_decode_bool(arr[13]),
-      signingBatchLimit: dco_decode_u_32(arr[14]),
-      broadcastWindowSeconds: dco_decode_u_64(arr[15]),
-      maxPreparedNotesPerRun: dco_decode_u_32(arr[16]),
+      denominationSplitCompletedCount: dco_decode_u_32(arr[6]),
+      denominationSplitTotalCount: dco_decode_u_32(arr[7]),
+      pendingTxCount: dco_decode_u_32(arr[8]),
+      broadcastedTxCount: dco_decode_u_32(arr[9]),
+      confirmedTxCount: dco_decode_u_32(arr[10]),
+      totalCount: dco_decode_u_32(arr[11]),
+      signedChildPcztCount: dco_decode_u_32(arr[12]),
+      pendingPrepTxCount: dco_decode_u_32(arr[13]),
+      message: dco_decode_opt_String(arr[14]),
+      canAbandon: dco_decode_bool(arr[15]),
+      signingBatchLimit: dco_decode_u_32(arr[16]),
+      broadcastWindowSeconds: dco_decode_u_64(arr[17]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[18]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[17],
+        arr[19],
       ),
     );
   }
@@ -9854,6 +9856,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_preparedNoteCount = sse_decode_u_32(deserializer);
     var var_denominationConfirmationCount = sse_decode_u_32(deserializer);
     var var_denominationConfirmationTarget = sse_decode_u_32(deserializer);
+    var var_denominationSplitCompletedCount = sse_decode_u_32(deserializer);
+    var var_denominationSplitTotalCount = sse_decode_u_32(deserializer);
     var var_pendingTxCount = sse_decode_u_32(deserializer);
     var var_broadcastedTxCount = sse_decode_u_32(deserializer);
     var var_confirmedTxCount = sse_decode_u_32(deserializer);
@@ -9875,6 +9879,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       preparedNoteCount: var_preparedNoteCount,
       denominationConfirmationCount: var_denominationConfirmationCount,
       denominationConfirmationTarget: var_denominationConfirmationTarget,
+      denominationSplitCompletedCount: var_denominationSplitCompletedCount,
+      denominationSplitTotalCount: var_denominationSplitTotalCount,
       pendingTxCount: var_pendingTxCount,
       broadcastedTxCount: var_broadcastedTxCount,
       confirmedTxCount: var_confirmedTxCount,
@@ -12134,6 +12140,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.preparedNoteCount, serializer);
     sse_encode_u_32(self.denominationConfirmationCount, serializer);
     sse_encode_u_32(self.denominationConfirmationTarget, serializer);
+    sse_encode_u_32(self.denominationSplitCompletedCount, serializer);
+    sse_encode_u_32(self.denominationSplitTotalCount, serializer);
     sse_encode_u_32(self.pendingTxCount, serializer);
     sse_encode_u_32(self.broadcastedTxCount, serializer);
     sse_encode_u_32(self.confirmedTxCount, serializer);

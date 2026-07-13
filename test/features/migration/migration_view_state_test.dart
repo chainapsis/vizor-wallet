@@ -257,6 +257,8 @@ void main() {
             phase: 'ready_to_migrate',
             targetValuesZatoshi: Uint64List(0),
             preparedNoteCount: 0,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 0,
             denominationConfirmationCount: 3,
             denominationConfirmationTarget: 3,
             pendingTxCount: 0,
@@ -335,6 +337,8 @@ void main() {
       phase: phase,
       targetValuesZatoshi: Uint64List(0),
       preparedNoteCount: 0,
+      denominationSplitCompletedCount: 0,
+      denominationSplitTotalCount: 0,
       denominationConfirmationCount: 3,
       denominationConfirmationTarget: 3,
       pendingTxCount: 0,
@@ -434,6 +438,40 @@ void main() {
     );
   });
 
+  test('broadcast tick leaves broadcasted children to normal sync', () {
+    rust_sync.MigrationStatus status({required int broadcastedTxCount}) =>
+        rust_sync.MigrationStatus(
+          phase: 'waiting_migration_confirmations',
+          targetValuesZatoshi: Uint64List(0),
+          preparedNoteCount: 0,
+          denominationSplitCompletedCount: 0,
+          denominationSplitTotalCount: 0,
+          denominationConfirmationCount: 3,
+          denominationConfirmationTarget: 3,
+          pendingTxCount: 0,
+          signedChildPcztCount: 0,
+          pendingPrepTxCount: 0,
+          broadcastedTxCount: broadcastedTxCount,
+          confirmedTxCount: 0,
+          totalCount: 30,
+          canAbandon: false,
+          signingBatchLimit: 50,
+          broadcastWindowSeconds: BigInt.from(180),
+          maxPreparedNotesPerRun: 64,
+          scheduledBroadcasts: const [],
+        );
+
+    final now = DateTime.fromMillisecondsSinceEpoch(1);
+    expect(
+      migrationShouldRunBroadcastTick(status(broadcastedTxCount: 1), now),
+      isFalse,
+    );
+    expect(
+      migrationShouldRunBroadcastTick(status(broadcastedTxCount: 0), now),
+      isFalse,
+    );
+  });
+
   test(
     'staged-fallback Send awaits a scan only before children are signed',
     () {
@@ -442,6 +480,8 @@ void main() {
             phase: 'ready_to_migrate',
             targetValuesZatoshi: Uint64List(0),
             preparedNoteCount: 0,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 0,
             denominationConfirmationCount: 3,
             denominationConfirmationTarget: 3,
             pendingTxCount: 0,

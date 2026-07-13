@@ -13,6 +13,7 @@ Future<void> _pump(
   MigrationTimelineModel model, {
   rust_sync.MigrationStatus? status,
   int totalShares = 3,
+  List<rust_sync.TransactionInfo> shares = const [],
   DateTime? now,
   VoidCallback? onScanSends,
   VoidCallback? onRetry,
@@ -26,7 +27,7 @@ Future<void> _pump(
             child: MigrationTimeline(
               model: model,
               status: status,
-              shares: const [],
+              shares: shares,
               amountZatoshi: BigInt.from(120000000),
               totalShares: totalShares,
               now: now ?? DateTime.fromMillisecondsSinceEpoch(0),
@@ -41,20 +42,29 @@ Future<void> _pump(
 }
 
 rust_sync.MigrationStatus _status({
-  required List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
+  String phase = 'broadcast_scheduled',
+  int denominationSplitCompletedCount = 0,
+  int denominationSplitTotalCount = 0,
+  int denominationConfirmationCount = 3,
+  int denominationConfirmationTarget = 3,
+  int confirmedTxCount = 0,
+  int? totalCount,
 }) {
   return rust_sync.MigrationStatus(
-    phase: 'broadcast_scheduled',
+    phase: phase,
     targetValuesZatoshi: Uint64List(0),
     preparedNoteCount: 0,
-    denominationConfirmationCount: 3,
-    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: denominationSplitCompletedCount,
+    denominationSplitTotalCount: denominationSplitTotalCount,
+    denominationConfirmationCount: denominationConfirmationCount,
+    denominationConfirmationTarget: denominationConfirmationTarget,
     pendingTxCount: scheduledBroadcasts.length,
     signedChildPcztCount: 0,
     pendingPrepTxCount: 0,
     broadcastedTxCount: 0,
-    confirmedTxCount: 0,
-    totalCount: scheduledBroadcasts.length,
+    confirmedTxCount: confirmedTxCount,
+    totalCount: totalCount ?? scheduledBroadcasts.length,
     canAbandon: false,
     signingBatchLimit: 8,
     broadcastWindowSeconds: BigInt.from(180),
@@ -74,8 +84,108 @@ void main() {
       ),
     );
     expect(find.text(MigrationCopy.splitTitle), findsOneWidget);
-    expect(find.text(MigrationCopy.confirmTitle), findsOneWidget);
+    expect(find.text(MigrationCopy.confirmTitle(0)), findsOneWidget);
     expect(find.text(MigrationCopy.sendTitle), findsOneWidget);
+  });
+
+  testWidgets('shows completed, remaining, and current confirmation round', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const MigrationTimelineModel(
+        split: MigrationNodeStatus.done,
+        confirm: MigrationNodeStatus.active,
+        send: MigrationNodeStatus.pending,
+      ),
+      status: _status(
+        phase: 'waiting_denom_confirmations',
+        denominationSplitCompletedCount: 1,
+        denominationSplitTotalCount: 3,
+        denominationConfirmationCount: 2,
+        totalCount: 30,
+      ),
+    );
+
+    expect(find.text('3 split transactions prepared'), findsOneWidget);
+    expect(find.text('Done · 30 standard notes'), findsNothing);
+    expect(find.text(MigrationCopy.confirmTitle(3)), findsOneWidget);
+    expect(
+      find.text('1 of 3 splits complete · 2 splits remaining'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Current confirmation round · 2 of 3 confirmations'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('uses singular split copy for a one-stage split', (tester) async {
+    await _pump(
+      tester,
+      const MigrationTimelineModel(
+        split: MigrationNodeStatus.done,
+        confirm: MigrationNodeStatus.active,
+        send: MigrationNodeStatus.pending,
+      ),
+      status: _status(
+        phase: 'waiting_denom_confirmations',
+        denominationSplitTotalCount: 1,
+        denominationConfirmationCount: 0,
+        totalCount: 30,
+      ),
+    );
+
+    expect(find.text('1 split transaction prepared'), findsOneWidget);
+    expect(find.text(MigrationCopy.confirmTitle(1)), findsOneWidget);
+    expect(
+      find.text('0 of 1 split complete · 1 split remaining'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('falls back to confirmation depth when split total is unknown', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const MigrationTimelineModel(
+        split: MigrationNodeStatus.done,
+        confirm: MigrationNodeStatus.active,
+        send: MigrationNodeStatus.pending,
+      ),
+      status: _status(
+        phase: 'waiting_denom_confirmations',
+        denominationConfirmationCount: 1,
+      ),
+    );
+
+    expect(
+      find.text('Current confirmation round · 1 of 3 confirmations'),
+      findsOneWidget,
+    );
+    expect(find.text('No splits needed'), findsNothing);
+  });
+
+  testWidgets('keeps the completed split count visible during submissions', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const MigrationTimelineModel(
+        split: MigrationNodeStatus.done,
+        confirm: MigrationNodeStatus.done,
+        send: MigrationNodeStatus.active,
+      ),
+      status: _status(
+        denominationSplitCompletedCount: 3,
+        denominationSplitTotalCount: 3,
+        totalCount: 30,
+      ),
+    );
+
+    expect(find.text('Done · 30 standard notes'), findsOneWidget);
+    expect(find.text('3 of 3 splits complete'), findsOneWidget);
   });
 
   testWidgets('staged fallback shows the scan action', (tester) async {
@@ -154,5 +264,58 @@ void main() {
       findsNothing,
     );
     expect(find.text(MigrationCopy.shareScheduled), findsOneWidget);
+  });
+
+  testWidgets('uses durable run status for confirmed submission progress', (
+    tester,
+  ) async {
+    const firstTxid =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const secondTxid =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    await _pump(
+      tester,
+      const MigrationTimelineModel(
+        split: MigrationNodeStatus.done,
+        confirm: MigrationNodeStatus.done,
+        send: MigrationNodeStatus.active,
+      ),
+      status: _status(
+        phase: 'waiting_migration_confirmations',
+        scheduledBroadcasts: const [
+          rust_sync.MigrationScheduledBroadcast(
+            txidHex: firstTxid,
+            scheduledAtMs: 1,
+            status: 'confirmed',
+          ),
+          rust_sync.MigrationScheduledBroadcast(
+            txidHex: secondTxid,
+            scheduledAtMs: 2,
+            status: 'confirmed',
+          ),
+        ],
+        confirmedTxCount: 2,
+        totalCount: 30,
+      ),
+      totalShares: 30,
+      shares: [
+        rust_sync.TransactionInfo(
+          txidHex: firstTxid,
+          minedHeight: BigInt.zero,
+          expiredUnmined: false,
+          accountBalanceDelta: 0,
+          fee: BigInt.zero,
+          blockTime: BigInt.zero,
+          isTransparent: false,
+          txKind: 'migration',
+          displayAmount: BigInt.one,
+          displayPool: 'ironwood',
+          createdTime: BigInt.zero,
+        ),
+      ],
+    );
+
+    expect(find.text('2 of 30 confirmed'), findsOneWidget);
+    expect(find.text(MigrationCopy.shareConfirmed), findsNWidgets(3));
   });
 }

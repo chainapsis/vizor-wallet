@@ -92,6 +92,10 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     final migrationTransactions = _migrationTransactions(
       sync.recentTransactions,
     );
+    final migrationStatusAsync = ref.watch(
+      activeOrchardMigrationStatusProvider,
+    );
+    final migrationStatus = migrationStatusAsync.value;
     final expectedTransferCount = ref.watch(
       migrationExpectedTransferCountProvider,
     );
@@ -113,6 +117,7 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     final currentRunMigrationTransactions = _currentRunMigrationTransactions(
       migrationTransactions,
       freshExpectedTransferCount,
+      migrationStatus?.scheduledBroadcasts ?? const [],
     );
     final currentRunCompletedCount = currentRunMigrationTransactions
         .where(_isCompletedMigration)
@@ -125,10 +130,6 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     final hasCompletedMigration = migrationTransactions.any(
       _isCompletedMigration,
     );
-    final migrationStatusAsync = ref.watch(
-      activeOrchardMigrationStatusProvider,
-    );
-    final migrationStatus = migrationStatusAsync.value;
     final runState = ref.watch(migrationRunControllerProvider);
     final statusIsLoading =
         accountUuid != null &&
@@ -318,7 +319,9 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
     return 'Get signature';
   }
 
-  bool get _keystoneCanDismiss => !_keystoneCompleting;
+  bool get _keystoneCanDismiss =>
+      _keystonePhase != KeystoneSigningModalPhase.ready &&
+      !_keystoneCompleting;
 
   String? get _keystoneRequestId => _keystoneSession?.requestId;
 
@@ -1208,6 +1211,8 @@ class _MigrationScreenState extends ConsumerState<MigrationScreen> {
           .refreshAfterSend(
             transactionHistoryLimit: migrationProgressTransactionHistoryLimit,
           );
+      if (!mounted) return;
+      ref.invalidate(activeOrchardMigrationStatusProvider);
     } catch (e) {
       log('MigrationScreen: migration progress refresh failed: $e');
     }
@@ -1439,7 +1444,18 @@ List<rust_sync.TransactionInfo> _migrationTransactions(
 List<rust_sync.TransactionInfo> _currentRunMigrationTransactions(
   List<rust_sync.TransactionInfo> migrationTransactions,
   MigrationExpectedTransferCount? expectedTransferCount,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts,
 ) {
+  if (scheduledBroadcasts.isNotEmpty) {
+    return migrationTransactions
+        .where(
+          (tx) => scheduledBroadcasts.any(
+            (broadcast) => migrationTxidsMatch(tx.txidHex, broadcast.txidHex),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   final firstTxid = expectedTransferCount?.firstTxid.toLowerCase();
   if (firstTxid == null) return migrationTransactions;
 

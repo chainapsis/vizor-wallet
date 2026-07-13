@@ -119,9 +119,12 @@ const ZCASH_SIGN_BATCH_TYPE: &str = "zcash-sign-batch";
 const ZCASH_SIGN_BATCH_VERSION: u32 = 1;
 pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
-// Must match the signer's `ZCASH_BATCH_MAX_MESSAGES`; the device rejects any batch
-// larger than this. Sized to fit a full migration batch.
-pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 80;
+// Must match the signer's `ZCASH_BATCH_MAX_PCZTS`; the device rejects any larger
+// batch before checking or signing it.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 50;
+// Must match the signer's `ZCASH_BATCH_MAX_TOTAL_BYTES`. The firmware applies
+// this to both the canonical PCZT byte total and request-id + Postcard envelope.
+const ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES: usize = 512 * 1024;
 
 const ZCASH_SIG_POOL_ORCHARD: u32 = 0;
 const ZCASH_SIG_POOL_IRONWOOD: u32 = 1;
@@ -452,6 +455,7 @@ pub(crate) fn encode_zcash_sign_batch_postcard(
     let mut ids = std::collections::HashSet::new();
     let mut payloads = std::collections::HashSet::new();
     let mut pczts = Vec::with_capacity(messages.len());
+    let mut total_payload_bytes = 0usize;
     for message in messages {
         if message.id.is_empty() {
             return Err("Zcash batch message id must not be empty".to_string());
@@ -467,6 +471,14 @@ pub(crate) fn encode_zcash_sign_batch_postcard(
         }
         if !payloads.insert(message.pczt_bytes.clone()) {
             return Err("Duplicate Zcash batch payload".to_string());
+        }
+        total_payload_bytes = total_payload_bytes
+            .checked_add(message.pczt_bytes.len())
+            .ok_or("Zcash batch payload byte count overflow")?;
+        if total_payload_bytes > ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES {
+            return Err(format!(
+                "Zcash batch PCZTs exceed {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes"
+            ));
         }
         pczts.push(
             pczt::Pczt::parse(&message.pczt_bytes)
@@ -495,6 +507,11 @@ pub fn encode_zcash_sign_batch_ur_parts(
         .sum::<usize>();
     let postcard = encode_zcash_sign_batch_postcard(messages)?;
     let postcard_len = postcard.len();
+    if request_id.len().saturating_add(postcard_len) > ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES {
+        return Err(format!(
+            "Zcash batch request exceeds {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes"
+        ));
+    }
     let cbor: Vec<u8> = ZcashSignBatch::new(request_id.as_bytes().to_vec(), postcard)
         .try_into()
         .map_err(|e: ur_registry::error::URError| {
@@ -875,6 +892,25 @@ mod tests {
         .expect_err("empty request id should fail");
 
         assert_eq!(err, "Zcash batch request id must not be empty");
+    }
+
+    #[test]
+    fn rejects_zcash_batch_envelope_above_firmware_limit() {
+        let request_id = "r".repeat(ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES);
+        let err = encode_zcash_sign_batch_ur_parts(
+            &request_id,
+            &[ZcashBatchMessageInput {
+                id: "tx-1".to_string(),
+                pczt_bytes: test_pczt_bytes(1),
+            }],
+            10_000,
+        )
+        .expect_err("oversized batch envelope should fail before UR encoding");
+
+        assert_eq!(
+            err,
+            format!("Zcash batch request exceeds {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes")
+        );
     }
 
     #[test]

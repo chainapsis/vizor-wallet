@@ -6941,6 +6941,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_preparedNoteCount = <u32>::sse_decode(deserializer);
         let mut var_denominationConfirmationCount = <u32>::sse_decode(deserializer);
         let mut var_denominationConfirmationTarget = <u32>::sse_decode(deserializer);
+        let mut var_denominationSplitCompletedCount = <u32>::sse_decode(deserializer);
+        let mut var_denominationSplitTotalCount = <u32>::sse_decode(deserializer);
         let mut var_pendingTxCount = <u32>::sse_decode(deserializer);
         let mut var_broadcastedTxCount = <u32>::sse_decode(deserializer);
         let mut var_confirmedTxCount = <u32>::sse_decode(deserializer);
@@ -6961,6 +6963,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             prepared_note_count: var_preparedNoteCount,
             denomination_confirmation_count: var_denominationConfirmationCount,
             denomination_confirmation_target: var_denominationConfirmationTarget,
+            denomination_split_completed_count: var_denominationSplitCompletedCount,
+            denomination_split_total_count: var_denominationSplitTotalCount,
             pending_tx_count: var_pendingTxCount,
             broadcasted_tx_count: var_broadcastedTxCount,
             confirmed_tx_count: var_confirmedTxCount,
@@ -9069,6 +9073,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
                 .into_into_dart()
                 .into_dart(),
             self.denomination_confirmation_target
+                .into_into_dart()
+                .into_dart(),
+            self.denomination_split_completed_count
+                .into_into_dart()
+                .into_dart(),
+            self.denomination_split_total_count
                 .into_into_dart()
                 .into_dart(),
             self.pending_tx_count.into_into_dart().into_dart(),
@@ -11221,6 +11231,8 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <u32>::sse_encode(self.prepared_note_count, serializer);
         <u32>::sse_encode(self.denomination_confirmation_count, serializer);
         <u32>::sse_encode(self.denomination_confirmation_target, serializer);
+        <u32>::sse_encode(self.denomination_split_completed_count, serializer);
+        <u32>::sse_encode(self.denomination_split_total_count, serializer);
         <u32>::sse_encode(self.pending_tx_count, serializer);
         <u32>::sse_encode(self.broadcasted_tx_count, serializer);
         <u32>::sse_encode(self.confirmed_tx_count, serializer);

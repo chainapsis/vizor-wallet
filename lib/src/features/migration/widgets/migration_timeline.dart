@@ -62,7 +62,9 @@ class MigrationTimeline extends StatelessWidget {
           context,
           id: MigrationNodeId.confirm,
           isLast: false,
-          title: MigrationCopy.confirmTitle,
+          title: MigrationCopy.confirmTitle(
+            status?.denominationSplitTotalCount ?? 0,
+          ),
           child: _confirmBody(context),
         ),
         _node(
@@ -154,10 +156,13 @@ class MigrationTimeline extends StatelessWidget {
         ],
       );
     }
+    final splitTotal = status?.denominationSplitTotalCount ?? 0;
     final text = switch (model.split) {
       MigrationNodeStatus.active => MigrationCopy.splitActive,
       MigrationNodeStatus.done =>
-        status != null && status!.totalCount > 0
+        model.confirm == MigrationNodeStatus.active && splitTotal > 0
+            ? MigrationCopy.splitTransactionsPrepared(splitTotal)
+            : status != null && status!.totalCount > 0
             ? MigrationCopy.splitDone(status!.totalCount)
             : MigrationCopy.splitDoneGeneric,
       MigrationNodeStatus.pending => '',
@@ -172,11 +177,35 @@ class MigrationTimeline extends StatelessWidget {
 
   Widget _confirmBody(BuildContext context) {
     final colors = context.colors;
+    final splitTotal = status?.denominationSplitTotalCount ?? 0;
+    final splitCompleted = (status?.denominationSplitCompletedCount ?? 0)
+        .clamp(0, splitTotal)
+        .toInt();
     if (model.confirm == MigrationNodeStatus.active) {
       final target = (status?.denominationConfirmationTarget ?? 3).clamp(1, 99);
       final count = (status?.denominationConfirmationCount ?? 0)
           .clamp(0, target)
           .toInt();
+      if (splitTotal > 0) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              MigrationCopy.splitProgress(splitCompleted, splitTotal),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              MigrationCopy.currentSplitConfirmations(count, target),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ],
+        );
+      }
       return Text(
         MigrationCopy.confirmActive(count, target),
         style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
@@ -184,7 +213,7 @@ class MigrationTimeline extends StatelessWidget {
     }
     if (model.confirm == MigrationNodeStatus.done) {
       return Text(
-        MigrationCopy.confirmDone,
+        MigrationCopy.confirmDone(splitCompleted, splitTotal),
         style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
       );
     }
@@ -228,7 +257,10 @@ class MigrationTimeline extends StatelessWidget {
       totalShares,
       1,
     ].reduce((a, b) => a > b ? a : b);
-    final confirmed = rows.where(_isConfirmed).length;
+    final confirmed =
+        (status?.confirmedTxCount ?? rows.where(_isConfirmed).length)
+            .clamp(0, total)
+            .toInt();
     final amount = ZecAmount.fromZatoshi(
       amountZatoshi,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -314,6 +346,7 @@ rust_sync.TransactionInfo? _transactionForShareRow({
     for (final tx in rows) {
       if (migrationTxidsMatch(tx.txidHex, broadcast.txidHex)) return tx;
     }
+    return null;
   }
   return index < rows.length ? rows[index] : null;
 }
@@ -412,8 +445,7 @@ class _ShareRow extends StatelessWidget {
     final isFailed = tx?.expiredUnmined ?? false;
     final broadcastStatus = scheduledBroadcast?.status;
     final isConfirmed =
-        (tx != null && _isConfirmed(tx)) ||
-        (tx == null && broadcastStatus == 'confirmed');
+        broadcastStatus == 'confirmed' || (tx != null && _isConfirmed(tx));
     final isSending =
         (tx != null && !isConfirmed && !isFailed) ||
         (tx == null && broadcastStatus == 'broadcasted');

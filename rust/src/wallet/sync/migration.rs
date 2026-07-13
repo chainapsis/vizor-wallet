@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, Rng};
@@ -13,6 +13,25 @@ use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
 
 use super::READ_DB_BUSY_TIMEOUT;
+
+mod split_plan;
+mod stages;
+pub(crate) use split_plan::{
+    plan_padded_denominations, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
+};
+#[allow(unused_imports)]
+pub(crate) use stages::{
+    all_denomination_stages_confirmed, denomination_stage_chain_records,
+    denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
+    denomination_stages_for_run, insert_denomination_stages_with_tx,
+    locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
+    mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
+    promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
+    reset_denomination_stage_exact, reset_denomination_stage_for_reorg, DenominationStage,
+    DenominationStageChainRecord, DenominationStageInputRef, DenominationStageInsert,
+    DenominationStageOutputKind, DenominationStageOutputRef, DenominationStageStatus,
+    DenominationStageStatusCounts, PendingRawDenominationStage,
+};
 
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
@@ -105,7 +124,9 @@ pub(crate) fn plan_denominations(
         log::warn!(
             "[MIGRATION TEST OVERRIDE] forcing {} parts (~{} zat each, available={}) \
              — REMOVE before production",
-            TEST_FORCED_PARTS, per_part, available
+            TEST_FORCED_PARTS,
+            per_part,
+            available
         );
         return Ok(DenominationPlan {
             migration_outputs: outputs,
@@ -271,6 +292,10 @@ pub(crate) struct MigrationStatus {
     pub prepared_note_count: u32,
     pub denomination_confirmation_count: u32,
     pub denomination_confirmation_target: u32,
+    /// Planned denomination stages that have reached trusted depth.
+    pub denomination_split_completed_count: u32,
+    /// Total denomination stages planned for this run.
+    pub denomination_split_total_count: u32,
     pub pending_tx_count: u32,
     pub broadcasted_tx_count: u32,
     pub confirmed_tx_count: u32,
@@ -296,11 +321,15 @@ pub(crate) fn migration_status(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
 
-    if let Some(run) = active_run(&conn, account_uuid, network)? {
-        let original_run = run.clone();
+    if let Some(original_run) = active_run(&conn, account_uuid, network)? {
+        drop(conn);
+        reconcile_denomination_stage_chain_state(db_path, &original_run.run_id)?;
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let run = active_run(&conn, account_uuid, network)?.unwrap_or(original_run);
         reconcile_denomination_confirmations(&conn, &run)?;
         reconcile_run_confirmations(&conn, &run.run_id)?;
-        let run = active_run(&conn, account_uuid, network)?.unwrap_or(original_run);
+        let run = active_run(&conn, account_uuid, network)?.unwrap_or(run);
         return status_for_run(&conn, run);
     }
 
@@ -322,6 +351,8 @@ pub(crate) fn migration_status(
         prepared_note_count: 0,
         denomination_confirmation_count: 0,
         denomination_confirmation_target: denomination_confirmations_required(),
+        denomination_split_completed_count: 0,
+        denomination_split_total_count: 0,
         pending_tx_count: 0,
         broadcasted_tx_count: 0,
         confirmed_tx_count: 0,
@@ -335,6 +366,61 @@ pub(crate) fn migration_status(
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts: Vec::new(),
     })
+}
+
+/// Reconciles the final denomination outputs for a staged run without needing
+/// balance information from the UI status call.
+pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<bool, String> {
+    reconcile_denomination_stage_chain_state(db_path, run_id)?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run = conn
+        .query_row(
+            &format!(
+                "SELECT run_id, phase, target_values_json, last_error
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                let target_values_json: String = row.get(2)?;
+                Ok(ActiveRun {
+                    run_id: row.get(0)?,
+                    phase: row.get(1)?,
+                    target_values_zatoshi: serde_json::from_str(&target_values_json)
+                        .unwrap_or_default(),
+                    last_error: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read staged migration run: {e}"))?
+        .ok_or_else(|| format!("Migration run {run_id} was not found"))?;
+    reconcile_denomination_confirmations(&conn, &run)?;
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read reconciled migration phase: {e}"))?;
+    if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        // Trusted confirmations are not sufficient until every terminal note
+        // also has the spend metadata populated by reconciliation above.
+        return Ok(false);
+    }
+    if phase == PHASE_READY_TO_MIGRATE {
+        return Ok(true);
+    }
+    if !matches!(
+        phase.as_str(),
+        PHASE_BROADCAST_SCHEDULED | PHASE_BROADCASTING | PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    ) {
+        return Ok(false);
+    }
+
+    let progress = denomination_split_progress_for_run(&conn, run_id)?;
+    Ok(progress.total_count > 0 && progress.completed_count == progress.total_count)
 }
 
 fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
@@ -458,6 +544,60 @@ pub(crate) fn create_run_with_prepared_notes_and_prep_tx(
         Some(prep_txid),
         Some(prep_raw_tx),
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_run_with_staged_denominations_and_signed_children(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    denomination_stages: Vec<DenominationStageInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<String, String> {
+    if denomination_stages.is_empty() {
+        return Err("Staged migration has no denomination transactions".to_string());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    if let Some(run) = active_run(&conn, account_uuid, network)? {
+        return Err(format!("Migration already active: {}", run.run_id));
+    }
+
+    let run_id = new_run_id(account_uuid);
+    let now = now_ms()?;
+    let target_values_json = serde_json::to_string(&plan.migration_outputs)
+        .map_err(|e| format!("Encode migration targets: {e}"))?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin staged migration run: {e}"))?;
+    tx.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+              updated_at_ms, prep_txid, target_values_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, NULL, ?7)"
+        ),
+        params![
+            run_id,
+            account_uuid,
+            network_name(network),
+            db_path,
+            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            now,
+            target_values_json,
+        ],
+    )
+    .map_err(|e| format!("Create staged migration run: {e}"))?;
+    insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
+    insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
+    insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
+    tx.commit()
+        .map_err(|e| format!("Commit staged migration run: {e}"))?;
+    Ok(run_id)
 }
 
 pub(crate) fn mark_run_phase(
@@ -672,11 +812,12 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
         .unchecked_transaction()
         .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
     insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
-    tx.execute(
-        &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
-        params![run_id],
-    )
-    .map_err(|e| format!("Delete promoted signed migration PCZTs: {e}"))?;
+    // Retain the compact signatures and base PCZTs until the run completes.
+    // If a trusted denomination transaction is later reorged, the affected
+    // children can be re-anchored and proved again without another Keystone
+    // scan. `signed_child_pczt_count` reports only children that do not
+    // currently have a pending transaction, so retaining these rows does not
+    // make an already-promoted batch look unfinished.
     tx.commit()
         .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
     Ok(())
@@ -894,7 +1035,284 @@ pub(crate) fn signed_child_pczts_for_run(
 pub(crate) fn signed_child_pczt_count(db_path: &str, run_id: &str) -> Result<u32, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    count_for_run(&conn, SIGNED_CHILD_PCZTS_TABLE, run_id)
+    unpromoted_signed_child_pczt_count_with_conn(&conn, run_id)
+}
+
+fn unpromoted_signed_child_pczt_count_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<u32, String> {
+    let pending = pending_migration_note_outpoints_with_conn(&conn, run_id)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT selected_note_json
+             FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = ?1"
+        ))
+        .map_err(|e| format!("Prepare signed migration PCZT count: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Query signed migration PCZT count: {e}"))?;
+    let mut count = 0u32;
+    for row in rows {
+        let selected_note_json =
+            row.map_err(|e| format!("Read signed migration PCZT count: {e}"))?;
+        let note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
+            .map_err(|e| format!("Decode signed migration PCZT count note: {e}"))?;
+        if !pending.contains(&(note.txid_hex.to_ascii_lowercase(), note.output_index)) {
+            count = count
+                .checked_add(1)
+                .ok_or("Signed migration PCZT count overflow")?;
+        }
+    }
+    Ok(count)
+}
+
+pub(crate) fn pending_migration_note_outpoints(
+    db_path: &str,
+    run_id: &str,
+) -> Result<BTreeSet<(String, u32)>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    pending_migration_note_outpoints_with_conn(&conn, run_id)
+}
+
+fn pending_migration_note_outpoints_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<BTreeSet<(String, u32)>, String> {
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT lower(selected_note_txid), selected_note_output_index
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1"
+        ))
+        .map_err(|e| format!("Prepare pending migration note query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| format!("Query pending migration notes: {e}"))?;
+    rows.collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|e| format!("Read pending migration notes: {e}"))
+}
+
+/// Restores the child-migration side of a staged run after one or more
+/// denomination transactions leave the active chain.
+///
+/// Compact signatures remain in `SIGNED_CHILD_PCZTS_TABLE`; only the child
+/// transactions funded by affected outputs are removed so they can be proved
+/// again once those same effecting-data transaction IDs are mined on the new
+/// chain. Independent children retain their schedule and confirmation state.
+pub(crate) fn reset_migration_children_for_reorged_denominations(
+    db_path: &str,
+    run_id: &str,
+    denomination_txids: &BTreeSet<String>,
+) -> Result<bool, String> {
+    if denomination_txids.is_empty() {
+        return Ok(false);
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin denomination reorg child reset: {e}"))?;
+    let mut reset_any = false;
+    for denomination_txid in denomination_txids {
+        let denomination_txid = denomination_txid.to_ascii_lowercase();
+        let mut child_stmt = tx
+            .prepare_cached(&format!(
+                "SELECT txid_hex, selected_note_output_index
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND lower(selected_note_txid) = ?2"
+            ))
+            .map_err(|e| format!("Prepare reorged migration child query: {e}"))?;
+        let child_rows = child_stmt
+            .query_map(params![run_id, denomination_txid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+            })
+            .map_err(|e| format!("Query reorged migration children: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read reorged migration children: {e}"))?;
+        drop(child_stmt);
+
+        let mut included_outputs = BTreeSet::new();
+        for (child_txid, output_index) in child_rows {
+            if local_denomination_chain_identity(&tx, &child_txid)?.is_some() {
+                included_outputs.insert(output_index);
+                continue;
+            }
+            tx.execute(
+                &format!(
+                    "DELETE FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND txid_hex = ?2"
+                ),
+                params![run_id, child_txid],
+            )
+            .map_err(|e| format!("Clear reorged pending migration child: {e}"))?;
+            reset_any = true;
+        }
+
+        let mut note_stmt = tx
+            .prepare_cached(&format!(
+                "SELECT output_index
+                 FROM {PREPARED_NOTES_TABLE}
+                 WHERE run_id = ?1 AND lower(txid_hex) = ?2"
+            ))
+            .map_err(|e| format!("Prepare reorged migration note query: {e}"))?;
+        let output_indices = note_stmt
+            .query_map(params![run_id, denomination_txid], |row| {
+                row.get::<_, u32>(0)
+            })
+            .map_err(|e| format!("Query reorged migration notes: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read reorged migration notes: {e}"))?;
+        drop(note_stmt);
+        for output_index in output_indices {
+            if included_outputs.contains(&output_index) {
+                continue;
+            }
+            tx.execute(
+                &format!(
+                    "UPDATE {PREPARED_NOTES_TABLE}
+                     SET nullifier_hex = NULL, lock_state = 'locked'
+                     WHERE run_id = ?1 AND lower(txid_hex) = ?2
+                       AND output_index = ?3"
+                ),
+                params![run_id, denomination_txid, output_index],
+            )
+            .map_err(|e| format!("Reset reorged prepared migration note: {e}"))?;
+            reset_any = true;
+        }
+    }
+    if reset_any {
+        let now = now_ms()?;
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
+        )
+        .map_err(|e| format!("Reset migration run after denomination reorg: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit denomination reorg child reset: {e}"))?;
+    Ok(reset_any)
+}
+
+/// Reconciles the plaintext denomination graph against the wallet's scanned
+/// canonical chain. This needs no seed, PCZT, or encryption password, so the
+/// normal status path can repair reorg state even after every child has been
+/// broadcast.
+pub(crate) fn reconcile_denomination_stage_chain_state(
+    db_path: &str,
+    run_id: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let records = denomination_stage_chain_records(&conn, run_id)?;
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    let mut current = BTreeMap::new();
+    for record in &records {
+        current.insert(
+            record.expected_txid_hex.to_ascii_lowercase(),
+            local_denomination_chain_identity(&conn, &record.expected_txid_hex)?,
+        );
+    }
+
+    let stored_matches = |record: &DenominationStageChainRecord,
+                          identity: &LocalTransactionChainIdentity| {
+        record.confirmed_mined_height == Some(identity.mined_height)
+            && record.confirmed_block_hash.as_deref() == Some(identity.block_hash.as_slice())
+    };
+    let mut affected = BTreeSet::new();
+    let mut invalid_stages = BTreeSet::new();
+    let mut identities_to_record = BTreeMap::new();
+
+    for record in &records {
+        let txid = record.expected_txid_hex.to_ascii_lowercase();
+        match (record.status, current.get(&txid).and_then(Option::as_ref)) {
+            (
+                DenominationStageStatus::Pending | DenominationStageStatus::Broadcasted,
+                Some(identity),
+            ) => {
+                identities_to_record.insert(txid, identity.clone());
+            }
+            (DenominationStageStatus::Confirmed, None) => {
+                affected.insert(txid.clone());
+                invalid_stages.insert(txid);
+            }
+            (DenominationStageStatus::Confirmed, Some(identity))
+                if !stored_matches(record, identity) =>
+            {
+                affected.insert(txid.clone());
+                identities_to_record.insert(txid, identity.clone());
+            }
+            _ => {}
+        }
+    }
+
+    // Propagate through normalized inputs. A dependent transaction that is
+    // itself on the canonical chain is valid and retained; an off-chain one
+    // must be re-anchored and re-proved.
+    loop {
+        let before = affected.len();
+        for record in &records {
+            let txid = record.expected_txid_hex.to_ascii_lowercase();
+            if record
+                .parent_txids
+                .iter()
+                .any(|parent| affected.contains(parent))
+            {
+                affected.insert(txid.clone());
+                if current.get(&txid).and_then(Option::as_ref).is_none() {
+                    invalid_stages.insert(txid);
+                }
+            }
+        }
+        if affected.len() == before {
+            break;
+        }
+    }
+    drop(conn);
+
+    if !affected.is_empty() {
+        // Child cleanup comes first. If the process stops before stage state is
+        // updated, the unchanged identity causes this idempotent cleanup to run
+        // again on the next status call.
+        reset_migration_children_for_reorged_denominations(db_path, run_id, &affected)?;
+    }
+
+    if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        for txid in &invalid_stages {
+            reset_denomination_stage_exact(&conn, run_id, txid)?;
+        }
+        for (txid, identity) in identities_to_record {
+            if invalid_stages.contains(&txid) {
+                continue;
+            }
+            replace_denomination_stage_confirmation_identity(
+                &conn,
+                run_id,
+                &txid,
+                identity.mined_height,
+                &identity.block_hash,
+            )?;
+        }
+    }
+
+    if !affected.is_empty() {
+        mark_run_phase(db_path, run_id, PHASE_WAITING_DENOM_CONFIRMATIONS, None)?;
+        log::warn!(
+            "migration: reconciled {} denomination transaction(s) after a chain change",
+            affected.len()
+        );
+    }
+    Ok(())
 }
 
 pub(crate) fn due_pending_txs(
@@ -1184,22 +1602,42 @@ pub(crate) fn locked_migration_note_refs(
         return Ok(BTreeSet::new());
     }
 
-    let mut stmt = conn
-        .prepare_cached(&format!(
-            "SELECT lower(pn.txid_hex), pn.output_index
-             FROM {PREPARED_NOTES_TABLE} pn
-             INNER JOIN {RUNS_TABLE} r ON r.run_id = pn.run_id
-             WHERE r.account_uuid = ?1
-               AND pn.lock_state = 'locked'
-               AND r.phase NOT IN ('{PHASE_COMPLETE}', '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
-        ))
-        .map_err(|e| format!("Prepare migration lock query: {e}"))?;
-    let rows = stmt
-        .query_map(params![account_uuid], |row| Ok((row.get(0)?, row.get(1)?)))
-        .map_err(|e| format!("Query migration locks: {e}"))?;
+    let mut locks = {
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT lower(pn.txid_hex), pn.output_index
+                 FROM {PREPARED_NOTES_TABLE} pn
+                 INNER JOIN {RUNS_TABLE} r ON r.run_id = pn.run_id
+                 WHERE r.account_uuid = ?1
+                   AND pn.lock_state = 'locked'
+                   AND r.phase NOT IN ('{PHASE_COMPLETE}', '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+            ))
+            .map_err(|e| format!("Prepare migration lock query: {e}"))?;
+        let rows = stmt
+            .query_map(params![account_uuid], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("Query migration locks: {e}"))?;
+        rows.collect::<Result<BTreeSet<_>, _>>()
+            .map_err(|e| format!("Read migration locks: {e}"))?
+    };
 
-    rows.collect::<Result<BTreeSet<_>, _>>()
-        .map_err(|e| format!("Read migration locks: {e}"))
+    let active_run_ids = {
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT run_id FROM {RUNS_TABLE}
+                 WHERE account_uuid = ?1
+                   AND phase NOT IN ('{PHASE_COMPLETE}', '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+            ))
+            .map_err(|e| format!("Prepare staged migration lock query: {e}"))?;
+        let rows = stmt
+            .query_map(params![account_uuid], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Query staged migration locks: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read staged migration run locks: {e}"))?
+    };
+    for run_id in active_run_ids {
+        locks.extend(locked_denomination_stage_input_outpoints(&conn, &run_id)?);
+    }
+    Ok(locks)
 }
 
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
@@ -1209,13 +1647,21 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     let broadcasted_tx_count = count_pending_with_status(conn, &run.run_id, "broadcasted")?;
     let confirmed_tx_count = count_pending_with_status(conn, &run.run_id, "confirmed")?;
     let scheduled_broadcasts = scheduled_broadcasts_for_run(conn, &run.run_id)?;
-    let signed_child_pczt_count = count_for_run(conn, SIGNED_CHILD_PCZTS_TABLE, &run.run_id)?;
+    let signed_child_pczt_count = unpromoted_signed_child_pczt_count_with_conn(conn, &run.run_id)?;
     let total_count = run.target_values_zatoshi.len() as u32;
-    let mut phase = if total_count > 0 && confirmed_tx_count >= total_count {
-        PHASE_COMPLETE.to_string()
-    } else {
-        run.phase
-    };
+    // Completion is a durable state transition that happens only after every
+    // child transaction has reached trusted depth. Never infer it from the
+    // per-transaction `confirmed` marker, which means only that the child is
+    // currently mined and can still be reorged before the trust threshold.
+    let mut phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run.run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read durable migration phase: {e}"))?
+        .unwrap_or_else(|| run.phase.clone());
     if phase == PHASE_READY_TO_MIGRATE
         && pending_tx_count == 0
         && prepared_note_count > 0
@@ -1224,8 +1670,19 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
     }
     let denomination_confirmation_target = denomination_confirmations_required();
-    let denomination_confirmation_count = if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        denomination_confirmation_count_for_run(conn, &run.run_id)?
+    let denomination_split_progress = denomination_split_progress_for_run(conn, &run.run_id)?;
+    let denomination_confirmation_count = if denomination_split_progress.total_count > 0 {
+        if denomination_split_progress.completed_count == denomination_split_progress.total_count {
+            denomination_confirmation_target
+        } else if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+            denomination_split_progress.frontier_confirmation_count
+        } else {
+            0
+        }
+    } else if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        // A run created before staged denomination persistence has no stage
+        // graph. Keep its prepared-note confirmation behavior intact.
+        denomination_split_progress.frontier_confirmation_count
     } else if prepared_note_count > 0
         && phase != PHASE_PREPARING_DENOMINATIONS
         && phase != PHASE_FAILED_TERMINAL
@@ -1251,6 +1708,8 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         prepared_note_count,
         denomination_confirmation_count,
         denomination_confirmation_target,
+        denomination_split_completed_count: denomination_split_progress.completed_count,
+        denomination_split_total_count: denomination_split_progress.total_count,
         pending_tx_count,
         broadcasted_tx_count,
         confirmed_tx_count,
@@ -1310,35 +1769,92 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
 
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex
+            "SELECT txid_hex, status
              FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted')"
+             WHERE run_id = ?1
+               AND status IN ('scheduled', 'broadcasted', 'confirmed')"
         ))
         .map_err(|e| format!("Prepare migration confirmation query: {e}"))?;
     let rows = stmt
-        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| format!("Query migration confirmation txs: {e}"))?;
-    let txids = rows
+    let pending = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read migration confirmation txs: {e}"))?;
 
-    for txid_hex in txids {
-        if local_transaction_is_confirmed(conn, &txid_hex)? {
-            conn.execute(
-                &format!(
-                    "UPDATE {PENDING_TXS_TABLE}
-                     SET status = 'confirmed'
-                     WHERE run_id = ?1 AND txid_hex = ?2"
-                ),
-                params![run_id, txid_hex],
-            )
-            .map_err(|e| format!("Mark migration tx confirmed: {e}"))?;
+    let now = now_ms()?;
+    let mut rescheduled = false;
+    for (txid_hex, status) in pending {
+        match local_denomination_chain_identity(conn, &txid_hex)? {
+            Some(_) if status != "confirmed" => {
+                conn.execute(
+                    &format!(
+                        "UPDATE {PENDING_TXS_TABLE}
+                         SET status = 'confirmed'
+                         WHERE run_id = ?1 AND txid_hex = ?2"
+                    ),
+                    params![run_id, txid_hex],
+                )
+                .map_err(|e| format!("Mark migration tx confirmed: {e}"))?;
+            }
+            None if status == "confirmed" => {
+                // A child that was mined but disappeared before trusted depth
+                // must become broadcastable again. Its signed raw transaction
+                // remains valid unless denomination reconciliation separately
+                // determines that its selected parent changed.
+                conn.execute(
+                    &format!(
+                        "UPDATE {PENDING_TXS_TABLE}
+                         SET status = 'scheduled', scheduled_at_ms = ?1
+                         WHERE run_id = ?2 AND txid_hex = ?3"
+                    ),
+                    params![now, run_id, txid_hex],
+                )
+                .map_err(|e| format!("Reschedule reorged migration tx: {e}"))?;
+                rescheduled = true;
+            }
+            _ => {}
         }
+    }
+
+    if rescheduled {
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Mark reorged migration tx broadcast scheduled: {e}"))?;
     }
 
     let total_count = count_for_run(conn, PENDING_TXS_TABLE, run_id)?;
     let confirmed_count = count_pending_with_status(conn, run_id, "confirmed")?;
     if total_count > 0 && confirmed_count >= total_count {
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT txid_hex FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 ORDER BY txid_hex ASC"
+            ))
+            .map_err(|e| format!("Prepare completed migration trust query: {e}"))?;
+        let txids = stmt
+            .query_map(params![run_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Query completed migration trust state: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read completed migration trust state: {e}"))?;
+        for txid in txids {
+            let Some(identity) = local_denomination_chain_identity(conn, &txid)? else {
+                return Ok(());
+            };
+            if synced_orchard_confirmation_count(conn, identity.mined_height)?
+                < denomination_confirmations_required()
+            {
+                return Ok(());
+            }
+        }
         let now = now_ms()?;
         conn.execute(
             &format!(
@@ -1358,6 +1874,11 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
             params![run_id],
         )
         .map_err(|e| format!("Release migration note locks: {e}"))?;
+        conn.execute(
+            &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+        )
+        .map_err(|e| format!("Delete completed migration child PCZTs: {e}"))?;
     }
 
     Ok(())
@@ -1385,6 +1906,23 @@ fn reconcile_denomination_confirmations(
         }
     }
 
+    // Prepared-note rows cover only terminal migration outputs. A smart
+    // multi-root plan can also contain an independent change-only stage, so
+    // never infer that every stage is confirmed from the terminal notes.
+    // Require a trusted canonical inclusion for every planned transaction.
+    let mut stage_identities = Vec::new();
+    for txid_hex in denomination_stage_expected_txids(conn, &run.run_id)? {
+        let Some(identity) = local_denomination_chain_identity(conn, &txid_hex)? else {
+            return Ok(());
+        };
+        if synced_orchard_confirmation_count(conn, identity.mined_height)?
+            < denomination_confirmations_required()
+        {
+            return Ok(());
+        }
+        stage_identities.push((txid_hex, identity));
+    }
+
     let now = now_ms()?;
     for (txid_hex, output_index, nf_hex, _) in confirmed {
         conn.execute(
@@ -1396,6 +1934,24 @@ fn reconcile_denomination_confirmations(
             params![nf_hex, run.run_id, txid_hex, output_index],
         )
         .map_err(|e| format!("Update prepared denomination note nullifier: {e}"))?;
+    }
+    for (txid_hex, identity) in stage_identities {
+        if let Err(error) = mark_denomination_stage_confirmed_at(
+            conn,
+            &run.run_id,
+            &txid_hex,
+            identity.mined_height,
+            &identity.block_hash,
+        ) {
+            // The broadcast tick owns the full reorg reset because it also
+            // clears and rebuilds dependent child transactions. Keep status
+            // reconciliation non-fatal and leave the run waiting so that tick
+            // can perform that atomic recovery path.
+            if error.contains("moved to a different chain inclusion") {
+                return Ok(());
+            }
+            return Err(error);
+        }
     }
     conn.execute(
         &format!(
@@ -1414,7 +1970,109 @@ fn denomination_confirmations_required() -> u32 {
     ConfirmationsPolicy::default().trusted().get()
 }
 
-fn denomination_confirmation_count_for_run(
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DenominationSplitProgress {
+    frontier_confirmation_count: u32,
+    completed_count: u32,
+    total_count: u32,
+}
+
+fn denomination_split_progress_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<DenominationSplitProgress, String> {
+    let stages = denomination_stage_chain_records(conn, run_id)?;
+    if stages.is_empty() {
+        let frontier_confirmation_count =
+            legacy_denomination_confirmation_count_for_run(conn, run_id)?;
+        let has_legacy_split = conn
+            .query_row(
+                &format!(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM {RUNS_TABLE} r
+                        WHERE r.run_id = ?1
+                          AND (
+                            r.prep_txid IS NOT NULL
+                            OR EXISTS(
+                                SELECT 1 FROM {PREP_TXS_TABLE} p
+                                WHERE p.run_id = r.run_id
+                            )
+                          )
+                    )"
+                ),
+                params![run_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| format!("Read legacy denomination split state: {e}"))?;
+        let total_count = u32::from(has_legacy_split);
+        let completed_count = u32::from(
+            has_legacy_split
+                && frontier_confirmation_count >= denomination_confirmations_required(),
+        );
+        return Ok(DenominationSplitProgress {
+            frontier_confirmation_count,
+            completed_count,
+            total_count,
+        });
+    }
+
+    let total_count = u32::try_from(stages.len())
+        .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
+    let planned_txids = stages
+        .iter()
+        .map(|stage| stage.expected_txid_hex.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let mut confirmations_by_txid = BTreeMap::new();
+    let mut trusted_txids = BTreeSet::new();
+    for stage in &stages {
+        let txid = stage.expected_txid_hex.to_ascii_lowercase();
+        let confirmation_count = match local_denomination_chain_identity(conn, &txid)? {
+            Some(identity) => synced_orchard_confirmation_count(conn, identity.mined_height)?,
+            None => 0,
+        };
+        confirmations_by_txid.insert(txid.clone(), confirmation_count);
+        if confirmation_count >= denomination_confirmations_required() {
+            trusted_txids.insert(txid);
+        }
+    }
+
+    let completed_count = u32::try_from(trusted_txids.len())
+        .map_err(|_| "Completed denomination split stage count exceeds u32".to_string())?;
+    let frontier_confirmation_count = if completed_count == total_count {
+        denomination_confirmations_required()
+    } else {
+        // A frontier contains only incomplete stages whose planned-stage
+        // parents are already trusted. Future descendants therefore do not pin
+        // the visible confirmation count to zero. Independent roots can share
+        // a frontier; report the least-confirmed one because every root in that
+        // round still has to reach trusted depth.
+        stages
+            .iter()
+            .filter_map(|stage| {
+                let txid = stage.expected_txid_hex.to_ascii_lowercase();
+                if trusted_txids.contains(&txid) {
+                    return None;
+                }
+                let parents_trusted = stage
+                    .parent_txids
+                    .iter()
+                    .map(|parent| parent.to_ascii_lowercase())
+                    .filter(|parent| planned_txids.contains(parent))
+                    .all(|parent| trusted_txids.contains(&parent));
+                parents_trusted.then(|| confirmations_by_txid[&txid])
+            })
+            .min()
+            .unwrap_or(0)
+    };
+
+    Ok(DenominationSplitProgress {
+        frontier_confirmation_count,
+        completed_count,
+        total_count,
+    })
+}
+
+fn legacy_denomination_confirmation_count_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<u32, String> {
@@ -1513,67 +2171,244 @@ fn prepared_note_spend_metadata_available_for_run(
 }
 
 fn pending_prep_tx_count_for_run(conn: &rusqlite::Connection, run_id: &str) -> Result<u32, String> {
-    if !table_exists(conn, PREP_TXS_TABLE)? {
-        return Ok(0);
-    }
-    conn.query_row(
-        &format!(
-            "SELECT COUNT(*)
-             FROM {PREP_TXS_TABLE}
-             WHERE run_id = ?1 AND status = 'pending'"
-        ),
-        params![run_id],
-        |row| row.get::<_, u32>(0),
-    )
-    .map_err(|e| format!("Count pending migration prep txs: {e}"))
+    let legacy_pending = if table_exists(conn, PREP_TXS_TABLE)? {
+        conn.query_row(
+            &format!(
+                "SELECT COUNT(*)
+                 FROM {PREP_TXS_TABLE}
+                 WHERE run_id = ?1 AND status = 'pending'"
+            ),
+            params![run_id],
+            |row| row.get::<_, u32>(0),
+        )
+        .map_err(|e| format!("Count pending migration prep txs: {e}"))?
+    } else {
+        0
+    };
+    // Keep the existing Dart retry signal active for the full staged split
+    // lifecycle. In particular, a terminal stage that has been broadcast must
+    // still trigger reconciliation while it is mined, confirmed, or reorged.
+    // Once reconciliation advances the run, only actionable pending/awaiting
+    // stages remain part of this legacy-shaped signal.
+    let staged = denomination_stage_status_counts(conn, run_id)?;
+    let waiting_for_denominations = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration phase for denomination retry count: {e}"))?
+        .is_some_and(|phase| phase == PHASE_WAITING_DENOM_CONFIRMATIONS);
+    let staged_retry_count = if waiting_for_denominations {
+        staged.total
+    } else {
+        staged
+            .pending
+            .checked_add(staged.awaiting_inputs)
+            .ok_or("Pending denomination stage count overflow")?
+    };
+    legacy_pending
+        .checked_add(staged_retry_count)
+        .ok_or("Pending denomination stage count overflow".to_string())
 }
 
 fn synced_orchard_confirmation_count(
     conn: &rusqlite::Connection,
     height: u32,
 ) -> Result<u32, String> {
-    if !table_exists(conn, "orchard_tree_checkpoints")? {
-        return Ok(denomination_confirmations_required());
-    }
+    // Match `zcash_client_sqlite::WalletRead::block_fully_scanned`: the
+    // earliest Scanned range that begins at or before the wallet birthday is
+    // contiguous through its end-exclusive upper bound. Tree checkpoints are
+    // not a scan watermark because blocks with no new Orchard commitments do
+    // not need to create one.
+    let has_fully_scanned_schema = table_exists(conn, "accounts")?
+        && table_exists(conn, "scan_queue")?
+        && table_exists(conn, "blocks")?;
+    if has_fully_scanned_schema {
+        let wallet_birthday = conn
+            .query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
+                row.get::<_, Option<u32>>(0)
+            })
+            .map_err(|e| format!("Read wallet birthday for migration confirmations: {e}"))?;
+        let Some(wallet_birthday) = wallet_birthday else {
+            return Ok(0);
+        };
 
-    let latest_checkpoint = conn
-        .query_row(
-            "SELECT MAX(checkpoint_id) FROM orchard_tree_checkpoints",
-            [],
-            |row| row.get::<_, Option<u32>>(0),
-        )
-        .map_err(|e| format!("Read latest Orchard checkpoint: {e}"))?;
-
-    Ok(latest_checkpoint
-        .map(|checkpoint| {
-            if checkpoint < height {
-                0
-            } else {
-                checkpoint - height + 1
-            }
-        })
-        .unwrap_or(0)
-        .min(denomination_confirmations_required()))
-}
-
-fn local_transaction_is_confirmed(
-    conn: &rusqlite::Connection,
-    txid_hex: &str,
-) -> Result<bool, String> {
-    for txid_blob in txid_blob_variants(txid_hex)? {
-        let mined = conn
+        // `10` is the persisted code for `ScanPriority::Scanned` in the
+        // pinned zcash_client_sqlite schema.
+        let scanned_range = conn
             .query_row(
-                "SELECT mined_height IS NOT NULL FROM transactions WHERE txid = ?1",
-                params![txid_blob],
-                |row| row.get::<_, bool>(0),
+                "SELECT block_range_start, block_range_end
+                 FROM scan_queue
+                 WHERE priority = 10
+                 ORDER BY block_range_start ASC
+                 LIMIT 1",
+                [],
+                |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
             )
             .optional()
-            .map_err(|e| format!("Read migration tx confirmation state: {e}"))?;
-        if mined.unwrap_or(false) {
-            return Ok(true);
+            .map_err(|e| format!("Read fully scanned range for migration confirmations: {e}"))?;
+        let Some((range_start, range_end)) = scanned_range else {
+            return Ok(0);
+        };
+        if range_start > wallet_birthday || range_end <= range_start {
+            return Ok(0);
+        }
+        let fully_scanned_height = range_end - 1;
+
+        // `block_fully_scanned` finally loads metadata for the derived height.
+        // Fail closed when a scan range does not retain that terminal block.
+        let terminal_block_exists = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM blocks WHERE height = ?1)",
+                params![fully_scanned_height],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| format!("Read fully scanned block for migration confirmations: {e}"))?;
+        if !terminal_block_exists {
+            return Ok(0);
+        }
+
+        return Ok(fully_scanned_height
+            .checked_sub(height)
+            .map(|depth| depth.saturating_add(1))
+            .unwrap_or(0)
+            .min(denomination_confirmations_required()));
+    }
+
+    // Unit fixtures in this module intentionally model only the confirmation
+    // metadata needed by their subject. Production wallets must never trust a
+    // sparse Orchard checkpoint as a substitute for the fully scanned height.
+    #[cfg(test)]
+    {
+        if !table_exists(conn, "orchard_tree_checkpoints")? {
+            return Ok(denomination_confirmations_required());
+        }
+
+        let latest_checkpoint = conn
+            .query_row(
+                "SELECT MAX(checkpoint_id) FROM orchard_tree_checkpoints",
+                [],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .map_err(|e| format!("Read latest Orchard checkpoint: {e}"))?;
+
+        return Ok(latest_checkpoint
+            .map(|checkpoint| {
+                if checkpoint < height {
+                    0
+                } else {
+                    checkpoint - height + 1
+                }
+            })
+            .unwrap_or(0)
+            .min(denomination_confirmations_required()));
+    }
+
+    #[cfg(not(test))]
+    Err(
+        "Wallet schema is missing accounts, scan_queue, or blocks required for migration confirmations"
+            .to_string(),
+    )
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LocalTransactionChainIdentity {
+    pub mined_height: u32,
+    pub block_hash: [u8; 32],
+}
+
+pub(crate) fn local_denomination_chain_identity(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+) -> Result<Option<LocalTransactionChainIdentity>, String> {
+    if !table_exists(conn, "transactions")? {
+        return Ok(None);
+    }
+    let has_scanned_block_identity =
+        table_exists(conn, "blocks")? && table_column_exists(conn, "transactions", "block")?;
+    if has_scanned_block_identity {
+        for txid_blob in txid_blob_variants(txid_hex)? {
+            let row = conn
+                .query_row(
+                    "SELECT t.block, b.hash
+                     FROM transactions t
+                     INNER JOIN blocks b ON b.height = t.block
+                     WHERE t.txid = ?1 AND t.block IS NOT NULL",
+                    params![txid_blob],
+                    |row| Ok((row.get::<_, u32>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| format!("Read migration tx chain inclusion: {e}"))?;
+            if let Some((mined_height, block_hash)) = row {
+                let block_hash: [u8; 32] = block_hash.try_into().map_err(|_| {
+                    "Migration denomination block hash must be 32 bytes".to_string()
+                })?;
+                return Ok(Some(LocalTransactionChainIdentity {
+                    mined_height,
+                    block_hash,
+                }));
+            }
+        }
+        return Ok(None);
+    }
+
+    // Unit fixtures in this module intentionally model only the two columns
+    // needed by their subject. Production wallets always have `transactions.block`
+    // and `blocks.hash`; never weaken denomination recovery to mined-height-only
+    // state outside tests.
+    #[cfg(test)]
+    for txid_blob in txid_blob_variants(txid_hex)? {
+        let mined_height = conn
+            .query_row(
+                "SELECT mined_height
+                 FROM transactions
+                 WHERE txid = ?1 AND mined_height IS NOT NULL",
+                params![txid_blob],
+                |row| row.get::<_, u32>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Read test migration tx chain inclusion: {e}"))?;
+        if let Some(mined_height) = mined_height {
+            let mut block_hash = [0u8; 32];
+            for chunk in block_hash.chunks_exact_mut(4) {
+                chunk.copy_from_slice(&mined_height.to_le_bytes());
+            }
+            return Ok(Some(LocalTransactionChainIdentity {
+                mined_height,
+                block_hash,
+            }));
         }
     }
-    Ok(false)
+    #[cfg(test)]
+    return Ok(None);
+
+    #[cfg(not(test))]
+    Err("Wallet schema cannot provide canonical denomination block identities".to_string())
+}
+
+pub(crate) fn local_transaction_raw(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    if !table_exists(conn, "transactions")? || !table_column_exists(conn, "transactions", "raw")? {
+        return Ok(None);
+    }
+    for txid_blob in txid_blob_variants(txid_hex)? {
+        let raw = conn
+            .query_row(
+                "SELECT raw FROM transactions WHERE txid = ?1 AND raw IS NOT NULL",
+                params![txid_blob],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Read migration transaction bytes: {e}"))?;
+        if raw.is_some() {
+            return Ok(raw);
+        }
+    }
+    Ok(None)
 }
 
 fn txid_blob_variants(txid_hex: &str) -> Result<Vec<Vec<u8>>, String> {
@@ -1721,7 +2556,8 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
 
         "
     ))
-    .map_err(|e| format!("Initialize migration schema: {e}"))
+    .map_err(|e| format!("Initialize migration schema: {e}"))?;
+    stages::ensure_schema(conn)
 }
 
 fn table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, String> {
@@ -1733,6 +2569,21 @@ fn table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, String
     .optional()
     .map(|row| row.is_some())
     .map_err(|e| format!("Check migration table {table}: {e}"))
+}
+
+fn table_column_exists(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(|e| format!("Check migration column {table}.{column}: {e}"))
 }
 
 fn now_ms() -> Result<i64, String> {
@@ -1830,6 +2681,58 @@ mod tests {
         assert!(offsets
             .iter()
             .all(|offset| *offset <= MIGRATION_BROADCAST_WINDOW_SECS));
+    }
+
+    #[test]
+    fn denomination_chain_identity_requires_a_scanned_block_hash() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 block INTEGER,
+                 mined_height INTEGER
+             );",
+        )
+        .unwrap();
+        let txid_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let mut stored_txid = hex::decode(txid_hex).unwrap();
+        stored_txid.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, block, mined_height)
+             VALUES (?1, NULL, 20)",
+            params![stored_txid],
+        )
+        .unwrap();
+
+        assert!(local_denomination_chain_identity(&conn, txid_hex)
+            .unwrap()
+            .is_none());
+
+        let block_hash = [0xabu8; 32];
+        conn.execute(
+            "INSERT INTO blocks (height, hash) VALUES (20, ?1)",
+            params![block_hash.as_slice()],
+        )
+        .unwrap();
+        conn.execute("UPDATE transactions SET block = 20", [])
+            .unwrap();
+        assert_eq!(
+            local_denomination_chain_identity(&conn, txid_hex).unwrap(),
+            Some(LocalTransactionChainIdentity {
+                mined_height: 20,
+                block_hash,
+            })
+        );
+
+        conn.execute(
+            "UPDATE blocks SET hash = ?1 WHERE height = 20",
+            params![vec![0xcdu8; 31]],
+        )
+        .unwrap();
+        assert!(local_denomination_chain_identity(&conn, txid_hex)
+            .unwrap_err()
+            .contains("32 bytes"));
     }
 
     #[test]
@@ -2083,6 +2986,106 @@ mod tests {
     }
 
     #[test]
+    fn confirmation_count_uses_scanned_empty_orchard_blocks() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE accounts (birthday_height INTEGER NOT NULL);
+             CREATE TABLE scan_queue (
+                 block_range_start INTEGER NOT NULL,
+                 block_range_end INTEGER NOT NULL,
+                 priority INTEGER NOT NULL
+             );
+             CREATE TABLE blocks (height INTEGER PRIMARY KEY);
+             CREATE TABLE orchard_tree_checkpoints (
+                 checkpoint_id INTEGER PRIMARY KEY
+             );
+             INSERT INTO accounts (birthday_height) VALUES (20), (25);
+             INSERT INTO scan_queue
+                 (block_range_start, block_range_end, priority)
+                 VALUES (20, 23, 10);
+             INSERT INTO blocks (height) VALUES (22);
+             INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21);",
+        )
+        .unwrap();
+
+        // Height 22 is fully scanned even though the last Orchard checkpoint
+        // is 21 because the final block added no Orchard commitments.
+        assert_eq!(synced_orchard_confirmation_count(&conn, 20).unwrap(), 3);
+        assert_eq!(synced_orchard_confirmation_count(&conn, 21).unwrap(), 2);
+        assert_eq!(synced_orchard_confirmation_count(&conn, 22).unwrap(), 1);
+        assert_eq!(synced_orchard_confirmation_count(&conn, 23).unwrap(), 0);
+    }
+
+    #[test]
+    fn confirmation_count_requires_scanned_range_to_cover_wallet_birthday() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE accounts (birthday_height INTEGER NOT NULL);
+             CREATE TABLE scan_queue (
+                 block_range_start INTEGER NOT NULL,
+                 block_range_end INTEGER NOT NULL,
+                 priority INTEGER NOT NULL
+             );
+             CREATE TABLE blocks (height INTEGER PRIMARY KEY);
+             CREATE TABLE orchard_tree_checkpoints (
+                 checkpoint_id INTEGER PRIMARY KEY
+             );
+             INSERT INTO accounts (birthday_height) VALUES (20), (25);
+             INSERT INTO scan_queue
+                 (block_range_start, block_range_end, priority)
+                 VALUES (21, 24, 10), (24, 30, 10);
+             INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (100);",
+        )
+        .unwrap();
+
+        // A gap after the earliest account birthday means there is no fully
+        // scanned height, regardless of later ranges or tree checkpoints.
+        assert_eq!(synced_orchard_confirmation_count(&conn, 21).unwrap(), 0);
+    }
+
+    #[test]
+    fn confirmation_count_requires_fully_scanned_terminal_block() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE accounts (birthday_height INTEGER NOT NULL);
+             CREATE TABLE scan_queue (
+                 block_range_start INTEGER NOT NULL,
+                 block_range_end INTEGER NOT NULL,
+                 priority INTEGER NOT NULL
+             );
+             CREATE TABLE blocks (height INTEGER PRIMARY KEY);
+             CREATE TABLE orchard_tree_checkpoints (
+                 checkpoint_id INTEGER PRIMARY KEY
+             );
+             INSERT INTO accounts (birthday_height) VALUES (20);
+             INSERT INTO scan_queue
+                 (block_range_start, block_range_end, priority)
+                 VALUES (20, 23, 10);
+             INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (100);",
+        )
+        .unwrap();
+
+        assert_eq!(synced_orchard_confirmation_count(&conn, 20).unwrap(), 0);
+    }
+
+    #[test]
+    fn confirmation_count_retains_checkpoint_fallback_for_minimal_schema() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(synced_orchard_confirmation_count(&conn, 20).unwrap(), 2);
+    }
+
+    #[test]
     fn confirmation_reconciliation_completes_run_and_releases_locks() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         ensure_schema(&conn).unwrap();
@@ -2165,6 +3168,124 @@ mod tests {
             )
             .unwrap();
         assert_eq!(lock_state, "unlocked");
+    }
+
+    #[test]
+    fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+
+        let run_id = "run-pre-trust-reorg";
+        let txid_hex = "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, PHASE_WAITING_MIGRATION_CONFIRMATIONS],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES (?1, ?2, 0, 100000000, 2, NULL, 'locked')"
+            ),
+            params![run_id, txid_hex],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value,
+                  scheduled_at_ms, status, metadata_json)
+                 VALUES (?1, ?2, 'encrypted', 10, 30, 99990000, 10000,
+                         ?2, 0, 100000000, 1, 'broadcasted', '{{}}')"
+            ),
+            params![run_id, txid_hex],
+        )
+        .unwrap();
+
+        let mut txid_blob = hex::decode(txid_hex).unwrap();
+        txid_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 20)",
+            params![txid_blob],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (20)",
+            [],
+        )
+        .unwrap();
+
+        let stale_run = ActiveRun {
+            run_id: run_id.to_string(),
+            phase: PHASE_WAITING_MIGRATION_CONFIRMATIONS.to_string(),
+            target_values_zatoshi: vec![100_000_000],
+            last_error: None,
+        };
+
+        reconcile_run_confirmations(&conn, run_id).unwrap();
+        let status = status_for_run(&conn, stale_run.clone()).unwrap();
+        assert_eq!(status.phase, PHASE_WAITING_MIGRATION_CONFIRMATIONS);
+        assert_eq!(status.confirmed_tx_count, 1);
+        let lock_state: String = conn
+            .query_row(
+                &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(lock_state, "locked");
+
+        conn.execute(
+            "UPDATE transactions SET mined_height = NULL WHERE txid = ?1",
+            params![txid_blob],
+        )
+        .unwrap();
+        reconcile_run_confirmations(&conn, run_id).unwrap();
+
+        let (pending_status, scheduled_at_ms): (String, i64) = conn
+            .query_row(
+                &format!(
+                    "SELECT status, scheduled_at_ms
+                     FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pending_status, "scheduled");
+        assert!(scheduled_at_ms > 1);
+
+        let status = status_for_run(&conn, stale_run).unwrap();
+        assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
+        assert_eq!(status.confirmed_tx_count, 0);
+        let lock_state: String = conn
+            .query_row(
+                &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(lock_state, "locked");
     }
 
     #[test]
@@ -2251,6 +3372,22 @@ mod tests {
             [],
         )
         .unwrap();
+        let independent_txid_hex = "11".repeat(32);
+        for (stage_index, expected_txid_hex) in
+            [(0, txid_hex.to_string()), (1, independent_txid_hex.clone())]
+        {
+            conn.execute(
+                "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, stage_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, encrypted_raw_tx,
+                  expected_txid_hex, target_height, expiry_height,
+                  fee_zatoshi, status)
+                 VALUES (?1, ?2, 'base', 'sigs', 'raw', ?3, 10, 0,
+                         80000, 'broadcasted')",
+                params![run_id, stage_index, expected_txid_hex],
+            )
+            .unwrap();
+        }
 
         let run = ActiveRun {
             run_id: run_id.to_string(),
@@ -2258,6 +3395,24 @@ mod tests {
             target_values_zatoshi: vec![100_000_000],
             last_error: None,
         };
+        reconcile_denomination_confirmations(&conn, &run).unwrap();
+
+        let phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+
+        let mut independent_txid_blob = hex::decode(&independent_txid_hex).unwrap();
+        independent_txid_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (id_tx, txid, mined_height) VALUES (2, ?1, 20)",
+            params![independent_txid_blob],
+        )
+        .unwrap();
         reconcile_denomination_confirmations(&conn, &run).unwrap();
 
         let phase: String = conn
@@ -2276,6 +3431,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(nullifier_hex, "ab".repeat(32));
+        assert!(all_denomination_stages_confirmed(&conn, run_id).unwrap());
     }
 
     #[test]
@@ -2371,6 +3527,14 @@ mod tests {
         assert_eq!(status.signed_child_pczt_count, 0);
         assert_eq!(status.pending_prep_tx_count, 1);
 
+        let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
+            txid_hex: txid_hex.to_string(),
+            output_index: 0,
+            value_zatoshi: 100_000_000,
+            note_version: 2,
+            nullifier_hex: Some("ab".repeat(32)),
+        })
+        .unwrap();
         conn.execute(
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
@@ -2378,9 +3542,9 @@ mod tests {
                   encrypted_signed_pczt, target_height, expiry_height,
                   value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
                  VALUES (?1, 'migration-1', 0, 'base', 'signed', 10, 20,
-                         99980000, 20000, '{{}}', '{{}}')"
+                         99980000, 20000, ?2, '{{}}')"
             ),
-            params![run_id],
+            params![run_id, selected_note_json],
         )
         .unwrap();
 
@@ -2403,6 +3567,556 @@ mod tests {
         let status = status_for_run(&conn, run).unwrap();
         assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
         assert_eq!(status.pending_prep_tx_count, 0);
+    }
+
+    #[test]
+    fn terminal_denomination_stage_keeps_retry_signal_until_run_is_ready() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        let run_id = "run-terminal-stage";
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, PHASE_WAITING_DENOM_CONFIRMATIONS],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
+              fee_zatoshi, status)
+             VALUES (?1, 0, 'base', 'sigs', 'raw', ?2, 10, 0, 80000,
+                     'broadcasted')",
+            params![run_id, "11".repeat(32)],
+        )
+        .unwrap();
+
+        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 1);
+        conn.execute(
+            "UPDATE vizor_migration_denomination_stages
+             SET status = 'confirmed' WHERE run_id = ?1",
+            params![run_id],
+        )
+        .unwrap();
+        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 1);
+
+        conn.execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+            params![PHASE_READY_TO_MIGRATE, run_id],
+        )
+        .unwrap();
+        assert_eq!(pending_prep_tx_count_for_run(&conn, run_id).unwrap(), 0);
+    }
+
+    #[test]
+    fn broadcast_scheduled_staged_run_requires_trusted_depth_and_preserves_phase() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 block INTEGER,
+                 mined_height INTEGER
+             );
+             CREATE TABLE orchard_tree_checkpoints (
+                 checkpoint_id INTEGER PRIMARY KEY
+             );",
+        )
+        .unwrap();
+
+        let run_id = "run-broadcast-scheduled";
+        let denomination_txid = "11".repeat(32);
+        let mined_height = 20;
+        let block_hash = [0xabu8; 32];
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO blocks (height, hash) VALUES (?1, ?2)",
+            params![mined_height, block_hash.as_slice()],
+        )
+        .unwrap();
+        let mut stored_txid = hex::decode(&denomination_txid).unwrap();
+        stored_txid.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, block, mined_height)
+             VALUES (?1, ?2, ?2)",
+            params![stored_txid, mined_height],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
+              fee_zatoshi, status)
+             VALUES (?1, 0, 'base', 'sigs', 'raw', ?2, 10, 0, 80000,
+                     'broadcasted')",
+            params![run_id, denomination_txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (?1)",
+            params![mined_height + 1],
+        )
+        .unwrap();
+        drop(conn);
+
+        // A canonical identity changes the durable stage status to confirmed,
+        // but two confirmations are still below trusted depth.
+        assert!(!reconcile_denomination_run(db_path, run_id).unwrap());
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert!(all_denomination_stages_confirmed(&conn, run_id).unwrap());
+        let phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, PHASE_BROADCAST_SCHEDULED);
+
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (?1)",
+            params![mined_height + 2],
+        )
+        .unwrap();
+        drop(conn);
+
+        // `advance_staged_denomination_run` treats this readiness result as the
+        // gate to `broadcast_due_scheduled_migration_txs`.
+        assert!(reconcile_denomination_run(db_path, run_id).unwrap());
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, PHASE_BROADCAST_SCHEDULED);
+    }
+
+    #[test]
+    fn denomination_reorg_restores_affected_presigned_child() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        let run_id = "run-reorg-child";
+        let denomination_txid = "11".repeat(32);
+        let child_txid = "22".repeat(32);
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES (?1, ?2, 7, 100000000, 2, ?3, 'unlocked')"
+            ),
+            params![run_id, denomination_txid, "ab".repeat(32)],
+        )
+        .unwrap();
+        let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
+            txid_hex: denomination_txid.clone(),
+            output_index: 7,
+            value_zatoshi: 100_000_000,
+            note_version: 2,
+            nullifier_hex: Some("ab".repeat(32)),
+        })
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_signed_pczt, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                 VALUES (?1, 'migration-1', 0, 'base', 'sigs', 10, 20,
+                         99980000, 20000, ?2, '{{}}')"
+            ),
+            params![run_id, selected_note_json],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value,
+                  scheduled_at_ms, status, metadata_json)
+                 VALUES (?1, ?2, 'raw', 10, 20, 99980000, 20000, ?3,
+                         7, 100000000, 1, 'scheduled', '{{}}')"
+            ),
+            params![run_id, child_txid, denomination_txid],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(signed_child_pczt_count(db_path, run_id).unwrap(), 0);
+        reset_migration_children_for_reorged_denominations(
+            db_path,
+            run_id,
+            &BTreeSet::from([denomination_txid.clone()]),
+        )
+        .unwrap();
+        assert_eq!(signed_child_pczt_count(db_path, run_id).unwrap(), 1);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let retained_signed: u32 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let pending: u32 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let (phase, nullifier, lock_state): (String, Option<String>, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT r.phase, n.nullifier_hex, n.lock_state
+                     FROM {RUNS_TABLE} r
+                     JOIN {PREPARED_NOTES_TABLE} n ON n.run_id = r.run_id
+                     WHERE r.run_id = ?1"
+                ),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(retained_signed, 1);
+        assert_eq!(pending, 0);
+        assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+        assert!(nullifier.is_none());
+        assert_eq!(lock_state, "locked");
+    }
+
+    #[test]
+    fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_dependents() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 block INTEGER,
+                 mined_height INTEGER
+             );",
+        )
+        .unwrap();
+
+        let run_id = "run-status-reorg";
+        let root_txid = "11".repeat(32);
+        let descendant_txid = "22".repeat(32);
+        let independent_txid = "33".repeat(32);
+        let migration_child_txid = "44".repeat(32);
+        let old_root_hash = [0xa1u8; 32];
+        let new_root_hash = [0xb2u8; 32];
+        let independent_hash = [0xc3u8; 32];
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        for (height, hash) in [(20, new_root_hash), (21, independent_hash)] {
+            conn.execute(
+                "INSERT INTO blocks (height, hash) VALUES (?1, ?2)",
+                params![height, hash.as_slice()],
+            )
+            .unwrap();
+        }
+        for (txid, height) in [(&root_txid, 20), (&independent_txid, 21)] {
+            let mut blob = hex::decode(txid).unwrap();
+            blob.reverse();
+            conn.execute(
+                "INSERT INTO transactions (txid, block, mined_height)
+                 VALUES (?1, ?2, ?2)",
+                params![blob, height],
+            )
+            .unwrap();
+        }
+
+        for (stage_index, txid, height, hash) in [
+            (0, &root_txid, 20, old_root_hash),
+            (1, &descendant_txid, 19, [0xd4u8; 32]),
+            (2, &independent_txid, 21, independent_hash),
+        ] {
+            conn.execute(
+                "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, stage_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, encrypted_raw_tx,
+                  expected_txid_hex, target_height, expiry_height,
+                  fee_zatoshi, confirmed_mined_height,
+                  confirmed_block_hash, status)
+                 VALUES (?1, ?2, 'base', 'sigs', 'raw', ?3, 10, 0,
+                         80000, ?4, ?5, 'confirmed')",
+                params![run_id, stage_index, txid, height, hash.as_slice()],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stage_inputs
+             (run_id, stage_index, input_order, txid_hex, output_index,
+              value_zatoshi, note_version, nullifier_hex)
+             VALUES (?1, 1, 0, ?2, 0, 100080000, 2, NULL)",
+            params![run_id, root_txid],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES (?1, ?2, 7, 100000000, 2, ?3, 'unlocked')"
+            ),
+            params![run_id, root_txid, "ab".repeat(32)],
+        )
+        .unwrap();
+        let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
+            txid_hex: root_txid.clone(),
+            output_index: 7,
+            value_zatoshi: 100_000_000,
+            note_version: 2,
+            nullifier_hex: Some("ab".repeat(32)),
+        })
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_signed_pczt, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                 VALUES (?1, 'migration-1', 0, 'base', 'sigs', 10, 20,
+                         99980000, 20000, ?2, '{{}}')"
+            ),
+            params![run_id, selected_note_json],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value,
+                  scheduled_at_ms, status, metadata_json)
+                 VALUES (?1, ?2, 'raw', 10, 20, 99980000, 20000, ?3,
+                         7, 100000000, 1, 'broadcasted', '{{}}')"
+            ),
+            params![run_id, migration_child_txid, root_txid],
+        )
+        .unwrap();
+        drop(conn);
+
+        let status = migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0).unwrap();
+        assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let stage_rows = conn
+            .prepare(
+                "SELECT expected_txid_hex, status, encrypted_raw_tx,
+                        confirmed_block_hash
+                 FROM vizor_migration_denomination_stages
+                 WHERE run_id = ?1 ORDER BY stage_index",
+            )
+            .unwrap()
+            .query_map(params![run_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(stage_rows[0].0, root_txid);
+        assert_eq!(stage_rows[0].1, "confirmed");
+        assert_eq!(stage_rows[0].2.as_deref(), Some("raw"));
+        assert_eq!(stage_rows[0].3, Some(new_root_hash.to_vec()));
+        assert_eq!(stage_rows[1].0, descendant_txid);
+        assert_eq!(stage_rows[1].1, "awaiting_inputs");
+        assert!(stage_rows[1].2.is_none());
+        assert_eq!(stage_rows[2].0, independent_txid);
+        assert_eq!(stage_rows[2].1, "confirmed");
+        assert_eq!(stage_rows[2].2.as_deref(), Some("raw"));
+
+        assert_eq!(count_for_run(&conn, PENDING_TXS_TABLE, run_id).unwrap(), 0);
+        assert_eq!(
+            count_for_run(&conn, SIGNED_CHILD_PCZTS_TABLE, run_id).unwrap(),
+            1
+        );
+        let (nullifier, lock_state): (Option<String>, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT nullifier_hex, lock_state
+                     FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(nullifier.is_none());
+        assert_eq!(lock_state, "locked");
+
+        let mut root_blob = hex::decode(&root_txid).unwrap();
+        root_blob.reverse();
+        conn.execute(
+            "DELETE FROM transactions WHERE txid = ?1",
+            params![root_blob],
+        )
+        .unwrap();
+        drop(conn);
+        reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let statuses = conn
+            .prepare(
+                "SELECT status FROM vizor_migration_denomination_stages
+                 WHERE run_id = ?1 ORDER BY stage_index",
+            )
+            .unwrap()
+            .query_map(params![run_id], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            statuses,
+            vec!["awaiting_inputs", "awaiting_inputs", "confirmed"]
+        );
+    }
+
+    #[test]
+    fn reorg_cleanup_preserves_a_migration_child_already_on_chain() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 block INTEGER,
+                 mined_height INTEGER
+             );",
+        )
+        .unwrap();
+        let run_id = "run-preserve-child";
+        let denomination_txid = "11".repeat(32);
+        let child_txid = "22".repeat(32);
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, db_path, PHASE_WAITING_MIGRATION_CONFIRMATIONS],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES (?1, ?2, 7, 100000000, 2, ?3, 'unlocked')"
+            ),
+            params![run_id, denomination_txid, "ab".repeat(32)],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value,
+                  scheduled_at_ms, status, metadata_json)
+                 VALUES (?1, ?2, 'raw', 10, 20, 99980000, 20000, ?3,
+                         7, 100000000, 1, 'broadcasted', '{{}}')"
+            ),
+            params![run_id, child_txid, denomination_txid],
+        )
+        .unwrap();
+        let block_hash = [0xabu8; 32];
+        conn.execute(
+            "INSERT INTO blocks (height, hash) VALUES (20, ?1)",
+            params![block_hash.as_slice()],
+        )
+        .unwrap();
+        let mut child_blob = hex::decode(&child_txid).unwrap();
+        child_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, block, mined_height)
+             VALUES (?1, 20, 20)",
+            params![child_blob],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert!(!reset_migration_children_for_reorged_denominations(
+            db_path,
+            run_id,
+            &BTreeSet::from([denomination_txid]),
+        )
+        .unwrap());
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(count_for_run(&conn, PENDING_TXS_TABLE, run_id).unwrap(), 1);
+        let (nullifier, lock_state): (Option<String>, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT nullifier_hex, lock_state
+                     FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(nullifier, Some("ab".repeat(32)));
+        assert_eq!(lock_state, "unlocked");
     }
 
     #[test]
@@ -2516,6 +4230,218 @@ mod tests {
         let status = status_for_run(&conn, run).unwrap();
         assert_eq!(status.denomination_confirmation_count, 2);
         assert_eq!(status.denomination_confirmation_target, 3);
+    }
+
+    #[test]
+    fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                txid BLOB PRIMARY KEY,
+                mined_height INTEGER
+             );
+             CREATE TABLE orchard_tree_checkpoints (
+                checkpoint_id INTEGER PRIMARY KEY
+             );",
+        )
+        .unwrap();
+
+        let run_id = "run-three-stage-progress";
+        let stage_txids = ["11".repeat(32), "22".repeat(32), "33".repeat(32)];
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, PHASE_WAITING_DENOM_CONFIRMATIONS],
+        )
+        .unwrap();
+        for (stage_index, txid) in stage_txids.iter().enumerate() {
+            let (raw_tx, status) = if stage_index == 0 {
+                (Some("raw"), "broadcasted")
+            } else {
+                (None, "awaiting_inputs")
+            };
+            conn.execute(
+                "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, stage_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, encrypted_raw_tx,
+                  expected_txid_hex, target_height, expiry_height,
+                  fee_zatoshi, status)
+                 VALUES (?1, ?2, 'base', 'sigs', ?3, ?4, 10, 20, 80000, ?5)",
+                params![run_id, stage_index as u32, raw_tx, txid, status],
+            )
+            .unwrap();
+            if stage_index > 0 {
+                conn.execute(
+                    "INSERT INTO vizor_migration_denomination_stage_inputs
+                     (run_id, stage_index, input_order, txid_hex, output_index,
+                      value_zatoshi, note_version, nullifier_hex)
+                     VALUES (?1, ?2, 0, ?3, 0, 100000000, 2, NULL)",
+                    params![run_id, stage_index as u32, stage_txids[stage_index - 1]],
+                )
+                .unwrap();
+            }
+        }
+
+        let run = ActiveRun {
+            run_id: run_id.to_string(),
+            phase: PHASE_WAITING_DENOM_CONFIRMATIONS.to_string(),
+            target_values_zatoshi: vec![100_000_000],
+            last_error: None,
+        };
+        let status = status_for_run(&conn, run.clone()).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 0);
+        assert_eq!(status.denomination_split_completed_count, 0);
+        assert_eq!(status.denomination_split_total_count, 3);
+
+        let mut stage_0_txid = hex::decode(&stage_txids[0]).unwrap();
+        stage_0_txid.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 20)",
+            params![stage_0_txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (20)",
+            [],
+        )
+        .unwrap();
+        let status = status_for_run(&conn, run.clone()).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 1);
+        assert_eq!(status.denomination_split_completed_count, 0);
+
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21)",
+            [],
+        )
+        .unwrap();
+        let status = status_for_run(&conn, run.clone()).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 2);
+        assert_eq!(status.denomination_split_completed_count, 0);
+
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (22)",
+            [],
+        )
+        .unwrap();
+        let status = status_for_run(&conn, run.clone()).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 0);
+        assert_eq!(status.denomination_split_completed_count, 1);
+        assert_eq!(status.denomination_split_total_count, 3);
+
+        conn.execute(
+            "UPDATE vizor_migration_denomination_stages
+             SET encrypted_raw_tx = 'raw', status = 'broadcasted'
+             WHERE run_id = ?1 AND stage_index = 1",
+            params![run_id],
+        )
+        .unwrap();
+        let mut stage_1_txid = hex::decode(&stage_txids[1]).unwrap();
+        stage_1_txid.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 23)",
+            params![stage_1_txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (23)",
+            [],
+        )
+        .unwrap();
+        let status = status_for_run(&conn, run.clone()).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 1);
+        assert_eq!(status.denomination_split_completed_count, 1);
+
+        conn.execute_batch(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (24);
+             INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (25);",
+        )
+        .unwrap();
+        let status = status_for_run(&conn, run).unwrap();
+        assert_eq!(status.denomination_confirmation_count, 0);
+        assert_eq!(status.denomination_split_completed_count, 2);
+        assert_eq!(status.denomination_split_total_count, 3);
+    }
+
+    #[test]
+    fn staged_split_progress_uses_the_slowest_parallel_root_not_future_descendants() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                txid BLOB PRIMARY KEY,
+                mined_height INTEGER
+             );
+             CREATE TABLE orchard_tree_checkpoints (
+                checkpoint_id INTEGER PRIMARY KEY
+             );",
+        )
+        .unwrap();
+
+        let run_id = "run-parallel-root-progress";
+        let root_0 = "44".repeat(32);
+        let root_1 = "55".repeat(32);
+        let child = "66".repeat(32);
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, PHASE_WAITING_DENOM_CONFIRMATIONS],
+        )
+        .unwrap();
+        for (stage_index, txid, raw_tx, status) in [
+            (0u32, &root_0, Some("raw"), "broadcasted"),
+            (1u32, &root_1, Some("raw"), "broadcasted"),
+            (2u32, &child, None, "awaiting_inputs"),
+        ] {
+            conn.execute(
+                "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, stage_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, encrypted_raw_tx,
+                  expected_txid_hex, target_height, expiry_height,
+                  fee_zatoshi, status)
+                 VALUES (?1, ?2, 'base', 'sigs', ?3, ?4, 10, 20, 80000, ?5)",
+                params![run_id, stage_index, raw_tx, txid, status],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stage_inputs
+             (run_id, stage_index, input_order, txid_hex, output_index,
+              value_zatoshi, note_version, nullifier_hex)
+             VALUES (?1, 2, 0, ?2, 0, 100000000, 2, NULL)",
+            params![run_id, root_0],
+        )
+        .unwrap();
+
+        for (txid, mined_height) in [(&root_0, 20u32), (&root_1, 21u32)] {
+            let mut txid_blob = hex::decode(txid).unwrap();
+            txid_blob.reverse();
+            conn.execute(
+                "INSERT INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+                params![txid_blob, mined_height],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21)",
+            [],
+        )
+        .unwrap();
+
+        let progress = denomination_split_progress_for_run(&conn, run_id).unwrap();
+        assert_eq!(progress.frontier_confirmation_count, 1);
+        assert_eq!(progress.completed_count, 0);
+        assert_eq!(progress.total_count, 3);
     }
 
     #[test]

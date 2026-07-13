@@ -90,7 +90,9 @@ use zcash_protocol::{
     PoolType, ShieldedProtocol,
 };
 
-use crate::wallet::db::with_wallet_db_write_lock;
+use crate::wallet::db::{
+    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
@@ -874,6 +876,59 @@ pub async fn migrate_orchard_to_ironwood(
             return Ok(result);
         }
 
+        match advance_staged_denomination_run(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            &run,
+            pending_password.as_slice(),
+            pending_salt_base64,
+        )
+        .await?
+        {
+            StagedDenominationAdvance::Waiting(result) => {
+                drop(seed);
+                drop(migration_guard);
+                return Ok(result);
+            }
+            StagedDenominationAdvance::Ready => {
+                drop(seed);
+                if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+                    let finalized = finalize_presigned_migration_children(
+                        db_path,
+                        network,
+                        account_uuid,
+                        &run.run_id,
+                        pending_password.as_slice(),
+                        pending_salt_base64,
+                    )?;
+                    if !finalized {
+                        let result = prepared_notes_not_spendable_result(
+                            run.target_values_zatoshi.len() as u32,
+                            run.target_values_zatoshi.iter().sum(),
+                        );
+                        drop(migration_guard);
+                        return Ok(result);
+                    }
+                }
+                let result = broadcast_due_scheduled_migration_txs(
+                    db_path,
+                    lightwalletd_url,
+                    network,
+                    &run.run_id,
+                    pending_password.as_slice(),
+                    pending_salt_base64,
+                    run.target_values_zatoshi.len() as u32,
+                    run.target_values_zatoshi.iter().sum(),
+                )
+                .await;
+                drop(migration_guard);
+                return result;
+            }
+            StagedDenominationAdvance::NotStaged => {}
+        }
+
         if super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count == 0
             && super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0
         {
@@ -949,23 +1004,29 @@ pub async fn migrate_orchard_to_ironwood(
         );
     };
 
-    let split = prepared.split;
-    let split_txid = format!("{}", split.txid);
-    let run_id = super::migration::create_run_with_prepared_notes_and_signed_children(
+    let PreparedSoftwareMigrationRun {
+        plan,
+        prepared_refs,
+        denomination_stages,
+        signed_children,
+        fee_zatoshi,
+        total_migratable_zatoshi,
+    } = prepared;
+    let prepared_count = u32::try_from(prepared_refs.len())
+        .map_err(|_| "Migration output count exceeds u32".to_string())?;
+    let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
         db_path,
         account_uuid,
         network,
-        &split.plan,
-        &split.migrated_outputs,
-        true,
-        prepared.signed_children,
+        &plan,
+        &prepared_refs,
+        signed_children,
+        denomination_stages,
         pending_password.as_slice(),
         pending_salt_base64,
-        Some(&split_txid),
-        Some(split.raw_tx.clone()),
     )?;
 
-    let Some(broadcast) = broadcast_pending_migration_prep_tx(
+    let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
         network,
@@ -983,9 +1044,9 @@ pub async fn migrate_orchard_to_ironwood(
 
     Ok(migration_result_from_prep_broadcast(
         broadcast,
-        split.migrated_outputs.len() as u32,
-        u64::from(split.fee_amount),
-        u64::from(split.total_migratable),
+        prepared_count,
+        fee_zatoshi,
+        total_migratable_zatoshi,
     ))
 }
 
@@ -1010,9 +1071,6 @@ pub async fn broadcast_due_orchard_migration_transactions(
         });
     };
 
-    let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    let signed_child_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
-
     if let Some(prep_broadcast) = broadcast_pending_migration_prep_tx(
         db_path,
         lightwalletd_url,
@@ -1031,7 +1089,23 @@ pub async fn broadcast_due_orchard_migration_transactions(
         ));
     }
 
-    if pending_totals.total_count == 0 && signed_child_count > 0 {
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password.as_slice(),
+        pending_salt_base64,
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => return Ok(result),
+        StagedDenominationAdvance::Ready | StagedDenominationAdvance::NotStaged => {}
+    }
+
+    let signed_child_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
+    if signed_child_count > 0 {
         if !run_may_finalize_presigned_migration_children(&run) {
             return Ok(prepared_notes_not_spendable_result(
                 run.target_values_zatoshi.len() as u32,
@@ -1090,7 +1164,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     }
 
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
-        create_orchard_denomination_split_pczt(db_path, network, account_uuid)
+        create_padded_orchard_denomination_pczts(db_path, network, account_uuid)
     })?;
     let Some(split) = split else {
         return Err(
@@ -1100,13 +1174,24 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     };
 
     let request_id = new_keystone_migration_request_id("denominations");
-    let message_id = "denominations".to_string();
-    let worker_base_pczt = split.base_pczt.clone();
-    let messages = vec![KeystoneMigrationMessage {
-        id: message_id,
-        redacted_pczt: split.redacted_pczt,
-    }];
+    let messages = split
+        .stages
+        .iter()
+        .map(|stage| KeystoneMigrationMessage {
+            id: stage.id.clone(),
+            redacted_pczt: stage.redacted_pczt.clone(),
+        })
+        .collect::<Vec<_>>();
     validate_keystone_migration_messages(&messages)?;
+    let root_proofs = split
+        .stages
+        .iter()
+        .filter(|stage| !stage.deferred)
+        .map(|stage| (stage.id.clone(), stage.base_pczt.clone()))
+        .collect::<Vec<_>>();
+    if root_proofs.is_empty() {
+        return Err("Padded denomination plan has no immediately provable root".to_string());
+    }
     let mut request_store = keystone_denomination_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?;
@@ -1116,16 +1201,14 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             account_uuid: account_uuid.to_string(),
             network,
             state: KeystoneMigrationRequestState::Proofing,
-            pczt_with_proofs: None,
             proof_error: None,
-            fee_zatoshi: split.fee_zatoshi,
-            migrated_outputs: split.migrated_outputs,
+            split_stages: split.stages,
             total_migratable_zatoshi: split.total_migratable_zatoshi,
             plan: split.plan,
         },
     );
     drop(request_store);
-    spawn_denomination_proof_worker(request_id.clone(), worker_base_pczt);
+    spawn_denomination_proof_worker(request_id.clone(), root_proofs);
 
     Ok(KeystoneMigrationSigningRequest {
         request_id,
@@ -1146,12 +1229,6 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let split_sigs = signed_by_id
-        .get("denominations")
-        .ok_or("Keystone result did not include the denomination split")?;
-    if signed_by_id.len() != 1 {
-        return Err("Keystone denomination result contained unexpected messages".to_string());
-    }
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
         return Err(
             "Migration already has an active run. Reject this Keystone request.".to_string(),
@@ -1170,6 +1247,13 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
                 "Signed denomination request does not match the active account".to_string(),
             );
         }
+        if signed_by_id.len() != stored.split_stages.len() {
+            return Err(format!(
+                "Keystone returned {} signed messages for {} requested denomination splits",
+                signed_by_id.len(),
+                stored.split_stages.len()
+            ));
+        }
         match stored.state {
             KeystoneMigrationRequestState::Proofing => {
                 return Err(
@@ -1186,55 +1270,45 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             }
             KeystoneMigrationRequestState::ProofReady => {}
         }
-        let pczt_with_proofs = stored
-            .pczt_with_proofs
-            .clone()
-            .ok_or("Keystone denomination proofs are not ready")?;
+        if stored
+            .split_stages
+            .iter()
+            .any(|stage| !stage.deferred && stage.pczt_with_proofs.is_none())
+        {
+            return Err("Keystone denomination root proofs are not ready".to_string());
+        }
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredDenominationCompletion {
-            pczt_with_proofs,
-            fee_zatoshi: stored.fee_zatoshi,
-            migrated_outputs: stored.migrated_outputs.clone(),
+            split_stages: stored.split_stages.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
             plan: stored.plan.clone(),
         }
     };
 
-    let extracted_split =
-        match super::pczt::apply_sigs_and_extract(&stored.pczt_with_proofs, split_sigs, None, None)
-        {
-            Ok(extracted) => extracted,
-            Err(e) => {
-                reset_denomination_request_after_failed_completion(request_id);
-                return Err(e);
-            }
-        };
+    for stage in &stored.split_stages {
+        if !signed_by_id.contains_key(&stage.id) {
+            reset_denomination_request_after_failed_completion(request_id);
+            return Err(format!("Keystone result missing {}", stage.id));
+        }
+    }
+    let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
 
-    let txid = extracted_split.txid.to_string();
-    let prepared_refs = stored
-        .migrated_outputs
-        .iter()
-        .map(|output| super::migration::PreparedOrchardNoteRef {
-            txid_hex: txid.clone(),
-            output_index: output.output_index,
-            value_zatoshi: output.value_zatoshi,
-            note_version: 2,
-            nullifier_hex: None,
-        })
-        .collect::<Vec<_>>();
-
-    let run_id = match super::migration::create_run_with_prepared_notes_and_prep_tx(
-        db_path,
-        account_uuid,
-        network,
-        &stored.plan,
-        &prepared_refs,
-        true,
-        &txid,
-        extracted_split.raw_tx,
-        pending_password,
-        pending_salt_base64,
-    ) {
+    let finalize_result = (|| -> Result<String, String> {
+        let denomination_stages =
+            signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
+        super::migration::create_run_with_staged_denominations_and_signed_children(
+            db_path,
+            account_uuid,
+            network,
+            &stored.plan,
+            &prepared_refs,
+            Vec::new(),
+            denomination_stages,
+            pending_password,
+            pending_salt_base64,
+        )
+    })();
+    let run_id = match finalize_result {
         Ok(run_id) => run_id,
         Err(e) => {
             reset_denomination_request_after_failed_completion(request_id);
@@ -1245,7 +1319,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         store.remove(request_id);
     }
 
-    let Some(broadcast) = broadcast_pending_migration_prep_tx(
+    let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
         network,
@@ -1263,7 +1337,11 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     Ok(migration_result_from_prep_broadcast(
         broadcast,
         prepared_refs.len() as u32,
-        stored.fee_zatoshi,
+        stored.split_stages.iter().try_fold(0u64, |total, stage| {
+            total
+                .checked_add(stage.fee_zatoshi)
+                .ok_or("Denomination stage fee total overflow")
+        })?,
         stored.total_migratable_zatoshi,
     ))
 }
@@ -1291,7 +1369,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     }
 
     let split = with_wallet_db_write_lock("send.migration.prepare_single_qr_pczt", || {
-        create_orchard_denomination_split_pczt(db_path, network, account_uuid)
+        create_padded_orchard_denomination_pczts(db_path, network, account_uuid)
     })?;
     let Some(split) = split else {
         return Err(
@@ -1303,13 +1381,13 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     let total_messages = split
         .predicted_notes
         .len()
-        .checked_add(1)
+        .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
     if total_messages > ZCASH_SIGN_BATCH_MAX_MESSAGES {
         return Err(format!(
-            "Single Keystone migration signing supports at most {} migration notes, but this plan needs {}. Reduce the migration amount or use the staged flow.",
-            ZCASH_SIGN_BATCH_MAX_MESSAGES - 1,
-            split.predicted_notes.len()
+            "Single Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs, but this plan needs {} split transactions plus {} migration transactions. Reduce the migration amount or use the staged flow.",
+            split.stages.len(),
+            split.predicted_notes.len(),
         ));
     }
 
@@ -1328,10 +1406,10 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
 
     let request_id = new_keystone_migration_request_id("single");
     let mut messages = Vec::with_capacity(total_messages);
-    messages.push(KeystoneMigrationMessage {
-        id: "denominations".to_string(),
-        redacted_pczt: split.redacted_pczt,
-    });
+    messages.extend(split.stages.iter().map(|stage| KeystoneMigrationMessage {
+        id: stage.id.clone(),
+        redacted_pczt: stage.redacted_pczt.clone(),
+    }));
     messages.extend(
         child_messages
             .iter()
@@ -1342,7 +1420,15 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     );
     validate_keystone_migration_messages(&messages)?;
 
-    let split_base_pczt = split.base_pczt.clone();
+    let root_proofs = split
+        .stages
+        .iter()
+        .filter(|stage| !stage.deferred)
+        .map(|stage| (stage.id.clone(), stage.base_pczt.clone()))
+        .collect::<Vec<_>>();
+    if root_proofs.is_empty() {
+        return Err("Padded denomination plan has no immediately provable root".to_string());
+    }
     let mut request_store = keystone_single_qr_migration_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?;
@@ -1352,17 +1438,15 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             account_uuid: account_uuid.to_string(),
             network,
             state: KeystoneMigrationRequestState::Proofing,
-            split_pczt_with_proofs: None,
             proof_error: None,
-            split_fee_zatoshi: split.fee_zatoshi,
-            migrated_outputs: split.migrated_outputs,
+            split_stages: split.stages,
             total_migratable_zatoshi: split.total_migratable_zatoshi,
             plan: split.plan,
             child_messages,
         },
     );
     drop(request_store);
-    spawn_single_qr_split_proof_worker(request_id.clone(), split_base_pczt);
+    spawn_single_qr_split_proof_worker(request_id.clone(), root_proofs);
 
     Ok(KeystoneMigrationSigningRequest {
         request_id,
@@ -1383,9 +1467,6 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    let split_sigs = signed_by_id
-        .get("denominations")
-        .ok_or("Keystone result did not include the denomination split")?;
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
         return Err(
             "Migration already has an active run. Reject this Keystone request.".to_string(),
@@ -1405,7 +1486,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         let expected_count = stored
             .child_messages
             .len()
-            .checked_add(1)
+            .checked_add(stored.split_stages.len())
             .ok_or("Keystone migration message count overflow")?;
         if signed_by_id.len() != expected_count {
             return Err(format!(
@@ -1430,70 +1511,51 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             }
             KeystoneMigrationRequestState::ProofReady => {}
         }
-        let split_pczt_with_proofs = stored
-            .split_pczt_with_proofs
-            .clone()
-            .ok_or("Keystone denomination proofs are not ready")?;
+        if stored
+            .split_stages
+            .iter()
+            .any(|stage| !stage.deferred && stage.pczt_with_proofs.is_none())
+        {
+            return Err("Keystone denomination root proofs are not ready".to_string());
+        }
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredSingleQrMigrationCompletion {
-            split_pczt_with_proofs,
-            split_fee_zatoshi: stored.split_fee_zatoshi,
-            migrated_outputs: stored.migrated_outputs.clone(),
+            split_stages: stored.split_stages.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
             plan: stored.plan.clone(),
             child_messages: stored.child_messages.clone(),
         }
     };
 
-    for child in &stored.child_messages {
-        if !signed_by_id.contains_key(&child.id) {
+    for id in stored
+        .split_stages
+        .iter()
+        .map(|stage| stage.id.as_str())
+        .chain(stored.child_messages.iter().map(|child| child.id.as_str()))
+    {
+        if !signed_by_id.contains_key(id) {
             reset_single_qr_request_after_failed_completion(request_id);
-            return Err(format!("Keystone result missing {}", child.id));
+            return Err(format!("Keystone result missing {id}"));
         }
     }
 
-    let extracted_split = match super::pczt::apply_sigs_and_extract(
-        &stored.split_pczt_with_proofs,
-        split_sigs,
-        None,
-        None,
-    ) {
-        Ok(extracted) => extracted,
-        Err(e) => {
-            reset_single_qr_request_after_failed_completion(request_id);
-            return Err(e);
-        }
-    };
-    let txid = extracted_split.txid.to_string();
-    let prepared_refs = stored
-        .migrated_outputs
-        .iter()
-        .map(|output| super::migration::PreparedOrchardNoteRef {
-            txid_hex: txid.clone(),
-            output_index: output.output_index,
-            value_zatoshi: output.value_zatoshi,
-            note_version: 2,
-            nullifier_hex: None,
-        })
-        .collect::<Vec<_>>();
+    let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
 
     let finalize_result = (|| -> Result<String, String> {
+        let denomination_stages =
+            signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
         let signed_children = stored
             .child_messages
             .iter()
             .enumerate()
             .map(|(index, child)| {
-                let selected_note = super::migration::PreparedOrchardNoteRef {
-                    txid_hex: txid.clone(),
-                    output_index: child.selected_note.output_index,
-                    value_zatoshi: child.selected_note.value_zatoshi,
-                    note_version: child.selected_note.note_version,
-                    nullifier_hex: None,
-                };
+                let mut selected_note = child.selected_note.clone();
+                selected_note.nullifier_hex = None;
                 let sigs = signed_by_id
                     .get(&child.id)
                     .ok_or_else(|| format!("Keystone result missing {}", child.id))?
                     .clone();
+                super::pczt::preflight_orchard_spend_auth_signatures(&child.base_pczt, &sigs)?;
                 Ok(super::migration::SignedMigrationPcztInsert {
                     message_id: child.id.clone(),
                     child_index: index as u32,
@@ -1512,18 +1574,16 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        super::migration::create_run_with_prepared_notes_and_signed_children(
+        super::migration::create_run_with_staged_denominations_and_signed_children(
             db_path,
             account_uuid,
             network,
             &stored.plan,
             &prepared_refs,
-            true,
             signed_children,
+            denomination_stages,
             pending_password,
             pending_salt_base64,
-            Some(&txid),
-            Some(extracted_split.raw_tx),
         )
     })();
     let run_id = match finalize_result {
@@ -1537,7 +1597,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         store.remove(request_id);
     }
 
-    let Some(broadcast) = broadcast_pending_migration_prep_tx(
+    let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
         network,
@@ -1555,7 +1615,11 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     Ok(migration_result_from_prep_broadcast(
         broadcast,
         prepared_refs.len() as u32,
-        stored.split_fee_zatoshi,
+        stored
+            .split_stages
+            .iter()
+            .map(|stage| stage.fee_zatoshi)
+            .sum(),
         stored.total_migratable_zatoshi,
     ))
 }
@@ -2003,6 +2067,165 @@ fn prepared_notes_not_spendable_result(
     }
 }
 
+enum StagedDenominationAdvance {
+    NotStaged,
+    Waiting(IronwoodMigrationResult),
+    Ready,
+}
+
+fn reconcile_mined_denomination_stages(
+    db_path: &str,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<Vec<super::migration::DenominationStage>, String> {
+    super::migration::reconcile_denomination_stage_chain_state(db_path, run_id)?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let stages = super::migration::denomination_stages_for_run(
+        &conn,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    let mut recovered_included_stage = false;
+    for stage in stages
+        .iter()
+        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+    {
+        let Some(identity) =
+            super::migration::local_denomination_chain_identity(&conn, &stage.expected_txid_hex)?
+        else {
+            continue;
+        };
+        let raw_tx = super::migration::local_transaction_raw(&conn, &stage.expected_txid_hex)?
+            .ok_or_else(|| {
+                format!(
+                    "Mined denomination stage {} is missing wallet transaction bytes",
+                    stage.expected_txid_hex
+                )
+            })?;
+        super::migration::promote_awaiting_denomination_stage(
+            &conn,
+            run_id,
+            stage.stage_index,
+            &stage.expected_txid_hex,
+            raw_tx,
+            pending_password,
+            pending_salt_base64,
+        )?;
+        super::migration::replace_denomination_stage_confirmation_identity(
+            &conn,
+            run_id,
+            &stage.expected_txid_hex,
+            identity.mined_height,
+            &identity.block_hash,
+        )?;
+        recovered_included_stage = true;
+    }
+    if recovered_included_stage {
+        super::migration::denomination_stages_for_run(
+            &conn,
+            run_id,
+            pending_password,
+            pending_salt_base64,
+        )
+    } else {
+        Ok(stages)
+    }
+}
+
+async fn advance_staged_denomination_run(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run: &super::migration::ActiveRun,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<StagedDenominationAdvance, String> {
+    let stages = reconcile_mined_denomination_stages(
+        db_path,
+        &run.run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    if stages.is_empty() {
+        return Ok(StagedDenominationAdvance::NotStaged);
+    }
+
+    let fallback_total_count = u32::try_from(run.target_values_zatoshi.len())
+        .map_err(|_| "Migration output count exceeds u32".to_string())?;
+    let fallback_migrated_zatoshi = run.target_values_zatoshi.iter().sum();
+    let split_fee_zatoshi = stages.iter().try_fold(0u64, |total, stage| {
+        total
+            .checked_add(stage.fee_zatoshi)
+            .ok_or("Denomination stage fee total overflow")
+    })?;
+
+    if let Some(broadcast) = broadcast_pending_denomination_stages(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run.run_id,
+        pending_password,
+        pending_salt_base64,
+    )
+    .await?
+    {
+        return Ok(StagedDenominationAdvance::Waiting(
+            migration_result_from_prep_broadcast(
+                broadcast,
+                fallback_total_count,
+                split_fee_zatoshi,
+                fallback_migrated_zatoshi,
+            ),
+        ));
+    }
+
+    if stages
+        .iter()
+        .any(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+    {
+        if finalize_ready_denomination_stages(
+            db_path,
+            network,
+            account_uuid,
+            &run.run_id,
+            pending_password,
+            pending_salt_base64,
+        )? {
+            let broadcast = broadcast_pending_denomination_stages(
+                db_path,
+                lightwalletd_url,
+                network,
+                &run.run_id,
+                pending_password,
+                pending_salt_base64,
+            )
+            .await?
+            .ok_or("Finalized denomination stage was not pending broadcast")?;
+            return Ok(StagedDenominationAdvance::Waiting(
+                migration_result_from_prep_broadcast(
+                    broadcast,
+                    fallback_total_count,
+                    split_fee_zatoshi,
+                    fallback_migrated_zatoshi,
+                ),
+            ));
+        }
+        return Ok(StagedDenominationAdvance::Waiting(
+            prepared_notes_not_spendable_result(fallback_total_count, fallback_migrated_zatoshi),
+        ));
+    }
+
+    if super::migration::reconcile_denomination_run(db_path, &run.run_id)? {
+        return Ok(StagedDenominationAdvance::Ready);
+    }
+    Ok(StagedDenominationAdvance::Waiting(
+        prepared_notes_not_spendable_result(fallback_total_count, fallback_migrated_zatoshi),
+    ))
+}
+
 fn run_may_finalize_presigned_migration_children(run: &super::migration::ActiveRun) -> bool {
     matches!(
         run.phase.as_str(),
@@ -2030,6 +2253,14 @@ fn derive_migration_usk(
         .account_index();
     let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
         .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+    let derived_account_id = db
+        .get_account_for_ufvk(&usk.to_unified_full_viewing_key())
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Spending key not recognized")?
+        .id();
+    if derived_account_id != account_id {
+        return Err("Spending key does not match migration account".to_string());
+    }
     drop(seed);
 
     Ok(usk)
@@ -2045,9 +2276,34 @@ fn prepare_software_migration_run(
     seed: SecretVec<u8>,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-    let Some(split) = create_orchard_denomination_split_transaction(db_path, network, &usk)? else {
+    let Some(mut split) = create_padded_orchard_denomination_pczts(db_path, network, account_uuid)?
+    else {
         return Ok(None);
     };
+
+    let mut split_sigs = HashMap::with_capacity(split.stages.len());
+    for stage in &mut split.stages {
+        let signed_pczt = sign_orchard_migration_pczt_with_usk(
+            &stage.base_pczt,
+            &stage.orchard_spend_action_indices,
+            &usk,
+        )?;
+        let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(
+            &stage.base_pczt,
+            &signed_pczt,
+        )?;
+        super::pczt::preflight_orchard_spend_auth_signatures(&stage.base_pczt, &sigs)?;
+        if !stage.deferred {
+            stage.pczt_with_proofs = Some(super::pczt::add_proofs_to_pczt(
+                &stage.base_pczt,
+                None,
+                None,
+            )?);
+        }
+        split_sigs.insert(stage.id.clone(), sigs);
+    }
+    let prepared_refs = prepared_refs_from_denomination_stages(&split.stages);
+    let denomination_stages = signed_denomination_stage_inserts(&split.stages, &split_sigs)?;
 
     let child_messages = split
         .predicted_notes
@@ -2076,14 +2332,13 @@ fn prepare_software_migration_run(
             // Persist only the produced signatures, matching the hardware
             // "signatures-only" path's compact storage form rather than the
             // full signed PCZT.
-            let sigs = super::pczt::extract_compact_sigs_from_signed_pczt(&signed_pczt)?;
-            let selected_note = super::migration::PreparedOrchardNoteRef {
-                txid_hex: format!("{}", split.txid),
-                output_index: child.selected_note.output_index,
-                value_zatoshi: child.selected_note.value_zatoshi,
-                note_version: child.selected_note.note_version,
-                nullifier_hex: None,
-            };
+            let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(
+                &child.base_pczt,
+                &signed_pczt,
+            )?;
+            super::pczt::preflight_orchard_spend_auth_signatures(&child.base_pczt, &sigs)?;
+            let mut selected_note = child.selected_note.clone();
+            selected_note.nullifier_hex = None;
             Ok(super::migration::SignedMigrationPcztInsert {
                 message_id: child.id.clone(),
                 child_index: index as u32,
@@ -2104,24 +2359,26 @@ fn prepare_software_migration_run(
         .collect::<Result<Vec<_>, String>>()?;
 
     Ok(Some(PreparedSoftwareMigrationRun {
-        split,
+        plan: split.plan,
+        prepared_refs,
+        denomination_stages,
         signed_children,
+        fee_zatoshi: split.stages.iter().try_fold(0u64, |total, stage| {
+            total
+                .checked_add(stage.fee_zatoshi)
+                .ok_or("Denomination stage fee total overflow")
+        })?,
+        total_migratable_zatoshi: split.total_migratable_zatoshi,
     }))
 }
 
-struct CreatedDenominationSplitTx {
-    txid: TxId,
-    raw_tx: Vec<u8>,
-    fee_amount: Zatoshis,
-    migrated_outputs: Vec<super::migration::PreparedOrchardNoteRef>,
-    predicted_notes: Vec<PredictedMigrationNote>,
-    total_migratable: Zatoshis,
-    plan: super::migration::DenominationPlan,
-}
-
 struct PreparedSoftwareMigrationRun {
-    split: CreatedDenominationSplitTx,
+    plan: super::migration::DenominationPlan,
+    prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
+    denomination_stages: Vec<super::migration::DenominationStageInsert>,
     signed_children: Vec<super::migration::SignedMigrationPcztInsert>,
+    fee_zatoshi: u64,
+    total_migratable_zatoshi: u64,
 }
 
 enum ActiveMigrationResumeAction {
@@ -2144,13 +2401,8 @@ struct CreatedPendingMigrationTx {
 }
 
 #[derive(Clone)]
-struct DenominationOutputTemplate {
-    output_index: u32,
-    value_zatoshi: u64,
-}
-
-#[derive(Clone)]
 struct PredictedMigrationNote {
+    txid_hex: String,
     output_index: u32,
     value_zatoshi: u64,
     note: orchard::Note,
@@ -2170,11 +2422,24 @@ enum KeystoneMigrationRequestState {
     Completing,
 }
 
-struct CreatedDenominationSplitPczt {
+#[derive(Clone)]
+struct CreatedDenominationStagePczt {
+    id: String,
     base_pczt: Vec<u8>,
+    orchard_spend_action_indices: Vec<usize>,
     redacted_pczt: Vec<u8>,
+    pczt_with_proofs: Option<Vec<u8>>,
+    expected_txid_hex: String,
+    target_height: u32,
+    expiry_height: u32,
     fee_zatoshi: u64,
-    migrated_outputs: Vec<DenominationOutputTemplate>,
+    deferred: bool,
+    inputs: Vec<super::migration::DenominationStageInputRef>,
+    outputs: Vec<super::migration::DenominationStageOutputRef>,
+}
+
+struct CreatedPaddedDenominationPczts {
+    stages: Vec<CreatedDenominationStagePczt>,
     predicted_notes: Vec<PredictedMigrationNote>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
@@ -2184,18 +2449,14 @@ struct StoredDenominationPczt {
     account_uuid: String,
     network: WalletNetwork,
     state: KeystoneMigrationRequestState,
-    pczt_with_proofs: Option<Vec<u8>>,
     proof_error: Option<String>,
-    fee_zatoshi: u64,
-    migrated_outputs: Vec<DenominationOutputTemplate>,
+    split_stages: Vec<CreatedDenominationStagePczt>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
 
 struct StoredDenominationCompletion {
-    pczt_with_proofs: Vec<u8>,
-    fee_zatoshi: u64,
-    migrated_outputs: Vec<DenominationOutputTemplate>,
+    split_stages: Vec<CreatedDenominationStagePczt>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -2236,19 +2497,15 @@ struct StoredSingleQrMigrationPczt {
     account_uuid: String,
     network: WalletNetwork,
     state: KeystoneMigrationRequestState,
-    split_pczt_with_proofs: Option<Vec<u8>>,
     proof_error: Option<String>,
-    split_fee_zatoshi: u64,
-    migrated_outputs: Vec<DenominationOutputTemplate>,
+    split_stages: Vec<CreatedDenominationStagePczt>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
 }
 
 struct StoredSingleQrMigrationCompletion {
-    split_pczt_with_proofs: Vec<u8>,
-    split_fee_zatoshi: u64,
-    migrated_outputs: Vec<DenominationOutputTemplate>,
+    split_stages: Vec<CreatedDenominationStagePczt>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
@@ -2403,13 +2660,17 @@ pub(crate) fn keystone_migration_proof_status(
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
         .get(request_id)
         .map(|stored| {
+            let roots = stored
+                .split_stages
+                .iter()
+                .filter(|stage| !stage.deferred)
+                .collect::<Vec<_>>();
             proof_status_from_counts(
-                if stored.split_pczt_with_proofs.is_some() {
-                    1
-                } else {
-                    0
-                },
-                1,
+                roots
+                    .iter()
+                    .filter(|stage| stage.pczt_with_proofs.is_some())
+                    .count(),
+                roots.len(),
                 stored.state,
                 stored.proof_error.clone(),
             )
@@ -2423,13 +2684,17 @@ pub(crate) fn keystone_migration_proof_status(
         .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?
         .get(request_id)
         .map(|stored| {
+            let roots = stored
+                .split_stages
+                .iter()
+                .filter(|stage| !stage.deferred)
+                .collect::<Vec<_>>();
             proof_status_from_counts(
-                if stored.pczt_with_proofs.is_some() {
-                    1
-                } else {
-                    0
-                },
-                1,
+                roots
+                    .iter()
+                    .filter(|stage| stage.pczt_with_proofs.is_some())
+                    .count(),
+                roots.len(),
                 stored.state,
                 stored.proof_error.clone(),
             )
@@ -2517,14 +2782,60 @@ fn proof_status_from_counts(
     }
 }
 
-fn spawn_denomination_proof_worker(request_id: String, base_pczt: Vec<u8>) {
+fn spawn_denomination_proof_worker(request_id: String, roots: Vec<(String, Vec<u8>)>) {
     let builder = thread::Builder::new().name("keystone-denomination-proof".to_string());
     let worker_request_id = request_id.clone();
     if let Err(e) = builder.spawn(move || {
+        let total = roots.len();
         let started = Instant::now();
-        log::info!("migration proofs: denomination proof started");
-        let result = super::pczt::add_proofs_to_pczt(&base_pczt, None, None);
-        let elapsed = started.elapsed();
+        log::info!("migration proofs: denomination started for {total} split roots");
+        for (index, (id, base_pczt)) in roots.into_iter().enumerate() {
+            let proof_started = Instant::now();
+            let result = super::pczt::add_proofs_to_pczt(&base_pczt, None, None);
+            let mut store = match keystone_denomination_requests().lock() {
+                Ok(store) => store,
+                Err(e) => {
+                    log::error!("migration proofs: denomination store lock failed: {e}");
+                    return;
+                }
+            };
+            let Some(stored) = store.get_mut(&worker_request_id) else {
+                log::info!("migration proofs: denomination request was discarded");
+                return;
+            };
+            if stored.state == KeystoneMigrationRequestState::Completing {
+                return;
+            }
+            match result {
+                Ok(pczt_with_proofs) => {
+                    let Some(stage) = stored.split_stages.iter_mut().find(|stage| stage.id == id)
+                    else {
+                        stored.proof_error = Some(format!("Missing split root {id}"));
+                        stored.state = KeystoneMigrationRequestState::ProofFailed;
+                        return;
+                    };
+                    stage.pczt_with_proofs = Some(pczt_with_proofs);
+                    log::info!(
+                        "migration proofs: denomination root {}/{} ready in {}ms",
+                        index + 1,
+                        total,
+                        proof_started.elapsed().as_millis()
+                    );
+                }
+                Err(e) => {
+                    stored.proof_error = Some(e);
+                    stored.state = KeystoneMigrationRequestState::ProofFailed;
+                    log::warn!(
+                        "migration proofs: denomination root {}/{} failed after {}ms",
+                        index + 1,
+                        total,
+                        proof_started.elapsed().as_millis()
+                    );
+                    return;
+                }
+            }
+        }
+
         let mut store = match keystone_denomination_requests().lock() {
             Ok(store) => store,
             Err(e) => {
@@ -2532,28 +2843,12 @@ fn spawn_denomination_proof_worker(request_id: String, base_pczt: Vec<u8>) {
                 return;
             }
         };
-        let Some(stored) = store.get_mut(&worker_request_id) else {
-            log::info!("migration proofs: denomination request was discarded");
-            return;
-        };
-        if stored.state == KeystoneMigrationRequestState::Completing {
-            return;
-        }
-        match result {
-            Ok(pczt_with_proofs) => {
-                stored.pczt_with_proofs = Some(pczt_with_proofs);
+        if let Some(stored) = store.get_mut(&worker_request_id) {
+            if stored.state != KeystoneMigrationRequestState::Completing {
                 stored.state = KeystoneMigrationRequestState::ProofReady;
                 log::info!(
-                    "migration proofs: denomination proof ready in {}ms",
-                    elapsed.as_millis()
-                );
-            }
-            Err(e) => {
-                stored.proof_error = Some(e);
-                stored.state = KeystoneMigrationRequestState::ProofFailed;
-                log::warn!(
-                    "migration proofs: denomination proof failed after {}ms",
-                    elapsed.as_millis()
+                    "migration proofs: all denomination roots ready in {}ms",
+                    started.elapsed().as_millis()
                 );
             }
         }
@@ -2568,14 +2863,60 @@ fn spawn_denomination_proof_worker(request_id: String, base_pczt: Vec<u8>) {
     }
 }
 
-fn spawn_single_qr_split_proof_worker(request_id: String, base_pczt: Vec<u8>) {
+fn spawn_single_qr_split_proof_worker(request_id: String, roots: Vec<(String, Vec<u8>)>) {
     let builder = thread::Builder::new().name("keystone-single-qr-split-proof".to_string());
     let worker_request_id = request_id.clone();
     if let Err(e) = builder.spawn(move || {
+        let total = roots.len();
         let started = Instant::now();
-        log::info!("migration proofs: single QR split proof started");
-        let result = super::pczt::add_proofs_to_pczt(&base_pczt, None, None);
-        let elapsed = started.elapsed();
+        log::info!("migration proofs: single QR started for {total} split roots");
+        for (index, (id, base_pczt)) in roots.into_iter().enumerate() {
+            let proof_started = Instant::now();
+            let result = super::pczt::add_proofs_to_pczt(&base_pczt, None, None);
+            let mut store = match keystone_single_qr_migration_requests().lock() {
+                Ok(store) => store,
+                Err(e) => {
+                    log::error!("migration proofs: single QR store lock failed: {e}");
+                    return;
+                }
+            };
+            let Some(stored) = store.get_mut(&worker_request_id) else {
+                log::info!("migration proofs: single QR request was discarded");
+                return;
+            };
+            if stored.state == KeystoneMigrationRequestState::Completing {
+                return;
+            }
+            match result {
+                Ok(pczt_with_proofs) => {
+                    let Some(stage) = stored.split_stages.iter_mut().find(|stage| stage.id == id)
+                    else {
+                        stored.proof_error = Some(format!("Missing split root {id}"));
+                        stored.state = KeystoneMigrationRequestState::ProofFailed;
+                        return;
+                    };
+                    stage.pczt_with_proofs = Some(pczt_with_proofs);
+                    log::info!(
+                        "migration proofs: split root {}/{} ready in {}ms",
+                        index + 1,
+                        total,
+                        proof_started.elapsed().as_millis()
+                    );
+                }
+                Err(e) => {
+                    stored.proof_error = Some(e);
+                    stored.state = KeystoneMigrationRequestState::ProofFailed;
+                    log::warn!(
+                        "migration proofs: split root {}/{} failed after {}ms",
+                        index + 1,
+                        total,
+                        proof_started.elapsed().as_millis()
+                    );
+                    return;
+                }
+            }
+        }
+
         let mut store = match keystone_single_qr_migration_requests().lock() {
             Ok(store) => store,
             Err(e) => {
@@ -2583,28 +2924,12 @@ fn spawn_single_qr_split_proof_worker(request_id: String, base_pczt: Vec<u8>) {
                 return;
             }
         };
-        let Some(stored) = store.get_mut(&worker_request_id) else {
-            log::info!("migration proofs: single QR request was discarded");
-            return;
-        };
-        if stored.state == KeystoneMigrationRequestState::Completing {
-            return;
-        }
-        match result {
-            Ok(pczt_with_proofs) => {
-                stored.split_pczt_with_proofs = Some(pczt_with_proofs);
+        if let Some(stored) = store.get_mut(&worker_request_id) {
+            if stored.state != KeystoneMigrationRequestState::Completing {
                 stored.state = KeystoneMigrationRequestState::ProofReady;
                 log::info!(
-                    "migration proofs: single QR split proof ready in {}ms",
-                    elapsed.as_millis()
-                );
-            }
-            Err(e) => {
-                stored.proof_error = Some(e);
-                stored.state = KeystoneMigrationRequestState::ProofFailed;
-                log::warn!(
-                    "migration proofs: single QR split proof failed after {}ms",
-                    elapsed.as_millis()
+                    "migration proofs: all split roots ready in {}ms",
+                    started.elapsed().as_millis()
                 );
             }
         }
@@ -2769,6 +3094,80 @@ fn signed_migration_messages_by_id(
     Ok(by_id)
 }
 
+fn prepared_refs_from_denomination_stages(
+    stages: &[CreatedDenominationStagePczt],
+) -> Vec<super::migration::PreparedOrchardNoteRef> {
+    stages
+        .iter()
+        .flat_map(|stage| {
+            stage
+                .outputs
+                .iter()
+                .filter(|output| {
+                    output.kind == super::migration::DenominationStageOutputKind::Migration
+                })
+                .map(|output| super::migration::PreparedOrchardNoteRef {
+                    txid_hex: stage.expected_txid_hex.clone(),
+                    output_index: output.output_index,
+                    value_zatoshi: output.value_zatoshi,
+                    note_version: output.note_version,
+                    nullifier_hex: None,
+                })
+        })
+        .collect()
+}
+
+fn signed_denomination_stage_inserts(
+    stages: &[CreatedDenominationStagePczt],
+    signed_by_id: &HashMap<String, Vec<pczt::roles::signer::SpendAuthSignature>>,
+) -> Result<Vec<super::migration::DenominationStageInsert>, String> {
+    stages
+        .iter()
+        .enumerate()
+        .map(|(stage_index, stage)| {
+            let sigs = signed_by_id
+                .get(&stage.id)
+                .ok_or_else(|| format!("Keystone result missing {}", stage.id))?
+                .clone();
+            super::pczt::preflight_orchard_spend_auth_signatures(&stage.base_pczt, &sigs)?;
+            let raw_tx = if stage.deferred {
+                None
+            } else {
+                let proofed = stage
+                    .pczt_with_proofs
+                    .as_ref()
+                    .ok_or("Keystone denomination root proofs are not ready")?;
+                let extracted = super::pczt::apply_sigs_and_extract(proofed, &sigs, None, None)?;
+                if extracted.txid.to_string() != stage.expected_txid_hex {
+                    return Err(format!(
+                        "Denomination root {} extracted an unexpected txid",
+                        stage.id
+                    ));
+                }
+                Some(extracted.raw_tx)
+            };
+            Ok(super::migration::DenominationStageInsert {
+                stage_index: u32::try_from(stage_index)
+                    .map_err(|_| "Denomination stage index overflow".to_string())?,
+                base_pczt: stage.base_pczt.clone(),
+                sigs,
+                raw_tx,
+                expected_txid_hex: stage.expected_txid_hex.clone(),
+                target_height: stage.target_height,
+                expiry_height: stage.expiry_height,
+                fee_zatoshi: stage.fee_zatoshi,
+                status: if stage.deferred {
+                    super::migration::DenominationStageStatus::AwaitingInputs
+                } else {
+                    super::migration::DenominationStageStatus::Pending
+                },
+                inputs: stage.inputs.clone(),
+                outputs: stage.outputs.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Captures dummy spend action indices before the IO finalizer consumes `dummy_sk`.
 fn dummy_spend_action_indices(bundle: Option<&orchard::pczt::Bundle>) -> Vec<usize> {
     bundle
@@ -2861,7 +3260,12 @@ fn pczt_from_build_result(
     Ok(BuiltPczt {
         bytes,
         redacted_bytes,
-        orchard_spend_action_indices,
+        // Post-NU6.3 Orchard change outputs are paired with wallet-controlled
+        // zero-valued spends. They are not IO-finalizer dummies, so software
+        // signing must authorize their actions along with the requested input
+        // spends. This union is also the set that receives derivation metadata
+        // for hardware signing above.
+        orchard_spend_action_indices: orchard_derivation_action_indices,
     })
 }
 
@@ -2895,11 +3299,53 @@ fn predicted_note_from_split_action(
     .ok_or("Denomination split output note is invalid".to_string())
 }
 
-fn create_orchard_denomination_split_pczt(
+fn synthetic_orchard_anchor_and_witnesses(
+    notes: &[orchard::Note],
+) -> Result<(orchard::Anchor, Vec<orchard::tree::MerklePath>), String> {
+    use incrementalmerkletree::{frontier::CommitmentTree, witness::IncrementalWitness};
+
+    if notes.is_empty() {
+        return Err("Synthetic Orchard witness set is empty".to_string());
+    }
+    let mut tree = CommitmentTree::<orchard::tree::MerkleHashOrchard, 32>::empty();
+    let mut witnesses = Vec::<IncrementalWitness<orchard::tree::MerkleHashOrchard, 32>>::new();
+    for note in notes {
+        let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+        let leaf = orchard::tree::MerkleHashOrchard::from_cmx(&cmx);
+        for witness in &mut witnesses {
+            witness
+                .append(leaf)
+                .map_err(|_| "Extend synthetic Orchard witness failed".to_string())?;
+        }
+        tree.append(leaf)
+            .map_err(|_| "Append synthetic Orchard commitment failed".to_string())?;
+        witnesses.push(
+            IncrementalWitness::from_tree(tree.clone())
+                .ok_or("Create synthetic Orchard witness failed")?,
+        );
+    }
+    let anchor = witnesses
+        .first()
+        .ok_or("Synthetic Orchard witness set is empty")?
+        .root()
+        .into();
+    let paths = witnesses
+        .into_iter()
+        .map(|witness| {
+            witness
+                .path()
+                .map(Into::into)
+                .ok_or_else(|| "Complete synthetic Orchard witness failed".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((anchor, paths))
+}
+
+fn create_padded_orchard_denomination_pczts(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-) -> Result<Option<CreatedDenominationSplitPczt>, String> {
+) -> Result<Option<CreatedPaddedDenominationPczts>, String> {
     let mut db = open_wallet_db(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -2922,23 +3368,35 @@ fn create_orchard_denomination_split_pczt(
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
-    let orchard_notes =
+    let mut orchard_notes =
         select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));
     if orchard_notes.is_empty() {
         return Ok(None);
     }
-
-    let selected_value = orchard_notes.iter().try_fold(Zatoshis::ZERO, |acc, note| {
-        let value = note.note_value().map_err(|e| format!("{e}"))?;
-        (acc + value).ok_or("Selected Orchard value overflow".to_string())
-    })?;
     let (orchard_anchor, orchard_inputs) =
         orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
-    // single spend to 2 actions, while its unpadded Ironwood output counts as
-    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
-    // recomputes the exact per-child fee from the real builder; this estimate
-    // must match it so the planned denominations balance.
+    let input_values = orchard_notes
+        .iter()
+        .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))
+        .collect::<Result<Vec<_>, String>>()?;
+    let input_refs = orchard_notes
+        .iter()
+        .map(|received| super::migration::DenominationStageInputRef {
+            txid_hex: format!("{}", received.txid()),
+            output_index: received.output_index() as u32,
+            value_zatoshi: u64::from(
+                received
+                    .note_value()
+                    .expect("Orchard V2 input value was validated above"),
+            ),
+            note_version: 2,
+            nullifier_hex: Some(hex::encode(
+                received.note().nullifier(&orchard_fvk).to_bytes(),
+            )),
+        })
+        .collect::<Vec<_>>();
+
     let migration_fee_estimate = fee_rule
         .fee_required(
             &network,
@@ -2951,310 +3409,258 @@ fn create_orchard_denomination_split_pczt(
             MIGRATION_IRONWOOD_ACTION_COUNT,
         )
         .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
+    let split_fee = fee_rule
+        .fee_required(
+            &network,
+            BlockHeight::from(target_height),
+            std::iter::empty::<TransparentInputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            super::migration::DENOMINATION_SPLIT_ACTIONS,
+            0,
+        )
+        .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
+    let padded_plan = super::migration::plan_padded_denominations(
+        &input_values,
+        u64::from(split_fee),
+        u64::from(migration_fee_estimate),
+        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
+    )?
+    .ok_or("Insufficient spendable Orchard funds for denomination split")?;
 
-    let mut prep_fee = Zatoshis::ZERO;
-    let mut plan = None;
-    for _ in 0..8 {
-        let next_plan = super::migration::plan_denominations(
-            u64::from(selected_value),
-            u64::from(prep_fee),
-            u64::from(migration_fee_estimate),
-            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        )?;
-        if next_plan.migration_outputs.is_empty() {
-            return Ok(None);
+    let padded_bundle_type = orchard::builder::BundleType::Transactional {
+        bundle_required: false,
+        pad_to_minimum: Some(
+            u8::try_from(super::migration::DENOMINATION_SPLIT_ACTIONS)
+                .map_err(|_| "Padded denomination action count exceeds u8".to_string())?,
+        ),
+    };
+    let mut stages = Vec::with_capacity(padded_plan.stages.len());
+    let mut predicted_migration_notes =
+        Vec::with_capacity(padded_plan.denominations.migration_outputs.len());
+    let mut previous_continuation = None::<PredictedMigrationNote>;
+
+    for (stage_index, stage_plan) in padded_plan.stages.iter().enumerate() {
+        let mut stage_notes = Vec::new();
+        let mut stage_input_refs = Vec::new();
+        if stage_plan.spends_previous_continuation {
+            let continuation = previous_continuation
+                .take()
+                .ok_or("Denomination stage is missing its continuation input")?;
+            stage_input_refs.push(super::migration::DenominationStageInputRef {
+                txid_hex: continuation.txid_hex.clone(),
+                output_index: continuation.output_index,
+                value_zatoshi: continuation.value_zatoshi,
+                note_version: 2,
+                nullifier_hex: Some(hex::encode(
+                    continuation.note.nullifier(&orchard_fvk).to_bytes(),
+                )),
+            });
+            stage_notes.push(continuation.note);
+        } else if previous_continuation.is_some() {
+            return Err("Independent denomination root left an unused continuation".to_string());
         }
-        let split_outputs = split_output_values(&next_plan);
-        let builder = make_orchard_split_builder(
+        for input_index in &stage_plan.original_input_indices {
+            let (note, _) = orchard_inputs
+                .get(*input_index)
+                .ok_or("Denomination stage input index is out of range")?;
+            stage_notes.push(*note);
+            stage_input_refs.push(
+                input_refs
+                    .get(*input_index)
+                    .ok_or("Denomination stage input reference is out of range")?
+                    .clone(),
+            );
+        }
+        if stage_notes.is_empty() {
+            return Err("Denomination stage has no Orchard inputs".to_string());
+        }
+
+        let deferred = stage_plan.spends_previous_continuation;
+        let (stage_anchor, stage_inputs) = if deferred {
+            let (anchor, witnesses) = synthetic_orchard_anchor_and_witnesses(&stage_notes)?;
+            (
+                anchor,
+                stage_notes
+                    .iter()
+                    .copied()
+                    .zip(witnesses.into_iter())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            let inputs = stage_plan
+                .original_input_indices
+                .iter()
+                .map(|index| {
+                    orchard_inputs
+                        .get(*index)
+                        .cloned()
+                        .ok_or("Denomination root input index is out of range")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            (orchard_anchor, inputs)
+        };
+
+        let mut output_values = stage_plan
+            .terminal_outputs
+            .iter()
+            .map(|output| output.value_zatoshi)
+            .collect::<Vec<_>>();
+        if let Some(value) = stage_plan.continuation_value_zatoshi {
+            output_values.push(value);
+        }
+        let builder = make_orchard_split_builder_with_type(
             network,
             target_height.into(),
-            orchard_anchor,
-            &orchard_inputs,
+            stage_anchor,
+            &stage_inputs,
             &orchard_fvk,
             internal_ovk.clone(),
             recipient,
-            &split_outputs,
+            &output_values,
             &memo,
+            padded_bundle_type,
         )?;
-        let next_fee = builder
+        let exact_fee = builder
             .get_fee(&fee_rule)
-            .map_err(|e| format!("Failed to estimate denomination prep fee: {e}"))?;
-        plan = Some(next_plan);
-        if next_fee == prep_fee {
-            break;
+            .map_err(|e| format!("Failed to verify padded denomination fee: {e}"))?;
+        if exact_fee != split_fee || u64::from(exact_fee) != stage_plan.fee_zatoshi {
+            return Err("Padded denomination stage fee changed after planning".to_string());
         }
-        prep_fee = next_fee;
-    }
+        let build_result = builder
+            .build_for_pczt(rand_core::OsRng, &fee_rule)
+            .map_err(|e| format!("Build padded denomination PCZT failed: {e}"))?;
+        let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
+        let orchard_bundle = build_result
+            .pczt_parts
+            .orchard
+            .as_ref()
+            .ok_or("Padded denomination PCZT missing Orchard bundle")?;
+        if orchard_bundle.actions().len() != super::migration::DENOMINATION_SPLIT_ACTIONS {
+            return Err(format!(
+                "Padded denomination stage built {} actions instead of {}",
+                orchard_bundle.actions().len(),
+                super::migration::DENOMINATION_SPLIT_ACTIONS
+            ));
+        }
 
-    let plan = plan.ok_or("Denomination planner did not converge")?;
-    let split_outputs = split_output_values(&plan);
-    let output_sum = split_outputs
-        .iter()
-        .try_fold(Zatoshis::ZERO, |acc, value| {
-            let value = Zatoshis::from_u64(*value).map_err(|_| "Bad split output value")?;
-            (acc + value).ok_or("Split output total overflow".to_string())
-        })?;
-    if output_sum > selected_value {
-        return Err("Denomination outputs exceed selected Orchard value".to_string());
-    }
-
-    let builder = make_orchard_split_builder(
-        network,
-        target_height.into(),
-        orchard_anchor,
-        &orchard_inputs,
-        &orchard_fvk,
-        internal_ovk,
-        recipient,
-        &split_outputs,
-        &memo,
-    )?;
-    let build_result = builder
-        .build_for_pczt(rand_core::OsRng, &fee_rule)
-        .map_err(|e| format!("Build denomination split PCZT failed: {e}"))?;
-
-    let migration_output_count = plan.migration_outputs.len();
-    let migrated_outputs = split_outputs
-        .iter()
-        .take(migration_output_count)
-        .enumerate()
-        .map(|(logical_index, value)| {
-            let output_index = build_result
+        let mut predicted_outputs = Vec::with_capacity(output_values.len());
+        for (logical_output, value_zatoshi) in output_values.iter().enumerate() {
+            let action_index = build_result
                 .orchard_meta
-                .output_action_index(logical_index)
-                .ok_or("Denomination split output index missing")?;
-            Ok(DenominationOutputTemplate {
-                output_index: output_index as u32,
-                value_zatoshi: *value,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let orchard_bundle = build_result
-        .pczt_parts
-        .orchard
-        .as_ref()
-        .ok_or("Denomination split PCZT missing Orchard bundle")?;
-    let predicted_notes = migrated_outputs
-        .iter()
-        .map(|output| {
+                .output_action_index(logical_output)
+                .ok_or("Padded denomination output action index missing")?;
             let action = orchard_bundle
                 .actions()
-                .get(output.output_index as usize)
-                .ok_or("Denomination split output action missing")?;
-            let note = predicted_note_from_split_action(action, output.value_zatoshi)?;
-            Ok(PredictedMigrationNote {
-                output_index: output.output_index,
-                value_zatoshi: output.value_zatoshi,
-                note,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let built_pczt = pczt_from_build_result(
-        build_result,
-        network,
-        account_derivation,
-        orchard_inputs.len(),
-        split_outputs.len(),
-    )?;
-    Ok(Some(CreatedDenominationSplitPczt {
-        base_pczt: built_pczt.bytes,
-        redacted_pczt: built_pczt.redacted_bytes,
-        fee_zatoshi: u64::from(prep_fee),
-        migrated_outputs,
-        predicted_notes,
-        total_migratable_zatoshi: plan.total_migratable_zatoshi,
-        plan,
-    }))
-}
-
-fn create_orchard_denomination_split_transaction(
-    db_path: &str,
-    network: WalletNetwork,
-    usk: &UnifiedSpendingKey,
-) -> Result<Option<CreatedDenominationSplitTx>, String> {
-    let mut db = open_wallet_db(db_path, network)?;
-    let fee_rule = ConservativeZip317FeeRule;
-    let ufvk = usk.to_unified_full_viewing_key();
-    let account_id = db
-        .get_account_for_ufvk(&ufvk)
-        .map_err(|e| format!("{e}"))?
-        .ok_or("Spending key not recognized")?
-        .id();
-    let orchard_fvk = ufvk
-        .orchard()
-        .cloned()
-        .ok_or("Orchard spending key not available")?;
-    let recipient_scope = orchard::keys::Scope::Internal;
-    let recipient = orchard_fvk.address_at(0u32, recipient_scope);
-    let internal_ovk = Some(orchard_fvk.to_ovk(recipient_scope));
-    let memo = MemoBytes::empty();
-
-    let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
-        .map_err(|e| format!("Failed to read anchor height: {e}"))?
-        .ok_or("Wallet must sync before preparing denominations")?;
-    let orchard_notes =
-        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
-    if orchard_notes.is_empty() {
-        return Ok(None);
-    }
-
-    let selected_value = orchard_notes.iter().try_fold(Zatoshis::ZERO, |acc, note| {
-        let value = note.note_value().map_err(|e| format!("{e}"))?;
-        (acc + value).ok_or("Selected Orchard value overflow".to_string())
-    })?;
-    let (orchard_anchor, orchard_inputs) =
-        orchard_witnesses(&mut db, anchor_height, &orchard_notes)?;
-    // The ZIP-317 fee of one migration child: its Orchard bundle pads the
-    // single spend to 2 actions, while its unpadded Ironwood output counts as
-    // 1 action, for 15_000 zatoshis. `create_orchard_to_ironwood_pczt_from_predicted_note`
-    // recomputes the exact per-child fee from the real builder; this estimate
-    // must match it so the planned denominations balance.
-    let migration_fee_estimate = fee_rule
-        .fee_required(
-            &network,
-            BlockHeight::from(target_height),
-            std::iter::empty::<TransparentInputSize>(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            MIGRATION_ORCHARD_ACTION_COUNT,
-            MIGRATION_IRONWOOD_ACTION_COUNT,
-        )
-        .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
-
-    let mut prep_fee = Zatoshis::ZERO;
-    let mut plan = None;
-    for _ in 0..8 {
-        let next_plan = super::migration::plan_denominations(
-            u64::from(selected_value),
-            u64::from(prep_fee),
-            u64::from(migration_fee_estimate),
-            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        )?;
-        if next_plan.migration_outputs.is_empty() {
-            return Ok(None);
+                .get(action_index)
+                .ok_or("Padded denomination output action missing")?;
+            predicted_outputs.push((
+                action_index as u32,
+                *value_zatoshi,
+                predicted_note_from_split_action(action, *value_zatoshi)?,
+            ));
         }
-        let split_outputs = split_output_values(&next_plan);
-        let builder = make_orchard_split_builder(
+
+        let built_pczt = pczt_from_build_result(
+            build_result,
             network,
-            target_height.into(),
-            orchard_anchor,
-            &orchard_inputs,
-            &orchard_fvk,
-            internal_ovk.clone(),
-            recipient,
-            &split_outputs,
-            &memo,
+            account_derivation,
+            stage_inputs.len(),
+            output_values.len(),
         )?;
-        let next_fee = builder
-            .get_fee(&fee_rule)
-            .map_err(|e| format!("Failed to estimate denomination prep fee: {e}"))?;
-        plan = Some(next_plan);
-        if next_fee == prep_fee {
-            break;
-        }
-        prep_fee = next_fee;
-    }
-
-    let plan = plan.ok_or("Denomination planner did not converge")?;
-    let split_outputs = split_output_values(&plan);
-    let output_sum = split_outputs
-        .iter()
-        .try_fold(Zatoshis::ZERO, |acc, value| {
-            let value = Zatoshis::from_u64(*value).map_err(|_| "Bad split output value")?;
-            (acc + value).ok_or("Split output total overflow".to_string())
-        })?;
-    if output_sum > selected_value {
-        return Err("Denomination outputs exceed selected Orchard value".to_string());
-    }
-
-    let builder = make_orchard_split_builder(
-        network,
-        target_height.into(),
-        orchard_anchor,
-        &orchard_inputs,
-        &orchard_fvk,
-        internal_ovk.clone(),
-        recipient,
-        &split_outputs,
-        &memo,
-    )?;
-
-    let transparent_signing_set = TransparentSigningSet::new();
-    let sapling_extsks = &[usk.sapling().clone(), usk.sapling().derive_internal()];
-    let orchard_saks = &[usk.orchard().into()];
-    let spend_prover = NoOpSpendProver;
-    let output_prover = NoOpOutputProver;
-    let build_result = builder
-        .build(
-            &transparent_signing_set,
-            sapling_extsks,
-            orchard_saks,
-            rand_core::OsRng,
-            &spend_prover,
-            &output_prover,
-            &fee_rule,
-        )
-        .map_err(|e| format!("Build denomination split TX failed: {e}"))?;
-    let txid = build_result.transaction().txid();
-    let mut raw_tx = Vec::new();
-    build_result
-        .transaction()
-        .write(&mut raw_tx)
-        .map_err(|e| format!("Serialize denomination split TX failed: {e}"))?;
-    let migration_output_count = plan.migration_outputs.len();
-    let mut prepared_refs = Vec::with_capacity(migration_output_count);
-    let mut predicted_notes = Vec::with_capacity(migration_output_count);
-
-    for (logical_index, value) in split_outputs.iter().enumerate() {
-        let action_index = build_result
-            .orchard_meta()
-            .output_action_index(logical_index)
-            .ok_or("Denomination split output index missing")?;
-        let note = build_result
-            .transaction()
-            .orchard_bundle()
-            .and_then(|bundle| {
-                bundle
-                    .decrypt_output_with_key(action_index, &orchard_fvk.to_ivk(recipient_scope))
-                    .map(|(note, _, _)| Note::Orchard {
-                        note,
-                        pool: ::orchard::ValuePool::Orchard,
-                    })
-            })
-            .ok_or("Wallet-internal denomination output did not decrypt")?;
-        let predicted_note = match note {
-            Note::Orchard { note, .. } => note,
-            Note::Sapling(_) => {
-                return Err("Wallet-internal denomination output was Sapling".to_string())
-            }
-        };
-        if logical_index < migration_output_count {
-            prepared_refs.push(super::migration::PreparedOrchardNoteRef {
-                txid_hex: format!("{txid}"),
-                output_index: action_index as u32,
-                value_zatoshi: *value,
+        let expected_txid = super::pczt::txid_from_io_finalized_pczt(&built_pczt.bytes)?;
+        let expected_txid_hex = expected_txid.to_string();
+        let mut stage_output_refs = Vec::with_capacity(predicted_outputs.len());
+        for (terminal, (output_index, value_zatoshi, note)) in stage_plan
+            .terminal_outputs
+            .iter()
+            .zip(predicted_outputs.iter())
+        {
+            let kind = match terminal.kind {
+                super::migration::SplitTerminalKind::Migration => {
+                    super::migration::DenominationStageOutputKind::Migration
+                }
+                super::migration::SplitTerminalKind::OrchardChange => {
+                    super::migration::DenominationStageOutputKind::Change
+                }
+            };
+            stage_output_refs.push(super::migration::DenominationStageOutputRef {
+                output_index: *output_index,
+                value_zatoshi: *value_zatoshi,
                 note_version: 2,
-                nullifier_hex: None,
+                kind,
             });
-            predicted_notes.push(PredictedMigrationNote {
-                output_index: action_index as u32,
-                value_zatoshi: *value,
-                note: predicted_note,
+            if terminal.kind == super::migration::SplitTerminalKind::Migration {
+                predicted_migration_notes.push((
+                    terminal.logical_index,
+                    PredictedMigrationNote {
+                        txid_hex: expected_txid_hex.clone(),
+                        output_index: *output_index,
+                        value_zatoshi: *value_zatoshi,
+                        note: *note,
+                    },
+                ));
+            }
+        }
+        if let Some(continuation_value) = stage_plan.continuation_value_zatoshi {
+            let (output_index, value_zatoshi, note) = predicted_outputs
+                .last()
+                .ok_or("Denomination continuation output missing")?;
+            if *value_zatoshi != continuation_value {
+                return Err("Denomination continuation value changed after build".to_string());
+            }
+            stage_output_refs.push(super::migration::DenominationStageOutputRef {
+                output_index: *output_index,
+                value_zatoshi: *value_zatoshi,
+                note_version: 2,
+                kind: super::migration::DenominationStageOutputKind::Continuation,
+            });
+            previous_continuation = Some(PredictedMigrationNote {
+                txid_hex: expected_txid_hex.clone(),
+                output_index: *output_index,
+                value_zatoshi: *value_zatoshi,
+                note: *note,
             });
         }
+
+        stages.push(CreatedDenominationStagePczt {
+            id: if stage_index == 0 {
+                "denominations".to_string()
+            } else {
+                format!("denominations-{}", stage_index + 1)
+            },
+            base_pczt: built_pczt.bytes,
+            orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
+            redacted_pczt: built_pczt.redacted_bytes,
+            pczt_with_proofs: None,
+            expected_txid_hex,
+            target_height: target_height.into(),
+            expiry_height,
+            fee_zatoshi: u64::from(split_fee),
+            deferred,
+            inputs: stage_input_refs,
+            outputs: stage_output_refs,
+        });
+    }
+    if previous_continuation.is_some() {
+        return Err("Denomination plan left an unspent continuation".to_string());
+    }
+    predicted_migration_notes.sort_by_key(|(logical_index, _)| *logical_index);
+    let predicted_notes = predicted_migration_notes
+        .into_iter()
+        .map(|(_, note)| note)
+        .collect::<Vec<_>>();
+    if predicted_notes.len() != padded_plan.denominations.migration_outputs.len() {
+        return Err("Padded denomination plan did not build every migration output".to_string());
     }
 
-    Ok(Some(CreatedDenominationSplitTx {
-        txid,
-        raw_tx,
-        fee_amount: prep_fee,
-        migrated_outputs: prepared_refs,
+    Ok(Some(CreatedPaddedDenominationPczts {
+        stages,
         predicted_notes,
-        total_migratable: Zatoshis::from_u64(plan.total_migratable_zatoshi)
-            .map_err(|_| "Bad migratable total")?,
-        plan,
+        total_migratable_zatoshi: padded_plan.denominations.total_migratable_zatoshi,
+        plan: padded_plan.denominations,
     }))
 }
 
@@ -3271,14 +3677,6 @@ fn select_all_orchard_v2_notes(
                 .collect()
         })
         .map_err(|e| format!("Failed to select Orchard notes: {e}"))
-}
-
-fn split_output_values(plan: &super::migration::DenominationPlan) -> Vec<u64> {
-    let mut outputs = plan.migration_outputs.clone();
-    if let Some(change) = plan.orchard_change {
-        outputs.push(change);
-    }
-    outputs
 }
 
 fn dummy_orchard_merkle_path() -> Result<orchard::tree::MerklePath, String> {
@@ -3410,7 +3808,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         fee_zatoshi: u64::from(fee_amount),
         migrated_zatoshi: u64::from(migrated_amount),
         selected_note: super::migration::PreparedOrchardNoteRef {
-            txid_hex: String::new(),
+            txid_hex: predicted.txid_hex.clone(),
             output_index: predicted.output_index,
             value_zatoshi: predicted.value_zatoshi,
             note_version: 2,
@@ -3810,7 +4208,7 @@ fn orchard_witnesses(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_orchard_split_builder(
+fn make_orchard_split_builder_with_type(
     network: WalletNetwork,
     target_height: u32,
     orchard_anchor: orchard::Anchor,
@@ -3820,6 +4218,7 @@ fn make_orchard_split_builder(
     recipient: orchard::Address,
     outputs: &[u64],
     memo: &MemoBytes,
+    bundle_type: orchard::builder::BundleType,
 ) -> Result<Builder<WalletNetwork, ()>, String> {
     let mut builder = Builder::new(
         network,
@@ -3830,7 +4229,7 @@ fn make_orchard_split_builder(
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             // Denomination prep is an ordinary private Orchard->Orchard split;
             // keep it padded like regular sends.
-            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
+            orchard_bundle_type: bundle_type,
             ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
     )
@@ -4591,6 +4990,98 @@ fn same_prepared_note_without_nullifier(
         && lhs.note_version == rhs.note_version
 }
 
+fn orchard_anchor_and_witnesses_for_denomination_inputs(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    inputs: &[super::migration::DenominationStageInputRef],
+) -> Result<Option<(orchard::Anchor, Vec<(String, orchard::tree::MerklePath)>)>, String> {
+    if inputs.is_empty() {
+        return Err("Denomination stage has no inputs".to_string());
+    }
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+    let orchard_fvk = account
+        .ufvk()
+        .and_then(|ufvk| ufvk.orchard().cloned())
+        .ok_or("Orchard viewing key not available")?;
+    let (_, anchor_height) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| format!("Failed to read anchor height: {e}"))?
+        .ok_or("Wallet must sync before finalizing a denomination stage")?;
+    // Select at the trusted anchor rather than through `get_spendable_note`.
+    // The latter intentionally hides a note once any unexpired local
+    // transaction spends it. After a reorg we need to reprove the same signed
+    // effecting data, so the old unmined authorization must not hide the
+    // stage-owned input from recovery.
+    let available_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+
+    let mut selected_notes = Vec::with_capacity(inputs.len());
+    let mut nullifiers = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        if input.note_version != 2 {
+            return Err("Denomination stage input is not an Orchard V2 note".to_string());
+        }
+        let Some(selected) = available_notes.iter().find(|selected| {
+            format!("{}", selected.txid()).eq_ignore_ascii_case(&input.txid_hex)
+                && selected.output_index() as u32 == input.output_index
+        }) else {
+            return Ok(None);
+        };
+        let orchard_note = *selected.note();
+        if orchard_note.version() != orchard::note::NoteVersion::V2 {
+            return Err("Denomination stage input revalidated as non-V2 Orchard".to_string());
+        }
+        let selected_value: Zatoshis = orchard_note
+            .value()
+            .inner()
+            .try_into()
+            .map_err(|e| format!("Denomination stage input value invalid: {e}"))?;
+        if u64::from(selected_value) != input.value_zatoshi {
+            return Err("Denomination stage input value changed during revalidation".to_string());
+        }
+        let nullifier_hex = hex::encode(orchard_note.nullifier(&orchard_fvk).to_bytes());
+        let expected_nullifier = input
+            .nullifier_hex
+            .as_deref()
+            .ok_or("Denomination stage input nullifier is missing")?;
+        if !nullifier_hex.eq_ignore_ascii_case(expected_nullifier) {
+            return Err(
+                "Denomination stage input nullifier changed during revalidation".to_string(),
+            );
+        }
+        nullifiers.push(nullifier_hex);
+        selected_notes.push(ReceivedNote::from_parts(
+            *selected.internal_note_id(),
+            *selected.txid(),
+            selected.output_index(),
+            orchard_note,
+            selected.spending_key_scope(),
+            selected.note_commitment_tree_position(),
+            selected.mined_height(),
+            selected.max_shielding_input_height(),
+        ));
+    }
+
+    let (anchor, witnesses) = orchard_witnesses(&mut db, anchor_height, &selected_notes)?;
+    if witnesses.len() != nullifiers.len() {
+        return Err("Denomination stage witness count changed".to_string());
+    }
+    Ok(Some((
+        anchor,
+        nullifiers
+            .into_iter()
+            .zip(witnesses.into_iter().map(|(_, witness)| witness))
+            .collect(),
+    )))
+}
+
 fn orchard_anchor_and_witness_for_prepared_note(
     db_path: &str,
     network: WalletNetwork,
@@ -4607,26 +5098,19 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .map_err(|e| format!("{e}"))?
         .ok_or("Account not found")?;
 
-    let (target_height, anchor_height) = db
+    let (_, anchor_height) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before finalizing migration")?;
-    let txid = parse_txid_hex(&note_ref.txid_hex)?;
-    let selected = db
-        .get_spendable_note(
-            &txid,
-            ShieldedProtocol::Orchard,
-            note_ref.output_index,
-            target_height,
-        )
-        .map_err(|e| format!("Failed to revalidate prepared note: {e}"))?;
-    let Some(selected) = selected else {
+    let available_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let Some(selected) = available_notes.iter().find(|selected| {
+        format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
+            && selected.output_index() as u32 == note_ref.output_index
+    }) else {
         return Ok(None);
     };
-    let orchard_note = match selected.note() {
-        Note::Orchard { note, .. } => *note,
-        Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
-    };
+    let orchard_note = *selected.note();
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
         return Err("Prepared note revalidated as non-V2 Orchard".to_string());
     }
@@ -4670,9 +5154,6 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(false);
     }
-    if super::migration::pending_totals_for_run(db_path, run_id)?.total_count > 0 {
-        return Ok(false);
-    }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
         return Ok(false);
     }
@@ -4688,8 +5169,15 @@ fn finalize_presigned_migration_children(
     }
 
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
+    let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let mut pending_inserts = Vec::with_capacity(signed_children.len());
     for child in signed_children {
+        if already_pending.contains(&(
+            child.selected_note.txid_hex.to_ascii_lowercase(),
+            child.selected_note.output_index,
+        )) {
+            continue;
+        }
         let current_note = current_prepared
             .iter()
             .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
@@ -4747,6 +5235,10 @@ fn finalize_presigned_migration_children(
         });
     }
 
+    if pending_inserts.is_empty() {
+        return Ok(false);
+    }
+
     super::migration::promote_signed_child_pczts_to_pending_txs(
         db_path,
         run_id,
@@ -4755,6 +5247,80 @@ fn finalize_presigned_migration_children(
         pending_salt_base64,
     )?;
     Ok(true)
+}
+
+fn finalize_ready_denomination_stages(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<bool, String> {
+    let stages = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::denomination_stages_for_run(
+            &conn,
+            run_id,
+            pending_password,
+            pending_salt_base64,
+        )?
+    };
+    if stages.is_empty() {
+        return Ok(false);
+    }
+
+    let mut promoted = false;
+    for stage in stages
+        .iter()
+        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+    {
+        let Some((anchor, witnesses)) = (match orchard_anchor_and_witnesses_for_denomination_inputs(
+            db_path,
+            network,
+            account_uuid,
+            &stage.inputs,
+        ) {
+            Ok(result) => result,
+            Err(e) if is_orchard_witness_not_ready_error(&e) => return Ok(promoted),
+            Err(e) => return Err(e),
+        }) else {
+            continue;
+        };
+        let base_pczt = super::pczt::set_orchard_anchor_and_witnesses(
+            &stage.base_pczt,
+            anchor,
+            witnesses
+                .iter()
+                .map(|(nullifier, witness)| (nullifier.as_str(), witness)),
+        )?;
+        let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+        let extracted =
+            super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &stage.sigs, None, None)?;
+        if !extracted
+            .txid
+            .to_string()
+            .eq_ignore_ascii_case(&stage.expected_txid_hex)
+        {
+            return Err(format!(
+                "Denomination stage {} extracted an unexpected txid",
+                stage.stage_index
+            ));
+        }
+
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::promote_awaiting_denomination_stage(
+            &conn,
+            run_id,
+            stage.stage_index,
+            &stage.expected_txid_hex,
+            extracted.raw_tx,
+            pending_password,
+            pending_salt_base64,
+        )?;
+        promoted = true;
+    }
+    Ok(promoted)
 }
 
 async fn broadcast_pending_migration_prep_tx(
@@ -4808,6 +5374,115 @@ async fn broadcast_pending_migration_prep_tx(
         decrypt_and_store_migration_tx,
     )
     .map(Some)
+}
+
+async fn broadcast_pending_denomination_stages(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<Option<CreatedBroadcastResult>, String> {
+    let pending = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::pending_raw_denomination_stages(
+            &conn,
+            run_id,
+            pending_password,
+            pending_salt_base64,
+        )?
+    };
+    if pending.is_empty() {
+        return Ok(None);
+    }
+
+    let txids = pending
+        .iter()
+        .map(|stage| stage.expected_txid_hex.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let total_count = u32::try_from(pending.len())
+        .map_err(|_| "Pending denomination stage count exceeds u32".to_string())?;
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(e) => {
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: CreatedBroadcastResult::PENDING_BROADCAST,
+                broadcasted_count: 0,
+                total_count,
+                message: Some(format!("Denomination split broadcast could not start: {e}")),
+            }));
+        }
+    };
+
+    let mut broadcasted_count = 0u32;
+    for stage in &pending {
+        if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: if broadcasted_count == 0 {
+                    CreatedBroadcastResult::PENDING_BROADCAST
+                } else {
+                    CreatedBroadcastResult::PARTIAL_BROADCAST
+                },
+                broadcasted_count,
+                total_count,
+                message: Some(format!(
+                    "Denomination split broadcast failed for {}: {e}",
+                    stage.expected_txid_hex
+                )),
+            }));
+        }
+
+        if let Err(e) = decrypt_and_store_migration_tx(db_path, network, &stage.raw_tx) {
+            let message =
+                migration_storage_retry_message("Denomination split", &stage.expected_txid_hex, &e);
+            log::warn!("migration: {message}");
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: if broadcasted_count == 0 {
+                    CreatedBroadcastResult::PENDING_BROADCAST
+                } else {
+                    CreatedBroadcastResult::PARTIAL_BROADCAST
+                },
+                broadcasted_count,
+                total_count,
+                message: Some(message),
+            }));
+        }
+
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::mark_denomination_stage_broadcasted(
+            &conn,
+            run_id,
+            &stage.expected_txid_hex,
+        )?;
+        broadcasted_count = broadcasted_count
+            .checked_add(1)
+            .ok_or("Broadcasted denomination stage count overflow")?;
+        log::info!(
+            "migration: broadcast denomination stage {} ({})",
+            stage.stage_index,
+            stage.expected_txid_hex
+        );
+    }
+
+    Ok(Some(CreatedBroadcastResult {
+        txids,
+        status: super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
+        broadcasted_count,
+        total_count,
+        message: Some(if total_count == 1 {
+            "Denomination split stage was created. Migration will continue after confirmation."
+                .to_string()
+        } else {
+            format!(
+                "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
+            )
+        }),
+    }))
 }
 
 async fn broadcast_due_scheduled_migration_txs(
@@ -5845,7 +6520,8 @@ mod tests {
         let request = TransactionRequest::new(vec![payment]).unwrap();
         // `ShieldedInputs` wants `ReceivedNote<_, wallet::Note>`; wrap the
         // orchard-typed note through `ReceivedNotes::into_vec` to get that form.
-        let notes = ReceivedNotes::new(vec![], vec![received_note], vec![]).into_vec(&RetainAllNotes);
+        let notes =
+            ReceivedNotes::new(vec![], vec![received_note], vec![]).into_vec(&RetainAllNotes);
         let shielded_inputs =
             ShieldedInputs::from_parts(nonempty::NonEmpty::from_vec(notes).unwrap());
         let balance = TransactionBalance::new(vec![], fee).unwrap();
@@ -6502,7 +7178,7 @@ mod tests {
             let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
             let orchard_anchor = merkle_path.root(cmx);
 
-            make_orchard_split_builder(
+            make_orchard_split_builder_with_type(
                 network,
                 target_height,
                 orchard_anchor,
@@ -6512,6 +7188,7 @@ mod tests {
                 recipient,
                 &[output_value],
                 &memo,
+                orchard::builder::BundleType::DEFAULT,
             )
         };
 
@@ -6531,6 +7208,101 @@ mod tests {
     fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
         let (built_pczt, _sk) = built_v6_split_pczt();
         crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
+    }
+
+    #[test]
+    fn padded_denomination_split_builds_exactly_sixteen_actions() {
+        let network = WalletNetwork::LocalIronwoodTestnet;
+        let target_height = 120;
+        let usk =
+            UnifiedSpendingKey::from_seed(&network, &[9; 32], zip32::AccountId::ZERO).unwrap();
+        let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
+        let recipient_scope = orchard::keys::Scope::Internal;
+        let recipient = fvk.address_at(0u32, recipient_scope);
+        let internal_ovk = Some(fvk.to_ovk(recipient_scope));
+        let memo = MemoBytes::empty();
+        let outputs = vec![100_000u64; 10];
+        let fee_rule = ConservativeZip317FeeRule;
+        let bundle_type = orchard::builder::BundleType::Transactional {
+            bundle_required: false,
+            pad_to_minimum: Some(16),
+        };
+
+        let build_builder = |input_value| {
+            let rho = orchard::note::Rho::from_bytes(&[2; 32]).unwrap();
+            let rseed = (0u8..=255)
+                .find_map(|b| orchard::note::RandomSeed::from_bytes([b; 32], &rho).into_option())
+                .expect("test rseed");
+            let note = orchard::Note::from_parts(
+                recipient,
+                orchard::value::NoteValue::from_raw(input_value),
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .unwrap();
+            let merkle_path = dummy_orchard_merkle_path().unwrap();
+            let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+            let anchor = merkle_path.root(cmx);
+            make_orchard_split_builder_with_type(
+                network,
+                target_height,
+                anchor,
+                &[(note, merkle_path)],
+                &fvk,
+                internal_ovk.clone(),
+                recipient,
+                &outputs,
+                &memo,
+                bundle_type,
+            )
+        };
+
+        let fee = build_builder(2_000_000)
+            .unwrap()
+            .get_fee(&fee_rule)
+            .unwrap();
+        assert_eq!(u64::from(fee), 80_000);
+        let input_value = outputs.iter().sum::<u64>() + u64::from(fee);
+        let build_result = build_builder(input_value)
+            .unwrap()
+            .build_for_pczt(rand_core::OsRng, &fee_rule)
+            .unwrap();
+        assert_eq!(
+            build_result
+                .pczt_parts
+                .orchard
+                .as_ref()
+                .unwrap()
+                .actions()
+                .len(),
+            16
+        );
+        let built = pczt_from_build_result(build_result, network, None, 1, outputs.len()).unwrap();
+        assert_eq!(
+            pczt::Pczt::parse(&built.bytes)
+                .unwrap()
+                .orchard()
+                .actions()
+                .len(),
+            16
+        );
+        assert_eq!(built.orchard_spend_action_indices.len(), 11);
+
+        let signed = sign_orchard_migration_pczt_with_usk(
+            &built.bytes,
+            &built.orchard_spend_action_indices,
+            &usk,
+        )
+        .unwrap();
+        let sigs = crate::wallet::sync::pczt::extract_required_compact_sigs_from_signed_pczt(
+            &built.bytes,
+            &signed,
+        )
+        .unwrap();
+        assert_eq!(sigs.len(), 11);
+        crate::wallet::sync::pczt::preflight_orchard_spend_auth_signatures(&built.bytes, &sigs)
+            .unwrap();
     }
 
     #[test]
