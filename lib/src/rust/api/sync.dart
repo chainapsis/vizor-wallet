@@ -986,16 +986,21 @@ class SyncProgress {
   final BigInt scannedHeight;
   final BigInt chainTipHeight;
   final bool isSyncing;
+  final bool isComplete;
 
   const SyncProgress({
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.isSyncing,
+    required this.isComplete,
   });
 
   @override
   int get hashCode =>
-      scannedHeight.hashCode ^ chainTipHeight.hashCode ^ isSyncing.hashCode;
+      scannedHeight.hashCode ^
+      chainTipHeight.hashCode ^
+      isSyncing.hashCode ^
+      isComplete.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1004,7 +1009,8 @@ class SyncProgress {
           runtimeType == other.runtimeType &&
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
-          isSyncing == other.isSyncing;
+          isSyncing == other.isSyncing &&
+          isComplete == other.isComplete;
 }
 
 class TransactionDetail {
@@ -1169,12 +1175,22 @@ class TxDataRequest {
 }
 
 class WalletBalance {
+  final WalletBalanceAvailability availability;
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
+
+  /// Wallet-created change that has not reached the trusted confirmation depth.
+  final BigInt changePendingConfirmation;
+
+  /// Other received value awaiting confirmations or additional witness scanning.
+  final BigInt valuePendingSpendability;
+
+  /// Notes at or below the ZIP-317 marginal fee, excluded from normal spendability.
+  final BigInt uneconomicValue;
 
   /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
@@ -1183,24 +1199,32 @@ class WalletBalance {
   final BigInt total;
 
   const WalletBalance({
+    required this.availability,
     required this.transparent,
     required this.sapling,
     required this.orchard,
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.changePendingConfirmation,
+    required this.valuePendingSpendability,
+    required this.uneconomicValue,
     required this.spendable,
     required this.total,
   });
 
   @override
   int get hashCode =>
+      availability.hashCode ^
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      changePendingConfirmation.hashCode ^
+      valuePendingSpendability.hashCode ^
+      uneconomicValue.hashCode ^
       spendable.hashCode ^
       total.hashCode;
 
@@ -1209,12 +1233,22 @@ class WalletBalance {
       identical(this, other) ||
       other is WalletBalance &&
           runtimeType == other.runtimeType &&
+          availability == other.availability &&
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          changePendingConfirmation == other.changePendingConfirmation &&
+          valuePendingSpendability == other.valuePendingSpendability &&
+          uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
           total == other.total;
+}
+
+enum WalletBalanceAvailability {
+  available,
+  summaryUnavailable,
+  accountUnavailable,
 }

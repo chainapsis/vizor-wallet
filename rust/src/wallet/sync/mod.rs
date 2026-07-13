@@ -71,6 +71,7 @@ pub use transactions::{
 pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
     TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(
@@ -306,6 +307,17 @@ pub(crate) struct SyncProgress {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub is_syncing: bool,
+    pub is_complete: bool,
+}
+
+fn is_completed_sync_status(
+    scanned_height: u64,
+    chain_tip_height: u64,
+    last_completed_height: Option<u64>,
+) -> bool {
+    chain_tip_height > 0
+        && scanned_height >= chain_tip_height
+        && last_completed_height == Some(chain_tip_height)
 }
 
 pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
@@ -314,15 +326,34 @@ pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncPr
         .get_wallet_summary(ConfirmationsPolicy::default())
         .map_err(|e| format!("{e}"))?
     {
-        Some(s) => Ok(SyncProgress {
-            scanned_height: u32::from(s.fully_scanned_height()) as u64,
-            chain_tip_height: u32::from(s.chain_tip_height()) as u64,
-            is_syncing: s.fully_scanned_height() < s.chain_tip_height(),
-        }),
+        Some(s) => {
+            let scanned_height = u32::from(s.fully_scanned_height()) as u64;
+            let chain_tip_height = u32::from(s.chain_tip_height()) as u64;
+            let last_completed_height = super::sync_engine::completed_sync_height_for_status(
+                db_path,
+                scanned_height,
+                chain_tip_height,
+            )
+            .unwrap_or_else(|e| {
+                log::warn!("sync: completed-height metadata unavailable: {e}");
+                None
+            });
+            Ok(SyncProgress {
+                scanned_height,
+                chain_tip_height,
+                is_syncing: s.fully_scanned_height() < s.chain_tip_height(),
+                is_complete: is_completed_sync_status(
+                    scanned_height,
+                    chain_tip_height,
+                    last_completed_height,
+                ),
+            })
+        }
         None => Ok(SyncProgress {
             scanned_height: 0,
             chain_tip_height: 0,
             is_syncing: false,
+            is_complete: false,
         }),
     }
 }
@@ -455,13 +486,21 @@ mod tests {
     //!   an unknown ID instead of panicking or corrupting state — this is
     //!   the path that fires on a replay attempt after the proposal has
     //!   already been consumed.
-    //!
     //! A full insert→consume→replay test would require constructing a real
     //! `Proposal<WalletFeeRule, ReceivedNoteId>`, which in turn needs a
     //! live wallet DB with spendable notes and a lightwalletd chain tip.
     //! That belongs in an integration test, not a unit test here.
 
     use super::*;
+
+    #[test]
+    fn sync_completion_requires_matching_persisted_tip() {
+        assert!(is_completed_sync_status(100, 100, Some(100)));
+        assert!(!is_completed_sync_status(100, 100, None));
+        assert!(!is_completed_sync_status(100, 100, Some(99)));
+        assert!(!is_completed_sync_status(99, 100, Some(100)));
+        assert!(!is_completed_sync_status(0, 0, Some(0)));
+    }
 
     /// Pull a proposal ID that is guaranteed not to collide with anything a
     /// concurrent test might have inserted. We use a fresh counter so each

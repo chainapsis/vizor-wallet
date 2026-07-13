@@ -43,21 +43,27 @@ class RustSwapDepositSender implements SwapDepositSender {
     }
 
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
-    final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-
-    log(
-      'SwapDepositSender: preflight begin '
-      'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
-      'zatoshi=$amountZatoshi',
-    );
-    final fee = await rust_sync.estimateFee(
-      dbPath: dbPath,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-      toAddress: quote.depositInstruction.address,
-      amountZatoshi: amountZatoshi,
-    );
+    final fee = await _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
+          accountUuid: accountUuid,
+          operation: () async {
+            final dbPath = await getWalletDbPath();
+            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+            log(
+              'SwapDepositSender: preflight begin '
+              'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
+              'zatoshi=$amountZatoshi',
+            );
+            return rust_sync.estimateFee(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              toAddress: quote.depositInstruction.address,
+              amountZatoshi: amountZatoshi,
+            );
+          },
+        );
     log('SwapDepositSender: preflight complete fee=$fee');
     return fee;
   }
@@ -72,8 +78,6 @@ class RustSwapDepositSender implements SwapDepositSender {
     }
 
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
-    final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSwapSendFlowId();
     BigInt? proposalId;
     var proposalConsumed = false;
@@ -84,14 +88,27 @@ class RustSwapDepositSender implements SwapDepositSender {
         'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
         'zatoshi=$amountZatoshi',
       );
-      final proposal = await rust_sync.proposeSend(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        sendFlowId: sendFlowId,
-        toAddress: quote.depositInstruction.address,
-        amountZatoshi: amountZatoshi,
-      );
+      final proposalContext = await _ref
+          .read(syncProvider.notifier)
+          .runWithAuthoritativeSpendable(
+            accountUuid: accountUuid,
+            operation: () async {
+              final dbPath = await getWalletDbPath();
+              final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+              final proposal = await rust_sync.proposeSend(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                sendFlowId: sendFlowId,
+                toAddress: quote.depositInstruction.address,
+                amountZatoshi: amountZatoshi,
+              );
+              return (proposal: proposal, dbPath: dbPath, endpoint: endpoint);
+            },
+          );
+      final proposal = proposalContext.proposal;
+      final dbPath = proposalContext.dbPath;
+      final endpoint = proposalContext.endpoint;
       proposalId = proposal.proposalId;
       log(
         'SwapDepositSender: proposal ready flow=$sendFlowId '

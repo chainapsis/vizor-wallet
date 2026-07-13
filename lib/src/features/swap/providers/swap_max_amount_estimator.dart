@@ -23,42 +23,48 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
 
   @override
   Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
-    final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointProvider);
-    final sync = (_ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
-      accountUuid,
-    );
-    final spendableZatoshi = sync.spendableBalance;
-    final estimateAddress = await _ref
-        .read(receiveAddressServiceProvider)
-        .loadTransparentReceiveAddress(accountUuid: accountUuid);
+    return _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
+          accountUuid: accountUuid,
+          operation: () async {
+            final dbPath = await getWalletDbPath();
+            final endpoint = _ref.read(rpcEndpointProvider);
+            final sync = (_ref.read(syncProvider).value ?? SyncState())
+                .scopedToAccount(accountUuid);
+            final spendableZatoshi = sync.displaySpendableBalance;
+            final estimateAddress = await _ref
+                .read(receiveAddressServiceProvider)
+                .loadTransparentReceiveAddress(accountUuid: accountUuid);
 
-    log(
-      'SwapMaxAmount: estimate begin account=$accountUuid '
-      'estimateAddress=${_shortSwapValue(estimateAddress)} '
-      'spendable=$spendableZatoshi',
-    );
-    final amountZatoshi = await findMaxZecAmountByFeeProbe(
-      spendableZatoshi: spendableZatoshi,
-      canSend: (amountZatoshi) async {
-        try {
-          await rust_sync.estimateFee(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            toAddress: estimateAddress,
-            amountZatoshi: amountZatoshi,
-            memo: null,
-          );
-          return true;
-        } catch (e) {
-          if (_isInsufficientFundsError(e)) return false;
-          rethrow;
-        }
-      },
-    );
-    log('SwapMaxAmount: estimate complete amount=$amountZatoshi');
-    return amountZatoshi;
+            log(
+              'SwapMaxAmount: estimate begin account=$accountUuid '
+              'estimateAddress=${_shortSwapValue(estimateAddress)} '
+              'spendable=$spendableZatoshi',
+            );
+            final amountZatoshi = await findMaxZecAmountByFeeProbe(
+              spendableZatoshi: spendableZatoshi,
+              canSend: (amountZatoshi) async {
+                try {
+                  await rust_sync.estimateFee(
+                    dbPath: dbPath,
+                    network: endpoint.networkName,
+                    accountUuid: accountUuid,
+                    toAddress: estimateAddress,
+                    amountZatoshi: amountZatoshi,
+                    memo: null,
+                  );
+                  return true;
+                } catch (e) {
+                  if (_isInsufficientFundsError(e)) return false;
+                  rethrow;
+                }
+              },
+            );
+            log('SwapMaxAmount: estimate complete amount=$amountZatoshi');
+            return amountZatoshi;
+          },
+        );
   }
 }
 

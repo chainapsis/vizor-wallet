@@ -331,15 +331,29 @@ pub struct SyncProgress {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub is_syncing: bool,
+    pub is_complete: bool,
+}
+
+pub enum WalletBalanceAvailability {
+    Available,
+    SummaryUnavailable,
+    AccountUnavailable,
 }
 
 pub struct WalletBalance {
+    pub availability: WalletBalanceAvailability,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    /// Wallet-created change that has not reached the trusted confirmation depth.
+    pub change_pending_confirmation: u64,
+    /// Other received value awaiting confirmations or additional witness scanning.
+    pub value_pending_spendability: u64,
+    /// Notes at or below the ZIP-317 marginal fee, excluded from normal spendability.
+    pub uneconomic_value: u64,
     /// Sum of spendable shielded balances. Use this for "available to send".
     pub spendable: u64,
     /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
@@ -527,6 +541,7 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
             scanned_height: p.scanned_height,
             chain_tip_height: p.chain_tip_height,
             is_syncing: p.is_syncing,
+            is_complete: p.is_complete,
         })
     })
 }
@@ -539,16 +554,31 @@ pub fn get_balance(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        let availability = match b.availability {
+            wallet_sync::WalletBalanceAvailability::Available => {
+                WalletBalanceAvailability::Available
+            }
+            wallet_sync::WalletBalanceAvailability::SummaryUnavailable => {
+                WalletBalanceAvailability::SummaryUnavailable
+            }
+            wallet_sync::WalletBalanceAvailability::AccountUnavailable => {
+                WalletBalanceAvailability::AccountUnavailable
+            }
+        };
         let spendable = b.sapling + b.orchard;
         let total_spendable = b.transparent + b.sapling + b.orchard;
         let pending = b.transparent_pending + b.sapling_pending + b.orchard_pending;
         Ok(WalletBalance {
+            availability,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,
             transparent_pending: b.transparent_pending,
             sapling_pending: b.sapling_pending,
             orchard_pending: b.orchard_pending,
+            change_pending_confirmation: b.change_pending_confirmation,
+            value_pending_spendability: b.value_pending_spendability,
+            uneconomic_value: b.uneconomic_value,
             spendable,
             total: total_spendable + pending,
         })

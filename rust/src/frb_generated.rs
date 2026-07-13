@@ -6628,10 +6628,12 @@ impl SseDecode for crate::api::sync::SyncProgress {
         let mut var_scannedHeight = <u64>::sse_decode(deserializer);
         let mut var_chainTipHeight = <u64>::sse_decode(deserializer);
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
+        let mut var_isComplete = <bool>::sse_decode(deserializer);
         return crate::api::sync::SyncProgress {
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
             is_syncing: var_isSyncing,
+            is_complete: var_isComplete,
         };
     }
 }
@@ -6929,23 +6931,45 @@ impl SseDecode for zcash_voting::wire::VotingRoundParams {
 impl SseDecode for crate::api::sync::WalletBalance {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_availability =
+            <crate::api::sync::WalletBalanceAvailability>::sse_decode(deserializer);
         let mut var_transparent = <u64>::sse_decode(deserializer);
         let mut var_sapling = <u64>::sse_decode(deserializer);
         let mut var_orchard = <u64>::sse_decode(deserializer);
         let mut var_transparentPending = <u64>::sse_decode(deserializer);
         let mut var_saplingPending = <u64>::sse_decode(deserializer);
         let mut var_orchardPending = <u64>::sse_decode(deserializer);
+        let mut var_changePendingConfirmation = <u64>::sse_decode(deserializer);
+        let mut var_valuePendingSpendability = <u64>::sse_decode(deserializer);
+        let mut var_uneconomicValue = <u64>::sse_decode(deserializer);
         let mut var_spendable = <u64>::sse_decode(deserializer);
         let mut var_total = <u64>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
+            availability: var_availability,
             transparent: var_transparent,
             sapling: var_sapling,
             orchard: var_orchard,
             transparent_pending: var_transparentPending,
             sapling_pending: var_saplingPending,
             orchard_pending: var_orchardPending,
+            change_pending_confirmation: var_changePendingConfirmation,
+            value_pending_spendability: var_valuePendingSpendability,
+            uneconomic_value: var_uneconomicValue,
             spendable: var_spendable,
             total: var_total,
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::WalletBalanceAvailability {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::WalletBalanceAvailability::Available,
+            1 => crate::api::sync::WalletBalanceAvailability::SummaryUnavailable,
+            2 => crate::api::sync::WalletBalanceAvailability::AccountUnavailable,
+            _ => unreachable!("Invalid variant for WalletBalanceAvailability: {}", inner),
         };
     }
 }
@@ -8482,6 +8506,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::SyncProgress {
             self.scanned_height.into_into_dart().into_dart(),
             self.chain_tip_height.into_into_dart().into_dart(),
             self.is_syncing.into_into_dart().into_dart(),
+            self.is_complete.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -8823,12 +8848,18 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VotingRoun
 impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.availability.into_into_dart().into_dart(),
             self.transparent.into_into_dart().into_dart(),
             self.sapling.into_into_dart().into_dart(),
             self.orchard.into_into_dart().into_dart(),
             self.transparent_pending.into_into_dart().into_dart(),
             self.sapling_pending.into_into_dart().into_dart(),
             self.orchard_pending.into_into_dart().into_dart(),
+            self.change_pending_confirmation
+                .into_into_dart()
+                .into_dart(),
+            self.value_pending_spendability.into_into_dart().into_dart(),
+            self.uneconomic_value.into_into_dart().into_dart(),
             self.spendable.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
         ]
@@ -8843,6 +8874,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::WalletBalance>
     for crate::api::sync::WalletBalance
 {
     fn into_into_dart(self) -> crate::api::sync::WalletBalance {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalanceAvailability {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Available => 0.into_dart(),
+            Self::SummaryUnavailable => 1.into_dart(),
+            Self::AccountUnavailable => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::WalletBalanceAvailability
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::WalletBalanceAvailability>
+    for crate::api::sync::WalletBalanceAvailability
+{
+    fn into_into_dart(self) -> crate::api::sync::WalletBalanceAvailability {
         self
     }
 }
@@ -10072,6 +10125,7 @@ impl SseEncode for crate::api::sync::SyncProgress {
         <u64>::sse_encode(self.scanned_height, serializer);
         <u64>::sse_encode(self.chain_tip_height, serializer);
         <bool>::sse_encode(self.is_syncing, serializer);
+        <bool>::sse_encode(self.is_complete, serializer);
     }
 }
 
@@ -10270,14 +10324,35 @@ impl SseEncode for zcash_voting::wire::VotingRoundParams {
 impl SseEncode for crate::api::sync::WalletBalance {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::sync::WalletBalanceAvailability>::sse_encode(self.availability, serializer);
         <u64>::sse_encode(self.transparent, serializer);
         <u64>::sse_encode(self.sapling, serializer);
         <u64>::sse_encode(self.orchard, serializer);
         <u64>::sse_encode(self.transparent_pending, serializer);
         <u64>::sse_encode(self.sapling_pending, serializer);
         <u64>::sse_encode(self.orchard_pending, serializer);
+        <u64>::sse_encode(self.change_pending_confirmation, serializer);
+        <u64>::sse_encode(self.value_pending_spendability, serializer);
+        <u64>::sse_encode(self.uneconomic_value, serializer);
         <u64>::sse_encode(self.spendable, serializer);
         <u64>::sse_encode(self.total, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::WalletBalanceAvailability {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::WalletBalanceAvailability::Available => 0,
+                crate::api::sync::WalletBalanceAvailability::SummaryUnavailable => 1,
+                crate::api::sync::WalletBalanceAvailability::AccountUnavailable => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

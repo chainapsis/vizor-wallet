@@ -104,6 +104,10 @@ const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
 const WITNESS_CHECK_MAX_CLEAN_AGE_BLOCKS: u64 = 10_000;
 const SYNC_META_TABLE: &str = "ext_vizor_sync_meta";
+const SYNC_COMPLETION_POLICY_VERSION: u32 = 1;
+const SYNC_COMPLETION_POLICY_VERSION_KEY: &str = "sync_completion_policy_version";
+const LAST_COMPLETED_SYNC_HEIGHT_KEY: &str = "last_completed_sync_height";
+const SYNC_IN_PROGRESS_KEY: &str = "sync_in_progress";
 const WITNESS_CHECK_POLICY_VERSION_KEY: &str = "witness_check_policy_version";
 const WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY: &str = "witness_check_last_clean_height";
 // `truncate_to_chain_state` only injects a canonical frontier when the requested
@@ -360,6 +364,31 @@ fn read_witness_check_meta(db_data_path: &str) -> Result<WitnessCheckMeta, Strin
     })
 }
 
+fn read_sync_completion_meta(
+    db_data_path: &str,
+) -> Result<(Option<u32>, Option<u64>, Option<bool>), String> {
+    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+    if !sync_meta_table_exists(&conn)? {
+        return Ok((None, None, None));
+    }
+
+    Ok((
+        parse_sync_meta_u32(
+            SYNC_COMPLETION_POLICY_VERSION_KEY,
+            read_sync_meta_value(&conn, SYNC_COMPLETION_POLICY_VERSION_KEY)?,
+        ),
+        parse_sync_meta_u64(
+            LAST_COMPLETED_SYNC_HEIGHT_KEY,
+            read_sync_meta_value(&conn, LAST_COMPLETED_SYNC_HEIGHT_KEY)?,
+        ),
+        parse_sync_meta_u32(
+            SYNC_IN_PROGRESS_KEY,
+            read_sync_meta_value(&conn, SYNC_IN_PROGRESS_KEY)?,
+        )
+        .map(|value| value != 0),
+    ))
+}
+
 fn witness_check_decision(
     db_data_path: &str,
     current_tip_height: u64,
@@ -416,6 +445,132 @@ fn mark_witness_check_clean(db_data_path: &str, current_tip_height: u64) -> Resu
     .map_err(|e| format!("write witness check clean height: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit sync metadata transaction: {e}"))
+}
+
+fn initialize_sync_completion_policy(
+    db_data_path: &str,
+    legacy_completed_height: Option<u64>,
+) -> Result<(Option<u64>, Option<bool>), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin sync completion metadata transaction: {e}"))?;
+    let inserted = tx
+        .execute(
+            "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO NOTHING",
+            params![
+                SYNC_COMPLETION_POLICY_VERSION_KEY,
+                SYNC_COMPLETION_POLICY_VERSION.to_string()
+            ],
+        )
+        .map_err(|e| format!("initialize sync completion policy version: {e}"))?;
+    if inserted > 0 {
+        tx.execute(
+            "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+             ON CONFLICT(key) DO NOTHING",
+            params![SYNC_IN_PROGRESS_KEY],
+        )
+        .map_err(|e| format!("initialize sync in-progress marker: {e}"))?;
+        if let Some(height) = legacy_completed_height {
+            tx.execute(
+                "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![LAST_COMPLETED_SYNC_HEIGHT_KEY, height.to_string()],
+            )
+            .map_err(|e| format!("migrate legacy completed sync height: {e}"))?;
+        }
+    }
+    tx.commit()
+        .map_err(|e| format!("commit sync completion metadata: {e}"))?;
+    read_sync_completion_meta(db_data_path).map(|(_, height, in_progress)| (height, in_progress))
+}
+
+pub(crate) fn completed_sync_height_for_status(
+    db_data_path: &str,
+    scanned_height: u64,
+    chain_tip_height: u64,
+) -> Result<Option<u64>, String> {
+    let (policy_version, completed_height, in_progress) = read_sync_completion_meta(db_data_path)?;
+    match policy_version {
+        Some(SYNC_COMPLETION_POLICY_VERSION) => Ok((in_progress == Some(false))
+            .then_some(completed_height)
+            .flatten()),
+        Some(other) => {
+            log::warn!(
+                "sync: unsupported completion policy version {other}; treating status as incomplete"
+            );
+            Ok(None)
+        }
+        None => {
+            let legacy_completed_height = (chain_tip_height > 0
+                && scanned_height >= chain_tip_height)
+                .then_some(chain_tip_height);
+            initialize_sync_completion_policy(db_data_path, legacy_completed_height).map(
+                |(height, in_progress)| (in_progress == Some(false)).then_some(height).flatten(),
+            )
+        }
+    }
+}
+
+fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin sync-start metadata transaction: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![
+            SYNC_COMPLETION_POLICY_VERSION_KEY,
+            SYNC_COMPLETION_POLICY_VERSION.to_string()
+        ],
+    )
+    .map_err(|e| format!("write sync-start policy version: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SYNC_IN_PROGRESS_KEY],
+    )
+    .map_err(|e| format!("write sync in-progress marker: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("commit sync-start metadata: {e}"))
+}
+
+fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin completed sync transaction: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![
+            SYNC_COMPLETION_POLICY_VERSION_KEY,
+            SYNC_COMPLETION_POLICY_VERSION.to_string()
+        ],
+    )
+    .map_err(|e| format!("write sync completion policy version: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![
+            LAST_COMPLETED_SYNC_HEIGHT_KEY,
+            completed_tip_height.to_string()
+        ],
+    )
+    .map_err(|e| format!("write completed sync height: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SYNC_IN_PROGRESS_KEY],
+    )
+    .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
 
 fn ensure_complete_scan_state(
@@ -1070,6 +1225,14 @@ async fn run_sync_impl(
         running_mode,
         base_batch_size
     );
+
+    // Persist the active session before any new sync work begins. A crash or
+    // mode handoff cannot leave the previous completed tip looking like the
+    // current run completed successfully.
+    with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
+        mark_sync_started(db_data_path)
+    })
+    .map_err(SyncError::db)?;
 
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
     let mut client = open_lwd_channel(lightwalletd_url).await?;
@@ -1927,6 +2090,10 @@ async fn run_sync_impl(
             e
         ),
     }
+    with_wallet_db_write_lock("sync_engine.mark_sync_completed", || {
+        mark_sync_completed(db_data_path, final_tip_height)
+    })
+    .map_err(SyncError::db)?;
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -2112,6 +2279,67 @@ mod tests {
                 policy_version: Some(WITNESS_CHECK_POLICY_VERSION),
                 last_clean_height: Some(3_364_776),
             },
+        );
+    }
+
+    #[test]
+    fn completed_sync_marker_round_trips_and_advances() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+
+        assert_eq!(
+            read_sync_completion_meta(db_path).unwrap(),
+            (None, None, None)
+        );
+        mark_sync_completed(db_path, 3_364_776).unwrap();
+        assert_eq!(
+            read_sync_completion_meta(db_path).unwrap(),
+            (
+                Some(SYNC_COMPLETION_POLICY_VERSION),
+                Some(3_364_776),
+                Some(false)
+            ),
+        );
+        mark_sync_started(db_path).unwrap();
+        assert_eq!(
+            completed_sync_height_for_status(db_path, 3_364_776, 3_364_776).unwrap(),
+            None,
+        );
+        mark_sync_completed(db_path, 3_364_777).unwrap();
+        assert_eq!(
+            read_sync_completion_meta(db_path).unwrap(),
+            (
+                Some(SYNC_COMPLETION_POLICY_VERSION),
+                Some(3_364_777),
+                Some(false)
+            ),
+        );
+    }
+
+    #[test]
+    fn completion_policy_migrates_legacy_tip_only_once() {
+        let legacy_file = tempfile::NamedTempFile::new().unwrap();
+        let legacy_path = legacy_file.path().to_str().unwrap();
+        assert_eq!(
+            completed_sync_height_for_status(legacy_path, 100, 100).unwrap(),
+            Some(100),
+        );
+        assert_eq!(
+            read_sync_completion_meta(legacy_path).unwrap(),
+            (Some(SYNC_COMPLETION_POLICY_VERSION), Some(100), Some(false)),
+        );
+
+        let active_sync_file = tempfile::NamedTempFile::new().unwrap();
+        let active_sync_path = active_sync_file.path().to_str().unwrap();
+        mark_sync_completed(active_sync_path, 100).unwrap();
+        mark_sync_started(active_sync_path).unwrap();
+        assert_eq!(
+            completed_sync_height_for_status(active_sync_path, 100, 100).unwrap(),
+            None,
+        );
+        assert_eq!(
+            read_sync_completion_meta(active_sync_path).unwrap(),
+            (Some(SYNC_COMPLETION_POLICY_VERSION), Some(100), Some(true)),
         );
     }
 

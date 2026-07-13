@@ -66,63 +66,74 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
       throw StateError('Swap deposit address is missing');
     }
     await _rejectTexDepositForKeystone(depositAddress);
-
     final amountZatoshi = zecDepositAmountZatoshiForIntent(intent);
-    final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSwapHardwareFlowId('deposit');
-    BigInt? proposalId;
-    var proposalConsumed = false;
+    return _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
+          accountUuid: accountUuid,
+          operation: () async {
+            final dbPath = await getWalletDbPath();
+            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+            BigInt? proposalId;
+            var proposalConsumed = false;
 
-    try {
-      log(
-        'SwapHardwareSigning: deposit propose begin flow=$sendFlowId '
-        'intent=${_shortSwapValue(intent.id)} '
-        'deposit=${_shortSwapValue(depositAddress)} zatoshi=$amountZatoshi',
-      );
-      final proposal = await rust_sync.proposeSend(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        sendFlowId: sendFlowId,
-        toAddress: depositAddress,
-        amountZatoshi: amountZatoshi,
-      );
-      proposalId = proposal.proposalId;
-      final pcztBytes = await rust_sync.createPcztFromProposal(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        proposalId: proposal.proposalId,
-        sendFlowId: sendFlowId,
-      );
-      proposalConsumed = true;
-      log(
-        'SwapHardwareSigning: deposit pczt ready flow=$sendFlowId '
-        'proposal=${proposal.proposalId} needsSapling=${proposal.needsSaplingParams}',
-      );
-      return SwapHardwarePcztDraft(
-        pcztBytes: pcztBytes,
-        needsSaplingParams: proposal.needsSaplingParams,
-        feeZatoshi: proposal.feeZatoshi,
-      );
-    } catch (e) {
-      log('SwapHardwareSigning: deposit pczt failed flow=$sendFlowId error=$e');
-      rethrow;
-    } finally {
-      if (proposalId != null && !proposalConsumed) {
-        try {
-          await rust_sync.discardProposal(
-            proposalId: proposalId,
-            sendFlowId: sendFlowId,
-          );
-        } catch (e) {
-          log(
-            'SwapHardwareSigning: discard deposit proposal failed '
-            'flow=$sendFlowId proposal=$proposalId error=$e',
-          );
-        }
-      }
-    }
+            try {
+              log(
+                'SwapHardwareSigning: deposit propose begin flow=$sendFlowId '
+                'intent=${_shortSwapValue(intent.id)} '
+                'deposit=${_shortSwapValue(depositAddress)} '
+                'zatoshi=$amountZatoshi',
+              );
+              final proposal = await rust_sync.proposeSend(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                sendFlowId: sendFlowId,
+                toAddress: depositAddress,
+                amountZatoshi: amountZatoshi,
+              );
+              proposalId = proposal.proposalId;
+              final pcztBytes = await rust_sync.createPcztFromProposal(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                proposalId: proposal.proposalId,
+                sendFlowId: sendFlowId,
+              );
+              proposalConsumed = true;
+              log(
+                'SwapHardwareSigning: deposit pczt ready flow=$sendFlowId '
+                'proposal=${proposal.proposalId} '
+                'needsSapling=${proposal.needsSaplingParams}',
+              );
+              return SwapHardwarePcztDraft(
+                pcztBytes: pcztBytes,
+                needsSaplingParams: proposal.needsSaplingParams,
+                feeZatoshi: proposal.feeZatoshi,
+              );
+            } catch (e) {
+              log(
+                'SwapHardwareSigning: deposit pczt failed '
+                'flow=$sendFlowId error=$e',
+              );
+              rethrow;
+            } finally {
+              if (proposalId != null && !proposalConsumed) {
+                try {
+                  await rust_sync.discardProposal(
+                    proposalId: proposalId,
+                    sendFlowId: sendFlowId,
+                  );
+                } catch (e) {
+                  log(
+                    'SwapHardwareSigning: discard deposit proposal failed '
+                    'flow=$sendFlowId proposal=$proposalId error=$e',
+                  );
+                }
+              }
+            }
+          },
+        );
   }
 
   @override
