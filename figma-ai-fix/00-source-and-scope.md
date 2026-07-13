@@ -30,7 +30,15 @@ listed below as the documentation scope.
   composition before using the internal asset directly.
 - Use Figma variable modes exactly as defined. Color uses Dark/Light; sizing and
   fonts use Desktop/Mobile.
-- Reuse an existing component, variable, or style before creating a new one.
+- Treat the entire Vizor design system as read-only. Never modify a
+  design-system page, component master, component set, variant, variable,
+  style, token, or shared asset.
+- When modifying or adding a screen on the AI Test page, reuse existing
+  design-system component instances, variables, styles, tokens, and layout
+  patterns as much as possible. Do not recreate an available asset with
+  detached or ad-hoc layers.
+- If the requested screen needs a design-system asset that does not exist, ask
+  the user how to proceed instead of adding to or changing the design system.
 - This is a point-in-time index. Live Figma values and node structure take
   precedence over this snapshot.
 

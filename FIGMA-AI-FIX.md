@@ -48,6 +48,12 @@ to use?
 
 ## Copy-only editing policy
 
+The Vizor design system itself is strictly read-only and must never be
+modified. This prohibition includes every design-system page, component
+master, component set, variant, variable, style, token, and shared asset. It
+still applies when changing the design system would appear to be the easiest
+way to satisfy the request.
+
 Existing Figma screens and components are immutable. Never rename, delete,
 move, reparent, detach, resize, restyle, or otherwise mutate an existing source
 node. Do not modify an existing component's variants, properties, auto-layout,
@@ -59,11 +65,17 @@ After the user approves the target:
 1. Copy only the approved screen or component into the
    [AI Test page](https://www.figma.com/design/HJxo289BJD7R6tz0OoGSQu/Vizor--Design-System--AI-Test-?node-id=8001-32299&m=dev).
 2. Apply every requested change only to that new copy and its descendants.
+   When modifying or adding a screen, reuse the existing Vizor design-system
+   component instances, variables, styles, tokens, and layout patterns as much
+   as possible. Do not recreate an available design-system asset with detached
+   or ad-hoc layers.
 3. If a nested shared component must change, copy that component into the AI
    Test page too, then retarget only the copied screen's instance to the copied
    component. Never change the original main component.
 4. If the requested change would require mutating anything outside the copied
    subtree, stop and ask the user before continuing.
+   If a required asset does not exist in the design system, also stop and ask
+   the user rather than adding it to or modifying the design system.
 5. Before reporting completion, verify that every mutated node is a descendant
    of the approved copy on the AI Test page and that all original nodes remain
    unchanged.
