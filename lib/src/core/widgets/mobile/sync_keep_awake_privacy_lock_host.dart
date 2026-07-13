@@ -38,7 +38,25 @@ class SyncKeepAwakePrivacyLockHost extends ConsumerStatefulWidget {
 class _SyncKeepAwakePrivacyLockHostState
     extends ConsumerState<SyncKeepAwakePrivacyLockHost> {
   Timer? _idleTimer;
+  AppLifecycleListener? _lifecycleListener;
+  bool _isInForeground = true;
   bool _clearScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kAppFormFactor != AppFormFactor.mobile) return;
+
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    _isInForeground =
+        lifecycleState == null || lifecycleState == AppLifecycleState.resumed;
+    _lifecycleListener = AppLifecycleListener(
+      onResume: _handleLifecycleResume,
+      onInactive: _handleLifecycleBackground,
+      onHide: _handleLifecycleBackground,
+      onPause: _handleLifecycleBackground,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,8 +80,25 @@ class _SyncKeepAwakePrivacyLockHostState
 
   @override
   void dispose() {
+    _lifecycleListener?.dispose();
     _idleTimer?.cancel();
     super.dispose();
+  }
+
+  void _handleLifecycleBackground() {
+    if (!_isInForeground) return;
+    _isInForeground = false;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+  }
+
+  void _handleLifecycleResume() {
+    if (_isInForeground) return;
+    _isInForeground = true;
+    // Returning to the app is an explicit user interaction. Reset the idle
+    // window before the provider rebuild rearms the timer so time spent while
+    // the app was not visible never causes an immediate privacy lock.
+    ref.read(syncKeepAwakeInteractionProvider.notifier).markInteraction();
   }
 
   void _syncIdleTimer({
@@ -71,7 +106,7 @@ class _SyncKeepAwakePrivacyLockHostState
     required SyncKeepAwakeInteractionState interaction,
     required bool visible,
   }) {
-    if (!active) {
+    if (!_isInForeground || !active) {
       _idleTimer?.cancel();
       _idleTimer = null;
       if (visible) return;
@@ -96,6 +131,7 @@ class _SyncKeepAwakePrivacyLockHostState
 
   void _lockIfStillIdle(int expectedRevision) {
     if (!mounted) return;
+    if (!_isInForeground) return;
     if (!ref.read(syncKeepAwakeActiveProvider)) return;
     if (ref.read(syncKeepAwakePrivacyLockProvider).isLocked) return;
 

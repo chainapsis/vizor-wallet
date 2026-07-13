@@ -76,6 +76,27 @@ void main() {
     expect(_enabledArgs(calls), [true]);
   });
 
+  testWidgets('disables native keep-awake while the app is not foreground', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false, true]);
+  });
+
   testWidgets('does not call native API when the setting is disabled', (
     tester,
   ) async {
