@@ -15,6 +15,7 @@ import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
+import 'pay_selected_asset_store.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
@@ -24,6 +25,25 @@ export 'swap_provider_config.dart';
 final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
   return const [];
 });
+
+/// Session-only memory for Pay's payout asset. This deliberately lives apart
+/// from persisted Swap composer preferences so moving between the two flows
+/// cannot overwrite either selection.
+class PaySelectedAssetNotifier extends Notifier<SwapAsset> {
+  static const defaultAsset = SwapAsset.usdc;
+
+  @override
+  SwapAsset build() => defaultAsset;
+
+  void select(SwapAsset asset) {
+    state = asset;
+  }
+}
+
+final paySelectedAssetProvider =
+    NotifierProvider<PaySelectedAssetNotifier, SwapAsset>(
+      PaySelectedAssetNotifier.new,
+    );
 
 sealed class SwapStartResult {
   const SwapStartResult(this.intentId);
@@ -44,8 +64,10 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
+  var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _statusRefreshInFlight = false;
+  SwapAsset? _payRetryAsset;
 
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
@@ -66,15 +88,21 @@ class SwapNotifier extends Notifier<SwapState> {
         if (previous == next) return;
         if (previous != null) {
           unawaited(_persistCurrentIntents(accountUuid: previous));
-          unawaited(
-            _persistComposerPreferences(
-              _currentComposerPreferences,
-              accountUuid: previous,
-            ),
-          );
+          // In Pay mode the composer state carries Pay's direction/payout
+          // asset, which must not overwrite the previous account's saved
+          // swap composer selection.
+          if (!state.payMode) {
+            unawaited(
+              _persistComposerPreferences(
+                _currentComposerPreferences,
+                accountUuid: previous,
+              ),
+            );
+          }
         }
         _clearAccountScopedTransientState();
         unawaited(_restoreComposerPreferences(accountUuid: next));
+        unawaited(_restorePaySelectedAsset(accountUuid: next));
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -92,6 +120,7 @@ class SwapNotifier extends Notifier<SwapState> {
     ref.onDispose(priceRefreshTimer.cancel);
     final activeAccountUuid = _activeAccountUuidOrNull;
     unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
+    unawaited(_restorePaySelectedAsset(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
     unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
@@ -103,6 +132,7 @@ class SwapNotifier extends Notifier<SwapState> {
       externalAsset: SwapAsset.usdc,
       reviewVisible: false,
       intents: [],
+      pricingLoading: true,
     ).copyWith(
       intents: initialIntents,
       selectedIntentId: initialIntents.isEmpty ? null : initialIntents.first.id,
@@ -121,6 +151,7 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
+          payMode: false,
         ),
       ),
     );
@@ -147,6 +178,7 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
+          payMode: false,
         ),
       ),
     );
@@ -219,6 +251,79 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
+  void preparePayFromShieldedZec() {
+    _clearReviewState();
+    _payRetryAsset = null;
+    final rememberedAsset = ref.read(paySelectedAssetProvider);
+    final supportedAssets = state.supportedExternalAssets;
+    final payAsset =
+        _supportedAssetFor(rememberedAsset, supportedAssets) ??
+        _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
+        (supportedAssets.isEmpty ? rememberedAsset : supportedAssets.first);
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          direction: SwapDirection.zecToExternal,
+          quoteMode: SwapQuoteMode.exactOutput,
+          amountText: '',
+          receiveAmountText: '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          externalAsset: payAsset,
+          destinationText: '',
+          reviewVisible: false,
+          depositTxHashText: '',
+          payMode: true,
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+    );
+  }
+
+  void prepareSwapComposer() {
+    if (!state.payMode) return;
+    _clearReviewState();
+    _payRetryAsset = null;
+    final supportedAssets = state.supportedExternalAssets;
+    final defaultSwapAsset =
+        _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
+        (supportedAssets.isEmpty ? SwapAsset.usdc : supportedAssets.first);
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: defaultSwapAsset,
+          quoteMode: SwapQuoteMode.exactInput,
+          amountText: '',
+          receiveAmountText: '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          destinationText: '',
+          reviewVisible: false,
+          depositTxHashText: '',
+          payMode: false,
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+    );
+    unawaited(
+      _restoreComposerPreferences(
+        accountUuid: _activeAccountUuidOrNull,
+        replaceComposer: true,
+      ),
+    );
+  }
+
   void toggleFiatInputMode(SwapAmountInputSide side) {
     _clearReviewState();
     final next = swapStateWithToggledFiatInputMode(state, side);
@@ -255,6 +360,7 @@ class SwapNotifier extends Notifier<SwapState> {
             externalAsset: supportedAsset,
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
+            payMode: false,
           ),
         ),
       ),
@@ -264,6 +370,47 @@ class SwapNotifier extends Notifier<SwapState> {
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
+  }
+
+  void selectPayExternalAsset(
+    SwapAsset asset, {
+    bool clearDestinationOnChainChange = false,
+    bool rememberSelection = true,
+  }) {
+    final supportedAsset = _supportedAssetFor(
+      asset,
+      state.supportedExternalAssets,
+    );
+    if (supportedAsset == null) return;
+    _payRetryAsset = null;
+    if (rememberSelection) {
+      ref.read(paySelectedAssetProvider.notifier).select(supportedAsset);
+      unawaited(_persistPaySelectedAsset(supportedAsset));
+    }
+    // Mobile Pay still collects the recipient first and therefore preserves
+    // it by default. Desktop Pay is amount-first and opts into clearing a
+    // stale address when the selected chain changes.
+    final chainChanged =
+        supportedAsset.chainTicker != state.externalAsset.chainTicker;
+    _clearReviewState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        swapStateWithTokenAmountsForFiatModes(
+          state.copyWith(
+            externalAsset: supportedAsset,
+            reviewVisible: false,
+            destinationText: clearDestinationOnChainChange && chainChanged
+                ? ''
+                : null,
+            payMode: true,
+          ),
+        ),
+      ),
+      preserveAmountFiatInput:
+          state.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          state.receiveAmountInputMode == SwapAmountInputMode.fiat,
+    );
   }
 
   void updateSlippageBps(int value) {
@@ -282,7 +429,11 @@ class SwapNotifier extends Notifier<SwapState> {
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
-    unawaited(_persistComposerPreferences(_currentComposerPreferences));
+    unawaited(
+      state.payMode
+          ? _persistSlippageOnlyPreference(normalized)
+          : _persistComposerPreferences(_currentComposerPreferences),
+    );
   }
 
   Future<void> useMaxZecAmount() async {
@@ -368,6 +519,13 @@ class SwapNotifier extends Notifier<SwapState> {
   Future<void> _loadSupportedExternalAssets({
     bool forceRefreshPrices = false,
   }) async {
+    final generation = ++_pricingLoadGeneration;
+    // build() starts the initial load before the notifier's state is assigned.
+    // Yield once so both that first load and later refreshes use the same state
+    // transition without reading an uninitialized notifier.
+    await Future<void>.value();
+    if (generation != _pricingLoadGeneration) return;
+    state = state.copyWith(pricingLoading: true);
     try {
       final provider = ref.read(swapIntentProvider);
       final pricingProvider = provider is SwapPricingProvider
@@ -381,13 +539,32 @@ class SwapNotifier extends Notifier<SwapState> {
       final liveAssets = pricing?.supportedExternalAssets.isNotEmpty == true
           ? pricing!.supportedExternalAssets
           : await provider.listSupportedExternalAssets();
+      if (generation != _pricingLoadGeneration) return;
       final supported = [
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
       ];
       if (supported.isEmpty) return;
-      final selected =
-          _supportedAssetFor(state.externalAsset, supported) ?? supported.first;
+      final retryAsset = state.payMode ? _payRetryAsset : null;
+      final supportedRetryAsset = retryAsset == null
+          ? null
+          : _supportedAssetFor(retryAsset, supported);
+      final rememberedAsset = state.payMode
+          ? ref.read(paySelectedAssetProvider)
+          : state.externalAsset;
+      final retryUnsupported =
+          retryAsset != null && supportedRetryAsset == null;
+      final selected = retryUnsupported
+          ? retryAsset
+          : supportedRetryAsset ??
+                _supportedAssetFor(rememberedAsset, supported) ??
+                supported.first;
+      if (state.payMode) {
+        ref.read(paySelectedAssetProvider.notifier).select(selected);
+        if (supportedRetryAsset != null && selected != rememberedAsset) {
+          unawaited(_persistPaySelectedAsset(selected));
+        }
+      }
       final selectedChanged = selected != state.externalAsset;
       var nextState = state.copyWith(
         supportedExternalAssets: supported,
@@ -396,7 +573,7 @@ class SwapNotifier extends Notifier<SwapState> {
         indicativeUsdPrices: pricing?.usdPrices ?? state.indicativeUsdPrices,
         externalAsset: selected,
         reviewVisible: selectedChanged ? false : state.reviewVisible,
-        clearReview: selectedChanged,
+        clearReview: selectedChanged || retryUnsupported,
         clearQuoteError: true,
       );
       nextState = swapStateWithTokenAmountsForFiatModes(nextState);
@@ -412,6 +589,10 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (_) {
       // Keep the static fallback so the swap flow remains usable offline.
+    } finally {
+      if (generation == _pricingLoadGeneration) {
+        state = state.copyWith(pricingLoading: false);
+      }
     }
   }
 
@@ -440,7 +621,9 @@ class SwapNotifier extends Notifier<SwapState> {
     );
 
     try {
-      await _persistComposerPreferences(preferences);
+      if (!state.payMode) {
+        await _persistComposerPreferences(preferences);
+      }
       final stagingAddress = await ref
           .read(swapZecStagingAddressServiceProvider)
           .prepareForQuote(accountUuid: accountUuid);
@@ -531,6 +714,7 @@ class SwapNotifier extends Notifier<SwapState> {
       'quote=${_shortSwapValue(quote.providerQuoteId)} '
       'deposit=${_shortSwapValue(quote.depositInstruction.address)}',
     );
+    final startingPayMode = state.payMode;
     state = state.copyWith(startSubmitting: true, clearStatusError: true);
     if (accountUuid == null) {
       log('Swap: start blocked; no active account');
@@ -584,6 +768,7 @@ class SwapNotifier extends Notifier<SwapState> {
       quote: quote,
       addressPlan: addressPlan,
       accountUuid: accountUuid,
+      payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
@@ -757,19 +942,31 @@ class SwapNotifier extends Notifier<SwapState> {
     final externalAsset = intent.externalAsset;
     if (direction == null || externalAsset == null) return;
 
-    final amountText = intent.sellAmount.split(' ').first.trim();
+    final retryingPay =
+        intent.payMode && direction == SwapDirection.zecToExternal;
+    final sellAmountText = intent.sellAmount.split(' ').first.trim();
+    final receiveAmountText = intent.receiveEstimate.split(' ').first.trim();
     final destinationText = direction.sendsZec
         ? intent.oneClickRecipient ?? ''
         : intent.oneClickRefundTo ?? '';
-    if (amountText.isEmpty || destinationText.isEmpty) return;
+    final inputAmountText = retryingPay ? receiveAmountText : sellAmountText;
+    if (inputAmountText.isEmpty || destinationText.isEmpty) return;
+    final selectedExternalAsset = externalAsset;
+    _payRetryAsset = retryingPay ? externalAsset : null;
+    if (retryingPay) {
+      ref.read(paySelectedAssetProvider.notifier).select(selectedExternalAsset);
+      unawaited(_persistPaySelectedAsset(selectedExternalAsset));
+    }
 
     _quoteGeneration++;
     state = state.copyWith(
       direction: direction,
-      externalAsset: externalAsset,
-      quoteMode: _inputQuoteModeForDirection(direction),
-      amountText: amountText,
-      receiveAmountText: '',
+      externalAsset: selectedExternalAsset,
+      quoteMode: retryingPay
+          ? SwapQuoteMode.exactOutput
+          : _inputQuoteModeForDirection(direction),
+      amountText: retryingPay ? '' : sellAmountText,
+      receiveAmountText: retryingPay ? receiveAmountText : '',
       amountInputMode: SwapAmountInputMode.token,
       receiveAmountInputMode: SwapAmountInputMode.token,
       amountFiatText: '',
@@ -778,6 +975,7 @@ class SwapNotifier extends Notifier<SwapState> {
       reviewVisible: false,
       quoteLoading: false,
       depositTxHashText: '',
+      payMode: retryingPay,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
@@ -1357,6 +1555,7 @@ class SwapNotifier extends Notifier<SwapState> {
   void _clearAccountScopedTransientState() {
     _quoteGeneration++;
     _accountScopeGeneration++;
+    _payRetryAsset = null;
     state = state.copyWith(
       amountText: '',
       receiveAmountText: '',
@@ -1432,6 +1631,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
   Future<void> _restoreComposerPreferences({
     required String? accountUuid,
+    bool replaceComposer = false,
   }) async {
     final scopedAccountUuid = accountUuid?.trim();
     if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) {
@@ -1443,11 +1643,13 @@ class SwapNotifier extends Notifier<SwapState> {
           .loadPreferences(accountUuid: scopedAccountUuid);
       if (preferences == null) return;
       if (!_isAccountActive(scopedAccountUuid)) return;
-      if (state.amountText.isNotEmpty ||
-          state.receiveAmountText.isNotEmpty ||
-          state.destinationText.isNotEmpty ||
-          state.quoteLoading ||
-          state.reviewVisible) {
+      if (!replaceComposer &&
+          (state.payMode ||
+              state.amountText.isNotEmpty ||
+              state.receiveAmountText.isNotEmpty ||
+              state.destinationText.isNotEmpty ||
+              state.quoteLoading ||
+              state.reviewVisible)) {
         return;
       }
       final externalAsset =
@@ -1463,6 +1665,7 @@ class SwapNotifier extends Notifier<SwapState> {
         slippageBps: preferences.slippageBps,
         reviewVisible: false,
         quoteLoading: false,
+        payMode: false,
         clearReview: true,
         clearQuoteError: true,
         clearStatusError: true,
@@ -1587,6 +1790,73 @@ class SwapNotifier extends Notifier<SwapState> {
             accountUuid: scopedAccountUuid,
             preferences: preferences,
           );
+    } catch (_) {}
+  }
+
+  Future<void> _persistPaySelectedAsset(SwapAsset asset) async {
+    final accountUuid = _activeAccountUuidOrNull?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    try {
+      await ref
+          .read(paySelectedAssetStoreProvider)
+          .saveSelectedAsset(accountUuid: accountUuid, asset: asset);
+    } catch (_) {}
+  }
+
+  Future<void> _restorePaySelectedAsset({String? accountUuid}) async {
+    final scopedAccountUuid = (accountUuid ?? _activeAccountUuidOrNull)?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    try {
+      final saved = await ref
+          .read(paySelectedAssetStoreProvider)
+          .loadSelectedAsset(accountUuid: scopedAccountUuid);
+      if (!_isAccountActive(scopedAccountUuid)) return;
+      // A retry is pinned to the intent's original payout rail. Ignore a
+      // slower restore of the ordinary Pay preference so it cannot overwrite
+      // the prepared retry after navigation.
+      if (state.payMode && _payRetryAsset != null) return;
+      final restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      // No saved value must reset the memory: keeping the previous account's
+      // selection would leak it into this account's Pay flow.
+      ref
+          .read(paySelectedAssetProvider.notifier)
+          .select(restoredAsset);
+      if (state.payMode) {
+        final supportedAssets = state.supportedExternalAssets;
+        final liveAsset =
+            _supportedAssetFor(restoredAsset, supportedAssets) ??
+            _supportedAssetFor(
+              PaySelectedAssetNotifier.defaultAsset,
+              supportedAssets,
+            ) ??
+            (supportedAssets.isEmpty ? restoredAsset : supportedAssets.first);
+        selectPayExternalAsset(
+          liveAsset,
+          clearDestinationOnChainChange: true,
+          rememberSelection: false,
+        );
+      }
+    } catch (_) {}
+  }
+
+  /// Slippage is shared with Pay, but Pay's direction/payout asset must not
+  /// overwrite the saved swap composer selection — only the stored slippage
+  /// field is updated, and nothing is written when no swap preferences exist.
+  Future<void> _persistSlippageOnlyPreference(int slippageBps) async {
+    final accountUuid = _activeAccountUuidOrNull?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    try {
+      final store = ref.read(swapComposerPreferencesStoreProvider);
+      final saved = await store.loadPreferences(accountUuid: accountUuid);
+      if (saved == null) return;
+      await store.savePreferences(
+        accountUuid: accountUuid,
+        preferences: SwapComposerPreferences(
+          direction: saved.direction,
+          externalAsset: saved.externalAsset,
+          slippageBps: slippageBps,
+        ),
+      );
     } catch (_) {}
   }
 

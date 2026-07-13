@@ -78,6 +78,286 @@ void main() {
     );
   });
 
+  test('maps completed pay activity to the Figma status presentation', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '4.0000 ZEC',
+        receiveEstimate: '100.00 USDC',
+        depositAddress: 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+        depositTxHash: 'zec-shielded-spend-txid',
+        nearIntentHash: 'near-intent-hash-123',
+        destinationChainTxHash: '0xusdc-delivery-txid',
+        oneClickRecipient: '0xrecipient-address',
+        totalFeesText: '0.1800 ZEC',
+        completedAt: DateTime(2026, 5, 25, 13, 30),
+        payMode: true,
+      ),
+    );
+
+    expect(presentation.title, 'Payment complete');
+    expect(presentation.statusLabel, 'Complete');
+    expect(presentation.payLabel, 'You paid');
+    expect(presentation.receiveLabel, 'Recipient received');
+    expect(presentation.payDetailText, 'Privately, from shielded balance');
+    expect(presentation.progressTabLabel, 'Payment progress');
+    expect(presentation.paymentMode, isTrue);
+    expect(presentation.showTabs, isFalse);
+    expect(presentation.payStatus, isNotNull);
+    expect(presentation.payStatus!.title, 'Paid successfully');
+    expect(presentation.payStatus!.statusLabel, 'Completed');
+    expect(presentation.payStatus!.phase, PayActivityStatusPhase.completed);
+    expect(presentation.payStatus!.timestampText, '25 May, 13:30');
+    expect(presentation.payStatus!.txIdText, 't1bufats...CvaAzeBo');
+    expect(
+      presentation.payStatus!.txIdUri,
+      Uri.parse(
+        'https://explorer.near-intents.org/transactions/'
+        't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+      ),
+    );
+    expect(presentation.payStatus!.convertedFromText, '4.0000 ZEC');
+    // totalFeesText is an app/provider fee, not the network transaction fee.
+    expect(presentation.payStatus!.transactionFeeText, 'Not reported');
+    expect(presentation.steps.map((step) => step.title), [
+      'Spend ZEC',
+      'Convert',
+      'Deliver USDC',
+      'Recipient receives',
+    ]);
+
+    expect(presentation.details.map((detail) => detail.label), [
+      'You paid',
+      'Rate',
+      'Fees',
+      'ZEC tx (shielded)',
+      'USDC delivery tx',
+    ]);
+    expect(_detailValue(presentation.details, 'You paid'), '4.0000 ZEC');
+    expect(_detailValue(presentation.details, 'Rate'), '1 ZEC = 25 USDC');
+    expect(
+      _detailRow(presentation.details, 'ZEC tx (shielded)').copyText,
+      'zec-shielded-spend-txid',
+    );
+    expect(
+      _detailRow(presentation.details, 'USDC delivery tx').copyText,
+      '0xusdc-delivery-txid',
+    );
+    expect(_detailValue(presentation.details, 'Fees'), '0.1800 ZEC');
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Timestamp')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('USDC recipient')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Deposit ZEC to')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Realized slippage')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Slippage tolerance')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Guaranteed minimum')),
+    );
+  });
+
+  test('maps in-progress pay activity without invented tx fees', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '4.0000 ZEC',
+        receiveEstimate: '100.00 USDC',
+        oneClickRecipient: '0xrecipient-address',
+        createdAt: DateTime(2026, 5, 25, 13, 30),
+        payMode: true,
+      ),
+    );
+
+    expect(presentation.title, 'Payment in progress');
+    expect(presentation.statusLabel, 'Processing');
+    expect(presentation.paymentMode, isTrue);
+    expect(presentation.showTabs, isTrue);
+    expect(presentation.payStatus, isNotNull);
+    expect(presentation.payStatus!.title, 'Pay in progress...');
+    expect(presentation.payStatus!.statusLabel, 'In progress');
+    expect(presentation.payStatus!.phase, PayActivityStatusPhase.inProgress);
+    expect(presentation.payStatus!.timestampText, '25 May, 13:30');
+    expect(presentation.payStatus!.txIdText, 'Not reported');
+    expect(presentation.payStatus!.txIdUri, isNull);
+    expect(presentation.payStatus!.convertedFromText, '4.0000 ZEC');
+    expect(presentation.payStatus!.transactionFeeText, 'Not reported');
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Network + conversion fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.value),
+      isNot(contains('Included')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.value),
+      isNot(contains('Included in shown rate')),
+    );
+    expect(
+      presentation.steps.map((step) => step.lastCheckedLabel),
+      everyElement(isNull),
+    );
+  });
+
+  test('reserves Recipient received for completed Pay activity', () {
+    for (final status in const [
+      SwapIntentStatus.failed,
+      SwapIntentStatus.refunded,
+      SwapIntentStatus.expired,
+    ]) {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+
+      expect(
+        presentation.receiveLabel,
+        'Recipient gets',
+        reason: status.name,
+      );
+    }
+  });
+
+  test('uses paid copy only when a terminal Pay moved funds', () {
+    SwapActivityStatusPresentation presentation({String? depositTxHash}) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.expired,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          depositTxHash: depositTxHash,
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    final undeposited = presentation();
+    expect(undeposited.payLabel, 'You pay');
+    expect(undeposited.details.map((row) => row.label), contains('You pay'));
+    expect(
+      undeposited.details.map((row) => row.label),
+      isNot(contains('You paid')),
+    );
+
+    final deposited = presentation(depositTxHash: 'zec-deposit-txid');
+    expect(deposited.payLabel, 'You paid');
+    expect(deposited.details.map((row) => row.label), contains('You paid'));
+  });
+
+  test('failed Pay copy requires provider-observed deposit evidence', () {
+    SwapActivityStatusPresentation presentation({
+      String? depositTxHash,
+      String? originChainTxHash,
+      String? depositedAmountText,
+    }) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.failed,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          depositTxHash: depositTxHash,
+          originChainTxHash: originChainTxHash,
+          providerRefundInfo: depositedAmountText == null
+              ? null
+              : SwapProviderRefundInfo(
+                  depositedAmountText: depositedAmountText,
+                ),
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    expect(
+      presentation(depositTxHash: 'local-broadcast-txid').payLabel,
+      'You pay',
+    );
+    expect(
+      presentation(originChainTxHash: 'provider-origin-txid').payLabel,
+      'You paid',
+    );
+    expect(
+      presentation(depositedAmountText: '0.7500 ZEC').payLabel,
+      'You paid',
+    );
+    expect(presentation(depositedAmountText: '0 ZEC').payLabel, 'You pay');
+  });
+
+  test('provider deposit statuses use paid copy without a tx hash', () {
+    SwapActivityStatusPresentation presentation(SwapIntentStatus status) {
+      return swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: '4.0000 ZEC',
+          receiveEstimate: '100.00 USDC',
+          oneClickRecipient: '0xrecipient-address',
+          payMode: true,
+        ),
+      );
+    }
+
+    for (final status in [
+      SwapIntentStatus.depositObserved,
+      SwapIntentStatus.processing,
+      SwapIntentStatus.incompleteDeposit,
+      SwapIntentStatus.refunded,
+    ]) {
+      final result = presentation(status);
+      expect(result.payLabel, 'You paid', reason: status.name);
+      expect(
+        result.details.map((row) => row.label),
+        contains('You paid'),
+        reason: status.name,
+      );
+    }
+  });
+
   test('omits the tx id detail row on desktop', () {
     // The "Tx ID" row is a mobile-only addition; desktop keeps the original
     // detail set. Mobile-lane coverage of the row lives in
@@ -670,6 +950,7 @@ SwapIntent _intent({
   DateTime? depositDeadline,
   DateTime? createdAt,
   DateTime? completedAt,
+  bool payMode = false,
 }) {
   return SwapIntent(
     id: 'swap-activity',
@@ -696,6 +977,7 @@ SwapIntent _intent({
     providerRefundInfo: providerRefundInfo,
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
+    payMode: payMode,
     createdAt: createdAt,
     completedAt: completedAt,
   );

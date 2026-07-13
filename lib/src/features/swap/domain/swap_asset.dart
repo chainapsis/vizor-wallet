@@ -182,6 +182,10 @@ class SwapAsset {
     return _marketKey == other._marketKey;
   }
 
+  bool hasSamePricingMarketAs(SwapAsset other) {
+    return _pricingMarketKey == other._pricingMarketKey;
+  }
+
   SwapAsset _withAssetId(String assetId) {
     return SwapAsset._(
       name: name,
@@ -207,6 +211,14 @@ class SwapAsset {
     return _formatAmountForDisplay(amount, rounding: _SwapAmountRounding.down);
   }
 
+  String formatAmountDownForInput(double amount) {
+    return _formatAmountForDisplay(
+      amount,
+      rounding: _SwapAmountRounding.down,
+      preserveSmallNonZero: true,
+    );
+  }
+
   String formatAmountUp(double amount) {
     return _formatAmountForDisplay(amount, rounding: _SwapAmountRounding.up);
   }
@@ -214,8 +226,11 @@ class SwapAsset {
   String _formatAmountForDisplay(
     double amount, {
     required _SwapAmountRounding rounding,
+    bool preserveSmallNonZero = false,
   }) {
-    final digits = _displayFractionDigits;
+    final digits = preserveSmallNonZero
+        ? _inputFractionDigitsFor(amount)
+        : _displayFractionDigits;
     final displayAmount = switch (rounding) {
       _SwapAmountRounding.nearest => amount,
       _SwapAmountRounding.down => _roundDisplayAmountDown(amount, digits),
@@ -225,17 +240,35 @@ class SwapAsset {
   }
 
   int get _displayFractionDigits {
-    final normalized = symbol.toUpperCase();
-    if (normalized == 'ZEC') {
+    final market = _marketSymbolKey(symbol);
+    if (market == 'zec') {
       return 4;
     }
-    if (normalized == 'BTC' || normalized == 'WBTC' || decimals == 8) {
+    if (market == 'btc' || decimals == 8) {
       return 8;
     }
-    if (normalized == 'ETH' || normalized == 'SOL' || normalized == 'NEAR') {
+    if (market == 'eth' || market == 'sol' || market == 'near') {
       return 4;
     }
     return 2;
+  }
+
+  int _inputFractionDigitsFor(double amount) {
+    final displayDigits = _displayFractionDigits;
+    final maxDigits = decimals < 8 ? decimals : 8;
+    if (!amount.isFinite || amount <= 0 || displayDigits >= maxDigits) {
+      return displayDigits;
+    }
+    var digits = displayDigits;
+    while (digits < maxDigits) {
+      final rounded = _roundDisplayAmountDown(amount, digits);
+      final relativeLoss = rounded <= 0
+          ? double.infinity
+          : (amount - rounded).abs() / amount;
+      if (relativeLoss <= 0.005) break;
+      digits++;
+    }
+    return digits;
   }
 
   Map<String, Object?> toPersistedJson() {
@@ -313,7 +346,9 @@ class SwapAsset {
   String toString() => 'SwapAsset($symbol on $chainTicker)';
 
   String get _marketKey =>
-      '${symbol.toLowerCase()}:${chainTicker.toLowerCase()}:$decimals';
+      '${_swapAssetSortKey(symbol)}:${chainTicker.toLowerCase()}:$decimals';
+
+  String get _pricingMarketKey => _marketSymbolKey(symbol);
 }
 
 enum _SwapAmountRounding { nearest, down, up }
@@ -501,6 +536,17 @@ String _swapAssetSortKey(String value) {
 }
 
 int _compareInt(int left, int right) => left.compareTo(right);
+
+String _marketSymbolKey(String symbol) {
+  final key = _swapAssetSortKey(symbol);
+  return switch (key) {
+    'gtusdcp' || 'mwusdc' || 'sparkusdc' || 'steakusdc' || 'susdc' => 'usdc',
+    'nrusdt' || 'usdt0' => 'usdt',
+    'btcomni' || 'wbtc' || 'xbtc' || 'cbbtc' || 'hemibtc' => 'btc',
+    'weth' => 'eth',
+    _ => key,
+  };
+}
 
 SwapAsset? _staticAssetFor(String symbol, String chainTicker, int decimals) {
   for (final asset in SwapAsset.values) {

@@ -1,22 +1,26 @@
 enum SwapActivityReturnTarget {
   swap,
+  pay,
   activity,
   home;
 
   String get queryValue => switch (this) {
     SwapActivityReturnTarget.swap => 'swap',
+    SwapActivityReturnTarget.pay => 'pay',
     SwapActivityReturnTarget.activity => 'activity',
     SwapActivityReturnTarget.home => 'home',
   };
 
   String get label => switch (this) {
     SwapActivityReturnTarget.swap => 'Swap',
+    SwapActivityReturnTarget.pay => 'Pay',
     SwapActivityReturnTarget.activity => 'Activity',
     SwapActivityReturnTarget.home => 'Home',
   };
 
   String get path => switch (this) {
     SwapActivityReturnTarget.swap => '/swap',
+    SwapActivityReturnTarget.pay => '/pay',
     SwapActivityReturnTarget.activity => '/activity',
     SwapActivityReturnTarget.home => '/home',
   };
@@ -24,10 +28,17 @@ enum SwapActivityReturnTarget {
   static SwapActivityReturnTarget fromQueryValue(String? value) {
     return switch (value) {
       'swap' => SwapActivityReturnTarget.swap,
+      'pay' => SwapActivityReturnTarget.pay,
       'home' => SwapActivityReturnTarget.home,
       _ => SwapActivityReturnTarget.activity,
     };
   }
+}
+
+class PayComposerNavigationArgs {
+  const PayComposerNavigationArgs({required this.preservePreparedComposer});
+
+  final bool preservePreparedComposer;
 }
 
 const swapActivityReturnQueryKey = 'from';

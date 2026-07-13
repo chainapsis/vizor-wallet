@@ -40,8 +40,11 @@ import '../../activity/swap_activity_row_mapper.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_state_provider.dart';
+import '../services/pay_introduction_badge_store.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
+import '../widgets/pay_floating_badge.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -387,6 +390,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final isImporting =
         !widget.sync.hasAccountScopedData && widget.sync.failure == null;
     final hasBalance = widget.sync.totalBalance > BigInt.zero;
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
 
     return _HomeDesktopPane(
       isImporting: isImporting,
@@ -408,6 +412,15 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onShieldBalancePressed: widget.onShieldBalancePressed,
       onSend: () => context.push('/send'),
       onReceive: () => context.push('/receive'),
+      onPay: swapFeatureEnabled
+          ? () {
+              ref
+                  .read(payIntroductionBadgeClickedProvider.notifier)
+                  .markClicked();
+              ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+              context.push('/pay');
+            }
+          : null,
       onActivity: () => context.push('/activity'),
     );
   }
@@ -891,6 +904,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.onShieldBalancePressed,
     required this.onSend,
     required this.onReceive,
+    required this.onPay,
     required this.onActivity,
   });
 
@@ -913,6 +927,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
+  final VoidCallback? onPay;
   final VoidCallback onActivity;
 
   static const _referencePaneHeight = 704.0;
@@ -960,6 +975,7 @@ class _HomeDesktopPane extends StatelessWidget {
                       onShieldBalancePressed: onShieldBalancePressed,
                       onSend: onSend,
                       onReceive: onReceive,
+                      onPay: onPay,
                     ),
                   ),
                 ),
@@ -1155,6 +1171,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
     required this.onShieldBalancePressed,
     required this.onSend,
     required this.onReceive,
+    required this.onPay,
   });
 
   final bool hasBalance;
@@ -1170,6 +1187,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onSend;
   final VoidCallback onReceive;
+  final VoidCallback? onPay;
 
   @override
   State<_HomeDesktopBalanceCard> createState() =>
@@ -1393,7 +1411,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     primary: true,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xxs),
+                const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: _HomeDesktopActionButton(
                     key: const ValueKey('home_desktop_receive_button'),
@@ -1403,6 +1421,23 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     primary: false,
                   ),
                 ),
+                if (widget.onPay != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  // Icon-only pay entry — Figma 5407:152492: fixed 60px pill.
+                  SizedBox(
+                    width: 60,
+                    child: PayIntroductionBadgeTarget(
+                      child: _HomeDesktopActionButton(
+                        key: const ValueKey('home_desktop_pay_button'),
+                        icon: AppIcons.paid,
+                        label: 'Pay in USDC',
+                        compact: true,
+                        onTap: widget.onPay!,
+                        primary: false,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
         ],
@@ -1419,6 +1454,7 @@ class _HomeDesktopActionButton extends StatelessWidget {
     required this.onTap,
     required this.primary,
     this.expanded = false,
+    this.compact = false,
   });
 
   final String icon;
@@ -1426,6 +1462,9 @@ class _HomeDesktopActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool primary;
   final bool expanded;
+
+  /// Icon-only pill (the pay entry); [label] still feeds semantics.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1469,20 +1508,22 @@ class _HomeDesktopActionButton extends StatelessWidget {
                   color: bg,
                   shape: const StadiumBorder(),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(icon, size: 16, color: fg),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      label,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: fg,
-                        fontWeight: FontWeight.w400,
+                child: compact
+                    ? AppIcon(icon, size: 20, color: fg)
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(icon, size: 16, color: fg),
+                          const SizedBox(width: AppSpacing.xxs),
+                          Text(
+                            label,
+                            style: AppTypography.labelMedium.copyWith(
+                              color: fg,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
               if (focused)
                 Positioned(

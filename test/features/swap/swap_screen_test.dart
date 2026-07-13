@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/address_book/contact_label_generator.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -36,15 +37,18 @@ import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_res
 import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_deposit_transaction_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -276,9 +280,7 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text(
-          'To: Treasury (0x5290840 ... 4169ee7) on Ethereum',
-        ),
+        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
       ),
       findsOneWidget,
     );
@@ -320,6 +322,59 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('pay review uses payment copy and payment detail rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '4.0000 ZEC',
+          receiveAmountText: '100.00 USDC',
+          payMode: true,
+        ),
+      ),
+    );
+
+    expect(find.text('Confirm payment'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_review_summary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
+    expect(find.text('You pay'), findsOneWidget);
+    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(find.text('Privately, from shielded balance'), findsOneWidget);
+    expect(find.text('Arrives in'), findsNothing);
+    expect(find.text('Rate'), findsOneWidget);
+    expect(find.text('Network + conversion fees'), findsNothing);
+    expect(find.text('Included in shown rate'), findsNothing);
+    expect(find.text('Quote holds'), findsOneWidget);
+    expect(find.text('Review swap'), findsNothing);
+    expect(find.text('Slippage tolerance'), findsNothing);
+    expect(find.text('Guaranteed minimum'), findsNothing);
+    expect(find.text('Swap fee'), findsNothing);
+  });
+
+  testWidgets('pay review action uses the output asset amount', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        SwapReviewPageActions(
+          expired: false,
+          starting: false,
+          sendsZec: true,
+          payMode: true,
+          receiveAmountText: '100.00 USDC',
+          onCancelReview: () {},
+          onReviewAgain: () {},
+          onStartIntent: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Pay 100.00 USDC'), findsOneWidget);
+    expect(find.text('Confirm swap'), findsNothing);
   });
 
   testWidgets('deposit tokens countdown starts in the final fifteen minutes', (
@@ -657,13 +712,14 @@ void main() {
           ),
         ],
       );
+      final router = GoRouter(
+        initialLocation: '/activity/swap/expired-deposit?from=swap',
+        routes: [_swapRoute(), _swapActivityRoute()],
+      );
 
       await tester.pumpWidget(
         _routerHarness(
-          GoRouter(
-            initialLocation: '/activity/swap/expired-deposit?from=swap',
-            routes: [_swapRoute(), _swapActivityRoute()],
-          ),
+          router,
           seedSwapActivityFixtures: false,
           sessionStore: sessionStore,
         ),
@@ -690,8 +746,234 @@ void main() {
 
       expect(timeoutRect.width, 340);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
+
+      await tester.tap(find.text('Restart swap'));
+      await tester.pumpAndSettle();
+
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/swap');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      expect(container.read(swapStateProvider).payMode, isFalse);
     },
   );
+
+  testWidgets('expired Pay restart returns to the prepared Pay composer', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final router = GoRouter(
+      initialLocation: '/activity/swap/expired-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'expired-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '2.45125 ZEC',
+          receiveEstimate: '4 SOL',
+          externalAsset: SwapAsset.sol,
+          payMode: true,
+        );
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [payIntent],
+      initialPayAsset: SwapAsset.usdc,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        priceRefreshInterval: const Duration(seconds: 1),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await tester.pumpAndSettle();
+
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+    expect(find.byType(PayScreen), findsOneWidget);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.payMode, isTrue);
+    expect(state.externalAsset, SwapAsset.sol);
+    expect(state.receiveAmountText, '4');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    expect(sessionStore.savedPayAsset, SwapAsset.sol);
+  });
+
+  testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
+    await _setDesktopViewport(tester);
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'saved-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final liveBaseUsdc = SwapAsset.live(
+      assetId: 'live-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final router = GoRouter(
+      initialLocation: '/activity/swap/dynamic-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'dynamic-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '1.5000 ZEC',
+          receiveEstimate: '100 USDC',
+          externalAsset: savedBaseUsdc,
+          payMode: true,
+        );
+    final sessionStore = _DelayedPayAssetLoadSwapPersistenceStore(
+      initialIntents: [payIntent],
+      initialPayAsset: SwapAsset.usdc,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: swapProvider,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await _pumpUntilPresent(tester, find.byType(PayScreen));
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    var state = container.read(swapStateProvider);
+    expect(state.externalAsset, savedBaseUsdc);
+    expect(state.receiveAmountText, '100');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    swapProvider.completeSupportedAssets([liveBaseUsdc]);
+    await tester.pumpAndSettle();
+
+    state = container.read(swapStateProvider);
+    expect(state.externalAsset, liveBaseUsdc);
+    expect(state.receiveAmountText, '100');
+    expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    // A Pay preference load that started before the retry must not overwrite
+    // the intent-pinned asset when it finishes later.
+    sessionStore.completePayAssetLoad();
+    await tester.pumpAndSettle();
+
+    expect(container.read(swapStateProvider).externalAsset, liveBaseUsdc);
+    expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
+  });
+
+  testWidgets('Pay retry does not substitute an unsupported asset', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final savedBaseUsdc = SwapAsset.live(
+      assetId: 'removed-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final router = GoRouter(
+      initialLocation: '/activity/swap/removed-pay?from=pay',
+      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+    );
+    final payIntent =
+        _persistedIntent(
+          id: 'removed-pay',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(
+          sellAmount: '1.5000 ZEC',
+          receiveEstimate: '100 USDC',
+          externalAsset: savedBaseUsdc,
+          payMode: true,
+        );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        swapProvider: swapProvider,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Restart swap'));
+
+    await tester.tap(find.text('Restart swap'));
+    await tester.pump();
+    swapProvider.completeSupportedAssets(const [SwapAsset.usdc]);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.externalAsset, savedBaseUsdc);
+    expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
+    expect(
+      state.externalAssetSupportError,
+      'USDC on Base is not currently supported.',
+    );
+    expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
 
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
@@ -1128,7 +1410,7 @@ void main() {
       findsOneWidget,
     );
 
-    for (final tab in ['Swap Progress', 'Transaction details']) {
+    for (final tab in ['Swap progress', 'Transaction details']) {
       expect(
         find.ancestor(
           of: find.text(tab),
@@ -1150,6 +1432,317 @@ void main() {
     expect(feeLabelRect.left, lessThan(feeValueRect.left));
     expect((refundLabelRect.left - depositLabelRect.left).abs(), lessThan(1));
     expect((feeLabelRect.left - refundLabelRect.left).abs(), lessThan(1));
+  });
+
+  testWidgets(
+    'pay activity renders the Figma progress status and address overlay',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final payIntent =
+          _persistedIntent(
+            id: 'pay-progress',
+            txHash: 'zec-shielded-spend-txid',
+          ).copyWith(
+            sellAmount: '2.45125 ZEC',
+            receiveEstimate: '990 USDC',
+            nearIntentHash: 'near-intent-hash-123',
+            payMode: true,
+            createdAt: DateTime(2026, 5, 25, 13, 30),
+            fiatValueBasis: SwapFiatValueBasis(
+              capturedAt: DateTime(2026, 5, 25, 13, 30),
+              sellUsdUnitPrice: 403.93,
+              receiveUsdUnitPrice: 990.12 / 990,
+            ),
+          );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/pay-progress?from=activity',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+          swapProvider: _DeferredStatusSwapProvider(
+            _statusSnapshot(id: 'pay-progress'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('pay_activity_status_content')),
+        findsOneWidget,
+      );
+      expect(find.text('Pay in progress...'), findsOneWidget);
+      expect(find.text('990 USDC'), findsOneWidget);
+      expect(find.text(r'$990.12'), findsOneWidget);
+      final amountAssetIcon = tester.widget<SwapAssetIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('pay_status_amount_row')),
+          matching: find.byType(SwapAssetIcon),
+        ),
+      );
+      expect(amountAssetIcon.showChainBadge, isFalse);
+      expect(find.text('New address'), findsOneWidget);
+      expect(find.text('0x529084...e4169ee7'), findsOneWidget);
+      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Timestamp'), findsOneWidget);
+      expect(find.text('Tx ID'), findsOneWidget);
+      expect(find.text('Converted from'), findsOneWidget);
+      expect(find.text('2.45125 ZEC'), findsOneWidget);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('Not reported'), findsOneWidget);
+      expect(find.byKey(const ValueKey('swap_status_tabs')), findsNothing);
+      expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
+      expect(find.byKey(const ValueKey('pay_status_summary')), findsNothing);
+
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('pay_activity_status_content')),
+        ),
+        const Size(396, 549),
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pay_status_review_info'))),
+        const Size(396, 204),
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pay_status_detail_card'))),
+        const Size(396, 257),
+      );
+
+      final toolbar = find.byType(AppPaneToolbar);
+      expect(
+        find.descendant(of: toolbar, matching: find.text('Activity')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('pay_status_show_full_address')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Recipient address'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('verify_address_close_button')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('pay activity renders the Figma completed status', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final payIntent =
+        _persistedIntent(
+          id: 'pay-completed',
+          txHash: 'zec-shielded-spend-txid',
+          depositAddress: 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+          status: SwapIntentStatus.complete,
+          nextAction: 'Payment complete',
+        ).copyWith(
+          sellAmount: '2.45125 ZEC',
+          receiveEstimate: '990 USDC',
+          nearIntentHash: 'near-intent-hash-123',
+          payMode: true,
+          createdAt: DateTime(2026, 5, 25, 13, 20),
+          completedAt: DateTime(2026, 5, 25, 13, 30),
+        );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/pay-completed?from=activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paid successfully'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Pay in progress...'), findsNothing);
+    expect(find.text('In progress'), findsNothing);
+    expect(find.byKey(const ValueKey('swap_status_tabs')), findsNothing);
+    final txIdRow = tester.widget<ReviewListRow>(
+      find.byWidgetPredicate(
+        (widget) => widget is ReviewListRow && widget.label == 'Tx ID',
+      ),
+    );
+    expect(txIdRow.value, 't1bufats...CvaAzeBo');
+    expect(txIdRow.onPressed, isNotNull);
+  });
+
+  testWidgets(
+    'pay activity shows the ZEC deposit fee only after confirmation',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const depositDisplayOrder =
+          'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+      final depositWalletOrder = swapChainTxidToWalletTxidHex(
+        depositDisplayOrder,
+      )!;
+      final payIntent = _persistedIntent(
+        id: 'pay-confirmed-fee',
+        txHash: depositDisplayOrder,
+      ).copyWith(payMode: true);
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/pay-confirmed-fee?from=activity',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+          swapProvider: _DeferredStatusSwapProvider(
+            _statusSnapshot(id: 'pay-confirmed-fee'),
+          ),
+          recentTransactions: [
+            _sentZecTx(
+              txidHex: depositWalletOrder,
+              zatoshi: BigInt.from(245125000),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('0.00015 ZEC'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      final pendingIntent = _persistedIntent(
+        id: 'pay-pending-fee',
+        txHash: depositDisplayOrder,
+      ).copyWith(payMode: true);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/pay-pending-fee?from=activity',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(
+            initialIntents: [pendingIntent],
+          ),
+          swapProvider: _DeferredStatusSwapProvider(
+            _statusSnapshot(id: 'pay-pending-fee'),
+          ),
+          recentTransactions: [
+            _sentZecTx(
+              txidHex: depositWalletOrder,
+              zatoshi: BigInt.from(245125000),
+              minedHeight: BigInt.zero,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('0.00015 ZEC'), findsNothing);
+      final txFeeRow = tester.widget<ReviewListRow>(
+        find.byWidgetPredicate(
+          (widget) => widget is ReviewListRow && widget.label == 'Tx fee',
+        ),
+      );
+      expect(txFeeRow.value, 'Not reported');
+    },
+  );
+
+  testWidgets('pay activity loads a confirmed deposit fee outside recent 10', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+    final requests = <({String accountUuid, String walletTxid})>[];
+    final payIntent = _persistedIntent(
+      id: 'pay-archived-confirmed-fee',
+      txHash: null,
+      originChainTxHash: depositDisplayOrder,
+    ).copyWith(payMode: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation:
+              '/activity/swap/pay-archived-confirmed-fee?from=activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        swapProvider: _DeferredStatusSwapProvider(
+          _statusSnapshot(id: 'pay-archived-confirmed-fee'),
+        ),
+        recentTransactions: [
+          for (var i = 0; i < 10; i++)
+            _sentZecTx(
+              txidHex: i.toRadixString(16).padLeft(64, '0'),
+              zatoshi: BigInt.from(100000000 + i),
+            ),
+        ],
+        payDepositTransactionLoader:
+            ({required accountUuid, required walletTxid}) async {
+              requests.add((accountUuid: accountUuid, walletTxid: walletTxid));
+              return _sentZecTx(
+                txidHex: walletTxid,
+                zatoshi: BigInt.from(245125000),
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('0.00015 ZEC'), findsOneWidget);
+    expect(requests, [
+      (accountUuid: 'account-1', walletTxid: depositWalletOrder),
+    ]);
+  });
+
+  testWidgets('failed Pay activity skips the unused full-history fee lookup', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const depositDisplayOrder =
+        'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
+    final requests = <({String accountUuid, String walletTxid})>[];
+    final payIntent = _persistedIntent(
+      id: 'pay-failed-no-fee-content',
+      txHash: null,
+      originChainTxHash: depositDisplayOrder,
+      status: SwapIntentStatus.failed,
+    ).copyWith(payMode: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation:
+              '/activity/swap/pay-failed-no-fee-content?from=activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+        payDepositTransactionLoader:
+            ({required accountUuid, required walletTxid}) async {
+              requests.add((accountUuid: accountUuid, walletTxid: walletTxid));
+              return null;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pay_activity_status_content')),
+      findsNothing,
+    );
+    expect(requests, isEmpty);
   });
 
   testWidgets('status details render address book labels with addresses', (
@@ -2511,6 +3104,293 @@ void main() {
     expect(sessionStore.loadPreferencesCount, 2);
   });
 
+  testWidgets('pay asset selection manages recipient lifetime safely', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPreferences: const SwapComposerPreferences(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.dai,
+        slippageBps: 150,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.dai);
+    final savesBeforePay = sessionStore.savePreferencesCount;
+
+    notifier.preparePayFromShieldedZec();
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    notifier.selectPayExternalAsset(SwapAsset.sol);
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    // Mobile is recipient-first, so its default selection path preserves what
+    // the user entered even across chains.
+    expect(container.read(swapStateProvider).destinationText, isNotEmpty);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+
+    notifier.selectPayExternalAsset(
+      SwapAsset.usdc,
+      clearDestinationOnChainChange: true,
+    );
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.usdc);
+    expect(container.read(swapStateProvider).destinationText, isEmpty);
+
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    notifier.selectPayExternalAsset(
+      SwapAsset.dai,
+      clearDestinationOnChainChange: true,
+    );
+    await tester.pump();
+
+    // USDC and DAI share Ethereum, so a valid recipient remains useful.
+    expect(container.read(swapStateProvider).destinationText, isNotEmpty);
+
+    notifier.selectPayExternalAsset(SwapAsset.sol);
+    await tester.pump();
+
+    notifier.prepareSwapComposer();
+    await tester.pump();
+
+    final restoredSwapState = container.read(swapStateProvider);
+    expect(restoredSwapState.payMode, isFalse);
+    expect(restoredSwapState.externalAsset, SwapAsset.dai);
+    expect(restoredSwapState.slippageBps, 150);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+
+    notifier.selectExternalAsset(SwapAsset.eth);
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.eth);
+
+    notifier.preparePayFromShieldedZec();
+    await tester.pump();
+
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+  });
+
+  testWidgets(
+    'swap falls back to USDC without preferences and preserves Pay asset',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          sessionStore: sessionStore,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+
+      notifier.preparePayFromShieldedZec();
+      notifier.selectPayExternalAsset(SwapAsset.sol);
+      await tester.pump();
+
+      expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+
+      notifier.prepareSwapComposer();
+
+      // The fallback is synchronous, so Pay's asset never flashes in Swap
+      // while the optional persisted preferences are loading.
+      var swapState = container.read(swapStateProvider);
+      expect(swapState.payMode, isFalse);
+      expect(swapState.direction, SwapDirection.zecToExternal);
+      expect(swapState.externalAsset, SwapAsset.usdc);
+
+      await tester.pump();
+
+      swapState = container.read(swapStateProvider);
+      expect(swapState.externalAsset, SwapAsset.usdc);
+      expect(sessionStore.savedPreferences, isNull);
+
+      notifier.preparePayFromShieldedZec();
+      await tester.pump();
+
+      expect(container.read(swapStateProvider).payMode, isTrue);
+      expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+    },
+  );
+
+  testWidgets('pay persists its asset separately and shares only slippage', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPreferences: const SwapComposerPreferences(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.dai,
+        slippageBps: 150,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    final savesBeforePay = sessionStore.savePreferencesCount;
+
+    notifier.preparePayFromShieldedZec();
+    notifier.selectPayExternalAsset(SwapAsset.sol);
+    await tester.pump();
+
+    // The payout asset lands in the Pay-scoped store only.
+    expect(sessionStore.savedPayAsset, SwapAsset.sol);
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
+
+    notifier.updateSlippageBps(200);
+    await tester.pump();
+
+    // Slippage is shared with swap, but Pay must not overwrite the saved
+    // swap composer direction/asset.
+    expect(sessionStore.savedPreferences?.slippageBps, 200);
+    expect(
+      sessionStore.savedPreferences?.direction,
+      SwapDirection.zecToExternal,
+    );
+    expect(sessionStore.savedPreferences?.externalAsset, SwapAsset.dai);
+
+    notifier.prepareSwapComposer();
+    await tester.pump();
+
+    final restored = container.read(swapStateProvider);
+    expect(restored.payMode, isFalse);
+    expect(restored.externalAsset, SwapAsset.dai);
+    expect(restored.slippageBps, 200);
+  });
+
+  testWidgets('pay restores its saved payout asset on startup', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPayAsset: SwapAsset.sol,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    container.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+    await tester.pump();
+
+    final state = container.read(swapStateProvider);
+    expect(state.payMode, isTrue);
+    expect(state.externalAsset, SwapAsset.sol);
+  });
+
+  testWidgets('account switch resets pay asset memory when none is saved', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPayAsset: SwapAsset.sol,
+    );
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    container.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+    await tester.pump();
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+
+    // account-2 has no saved pay asset: the memory must reset instead of
+    // leaking account-1's selection into the mounted Pay composer.
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.usdc);
+
+    await container.read(accountProvider.notifier).switchAccount('account-1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
+    expect(container.read(swapStateProvider).payMode, isTrue);
+    expect(container.read(swapStateProvider).externalAsset, SwapAsset.sol);
+  });
+
   testWidgets('account switch closes open swap activity detail', (
     tester,
   ) async {
@@ -2868,6 +3748,55 @@ void main() {
     );
     expect(find.text('USD Coin'), findsNothing);
     expect(find.text('Ethereum USDC'), findsNothing);
+  });
+
+  testWidgets('swap composer explains an unsupported restored asset', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final baseUsdc = SwapAsset.live(
+      assetId: 'removed-base-usdc',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialPreferences: SwapComposerPreferences(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: baseUsdc,
+          ),
+        ),
+        swapProvider: _FakeSwapProvider(supportedAssets: const []),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('USDC on Base is not currently supported.'),
+      findsOneWidget,
+    );
+    final reviewButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_review_button')),
+    );
+    expect(reviewButton.onPressed, isNull);
   });
 
   testWidgets('swap asset selector exposes multi-chain external assets', (
@@ -3256,7 +4185,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(sessionStore.savedPreferences?.slippageBps, isNull);
-    expect(find.text('2%'), findsNothing);
+    expect(find.text('2%'), findsOneWidget);
   });
 
   testWidgets('draft conversion uses refreshed 1Click token prices', (
@@ -3464,7 +4393,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('swap_status_title')), findsOneWidget);
     expect(find.text('Swap in progress...'), findsOneWidget);
-    expect(find.text('Swap Progress'), findsOneWidget);
+    expect(find.text('Swap progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);
     expect(find.text('Activity detail'), findsNothing);
     expect(find.byKey(const ValueKey('swap_review_info')), findsOneWidget);
@@ -4477,7 +5406,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Incomplete deposit'), findsWidgets);
-    // An incomplete deposit is non-terminal, so it keeps the Swap Progress /
+    // An incomplete deposit is non-terminal, so it keeps the Swap progress /
     // Transaction details tabs rather than a terminal status badge.
     expect(find.byKey(const ValueKey('swap_status_tabs')), findsOneWidget);
 
@@ -7884,6 +8813,7 @@ Widget _routerHarness(
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
+  PayDepositTransactionLoader? payDepositTransactionLoader,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -7903,6 +8833,10 @@ Widget _routerHarness(
           spendableBalance ?? BigInt.from(10000000000),
           recentTransactions: recentTransactions,
         ),
+      ),
+      payDepositTransactionLoaderProvider.overrideWithValue(
+        payDepositTransactionLoader ??
+            ({required accountUuid, required walletTxid}) async => null,
       ),
       receiveAddressServiceProvider.overrideWith(
         _FakeReceiveAddressService.new,
@@ -7942,6 +8876,7 @@ Widget _routerHarness(
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
       ),
+      paySelectedAssetStoreProvider.overrideWithValue(effectiveSessionStore),
       if (seedSwapActivityFixtures) ...[
         swapInitialIntentsProvider.overrideWithValue(fixtureIntents),
       ],
@@ -7984,6 +8919,19 @@ GoRoute _swapRoute() {
     routes: [
       GoRoute(path: 'review', builder: (_, _) => const SwapReviewScreen()),
     ],
+  );
+}
+
+GoRoute _payRoute() {
+  return GoRoute(
+    path: '/pay',
+    builder: (_, state) {
+      final args = state.extra;
+      return PayScreen(
+        preservePreparedComposer:
+            args is PayComposerNavigationArgs && args.preservePreparedComposer,
+      );
+    },
   );
 }
 
@@ -8140,6 +9088,7 @@ Widget _reviewTestPage({
   required String receiveAmountText,
   ValueChanged<String>? onCopy,
   List<AddressBookContact> addressBookContacts = const [],
+  bool payMode = false,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
@@ -8175,6 +9124,7 @@ Widget _reviewTestPage({
     expired: false,
     amountWarning: null,
     startError: null,
+    payMode: payMode,
   );
 }
 
@@ -8182,6 +9132,8 @@ Widget _statusTestPage({
   String title = 'Swap in progress...',
   SwapAsset payAsset = SwapAsset.usdc,
   SwapAsset receiveAsset = SwapAsset.zec,
+  String payLabel = "You're paying",
+  String receiveLabel = "You're receiving",
   String payDetailText = r'$110.24',
   String receiveDetailText = r'$110.24',
   String payAmountText = '999.99 USDC',
@@ -8191,6 +9143,7 @@ Widget _statusTestPage({
   Duration progressAdvanceInterval = const Duration(milliseconds: 520),
   SwapStatusBadgeKind badgeKind = SwapStatusBadgeKind.liveQuote,
   SwapStatusTab activeTab = SwapStatusTab.progress,
+  bool paymentMode = false,
   bool showTabs = true,
   List<SwapStatusDetailRowData>? details,
 }) {
@@ -8202,6 +9155,8 @@ Widget _statusTestPage({
       title: title,
       payAsset: payAsset,
       receiveAsset: receiveAsset,
+      payLabel: payLabel,
+      receiveLabel: receiveLabel,
       payDetailText: payDetailText,
       receiveDetailText: receiveDetailText,
       payAmountText: payAmountText,
@@ -8212,6 +9167,7 @@ Widget _statusTestPage({
       progressAdvanceInterval: progressAdvanceInterval,
       activeTab: activeTab,
       showTabs: showTabs,
+      paymentMode: paymentMode,
       steps: const [
         SwapStatusStepData(
           title: 'USDC source deposit',
@@ -8276,7 +9232,8 @@ Widget _statusTestPage({
 
 SwapIntent _persistedIntent({
   required String id,
-  required String txHash,
+  required String? txHash,
+  String? originChainTxHash,
   String? depositAddress,
   SwapIntentStatus status = SwapIntentStatus.processing,
   String? nextAction,
@@ -8296,6 +9253,7 @@ SwapIntent _persistedIntent({
     depositAddress: depositAddress ?? id,
     depositMemo: 'memo-7',
     depositTxHash: txHash,
+    originChainTxHash: originChainTxHash,
     providerQuoteId: 'quote-1',
     oneClickRecipient: '0x52908400098527886e0f7030069857d2e4169ee7',
     oneClickRefundTo: 'u1refund',
@@ -8373,10 +9331,11 @@ SwapIntent _persistedExternalToZecCompleteIntent({
 rust_sync.TransactionInfo _sentZecTx({
   required String txidHex,
   required BigInt zatoshi,
+  BigInt? minedHeight,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
-    minedHeight: BigInt.from(2000000),
+    minedHeight: minedHeight ?? BigInt.from(2000000),
     expiredUnmined: false,
     accountBalanceDelta: -zatoshi.toInt(),
     fee: BigInt.from(15000),
@@ -8695,7 +9654,10 @@ String _destinationSummaryText(WidgetTester tester) {
       ? (widget.data ?? '')
       : (tester
                 .widget<Text>(
-                  find.descendant(of: finder.first, matching: find.byType(Text)),
+                  find.descendant(
+                    of: finder.first,
+                    matching: find.byType(Text),
+                  ),
                 )
                 .data ??
             '');

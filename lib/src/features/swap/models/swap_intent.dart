@@ -36,6 +36,7 @@ class SwapIntentRecord {
     this.oneClickRefundTo,
     this.depositDeadline,
     this.accountUuid,
+    this.payMode = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -77,6 +78,7 @@ class SwapIntentRecord {
       oneClickRefundTo: intent.oneClickRefundTo,
       depositDeadline: intent.depositDeadline,
       accountUuid: intent.accountUuid,
+      payMode: intent.payMode,
       createdAt: intent.createdAt,
       updatedAt: intent.updatedAt,
       completedAt: intent.completedAt,
@@ -117,6 +119,7 @@ class SwapIntentRecord {
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
   final String? accountUuid;
+  final bool payMode;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -159,6 +162,7 @@ class SwapIntentRecord {
     String? oneClickRefundTo,
     DateTime? depositDeadline,
     String? accountUuid,
+    bool? payMode,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -207,6 +211,7 @@ class SwapIntentRecord {
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
+      payMode: payMode ?? this.payMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
@@ -248,6 +253,7 @@ class SwapIntent {
     this.oneClickRefundTo,
     this.depositDeadline,
     this.accountUuid,
+    this.payMode = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -287,6 +293,7 @@ class SwapIntent {
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
   final String? accountUuid;
+  final bool payMode;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -303,6 +310,13 @@ class SwapIntent {
     depositTxHash: depositTxHash,
     broadcastStatus: broadcastStatus,
   );
+
+  bool get hasProviderObservedDepositEvidence =>
+      swapHasProviderObservedDepositEvidence(
+        status: status,
+        originChainTxHash: originChainTxHash,
+        depositedAmountText: providerRefundInfo?.depositedAmountText,
+      );
 
   SwapIntent copyWith({
     String? id,
@@ -336,6 +350,7 @@ class SwapIntent {
     String? oneClickRefundTo,
     DateTime? depositDeadline,
     String? accountUuid,
+    bool? payMode,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -380,6 +395,7 @@ class SwapIntent {
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
+      payMode: payMode ?? this.payMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
@@ -445,4 +461,36 @@ bool swapHasConfirmedDepositEvidence({
   final notOnNetwork =
       broadcastStatus == SwapDepositBroadcastStatus.pendingBroadcast;
   return has(originChainTxHash) || (has(depositTxHash) && !notOnNetwork);
+}
+
+/// Provider evidence that a source-chain deposit exists even when the status
+/// response omits its transaction hash. Provider states after
+/// `PENDING_DEPOSIT` establish the same fact, while failed/expired records
+/// require an origin hash or a positive reported amount.
+bool swapHasProviderObservedDepositEvidence({
+  required SwapIntentStatus status,
+  String? originChainTxHash,
+  String? depositedAmountText,
+}) {
+  if (originChainTxHash?.trim().isNotEmpty ?? false) return true;
+  if (_isPositiveSwapAmountText(depositedAmountText)) return true;
+  return switch (status) {
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.complete ||
+    SwapIntentStatus.refunded => true,
+    _ => false,
+  };
+}
+
+bool _isPositiveSwapAmountText(String? amountText) {
+  final normalized = amountText?.trim();
+  if (normalized == null || normalized.isEmpty) return false;
+  final numericText = normalized
+      .split(RegExp(r'\s+'))
+      .first
+      .replaceAll(',', '');
+  final amount = double.tryParse(numericText);
+  return amount != null && amount.isFinite && amount > 0;
 }

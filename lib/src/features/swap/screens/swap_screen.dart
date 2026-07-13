@@ -64,6 +64,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     _shortcutFocusNode = FocusNode(debugLabel: 'SwapScreenShortcuts');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      ref.read(swapStateProvider.notifier).prepareSwapComposer();
       _shortcutFocusNode.requestFocus();
     });
   }
