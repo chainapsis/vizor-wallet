@@ -441,14 +441,7 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
-    // Sync batches are hard-capped by the orchestration layer (2000 desktop,
-    // 1000 mobile, 300 background, and 100 in the known sandblasting window),
-    // so reserving the exact inclusive range avoids repeated Vec growth while
-    // retaining a bounded allocation even for adversarial compact-block data.
-    let expected_blocks = u32::from(end)
-        .saturating_sub(u32::from(start))
-        .saturating_add(1) as usize;
-    let mut blocks = Vec::with_capacity(expected_blocks);
+    let mut blocks = Vec::new();
     while let Some(block) = next_stream_message(&mut stream, "get_block_range stream").await? {
         blocks.push(block);
     }
