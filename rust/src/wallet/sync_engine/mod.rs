@@ -101,6 +101,7 @@ const SANDBLASTING_END: u32 = 2_050_000;
 const BATCH_SIZE_SANDBLASTING: u32 = 100;
 
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
+const MAX_CANONICAL_REPAIR_PASSES_PER_RUN: u32 = 2;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
 const WITNESS_CHECK_MAX_CLEAN_AGE_BLOCKS: u64 = 10_000;
 const SYNC_META_TABLE: &str = "ext_vizor_sync_meta";
@@ -114,6 +115,19 @@ const WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY: &str = "witness_check_last_clean_heig
 // height is below the retained checkpoint window. Start at the pruning depth
 // and escalate so corrupted anchor checkpoints do not survive the repair.
 const ANCHOR_ROOT_REPAIR_REWIND_DISTANCES: [u32; 3] = [100, 1000, 10_000];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VerifiedTip {
+    height: BlockHeight,
+    hash: BlockHash,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanonicalTipDecision {
+    Complete,
+    RemoteAhead,
+    Repair,
+}
 
 /// Sync-scoped elapsed time reference. Set at sync start.
 static SYNC_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
@@ -601,12 +615,12 @@ fn ensure_complete_scan_state(
         )));
     };
 
-    if db_tip_height < current_tip_height {
+    if db_tip_height != current_tip_height {
         return Err(SyncError::continuity(
             current_tip_height,
             format!(
                 "sync completion blocked: wallet DB chain tip {db_tip_height} \
-                 lags lightwalletd tip {current_tip_height}"
+                 does not match lightwalletd tip {current_tip_height}"
             ),
         ));
     }
@@ -622,6 +636,247 @@ fn ensure_complete_scan_state(
     }
 
     Ok((fully_scanned_height, db_tip_height))
+}
+
+fn compact_hash(bytes: &[u8], context: &str) -> Result<BlockHash, SyncError> {
+    BlockHash::try_from_slice(bytes).ok_or_else(|| {
+        SyncError::parse(format!(
+            "{context} hash has {} bytes, expected 32",
+            bytes.len()
+        ))
+    })
+}
+
+fn verified_tip_from_block_id(
+    tip: &service::BlockId,
+    context: &str,
+) -> Result<VerifiedTip, SyncError> {
+    Ok(VerifiedTip {
+        height: block_height_from_u64(tip.height, &format!("{context} height"))?,
+        hash: compact_hash(&tip.hash, context)?,
+    })
+}
+
+fn select_completion_tip(last_verified: VerifiedTip, fresh: Option<VerifiedTip>) -> VerifiedTip {
+    fresh.unwrap_or(last_verified)
+}
+
+fn canonical_tip_decision(
+    local_tip_height: u64,
+    local_hash_at_remote_tip: Option<BlockHash>,
+    remote_tip: VerifiedTip,
+) -> CanonicalTipDecision {
+    let remote_tip_height = u32::from(remote_tip.height) as u64;
+    if local_tip_height < remote_tip_height {
+        CanonicalTipDecision::RemoteAhead
+    } else if local_tip_height > remote_tip_height
+        || local_hash_at_remote_tip != Some(remote_tip.hash)
+    {
+        CanonicalTipDecision::Repair
+    } else {
+        CanonicalTipDecision::Complete
+    }
+}
+
+fn reserve_canonical_repair_pass(
+    repair_passes_this_run: &mut u32,
+    mismatch_height: u64,
+) -> Result<u32, SyncError> {
+    if *repair_passes_this_run >= MAX_CANONICAL_REPAIR_PASSES_PER_RUN {
+        return Err(SyncError::continuity(
+            mismatch_height,
+            format!(
+                "canonical tip repair budget exhausted after {} pass(es)",
+                *repair_passes_this_run
+            ),
+        ));
+    }
+    *repair_passes_this_run += 1;
+    Ok(*repair_passes_this_run)
+}
+
+async fn canonical_chain_state_at(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: BlockHeight,
+) -> Result<chain::ChainState, SyncError> {
+    let state = get_tree_state(client, u32::from(height) as u64)
+        .await?
+        .to_chain_state()
+        .map_err(|e| SyncError::parse(format!("parse canonical tree state at {height}: {e}")))?;
+    if state.block_height() != height {
+        return Err(SyncError::parse(format!(
+            "lightwalletd returned tree state for {}, requested {height}",
+            state.block_height(),
+        )));
+    }
+    Ok(state)
+}
+
+/// Clear re-derivable commitment-tree metadata retained on notes whose
+/// transactions became unmined after a canonical-chain rewind.
+fn clear_unmined_note_tree_metadata(db_path: &str) -> Result<usize, SyncError> {
+    with_wallet_db_write_lock("sync_engine.clear_unmined_note_tree_metadata", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
+            .map_err(|e| SyncError::db(format!("open wallet DB for orphan-note cleanup: {e}")))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| SyncError::db(format!("begin orphan-note cleanup: {e}")))?;
+        let mut cleared = 0usize;
+        for table in ["sapling_received_notes", "orchard_received_notes"] {
+            cleared += tx
+                .execute(
+                    &format!(
+                        "UPDATE {table}
+                         SET commitment_tree_position = NULL, nf = NULL
+                         WHERE commitment_tree_position IS NOT NULL
+                         AND EXISTS (
+                            SELECT 1 FROM transactions tx
+                            WHERE tx.id_tx = {table}.transaction_id
+                            AND tx.mined_height IS NULL
+                         )"
+                    ),
+                    [],
+                )
+                .map_err(|e| SyncError::db(format!("clear orphaned metadata in {table}: {e}")))?;
+        }
+        tx.commit()
+            .map_err(|e| SyncError::db(format!("commit orphan-note cleanup: {e}")))?;
+        Ok(cleared)
+    })
+}
+
+async fn rewind_for_canonical_tip_mismatch(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    remote_tip: BlockHeight,
+    remote_tip_hash: BlockHash,
+) -> Result<u64, SyncError> {
+    let mismatch_height = u32::from(remote_tip) as u64;
+    let remote_tip_u32 = u32::from(remote_tip);
+    let local_tip_hash = db
+        .get_block_hash(remote_tip)
+        .map_err(|e| SyncError::db(format!("get wallet block hash at {remote_tip}: {e}")))?;
+
+    // A backward tip on the same branch only needs a height truncation. A
+    // hash mismatch needs a canonical frontier at the common ancestor.
+    let rewind_anchor = if local_tip_hash == Some(remote_tip_hash) {
+        with_wallet_db_write_lock("sync_engine.truncate_to_height.backward_tip", || {
+            db.truncate_to_height(remote_tip).map_err(|e| {
+                if is_sqlite_lock_contention(&e) {
+                    SyncError::other(format!(
+                        "truncate_to_height({remote_tip}): SQLite lock contention: {e}"
+                    ))
+                } else {
+                    SyncError::db(format!("truncate_to_height({remote_tip}): {e}"))
+                }
+            })
+        })?
+    } else {
+        let mut last_mismatch = remote_tip_u32;
+        let mut distance = 1u32;
+        let (anchor_state, found_common_ancestor) = loop {
+            let candidate_u32 = remote_tip_u32.saturating_sub(distance);
+            let candidate = BlockHeight::from_u32(candidate_u32);
+            let state = canonical_chain_state_at(client, candidate).await?;
+            let local_hash = db
+                .get_block_hash(candidate)
+                .map_err(|e| SyncError::db(format!("get wallet block hash at {candidate}: {e}")))?;
+
+            if local_hash == Some(state.block_hash()) {
+                let mut low_equal = candidate_u32;
+                let mut high_mismatch = last_mismatch;
+                let mut low_state = state;
+                while high_mismatch.saturating_sub(low_equal) > 1 {
+                    let mid_u32 = low_equal + (high_mismatch - low_equal) / 2;
+                    let mid = BlockHeight::from_u32(mid_u32);
+                    let mid_state = canonical_chain_state_at(client, mid).await?;
+                    let mid_local_hash = db.get_block_hash(mid).map_err(|e| {
+                        SyncError::db(format!("get wallet block hash at {mid}: {e}"))
+                    })?;
+                    if mid_local_hash == Some(mid_state.block_hash()) {
+                        low_equal = mid_u32;
+                        low_state = mid_state;
+                    } else {
+                        high_mismatch = mid_u32;
+                    }
+                }
+                break (low_state, true);
+            }
+
+            if candidate_u32 == 0 || local_hash.is_none() {
+                break (state, false);
+            }
+
+            last_mismatch = candidate_u32;
+            distance = distance.saturating_mul(2).min(remote_tip_u32);
+        };
+        let anchor_height = anchor_state.block_height();
+        with_wallet_db_write_lock(
+            "sync_engine.truncate_to_chain_state.canonical_tip_mismatch",
+            || {
+                db.truncate_to_chain_state(anchor_state).map_err(|e| {
+                    if is_sqlite_lock_contention(&e) {
+                        SyncError::other(format!(
+                            "truncate_to_chain_state({anchor_height}): SQLite lock contention: {e}"
+                        ))
+                    } else {
+                        SyncError::db(format!("truncate_to_chain_state({anchor_height}): {e}"))
+                    }
+                })
+            },
+        )?;
+        log::warn!(
+            "[{}] sync: canonical mismatch selected rewind anchor {} ({})",
+            elapsed(),
+            anchor_height,
+            if found_common_ancestor {
+                "highest common ancestor"
+            } else {
+                "canonical frontier fallback"
+            },
+        );
+        anchor_height
+    };
+
+    let cleared_notes = clear_unmined_note_tree_metadata(db_path)?;
+    if cleared_notes > 0 {
+        log::info!(
+            "[{}] sync: cleared orphan-branch tree metadata from {} unmined note(s)",
+            elapsed(),
+            cleared_notes,
+        );
+    }
+
+    let ranges = with_wallet_db_write_lock(
+        "sync_engine.update_chain_tip.canonical_tip_mismatch",
+        || -> Result<Vec<ScanRange>, SyncError> {
+            db.update_chain_tip(remote_tip).map_err(|e| {
+                SyncError::db(format!(
+                    "update_chain_tip({mismatch_height}) after canonical mismatch: {e}"
+                ))
+            })?;
+            db.suggest_scan_ranges().map_err(|e| {
+                SyncError::db(format!(
+                    "suggest_scan_ranges after canonical tip mismatch: {e}"
+                ))
+            })
+        },
+    )?;
+    let pending = pending_scan_blocks(&ranges);
+    log::warn!(
+        "[{}] sync: canonical tip mismatch rewound wallet to {} and queued {} block(s)",
+        elapsed(),
+        u32::from(rewind_anchor),
+        pending,
+    );
+    if u32::from(rewind_anchor) < u32::from(remote_tip) && pending == 0 {
+        return Err(SyncError::continuity(
+            mismatch_height,
+            "canonical tip rewind produced no pending scan ranges",
+        ));
+    }
+    Ok(pending)
 }
 
 fn queue_witness_repairs_if_needed(
@@ -1248,8 +1503,9 @@ async fn run_sync_impl(
     // also kept around for its other fields but `current_tip_height`
     // is the authoritative value for emitted events.
     let tip = get_latest_block(&mut client).await?;
-    let mut current_tip_height: u64 = tip.height;
-    let tip_height = BlockHeight::from_u32(tip.height as u32);
+    let mut last_verified_tip = verified_tip_from_block_id(&tip, "initial lightwalletd tip")?;
+    let mut current_tip_height: u64 = u32::from(last_verified_tip.height) as u64;
+    let tip_height = last_verified_tip.height;
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
     with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
@@ -1367,6 +1623,7 @@ async fn run_sync_impl(
     let mut main_rewinds_this_run: u32 = 0;
     let mut witness_repair_passes_this_run: u32 = 0;
     let mut anchor_root_repair_passes_this_run: u32 = 0;
+    let mut canonical_repair_passes_this_run: u32 = 0;
     let mut force_witness_check_this_run = false;
 
     // Phase-transition markers used only for logging. Progress through the
@@ -1445,8 +1702,13 @@ async fn run_sync_impl(
         // tip and try again next period.
         if last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL {
             match get_latest_block(&mut client).await {
-                Ok(fresh_tip) => {
-                    let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
+                Ok(fresh_tip) => match verified_tip_from_block_id(
+                    &fresh_tip,
+                    "periodic lightwalletd tip",
+                ) {
+                    Ok(fresh_verified_tip) => {
+                    last_verified_tip = fresh_verified_tip;
+                    let fresh_height = fresh_verified_tip.height;
                     if let Err(e) =
                         with_wallet_db_write_lock("sync_engine.update_chain_tip.periodic", || {
                             db.update_chain_tip(fresh_height)
@@ -1465,7 +1727,12 @@ async fn run_sync_impl(
                         );
                         current_tip_height = fresh_tip.height;
                     }
-                }
+                    }
+                    Err(e) => log::warn!(
+                        "[{}] sync: periodic tip response was invalid; keeping last verified tip: {e}",
+                        elapsed(),
+                    ),
+                },
                 Err(e) => {
                     log::warn!(
                         "[{}] sync: periodic tip refresh get_latest_block failed: {e}",
@@ -1483,6 +1750,128 @@ async fn run_sync_impl(
         let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
             Some(r) => r.clone(),
             None => {
+                // A height-only scan queue can be empty on a same-height reorg.
+                // Refresh once before completion, but do not make this final
+                // unary RPC a liveness barrier: a transient failure falls back
+                // to the most recent successfully parsed tip/hash pair.
+                let fresh_completion_tip = match get_latest_block(&mut client).await {
+                    Ok(fresh_tip) => {
+                        match verified_tip_from_block_id(&fresh_tip, "final lightwalletd tip") {
+                            Ok(verified) => Some(verified),
+                            Err(e) => {
+                                log::warn!(
+                                "[{}] sync: final tip response was invalid; using last verified tip: {e}",
+                                elapsed(),
+                            );
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[{}] sync: final tip refresh failed; using last verified tip: {e}",
+                            elapsed(),
+                        );
+                        None
+                    }
+                };
+                let verified_tip = select_completion_tip(last_verified_tip, fresh_completion_tip);
+                last_verified_tip = verified_tip;
+                let verified_tip_height = u32::from(verified_tip.height) as u64;
+
+                let local_tip_height = match wallet_summary_heights(&db)? {
+                    Some((_, local_tip_height)) => local_tip_height,
+                    None => {
+                        ensure_complete_scan_state(&db, verified_tip_height)?;
+                        0
+                    }
+                };
+                let local_hash_at_remote_tip = if local_tip_height >= verified_tip_height {
+                    db.get_block_hash(verified_tip.height).map_err(|e| {
+                        SyncError::db(format!(
+                            "get wallet block hash at {}: {e}",
+                            verified_tip.height
+                        ))
+                    })?
+                } else {
+                    None
+                };
+
+                match canonical_tip_decision(
+                    local_tip_height,
+                    local_hash_at_remote_tip,
+                    verified_tip,
+                ) {
+                    CanonicalTipDecision::RemoteAhead => {
+                        let queued_ranges = with_wallet_db_write_lock(
+                            "sync_engine.update_chain_tip.final_remote_ahead",
+                            || -> Result<Vec<ScanRange>, SyncError> {
+                                db.update_chain_tip(verified_tip.height).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "update_chain_tip({verified_tip_height}) at final validation: {e}"
+                                    ))
+                                })?;
+                                db.suggest_scan_ranges().map_err(|e| {
+                                    SyncError::db(format!(
+                                        "suggest_scan_ranges after final tip advance: {e}"
+                                    ))
+                                })
+                            },
+                        )?;
+                        let pending = pending_scan_blocks(&queued_ranges);
+                        if pending == 0 {
+                            return Err(SyncError::continuity(
+                                verified_tip_height,
+                                "final tip advanced but produced no pending scan ranges",
+                            ));
+                        }
+                        log::info!(
+                            "[{}] sync: final tip advanced {} -> {}; queued {} block(s)",
+                            elapsed(),
+                            local_tip_height,
+                            verified_tip_height,
+                            pending,
+                        );
+                        current_tip_height = verified_tip_height;
+                        initial_total = pending;
+                        prev_remaining = pending;
+                        prefetch = None;
+                        continue;
+                    }
+                    CanonicalTipDecision::Repair => {
+                        let repair_pass = reserve_canonical_repair_pass(
+                            &mut canonical_repair_passes_this_run,
+                            verified_tip_height,
+                        )?;
+                        log::warn!(
+                            "[{}] sync: final canonical tip mismatch at height {} \
+                             (local_tip={}, pass {}/{}); repairing before completion",
+                            elapsed(),
+                            verified_tip_height,
+                            local_tip_height,
+                            repair_pass,
+                            MAX_CANONICAL_REPAIR_PASSES_PER_RUN,
+                        );
+                        let pending = rewind_for_canonical_tip_mismatch(
+                            &mut client,
+                            &mut db,
+                            db_data_path,
+                            verified_tip.height,
+                            verified_tip.hash,
+                        )
+                        .await?;
+                        current_tip_height = verified_tip_height;
+                        initial_total = pending;
+                        prev_remaining = pending;
+                        force_witness_check_this_run = true;
+                        prefetch = None;
+                        continue;
+                    }
+                    CanonicalTipDecision::Complete => {
+                        current_tip_height = verified_tip_height;
+                    }
+                }
+
                 if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
                     db_data_path,
                     &mut db,
@@ -1903,11 +2292,24 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        match get_latest_block(&mut client)
-            .await
-            .map(|tip| tip.height as u32)
-        {
-            Ok(fresh_tip_height) => {
+        match get_latest_block(&mut client).await {
+            Ok(fresh_tip) => {
+                let fresh_tip_height = fresh_tip.height as u32;
+                let fresh_verified_tip =
+                    match verified_tip_from_block_id(&fresh_tip, "post-batch lightwalletd tip") {
+                        Ok(verified) => Some(verified),
+                        Err(e) => {
+                            log::warn!(
+                                "[{}] sync: post-batch tip response was invalid; \
+                             not promoting it for completion: {e}",
+                                elapsed(),
+                            );
+                            None
+                        }
+                    };
+                if let Some(verified) = fresh_verified_tip {
+                    last_verified_tip = verified;
+                }
                 // Promote the fresh tip to the authoritative value
                 // so progress events and the final completion event
                 // use the latest chain height, not the one from
@@ -1923,14 +2325,15 @@ async fn run_sync_impl(
                 // bumping current_tip_height prematurely would make
                 // the completion event claim a height the wallet
                 // never actually scanned. (Codex 3rd-round finding.)
-                if (fresh_tip_height as u64) > current_tip_height {
-                    let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
+                if (fresh_tip_height as u64) > current_tip_height && fresh_verified_tip.is_some() {
+                    let fresh_bh = fresh_verified_tip.unwrap().height;
                     match with_wallet_db_write_lock(
                         "sync_engine.update_chain_tip.post_batch",
                         || db.update_chain_tip(fresh_bh),
                     ) {
                         Ok(_) => {
                             current_tip_height = fresh_tip_height as u64;
+                            last_verified_tip = fresh_verified_tip.unwrap();
                         }
                         Err(e) => {
                             log::warn!(
@@ -2170,6 +2573,61 @@ fn should_use_empty_chain_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_hash(byte: u8) -> BlockHash {
+        BlockHash::try_from_slice(&[byte; 32]).unwrap()
+    }
+
+    fn test_tip(height: u32, hash_byte: u8) -> VerifiedTip {
+        VerifiedTip {
+            height: BlockHeight::from_u32(height),
+            hash: test_hash(hash_byte),
+        }
+    }
+
+    #[test]
+    fn canonical_tip_requires_matching_height_and_hash() {
+        let remote = test_tip(100, 1);
+
+        assert_eq!(
+            canonical_tip_decision(100, Some(test_hash(1)), remote),
+            CanonicalTipDecision::Complete,
+        );
+        assert_eq!(
+            canonical_tip_decision(99, None, remote),
+            CanonicalTipDecision::RemoteAhead,
+        );
+        assert_eq!(
+            canonical_tip_decision(100, Some(test_hash(2)), remote),
+            CanonicalTipDecision::Repair,
+        );
+        assert_eq!(
+            canonical_tip_decision(101, Some(test_hash(1)), remote),
+            CanonicalTipDecision::Repair,
+        );
+    }
+
+    #[test]
+    fn final_tip_refresh_failure_keeps_last_verified_tip() {
+        let last_verified = test_tip(100, 1);
+        let fresh = test_tip(101, 2);
+
+        assert_eq!(select_completion_tip(last_verified, None), last_verified);
+        assert_eq!(select_completion_tip(last_verified, Some(fresh)), fresh);
+    }
+
+    #[test]
+    fn canonical_tip_repair_budget_is_bounded() {
+        let mut passes = 0;
+
+        assert_eq!(reserve_canonical_repair_pass(&mut passes, 100).unwrap(), 1);
+        assert_eq!(reserve_canonical_repair_pass(&mut passes, 100).unwrap(), 2);
+        assert!(matches!(
+            reserve_canonical_repair_pass(&mut passes, 100),
+            Err(SyncError::Continuity { at_height: 100, .. })
+        ));
+        assert_eq!(passes, MAX_CANONICAL_REPAIR_PASSES_PER_RUN);
+    }
 
     #[test]
     fn empty_chain_state_uses_network_activation_height() {
