@@ -109,8 +109,8 @@ fn sig_result_to_api(
     request_id: Vec<u8>,
     message_ids: Vec<Vec<u8>>,
 ) -> Result<KeystoneSigResult, String> {
-    if firmware_version.is_empty() {
-        return Err("Keystone firmware version must not be empty".to_string());
+    if firmware_version.len() != 3 {
+        return Err("Keystone firmware version must be 3 bytes [major, minor, build]".to_string());
     }
     if request_id.is_empty() {
         return Err("Zcash batch request id must not be empty".to_string());
@@ -185,9 +185,9 @@ fn signed_pczt_firmware_version(pczt: &pczt::Pczt) -> Result<Vec<u8>, String> {
         .ok_or_else(|| {
             format!("Signed PCZT is missing {KEYSTONE_FW_VERSION_PROP} firmware metadata")
         })?;
-    if firmware_version.is_empty() {
+    if firmware_version.len() != 3 {
         return Err(format!(
-            "Signed PCZT has empty {KEYSTONE_FW_VERSION_PROP} firmware metadata"
+            "Signed PCZT {KEYSTONE_FW_VERSION_PROP} firmware metadata must be 3 bytes [major, minor, build]"
         ));
     }
     Ok(firmware_version.clone())
@@ -399,19 +399,22 @@ mod tests {
     }
 
     #[test]
-    fn compact_response_rejects_empty_firmware_version_before_mapping() {
+    fn compact_response_rejects_invalid_firmware_version_length_before_mapping() {
         let response = pczt::roles::signer::batch::BatchSignResponse::new(vec![vec![]]);
 
         let error = sig_result_to_api(
             response,
-            vec![],
+            vec![1, 2],
             b"request-1".to_vec(),
             vec![b"message-1".to_vec()],
         )
         .err()
         .unwrap();
 
-        assert_eq!(error, "Keystone firmware version must not be empty");
+        assert_eq!(
+            error,
+            "Keystone firmware version must be 3 bytes [major, minor, build]"
+        );
     }
 
     fn test_pczt_with_firmware_version(firmware_version: Option<&[u8]>) -> pczt::Pczt {
@@ -445,11 +448,11 @@ mod tests {
     }
 
     #[test]
-    fn legacy_pczt_rejects_empty_firmware_version_stamp() {
-        let error =
-            signed_pczt_firmware_version(&test_pczt_with_firmware_version(Some(&[]))).unwrap_err();
+    fn legacy_pczt_rejects_invalid_firmware_version_length() {
+        let error = signed_pczt_firmware_version(&test_pczt_with_firmware_version(Some(&[1, 2])))
+            .unwrap_err();
 
-        assert!(error.contains("empty keystone:fw_version"));
+        assert!(error.contains("must be 3 bytes"));
     }
 
     #[test]

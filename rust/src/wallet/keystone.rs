@@ -582,8 +582,10 @@ pub fn decode_zcash_batch_sign_response(
     let result = ZcashBatchSigResult::try_from(cbor.to_vec())
         .map_err(|e| format!("Invalid zcash-batch-sig-result CBOR envelope: {e:?}"))?;
     let firmware_version = result.get_firmware_version().to_vec();
-    if firmware_version.is_empty() {
-        return Err("Zcash batch result firmware version must not be empty".to_string());
+    if firmware_version.len() != 3 {
+        return Err(
+            "Zcash batch result firmware version must be 3 bytes [major, minor, build]".to_string(),
+        );
     }
     if result.get_request_id().is_empty() {
         return Err("Zcash batch result request id must not be empty".to_string());
@@ -1116,14 +1118,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zcash_batch_sign_response_empty_firmware_version() {
+    fn rejects_zcash_batch_sign_response_invalid_firmware_version_length() {
         let postcard = encode_test_sig_result_postcard(&[vec![]]);
-        let cbor = wrap_test_sig_result_with_firmware_version("request-1", postcard, &[]);
+        let cbor = wrap_test_sig_result_with_firmware_version("request-1", postcard, &[1, 2]);
 
         let err = decode_zcash_batch_sign_response(&cbor)
-            .expect_err("empty firmware version should fail");
+            .expect_err("invalid firmware version length should fail");
 
-        assert_eq!(err, "Zcash batch result firmware version must not be empty");
+        assert_eq!(
+            err,
+            "Zcash batch result firmware version must be 3 bytes [major, minor, build]"
+        );
     }
 
     #[test]
