@@ -400,6 +400,38 @@ class _HomeContent extends ConsumerStatefulWidget {
 class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
 
+  Future<void> _openPay() async {
+    final accountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid
+        ?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+
+    final router = GoRouter.of(context);
+    final swapNotifier = ref.read(swapStateProvider.notifier);
+    final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
+      accountUuid: accountUuid,
+    );
+    ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+
+    final selectedAsset = await selectedAssetFuture;
+    if (!mounted ||
+        selectedAsset == null ||
+        router.routerDelegate.currentConfiguration.uri.path != '/home') {
+      return;
+    }
+    final prepared = swapNotifier.preparePayFromShieldedZec(
+      preferredAsset: selectedAsset,
+      expectedAccountUuid: accountUuid,
+    );
+    if (!prepared) return;
+    router.push(
+      '/pay',
+      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+    );
+  }
+
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
 
@@ -483,12 +515,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         .watch(payIntroductionBadgeClickedProvider)
         .value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
-
-    void openPay() {
-      ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
-      ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
-      context.push('/pay');
-    }
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
@@ -643,7 +669,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                                 height: _mobileHomeActionButtonHeight,
                                 contentPadding: EdgeInsets.zero,
                                 variant: AppButtonVariant.secondary,
-                                onPressed: openPay,
+                                onPressed: _openPay,
                                 child: const _ButtonIcon(AppIcons.paid),
                               ),
                             ),

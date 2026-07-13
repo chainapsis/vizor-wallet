@@ -3305,9 +3305,7 @@ void main() {
     expect(restored.slippageBps, 200);
   });
 
-  testWidgets('pay restores its saved payout asset on startup', (
-    tester,
-  ) async {
+  testWidgets('pay restores its saved payout asset on startup', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore(
       initialPayAsset: SwapAsset.sol,
@@ -3335,6 +3333,40 @@ void main() {
     final state = container.read(swapStateProvider);
     expect(state.payMode, isTrue);
     expect(state.externalAsset, SwapAsset.sol);
+  });
+
+  testWidgets('pay asset restore retries after a transient store failure', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FlakyPayAssetLoadSwapPersistenceStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    expect(sessionStore.payAssetLoadCount, 1);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+
+    final restored = await container
+        .read(swapStateProvider.notifier)
+        .resolvePaySelectedAssetForEntry(accountUuid: 'account-1');
+
+    expect(restored, SwapAsset.sol);
+    expect(sessionStore.payAssetLoadCount, 2);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
   });
 
   testWidgets('account switch resets pay asset memory when none is saved', (

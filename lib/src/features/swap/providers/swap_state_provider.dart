@@ -66,8 +66,13 @@ class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
+  var _payEntryGeneration = 0;
+  var _hasResolvedSupportedAssets = false;
   var _statusRefreshInFlight = false;
   SwapAsset? _payRetryAsset;
+  String? _restoredPayAssetAccountUuid;
+  String? _payAssetRestoreAccountUuid;
+  Future<SwapAsset?>? _payAssetRestoreFuture;
 
   String? get _activeAccountUuidOrNull =>
       ref.read(accountProvider).value?.activeAccountUuid;
@@ -102,7 +107,7 @@ class SwapNotifier extends Notifier<SwapState> {
         }
         _clearAccountScopedTransientState();
         unawaited(_restoreComposerPreferences(accountUuid: next));
-        unawaited(_restorePaySelectedAsset(accountUuid: next));
+        unawaited(_ensurePaySelectedAssetRestored(accountUuid: next));
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -120,7 +125,7 @@ class SwapNotifier extends Notifier<SwapState> {
     ref.onDispose(priceRefreshTimer.cancel);
     final activeAccountUuid = _activeAccountUuidOrNull;
     unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
-    unawaited(_restorePaySelectedAsset(accountUuid: activeAccountUuid));
+    unawaited(_ensurePaySelectedAssetRestored(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
     unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
@@ -251,13 +256,26 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
-  void preparePayFromShieldedZec() {
+  bool preparePayFromShieldedZec({
+    SwapAsset? preferredAsset,
+    String? expectedAccountUuid,
+  }) {
+    final scopedExpectedAccountUuid = expectedAccountUuid?.trim();
+    if (scopedExpectedAccountUuid != null &&
+        (scopedExpectedAccountUuid.isEmpty ||
+            !_isAccountActive(scopedExpectedAccountUuid))) {
+      return false;
+    }
     _clearReviewState();
     _payRetryAsset = null;
-    final rememberedAsset = ref.read(paySelectedAssetProvider);
+    final SwapAsset rememberedAsset =
+        preferredAsset ?? ref.read(paySelectedAssetProvider);
     final supportedAssets = state.supportedExternalAssets;
     final payAsset =
         _supportedAssetFor(rememberedAsset, supportedAssets) ??
+        (state.pricingLoading && !_hasResolvedSupportedAssets
+            ? rememberedAsset
+            : null) ??
         _supportedAssetFor(SwapAsset.usdc, supportedAssets) ??
         (supportedAssets.isEmpty ? rememberedAsset : supportedAssets.first);
     state = swapStateWithDerivedFiatTexts(
@@ -283,6 +301,25 @@ class SwapNotifier extends Notifier<SwapState> {
         ),
       ),
     );
+    return true;
+  }
+
+  Future<SwapAsset?> resolvePaySelectedAssetForEntry({
+    required String accountUuid,
+  }) async {
+    final scopedAccountUuid = accountUuid.trim();
+    if (scopedAccountUuid.isEmpty || !_isAccountActive(scopedAccountUuid)) {
+      return null;
+    }
+    final entryGeneration = ++_payEntryGeneration;
+    final asset = await _ensurePaySelectedAssetRestored(
+      accountUuid: scopedAccountUuid,
+    );
+    if (entryGeneration != _payEntryGeneration ||
+        !_isAccountActive(scopedAccountUuid)) {
+      return null;
+    }
+    return asset;
   }
 
   void prepareSwapComposer() {
@@ -540,6 +577,7 @@ class SwapNotifier extends Notifier<SwapState> {
           ? pricing!.supportedExternalAssets
           : await provider.listSupportedExternalAssets();
       if (generation != _pricingLoadGeneration) return;
+      _hasResolvedSupportedAssets = true;
       final supported = [
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
@@ -1558,7 +1596,11 @@ class SwapNotifier extends Notifier<SwapState> {
   void _clearAccountScopedTransientState() {
     _quoteGeneration++;
     _accountScopeGeneration++;
+    _payEntryGeneration++;
     _payRetryAsset = null;
+    _restoredPayAssetAccountUuid = null;
+    _payAssetRestoreAccountUuid = null;
+    _payAssetRestoreFuture = null;
     state = state.copyWith(
       amountText: '',
       receiveAmountText: '',
@@ -1806,28 +1848,74 @@ class SwapNotifier extends Notifier<SwapState> {
     } catch (_) {}
   }
 
-  Future<void> _restorePaySelectedAsset({String? accountUuid}) async {
+  Future<SwapAsset?> _ensurePaySelectedAssetRestored({String? accountUuid}) {
     final scopedAccountUuid = (accountUuid ?? _activeAccountUuidOrNull)?.trim();
-    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) {
+      return Future<SwapAsset?>.value();
+    }
+    if (_restoredPayAssetAccountUuid == scopedAccountUuid &&
+        _isAccountActive(scopedAccountUuid)) {
+      return Future<SwapAsset?>.value(ref.read(paySelectedAssetProvider));
+    }
+    final pending = _payAssetRestoreFuture;
+    if (_payAssetRestoreAccountUuid == scopedAccountUuid && pending != null) {
+      return pending;
+    }
+
+    final accountScopeGeneration = _accountScopeGeneration;
+    late final Future<SwapAsset?> restoreFuture;
+    restoreFuture =
+        _restorePaySelectedAssetForAccount(
+          accountUuid: scopedAccountUuid,
+          accountScopeGeneration: accountScopeGeneration,
+        ).whenComplete(() {
+          if (identical(_payAssetRestoreFuture, restoreFuture)) {
+            _payAssetRestoreAccountUuid = null;
+            _payAssetRestoreFuture = null;
+          }
+        });
+    _payAssetRestoreAccountUuid = scopedAccountUuid;
+    _payAssetRestoreFuture = restoreFuture;
+    return restoreFuture;
+  }
+
+  Future<SwapAsset?> _restorePaySelectedAssetForAccount({
+    required String accountUuid,
+    required int accountScopeGeneration,
+  }) async {
+    var restoredAsset = PaySelectedAssetNotifier.defaultAsset;
+    var loadSucceeded = false;
     try {
       final saved = await ref
           .read(paySelectedAssetStoreProvider)
-          .loadSelectedAsset(accountUuid: scopedAccountUuid);
-      if (!_isAccountActive(scopedAccountUuid)) return;
+          .loadSelectedAsset(accountUuid: accountUuid);
+      restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      loadSucceeded = true;
+    } catch (_) {}
+    if (accountScopeGeneration != _accountScopeGeneration ||
+        !_isAccountActive(accountUuid)) {
+      return null;
+    }
+    try {
       // A retry is pinned to the intent's original payout rail. Ignore a
       // slower restore of the ordinary Pay preference so it cannot overwrite
       // the prepared retry after navigation.
-      if (state.payMode && _payRetryAsset != null) return;
-      final restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      if (state.payMode && _payRetryAsset != null) {
+        if (loadSucceeded) {
+          _restoredPayAssetAccountUuid = accountUuid;
+        }
+        return ref.read(paySelectedAssetProvider);
+      }
       // No saved value must reset the memory: keeping the previous account's
       // selection would leak it into this account's Pay flow.
-      ref
-          .read(paySelectedAssetProvider.notifier)
-          .select(restoredAsset);
+      ref.read(paySelectedAssetProvider.notifier).select(restoredAsset);
       if (state.payMode) {
         final supportedAssets = state.supportedExternalAssets;
         final liveAsset =
             _supportedAssetFor(restoredAsset, supportedAssets) ??
+            (state.pricingLoading && !_hasResolvedSupportedAssets
+                ? restoredAsset
+                : null) ??
             _supportedAssetFor(
               PaySelectedAssetNotifier.defaultAsset,
               supportedAssets,
@@ -1839,7 +1927,13 @@ class SwapNotifier extends Notifier<SwapState> {
           rememberSelection: false,
         );
       }
-    } catch (_) {}
+      if (loadSucceeded) {
+        _restoredPayAssetAccountUuid = accountUuid;
+      }
+      return restoredAsset;
+    } catch (_) {
+      return restoredAsset;
+    }
   }
 
   /// Slippage is shared with Pay, but Pay's direction/payout asset must not

@@ -1032,6 +1032,19 @@ class _DelayedPayAssetLoadSwapPersistenceStore
   }
 }
 
+class _FlakyPayAssetLoadSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  var payAssetLoadCount = 0;
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    payAssetLoadCount += 1;
+    if (payAssetLoadCount == 1) {
+      throw StateError('transient secure store failure');
+    }
+    return SwapAsset.sol;
+  }
+}
+
 AddressBookContact _addressBookContact({
   required String id,
   required String label,

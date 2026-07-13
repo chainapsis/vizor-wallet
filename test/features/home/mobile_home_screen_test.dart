@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -57,6 +59,21 @@ class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
     markCount += 1;
     clicked = true;
   }
+}
+
+class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
+  const _FakePaySelectedAssetStore();
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    return null;
+  }
+
+  @override
+  Future<void> saveSelectedAsset({
+    required String accountUuid,
+    required SwapAsset asset,
+  }) async {}
 }
 
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
@@ -136,6 +153,9 @@ Widget _app(
       ),
       payIntroductionBadgeStoreProvider.overrideWithValue(
         badgeStore ?? _FakePayIntroductionBadgeStore(),
+      ),
+      paySelectedAssetStoreProvider.overrideWithValue(
+        const _FakePaySelectedAssetStore(),
       ),
       // The coin float loops forever; keep it off so pumpAndSettle-based
       // tests can settle (mirrors the desktop suites' motion seam).
