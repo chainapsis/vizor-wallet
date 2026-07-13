@@ -6287,11 +6287,11 @@ impl SseDecode for crate::api::keystone::KeystoneMsgSig {
 impl SseDecode for crate::api::keystone::KeystoneSigResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_version = <u32>::sse_decode(deserializer);
+        let mut var_firmwareVersion = <Vec<u8>>::sse_decode(deserializer);
         let mut var_requestId = <Vec<u8>>::sse_decode(deserializer);
         let mut var_results = <Vec<crate::api::keystone::KeystoneMsgSig>>::sse_decode(deserializer);
         return crate::api::keystone::KeystoneSigResult {
-            version: var_version,
+            firmware_version: var_firmwareVersion,
             request_id: var_requestId,
             results: var_results,
         };
@@ -8944,7 +8944,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::keystone::KeystoneMsgSig>
 impl flutter_rust_bridge::IntoDart for crate::api::keystone::KeystoneSigResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
-            self.version.into_into_dart().into_dart(),
+            self.firmware_version.into_into_dart().into_dart(),
             self.request_id.into_into_dart().into_dart(),
             self.results.into_into_dart().into_dart(),
         ]
@@ -10733,7 +10733,7 @@ impl SseEncode for crate::api::keystone::KeystoneMsgSig {
 impl SseEncode for crate::api::keystone::KeystoneSigResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.version, serializer);
+        <Vec<u8>>::sse_encode(self.firmware_version, serializer);
         <Vec<u8>>::sse_encode(self.request_id, serializer);
         <Vec<crate::api::keystone::KeystoneMsgSig>>::sse_encode(self.results, serializer);
     }

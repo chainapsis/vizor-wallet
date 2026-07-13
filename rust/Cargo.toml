@@ -149,7 +149,7 @@ features = [
 
 [dependencies.ur-registry]
 git = "https://github.com/valargroup/keystone-sdk-rust.git"
-rev = "7a6910511cb26ac7f18f924b281a0da15552ebb1"
+rev = "c2119436f5246be05b1ba877a7e6b63f51c01339"
 package = "ur-registry"
 default-features = false
 features = ["std"]
@@ -181,7 +181,7 @@ shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "dec
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "decefc469dbf1e686b20b7e7dcaa7cb4f122125b" }
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(zcash_unstable, values("nu6.3"))', 'cfg(ironwood_masquerade)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default

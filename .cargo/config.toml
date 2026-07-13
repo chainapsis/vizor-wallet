@@ -1,3 +1,0 @@
-[build]
-# Required by the pinned Ironwood / NU6.3 Rust stack.
-rustflags = ['--cfg', 'zcash_unstable="nu6.3"']

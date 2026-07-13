@@ -959,7 +959,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1908,7 +1908,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3048,7 +3048,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3498,10 +3498,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3897,7 +3897,7 @@ dependencies = [
 [[package]]
 name = "ur-registry"
 version = "1.0.5"
-source = "git+https://github.com/valargroup/keystone-sdk-rust.git?rev=7a6910511cb26ac7f18f924b281a0da15552ebb1#7a6910511cb26ac7f18f924b281a0da15552ebb1"
+source = "git+https://github.com/valargroup/keystone-sdk-rust.git?rev=c2119436f5246be05b1ba877a7e6b63f51c01339#c2119436f5246be05b1ba877a7e6b63f51c01339"
 dependencies = [
  "bs58",
  "hex",
