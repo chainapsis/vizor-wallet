@@ -379,7 +379,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
       accountUuid: accountUuid,
     );
-    ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+    ref.read(desktopPayIntroductionVisibleProvider.notifier).dismiss();
 
     final selectedAsset = await selectedAssetFuture;
     if (!mounted ||

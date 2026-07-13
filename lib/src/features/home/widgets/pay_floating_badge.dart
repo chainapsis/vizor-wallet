@@ -10,8 +10,8 @@ const _payIntroductionFadeOutDuration = Duration(milliseconds: 120);
 
 /// Wraps the desktop Pay button with its floating introduction.
 ///
-/// Before the first Pay activation, the full treatment is always visible.
-/// Afterwards it returns only while the Pay button is hovered.
+/// The full treatment is shown during the first eligible Home visit, then
+/// disappears permanently after Pay is activated or Home is left.
 class PayIntroductionBadgeTarget extends ConsumerStatefulWidget {
   const PayIntroductionBadgeTarget({
     super.key,
@@ -29,56 +29,64 @@ class PayIntroductionBadgeTarget extends ConsumerStatefulWidget {
 
 class _PayIntroductionBadgeTargetState
     extends ConsumerState<PayIntroductionBadgeTarget> {
-  var _hovered = false;
+  bool? _routeWasCurrent;
+  var _dismissedForRoute = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routeIsCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+    if (_routeWasCurrent == true && !routeIsCurrent) {
+      _dismissedForRoute = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(desktopPayIntroductionVisibleProvider.notifier).dismiss();
+      });
+    }
+    _routeWasCurrent = routeIsCurrent;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final clicked = ref.watch(payIntroductionBadgeClickedProvider).value;
+    final visible = ref.watch(desktopPayIntroductionVisibleProvider).value;
     final showIntroduction =
-        widget.enabled && (clicked == false || (clicked == true && _hovered));
-    return MouseRegion(
-      key: const ValueKey('pay_introduction_badge_hover_target'),
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Stack(
-        key: const ValueKey('pay_introduction_badge_target'),
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 60,
-            height: 44,
-            child: _PayIntroductionFade(
-              key: const ValueKey('pay_introduction_glow_fade'),
-              visible: showIntroduction,
-              child: const IgnorePointer(child: _PayFloatingGlow()),
-            ),
+        widget.enabled && !_dismissedForRoute && visible == true;
+    return Stack(
+      key: const ValueKey('pay_introduction_badge_target'),
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: 0,
+          top: 0,
+          width: 60,
+          height: 44,
+          child: _PayIntroductionFade(
+            key: const ValueKey('pay_introduction_glow_fade'),
+            visible: showIntroduction,
+            child: const IgnorePointer(child: _PayFloatingGlow()),
           ),
-          widget.child,
-          Positioned(
-            // In the Home frame (5407:152492), the 169px badge frame starts
-            // at the Pay button's left edge and overflows to its right.
-            left: 0,
-            top: -65,
-            child: _PayIntroductionFade(
-              key: const ValueKey('pay_introduction_badge_fade'),
-              visible: showIntroduction,
-              child: IgnorePointer(
-                child: ExcludeSemantics(
-                  child: PayFloatingBadge(
-                    animate: ref.watch(
-                      payIntroductionBadgeMotionEnabledProvider,
-                    ),
-                    showGlow: false,
-                    showNew: true,
-                  ),
+        ),
+        widget.child,
+        Positioned(
+          // In the Home frame (5407:152492), the 169px badge frame starts
+          // at the Pay button's left edge and overflows to its right.
+          left: 0,
+          top: -65,
+          child: _PayIntroductionFade(
+            key: const ValueKey('pay_introduction_badge_fade'),
+            visible: showIntroduction,
+            child: IgnorePointer(
+              child: ExcludeSemantics(
+                child: PayFloatingBadge(
+                  animate: ref.watch(payIntroductionBadgeMotionEnabledProvider),
+                  showGlow: false,
+                  showNew: true,
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
