@@ -37,7 +37,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
@@ -95,37 +95,19 @@ pub(super) async fn run_enhancement(
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
                         Ok(raw) => {
+                            let tx = parse_get_transaction_response(&raw.data, *txid)?;
                             let mined_height = mined_height_from_raw_height(raw.height)?;
-                            if !raw.data.is_empty() {
-                                match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                    Ok(tx) => {
-                                        if let Err(e) = with_wallet_db_write_lock(
-                                            "sync_engine.enhance.decrypt_and_store_transaction",
-                                            || {
-                                                decrypt_and_store_transaction(
-                                                    &network,
-                                                    db,
-                                                    &tx,
-                                                    mined_height,
-                                                )
-                                            },
-                                        ) {
-                                            log::error!(
-                                                "sync: decrypt_and_store_transaction failed: {e}"
-                                            );
-                                        }
-                                        if let Err(e) =
-                                            fill_missing_transparent_fee(client, db_path, &tx).await
-                                        {
-                                            log::warn!(
-                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => log::warn!(
-                                        "sync: Transaction::read failed for {txid_str}: {e}"
-                                    ),
-                                }
+                            if let Err(e) = with_wallet_db_write_lock(
+                                "sync_engine.enhance.decrypt_and_store_transaction",
+                                || decrypt_and_store_transaction(&network, db, &tx, mined_height),
+                            ) {
+                                log::error!("sync: decrypt_and_store_transaction failed: {e}");
+                            }
+                            if let Err(e) = fill_missing_transparent_fee(client, db_path, &tx).await
+                            {
+                                log::warn!(
+                                    "sync: transparent fee enhancement failed for {txid_str}: {e}"
+                                );
                             }
                             if matches!(req, TransactionDataRequest::GetStatus(_)) {
                                 let status = transaction_status_from_raw_height(raw.height)?;
@@ -259,6 +241,31 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+fn parse_get_transaction_response(
+    data: &[u8],
+    expected_txid: TxId,
+) -> Result<Transaction, SyncError> {
+    if data.is_empty() {
+        return Err(SyncError::net(format!(
+            "lightwalletd returned empty transaction data for requested {expected_txid}"
+        )));
+    }
+
+    let tx = Transaction::read(data, BranchId::Sapling).map_err(|e| {
+        SyncError::net(format!(
+            "lightwalletd returned invalid transaction data for requested {expected_txid}: {e}"
+        ))
+    })?;
+    if tx.txid() != expected_txid {
+        return Err(SyncError::net(format!(
+            "lightwalletd returned txid {} for requested {expected_txid}",
+            tx.txid()
+        )));
+    }
+
+    Ok(tx)
 }
 
 fn notify_completed_address_check<E: Display>(
@@ -465,6 +472,12 @@ mod tests {
         Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap()
     }
 
+    fn encode_transaction(tx: &Transaction) -> Vec<u8> {
+        let mut encoded = vec![];
+        tx.write(&mut encoded).unwrap();
+        encoded
+    }
+
     fn transparent_fee_test_db(
         tx: &Transaction,
         account_balance_delta: i64,
@@ -530,6 +543,43 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn get_transaction_response_accepts_matching_txid() {
+        let tx = transparent_fee_test_tx();
+        let encoded = encode_transaction(&tx);
+
+        let parsed = parse_get_transaction_response(&encoded, tx.txid()).unwrap();
+
+        assert_eq!(parsed.txid(), tx.txid());
+    }
+
+    #[test]
+    fn get_transaction_response_retries_mismatched_txid() {
+        let tx = transparent_fee_test_tx();
+        let encoded = encode_transaction(&tx);
+
+        assert!(matches!(
+            parse_get_transaction_response(&encoded, TxId::NULL),
+            Err(SyncError::Network(_)),
+        ));
+    }
+
+    #[test]
+    fn get_transaction_response_retries_empty_data() {
+        assert!(matches!(
+            parse_get_transaction_response(&[], TxId::NULL),
+            Err(SyncError::Network(_)),
+        ));
+    }
+
+    #[test]
+    fn get_transaction_response_retries_malformed_data() {
+        assert!(matches!(
+            parse_get_transaction_response(&[0xde, 0xad, 0xbe, 0xef], TxId::NULL),
+            Err(SyncError::Network(_)),
+        ));
     }
 
     #[test]
