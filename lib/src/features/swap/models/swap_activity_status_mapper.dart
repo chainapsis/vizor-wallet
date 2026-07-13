@@ -21,7 +21,7 @@ class SwapActivityAccountDetail {
 
 enum PayActivityStatusPhase { inProgress, completed }
 
-/// Desktop Pay status data backed by values whose meaning is known at the
+/// Shared Pay status data backed by values whose meaning is known at the
 /// activity boundary. Provider/app fees are deliberately not repurposed as the
 /// Figma `Tx fee`; that value is injected only from a confirmed matching ZEC
 /// deposit transaction in wallet history.
@@ -173,8 +173,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   }
 
   return SwapActivityStatusPresentation(
-    // Keep the shared presentation stable for mobile. Desktop Pay consumes
-    // the dedicated [payStatus] copy below instead of these shared fields.
+    // Keep the generic swap presentation stable. Pay surfaces consume the
+    // dedicated [payStatus] contract instead of relabelling generic details.
     title: _swapActivityStatusTitle(intent),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
@@ -207,8 +207,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     progressTabLabel: payMode ? 'Payment progress' : 'Swap progress',
     paymentMode: payMode,
     payStatus: payStatus,
-    // Desktop Pay renders its dedicated Figma status content before the
-    // shared status page. Keep the shared progress tabs available for mobile.
+    // Mobile keeps the shared progress tabs while reading its detail values
+    // from [payStatus]; desktop renders its dedicated Pay status content.
     showTabs: !intent.status.isTerminal,
   );
 }

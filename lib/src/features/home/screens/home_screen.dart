@@ -366,6 +366,38 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         .refreshOpenActivities(accountUuid: accountUuid, force: force);
   }
 
+  Future<void> _openPay() async {
+    final accountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid
+        ?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+
+    final router = GoRouter.of(context);
+    final swapNotifier = ref.read(swapStateProvider.notifier);
+    final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
+      accountUuid: accountUuid,
+    );
+    ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+
+    final selectedAsset = await selectedAssetFuture;
+    if (!mounted ||
+        selectedAsset == null ||
+        router.routerDelegate.currentConfiguration.uri.path != '/home') {
+      return;
+    }
+    final prepared = swapNotifier.preparePayFromShieldedZec(
+      preferredAsset: selectedAsset,
+      expectedAccountUuid: accountUuid,
+    );
+    if (!prepared) return;
+    router.push(
+      '/pay',
+      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
@@ -412,15 +444,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onShieldBalancePressed: widget.onShieldBalancePressed,
       onSend: () => context.push('/send'),
       onReceive: () => context.push('/receive'),
-      onPay: swapFeatureEnabled
-          ? () {
-              ref
-                  .read(payIntroductionBadgeClickedProvider.notifier)
-                  .markClicked();
-              ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
-              context.push('/pay');
-            }
-          : null,
+      onPay: swapFeatureEnabled ? _openPay : null,
       onActivity: () => context.push('/activity'),
     );
   }

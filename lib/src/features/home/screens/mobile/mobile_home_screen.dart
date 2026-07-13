@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
@@ -30,8 +32,11 @@ import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/pay_introduction_badge_store.dart';
 import '../../services/transparent_shielding_service.dart';
+import '../../widgets/pay_floating_badge.dart';
 import 'mobile_keystone_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -395,6 +400,38 @@ class _HomeContent extends ConsumerStatefulWidget {
 class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
 
+  Future<void> _openPay() async {
+    final accountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid
+        ?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+
+    final router = GoRouter.of(context);
+    final swapNotifier = ref.read(swapStateProvider.notifier);
+    final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
+      accountUuid: accountUuid,
+    );
+    ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+
+    final selectedAsset = await selectedAssetFuture;
+    if (!mounted ||
+        selectedAsset == null ||
+        router.routerDelegate.currentConfiguration.uri.path != '/home') {
+      return;
+    }
+    final prepared = swapNotifier.preparePayFromShieldedZec(
+      preferredAsset: selectedAsset,
+      expectedAccountUuid: accountUuid,
+    );
+    if (!prepared) return;
+    router.push(
+      '/pay',
+      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+    );
+  }
+
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
 
@@ -473,6 +510,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         ? fixedPrivacyMask()
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
+    final payEnabled = ref.watch(swapFeatureEnabledProvider);
+    final payIntroductionClicked = ref
+        .watch(payIntroductionBadgeClickedProvider)
+        .value;
+    final showPayIntroduction = payEnabled && payIntroductionClicked == false;
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
@@ -531,102 +573,190 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         kMobileTabBarHeight + AppSpacing.lg,
       ),
       children: [
-        _BalanceCard(
-          balanceText: privacyModeEnabled
-              ? fixedPrivacyMask()
-              : ZecAmount.fromZatoshi(
-                  shieldedBalance,
-                ).compactBalance.amountText,
-          fiatBalanceText: shieldedFiatBalanceText,
-          priceChange24hPct: priceChange24hPct,
-          transparentBalanceText: ZecAmount.fromZatoshi(
-            transparentBalance,
-          ).compactBalance.amountText,
-          hasTransparentBalance: transparentBalance > BigInt.zero,
-          canShieldBalance: sync.canShieldTransparentBalance,
-          isShieldingBalance: _isShieldingBalance,
-          privacyModeEnabled: privacyModeEnabled,
-          onTogglePrivacyMode: widget.onTogglePrivacyMode,
-          onShieldBalancePressed: () => unawaited(_shieldTransparentBalance()),
-        ),
-        const SizedBox(height: AppSpacing.s),
-        if (hasBalance)
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_home_send'),
-                  expand: true,
-                  constrainContent: true,
-                  onPressed: () => context.push('/send'),
-                  leading: const _ButtonIcon(AppIcons.plane),
-                  height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Send',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_home_receive'),
-                  expand: true,
-                  constrainContent: true,
-                  variant: AppButtonVariant.secondary,
-                  onPressed: () => context.push('/receive'),
-                  leading: const _ButtonIcon(AppIcons.arrowDownCircle),
-                  height: _mobileHomeActionButtonHeight,
-                  child: const Text(
-                    'Receive',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-          )
-        else
-          AppButton(
-            // Same key as the funded-state Receive button — only one of
-            // the two renders at a time.
-            key: const ValueKey('mobile_home_receive'),
-            expand: true,
-            constrainContent: true,
-            onPressed: () => context.push('/receive'),
-            leading: const _ButtonIcon(AppIcons.addNew),
-            height: _mobileHomeActionButtonHeight,
-            child: const Text(
-              'Receive your first ZEC',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        const SizedBox(height: AppSpacing.md),
-        if (recentRows.isEmpty)
-          const _EmptyActivity()
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xs,
-              vertical: AppSpacing.s,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
               children: [
-                _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
-                const SizedBox(height: AppSpacing.md),
-                for (var i = 0; i < recentRows.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.s),
-                  KeyedSubtree(
-                    key: ValueKey('mobile_home_activity_row_$i'),
-                    child: ActivityFeedRowGroup(row: recentRows[i]),
+                _BalanceCard(
+                  balanceText: privacyModeEnabled
+                      ? fixedPrivacyMask()
+                      : ZecAmount.fromZatoshi(
+                          shieldedBalance,
+                        ).compactBalance.amountText,
+                  fiatBalanceText: shieldedFiatBalanceText,
+                  priceChange24hPct: priceChange24hPct,
+                  transparentBalanceText: ZecAmount.fromZatoshi(
+                    transparentBalance,
+                  ).compactBalance.amountText,
+                  hasTransparentBalance: transparentBalance > BigInt.zero,
+                  canShieldBalance: sync.canShieldTransparentBalance,
+                  isShieldingBalance: _isShieldingBalance,
+                  privacyModeEnabled: privacyModeEnabled,
+                  onTogglePrivacyMode: widget.onTogglePrivacyMode,
+                  onShieldBalancePressed: () =>
+                      unawaited(_shieldTransparentBalance()),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                if (hasBalance)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppButton(
+                          key: const ValueKey('mobile_home_send'),
+                          expand: true,
+                          constrainContent: true,
+                          onPressed: () => context.push('/send'),
+                          leading: const _ButtonIcon(AppIcons.plane),
+                          height: _mobileHomeActionButtonHeight,
+                          child: const Text(
+                            'Send',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: AppButton(
+                          key: const ValueKey('mobile_home_receive'),
+                          expand: true,
+                          constrainContent: true,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: () => context.push('/receive'),
+                          leading: const _ButtonIcon(AppIcons.arrowDownCircle),
+                          height: _mobileHomeActionButtonHeight,
+                          child: const Text(
+                            'Receive',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      // The Pay entry follows the swap feature flag: pay
+                      // rides the swap engine, so a server-side swap disable
+                      // hides the button and its callout, mirroring desktop's
+                      // `onPay == null` gating.
+                      if (payEnabled) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        DecoratedBox(
+                          key: const ValueKey('mobile_home_pay_glow'),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: showPayIntroduction
+                                ? const [
+                                    BoxShadow(
+                                      color: Color(0xFF1C7ADE),
+                                      blurRadius: 60,
+                                      spreadRadius: 20,
+                                    ),
+                                    BoxShadow(
+                                      color: Color(0xFF1C7ADE),
+                                      blurRadius: 100,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: SizedBox(
+                            width: _mobileHomeActionButtonHeight,
+                            height: _mobileHomeActionButtonHeight,
+                            child: Semantics(
+                              button: true,
+                              label: 'Pay',
+                              child: AppButton(
+                                key: const ValueKey('mobile_home_pay'),
+                                minWidth: _mobileHomeActionButtonHeight,
+                                height: _mobileHomeActionButtonHeight,
+                                contentPadding: EdgeInsets.zero,
+                                variant: AppButtonVariant.secondary,
+                                onPressed: _openPay,
+                                child: const _ButtonIcon(AppIcons.paid),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                else
+                  AppButton(
+                    // Same key as the funded-state Receive button — only one
+                    // of the two renders at a time.
+                    key: const ValueKey('mobile_home_receive'),
+                    expand: true,
+                    constrainContent: true,
+                    onPressed: () => context.push('/receive'),
+                    leading: const _ButtonIcon(AppIcons.addNew),
+                    height: _mobileHomeActionButtonHeight,
+                    child: const Text(
+                      'Receive your first ZEC',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ],
               ],
             ),
-          ),
+            if (hasBalance && showPayIntroduction) ...[
+              Positioned(
+                right: 41,
+                top: 172,
+                width: 118,
+                height: 65,
+                child: const IgnorePointer(child: _MobilePayBadges()),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (recentRows.isEmpty)
+              const _EmptyActivity()
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.s,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _RecentActivityHeader(
+                      onSeeAll: () => context.go('/activity'),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    for (var i = 0; i < recentRows.length; i++) ...[
+                      if (i > 0) const SizedBox(height: AppSpacing.s),
+                      KeyedSubtree(
+                        key: ValueKey('mobile_home_activity_row_$i'),
+                        child: ActivityFeedRowGroup(row: recentRows[i]),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            if (hasBalance && showPayIntroduction)
+              Positioned(
+                right: 43,
+                top: -35,
+                width: 80,
+                height: 80,
+                child: IgnorePointer(
+                  child: PayCoinFloatMotion(
+                    animate: ref.watch(
+                      payIntroductionBadgeMotionEnabledProvider,
+                    ),
+                    child: Image.asset(
+                      'assets/illustrations/pay_coin.png',
+                      key: const ValueKey('mobile_home_pay_coin'),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -1114,6 +1244,74 @@ class _ButtonIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppIcon(iconName, size: 20);
+  }
+}
+
+/// The Pay introduction callout — Figma `PAY Floating Badge`
+/// (6261:126485). Like desktop, the whole treatment remains until the first
+/// Pay activation; mobile has no hover state for bringing it back afterwards.
+class _MobilePayBadges extends StatelessWidget {
+  const _MobilePayBadges();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'New: Pay in USDC',
+      container: true,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          key: const ValueKey('mobile_home_pay_badges'),
+          width: 118,
+          height: 65,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                width: 118,
+                height: 34,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C7ADE),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 14,
+                top: 8,
+                child: Text(
+                  'Pay in USDC',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: const Color(0xFFFFFFFF),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 40,
+                top: 36,
+                width: 55,
+                height: 29,
+                child: SvgPicture.asset(
+                  'assets/illustrations/pay_floating_new.svg',
+                ),
+              ),
+              Positioned(
+                left: 49,
+                top: 42,
+                child: Text(
+                  'NEW',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: const Color(0xFFFFFFFF),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -12,17 +12,6 @@ import '../models/pay_amount_input.dart';
 
 const _payAmountSkeletonPeriod = Duration(milliseconds: 1200);
 
-/// Whether the Amount step can advance. Kept beside the widget so the
-/// bottom-pinned CTA and the amount surface share one validation contract.
-bool payAmountCanContinue(SwapState state) {
-  final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
-  return hasAmount &&
-      state.quoteAmountPrecisionError == null &&
-      state.externalAssetIsSupported &&
-      !state.quoteLoading &&
-      !state.pricingLoading;
-}
-
 /// Step 1 "Amount" of the desktop pay wizard (Form Option A) — Figma
 /// 6133:124896: "Paying in" asset selector, centered serif amount input with
 /// an inline fiat toggle, and the "Estimated spend" ZEC row.

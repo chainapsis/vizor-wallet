@@ -519,6 +519,26 @@ class _DelayedQuoteSwapProvider extends _FakeSwapProvider {
   }
 }
 
+class _DelayedRefreshQuoteSwapProvider extends _FakeSwapProvider {
+  final _refreshGate = Completer<void>();
+  var _quoteCount = 0;
+
+  void completeRefresh() {
+    if (!_refreshGate.isCompleted) {
+      _refreshGate.complete();
+    }
+  }
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    _quoteCount += 1;
+    if (_quoteCount > 1) {
+      await _refreshGate.future;
+    }
+    return super.quote(request);
+  }
+}
+
 class _FailingStartSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapIntentSnapshot> startSwap(SwapQuote quote) async {
@@ -1015,6 +1035,19 @@ class _DelayedPayAssetLoadSwapPersistenceStore
     final loaded = await super.loadSelectedAsset(accountUuid: accountUuid);
     await _loadGate.future;
     return loaded;
+  }
+}
+
+class _FlakyPayAssetLoadSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  var payAssetLoadCount = 0;
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    payAssetLoadCount += 1;
+    if (payAssetLoadCount == 1) {
+      throw StateError('transient secure store failure');
+    }
+    return SwapAsset.sol;
   }
 }
 

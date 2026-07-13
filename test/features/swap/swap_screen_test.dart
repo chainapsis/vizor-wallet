@@ -3351,9 +3351,7 @@ void main() {
     expect(restored.slippageBps, 200);
   });
 
-  testWidgets('pay restores its saved payout asset on startup', (
-    tester,
-  ) async {
+  testWidgets('pay restores its saved payout asset on startup', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore(
       initialPayAsset: SwapAsset.sol,
@@ -3381,6 +3379,40 @@ void main() {
     final state = container.read(swapStateProvider);
     expect(state.payMode, isTrue);
     expect(state.externalAsset, SwapAsset.sol);
+  });
+
+  testWidgets('pay asset restore retries after a transient store failure', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FlakyPayAssetLoadSwapPersistenceStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    expect(sessionStore.payAssetLoadCount, 1);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+
+    final restored = await container
+        .read(swapStateProvider.notifier)
+        .resolvePaySelectedAssetForEntry(accountUuid: 'account-1');
+
+    expect(restored, SwapAsset.sol);
+    expect(sessionStore.payAssetLoadCount, 2);
+    expect(container.read(paySelectedAssetProvider), SwapAsset.sol);
   });
 
   testWidgets('account switch resets pay asset memory when none is saved', (
@@ -6975,6 +7007,64 @@ void main() {
       find.text('Quote expired. Review again for an updated rate.'),
       findsNothing,
     );
+    expect(find.text('Confirm swap'), findsOneWidget);
+  });
+
+  testWidgets('review stays visible while a replacement quote is pending', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _DelayedRefreshQuoteSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapReviewScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.expireReviewQuote();
+    await tester.pumpAndSettle();
+    final originalQuote = container.read(swapStateProvider).reviewQuote;
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_again_button')));
+    await tester.pump();
+
+    var state = container.read(swapStateProvider);
+    expect(state.quoteLoading, isTrue);
+    expect(state.reviewVisible, isTrue);
+    expect(state.reviewQuote, same(originalQuote));
+    expect(find.byType(SwapReviewScreen), findsOneWidget);
+
+    swapProvider.completeRefresh();
+    await tester.pumpAndSettle();
+
+    state = container.read(swapStateProvider);
+    expect(state.quoteLoading, isFalse);
+    expect(state.reviewVisible, isTrue);
+    expect(state.reviewQuote, isNot(same(originalQuote)));
+    expect(swapProvider.requests, hasLength(2));
     expect(find.text('Confirm swap'), findsOneWidget);
   });
 

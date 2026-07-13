@@ -215,12 +215,6 @@ class _SwapActivityDetailSurfaceState
   void _reviewFreshQuote() {
     final selectedIntent = ref.read(swapStateProvider).selectedIntentOrNull;
     final retryingPay = selectedIntent?.payMode ?? false;
-    if (retryingPay && widget.layout == SwapActivityDetailLayout.mobile) {
-      // Pay is desktop-only. Mobile has no /pay route, so offer the supported
-      // Swap composer without preparing or persisting dormant Pay state.
-      context.go('/swap');
-      return;
-    }
     ref.read(swapStateProvider.notifier).prepareRetryFromSelectedIntent();
     if (retryingPay) {
       context.go(
@@ -755,10 +749,22 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   bool _detailsExpanded = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (_usesMobilePayStatus(widget.intent, widget.layout)) {
+      _activeTab = SwapStatusTab.details;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.intent.id != widget.intent.id) {
-      _activeTab = SwapStatusTab.progress;
+    if (oldWidget.intent.id != widget.intent.id ||
+        oldWidget.intent.payMode != widget.intent.payMode ||
+        oldWidget.layout != widget.layout) {
+      _activeTab = _usesMobilePayStatus(widget.intent, widget.layout)
+          ? SwapStatusTab.details
+          : SwapStatusTab.progress;
       _detailsExpanded = false;
     }
   }
@@ -777,7 +783,6 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     final recipientAddress = intent.oneClickRecipient?.trim();
     final accountUuid = intent.accountUuid?.trim();
     final shouldLoadPayDeposit =
-        widget.layout == SwapActivityDetailLayout.desktop &&
         intent.payMode &&
         intent.direction == SwapDirection.zecToExternal &&
         payActivityStatusPhaseFor(intent.status) != null &&
@@ -823,9 +828,31 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final payStatus = presentation.payStatus;
+      final recipientContact = hasRecipient
+          ? addressBookContactForSwapAsset(
+              contacts: addressBookContacts,
+              asset: presentation.receiveAsset,
+              address: recipient,
+            )
+          : null;
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
+        paymentHeader:
+            presentation.paymentMode && payStatus != null && hasRecipient
+            ? MobilePayStatusHeader(
+                asset: presentation.receiveAsset,
+                amountText: trimSwapAmountText(presentation.receiveAmountText),
+                fiatText: presentation.receiveFiatText,
+                label: payStatus.phase == PayActivityStatusPhase.completed
+                    ? 'You paid'
+                    : "You're paying",
+                recipientAddress: recipient,
+                recipientName: recipientContact?.label,
+                recipientProfilePictureId: recipientContact?.profilePictureId,
+              )
+            : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
           label: !paymentMode && terminal ? 'You paid' : presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
@@ -953,6 +980,12 @@ String? _payDepositTxid(SwapIntent intent) {
   return providerDepositTxid == null || providerDepositTxid.isEmpty
       ? null
       : providerDepositTxid;
+}
+
+bool _usesMobilePayStatus(SwapIntent intent, SwapActivityDetailLayout layout) {
+  return layout == SwapActivityDetailLayout.mobile &&
+      intent.payMode &&
+      intent.direction == SwapDirection.zecToExternal;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.

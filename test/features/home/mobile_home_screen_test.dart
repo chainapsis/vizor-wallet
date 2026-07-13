@@ -11,11 +11,15 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
-import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -31,37 +35,6 @@ class _FakePrivacyModeNotifier extends PrivacyModeNotifier {
   }
 }
 
-class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
-  _FakeSyncKeepAwakeNotifier([
-    this.initialState = const SyncKeepAwakeSettings(
-      enabled: false,
-      promptSeen: false,
-    ),
-  ]);
-
-  final SyncKeepAwakeSettings initialState;
-  int markPromptSeenCount = 0;
-  bool? lastEnabled;
-
-  @override
-  SyncKeepAwakeSettings build() => initialState;
-
-  @override
-  Future<void> markPromptSeen() async {
-    markPromptSeenCount += 1;
-    state = state.copyWith(promptSeen: true);
-  }
-
-  @override
-  Future<void> setEnabled(bool enabled, {bool markPromptSeen = true}) async {
-    lastEnabled = enabled;
-    state = state.copyWith(
-      enabled: enabled,
-      promptSeen: markPromptSeen ? true : null,
-    );
-  }
-}
-
 class _FakeMarketDataSource implements ZecMarketDataSource {
   const _FakeMarketDataSource(this.data);
 
@@ -69,6 +42,38 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async => data;
+}
+
+/// In-memory clicked-state store for the shared desktop/mobile Pay intro.
+class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  _FakePayIntroductionBadgeStore({this.clicked = false});
+
+  bool clicked;
+  int markCount = 0;
+
+  @override
+  Future<bool> hasClickedPay() async => clicked;
+
+  @override
+  Future<void> markPayClicked() async {
+    markCount += 1;
+    clicked = true;
+  }
+}
+
+class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
+  const _FakePaySelectedAssetStore();
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    return null;
+  }
+
+  @override
+  Future<void> saveSelectedAsset({
+    required String accountUuid,
+    required SwapAsset asset,
+  }) async {}
 }
 
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
@@ -110,11 +115,10 @@ Widget _app(
     change24hPct: 13.12,
   ),
   FakeSyncNotifier? syncNotifier,
-  _FakeSyncKeepAwakeNotifier? keepAwakeNotifier,
+  bool? swapEnabled,
+  PayIntroductionBadgeStore? badgeStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
-  final effectiveKeepAwakeNotifier =
-      keepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier();
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -125,6 +129,17 @@ Widget _app(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
       ),
+      GoRoute(
+        path: '/pay',
+        builder: (_, _) => Consumer(
+          builder: (_, ref, _) {
+            final state = ref.watch(swapStateProvider);
+            return Text(
+              'pay route ${state.direction.name} ${state.quoteMode.name}',
+            );
+          },
+        ),
+      ),
     ],
   );
 
@@ -132,11 +147,21 @@ Widget _app(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
-      syncKeepAwakeProvider.overrideWith(() => effectiveKeepAwakeNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
       ),
+      payIntroductionBadgeStoreProvider.overrideWithValue(
+        badgeStore ?? _FakePayIntroductionBadgeStore(),
+      ),
+      paySelectedAssetStoreProvider.overrideWithValue(
+        const _FakePaySelectedAssetStore(),
+      ),
+      // The coin float loops forever; keep it off so pumpAndSettle-based
+      // tests can settle (mirrors the desktop suites' motion seam).
+      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
+      if (swapEnabled != null)
+        swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -210,121 +235,6 @@ void main() {
     expect(canvasRect.size, const Size(340, 220));
     expect(imageRect.size, const Size(246, 192));
     expect(canvasRect.bottom, moreOrLessEquals(744));
-  });
-
-  testWidgets('shows sync keep-awake prompt for long foreground sync', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(393, 852));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
-    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier();
-    await tester.pumpWidget(
-      _app(
-        SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          isSyncing: true,
-          percentage: 0.25,
-          scannedHeight: 100,
-          chainTipHeight: 200,
-          lastSyncStartedAt: DateTime.now().subtract(
-            const Duration(seconds: 30),
-          ),
-        ),
-        keepAwakeNotifier: keepAwakeNotifier,
-      ),
-    );
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text('Keep screen awake during sync?'), findsOneWidget);
-    expect(find.text('This will make long syncs much easier.'), findsOneWidget);
-    expect(find.text('Keep screen awake'), findsOneWidget);
-    expect(find.text('Maybe later'), findsOneWidget);
-    expect(keepAwakeNotifier.markPromptSeenCount, 1);
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_sync_keep_awake_prompt_enable')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(keepAwakeNotifier.lastEnabled, isTrue);
-    expect(find.text('Keep screen awake during sync?'), findsNothing);
-  });
-
-  testWidgets('does not repeat sync keep-awake prompt after it was seen', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(393, 852));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
-    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier(
-      const SyncKeepAwakeSettings(enabled: false, promptSeen: true),
-    );
-    await tester.pumpWidget(
-      _app(
-        SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          isSyncing: true,
-          percentage: 0.25,
-          scannedHeight: 100,
-          chainTipHeight: 200,
-          lastSyncStartedAt: DateTime.now().subtract(
-            const Duration(seconds: 30),
-          ),
-        ),
-        keepAwakeNotifier: keepAwakeNotifier,
-      ),
-    );
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text('Keep screen awake during sync?'), findsNothing);
-    expect(keepAwakeNotifier.markPromptSeenCount, 0);
-  });
-
-  testWidgets('does not show sync keep-awake prompt when already enabled', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(393, 852));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
-    final keepAwakeNotifier = _FakeSyncKeepAwakeNotifier(
-      const SyncKeepAwakeSettings(enabled: true, promptSeen: false),
-    );
-    await tester.pumpWidget(
-      _app(
-        SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          isSyncing: true,
-          percentage: 0.25,
-          scannedHeight: 100,
-          chainTipHeight: 200,
-          lastSyncStartedAt: DateTime.now().subtract(
-            const Duration(seconds: 30),
-          ),
-        ),
-        keepAwakeNotifier: keepAwakeNotifier,
-      ),
-    );
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text('Keep screen awake during sync?'), findsNothing);
-    expect(keepAwakeNotifier.markPromptSeenCount, 0);
   });
 
   testWidgets('shows balance, actions, and empty activity when funded', (
@@ -454,6 +364,15 @@ void main() {
     final receiveRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_receive')),
     );
+    final payRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_pay')),
+    );
+    final payIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_home_pay')),
+        matching: find.byType(AppIcon),
+      ),
+    );
     final sendLabelStyle = _effectiveTextStyle(tester, find.text('Send'));
     final receiveLabelStyle = _effectiveTextStyle(tester, find.text('Receive'));
     final shieldedLabel = tester.widget<Text>(find.text('Shielded balance'));
@@ -469,7 +388,19 @@ void main() {
 
     expect(privacyButtonRect.size, const Size(32, 32));
     expect(privacyIcon.size, 16);
+    expect(payIcon.name, AppIcons.paid);
+    expect(payIcon.size, 20);
+    expect(find.bySemanticsLabel('Pay'), findsOneWidget);
+    expect(payRect.top, moreOrLessEquals(sendRect.top, epsilon: 0.1));
+    expect(payRect.bottom, moreOrLessEquals(sendRect.bottom, epsilon: 0.1));
+    expect(payRect.size, const Size(50, 50));
     expect(receiveRect.left, greaterThan(sendRect.right));
+    expect(payRect.left, greaterThan(receiveRect.right));
+    expect(
+      find.byKey(const ValueKey('mobile_home_pay_badges')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsOneWidget);
     expect(sendRect.height, AppButtonSizing.largeHeight);
     expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
     expect(sendLabelStyle.height, AppTypography.labelLarge.height);
@@ -504,6 +435,66 @@ void main() {
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
     expect(find.text('receive route'), findsOneWidget);
+  });
+
+  testWidgets('pay action opens exact-output pay route', (tester) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        badgeStore: badgeStore,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_home_pay')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
+    expect(badgeStore.clicked, isTrue);
+    expect(badgeStore.markCount, 1);
+  });
+
+  testWidgets('hides the mobile Pay introduction after Pay was activated', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        badgeStore: _FakePayIntroductionBadgeStore(clicked: true),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
+    final glow = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('mobile_home_pay_glow')),
+    );
+    expect((glow.decoration as BoxDecoration).boxShadow, isNull);
+  });
+
+  testWidgets('hides the pay entry and callout when swap is disabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        swapEnabled: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
+    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
+    // Send/Receive remain.
+    expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);
   });
 
   testWidgets('uses the mobile Rest illustration canvas for empty activity', (
@@ -626,8 +617,8 @@ void main() {
     final sendRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_send')),
     );
-    final receiveRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_home_receive')),
+    final payRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_pay')),
     );
     final rowRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_activity_row_0')),
@@ -652,7 +643,7 @@ void main() {
     );
     expect(
       rowRect.right,
-      moreOrLessEquals(receiveRect.right - AppSpacing.xs, epsilon: 0.1),
+      moreOrLessEquals(payRect.right - AppSpacing.xs, epsilon: 0.1),
     );
     expect(headerRect.left, rowRect.left);
     expect(seeAllRect.height, 24);
