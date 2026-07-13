@@ -49,10 +49,12 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/pay_activity_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_icon.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.dart';
@@ -975,6 +977,71 @@ void main() {
     );
   });
 
+  testWidgets(
+    'Pay saves an unknown recipient from the checkbox before review',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final addressBookRepository = _FakeAddressBookRepository();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/pay',
+            routes: [_payRoute(), _swapActivityRoute()],
+          ),
+          addressBookRepository: addressBookRepository,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+
+      const recipient = '0x2222222222222222222222222222222222222222';
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('pay_save_address_checkbox')));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PayAddContactModal), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_add_contact_modal')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_add_contact_label_field')),
+        'Treasury',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_add_contact_save_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(addressBookRepository.contacts, hasLength(1));
+      expect(addressBookRepository.contacts.single.label, 'Treasury');
+      expect(addressBookRepository.contacts.single.address, recipient);
+      expect(find.text('Review Payment'), findsOneWidget);
+      expect(find.byType(PayAddContactModal), findsNothing);
+    },
+  );
+
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
   ) async {
@@ -1459,7 +1526,14 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/activity/swap/pay-progress?from=activity',
-            routes: [_swapRoute(), _swapActivityRoute()],
+            routes: [
+              _swapRoute(),
+              _swapActivityRoute(),
+              GoRoute(
+                path: '/home',
+                builder: (_, _) => const Text('Home destination'),
+              ),
+            ],
           ),
           seedSwapActivityFixtures: false,
           sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
@@ -1493,6 +1567,14 @@ void main() {
       expect(find.text('2.45125 ZEC'), findsOneWidget);
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('Not reported'), findsOneWidget);
+      expect(
+        find.text(
+          'Your swap is in progress. You can check its status at any time '
+          'from the Activity tab.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Go home'), findsOneWidget);
       expect(find.byKey(const ValueKey('swap_status_tabs')), findsNothing);
       expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
       expect(find.byKey(const ValueKey('pay_status_summary')), findsNothing);
@@ -1501,7 +1583,7 @@ void main() {
         tester.getSize(
           find.byKey(const ValueKey('pay_activity_status_content')),
         ),
-        const Size(396, 549),
+        PayActivityStatusContent.inProgressContentSize,
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('pay_status_review_info'))),
@@ -1527,6 +1609,17 @@ void main() {
         find.byKey(const ValueKey('verify_address_close_button')),
         findsOneWidget,
       );
+
+      await tester.tap(
+        find.byKey(const ValueKey('verify_address_close_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('pay_status_go_home_button')),
+      );
+      await tester.tap(find.byKey(const ValueKey('pay_status_go_home_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Home destination'), findsOneWidget);
     },
   );
 
@@ -3305,9 +3398,7 @@ void main() {
     expect(restored.slippageBps, 200);
   });
 
-  testWidgets('pay restores its saved payout asset on startup', (
-    tester,
-  ) async {
+  testWidgets('pay restores its saved payout asset on startup', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore(
       initialPayAsset: SwapAsset.sol,

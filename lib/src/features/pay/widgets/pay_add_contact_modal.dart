@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
 import '../../swap/models/swap_address_formatting.dart';
@@ -40,7 +40,8 @@ class PayAddContactModal extends StatefulWidget {
 
 class _PayAddContactModalState extends State<PayAddContactModal> {
   late final TextEditingController _labelController;
-  var _profilePictureId = kDefaultProfilePictureId;
+  late final FocusNode _labelFocusNode;
+  late String _profilePictureId;
   var _pickingPicture = false;
   var _saving = false;
   String? _saveError;
@@ -48,14 +49,34 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
   @override
   void initState() {
     super.initState();
+    _profilePictureId = randomContactProfilePictureId();
     _labelController = TextEditingController();
+    _labelFocusNode = FocusNode();
     _labelController.addListener(() => setState(() {}));
+    _requestLabelFocus();
   }
 
   @override
   void dispose() {
     _labelController.dispose();
+    _labelFocusNode.dispose();
     super.dispose();
+  }
+
+  void _requestLabelFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _labelFocusNode.requestFocus();
+    });
+  }
+
+  void _closePicturePicker([String? profilePictureId]) {
+    setState(() {
+      if (profilePictureId != null) {
+        _profilePictureId = profilePictureId;
+      }
+      _pickingPicture = false;
+    });
+    _requestLabelFocus();
   }
 
   bool get _canSave {
@@ -91,13 +112,8 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
       return AppProfilePicturePickerModal(
         title: 'Select contact picture',
         currentProfilePictureId: _profilePictureId,
-        onCancel: () => setState(() => _pickingPicture = false),
-        onUpdate: (id) async {
-          setState(() {
-            _profilePictureId = id;
-            _pickingPicture = false;
-          });
-        },
+        onCancel: _closePicturePicker,
+        onUpdate: (id) async => _closePicturePicker(id),
       );
     }
     return AppModalCard(
@@ -151,6 +167,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             key: const ValueKey('pay_add_contact_label_field'),
             label: 'Address label',
             controller: _labelController,
+            focusNode: _labelFocusNode,
             hintText: 'Add label 1-20 characters',
             autofocus: true,
             inputFormatters: [LengthLimitingTextInputFormatter(20)],
@@ -162,12 +179,17 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Chain & address',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
+                Expanded(
+                  child: Text(
+                    'Chain & address',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
                 ),
+                const SizedBox(width: AppSpacing.xs),
                 Row(
                   children: [
                     AddressBookNetworkIcon(network: widget.network, size: 16),
