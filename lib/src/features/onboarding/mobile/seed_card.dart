@@ -129,11 +129,18 @@ class _WordGrid extends StatelessWidget {
                             ),
                             const SizedBox(width: AppSpacing.xxs),
                             Expanded(
-                              child: Text(
-                                words[row * 3 + col],
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.homeCard,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    words[row * 3 + col],
+                                    maxLines: 1,
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: colors.text.homeCard,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

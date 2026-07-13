@@ -27,6 +27,9 @@ import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
+import '../src/features/onboarding/mobile/mobile_import_screens.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -54,6 +57,41 @@ const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
     'access accident account accuse achieve acid acoustic acquire across act '
     'action actor actress actual';
+
+const _previewLongWordMnemonic =
+    'business question physical security language purchase abstract accident '
+    'distance elephant hospital umbrella';
+
+const _previewImportReviewMnemonic =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify active effort merit fossil carbon drift '
+    'narrow across raise';
+const _previewImportReviewMnemonic15 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify';
+const _previewImportReviewMnemonic12 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine';
+const _previewImportReviewMnemonic18 =
+    'caution dream solar agent witness logic hurdle focus benefit rough index '
+    'genuine puzzle sudden modify active effort merit';
+const _previewErrorToastDuration = Duration(hours: 1);
+
+const _previewManualAcceptedWords = [
+  'abandon',
+  'ability',
+  'able',
+  'about',
+  'above',
+  'absent',
+  'absorb',
+  'abstract',
+  'absurd',
+  'abuse',
+  'access',
+];
+
+const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
 /// with `appLayoutProvider` overridden to a no-op so the dev window does
@@ -147,11 +185,115 @@ Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileImportPasteUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(child: _MobileImportHarness());
+}
+
+Widget buildMobileImportPasteErrorUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(initialPasteError: "Can't read the clipboard"),
+  );
+}
+
+Widget buildMobileImportManualEmptyUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(wordListOverride: _previewManualWordList),
+    ),
+  );
+}
+
+Widget buildMobileImportManualTypingUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialTypedWord: 'Ag',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportManualErrorUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialTypedWord: 'Secr\$',
+        initialError: 'Invalid secret passphrase word.',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportManualDoneUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileImportManualScreen(
+        wordListOverride: _previewManualWordList,
+        initialAcceptedWords: _previewManualAcceptedWords,
+        initialTypedWord: 'Age',
+      ),
+    ),
+  );
+}
+
+Widget buildMobileImportReviewUseCase(BuildContext context) {
+  return buildMobileImportReview15UseCase(context);
+}
+
+Widget buildMobileImportReview12UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic12,
+    ),
+  );
+}
+
+Widget buildMobileImportReview15UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic15,
+    ),
+  );
+}
+
+Widget buildMobileImportReview18UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic18,
+    ),
+  );
+}
+
+Widget buildMobileImportReview24UseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: _MobileImportHarness(
+      initialLocation: '/import/review',
+      initialReviewMnemonic: _previewImportReviewMnemonic,
+    ),
+  );
+}
+
 Widget buildMobileSecretPassphraseRevealedUseCase(BuildContext context) {
   return const _MobilePreviewFrame(
     child: IgnorePointer(
       child: MobileSecretPassphraseScreen(
         args: CreateSecretPassphraseArgs(mnemonic: _previewMnemonic),
+        screenshotStream: Stream.empty(),
+      ),
+    ),
+  );
+}
+
+Widget buildMobileSecretPassphraseLongWordsUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileSecretPassphraseScreen(
+        args: CreateSecretPassphraseArgs(mnemonic: _previewLongWordMnemonic),
         screenshotStream: Stream.empty(),
       ),
     ),
@@ -590,6 +732,87 @@ Widget _buildMobileAccountsUseCase(
   );
 }
 
+class _MobileImportHarness extends StatefulWidget {
+  const _MobileImportHarness({
+    this.initialLocation = '/import',
+    this.initialPasteError,
+    this.initialReviewMnemonic = _previewImportReviewMnemonic,
+  });
+
+  final String initialLocation;
+  final String? initialPasteError;
+  final String initialReviewMnemonic;
+
+  @override
+  State<_MobileImportHarness> createState() => _MobileImportHarnessState();
+}
+
+class _MobileImportHarnessState extends State<_MobileImportHarness> {
+  late final GoRouter _router;
+  late final SensitivePrivacyOverlayController _reviewPrivacyController =
+      SensitivePrivacyOverlayController();
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.initialLocation,
+      routes: [
+        GoRoute(
+          path: '/import',
+          builder:
+              (_, _) => MobileImportScreen(
+                initialPreviewError: widget.initialPasteError,
+                initialPreviewErrorDuration: _previewErrorToastDuration,
+              ),
+        ),
+        GoRoute(
+          path: '/import/manual',
+          builder:
+              (_, _) => const MobileImportManualScreen(
+                wordListOverride: _previewManualWordList,
+              ),
+        ),
+        GoRoute(
+          path: '/import/review',
+          builder: (_, state) {
+            final extra = state.extra;
+            final args =
+                extra is ImportSecretPassphraseArgs
+                    ? extra
+                    : ImportSecretPassphraseArgs(
+                      mnemonic: widget.initialReviewMnemonic,
+                    );
+            return MobileImportReviewScreen(
+              args: args,
+              screenshotStream: const Stream.empty(),
+              privacyOverlayController: _reviewPrivacyController,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/import/birthday',
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    _reviewPrivacyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
 class _NoOpLayoutNotifier extends AppLayoutNotifier {
   @override
   AppLayoutState build() => const AppLayoutState(AppLayoutMode.large);
@@ -628,16 +851,17 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => AccountsScreen(
-            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
-            initialModalAccountUuid: widget.initialModalAccountUuid,
-            initialModal: widget.initialModal,
-          ),
+          builder:
+              (_, _) => AccountsScreen(
+                initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+                initialModalAccountUuid: widget.initialModalAccountUuid,
+                initialModal: widget.initialModal,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/home',
@@ -764,9 +988,10 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(
           path: '/settings/link-mobile',
-          builder: (_, _) => const WalletLinkDesktopScreen(
-            previewState: WalletLinkState.initial(),
-          ),
+          builder:
+              (_, _) => const WalletLinkDesktopScreen(
+                previewState: WalletLinkState.initial(),
+              ),
         ),
         for (final path in const [
           '/settings/secret-passphrase',
@@ -898,15 +1123,16 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => MobileAccountsScreen(
-            initialSheetAccountUuid: widget.initialSheetAccountUuid,
-            initialSheet: widget.initialSheet,
-          ),
+          builder:
+              (_, _) => MobileAccountsScreen(
+                initialSheetAccountUuid: widget.initialSheetAccountUuid,
+                initialSheet: widget.initialSheet,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/send',
@@ -948,14 +1174,17 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
       routes: [
         GoRoute(
           path: '/home',
-          builder: (_, _) => AppMobileShell(
-            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
-            tabBar: AppMobileTabBar(
-              items: _mobileHomeTabItems,
-              currentIndex: 0,
-              onSelect: (_) {},
-            ),
-          ),
+          builder:
+              (_, _) => AppMobileShell(
+                body: _MobileHomeBody(
+                  openAccountsSheet: widget.openAccountsSheet,
+                ),
+                tabBar: AppMobileTabBar(
+                  items: _mobileHomeTabItems,
+                  currentIndex: 0,
+                  onSelect: (_) {},
+                ),
+              ),
         ),
         GoRoute(
           path: '/send',
@@ -975,9 +1204,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
+          builder:
+              (_, state) => _PreviewRoutePlaceholder(
+                label: '/activity/tx/${state.pathParameters['txid']}',
+              ),
         ),
         GoRoute(
           path: '/settings',
@@ -989,8 +1219,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
       ],
     );
@@ -1056,8 +1286,9 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
         // satisfy the router.
         GoRoute(
           path: '/onboarding/intro',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
           path: '/import',
@@ -1109,8 +1340,8 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
         ),
         GoRoute(
           path: '/lost-password',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/lost-password'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/lost-password'),
         ),
       ],
     );

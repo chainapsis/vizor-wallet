@@ -481,22 +481,29 @@ class _MobileImportBirthdayScreenState
         : AppIcons.chevronForward;
 
     return MobileOnboardingStepScaffold(
-      progress: widget.progress ?? mobileImportProgress(2),
+      progress: widget.progress ?? mobileImportProgress(3),
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.
       subtitle: 'An estimate is enough — sync starts\nfrom there.',
       // Keep the primary flow action last in the bottom stack. The
-      // earliest-height fallback remains a text action above it and still
-      // requires confirmation before scanning from zero.
+      // earliest-height fallback remains secondary and still requires
+      // confirmation before scanning from zero.
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _BottomTextAction(
+          AppButton(
             key: const ValueKey('mobile_import_birthday_skip'),
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            constrainContent: true,
             onPressed: _busy ? null : () => unawaited(_skipBirthday()),
-            label: 'I don’t remember',
+            child: const Text(
+              'I don’t remember',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -639,46 +646,6 @@ class _MobileImportBirthdayScreenState
               style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _BottomTextAction extends StatelessWidget {
-  const _BottomTextAction({
-    required this.label,
-    required this.onPressed,
-    super.key,
-  });
-
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final enabled = onPressed != null;
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: label,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onPressed,
-          child: SizedBox(
-            height: AppButtonSizing.largeHeight,
-            child: Center(
-              child: Text(
-                label,
-                style: AppTypography.labelLarge.copyWith(
-                  color: enabled ? colors.text.primary : colors.text.disabled,
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

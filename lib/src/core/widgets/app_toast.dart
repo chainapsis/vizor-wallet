@@ -6,10 +6,16 @@ import 'package:flutter/widgets.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
+enum AppToastTone { neutral, destructive }
+
+const _kToastIconSize = 20.0;
+const _kDestructiveToastForeground = Color(0xFFFFFFFF);
+
 class AppToast extends StatelessWidget {
   const AppToast({
     required this.message,
     this.iconName = AppIcons.checkCircle,
+    this.tone = AppToastTone.neutral,
     super.key,
   });
 
@@ -17,15 +23,34 @@ class AppToast extends StatelessWidget {
 
   final String message;
   final String iconName;
+  final AppToastTone tone;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final backgroundColor = switch (tone) {
+      AppToastTone.neutral => colors.background.inverse,
+      AppToastTone.destructive => colors.background.utilityDestructiveStrong,
+    };
+    final textColor = switch (tone) {
+      AppToastTone.neutral => colors.text.inverse,
+      AppToastTone.destructive => _kDestructiveToastForeground,
+    };
+    final iconColor = switch (tone) {
+      AppToastTone.neutral => colors.icon.inverse,
+      AppToastTone.destructive => _kDestructiveToastForeground,
+    };
+    final textStyle = switch (tone) {
+      AppToastTone.neutral => AppTypography.labelLarge,
+      AppToastTone.destructive => AppTypography.labelLarge.copyWith(
+        fontWeight: FontWeight.w400,
+      ),
+    };
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colors.background.inverse,
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(AppRadii.small),
         ),
         child: Padding(
@@ -37,11 +62,7 @@ class AppToast extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AppIcon(
-                iconName,
-                size: AppIconSize.medium,
-                color: colors.icon.inverse,
-              ),
+              AppIcon(iconName, size: _kToastIconSize, color: iconColor),
               const SizedBox(width: AppSpacing.xxs),
               // Flexible so long messages wrap inside the pill instead of
               // overflowing the row off-screen.
@@ -51,9 +72,7 @@ class AppToast extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.inverse,
-                  ),
+                  style: textStyle.copyWith(color: textColor),
                 ),
               ),
             ],
@@ -86,6 +105,7 @@ class _AppToastHostState extends State<AppToastHost> {
 
   String? _message;
   String _iconName = AppIcons.checkCircle;
+  AppToastTone _tone = AppToastTone.neutral;
   Timer? _timer;
 
   @override
@@ -98,11 +118,13 @@ class _AppToastHostState extends State<AppToastHost> {
     String message, {
     Duration duration = AppToast.defaultDuration,
     String iconName = AppIcons.checkCircle,
+    AppToastTone tone = AppToastTone.neutral,
   }) {
     _timer?.cancel();
     setState(() {
       _message = message;
       _iconName = iconName;
+      _tone = tone;
     });
     _timer = Timer(duration, () {
       if (!mounted) return;
@@ -147,7 +169,11 @@ class _AppToastHostState extends State<AppToastHost> {
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.sm,
                     ),
-                    child: AppToast(message: message, iconName: _iconName),
+                    child: AppToast(
+                      message: message,
+                      iconName: _iconName,
+                      tone: _tone,
+                    ),
                   ),
                 ),
               ),
@@ -163,6 +189,7 @@ void showAppToast(
   String message, {
   Duration duration = AppToast.defaultDuration,
   String iconName = AppIcons.checkCircle,
+  AppToastTone tone = AppToastTone.neutral,
 }) {
   // 1. A direct host scope (the toast renders inside the nearest
   //    AppToastHost, which is under the app's AppTheme).
@@ -170,7 +197,12 @@ void showAppToast(
       .getElementForInheritedWidgetOfExactType<_AppToastScope>();
   final scope = element?.widget as _AppToastScope?;
   if (scope != null) {
-    scope.state.show(message, duration: duration, iconName: iconName);
+    scope.state.show(
+      message,
+      duration: duration,
+      iconName: iconName,
+      tone: tone,
+    );
     return;
   }
 
@@ -180,7 +212,12 @@ void showAppToast(
   final fallbackState = _AppToastHostState._lastActiveState;
   if (fallbackState != null &&
       _canUseToastHostForContext(context, fallbackState.context)) {
-    fallbackState.show(message, duration: duration, iconName: iconName);
+    fallbackState.show(
+      message,
+      duration: duration,
+      iconName: iconName,
+      tone: tone,
+    );
     return;
   }
 
@@ -200,6 +237,7 @@ void showAppToast(
       message,
       duration: duration,
       iconName: iconName,
+      tone: tone,
       theme: theme,
     );
     return;
@@ -208,7 +246,12 @@ void showAppToast(
   // 4. Last resort for overlay-less subtrees: the most recently active host,
   //    even if it is covered.
   if (fallbackState != null) {
-    fallbackState.show(message, duration: duration, iconName: iconName);
+    fallbackState.show(
+      message,
+      duration: duration,
+      iconName: iconName,
+      tone: tone,
+    );
     return;
   }
   assert(
@@ -232,6 +275,7 @@ void _showOverlayToast(
   String message, {
   required Duration duration,
   required String iconName,
+  required AppToastTone tone,
   required AppThemeData? theme,
 }) {
   final previousEntry = _AppToastHostState._fallbackOverlayEntry;
@@ -245,6 +289,7 @@ void _showOverlayToast(
     builder: (_) => _OverlayAppToast(
       message: message,
       iconName: iconName,
+      tone: tone,
       duration: duration,
       theme: theme,
       onDismiss: () {
@@ -271,6 +316,7 @@ class _OverlayAppToast extends StatefulWidget {
   const _OverlayAppToast({
     required this.message,
     required this.iconName,
+    required this.tone,
     required this.duration,
     required this.theme,
     required this.onDismiss,
@@ -279,6 +325,7 @@ class _OverlayAppToast extends StatefulWidget {
 
   final String message;
   final String iconName;
+  final AppToastTone tone;
   final Duration duration;
   final AppThemeData? theme;
   final VoidCallback onDismiss;
@@ -321,7 +368,11 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
       MediaQuery.paddingOf(context).top + AppSpacing.xs,
     );
     final theme = widget.theme;
-    Widget toast = AppToast(message: widget.message, iconName: widget.iconName);
+    Widget toast = AppToast(
+      message: widget.message,
+      iconName: widget.iconName,
+      tone: widget.tone,
+    );
     // The root overlay sits above the app's AppTheme, so re-provide the
     // ambient theme captured at call time; otherwise AppToast cannot resolve
     // tokens here.

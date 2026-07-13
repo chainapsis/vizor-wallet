@@ -5,9 +5,9 @@
 /// user has already passed the first screen.
 const kMobileCreateStepCount = 7;
 
-/// Import-flow step ordering after secret-passphrase review removal:
-/// secret passphrase entry (paste or manual) -> birthday -> passcode.
-const kMobileImportStepCount = 3;
+/// Import-flow step ordering:
+/// secret passphrase entry (paste or manual) -> review -> birthday -> passcode.
+const kMobileImportStepCount = 4;
 
 /// Track fill for step N. Denominator is one past the step count so the
 /// track is never empty on the first step nor full while the last step is

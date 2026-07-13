@@ -8,9 +8,14 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
+import 'mobile_import_review_screen.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
+
+const _kManualInvalidWordMessage = 'Invalid secret passphrase word.';
+const _kManualSuggestionsHeight = 60.0;
+const _kManualSuggestionChipHeight = 36.0;
 
 /// Manual word-by-word import — Figma `Enter your Secret Passphrase`
 /// (4562:106067): one large field per word with the position counter,
@@ -18,11 +23,29 @@ import 'mobile_onboarding_scaffold.dart';
 /// tapping a suggestion, or by space/return when it's a valid BIP39
 /// word; backspace on an empty field steps back to the previous word.
 class MobileImportManualScreen extends StatefulWidget {
-  const MobileImportManualScreen({this.wordListOverride, super.key});
+  const MobileImportManualScreen({
+    this.wordListOverride,
+    this.initialAcceptedWords = const [],
+    this.initialTypedWord,
+    this.initialError,
+    super.key,
+  });
 
   /// Test seam — production loads the Rust BIP39 list.
   @visibleForTesting
   final List<String>? wordListOverride;
+
+  /// Test/Widgetbook seam for previewing later word-entry states.
+  @visibleForTesting
+  final List<String> initialAcceptedWords;
+
+  /// Test/Widgetbook seam for previewing the active word field.
+  @visibleForTesting
+  final String? initialTypedWord;
+
+  /// Test/Widgetbook seam for previewing invalid-word states.
+  @visibleForTesting
+  final String? initialError;
 
   @override
   State<MobileImportManualScreen> createState() =>
@@ -49,6 +72,15 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       }
     }
     _wordList = words;
+    _accepted.addAll(widget.initialAcceptedWords.take(kMnemonicMaxWords));
+    final initialTypedWord = widget.initialTypedWord;
+    if (initialTypedWord != null) {
+      _controller.text = initialTypedWord;
+      _controller.selection = TextSelection.collapsed(
+        offset: initialTypedWord.length,
+      );
+    }
+    _error = widget.initialError;
     _controller.addListener(() => setState(() {}));
   }
 
@@ -74,7 +106,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   int get _pendingCount => _accepted.length + (_hasTyped ? 1 : 0);
 
   /// A valid-length phrase (12/15/18/21/24) is reachable, so offer
-  /// "Confirm & import" beside "Next word" (Figma 4746:83516).
+  /// "Finish & review" beside "Next word" (Figma 4746:83516).
   bool get _showFinish => kMnemonicWordCounts.contains(_pendingCount);
 
   /// Accept the typed word and advance to the next slot.
@@ -99,31 +131,31 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
   }
 
   /// Accept the typed word (if any), then validate the full phrase and
-  /// move to the birthday step.
+  /// move to the review step.
   void _finish() {
     if (_hasTyped) {
       final tokens = tokenizeMnemonicWords(_typed);
       final word = tokens.isEmpty ? '' : tokens.first;
       if (word.isEmpty || !_wordList.contains(word)) {
-        setState(() => _error = "'$_typed' isn't in the passphrase word list.");
+        setState(() => _error = _kManualInvalidWordMessage);
         _focusNode.requestFocus();
         return;
       }
       if (!_addAcceptedWord(word)) {
-        _continueToBirthday();
+        _continueToReview();
         return;
       }
     }
-    _continueToBirthday();
+    _continueToReview();
   }
 
   void _acceptWord(String word) {
     if (!_addAcceptedWord(word)) {
-      _continueToBirthday();
+      _continueToReview();
       return;
     }
     if (_accepted.length >= kMnemonicMaxWords) {
-      _continueToBirthday();
+      _continueToReview();
     }
   }
 
@@ -141,8 +173,20 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       _onSubmitted(value);
       return;
     }
-    // Editing the word clears the invalid-word error (and its red text).
-    if (_error != null) setState(() => _error = null);
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      if (_error != null) setState(() => _error = null);
+      return;
+    }
+
+    final hasOnlyLetters = RegExp(r'^[A-Za-z]+$').hasMatch(trimmed);
+    final prefix = trimmed.toLowerCase();
+    final hasMatchingPrefix =
+        _wordList.isEmpty || _wordList.any((word) => word.startsWith(prefix));
+    final nextError = hasOnlyLetters && hasMatchingPrefix
+        ? null
+        : _kManualInvalidWordMessage;
+    if (_error != nextError) setState(() => _error = nextError);
   }
 
   /// Fill consecutive slots from the current position with [tokens] (each
@@ -168,7 +212,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           : "Stopped at '$stoppedAt' — it isn't in the passphrase word list.";
     });
     if (_accepted.length >= kMnemonicMaxWords) {
-      _continueToBirthday();
+      _continueToReview();
     } else {
       _focusNode.requestFocus();
     }
@@ -183,7 +227,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     final word = tokens.isEmpty ? '' : tokens.first;
     if (word.isEmpty) {
       if (kMnemonicWordCounts.contains(_accepted.length)) {
-        _continueToBirthday();
+        _continueToReview();
       }
       return;
     }
@@ -191,7 +235,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
       _acceptWord(word);
     } else {
       setState(() {
-        _error = "'$word' isn't in the passphrase word list.";
+        _error = _kManualInvalidWordMessage;
       });
       _focusNode.requestFocus();
     }
@@ -213,7 +257,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     );
   }
 
-  void _editLastWordAfterBirthdayBack() {
+  void _editLastWordAfterReviewBack() {
     if (_accepted.isEmpty) return;
     setState(() {
       _restoreLastWordToField();
@@ -222,7 +266,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     _focusNode.requestFocus();
   }
 
-  void _continueToBirthday() {
+  void _continueToReview() {
     final words = [..._accepted];
     final error = validateImportedMnemonic(words);
     if (error != null) {
@@ -231,16 +275,25 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
     }
     context
         .push<Object?>(
-          '/import/birthday',
-          extra: ImportBirthdayArgs(mnemonic: words.join(' ')),
+          '/import/review',
+          extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
         )
         .then((result) {
-          if (mounted) _editLastWordAfterBirthdayBack();
+          if (!mounted) return;
+          if (result == MobileImportReviewResult.clear) {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/import');
+            }
+            return;
+          }
+          _editLastWordAfterReviewBack();
         });
   }
 
   /// The CTA block: a single "Next word" until a valid-length phrase is
-  /// reachable, then a full-width "Confirm & import" primary action plus a
+  /// reachable, then "Finish & review" plus a
   /// secondary "Next word" to continue toward longer standard phrases.
   Widget _buildButtonRow() {
     final nextEnabled = _hasTyped && !_atMax;
@@ -250,24 +303,40 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
           ? AppButtonVariant.secondary
           : AppButtonVariant.primary,
       expand: true,
+      constrainContent: true,
+      contentPadding: _showFinish
+          ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
+          : null,
       onPressed: nextEnabled ? _acceptTyped : null,
-      trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Next word'),
+      trailing: _showFinish ? null : const AppIcon(AppIcons.chevronForward),
+      child: const Text(
+        'Next word',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
     if (!_showFinish) return nextButton;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
       children: [
-        AppButton(
-          key: const ValueKey('mobile_import_manual_finish'),
-          expand: true,
-          onPressed: _finish,
-          trailing: const AppIcon(AppIcons.chevronForward),
-          child: const Text('Confirm & import'),
+        SizedBox(width: 128, child: nextButton),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: AppButton(
+            key: const ValueKey('mobile_import_manual_finish'),
+            expand: true,
+            constrainContent: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+            ),
+            onPressed: _finish,
+            trailing: const AppIcon(AppIcons.chevronForward),
+            child: const Text(
+              'Finish & review',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        nextButton,
       ],
     );
   }
@@ -303,18 +372,21 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen> {
             onSubmitted: _onSubmitted,
           ),
           if (_suggestions.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.s),
+            const SizedBox(height: AppSpacing.sm),
             SizedBox(
-              height: 40,
+              key: const ValueKey('mobile_import_manual_suggestions'),
+              height: _kManualSuggestionsHeight,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
                   for (final word in _suggestions)
-                    Padding(
-                      padding: const EdgeInsets.only(right: AppSpacing.xs),
-                      child: _SuggestionChip(
-                        word: word,
-                        onTap: () => _acceptWord(word),
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xs),
+                        child: _SuggestionChip(
+                          word: word,
+                          onTap: () => _acceptWord(word),
+                        ),
                       ),
                     ),
                 ],
@@ -391,6 +463,7 @@ class _WordField extends StatelessWidget {
     final colors = context.colors;
     final textColor = hasError ? colors.text.destructive : colors.text.accent;
     return Container(
+      key: const ValueKey('mobile_import_manual_input'),
       // Figma `Input` (4562:106067): 24 px padding around a 40 px serif
       // line makes the 88 px field.
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -453,18 +526,24 @@ class _SuggestionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return GestureDetector(
+      key: ValueKey('mobile_import_manual_suggestion_$word'),
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: colors.background.raised,
-          borderRadius: BorderRadius.circular(AppRadii.full),
-        ),
-        child: Center(
-          child: Text(
-            word,
-            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+      child: SizedBox(
+        height: _kManualSuggestionChipHeight,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: colors.background.raised,
+            borderRadius: BorderRadius.circular(AppRadii.full),
+          ),
+          child: Center(
+            child: Text(
+              word,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
           ),
         ),
       ),

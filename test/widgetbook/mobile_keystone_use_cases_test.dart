@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/keystone_use_cases.dart';
 
@@ -246,6 +247,19 @@ void main() {
     );
     expect(find.text('Enter the date'), findsOneWidget);
     expect(find.text('Enter the block height'), findsOneWidget);
+    final skipButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_import_birthday_skip')),
+    );
+    expect(skipButton.variant, AppButtonVariant.ghost);
+    expect(skipButton.expand, isTrue);
+
+    await tester.tap(find.text('I don’t remember'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_import_birthday_unknown_height_sheet')),
+      findsOneWidget,
+    );
   });
 }
 

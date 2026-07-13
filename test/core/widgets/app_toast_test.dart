@@ -49,8 +49,51 @@ void main() {
 
     final icon = tester.widget<AppIcon>(find.byType(AppIcon));
     expect(icon.name, AppIcons.checkCircle);
-    expect(icon.size, AppIconSize.medium);
+    expect(icon.size, 20);
     expect(icon.color, AppThemeData.light.colors.icon.inverse);
+  });
+
+  testWidgets('AppToast destructive tone matches the error toast tokens', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.dark,
+        child: Center(
+          child: AppToast(
+            message: "Can't read the clipboard",
+            iconName: AppIcons.cancel,
+            tone: AppToastTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final toastFinder = find.byType(AppToast);
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: toastFinder,
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(
+      decoration.color,
+      AppThemeData.dark.colors.background.utilityDestructiveStrong,
+    );
+
+    final text = tester.widget<Text>(find.text("Can't read the clipboard"));
+    expect(text.style?.color, const Color(0xFFFFFFFF));
+    expect(text.style?.fontWeight, FontWeight.w400);
+    expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
+
+    final icon = tester.widget<AppIcon>(find.byType(AppIcon));
+    expect(icon.name, AppIcons.cancel);
+    expect(icon.size, 20);
+    expect(icon.color, const Color(0xFFFFFFFF));
   });
 
   testWidgets('AppToast clears inherited text decoration', (tester) async {

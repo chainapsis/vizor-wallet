@@ -12,11 +12,12 @@ void main() {
     expect(mobileCreateProgress(7), closeTo(0.875, 0.0001));
   });
 
-  test('import progress reflects the review screen removal', () {
-    expect(kMobileImportStepCount, 3);
-    expect(mobileImportProgress(1), closeTo(0.25, 0.0001));
-    expect(mobileImportProgress(2), closeTo(0.5, 0.0001));
-    expect(mobileImportProgress(3), closeTo(0.75, 0.0001));
+  test('import progress includes the review step', () {
+    expect(kMobileImportStepCount, 4);
+    expect(mobileImportProgress(1), closeTo(0.2, 0.0001));
+    expect(mobileImportProgress(2), closeTo(0.4, 0.0001));
+    expect(mobileImportProgress(3), closeTo(0.6, 0.0001));
+    expect(mobileImportProgress(4), closeTo(0.8, 0.0001));
   });
 
   test('keystone passcode progress stays on the existing fill', () {

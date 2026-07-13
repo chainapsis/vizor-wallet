@@ -7,12 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _wordList = ['abandon', 'ability', 'able', 'about', 'zebra'];
 const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
+const _validMnemonic =
+    'abandon ability able about above absent absorb abstract absurd abuse access accident';
 
 Widget _app() {
   return ProviderScope(
@@ -33,10 +36,10 @@ Widget _routedApp() {
             const MobileImportManualScreen(wordListOverride: _wordList),
       ),
       GoRoute(
-        path: '/import/birthday',
+        path: '/import/review',
         builder: (_, state) {
-          final args = state.extra as ImportBirthdayArgs;
-          return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
+          final args = state.extra as ImportSecretPassphraseArgs;
+          return Scaffold(body: Text('Review: ${args.mnemonic}'));
         },
       ),
     ],
@@ -45,6 +48,47 @@ Widget _routedApp() {
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _stackedManualApp() {
+  final words = _validMnemonic.split(' ');
+  final router = GoRouter(
+    initialLocation: '/method',
+    routes: [
+      GoRoute(
+        path: '/method',
+        builder: (context, _) => Scaffold(
+          body: Center(
+            child: TextButton(
+              key: const ValueKey('method_import'),
+              onPressed: () => context.push('/import'),
+              child: const Text('Method selection'),
+            ),
+          ),
+        ),
+      ),
+      GoRoute(path: '/import', builder: (_, _) => const MobileImportScreen()),
+      GoRoute(
+        path: '/import/manual',
+        builder: (_, _) => MobileImportManualScreen(
+          wordListOverride: words,
+          initialAcceptedWords: words,
+        ),
+      ),
+      GoRoute(
+        path: '/import/review',
+        builder: (_, state) => MobileImportReviewScreen(
+          args: state.extra as ImportSecretPassphraseArgs,
+        ),
+      ),
+    ],
+  );
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -82,6 +126,33 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('ability'), findsOneWidget);
     expect(find.text('zebra'), findsNothing);
+    final inputBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('mobile_import_manual_input')))
+        .dy;
+    final suggestionsTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey('mobile_import_manual_suggestions')),
+        )
+        .dy;
+    expect(suggestionsTop - inputBottom, AppSpacing.sm);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_import_manual_suggestions')),
+          )
+          .height,
+      60,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_import_manual_suggestion_abandon'),
+            ),
+          )
+          .height,
+      36,
+    );
 
     await tester.tap(find.text('abandon'));
     await tester.pump();
@@ -90,38 +161,64 @@ void main() {
     expect(find.textContaining('abandon'), findsOneWidget);
   });
 
-  testWidgets(
-    'back from birthday edits the last word instead of adding a 25th',
-    (tester) async {
-      await tester.pumpWidget(_routedApp());
-      await tester.pumpAndSettle();
+  testWidgets('back from review edits the last word instead of adding a 25th', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pumpAndSettle();
 
-      final field = find.byKey(const ValueKey('mobile_import_manual_field'));
-      await tester.enterText(
-        field,
-        List.filled(kMnemonicMaxWords, 'abandon').join(' '),
-      );
-      await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('mobile_import_manual_field'));
+    await tester.enterText(
+      field,
+      List.filled(kMnemonicMaxWords, 'abandon').join(' '),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Birthday:'), findsOneWidget);
+    expect(find.textContaining('Review:'), findsOneWidget);
 
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
 
-      expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
-      expect(tester.widget<TextField>(field).controller!.text, 'abandon');
-      expect(find.text('24'), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
+    expect(tester.widget<TextField>(field).controller!.text, 'abandon');
+    expect(find.text('24'), findsOneWidget);
 
-      await tester.enterText(field, 'zebra');
-      await tester.pump();
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
+    await tester.enterText(field, 'zebra');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Birthday:'), findsOneWidget);
-      expect(find.textContaining('zebra'), findsOneWidget);
-      expect(find.textContaining('found 25'), findsNothing);
-    },
-  );
+    expect(find.textContaining('Review:'), findsOneWidget);
+    expect(find.textContaining('zebra'), findsOneWidget);
+    expect(find.textContaining('found 25'), findsNothing);
+  });
+
+  testWidgets('clearing a manual review preserves the import stack', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_stackedManualApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('method_import')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_enter_manually')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_manual_finish')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_import_review_clear')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Wallet'), findsOneWidget);
+    expect(find.text('Enter your Secret Passphrase'), findsNothing);
+    expect(find.text('Review Import'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Method selection'), findsOneWidget);
+  });
 
   testWidgets('keyboard action advances without dropping focus', (
     tester,
@@ -150,20 +247,17 @@ void main() {
     );
   });
 
-  testWidgets('an unknown word is rejected with an error', (tester) async {
+  testWidgets('an invalid word is shown as an input error', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
 
     await tester.enterText(
       find.byKey(const ValueKey('mobile_import_manual_field')),
-      'notaword ',
+      r'Secr$',
     );
     await tester.pump();
 
-    expect(
-      find.text("'notaword' isn't in the passphrase word list."),
-      findsOneWidget,
-    );
+    expect(find.text('Invalid secret passphrase word.'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
   });
 
