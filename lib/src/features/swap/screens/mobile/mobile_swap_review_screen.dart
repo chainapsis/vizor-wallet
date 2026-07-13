@@ -132,7 +132,18 @@ class _MobileSwapReviewScreenState
       if (!next.reviewVisible ||
           next.reviewQuote == null ||
           next.reviewAddressPlan == null) {
-        context.go(widget.payMode ? '/pay' : '/swap');
+        if (!widget.payMode) {
+          context.go('/swap');
+        } else if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(
+            '/pay',
+            extra: const PayComposerNavigationArgs(
+              preservePreparedComposer: true,
+            ),
+          );
+        }
       }
     }());
   }
