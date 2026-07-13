@@ -85,7 +85,7 @@ void main() {
     expect(_coinTranslationY(tester), 0);
   });
 
-  testWidgets('target keeps the full treatment until Pay is clicked', (
+  testWidgets('target claims the existing record before showing once', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore();
@@ -102,7 +102,8 @@ void main() {
     );
     expect(find.text('Pay in USDC'), findsOneWidget);
     expect(find.text('NEW'), findsOneWidget);
-    expect(store.markCount, 0);
+    expect(store.clicked, isTrue);
+    expect(store.markCount, 1);
     final targetRect = tester.getRect(
       find.byKey(const ValueKey('pay_introduction_badge_target')),
     );
@@ -120,7 +121,7 @@ void main() {
       tester.element(find.byType(PayIntroductionBadgeTarget)),
       listen: false,
     );
-    container.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
+    container.read(desktopPayIntroductionVisibleProvider.notifier).dismiss();
     await tester.pumpAndSettle();
 
     expect(find.byType(PayFloatingBadge), findsNothing);
@@ -131,13 +132,14 @@ void main() {
     expect(store.markCount, 1);
   });
 
-  testWidgets('clicked target shows the full treatment only while hovered', (
+  testWidgets('completed v0.0.37 target never returns on hover', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore()..clicked = true;
     await _pumpTarget(tester, store, persistenceEnabled: true);
 
     expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(store.markCount, 0);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer();
@@ -146,21 +148,6 @@ void main() {
         find.byKey(const ValueKey('pay_introduction_badge_target')),
       ),
     );
-    await tester.pump();
-
-    expect(find.byType(PayFloatingBadge), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('pay_floating_badge_glow')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('pay_floating_badge_coin')),
-      findsOneWidget,
-    );
-    expect(find.text('Pay in USDC'), findsOneWidget);
-    expect(find.text('NEW'), findsOneWidget);
-
-    await mouse.moveTo(Offset.zero);
     await tester.pump();
 
     expect(find.byType(PayFloatingBadge), findsNothing);
@@ -170,33 +157,54 @@ void main() {
     expect(find.text('NEW'), findsNothing);
   });
 
-  testWidgets('clicked target fades the treatment on hover transitions', (
+  testWidgets('claimed target stays hidden in a fresh provider scope', (
     tester,
   ) async {
-    final store = _FakePayIntroductionBadgeStore()..clicked = true;
+    final store = _FakePayIntroductionBadgeStore();
+    await _pumpTarget(tester, store, persistenceEnabled: true);
+
+    expect(find.byType(PayFloatingBadge), findsOneWidget);
+    expect(store.markCount, 1);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await _pumpTarget(tester, store, persistenceEnabled: true);
+
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+    expect(store.markCount, 1);
+  });
+
+  testWidgets('target fails closed when its completion cannot be stored', (
+    tester,
+  ) async {
+    final store = _FakePayIntroductionBadgeStore(failMark: true);
+    await _pumpTarget(tester, store, persistenceEnabled: true);
+
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+  });
+
+  testWidgets('target fades the treatment when it is dismissed', (
+    tester,
+  ) async {
+    final store = _FakePayIntroductionBadgeStore();
     await _pumpTarget(
       tester,
       store,
       persistenceEnabled: true,
       disableAnimations: false,
     );
+    expect(find.byType(PayFloatingBadge), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 180));
 
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer();
-    await mouse.moveTo(
-      tester.getCenter(
-        find.byKey(const ValueKey('pay_introduction_badge_target')),
-      ),
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayIntroductionBadgeTarget)),
+      listen: false,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-
-    expect(_badgeFadeOpacity(tester), inExclusiveRange(0, 1));
-
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(_badgeFadeOpacity(tester), 1);
-
-    await mouse.moveTo(Offset.zero);
+    container.read(desktopPayIntroductionVisibleProvider.notifier).dismiss();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
 
@@ -226,7 +234,7 @@ void main() {
     },
   );
 
-  testWidgets('navigation without a Pay click keeps the full treatment', (
+  testWidgets('navigation away permanently dismisses the treatment', (
     tester,
   ) async {
     final store = _FakePayIntroductionBadgeStore();
@@ -250,10 +258,10 @@ void main() {
       find.byKey(const ValueKey('pay_introduction_badge_target')),
       findsOneWidget,
     );
-    expect(find.byType(PayFloatingBadge), findsOneWidget);
-    expect(find.text('Pay in USDC'), findsOneWidget);
-    expect(find.text('NEW'), findsOneWidget);
-    expect(store.markCount, 0);
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+    expect(store.markCount, 1);
   });
 }
 
@@ -339,7 +347,7 @@ Future<void> _pumpNavigableTarget(
     ProviderScope(
       overrides: [
         payIntroductionBadgeStoreProvider.overrideWithValue(store),
-        payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(false),
+        payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(true),
       ],
       child: MaterialApp(
         home: MediaQuery(
@@ -360,6 +368,9 @@ Future<void> _pumpNavigableTarget(
 }
 
 class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
+  _FakePayIntroductionBadgeStore({this.failMark = false});
+
+  final bool failMark;
   bool clicked = false;
   int markCount = 0;
 
@@ -368,6 +379,9 @@ class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
 
   @override
   Future<void> markPayClicked() async {
+    if (failMark) {
+      throw StateError('test persistence failure');
+    }
     markCount += 1;
     clicked = true;
   }

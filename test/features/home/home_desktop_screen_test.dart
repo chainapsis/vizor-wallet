@@ -394,77 +394,132 @@ void main() {
     expect(badgeStore.markCount, 0);
   });
 
-  testWidgets(
-    'home hides the treatment after Pay click and restores it on hover',
-    (tester) async {
-      final badgeStore = _FakePayIntroductionBadgeStore();
-      await tester.pumpWidget(
-        _appHarness(
-          '/home',
-          payIntroductionBadgeStore: badgeStore,
-          syncState: SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            orchardBalance: BigInt.from(14_312_000_000),
-            spendableBalance: BigInt.from(14_312_000_000),
-            totalBalance: BigInt.from(14_312_000_000),
-          ),
+  testWidgets('home does not consume the treatment without a Pay button', (
+    tester,
+  ) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        payIntroductionBadgeStore: badgeStore,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
         ),
-      );
-      await _pumpUntilPresent(tester, find.text('NEW'));
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.byType(PayFloatingBadge), findsOneWidget);
-      expect(find.text('NEW'), findsOneWidget);
-      expect(badgeStore.markCount, 0);
+    expect(find.byKey(const ValueKey('home_desktop_pay_button')), findsNothing);
+    expect(find.byType(PayIntroductionBadgeTarget), findsNothing);
+    expect(badgeStore.markCount, 0);
+  });
 
-      await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
-      await _pumpUntilPresent(tester, find.byType(PayScreen));
-      expect(badgeStore.markCount, 1);
-      await tester.tap(find.byKey(const ValueKey('pay_wizard_back_link')));
-      for (
-        var i = 0;
-        i < 20 && find.byType(PayScreen).evaluate().isNotEmpty;
-        i++
-      ) {
-        await tester.pump(const Duration(milliseconds: 50));
-      }
+  testWidgets('home shows the treatment once and keeps it hidden after Pay', (
+    tester,
+  ) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        payIntroductionBadgeStore: badgeStore,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('NEW'));
 
-      expect(find.byType(PayScreen), findsNothing);
-      expect(find.byType(PayFloatingBadge), findsNothing);
-      expect(find.text('Pay in USDC'), findsNothing);
-      expect(find.text('NEW'), findsNothing);
-      expect(badgeStore.markCount, 1);
+    expect(find.byType(PayFloatingBadge), findsOneWidget);
+    expect(find.text('NEW'), findsOneWidget);
+    expect(badgeStore.clicked, isTrue);
+    expect(badgeStore.markCount, 1);
 
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer();
-      await mouse.moveTo(
-        tester.getCenter(find.byKey(const ValueKey('home_desktop_pay_button'))),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 180));
+    await tester.tap(find.byKey(const ValueKey('home_desktop_pay_button')));
+    await _pumpUntilPresent(tester, find.byType(PayScreen));
+    expect(badgeStore.markCount, 1);
+    await tester.tap(find.byKey(const ValueKey('pay_wizard_back_link')));
+    for (
+      var i = 0;
+      i < 20 && find.byType(PayScreen).evaluate().isNotEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
 
-      expect(find.byType(PayFloatingBadge), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('pay_floating_badge_glow')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('pay_floating_badge_coin')),
-        findsOneWidget,
-      );
-      expect(find.text('Pay in USDC'), findsOneWidget);
-      expect(find.text('NEW'), findsOneWidget);
+    expect(find.byType(PayScreen), findsNothing);
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+    expect(badgeStore.markCount, 1);
 
-      await mouse.moveTo(Offset.zero);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 121));
-      await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('home_desktop_pay_button'))),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
 
-      expect(find.byType(PayFloatingBadge), findsNothing);
-      expect(find.text('Pay in USDC'), findsNothing);
-      expect(find.text('NEW'), findsNothing);
-    },
-  );
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_glow')), findsNothing);
+    expect(find.byKey(const ValueKey('pay_floating_badge_coin')), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 121));
+    await tester.pump();
+
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+  });
+
+  testWidgets('home keeps the treatment hidden after visiting another page', (
+    tester,
+  ) async {
+    final badgeStore = _FakePayIntroductionBadgeStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        payIntroductionBadgeStore: badgeStore,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('NEW'));
+
+    expect(find.byType(PayFloatingBadge), findsOneWidget);
+    expect(badgeStore.markCount, 1);
+
+    await tester.tap(find.byKey(const ValueKey('home_desktop_send_button')));
+    await _pumpUntilPresent(tester, find.byType(SendScreen));
+    await tester.tap(find.byKey(const ValueKey('send_pane_back_button')));
+    for (
+      var i = 0;
+      i < 20 && find.byType(SendScreen).evaluate().isNotEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    expect(find.byType(SendScreen), findsNothing);
+    expect(find.byType(PayFloatingBadge), findsNothing);
+    expect(find.text('Pay in USDC'), findsNothing);
+    expect(find.text('NEW'), findsNothing);
+    expect(badgeStore.markCount, 1);
+  });
 
   testWidgets('home desktop see all action opens activity screen', (
     tester,
