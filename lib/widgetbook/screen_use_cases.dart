@@ -28,6 +28,7 @@ import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_screens.dart';
@@ -195,6 +196,19 @@ Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
       child: MobilePasscodeScreen(
         args: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
       ),
+    ),
+  );
+}
+
+Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
+  return _MobilePreviewFrame(
+    child: MobileCustomiseAccountScreen(
+      args: const CustomiseAccountArgs(
+        mnemonic: _previewMnemonic,
+        pendingPassword: '123456',
+      ),
+      random: Random(1234),
+      onFinish: (_, _) async {},
     ),
   );
 }

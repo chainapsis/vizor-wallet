@@ -1,9 +1,10 @@
 /// Create-flow step ordering for the steps-nav progress track:
 /// welcome -> method selection -> intro -> address types -> things to know ->
-/// secret passphrase -> passcode. Welcome itself does not show the track, but
-/// the following steps still count it so create progress starts after the
-/// user has already passed the first screen.
-const kMobileCreateStepCount = 7;
+/// secret passphrase -> passcode -> customise account. Welcome itself does not
+/// show the track, but the following steps still count it so create progress
+/// starts after the user has already passed the first screen. Biometrics is a
+/// terminal completion screen and keeps its full progress value.
+const kMobileCreateStepCount = 8;
 
 /// Import-flow step ordering:
 /// secret passphrase entry (paste or manual) -> review -> birthday -> passcode.
