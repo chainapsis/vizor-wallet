@@ -13,13 +13,10 @@ import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../create/onboarding_split_view.dart'
     show
-        clearCreateOnboardingSecretState,
         createOnboardingMnemonicProvider,
         onboardingSecretPassphraseRevealedProvider;
 import '../shared/onboarding_error_messages.dart';
@@ -33,9 +30,9 @@ import 'seed_card.dart';
 /// Mobile create-flow passphrase step — Figma `Onboarding 4 Secret
 /// Phrase` (4394:81938 hidden / 4394:82007 revealed). Mirrors the
 /// desktop screen's logic: the mnemonic survives back navigation via
-/// [createOnboardingMnemonicProvider]; continue either pushes the
-/// passcode step (first wallet) or creates the account directly when a
-/// password is already configured (add-account).
+/// [createOnboardingMnemonicProvider]; continue either pushes the passcode
+/// step (first wallet) or account customisation when a password is already
+/// configured (add-account).
 class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
   const MobileSecretPassphraseScreen({
     this.args,
@@ -63,7 +60,6 @@ class _MobileSecretPassphraseScreenState
   String? _mnemonic;
   bool _revealed = false;
   bool _copied = false;
-  bool _submitting = false;
   String? _error;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
@@ -132,7 +128,7 @@ class _MobileSecretPassphraseScreenState
 
   Future<void> _continue() async {
     final mnemonic = _mnemonic;
-    if (mnemonic == null || _submitting) return;
+    if (mnemonic == null) return;
     if (!_revealed) {
       unawaited(AppHaptics.privacyToggle());
       setState(() => _revealed = true);
@@ -151,32 +147,10 @@ class _MobileSecretPassphraseScreenState
       return;
     }
 
-    // Add-account path: a passcode already guards the wallet, so the
-    // account is created right here.
-    setState(() {
-      _submitting = true;
-      _error = null;
-    });
-    final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
-    try {
-      await runWithSyncPausedForAccountMutation(
-        ref,
-        () => accountNotifier.createAccountFromMnemonic(mnemonic: mnemonic),
-      );
-    } catch (e, st) {
-      log('MobileSecretPassphrase: ERROR creating account: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _error = onboardingSubmitErrorMessage(e);
-      });
-      return;
-    }
-    if (mounted) {
-      clearCreateOnboardingSecretState(ref.read);
-    }
-    router.go('/home');
+    context.push(
+      '/onboarding/customise-account',
+      extra: CustomiseAccountArgs(mnemonic: mnemonic),
+    );
   }
 
   Future<void> _onScreenshot() async {
@@ -211,7 +185,7 @@ class _MobileSecretPassphraseScreenState
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: mobileCreateProgress(6),
-        onBack: _submitting ? null : () => Navigator.of(context).maybePop(),
+        onBack: () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',
         bottomArea: Column(
@@ -231,15 +205,9 @@ class _MobileSecretPassphraseScreenState
             AppButton(
               key: const ValueKey('mobile_secret_passphrase_primary'),
               expand: true,
-              onPressed: _error != null || _submitting ? null : _continue,
+              onPressed: _error != null ? null : _continue,
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(
-                _submitting
-                    ? 'Creating wallet...'
-                    : _revealed
-                    ? 'Continue'
-                    : 'Reveal phrase',
-              ),
+              child: Text(_revealed ? 'Continue' : 'Reveal phrase'),
             ),
           ],
         ),
