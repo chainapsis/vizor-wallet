@@ -1284,13 +1284,8 @@ pub(crate) fn locked_migration_note_refs(
     db_path: &str,
     account_uuid: &str,
 ) -> Result<BTreeSet<(String, u32)>, String> {
-    let conn = match open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT)) {
-        Ok(conn) => conn,
-        Err(e) => {
-            log::warn!("migration locks: failed to open readonly DB: {e}");
-            return Ok(BTreeSet::new());
-        }
-    };
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))
+        .map_err(|e| format!("Failed to check migration note locks: {e}"))?;
     if !table_exists(&conn, PREPARED_NOTES_TABLE)? {
         return Ok(BTreeSet::new());
     }
@@ -2537,6 +2532,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.phase, PHASE_WAITING_FOR_SPENDABLE_ORCHARD);
+    }
+
+    #[test]
+    fn locked_migration_note_refs_missing_wallet_db_fails_closed() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("missing-wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let err = locked_migration_note_refs(&db_path, "account-1").unwrap_err();
+
+        assert!(err.contains("Failed to check migration note locks"));
+    }
+
+    #[test]
+    fn locked_migration_note_refs_without_migration_tables_is_empty() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        drop(rusqlite::Connection::open(&db_path).unwrap());
+
+        let locks = locked_migration_note_refs(&db_path, "account-1").unwrap();
+
+        assert!(locks.is_empty());
     }
 
     #[test]
