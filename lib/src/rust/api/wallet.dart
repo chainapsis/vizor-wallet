@@ -29,6 +29,15 @@ Future<ChainUpgradeStatus> getChainUpgradeStatus({
   network: network,
 );
 
+/// Compute chain upgrade activation state from a known chain tip height.
+Future<ChainUpgradeActivationStatus> getChainUpgradeStatusAtHeight({
+  required String network,
+  required BigInt tipHeight,
+}) => RustLib.instance.api.crateApiWalletGetChainUpgradeStatusAtHeight(
+  network: network,
+  tipHeight: tipHeight,
+);
+
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
 Future<WalletCreationResult> createWallet({
@@ -366,6 +375,38 @@ class AccountInfo {
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware;
+}
+
+/// Chain upgrade activation state computed from a known chain tip height.
+class ChainUpgradeActivationStatus {
+  final String network;
+  final BigInt tipHeight;
+  final BigInt? nu63ActivationHeight;
+  final bool ironwoodActiveAtTip;
+
+  const ChainUpgradeActivationStatus({
+    required this.network,
+    required this.tipHeight,
+    this.nu63ActivationHeight,
+    required this.ironwoodActiveAtTip,
+  });
+
+  @override
+  int get hashCode =>
+      network.hashCode ^
+      tipHeight.hashCode ^
+      nu63ActivationHeight.hashCode ^
+      ironwoodActiveAtTip.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChainUpgradeActivationStatus &&
+          runtimeType == other.runtimeType &&
+          network == other.network &&
+          tipHeight == other.tipHeight &&
+          nu63ActivationHeight == other.nu63ActivationHeight &&
+          ironwoodActiveAtTip == other.ironwoodActiveAtTip;
 }
 
 /// Connected lightwalletd chain state relevant to Ironwood rollout decisions.

@@ -143,6 +143,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BundleLayout dco_decode_bundle_layout(dynamic raw);
 
   @protected
+  ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
+    dynamic raw,
+  );
+
+  @protected
   ChainUpgradeStatus dco_decode_chain_upgrade_status(dynamic raw);
 
   @protected
@@ -680,6 +685,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
+
+  @protected
+  ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ChainUpgradeStatus sse_decode_chain_upgrade_status(
@@ -1346,6 +1356,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_chain_upgrade_activation_status(
+    ChainUpgradeActivationStatus self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_chain_upgrade_status(

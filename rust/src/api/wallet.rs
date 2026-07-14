@@ -88,6 +88,14 @@ pub struct ChainUpgradeStatus {
     pub endpoint_matches_network: bool,
 }
 
+/// Chain upgrade activation state computed from a known chain tip height.
+pub struct ChainUpgradeActivationStatus {
+    pub network: String,
+    pub tip_height: u64,
+    pub nu6_3_activation_height: Option<u64>,
+    pub ironwood_active_at_tip: bool,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -216,6 +224,22 @@ pub fn get_chain_upgrade_status(
                 nu6_3_activation_height: nu6_3_activation_height(network),
                 ironwood_active_at_tip: is_ironwood_active_at_height(network, tip.height)?,
             })
+        })
+    })
+}
+
+/// Compute chain upgrade activation state from a known chain tip height.
+pub fn get_chain_upgrade_status_at_height(
+    network: String,
+    tip_height: u64,
+) -> Result<ChainUpgradeActivationStatus, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        Ok(ChainUpgradeActivationStatus {
+            network: network_name(network).to_string(),
+            tip_height,
+            nu6_3_activation_height: nu6_3_activation_height(network),
+            ironwood_active_at_tip: is_ironwood_active_at_height(network, tip_height)?,
         })
     })
 }
@@ -1045,6 +1069,23 @@ mod tests {
             assert!(is_ironwood_active_at_height(network, activation).unwrap());
             assert!(is_ironwood_active_at_height(network, activation + 1).unwrap());
         }
+    }
+
+    #[test]
+    fn chain_upgrade_status_at_height_reports_ironwood_activation() {
+        let activation = nu6_3_activation_height(WalletNetwork::Main).unwrap();
+
+        let before =
+            get_chain_upgrade_status_at_height("main".to_string(), activation - 1).unwrap();
+        assert_eq!(before.network, "main");
+        assert_eq!(before.tip_height, activation - 1);
+        assert_eq!(before.nu6_3_activation_height, Some(activation));
+        assert!(!before.ironwood_active_at_tip);
+
+        let at_activation =
+            get_chain_upgrade_status_at_height("main".to_string(), activation).unwrap();
+        assert_eq!(at_activation.tip_height, activation);
+        assert!(at_activation.ironwood_active_at_tip);
     }
 
     #[test]

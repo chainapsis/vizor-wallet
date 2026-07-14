@@ -12,6 +12,7 @@ import '../rust/api/sync.dart' as rust_sync;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
+import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
@@ -453,6 +454,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
+    unawaited(ref.read(chainUpgradeStatusProvider.future));
     _bgDelegate = BackgroundSyncDelegate.create();
     _bgDelegate.setupListeners(
       onStopRequested: () => stopSync(),
@@ -731,9 +733,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         .then((dbPath) async {
           if (gen != _syncGen) return; // stopSync was called, abort
           try {
-            await ref
+            final tip = await ref
                 .read(rpcEndpointFailoverProvider.notifier)
                 .getLatestBlockHeight();
+            await ref
+                .read(chainUpgradeStatusProvider.notifier)
+                .refreshAtTip(tip);
           } catch (e) {
             if (gen != _syncGen) return;
             log('Sync: endpoint preflight failed: $e');
@@ -1288,6 +1293,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final tip = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .getLatestBlockHeight();
+      await ref.read(chainUpgradeStatusProvider.notifier).refreshAtTip(tip);
       final current = state.value;
       final lastSynced = current?.chainTipHeight ?? 0;
       final syncComplete = current?.isSyncComplete ?? false;
