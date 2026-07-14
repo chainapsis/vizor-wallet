@@ -40,15 +40,15 @@ use std::num::NonZeroUsize;
 
 use secrecy::{ExposeSecret, SecretVec};
 use transparent::{address::TransparentAddress, keys::TransparentKeyScope};
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_client_backend::data_api::wallet::input_selection::{GreedyInputSelector, SpendPolicy};
 use zcash_client_backend::{
     data_api::{
         wallet::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             propose_transfer, ConfirmationsPolicy, TargetHeight,
         },
-        Account as _, Balance, InputSource, MaxSpendMode, NoteRetention, ReceivedNotes,
-        TargetValue, TransparentKeyOrigin, TransparentOutputFilter, WalletRead,
+        Account as _, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteRetention,
+        ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -147,6 +147,10 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     fn should_retain_orchard(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
         true
     }
+
+    fn should_retain_ironwood(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
+        true
+    }
 }
 
 /// Wallet-local ZIP-317 rule that preserves standard fee parameters but
@@ -170,6 +174,7 @@ impl FeeRule for ConservativeZip317FeeRule {
         sapling_input_count: usize,
         sapling_output_count: usize,
         orchard_action_count: usize,
+        ironwood_action_count: usize,
     ) -> Result<Zatoshis, Self::Error> {
         let transparent_input_sizes = transparent_input_sizes.into_iter().map(|size| match size {
             TransparentInputSize::Known(size) => {
@@ -186,6 +191,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            ironwood_action_count,
         )
     }
 }
@@ -245,6 +251,7 @@ pub fn propose_send(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
+        &SpendPolicy::default(),
         None,
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
@@ -324,6 +331,7 @@ pub fn estimate_fee(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
+        &SpendPolicy::default(),
         None,
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
@@ -413,11 +421,15 @@ pub(crate) fn create_shield_transparent_pczt(
             account_id,
             OvkPolicy::Sender,
             &proposal,
+            None,
+            ::orchard::builder::BundleType::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
 
         Ok(ShieldTransparentPcztResult {
-            pczt_bytes: pczt.serialize(),
+            pczt_bytes: pczt
+                .serialize()
+                .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?,
             fee_zatoshi,
             shielded_zatoshi,
             needs_sapling_params,
@@ -472,7 +484,6 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                None,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -589,7 +600,6 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        None,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -604,7 +614,6 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        None,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -655,7 +664,7 @@ fn build_shielding_proposal(
         &from_addrs,
         account_id,
         ConfirmationsPolicy::MIN,
-        TransparentOutputFilter::All,
+        CoinbaseFilter::AllTransparentOutputs,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
@@ -762,7 +771,11 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         .num_outputs(sapling_input_count, 0)
         .map_err(|e| format!("Max Sapling bundle size failed: {e:?}"))?;
     let orchard_action_count = ::orchard::builder::BundleType::DEFAULT
-        .num_actions(orchard_input_count, 0)
+        .num_actions(
+            ::orchard::bundle::BundleVersion::orchard_v2().default_flags(),
+            orchard_input_count,
+            0,
+        )
         .map_err(|e| format!("Max Orchard bundle size failed: {e:?}"))?;
 
     let fee = fee_rule
@@ -774,6 +787,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            0,
         )
         .map_err(|e| format!("Max fee calculation failed: {e}"))?;
 
@@ -788,7 +802,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let shielded_inputs = nonempty::NonEmpty::from_vec(spendable_notes.into_vec(&RetainAllNotes))
-        .map(|notes| ShieldedInputs::from_parts(anchor_height, notes))
+        .map(ShieldedInputs::from_parts)
         .ok_or("No shielded funds available to send")?;
 
     let balance = TransactionBalance::new(vec![], fee)
@@ -799,9 +813,12 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         BTreeMap::from([(0usize, PoolType::TRANSPARENT)]),
         vec![],
         Some(shielded_inputs),
+        anchor_height,
         balance,
         fee_rule,
         target_height,
+        ConfirmationsPolicy::default(),
+        false,
         false,
     )
     .map_err(|e| format!("Propose transparent max failed: {e}"))
@@ -1424,6 +1441,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_p2pkh_fee = StandardFeeRule::Zip317
@@ -1435,6 +1453,7 @@ mod tests {
                 0,
                 0,
                 0,
+                0,
             )
             .unwrap();
         let standard_undersized_fee = StandardFeeRule::Zip317
@@ -1443,6 +1462,7 @@ mod tests {
                 height,
                 undersized_inputs,
                 std::iter::empty::<usize>(),
+                0,
                 0,
                 0,
                 0,
@@ -1483,7 +1503,7 @@ mod tests {
             BlockHeight::from_u32(900),
             recipient,
             None,
-            ReceivedNotes::new(vec![received_note], vec![]),
+            ReceivedNotes::new(vec![received_note], vec![], vec![]),
             ConservativeZip317FeeRule,
         )
         .expect("transparent-recipient send-max should build from shielded notes");
@@ -1541,7 +1561,9 @@ mod tests {
             txid[4..8].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
             let outpoint = OutPoint::new(txid, 0);
             let txout = TxOut::new(value, taddr.script().into());
-            let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
+            let utxo =
+                WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None)
+                    .unwrap();
             db.put_received_transparent_utxo(&utxo).unwrap();
         }
 
@@ -1564,7 +1586,6 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
-            None,
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal

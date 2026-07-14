@@ -149,11 +149,14 @@ pub fn create_pczt_from_proposal(
             stored.account_id,
             OvkPolicy::Sender,
             &stored.proposal,
+            None,
+            ::orchard::builder::BundleType::DEFAULT,
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;
 
-    Ok(pczt.serialize())
+    pczt.serialize()
+        .map_err(|e| format!("Serialize PCZT: {e:?}"))
 }
 
 /// Release a stored proposal without executing it. Called from the
@@ -190,7 +193,9 @@ pub fn add_proofs_to_pczt(
 
     if prover.requires_orchard_proof() {
         prover = prover
-            .create_orchard_proof(&orchard::circuit::ProvingKey::build())
+            .create_orchard_proof(&orchard::circuit::ProvingKey::build(
+                orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+            ))
             .map_err(|e| format!("Orchard proof: {e:?}"))?;
     }
 
@@ -213,7 +218,10 @@ pub fn add_proofs_to_pczt(
         }
     }
 
-    Ok(prover.finish().serialize())
+    prover
+        .finish()
+        .serialize()
+        .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
 }
 
 /// Redact information from a PCZT that the signer role doesn't need
@@ -245,7 +253,9 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
         })
         .finish();
 
-    Ok(redacted.serialize())
+    redacted
+        .serialize()
+        .map_err(|e| format!("Serialize redacted PCZT: {e:?}"))
 }
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, broadcast
@@ -284,7 +294,9 @@ pub async fn extract_and_broadcast_pczt(
             .map_err(|e| format!("Combine PCZTs: {e:?}"))
     }
 
-    let orchard_vk = orchard::circuit::VerifyingKey::build();
+    let orchard_vk = orchard::circuit::VerifyingKey::build(
+        orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+    );
 
     // Load Sapling verifying keys once if the caller supplied params.
     // The prover keeps the underlying params alive, and

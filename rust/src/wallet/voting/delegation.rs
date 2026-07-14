@@ -107,6 +107,7 @@ pub async fn setup_delegation_bundles(
     } = lwd_params;
     let round_context = zcash_voting::delegate::ensure_round_context(
         voting_db,
+        network,
         &round_params,
         round_name,
         session_json,
@@ -499,6 +500,7 @@ mod tests {
                 &seed,
                 PrepareDelegationBundleParams {
                     lwd: zcash_voting::delegate::DelegationLwdInputs {
+                        network: zcash_voting::Network::Regtest,
                         round_params,
                         resolved_round_name: "Demo".to_string(),
                         anchor_tree_state_bytes: Vec::new(),

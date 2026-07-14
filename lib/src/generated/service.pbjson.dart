@@ -23,13 +23,14 @@ const PoolType$json = {
     {'1': 'TRANSPARENT', '2': 1},
     {'1': 'SAPLING', '2': 2},
     {'1': 'ORCHARD', '2': 3},
+    {'1': 'IRONWOOD', '2': 4},
   ],
 };
 
 /// Descriptor for `PoolType`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List poolTypeDescriptor = $convert.base64Decode(
     'CghQb29sVHlwZRIVChFQT09MX1RZUEVfSU5WQUxJRBAAEg8KC1RSQU5TUEFSRU5UEAESCwoHU0'
-    'FQTElORxACEgsKB09SQ0hBUkQQAw==');
+    'FQTElORxACEgsKB09SQ0hBUkQQAxIMCghJUk9OV09PRBAE');
 
 @$core.Deprecated('Use shieldedProtocolDescriptor instead')
 const ShieldedProtocol$json = {
@@ -37,12 +38,14 @@ const ShieldedProtocol$json = {
   '2': [
     {'1': 'sapling', '2': 0},
     {'1': 'orchard', '2': 1},
+    {'1': 'ironwood', '2': 2},
   ],
 };
 
 /// Descriptor for `ShieldedProtocol`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List shieldedProtocolDescriptor = $convert.base64Decode(
-    'ChBTaGllbGRlZFByb3RvY29sEgsKB3NhcGxpbmcQABILCgdvcmNoYXJkEAE=');
+    'ChBTaGllbGRlZFByb3RvY29sEgsKB3NhcGxpbmcQABILCgdvcmNoYXJkEAESDAoIaXJvbndvb2'
+    'QQAg==');
 
 @$core.Deprecated('Use blockIDDescriptor instead')
 const BlockID$json = {
@@ -354,6 +357,7 @@ const TreeState$json = {
     {'1': 'time', '3': 4, '4': 1, '5': 13, '10': 'time'},
     {'1': 'saplingTree', '3': 5, '4': 1, '5': 9, '10': 'saplingTree'},
     {'1': 'orchardTree', '3': 6, '4': 1, '5': 9, '10': 'orchardTree'},
+    {'1': 'ironwoodTree', '3': 7, '4': 1, '5': 9, '10': 'ironwoodTree'},
   ],
 };
 
@@ -362,7 +366,7 @@ final $typed_data.Uint8List treeStateDescriptor = $convert.base64Decode(
     'CglUcmVlU3RhdGUSGAoHbmV0d29yaxgBIAEoCVIHbmV0d29yaxIWCgZoZWlnaHQYAiABKARSBm'
     'hlaWdodBISCgRoYXNoGAMgASgJUgRoYXNoEhIKBHRpbWUYBCABKA1SBHRpbWUSIAoLc2FwbGlu'
     'Z1RyZWUYBSABKAlSC3NhcGxpbmdUcmVlEiAKC29yY2hhcmRUcmVlGAYgASgJUgtvcmNoYXJkVH'
-    'JlZQ==');
+    'JlZRIiCgxpcm9ud29vZFRyZWUYByABKAlSDGlyb253b29kVHJlZQ==');
 
 @$core.Deprecated('Use getSubtreeRootsArgDescriptor instead')
 const GetSubtreeRootsArg$json = {

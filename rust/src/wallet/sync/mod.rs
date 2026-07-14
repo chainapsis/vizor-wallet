@@ -282,6 +282,7 @@ pub fn scan_blocks(
             time: ts_time,
             sapling_tree: ts_sapling.into(),
             orchard_tree: ts_orchard.into(),
+            ironwood_tree: String::new(),
         }
         .to_chain_state()
         .map_err(|e| format!("{e}"))?

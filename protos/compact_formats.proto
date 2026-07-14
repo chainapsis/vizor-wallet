@@ -14,6 +14,7 @@ option swift_prefix = "";
 message ChainMetadata {
     uint32 saplingCommitmentTreeSize = 1; // the size of the Sapling note commitment tree as of the end of this block
     uint32 orchardCommitmentTreeSize = 2; // the size of the Orchard note commitment tree as of the end of this block
+    uint32 ironwoodCommitmentTreeSize = 3; // the size of the Ironwood note commitment tree as of the end of this block
 }
 
 // A compact representation of a Zcash block.
@@ -60,7 +61,8 @@ message CompactTx {
     // stateless server and a transaction with transparent inputs, this will be
     // unset because the calculation requires reference to prior transactions.
     // If there are no transparent inputs, the fee will be calculable as:
-    //    valueBalanceSapling + valueBalanceOrchard + sum(vPubNew) - sum(vPubOld) - sum(tOut)
+    //    valueBalanceSapling + valueBalanceOrchard + valueBalanceIronwood
+    //    + sum(vPubNew) - sum(vPubOld) - sum(tOut)
     uint32 fee = 3;
 
     repeated CompactSaplingSpend spends = 4;
@@ -77,6 +79,10 @@ message CompactTx {
 
     // A sequence of transparent outputs being created by the transaction.
     repeated TxOut vout = 8;
+
+    // A sequence of Ironwood actions in the transaction. Ironwood reuses the
+    // compact Orchard action shape because the pools have identical action fields.
+    repeated CompactOrchardAction ironwoodActions = 9;
 }
 
 // A compact representation of a transparent transaction input.
@@ -122,6 +128,9 @@ message CompactSaplingOutput {
 }
 
 // A compact representation of an [Orchard Action](https://zips.z.cash/protocol/protocol.pdf#actionencodingandconsensus).
+//
+// This shape is also used for Ironwood actions because Ironwood action fields
+// are identical to Orchard action fields.
 message CompactOrchardAction {
     bytes nullifier = 1;        // [32] The nullifier of the input note
     bytes cmx = 2;              // [32] The x-coordinate of the note commitment for the output note

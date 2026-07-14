@@ -1086,6 +1086,9 @@ async fn refresh_transparent_addresses(
             OutPoint::new(txid, index),
             TxOut::new(value, Script(script::Code(reply.script))),
             Some(BlockHeight::from_u32(height)),
+            None,
+            None,
+            None,
         )
         .ok_or_else(|| {
             SyncError::parse("transparent UTXO script did not decode to a wallet address")

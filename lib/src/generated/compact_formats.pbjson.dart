@@ -33,6 +33,13 @@ const ChainMetadata$json = {
       '5': 13,
       '10': 'orchardCommitmentTreeSize'
     },
+    {
+      '1': 'ironwoodCommitmentTreeSize',
+      '3': 3,
+      '4': 1,
+      '5': 13,
+      '10': 'ironwoodCommitmentTreeSize'
+    },
   ],
 };
 
@@ -40,7 +47,8 @@ const ChainMetadata$json = {
 final $typed_data.Uint8List chainMetadataDescriptor = $convert.base64Decode(
     'Cg1DaGFpbk1ldGFkYXRhEjwKGXNhcGxpbmdDb21taXRtZW50VHJlZVNpemUYASABKA1SGXNhcG'
     'xpbmdDb21taXRtZW50VHJlZVNpemUSPAoZb3JjaGFyZENvbW1pdG1lbnRUcmVlU2l6ZRgCIAEo'
-    'DVIZb3JjaGFyZENvbW1pdG1lbnRUcmVlU2l6ZQ==');
+    'DVIZb3JjaGFyZENvbW1pdG1lbnRUcmVlU2l6ZRI+Chppcm9ud29vZENvbW1pdG1lbnRUcmVlU2'
+    'l6ZRgDIAEoDVIaaXJvbndvb2RDb21taXRtZW50VHJlZVNpemU=');
 
 @$core.Deprecated('Use compactBlockDescriptor instead')
 const CompactBlock$json = {
@@ -127,6 +135,14 @@ const CompactTx$json = {
       '6': '.cash.z.wallet.sdk.rpc.TxOut',
       '10': 'vout'
     },
+    {
+      '1': 'ironwoodActions',
+      '3': 9,
+      '4': 3,
+      '5': 11,
+      '6': '.cash.z.wallet.sdk.rpc.CompactOrchardAction',
+      '10': 'ironwoodActions'
+    },
   ],
 };
 
@@ -138,7 +154,9 @@ final $typed_data.Uint8List compactTxDescriptor = $convert.base64Decode(
     'dhbGxldC5zZGsucnBjLkNvbXBhY3RTYXBsaW5nT3V0cHV0UgdvdXRwdXRzEkUKB2FjdGlvbnMY'
     'BiADKAsyKy5jYXNoLnoud2FsbGV0LnNkay5ycGMuQ29tcGFjdE9yY2hhcmRBY3Rpb25SB2FjdG'
     'lvbnMSNAoDdmluGAcgAygLMiIuY2FzaC56LndhbGxldC5zZGsucnBjLkNvbXBhY3RUeEluUgN2'
-    'aW4SMAoEdm91dBgIIAMoCzIcLmNhc2guei53YWxsZXQuc2RrLnJwYy5UeE91dFIEdm91dA==');
+    'aW4SMAoEdm91dBgIIAMoCzIcLmNhc2guei53YWxsZXQuc2RrLnJwYy5UeE91dFIEdm91dBJVCg'
+    '9pcm9ud29vZEFjdGlvbnMYCSADKAsyKy5jYXNoLnoud2FsbGV0LnNkay5ycGMuQ29tcGFjdE9y'
+    'Y2hhcmRBY3Rpb25SD2lyb253b29kQWN0aW9ucw==');
 
 @$core.Deprecated('Use compactTxInDescriptor instead')
 const CompactTxIn$json = {
