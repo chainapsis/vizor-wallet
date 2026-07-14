@@ -57,16 +57,16 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
-  desktop_window_bootstrap: a3d400ad460d822537e39f20eab67a696bd6fc32
-  flutter_secure_storage_darwin: 557817588b80e60213cbecb573c45c76b788018d
+  desktop_window_bootstrap: 4dcde2e9c6df76755b31c7b494b047bfb90ed74d
+  flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  mobile_scanner: 77265f3dc8d580810e91849d4a0811a90467ed5e
-  rust_lib_zcash_wallet: 18d0d53f536437f737d9a8d54f9830ae9e0437c4
-  screen_retriever_macos: 776e0fa5d42c6163d2bf772d22478df4b302b161
-  share_plus: 1fa619de8392a4398bfaf176d441853922614e89
-  shared_preferences_foundation: 5086985c1d43c5ba4d5e69a4e8083a389e2909e6
-  url_launcher_macos: 175a54c831f4375a6cf895875f716ee5af3888ce
-  window_manager: e25faf20d88283a0d46e7b1a759d07261ca27575
+  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
+  rust_lib_zcash_wallet: e6239745a9c854f6b4aa85577092ca55b5e78f3b
+  screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
+  share_plus: 510bf0af1a42cd602274b4629920c9649c52f4cc
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
+  window_manager: b729e31d38fb04905235df9ea896128991cad99e
 
 PODFILE CHECKSUM: 346bfb2deb41d4a6ebd6f6799f92188bde2d246f
 
