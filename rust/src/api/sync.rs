@@ -424,6 +424,7 @@ pub fn update_chain_tip(db_path: String, network: String, height: u64) -> Result
 pub struct SubtreeIndices {
     pub next_sapling: u64,
     pub next_orchard: u64,
+    pub next_ironwood: u64,
 }
 
 pub fn get_next_subtree_indices(
@@ -432,10 +433,11 @@ pub fn get_next_subtree_indices(
 ) -> Result<SubtreeIndices, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let (s, o) = wallet_sync::get_next_subtree_indices(&db_path, network)?;
+        let (s, o, i) = wallet_sync::get_next_subtree_indices(&db_path, network)?;
         Ok(SubtreeIndices {
             next_sapling: s,
             next_orchard: o,
+            next_ironwood: i,
         })
     })
 }
@@ -447,6 +449,8 @@ pub fn put_subtree_roots(
     sapling_roots: Vec<SubtreeRoot>,
     orchard_start_index: u64,
     orchard_roots: Vec<SubtreeRoot>,
+    ironwood_start_index: u64,
+    ironwood_roots: Vec<SubtreeRoot>,
 ) -> Result<(), String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -460,6 +464,16 @@ pub fn put_subtree_roots(
             .map(|r| (r.completing_block_height, r.root_hash))
             .collect();
         wallet_sync::put_orchard_subtree_roots(&db_path, network, orchard_start_index, &orchard)?;
+        let ironwood: Vec<(u64, Vec<u8>)> = ironwood_roots
+            .into_iter()
+            .map(|r| (r.completing_block_height, r.root_hash))
+            .collect();
+        wallet_sync::put_ironwood_subtree_roots(
+            &db_path,
+            network,
+            ironwood_start_index,
+            &ironwood,
+        )?;
         Ok(())
     })
 }
@@ -508,6 +522,7 @@ pub fn scan_blocks(
     tree_state_time: u32,
     tree_state_sapling_tree: String,
     tree_state_orchard_tree: String,
+    tree_state_ironwood_tree: String,
     limit: u64,
 ) -> Result<ScanResult, String> {
     catch(|| {
@@ -523,6 +538,7 @@ pub fn scan_blocks(
             tree_state_time,
             &tree_state_sapling_tree,
             &tree_state_orchard_tree,
+            &tree_state_ironwood_tree,
             limit,
         )?;
         Ok(ScanResult {

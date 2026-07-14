@@ -137,6 +137,27 @@ fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: Blo
     }
 }
 
+fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
+    let current_tip = u32::try_from(current_tip_height).unwrap_or(u32::MAX);
+    BlockHeight::from_u32(current_tip.saturating_add(1))
+}
+
+fn scannable_batch_end(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    current_tip_height: u64,
+) -> Option<(u32, BlockHeight)> {
+    let available_end = std::cmp::min(range_end, chain_tip_exclusive_end(current_tip_height));
+    if start >= available_end {
+        return None;
+    }
+
+    let batch_size = batch_size_for_range(base_batch_size, start, available_end);
+    let end = std::cmp::min(start + batch_size, available_end);
+    Some((batch_size, end))
+}
+
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     #[cfg(debug_assertions)]
     {
@@ -723,6 +744,7 @@ fn queue_witness_repairs_if_needed(
 async fn repair_anchor_root_mismatch_if_needed(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    network: WalletNetwork,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
 ) -> Result<Option<u64>, SyncError> {
@@ -739,6 +761,15 @@ async fn repair_anchor_root_mismatch_if_needed(
     let local_orchard = db
         .with_orchard_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
         .map_err(|e| SyncError::db(format!("orchard root at {anchor_height}: {e}")))?;
+    let ironwood_enabled = lwd::ironwood_sync_enabled(network, anchor_height);
+    let local_ironwood = if ironwood_enabled {
+        Some(
+            db.with_ironwood_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
+                .map_err(|e| SyncError::db(format!("ironwood root at {anchor_height}: {e}")))?,
+        )
+    } else {
+        None
+    };
 
     let anchor_chain_state = get_tree_state(client, u32::from(anchor_height) as u64)
         .await?
@@ -753,8 +784,20 @@ async fn repair_anchor_root_mismatch_if_needed(
 
     let canonical_sapling = anchor_chain_state.final_sapling_tree().root();
     let canonical_orchard = anchor_chain_state.final_orchard_tree().root();
+    let canonical_ironwood =
+        ironwood_enabled.then(|| anchor_chain_state.final_ironwood_tree().root());
+    let ironwood_roots_match = match (&local_ironwood, &canonical_ironwood) {
+        // `with_ironwood_tree_mut` reports `None` when the backend tracks no
+        // Ironwood tree; treat that like a missing root so repair kicks in.
+        (Some(local), Some(canonical)) => {
+            local.as_ref().and_then(|root| root.as_ref()) == Some(canonical)
+        }
+        (None, None) => true,
+        _ => false,
+    };
     if local_sapling.as_ref() == Some(&canonical_sapling)
         && local_orchard.as_ref() == Some(&canonical_orchard)
+        && ironwood_roots_match
     {
         return Ok(None);
     }
@@ -783,7 +826,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             "[{}] sync: anchor root mismatch at {anchor_height} \
              (target={}, repair_height={repair_height}, pass {}/{}); \
              local_sapling={:?}, canonical_sapling={:?}, local_orchard={:?}, \
-             canonical_orchard={:?}; rewinding to canonical chain state",
+             canonical_orchard={:?}, local_ironwood={:?}, canonical_ironwood={:?}; \
+             rewinding to canonical chain state",
             elapsed(),
             u32::from(target_height),
             *repair_passes_this_run,
@@ -792,6 +836,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             canonical_sapling,
             local_orchard,
             canonical_orchard,
+            local_ironwood,
+            canonical_ironwood,
         );
 
         let current_tip = BlockHeight::from_u32(current_tip_height as u32);
@@ -1314,7 +1360,7 @@ async fn run_sync_impl(
     }
 
     // 3. Download subtree roots (incremental)
-    download_subtree_roots(&mut client, &mut db).await?;
+    download_subtree_roots(&mut client, &mut db, network, tip_height).await?;
 
     // Rescue pass (VZR-89): demote orphaned scan ranges left below the surviving
     // accounts' birthday by a pre-fix account deletion, so a wallet bricked by
@@ -1501,6 +1547,7 @@ async fn run_sync_impl(
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     &mut client,
                     &mut db,
+                    network,
                     current_tip_height,
                     &mut anchor_root_repair_passes_this_run,
                 )
@@ -1545,6 +1592,7 @@ async fn run_sync_impl(
         }
 
         let start = range.block_range().start;
+        let range_end = range.block_range().end;
         // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
         // when the current range overlaps the known Zcash mainnet
         // sandblasting attack window. These blocks contain an
@@ -1552,8 +1600,17 @@ async fn run_sync_impl(
         // making scan_cached_blocks much slower per block and
         // using more memory. Matches the SDK's
         // `SANDBLASTING_RANGE` check.
-        let batch_size = batch_size_for_range(base_batch_size, start, range.block_range().end);
-        let end = std::cmp::min(start + batch_size, range.block_range().end);
+        let Some((batch_size, end)) =
+            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
+        else {
+            log::info!(
+                "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
+                elapsed(),
+                describe_block_range(range.block_range()),
+                current_tip_height,
+            );
+            break;
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let current_pct = if initial_total > 0 {
             1.0 - (prev_remaining as f64 / initial_total as f64)
@@ -1609,17 +1666,17 @@ async fn run_sync_impl(
                     _ => {
                         // Prefetch failed — download synchronously.
                         log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1).await?
+                        download_blocks(&mut client, start, end - 1, network).await?
                     }
                 }
             } else {
                 // Range changed (reorg, priority switch, etc.) —
                 // Drop the Prefetch, which aborts the background task.
                 drop(pf);
-                download_blocks(&mut client, start, end - 1).await?
+                download_blocks(&mut client, start, end - 1, network).await?
             }
         } else {
-            download_blocks(&mut client, start, end - 1).await?
+            download_blocks(&mut client, start, end - 1, network).await?
         };
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
@@ -2052,20 +2109,29 @@ async fn run_sync_impl(
         // the prefetch — the next range comes from
         // suggest_scan_ranges() which needs the DB state the current
         // scan just committed, and we can't predict it in advance.
-        if end < range.block_range().end && !cancel.load(Ordering::Relaxed) {
+        if end < range_end && !cancel.load(Ordering::Relaxed) {
             let pf_start = end;
             // Recompute batch_size for the prefetch range in case
             // it crosses a sandblasting boundary differently.
-            let pf_batch = batch_size_for_range(base_batch_size, pf_start, range.block_range().end);
-            let pf_end = std::cmp::min(pf_start + pf_batch, range.block_range().end);
-            let mut pf_client = client.clone();
-            prefetch = Some(Prefetch {
-                start: pf_start,
-                end: pf_end,
-                handle: Some(tokio::spawn(async move {
-                    download_blocks(&mut pf_client, pf_start, pf_end - 1).await
-                })),
-            });
+            if let Some((_, pf_end)) =
+                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
+            {
+                let mut pf_client = client.clone();
+                prefetch = Some(Prefetch {
+                    start: pf_start,
+                    end: pf_end,
+                    handle: Some(tokio::spawn(async move {
+                        download_blocks(&mut pf_client, pf_start, pf_end - 1, network).await
+                    })),
+                });
+            } else {
+                log::debug!(
+                    "[{}] sync: skipping prefetch from {} past current tip {}",
+                    elapsed(),
+                    u32::from(pf_start),
+                    current_tip_height,
+                );
+            }
         }
     }
 
@@ -2193,6 +2259,32 @@ mod tests {
         assert!(
             !should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(141))
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn scannable_batch_end_clamps_to_current_tip() {
+        assert_eq!(
+            scannable_batch_end(
+                2_000,
+                BlockHeight::from_u32(121),
+                BlockHeight::from_u32(131),
+                121,
+            ),
+            Some((2_000, BlockHeight::from_u32(122))),
+        );
+    }
+
+    #[test]
+    fn scannable_batch_end_skips_ranges_past_current_tip() {
+        assert_eq!(
+            scannable_batch_end(
+                2_000,
+                BlockHeight::from_u32(122),
+                BlockHeight::from_u32(131),
+                121,
+            ),
+            None,
         );
     }
 

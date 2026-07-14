@@ -118,6 +118,8 @@ Future<void> putSubtreeRoots({
   required List<SubtreeRoot> saplingRoots,
   required BigInt orchardStartIndex,
   required List<SubtreeRoot> orchardRoots,
+  required BigInt ironwoodStartIndex,
+  required List<SubtreeRoot> ironwoodRoots,
 }) => RustLib.instance.api.crateApiSyncPutSubtreeRoots(
   dbPath: dbPath,
   network: network,
@@ -125,6 +127,8 @@ Future<void> putSubtreeRoots({
   saplingRoots: saplingRoots,
   orchardStartIndex: orchardStartIndex,
   orchardRoots: orchardRoots,
+  ironwoodStartIndex: ironwoodStartIndex,
+  ironwoodRoots: ironwoodRoots,
 );
 
 Future<List<ScanRangeInfo>> suggestScanRanges({
@@ -154,6 +158,7 @@ Future<ScanResult> scanBlocks({
   required int treeStateTime,
   required String treeStateSaplingTree,
   required String treeStateOrchardTree,
+  required String treeStateIronwoodTree,
   required BigInt limit,
 }) => RustLib.instance.api.crateApiSyncScanBlocks(
   dbPath: dbPath,
@@ -166,6 +171,7 @@ Future<ScanResult> scanBlocks({
   treeStateTime: treeStateTime,
   treeStateSaplingTree: treeStateSaplingTree,
   treeStateOrchardTree: treeStateOrchardTree,
+  treeStateIronwoodTree: treeStateIronwoodTree,
   limit: limit,
 );
 
@@ -946,11 +952,17 @@ class ShieldTransparentStatus {
 class SubtreeIndices {
   final BigInt nextSapling;
   final BigInt nextOrchard;
+  final BigInt nextIronwood;
 
-  const SubtreeIndices({required this.nextSapling, required this.nextOrchard});
+  const SubtreeIndices({
+    required this.nextSapling,
+    required this.nextOrchard,
+    required this.nextIronwood,
+  });
 
   @override
-  int get hashCode => nextSapling.hashCode ^ nextOrchard.hashCode;
+  int get hashCode =>
+      nextSapling.hashCode ^ nextOrchard.hashCode ^ nextIronwood.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -958,7 +970,8 @@ class SubtreeIndices {
       other is SubtreeIndices &&
           runtimeType == other.runtimeType &&
           nextSapling == other.nextSapling &&
-          nextOrchard == other.nextOrchard;
+          nextOrchard == other.nextOrchard &&
+          nextIronwood == other.nextIronwood;
 }
 
 class SubtreeRoot {

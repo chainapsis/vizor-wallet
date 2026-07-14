@@ -128,7 +128,7 @@ pub fn update_chain_tip(db_path: &str, network: WalletNetwork, height: u64) -> R
 pub fn get_next_subtree_indices(
     db_path: &str,
     network: WalletNetwork,
-) -> Result<(u64, u64), String> {
+) -> Result<(u64, u64, u64), String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let summary = db
         .get_wallet_summary(ConfirmationsPolicy::default())
@@ -137,8 +137,9 @@ pub fn get_next_subtree_indices(
         Some(s) => Ok((
             s.next_sapling_subtree_index(),
             s.next_orchard_subtree_index(),
+            s.next_ironwood_subtree_index(),
         )),
-        None => Ok((0, 0)),
+        None => Ok((0, 0, 0)),
     }
 }
 
@@ -151,7 +152,7 @@ pub fn put_sapling_subtree_roots(
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
-            let arr: [u8; 32] = bytes[..32].try_into().map_err(|_| "bad hash len")?;
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
             let node =
                 Option::from(sapling_crypto::Node::from_bytes(arr)).ok_or("bad sapling hash")?;
             Ok::<_, String>(CommitmentTreeRoot::from_parts(
@@ -180,7 +181,7 @@ pub fn put_orchard_subtree_roots(
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
-            let arr: [u8; 32] = bytes[..32].try_into().map_err(|_| "bad hash len")?;
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
             let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&arr))
                 .ok_or("bad orchard hash")?;
             Ok::<_, String>(CommitmentTreeRoot::from_parts(
@@ -195,6 +196,35 @@ pub fn put_orchard_subtree_roots(
         with_wallet_db_write_lock("sync.put_orchard_subtree_roots", || {
             let mut db = open_wallet_db(db_path, network)?;
             db.put_orchard_subtree_roots(start_index, parsed.as_slice())
+                .map_err(|e| format!("{e}"))
+        })
+    }
+}
+
+pub fn put_ironwood_subtree_roots(
+    db_path: &str,
+    network: WalletNetwork,
+    start_index: u64,
+    roots: &[(u64, Vec<u8>)],
+) -> Result<(), String> {
+    let parsed: Vec<_> = roots
+        .iter()
+        .map(|(h, bytes)| {
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
+            let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&arr))
+                .ok_or("bad ironwood hash")?;
+            Ok::<_, String>(CommitmentTreeRoot::from_parts(
+                BlockHeight::from_u32(*h as u32),
+                node,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if parsed.is_empty() {
+        Ok(())
+    } else {
+        with_wallet_db_write_lock("sync.put_ironwood_subtree_roots", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            db.put_ironwood_subtree_roots(start_index, parsed.as_slice())
                 .map_err(|e| format!("{e}"))
         })
     }
@@ -266,6 +296,7 @@ pub fn scan_blocks(
     ts_time: u32,
     ts_sapling: &str,
     ts_orchard: &str,
+    ts_ironwood: &str,
     limit: u64,
 ) -> Result<u64, String> {
     let db_cache = open_block_cache(cache_path)?;
@@ -282,7 +313,7 @@ pub fn scan_blocks(
             time: ts_time,
             sapling_tree: ts_sapling.into(),
             orchard_tree: ts_orchard.into(),
-            ironwood_tree: String::new(),
+            ironwood_tree: ts_ironwood.into(),
         }
         .to_chain_state()
         .map_err(|e| format!("{e}"))?

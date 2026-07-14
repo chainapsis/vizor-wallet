@@ -631,6 +631,8 @@ abstract class RustLibApi extends BaseApi {
     required List<SubtreeRoot> saplingRoots,
     required BigInt orchardStartIndex,
     required List<SubtreeRoot> orchardRoots,
+    required BigInt ironwoodStartIndex,
+    required List<SubtreeRoot> ironwoodRoots,
   });
 
   Future<void> crateApiVotingRecordShareDelegation({
@@ -714,6 +716,7 @@ abstract class RustLibApi extends BaseApi {
     required int treeStateTime,
     required String treeStateSaplingTree,
     required String treeStateOrchardTree,
+    required String treeStateIronwoodTree,
     required BigInt limit,
   });
 
@@ -4321,6 +4324,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<SubtreeRoot> saplingRoots,
     required BigInt orchardStartIndex,
     required List<SubtreeRoot> orchardRoots,
+    required BigInt ironwoodStartIndex,
+    required List<SubtreeRoot> ironwoodRoots,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4332,6 +4337,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_subtree_root(saplingRoots, serializer);
           sse_encode_u_64(orchardStartIndex, serializer);
           sse_encode_list_subtree_root(orchardRoots, serializer);
+          sse_encode_u_64(ironwoodStartIndex, serializer);
+          sse_encode_list_subtree_root(ironwoodRoots, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4351,6 +4358,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           saplingRoots,
           orchardStartIndex,
           orchardRoots,
+          ironwoodStartIndex,
+          ironwoodRoots,
         ],
         apiImpl: this,
       ),
@@ -4367,6 +4376,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "saplingRoots",
           "orchardStartIndex",
           "orchardRoots",
+          "ironwoodStartIndex",
+          "ironwoodRoots",
         ],
       );
 
@@ -4828,6 +4839,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int treeStateTime,
     required String treeStateSaplingTree,
     required String treeStateOrchardTree,
+    required String treeStateIronwoodTree,
     required BigInt limit,
   }) {
     return handler.executeNormal(
@@ -4844,6 +4856,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(treeStateTime, serializer);
           sse_encode_String(treeStateSaplingTree, serializer);
           sse_encode_String(treeStateOrchardTree, serializer);
+          sse_encode_String(treeStateIronwoodTree, serializer);
           sse_encode_u_64(limit, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -4868,6 +4881,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           treeStateTime,
           treeStateSaplingTree,
           treeStateOrchardTree,
+          treeStateIronwoodTree,
           limit,
         ],
         apiImpl: this,
@@ -4888,6 +4902,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "treeStateTime",
       "treeStateSaplingTree",
       "treeStateOrchardTree",
+      "treeStateIronwoodTree",
       "limit",
     ],
   );
@@ -6995,11 +7010,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SubtreeIndices dco_decode_subtree_indices(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return SubtreeIndices(
       nextSapling: dco_decode_u_64(arr[0]),
       nextOrchard: dco_decode_u_64(arr[1]),
+      nextIronwood: dco_decode_u_64(arr[2]),
     );
   }
 
@@ -9013,9 +9029,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_nextSapling = sse_decode_u_64(deserializer);
     var var_nextOrchard = sse_decode_u_64(deserializer);
+    var var_nextIronwood = sse_decode_u_64(deserializer);
     return SubtreeIndices(
       nextSapling: var_nextSapling,
       nextOrchard: var_nextOrchard,
+      nextIronwood: var_nextIronwood,
     );
   }
 
@@ -10833,6 +10851,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self.nextSapling, serializer);
     sse_encode_u_64(self.nextOrchard, serializer);
+    sse_encode_u_64(self.nextIronwood, serializer);
   }
 
   @protected
