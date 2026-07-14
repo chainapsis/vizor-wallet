@@ -203,6 +203,48 @@ captures to compare the same app-content bounds. Follow the repository's Figma
 layer-interpretation rules for presentation-only macOS backgrounds and window
 controls.
 
+### Scrollable screens
+
+Treat a scrollable design as a fixed viewport containing longer content, not
+as an arbitrarily tall app window.
+
+1. Keep the copied top-level `Screen` at the same desktop or mobile viewport
+   dimensions used by Flutter. Do not lengthen that frame merely because its
+   content scrolls.
+2. Put the scrolling content in a nested frame whose bounds match the actual
+   scroll region. Enable clipping on the viewport frame, extend the content
+   below it, and set vertical overflow scrolling in the prototype when the
+   available Figma operation supports it.
+3. Match the code's scroll ownership. Headers, sidebars, bottom navigation,
+   CTAs, and other elements that remain fixed in Flutter stay outside the
+   scrolling frame. Elements that scroll in Flutter must not be made fixed in
+   Figma for convenience.
+4. Use the top position as the canonical copied screen. Add separate sibling
+   copies for middle or bottom positions only when the visible UI materially
+   changes there, such as a sticky-header transition, fixed action, scrollbar
+   thumb, bottom-only content, lazy-loading state, pagination, or a
+   user-requested scroll position. Name the states consistently, for example
+   `Activity / Scroll top`, `Activity / Scroll middle`, and
+   `Activity / Scroll bottom`.
+5. Register and capture a deterministic Flutter scenario for every required
+   scroll position. Prefer scenario IDs such as `activity-top`,
+   `activity-middle`, and `activity-bottom`; use offset `0`, an explicitly
+   documented middle target, and `maxScrollExtent` respectively. Set the
+   position without animation (for example with `jumpTo`) only after layout and
+   assets are ready, then compare each widget PNG with its matching Figma copy.
+6. Show a scrollbar only when the implementation shows one. Reuse the existing
+   design-system `Scrollbar` component and its `scroll=Top`, `scroll=Middle`, or
+   `scroll=bottom` variant documented in
+   `figma-ai-fix/13-platform-and-local-utilities.md`. Never redraw or modify the
+   design-system component. Do not invent a custom scrollbar for native
+   platform scrolling that the app itself does not render.
+7. Do not stitch viewport screenshots or use a vertically stretched `Screen`
+   as primary parity evidence. If the user needs the entire information
+   architecture visible at once, create a separate, clearly labeled
+   `Full content spec` reference frame in addition to the real clipped screen.
+   That reference is documentation only and is not an app viewport or parity
+   result.
+
 ### 3. Capture and compare the Figma copy
 
 1. Set the copied Figma screen to the same viewport or frame dimensions,
