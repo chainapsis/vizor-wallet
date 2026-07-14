@@ -646,6 +646,78 @@ pub struct ExecuteProposalResult {
     pub message: Option<String>,
 }
 
+pub struct IronwoodMigrationResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+}
+
+pub struct KeystoneMigrationMessage {
+    pub id: String,
+    pub redacted_pczt: Vec<u8>,
+}
+
+pub struct KeystoneMigrationSigningRequest {
+    pub request_id: String,
+    pub messages: Vec<KeystoneMigrationMessage>,
+    pub signing_batch_limit: u32,
+}
+
+/// One signed message in the compact "signatures-only" Keystone response: the
+/// produced spend-authorization signatures for request message `id`. Replaces
+/// the prior full-signed-PCZT payload. Dart builds this from the decoded
+/// `KeystoneSigResult` and feeds it into the migration completion calls.
+pub struct KeystoneSignedMigrationMessage {
+    pub id: String,
+    pub sigs: Vec<crate::api::keystone::KeystoneActionSig>,
+}
+
+pub struct KeystoneMigrationProofStatus {
+    pub ready_count: u32,
+    pub total_count: u32,
+    pub is_ready: bool,
+    pub is_failed: bool,
+    pub message: Option<String>,
+}
+
+pub struct MigrationScheduledBroadcast {
+    pub txid_hex: String,
+    pub scheduled_at_ms: i64,
+    pub status: String,
+}
+
+pub struct MigrationStatus {
+    pub phase: String,
+    pub active_run_id: Option<String>,
+    pub target_values_zatoshi: Vec<u64>,
+    pub prepared_note_count: u32,
+    /// Minimum confirmation depth across the active denomination split
+    /// frontier, including parallel split roots.
+    pub denomination_confirmation_count: u32,
+    pub denomination_confirmation_target: u32,
+    /// Denomination split transactions that have reached the wallet's trusted
+    /// confirmation depth, rather than transactions that are merely mined.
+    pub denomination_split_completed_count: u32,
+    /// Total denomination split transactions planned for this migration run.
+    pub denomination_split_total_count: u32,
+    pub pending_tx_count: u32,
+    pub broadcasted_tx_count: u32,
+    pub confirmed_tx_count: u32,
+    pub total_count: u32,
+    pub signed_child_pczt_count: u32,
+    pub pending_split_stage_count: u32,
+    pub message: Option<String>,
+    pub can_abandon: bool,
+    pub signing_batch_limit: u32,
+    pub broadcast_window_seconds: u64,
+    pub max_prepared_notes_per_run: u32,
+    pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
+}
+
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
@@ -834,6 +906,417 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
     })
 }
 
+pub fn migrate_orchard_to_ironwood(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let password = Zeroizing::new(password.into_bytes());
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            seed,
+            password,
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
+pub fn get_orchard_migration_status(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<MigrationStatus, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let balance = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        let status = wallet_sync::migration_status(
+            &db_path,
+            network,
+            &account_uuid,
+            balance.orchard,
+            balance.orchard_pending,
+            balance.ironwood,
+        )?;
+        Ok(MigrationStatus {
+            phase: status.phase,
+            active_run_id: status.active_run_id,
+            target_values_zatoshi: status.target_values_zatoshi,
+            prepared_note_count: status.prepared_note_count,
+            denomination_confirmation_count: status.denomination_confirmation_count,
+            denomination_confirmation_target: status.denomination_confirmation_target,
+            denomination_split_completed_count: status.denomination_split_completed_count,
+            denomination_split_total_count: status.denomination_split_total_count,
+            pending_tx_count: status.pending_tx_count,
+            broadcasted_tx_count: status.broadcasted_tx_count,
+            confirmed_tx_count: status.confirmed_tx_count,
+            total_count: status.total_count,
+            signed_child_pczt_count: status.signed_child_pczt_count,
+            pending_split_stage_count: status.pending_split_stage_count,
+            message: status.message,
+            can_abandon: status.can_abandon,
+            signing_batch_limit: status.signing_batch_limit,
+            broadcast_window_seconds: status.broadcast_window_seconds,
+            max_prepared_notes_per_run: status.max_prepared_notes_per_run,
+            scheduled_broadcasts: status
+                .scheduled_broadcasts
+                .into_iter()
+                .map(|broadcast| MigrationScheduledBroadcast {
+                    txid_hex: broadcast.txid_hex,
+                    scheduled_at_ms: broadcast.scheduled_at_ms,
+                    status: broadcast.status,
+                })
+                .collect(),
+        })
+    })
+}
+
+pub fn broadcast_due_orchard_migration_transactions(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::broadcast_due_orchard_migration_transactions(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            password,
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
+pub fn prepare_orchard_migration_denominations_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<KeystoneMigrationSigningRequest, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let request = wallet_sync::prepare_orchard_migration_denominations_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+        )?;
+        Ok(KeystoneMigrationSigningRequest {
+            request_id: request.request_id,
+            signing_batch_limit: request.signing_batch_limit,
+            messages: request
+                .messages
+                .into_iter()
+                .map(|message| KeystoneMigrationMessage {
+                    id: message.id,
+                    redacted_pczt: message.redacted_pczt,
+                })
+                .collect(),
+        })
+    })
+}
+
+/// Convert the FRB-boundary signed messages (compact action signatures with
+/// `Vec<u8>` sigs) into the wallet-layer form (`[u8; 64]` sigs), validating each
+/// signature is exactly 64 bytes. Shared by all three migration completion FRB
+/// wrappers so the conversion (and its length check) stays in one place.
+fn to_wallet_signed_messages(
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+) -> Result<Vec<wallet_sync::KeystoneSignedMigrationMessage>, String> {
+    signed_messages
+        .into_iter()
+        .map(|message| {
+            let sigs = message
+                .sigs
+                .into_iter()
+                .map(|action| {
+                    let sig: [u8; 64] = action.sig.as_slice().try_into().map_err(|_| {
+                        format!(
+                            "Keystone signature for {} must be 64 bytes, got {}",
+                            message.id,
+                            action.sig.len()
+                        )
+                    })?;
+                    let value_pool = match action.pool {
+                        0 => orchard::ValuePool::Orchard,
+                        1 => orchard::ValuePool::Ironwood,
+                        other => {
+                            return Err(format!(
+                                "Keystone signature for {} has unsupported pool {other}",
+                                message.id
+                            ));
+                        }
+                    };
+                    let action_index = usize::try_from(action.action_index).map_err(|_| {
+                        format!(
+                            "Keystone signature action index {} exceeds usize",
+                            action.action_index
+                        )
+                    })?;
+                    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
+                        value_pool,
+                        action_index,
+                        sig,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(wallet_sync::KeystoneSignedMigrationMessage {
+                id: message.id,
+                sigs,
+            })
+        })
+        .collect()
+}
+
+pub async fn complete_orchard_migration_denominations_pczt(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    request_id: String,
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    let network = parse_network_and_migrate(&db_path, &network)?;
+    let password = Zeroizing::new(password.into_bytes());
+    let signed_messages = to_wallet_signed_messages(signed_messages)?;
+    let r = wallet_sync::complete_orchard_migration_denominations_pczt(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        &request_id,
+        signed_messages,
+        password.as_slice(),
+        &salt_base64,
+    )
+    .await?;
+    Ok(IronwoodMigrationResult {
+        txids: r.txids,
+        status: r.status,
+        broadcasted_count: r.broadcasted_count,
+        total_count: r.total_count,
+        message: r.message,
+        fee_zatoshi: r.fee_zatoshi,
+        migrated_zatoshi: r.migrated_zatoshi,
+    })
+}
+
+pub fn prepare_orchard_migration_single_qr_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<KeystoneMigrationSigningRequest, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let request = wallet_sync::prepare_orchard_migration_single_qr_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+        )?;
+        Ok(KeystoneMigrationSigningRequest {
+            request_id: request.request_id,
+            signing_batch_limit: request.signing_batch_limit,
+            messages: request
+                .messages
+                .into_iter()
+                .map(|message| KeystoneMigrationMessage {
+                    id: message.id,
+                    redacted_pczt: message.redacted_pczt,
+                })
+                .collect(),
+        })
+    })
+}
+
+pub async fn complete_orchard_migration_single_qr_pczt(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    request_id: String,
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    let network = parse_network_and_migrate(&db_path, &network)?;
+    let password = Zeroizing::new(password.into_bytes());
+    let signed_messages = to_wallet_signed_messages(signed_messages)?;
+    let r = wallet_sync::complete_orchard_migration_single_qr_pczt(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        &request_id,
+        signed_messages,
+        password.as_slice(),
+        &salt_base64,
+    )
+    .await?;
+    Ok(IronwoodMigrationResult {
+        txids: r.txids,
+        status: r.status,
+        broadcasted_count: r.broadcasted_count,
+        total_count: r.total_count,
+        message: r.message,
+        fee_zatoshi: r.fee_zatoshi,
+        migrated_zatoshi: r.migrated_zatoshi,
+    })
+}
+
+pub fn prepare_orchard_migration_batch_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<KeystoneMigrationSigningRequest, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let request =
+            wallet_sync::prepare_orchard_migration_batch_pczt(&db_path, network, &account_uuid)?;
+        Ok(KeystoneMigrationSigningRequest {
+            request_id: request.request_id,
+            signing_batch_limit: request.signing_batch_limit,
+            messages: request
+                .messages
+                .into_iter()
+                .map(|message| KeystoneMigrationMessage {
+                    id: message.id,
+                    redacted_pczt: message.redacted_pczt,
+                })
+                .collect(),
+        })
+    })
+}
+
+pub fn keystone_migration_proof_status(
+    request_id: String,
+) -> Result<KeystoneMigrationProofStatus, String> {
+    catch(|| {
+        let status = wallet_sync::keystone_migration_proof_status(&request_id)?;
+        Ok(KeystoneMigrationProofStatus {
+            ready_count: status.ready_count,
+            total_count: status.total_count,
+            is_ready: status.is_ready,
+            is_failed: status.is_failed,
+            message: status.message,
+        })
+    })
+}
+
+pub fn discard_keystone_migration_request(request_id: String) -> Result<(), String> {
+    catch(|| wallet_sync::discard_keystone_migration_request(&request_id))
+}
+
+pub fn complete_orchard_migration_batch_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    request_id: String,
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let signed_messages = to_wallet_signed_messages(signed_messages)?;
+        let r = wallet_sync::complete_orchard_migration_batch_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+            &request_id,
+            signed_messages,
+            password.as_slice(),
+            &salt_base64,
+        )?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
+pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password_bytes = password.into_bytes();
+        let seed = secret_store::seed_from_macos_stored_mnemonic(
+            network,
+            &account_uuid,
+            Zeroizing::new(password_bytes.clone()),
+        )?;
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            seed,
+            Zeroizing::new(password_bytes),
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
 pub fn get_shield_transparent_status(
     db_path: String,
@@ -852,7 +1335,7 @@ pub fn get_shield_transparent_status(
     })
 }
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
     network: String,
@@ -871,8 +1354,7 @@ pub fn create_shield_transparent_pczt(
 }
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 pub fn shield_transparent_balance(
     db_path: String,
     lightwalletd_url: String,

@@ -23,6 +23,8 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
+mod broadcast;
+mod migration;
 mod pczt;
 mod send;
 mod transactions;
@@ -36,17 +38,27 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
+pub(crate) use migration::migration_status;
+pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
+pub use send::{
+    broadcast_due_orchard_migration_transactions, estimate_fee, execute_proposal,
+    execute_proposal_with_seed_loader, migrate_orchard_to_ironwood, propose_send,
+    ExecuteProposalResult, IronwoodMigrationResult,
+};
+pub(crate) use send::{
+    complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
+    complete_orchard_migration_single_qr_pczt, discard_keystone_migration_request,
+    keystone_migration_proof_status, prepare_orchard_migration_batch_pczt,
+    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
+    KeystoneSignedMigrationMessage,
+};
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
-};
-pub use send::{
-    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
-    ExecuteProposalResult,
 };
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
@@ -61,6 +73,8 @@ pub(crate) use send::ShieldTransparentPcztResult;
 pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentStatus;
+#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
+pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{
     decrypt_and_store_transaction, get_next_available_address,
     get_previous_transaction_count_for_address, get_transaction_data_requests,
@@ -437,6 +451,11 @@ pub(super) struct StoredProposal {
         send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
     >,
+    pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
+    /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
+    /// bundles (migration children only) and the PCZT must be built with
+    /// `BundleType::UNPADDED` to balance. See `zip317_helper`.
+    pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
     pub send_flow_id: String,

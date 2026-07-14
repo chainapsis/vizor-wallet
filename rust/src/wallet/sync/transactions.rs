@@ -89,8 +89,8 @@ pub fn get_wallet_balance(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<WalletBalance, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
     let target_id = parse_account_uuid(account_uuid)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     match db
         .get_wallet_summary(ConfirmationsPolicy::default())
         .map_err(|e| format!("{e}"))?
@@ -1246,7 +1246,7 @@ fn is_user_visible_self_output(output: &TxOutput) -> bool {
         // Transparent self outputs are user-visible only when they land on a
         // normal external/foreign receiver. Internal and ephemeral receivers
         // are change/funding mechanics.
-        0 => has_external_or_foreign_scope,
+        TRANSPARENT_POOL => has_external_or_foreign_scope,
         // `is_change` is best-effort for wallet-owned outputs and can also be
         // set on explicit self-transfers. Treat external/foreign receivers and
         // sent-note recipients as visible; keep internal change hidden.
@@ -1568,8 +1568,8 @@ impl TxBase {
 }
 
 /// A wallet-created transaction that is eligible for automatic
-/// resubmit: unmined, not past its expiry height, and sending value
-/// out of the wallet.
+/// resubmit: unmined, not past its expiry height or explicitly
+/// no-expiry, and sending value out of the wallet.
 ///
 /// `raw_tx` is the full serialized transaction bytes ready to feed
 /// back into `send_transaction` — no re-encoding required. The
@@ -1590,10 +1590,11 @@ pub(crate) struct ResubmittableTx {
 ///
 ///   * `mined_height IS NULL` — the transaction has not yet been
 ///     confirmed in a block.
-///   * `expiry_height > ?current_height` — the transaction is still
-///     valid to relay; once the current tip passes `expiry_height`
-///     the network will drop it and there is nothing we can do by
-///     resubmitting.
+///   * `expiry_height = 0 OR expiry_height > ?current_height` — the
+///     transaction is still valid to relay. A zero expiry height means
+///     no expiry; otherwise, once the current tip passes
+///     `expiry_height`, the network will drop it and there is nothing
+///     we can do by resubmitting.
 ///   * `account_balance_delta < 0` — the net balance change for the
 ///     account is negative, i.e. this is an outbound transaction
 ///     the wallet originated. Inbound transactions the sync loop
@@ -1618,7 +1619,7 @@ pub(crate) fn get_resubmittable_txs(
             "SELECT DISTINCT txid, raw, expiry_height \
              FROM v_transactions \
              WHERE mined_height IS NULL \
-               AND expiry_height > ?1 \
+               AND (expiry_height = 0 OR expiry_height > ?1) \
                AND account_balance_delta < 0 \
                AND raw IS NOT NULL",
         )
@@ -1628,10 +1629,8 @@ pub(crate) fn get_resubmittable_txs(
         .query_map([current_height], |row| {
             let txid_bytes: Vec<u8> = row.get(0)?;
             let raw_tx: Vec<u8> = row.get(1)?;
-            // `expiry_height > ?1` in the WHERE clause guarantees a
-            // non-null positive value, but rusqlite still types the
-            // column as nullable — unwrap via COALESCE-equivalent
-            // on the Rust side instead of patching the SQL.
+            // The WHERE clause rejects NULL expiry heights but still
+            // permits 0 as the protocol no-expiry marker.
             let expiry_height: u32 = row
                 .get::<_, Option<i64>>(2)?
                 .map(|h| h.max(0) as u32)
@@ -1683,11 +1682,9 @@ mod tests {
             assert_eq!(balance.transparent, 0);
             assert_eq!(balance.sapling, 0);
             assert_eq!(balance.orchard, 0);
-            assert_eq!(balance.ironwood, 0);
             assert_eq!(balance.transparent_pending, 0);
             assert_eq!(balance.sapling_pending, 0);
             assert_eq!(balance.orchard_pending, 0);
-            assert_eq!(balance.ironwood_pending, 0);
             assert_eq!(balance.change_pending_confirmation, 0);
             assert_eq!(balance.value_pending_spendability, 0);
             assert_eq!(balance.uneconomic_value, 0);
@@ -1734,6 +1731,57 @@ mod tests {
 
     fn fake_txid(byte: u8) -> [u8; 32] {
         [byte; 32]
+    }
+
+    fn tx_base_for_history() -> TxBase {
+        TxBase {
+            txid: fake_txid(1).to_vec(),
+            transaction_id: 1,
+            mined_height: Some(121),
+            expired_unmined: false,
+            account_balance_delta: -625_000_000,
+            fee: 20_000,
+            block_time: 1_800_000_000,
+            total_spent: 625_000_000,
+            total_received: 0,
+            is_shielding: false,
+            expiry_height: Some(122),
+            tx_index: 0,
+            created: None,
+            created_time: 0,
+            spent_orchard_note: true,
+        }
+    }
+
+    #[test]
+    fn classify_orchard_to_ironwood_migration_shows_moved_amount() {
+        let mut summary = ActivitySummary::default();
+        summary.migration.amount = 624_980_000;
+
+        let rows = classify_history_tx(&tx_base_for_history(), &summary, 0);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "migration");
+        assert_eq!(rows[0].info.display_amount, 624_980_000);
+        assert_eq!(rows[0].info.display_pool, "ironwood");
+    }
+
+    #[test]
+    fn classify_expired_orchard_to_ironwood_migration_keeps_failed_row() {
+        let mut base = tx_base_for_history();
+        base.mined_height = None;
+        base.expired_unmined = true;
+
+        let mut summary = ActivitySummary::default();
+        summary.migration.amount = 624_980_000;
+
+        let rows = classify_history_tx(&base, &summary, 0);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "migration");
+        assert!(rows[0].info.expired_unmined);
+        assert_eq!(rows[0].info.display_amount, 624_980_000);
+        assert_eq!(rows[0].info.display_pool, "ironwood");
     }
 
     fn fake_raw() -> Vec<u8> {
@@ -2030,6 +2078,13 @@ mod tests {
                 .unwrap();
             }
         }
+        let transaction_id = conn
+            .query_row(
+                "SELECT id_tx FROM transactions WHERE txid = ?1",
+                rusqlite::params![txid],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
         let output_index = conn
             .query_row(
                 "SELECT COALESCE(MAX(output_index) + 1, 0)
@@ -2041,13 +2096,6 @@ mod tests {
             .unwrap();
         let from_bytes = from_account.map(|uuid| uuid.as_bytes().to_vec());
         let to_bytes = to_account.map(|uuid| uuid.as_bytes().to_vec());
-        let transaction_id = conn
-            .query_row(
-                "SELECT id_tx FROM transactions WHERE txid = ?1",
-                rusqlite::params![txid],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap();
         conn.execute(
             "INSERT INTO v_tx_outputs (
                  transaction_id, txid, output_pool, output_index, from_account_uuid,
@@ -2903,7 +2951,7 @@ mod tests {
         let output_index = insert_output_with_address_and_memo(
             &db,
             &migration_tx,
-            ORCHARD_POOL,
+            3,
             Some(account),
             Some(account),
             624_980_000,
@@ -4354,8 +4402,8 @@ mod tests {
     #[test]
     fn resubmit_excludes_expired_txs() {
         // `expiry_height > current_height` is the network's
-        // still-relayable check. A tx whose expiry equals the current
-        // height is already past the window.
+        // still-relayable check for expiring transactions. A tx whose
+        // expiry equals the current height is already past the window.
         let db = fresh_db();
         insert_row(
             &db,
@@ -4446,6 +4494,27 @@ mod tests {
         assert_eq!(got[0].txid_bytes, txid.to_vec());
         assert_eq!(got[0].raw_tx, raw);
         assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_includes_no_expiry_outbound_pending() {
+        // Expiry height 0 is the protocol no-expiry marker, so these
+        // transactions must keep participating in auto-resubmit across
+        // restarts and long migration windows.
+        let db = fresh_db();
+        let txid = fake_txid(0x07);
+        let raw = fake_raw();
+        insert_row(&db, &txid, Some(&raw), None, Some(0), -5_000);
+
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert_eq!(
+            got.len(),
+            1,
+            "no-expiry outbound pending tx must be resubmittable"
+        );
+        assert_eq!(got[0].txid_bytes, txid.to_vec());
+        assert_eq!(got[0].raw_tx, raw);
+        assert_eq!(got[0].expiry_height, 0);
     }
 
     #[test]
