@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -19,6 +19,15 @@ Future<String> getLightwalletdChainName({required String lightwalletdUrl}) =>
     RustLib.instance.api.crateApiWalletGetLightwalletdChainName(
       lightwalletdUrl: lightwalletdUrl,
     );
+
+/// Get the connected chain upgrade state used to decide whether Ironwood is active.
+Future<ChainUpgradeStatus> getChainUpgradeStatus({
+  required String lightwalletdUrl,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletGetChainUpgradeStatus(
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+);
 
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
@@ -357,6 +366,67 @@ class AccountInfo {
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware;
+}
+
+/// Connected lightwalletd chain state relevant to Ironwood rollout decisions.
+class ChainUpgradeStatus {
+  final String network;
+  final String lightwalletdChainName;
+  final BigInt tipHeight;
+  final BigInt lightwalletdReportedHeight;
+  final BigInt lightwalletdEstimatedHeight;
+  final String lightwalletdConsensusBranchId;
+  final String lightwalletdUpgradeName;
+  final BigInt lightwalletdUpgradeHeight;
+  final BigInt? nu63ActivationHeight;
+  final bool ironwoodActiveAtTip;
+  final bool endpointMatchesNetwork;
+
+  const ChainUpgradeStatus({
+    required this.network,
+    required this.lightwalletdChainName,
+    required this.tipHeight,
+    required this.lightwalletdReportedHeight,
+    required this.lightwalletdEstimatedHeight,
+    required this.lightwalletdConsensusBranchId,
+    required this.lightwalletdUpgradeName,
+    required this.lightwalletdUpgradeHeight,
+    this.nu63ActivationHeight,
+    required this.ironwoodActiveAtTip,
+    required this.endpointMatchesNetwork,
+  });
+
+  @override
+  int get hashCode =>
+      network.hashCode ^
+      lightwalletdChainName.hashCode ^
+      tipHeight.hashCode ^
+      lightwalletdReportedHeight.hashCode ^
+      lightwalletdEstimatedHeight.hashCode ^
+      lightwalletdConsensusBranchId.hashCode ^
+      lightwalletdUpgradeName.hashCode ^
+      lightwalletdUpgradeHeight.hashCode ^
+      nu63ActivationHeight.hashCode ^
+      ironwoodActiveAtTip.hashCode ^
+      endpointMatchesNetwork.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChainUpgradeStatus &&
+          runtimeType == other.runtimeType &&
+          network == other.network &&
+          lightwalletdChainName == other.lightwalletdChainName &&
+          tipHeight == other.tipHeight &&
+          lightwalletdReportedHeight == other.lightwalletdReportedHeight &&
+          lightwalletdEstimatedHeight == other.lightwalletdEstimatedHeight &&
+          lightwalletdConsensusBranchId ==
+              other.lightwalletdConsensusBranchId &&
+          lightwalletdUpgradeName == other.lightwalletdUpgradeName &&
+          lightwalletdUpgradeHeight == other.lightwalletdUpgradeHeight &&
+          nu63ActivationHeight == other.nu63ActivationHeight &&
+          ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
+          endpointMatchesNetwork == other.endpointMatchesNetwork;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

@@ -143,6 +143,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BundleLayout dco_decode_bundle_layout(dynamic raw);
 
   @protected
+  ChainUpgradeStatus dco_decode_chain_upgrade_status(dynamic raw);
+
+  @protected
   CompletedVoteChoiceView dco_decode_completed_vote_choice_view(dynamic raw);
 
   @protected
@@ -677,6 +680,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
+
+  @protected
+  ChainUpgradeStatus sse_decode_chain_upgrade_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   CompletedVoteChoiceView sse_decode_completed_vote_choice_view(
@@ -1338,6 +1346,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_chain_upgrade_status(
+    ChainUpgradeStatus self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_completed_vote_choice_view(
