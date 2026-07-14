@@ -2,7 +2,7 @@ import 'package:characters/characters.dart';
 
 const kAccountNameMinCharacters = 1;
 const kAccountNameMaxCharacters = 20;
-const kAccountNameLengthMessage = 'Use up to 20 characters.';
+const kAccountNameLengthMessage = 'Name can be up to 20 characters.';
 
 String normalizeAccountName(String name) => name.trim();
 

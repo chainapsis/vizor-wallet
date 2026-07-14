@@ -9,6 +9,20 @@ class CreateSecretPassphraseArgs {
   final String mnemonic;
 }
 
+/// Ephemeral create-wallet draft passed to the final desktop onboarding step.
+///
+/// [pendingPassword] is present only for the first wallet, before password
+/// setup has been persisted. It stays in route memory and is intentionally not
+/// carried when the user navigates back to the password screen.
+class CustomiseAccountArgs {
+  const CustomiseAccountArgs({required this.mnemonic, this.pendingPassword});
+
+  final String mnemonic;
+  final String? pendingPassword;
+
+  bool get configuresPassword => pendingPassword != null;
+}
+
 class ImportSecretPassphraseArgs {
   const ImportSecretPassphraseArgs({required this.mnemonic});
 

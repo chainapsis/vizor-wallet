@@ -12,14 +12,11 @@ import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'onboarding_split_view.dart';
 import '../shared/onboarding_chrome.dart';
 import '../shared/onboarding_flow_args.dart';
-import '../shared/onboarding_error_messages.dart';
 
 class SecretPassphraseScreen extends ConsumerStatefulWidget {
   const SecretPassphraseScreen({
@@ -36,20 +33,14 @@ class SecretPassphraseScreen extends ConsumerStatefulWidget {
       _SecretPassphraseScreenState();
 }
 
-enum _CreateWalletSubmitPhase { idle, stoppingSync, creating }
-
 class _SecretPassphraseScreenState
     extends ConsumerState<SecretPassphraseScreen> {
   String? _mnemonic;
   bool _isPreparing = true;
-  _CreateWalletSubmitPhase _submitPhase = _CreateWalletSubmitPhase.idle;
   bool _revealed = false;
   bool _copied = false;
   Timer? _copyResetTimer;
   String? _prepareError;
-  String? _submitError;
-
-  bool get _isSubmitting => _submitPhase != _CreateWalletSubmitPhase.idle;
 
   @override
   void initState() {
@@ -112,12 +103,11 @@ class _SecretPassphraseScreenState
   }
 
   Future<void> _handlePrimaryAction() async {
-    if (_isPreparing || _isSubmitting || _prepareError != null) return;
+    if (_isPreparing || _prepareError != null) return;
     if (!_revealed) {
       setState(() {
         _revealed = true;
         _copied = false;
-        _submitError = null;
       });
       ref
           .read(onboardingSecretPassphraseRevealedProvider.notifier)
@@ -136,42 +126,10 @@ class _SecretPassphraseScreenState
       return;
     }
 
-    setState(() {
-      _submitPhase = _CreateWalletSubmitPhase.creating;
-      _submitError = null;
-    });
-    final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
-    try {
-      await runWithSyncPausedForAccountMutation(
-        ref,
-        () => accountNotifier.createAccountFromMnemonic(mnemonic: mnemonic),
-        onStoppingSync: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _CreateWalletSubmitPhase.stoppingSync;
-          });
-        },
-        onSyncPaused: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _CreateWalletSubmitPhase.creating;
-          });
-        },
-      );
-    } catch (e, st) {
-      log('SecretPassphraseScreen._handlePrimaryAction: ERROR: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _submitPhase = _CreateWalletSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
-      });
-      return;
-    }
-    if (mounted) {
-      clearCreateOnboardingSecretState(ref.read);
-    }
-    router.go('/home');
+    context.go(
+      OnboardingStep.customiseAccount.routePath,
+      extra: CustomiseAccountArgs(mnemonic: mnemonic),
+    );
   }
 
   Future<void> _copyMnemonic() async {
@@ -217,11 +175,9 @@ class _SecretPassphraseScreenState
           child: _HeroLayout(
             mnemonic: _mnemonic,
             isPreparing: _isPreparing,
-            submitPhase: _submitPhase,
             revealed: _revealed,
             copied: _copied,
             prepareError: _prepareError,
-            submitError: _submitError,
             onPrimaryPressed: _handlePrimaryAction,
             onCopyPressed: _copyMnemonic,
           ),
@@ -235,22 +191,18 @@ class _HeroLayout extends StatelessWidget {
   const _HeroLayout({
     required this.mnemonic,
     required this.isPreparing,
-    required this.submitPhase,
     required this.revealed,
     required this.copied,
     required this.prepareError,
-    required this.submitError,
     required this.onPrimaryPressed,
     required this.onCopyPressed,
   });
 
   final String? mnemonic;
   final bool isPreparing;
-  final _CreateWalletSubmitPhase submitPhase;
   final bool revealed;
   final bool copied;
   final String? prepareError;
-  final String? submitError;
   final Future<void> Function() onPrimaryPressed;
   final Future<void> Function() onCopyPressed;
 
@@ -285,9 +237,7 @@ class _HeroLayout extends StatelessWidget {
                     ),
                     _BottomActions(
                       isPreparing: isPreparing,
-                      submitPhase: submitPhase,
                       revealed: revealed,
-                      submitError: submitError,
                       onPrimaryPressed: onPrimaryPressed,
                     ),
                   ],
@@ -375,52 +325,25 @@ class _TitleBlock extends StatelessWidget {
 class _BottomActions extends StatelessWidget {
   const _BottomActions({
     required this.isPreparing,
-    required this.submitPhase,
     required this.revealed,
-    required this.submitError,
     required this.onPrimaryPressed,
   });
 
   final bool isPreparing;
-  final _CreateWalletSubmitPhase submitPhase;
   final bool revealed;
-  final String? submitError;
   final Future<void> Function() onPrimaryPressed;
 
   static const double _buttonWidth = 196;
 
   @override
   Widget build(BuildContext context) {
-    final isSubmitting = submitPhase != _CreateWalletSubmitPhase.idle;
-    return Column(
-      children: [
-        AppButton(
-          key: const ValueKey('create_secret_phrase_primary_button'),
-          onPressed: !isPreparing && !isSubmitting ? onPrimaryPressed : null,
-          variant: AppButtonVariant.primary,
-          minWidth: _buttonWidth,
-          trailing: const AppIcon(AppIcons.chevronForward),
-          child: Text(switch (submitPhase) {
-            _CreateWalletSubmitPhase.stoppingSync => 'Stop syncing...',
-            _CreateWalletSubmitPhase.creating => 'Creating wallet...',
-            _CreateWalletSubmitPhase.idle =>
-              revealed ? 'Continue' : 'Reveal the phrase',
-          }),
-        ),
-        if (submitError != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            width: 320,
-            child: Text(
-              submitError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.warning,
-              ),
-            ),
-          ),
-        ],
-      ],
+    return AppButton(
+      key: const ValueKey('create_secret_phrase_primary_button'),
+      onPressed: !isPreparing ? onPrimaryPressed : null,
+      variant: AppButtonVariant.primary,
+      minWidth: _buttonWidth,
+      trailing: const AppIcon(AppIcons.chevronForward),
+      child: Text(revealed ? 'Continue' : 'Reveal the phrase'),
     );
   }
 }

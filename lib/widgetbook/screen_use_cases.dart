@@ -2,6 +2,7 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
@@ -33,6 +34,8 @@ import '../src/features/onboarding/mobile/mobile_import_screens.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import '../src/features/onboarding/create/customise_account_screen.dart';
+import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
@@ -103,6 +106,17 @@ Widget buildWelcomeLargeUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
     child: _WelcomeHarness(),
+  );
+}
+
+Widget buildCustomiseAccountUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(const AccountState()),
+      ),
+    ],
+    child: const _CustomiseAccountHarness(),
   );
 }
 
@@ -1308,6 +1322,72 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
+  }
+}
+
+class _CustomiseAccountHarness extends StatefulWidget {
+  const _CustomiseAccountHarness();
+
+  @override
+  State<_CustomiseAccountHarness> createState() =>
+      _CustomiseAccountHarnessState();
+}
+
+class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: OnboardingStep.customiseAccount.routePath,
+      routes: [
+        GoRoute(
+          path: OnboardingStep.customiseAccount.routePath,
+          builder:
+              (_, _) => OnboardingSplitViewShell(
+                activeStep: OnboardingStep.customiseAccount,
+                showPasswordStep: true,
+                child: CustomiseAccountScreen(
+                  args: CustomiseAccountArgs(
+                    mnemonic: _previewMnemonic,
+                    pendingPassword: 'PreviewPassword1!',
+                  ),
+                  random: Random(1234),
+                  onFinish: (_, _) async {},
+                ),
+              ),
+        ),
+        GoRoute(
+          path: OnboardingStep.setPassword.routePath,
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(
+                label: '/onboarding/set-password',
+              ),
+        ),
+        GoRoute(
+          path: OnboardingStep.secretPassphrase.routePath,
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(
+                label: '/onboarding/secret-passphrase',
+              ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ColoredBox(
       color: context.colors.macosUtility.window,
       child: Router.withConfig(config: _router),

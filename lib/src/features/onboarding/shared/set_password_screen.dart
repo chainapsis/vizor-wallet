@@ -81,6 +81,17 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     });
 
     final router = GoRouter.of(context);
+    if (args.flow == SetPasswordFlow.create) {
+      router.go(
+        OnboardingStep.customiseAccount.routePath,
+        extra: CustomiseAccountArgs(
+          mnemonic: args.requiredMnemonic,
+          pendingPassword: password,
+        ),
+      );
+      return;
+    }
+
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final routerRefresh = ref.read(routerRefreshProvider);
@@ -201,6 +212,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitError = null;
       }),
       onSubmit: _submit,
+      idleSubmitLabel: args.flow == SetPasswordFlow.create
+          ? 'Set password & continue'
+          : 'Set password & finish',
     );
     final backTarget = onboarding_chrome.OnboardingBackTarget.route(
       label: _backLabel(args.flow),
@@ -249,6 +263,7 @@ class _SetPasswordContent extends StatelessWidget {
     required this.submitError,
     required this.onChanged,
     required this.onSubmit,
+    required this.idleSubmitLabel,
   });
 
   final TextEditingController passwordController;
@@ -260,6 +275,7 @@ class _SetPasswordContent extends StatelessWidget {
   final String? submitError;
   final VoidCallback onChanged;
   final Future<void> Function() onSubmit;
+  final String idleSubmitLabel;
 
   static const _contentWidth = 396.0;
   static const _mainHeight = 248.0;
@@ -294,6 +310,7 @@ class _SetPasswordContent extends StatelessWidget {
                   canSubmit: canSubmit,
                   submitError: submitError,
                   onSubmit: onSubmit,
+                  idleSubmitLabel: idleSubmitLabel,
                 ),
               ],
             ),
@@ -442,12 +459,14 @@ class _SetPasswordBottomActions extends StatelessWidget {
     required this.canSubmit,
     required this.submitError,
     required this.onSubmit,
+    required this.idleSubmitLabel,
   });
 
   final _SetPasswordSubmitPhase submitPhase;
   final bool canSubmit;
   final String? submitError;
   final Future<void> Function() onSubmit;
+  final String idleSubmitLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -476,7 +495,7 @@ class _SetPasswordBottomActions extends StatelessWidget {
           child: Text(switch (submitPhase) {
             _SetPasswordSubmitPhase.stoppingSync => 'Stop syncing...',
             _SetPasswordSubmitPhase.settingPassword => 'Setting password...',
-            _SetPasswordSubmitPhase.idle => 'Set password & finish',
+            _SetPasswordSubmitPhase.idle => idleSubmitLabel,
           }),
         ),
       ],
