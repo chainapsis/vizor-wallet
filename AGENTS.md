@@ -123,6 +123,50 @@ When the user explicitly asks you to modify a Figma file or design, read
 `FIGMA-AI-FIX.md` completely before starting and use it as the instructions and
 reference for that work.
 
+## Figma Visual Verification
+
+Use the widget-test capture as the default visual-comparison path in both
+directions: when applying an existing Flutter implementation to Figma and when
+implementing a Figma design in Flutter, then capturing the result to find and
+correct differences from the design.
+
+- Represent the required screen and state as a deterministic scenario in
+  `lib/figma_compare/figma_compare_scenarios.dart`. Prefer reusing an existing
+  Widgetbook fixture. The scenario must not depend on production wallet data,
+  storage, network, or Rust state.
+- Match the Figma reference's form factor, logical viewport, theme, locale,
+  content, and component state. Use the widget-test renderer for normal
+  desktop and mobile iterations:
+
+  ```bash
+  scripts/figma-compare.sh widget \
+    --scenario <scenario> \
+    --theme <dark|light>
+
+  scripts/figma-compare.sh widget \
+    --form-factor mobile \
+    --scenario <mobile-scenario> \
+    --theme <dark|light>
+  ```
+
+- Compare `content.widget.png` with the corresponding Figma capture side by
+  side and, when practical, with an overlay or image diff. After implementing
+  from Figma, correct the Flutter code and repeat the widget capture until no
+  actionable visual difference remains. Do not use Widgetbook chrome as
+  comparison evidence.
+- If the required state is not registered, add a reusable deterministic
+  capture scenario before falling back to a running platform app. Temporary
+  production routes, bootstrap overrides, or provider changes are a last
+  resort and must be removed before completion.
+- Use native macOS or iOS Simulator captures only for a final check of behavior
+  the widget-test renderer cannot represent, such as operating-system chrome,
+  the real window shell, native insets, or a material platform-rendering
+  difference. Keep the widget capture as the primary app-content comparison.
+- A request to compare an implementation with Figma does not authorize any
+  Figma mutation. Do not copy, move, or edit Figma nodes unless the user
+  explicitly requests a Figma change. When they do, read `FIGMA-AI-FIX.md` in
+  full and follow its target-approval, copy-only, and visual-parity workflow.
+
 ## Figma Layer Interpretation
 
 When reading or implementing Figma designs, distinguish app UI from
