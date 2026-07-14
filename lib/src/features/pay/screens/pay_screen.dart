@@ -63,6 +63,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   _PayModalSurface? _payModal;
   var _wizardStep = _PayWizardStep.amount;
   var _startingIntent = false;
+  var _saveRecipientToContacts = false;
+  var _openReviewAfterContactSave = false;
   var _reviewRequestGeneration = 0;
   Timer? _expiryTimer;
   DateTime? _expiryDeadline;
@@ -97,7 +99,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 
   void _closePayModal() {
     if (_payModal == null) return;
-    setState(() => _payModal = null);
+    setState(() {
+      _payModal = null;
+      _openReviewAfterContactSave = false;
+    });
   }
 
   void _syncController(TextEditingController controller, String value) {
@@ -119,8 +124,27 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   void _handleAddressScanned(String value) {
-    ref.read(swapStateProvider.notifier).updateDestination(value);
+    _updateRecipientDestination(value);
     _closePayModal();
+  }
+
+  void _updateRecipientDestination(String value) {
+    final current = ref.read(swapStateProvider).destinationText;
+    if (_saveRecipientToContacts && value != current) {
+      setState(() => _saveRecipientToContacts = false);
+    }
+    ref.read(swapStateProvider.notifier).updateDestination(value);
+  }
+
+  void _selectRecipient({required bool canSaveContact}) {
+    if (_saveRecipientToContacts && canSaveContact) {
+      setState(() {
+        _openReviewAfterContactSave = true;
+        _payModal = _PayModalSurface.addContact;
+      });
+      return;
+    }
+    unawaited(_openReview());
   }
 
   Future<void> _openReview() async {
@@ -187,7 +211,15 @@ class _PayScreenState extends ConsumerState<PayScreen> {
           profilePictureId: profilePictureId,
         );
     if (!mounted) return;
-    _closePayModal();
+    final openReview = _openReviewAfterContactSave;
+    setState(() {
+      _payModal = null;
+      _saveRecipientToContacts = false;
+      _openReviewAfterContactSave = false;
+    });
+    if (openReview) {
+      await _openReview();
+    }
   }
 
   /// Keeps the review countdown aligned with the active quote; a new quote
@@ -314,10 +346,13 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       busy: swapState.quoteLoading,
       enabled: swapState.externalAssetIsSupported,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
-      onSelectRecipient: () => unawaited(_openReview()),
-      onAddToContacts: network == null
-          ? () {}
-          : () => setState(() => _payModal = _PayModalSurface.addContact),
+      onSelectRecipient: () => _selectRecipient(
+        canSaveContact: network != null && recipientContact == null,
+      ),
+      saveAddressToContacts: _saveRecipientToContacts,
+      onSaveAddressToContactsChanged: network == null
+          ? null
+          : (value) => setState(() => _saveRecipientToContacts = value),
     );
     final actions = switch (_wizardStep) {
       _PayWizardStep.amount => PayAmountAction(
@@ -397,11 +432,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   contacts: contacts,
                   recents: recents,
                   busy: swapState.quoteLoading,
-                  onAddressChanged: swapNotifier.updateDestination,
+                  onAddressChanged: _updateRecipientDestination,
                   onOpenScanner: () => setState(
                     () => _payModal = _PayModalSurface.addressScanner,
                   ),
-                  onChooseRecipient: swapNotifier.updateDestination,
+                  onChooseRecipient: _updateRecipientDestination,
                 ),
                 _PayWizardStep.review =>
                   quote == null
@@ -446,6 +481,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                       assets: swapState.supportedExternalAssets,
                       selected: swapState.externalAsset,
                       onSelected: (asset) {
+                        setState(() => _saveRecipientToContacts = false);
                         ref
                             .read(swapStateProvider.notifier)
                             .selectPayExternalAsset(

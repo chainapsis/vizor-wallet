@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart' show Material, MaterialApp, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon_hover_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart';
@@ -59,9 +61,11 @@ Widget _recipientStep({
   List<PayRecentRecipient> recents = const [],
   ValueChanged<String>? onChooseRecipient,
   VoidCallback? onSelectRecipient,
-  VoidCallback? onAddToContacts,
+  ValueChanged<bool>? onSaveAddressToContactsChanged,
   String? quoteError,
   bool actionsEnabled = true,
+  bool busy = false,
+  bool saveAddressToContacts = false,
 }) {
   final step = PayRecipientStep(
     controller: TextEditingController(text: typedAddress),
@@ -69,7 +73,7 @@ Widget _recipientStep({
     addressError: addressError,
     contacts: contacts,
     recents: recents,
-    busy: false,
+    busy: busy,
     onAddressChanged: (_) {},
     onOpenScanner: () {},
     onChooseRecipient: onChooseRecipient ?? (_) {},
@@ -78,11 +82,12 @@ Widget _recipientStep({
     typedAddress: typedAddress,
     addressError: addressError,
     contacts: contacts,
-    busy: false,
+    busy: busy,
     enabled: actionsEnabled,
     quoteError: quoteError,
     onSelectRecipient: onSelectRecipient ?? () {},
-    onAddToContacts: onAddToContacts ?? () {},
+    saveAddressToContacts: saveAddressToContacts,
+    onSaveAddressToContactsChanged: onSaveAddressToContactsChanged ?? (_) {},
   );
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -125,15 +130,60 @@ void main() {
     );
 
     expect(
-      payRecipientContactForAddress(
-        [contact],
-        _solanaAddress.replaceFirst('N', 'n'),
-      ),
+      payRecipientContactForAddress([
+        contact,
+      ], _solanaAddress.replaceFirst('N', 'n')),
       isNull,
     );
   });
 
   group('PayAddContactModal', () {
+    testWidgets('starts with a random avatar and focuses the address label', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          PayAddContactModal(
+            network: AddressBookNetwork.ethereum,
+            address: _unknownAddress,
+            onCancel: () {},
+            onSave: (_, _) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final labelField = find.byKey(
+        const ValueKey('pay_add_contact_label_field'),
+      );
+      final editable = find.descendant(
+        of: labelField,
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(editable).focusNode!.hasFocus, isTrue);
+
+      final avatar = tester.widget<AppProfilePicture>(
+        find.descendant(
+          of: find.byKey(const ValueKey('pay_add_contact_modal')),
+          matching: find.byType(AppProfilePicture),
+        ),
+      );
+      expect(
+        kProfilePictureOptions.map((option) => option.id),
+        contains(avatar.profilePictureId),
+      );
+
+      await tester.enterText(labelField, 'Mike');
+      await tester.pump();
+      final rebuiltAvatar = tester.widget<AppProfilePicture>(
+        find.descendant(
+          of: find.byKey(const ValueKey('pay_add_contact_modal')),
+          matching: find.byType(AppProfilePicture),
+        ),
+      );
+      expect(rebuiltAvatar.profilePictureId, avatar.profilePictureId);
+    });
+
     testWidgets('waits for persistence and recovers from a save failure', (
       tester,
     ) async {
@@ -469,7 +519,7 @@ void main() {
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        find.byKey(const ValueKey('pay_save_address_checkbox')),
         findsNothing,
       );
     });
@@ -493,7 +543,7 @@ void main() {
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        find.byKey(const ValueKey('pay_save_address_checkbox')),
         findsNothing,
       );
       expect(
@@ -521,7 +571,7 @@ void main() {
       );
       expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
       expect(
-        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        find.byKey(const ValueKey('pay_save_address_checkbox')),
         findsOneWidget,
       );
     });
@@ -584,7 +634,7 @@ void main() {
       );
       expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
       expect(
-        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        find.byKey(const ValueKey('pay_save_address_checkbox')),
         findsNothing,
       );
       expect(
@@ -596,12 +646,19 @@ void main() {
     testWidgets('unknown valid address shows the new-address notice', (
       tester,
     ) async {
+      var saveAddress = false;
       await tester.pumpWidget(
         _harness(
-          _recipientStep(
-            typedAddress: _unknownAddress,
-            contacts: [_contact],
-            recents: const [PayRecentRecipient(address: _recentAddress)],
+          StatefulBuilder(
+            builder: (context, setState) => _recipientStep(
+              typedAddress: _unknownAddress,
+              contacts: [_contact],
+              recents: const [PayRecentRecipient(address: _recentAddress)],
+              saveAddressToContacts: saveAddress,
+              onSaveAddressToContactsChanged: (value) {
+                setState(() => saveAddress = value);
+              },
+            ),
           ),
         ),
       );
@@ -616,11 +673,77 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+        find.byKey(const ValueKey('pay_save_address_checkbox')),
         findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey('pay_select_recipient_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Save address to contacts'), findsOneWidget);
+
+      final selectButton = find.byKey(
+        const ValueKey('pay_select_recipient_button'),
+      );
+      final saveCheckbox = find.byKey(
+        const ValueKey('pay_save_address_checkbox'),
+      );
+      final saveCheckboxContent = find.byKey(
+        const ValueKey('pay_save_address_checkbox_content'),
+      );
+      expect(
+        tester.getTopLeft(saveCheckbox).dy,
+        lessThan(tester.getTopLeft(selectButton).dy),
+      );
+      expect(
+        tester.getCenter(saveCheckboxContent).dx,
+        closeTo(tester.getCenter(selectButton).dx, 0.5),
+      );
+      await tester.tap(saveCheckbox);
+      await tester.pump();
+      expect(saveAddress, isTrue);
+      expect(
+        find.descendant(
+          of: saveCheckbox,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.check,
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('quote loading disables actions and shows a spinner', (
+      tester,
+    ) async {
+      var saveChanged = false;
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _unknownAddress,
+            busy: true,
+            onSaveAddressToContactsChanged: (_) => saveChanged = true,
+          ),
+        ),
+      );
+
+      final selectButton = find.byKey(
+        const ValueKey('pay_select_recipient_button'),
+      );
+      final saveCheckbox = find.byKey(
+        const ValueKey('pay_save_address_checkbox'),
+      );
+      expect(find.text('Fetching quote'), findsOneWidget);
+      expect(tester.widget<AppButton>(selectButton).onPressed, isNull);
+      await tester.tap(saveCheckbox);
+      expect(saveChanged, isFalse);
+      expect(
+        find.descendant(
+          of: selectButton,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+          ),
+        ),
         findsOneWidget,
       );
     });

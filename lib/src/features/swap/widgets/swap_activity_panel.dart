@@ -906,6 +906,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           recipientAddress,
           recipientContact,
         ),
+        onGoHome: () => context.go('/home'),
         onOpenExplorer: txIdUri == null
             ? null
             : () => unawaited(

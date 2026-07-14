@@ -62,8 +62,14 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('New address detected.'), findsOneWidget);
-    expect(find.text('Add to contacts'), findsOneWidget);
+    expect(find.text('Save address to contacts'), findsOneWidget);
     expect(find.text('Select recipient'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pay_save_address_checkbox')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PayAddContactModal), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_add_contact_modal')), findsOneWidget);
   });
 
   testWidgets('Pay review use case renders a live quote and confirm action', (
@@ -134,13 +140,21 @@ void main() {
     expect(content.status.phase, PayActivityStatusPhase.inProgress);
     expect(
       tester.getSize(find.byKey(const ValueKey('pay_activity_status_content'))),
-      PayActivityStatusContent.contentSize,
+      PayActivityStatusContent.inProgressContentSize,
     );
     expect(find.text('Pay in progress...'), findsOneWidget);
     expect(find.text('990 USDC'), findsOneWidget);
     expect(find.text(r'$990.12'), findsOneWidget);
     expect(find.text('New address'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
+    expect(
+      find.text(
+        'Your swap is in progress. You can check its status at any time from '
+        'the Activity tab.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Go home'), findsOneWidget);
     _expectPayStatusDetails();
   });
 
@@ -157,6 +171,11 @@ void main() {
     expect(find.text('Paid successfully'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('In progress'), findsNothing);
+    expect(find.text('Go home'), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('pay_activity_status_content'))),
+      PayActivityStatusContent.completedContentSize,
+    );
     _expectPayStatusDetails();
   });
 }

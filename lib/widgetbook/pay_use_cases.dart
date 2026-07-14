@@ -180,6 +180,8 @@ class _PayRecipientPreview extends StatefulWidget {
 class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
   late final TextEditingController _controller;
   late String _typedAddress;
+  var _saveAddressToContacts = false;
+  var _addContactOpen = false;
 
   @override
   void initState() {
@@ -197,6 +199,7 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
   void _selectAddress(String address) {
     setState(() {
       _typedAddress = address;
+      _saveAddressToContacts = false;
       _controller.value = TextEditingValue(
         text: address,
         selection: TextSelection.collapsed(offset: address.length),
@@ -215,27 +218,56 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
       contacts: _previewContacts,
       busy: false,
       quoteError: null,
-      onSelectRecipient: () {},
-      onAddToContacts: () {},
+      onSelectRecipient: () {
+        if (_saveAddressToContacts) {
+          setState(() => _addContactOpen = true);
+        }
+      },
+      saveAddressToContacts: _saveAddressToContacts,
+      onSaveAddressToContactsChanged: (value) =>
+          setState(() => _saveAddressToContacts = value),
     );
-    return PayWizardPage(
-      title: 'Select Recipient',
-      currentIndex: 1,
-      backLabel: 'Amount',
-      onBack: () {},
-      actions: actions.visible ? actions : null,
-      onStepSelected: (_) {},
-      child: PayRecipientStep(
-        controller: _controller,
-        typedAddress: _typedAddress,
-        addressError: issue,
-        contacts: _previewContacts,
-        recents: _previewRecents,
-        busy: false,
-        onAddressChanged: (value) => setState(() => _typedAddress = value),
-        onOpenScanner: () {},
-        onChooseRecipient: _selectAddress,
-      ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PayWizardPage(
+          title: 'Select Recipient',
+          currentIndex: 1,
+          backLabel: 'Amount',
+          onBack: () {},
+          actions: actions.visible ? actions : null,
+          onStepSelected: (_) {},
+          child: PayRecipientStep(
+            controller: _controller,
+            typedAddress: _typedAddress,
+            addressError: issue,
+            contacts: _previewContacts,
+            recents: _previewRecents,
+            busy: false,
+            onAddressChanged: (value) => setState(() {
+              _typedAddress = value;
+              _saveAddressToContacts = false;
+            }),
+            onOpenScanner: () {},
+            onChooseRecipient: _selectAddress,
+          ),
+        ),
+        if (_addContactOpen)
+          AppPaneModalOverlay(
+            onDismiss: () => setState(() => _addContactOpen = false),
+            child: PayAddContactModal(
+              network: AddressBookNetwork.ethereum,
+              address: _typedAddress,
+              onCancel: () => setState(() => _addContactOpen = false),
+              onSave: (_, _) async {
+                setState(() {
+                  _addContactOpen = false;
+                  _saveAddressToContacts = false;
+                });
+              },
+            ),
+          ),
+      ],
     );
   }
 }
@@ -356,6 +388,7 @@ class _PayStatusPreview extends StatelessWidget {
           amountFiatText: r'$990.12',
           recipientAddress: _newRecipientAddress,
           onShowFullAddress: () {},
+          onGoHome: () {},
           onOpenExplorer: () {},
         ),
       ),

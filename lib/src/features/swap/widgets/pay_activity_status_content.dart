@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/review_info_row.dart';
@@ -23,6 +24,7 @@ class PayActivityStatusContent extends StatelessWidget {
     required this.amountFiatText,
     required this.recipientAddress,
     required this.onShowFullAddress,
+    required this.onGoHome,
     this.recipientContact,
     this.onOpenExplorer,
     super.key,
@@ -35,13 +37,18 @@ class PayActivityStatusContent extends StatelessWidget {
   final String recipientAddress;
   final AddressBookContact? recipientContact;
   final VoidCallback onShowFullAddress;
+  final VoidCallback onGoHome;
   final VoidCallback? onOpenExplorer;
 
-  static const Size contentSize = Size(396, 549);
+  static const Size inProgressContentSize = Size(396, 713);
+  static const Size completedContentSize = Size(396, 549);
   static const double reviewInfoHeight = 204;
   static const double detailCardHeight = 257;
+  static const double inProgressFooterHeight = 140;
 
   bool get _completed => status.phase == PayActivityStatusPhase.completed;
+  Size get contentSize =>
+      _completed ? completedContentSize : inProgressContentSize;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +71,38 @@ class PayActivityStatusContent extends StatelessWidget {
           _reviewInfo(context),
           const SizedBox(height: AppSpacing.base),
           _detailCard(context),
+          if (!_completed) ...[
+            const SizedBox(height: AppSpacing.md),
+            _inProgressFooter(context),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _inProgressFooter(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('pay_status_in_progress_footer'),
+      height: inProgressFooterHeight,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            'Your swap is in progress. You can check its status at any time '
+            'from the Activity tab.',
+            key: const ValueKey('pay_status_in_progress_message'),
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            key: const ValueKey('pay_status_go_home_button'),
+            onPressed: onGoHome,
+            minWidth: 196,
+            child: const Text('Go home'),
+          ),
         ],
       ),
     );

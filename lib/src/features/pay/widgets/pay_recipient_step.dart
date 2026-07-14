@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -10,6 +11,11 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
+
+const _payCheckboxActivationShortcuts = <ShortcutActivator, Intent>{
+  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+};
 
 /// Step 2 "Select Recipient" of the desktop pay wizard — Figma 6241:85245
 /// plus the 2B1/2B2/2B3 field states (85845 / 104834 / 86376).
@@ -235,7 +241,8 @@ class PayRecipientActions extends StatelessWidget {
     required this.busy,
     required this.quoteError,
     required this.onSelectRecipient,
-    required this.onAddToContacts,
+    required this.saveAddressToContacts,
+    required this.onSaveAddressToContactsChanged,
     this.enabled = true,
     super.key,
   });
@@ -247,7 +254,8 @@ class PayRecipientActions extends StatelessWidget {
   final bool enabled;
   final String? quoteError;
   final VoidCallback onSelectRecipient;
-  final VoidCallback onAddToContacts;
+  final bool saveAddressToContacts;
+  final ValueChanged<bool>? onSaveAddressToContactsChanged;
 
   bool get visible {
     final typed = typedAddress.trim();
@@ -258,7 +266,8 @@ class PayRecipientActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final typed = typedAddress.trim();
     final contact = payRecipientContactForAddress(contacts, typed);
-    final canAddContact = contact == null;
+    final canSaveContact =
+        contact == null && onSaveAddressToContactsChanged != null;
 
     return Column(
       key: const ValueKey('pay_recipient_actions'),
@@ -280,14 +289,10 @@ class PayRecipientActions extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
         ],
-        if (canAddContact) ...[
-          AppButton(
-            key: const ValueKey('pay_add_to_contacts_button'),
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.large,
-            minWidth: PayWizardActionMetrics.width,
-            onPressed: busy ? null : onAddToContacts,
-            child: const Text('Add to contacts'),
+        if (canSaveContact) ...[
+          _PaySaveAddressCheckbox(
+            value: saveAddressToContacts,
+            onChanged: busy ? null : onSaveAddressToContactsChanged,
           ),
           const SizedBox(height: AppSpacing.s),
         ],
@@ -297,6 +302,9 @@ class PayRecipientActions extends StatelessWidget {
           size: AppButtonSize.large,
           minWidth: PayWizardActionMetrics.width,
           onPressed: busy || !enabled ? null : onSelectRecipient,
+          leading: busy
+              ? const AppIcon(AppIcons.loader, semanticLabel: 'Fetching quote')
+              : null,
           child: Text(busy ? 'Fetching quote' : 'Select recipient'),
         ),
       ],
@@ -304,8 +312,141 @@ class PayRecipientActions extends StatelessWidget {
   }
 }
 
+class _PaySaveAddressCheckbox extends StatefulWidget {
+  const _PaySaveAddressCheckbox({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  State<_PaySaveAddressCheckbox> createState() =>
+      _PaySaveAddressCheckboxState();
+}
+
+class _PaySaveAddressCheckboxState extends State<_PaySaveAddressCheckbox> {
+  var _hovered = false;
+  var _focused = false;
+
+  bool get _enabled => widget.onChanged != null;
+
+  void _activate() {
+    if (!_enabled) return;
+    widget.onChanged!(!widget.value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final transparent = colors.background.ground.withValues(alpha: 0);
+    final labelColor = _enabled
+        ? colors.text.accent
+        : colors.button.disabled.label;
+
+    return Semantics(
+      key: const ValueKey('pay_save_address_checkbox'),
+      checked: widget.value,
+      enabled: _enabled,
+      label: 'Save address to contacts',
+      child: ExcludeSemantics(
+        child: MouseRegion(
+          cursor: _enabled
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          onEnter: _enabled ? (_) => setState(() => _hovered = true) : null,
+          onExit: _enabled ? (_) => setState(() => _hovered = false) : null,
+          child: FocusableActionDetector(
+            enabled: _enabled,
+            mouseCursor: _enabled
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
+            onShowFocusHighlight: (value) => setState(() => _focused = value),
+            shortcuts: _payCheckboxActivationShortcuts,
+            actions: <Type, Action<Intent>>{
+              ActivateIntent: CallbackAction<Intent>(
+                onInvoke: (_) {
+                  _activate();
+                  return null;
+                },
+              ),
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _enabled ? _activate : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOut,
+                width: PayWizardActionMetrics.saveContactWidth,
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+                decoration: BoxDecoration(
+                  color: _hovered ? colors.state.hover : transparent,
+                  border: Border.all(
+                    color: _focused ? colors.state.focusRing : transparent,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.small),
+                ),
+                child: Center(
+                  child: FittedBox(
+                    key: const ValueKey('pay_save_address_checkbox_content'),
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          key: const ValueKey(
+                            'pay_save_address_checkbox_indicator',
+                          ),
+                          duration: const Duration(milliseconds: 140),
+                          curve: Curves.easeOut,
+                          width: 20,
+                          height: 20,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: widget.value
+                                ? colors.background.inverse
+                                : transparent,
+                            border: Border.all(
+                              color: widget.value
+                                  ? colors.border.strong
+                                  : colors.border.regular,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.xSmall,
+                            ),
+                          ),
+                          child: widget.value
+                              ? AppIcon(
+                                  AppIcons.check,
+                                  size: 13,
+                                  color: colors.icon.inverse,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          'Save address to contacts',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: labelColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 abstract final class PayWizardActionMetrics {
   static const double width = 196;
+  static const double saveContactWidth = 240;
 }
 
 class _PayRecipientListCard extends StatelessWidget {
