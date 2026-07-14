@@ -37,9 +37,10 @@ ActivityRowData buildTransactionActivityRow({
   final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';
   final isShielded = kind == 'shielded';
+  final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isInbound || isSent
+  final subtitle = isInbound || isSent || isMigration
       ? _poolLabel(transaction.displayPool)
       : null;
 
@@ -65,7 +66,7 @@ ActivityRowData buildTransactionActivityRow({
         amount: amount,
         signedAmount: signedAmount,
         isFailed: isFailed,
-        isShielded: isShielded,
+        isUnsignedAmount: isShielded || isMigration,
         kind: kind,
         privacyModeEnabled: privacyModeEnabled,
       ),
@@ -110,7 +111,7 @@ String _transactionAmountText({
   required BigInt amount,
   required BigInt signedAmount,
   required bool isFailed,
-  required bool isShielded,
+  required bool isUnsignedAmount,
   required String kind,
   required bool privacyModeEnabled,
 }) {
@@ -122,7 +123,7 @@ String _transactionAmountText({
     );
   }
   if (amount == BigInt.zero) return '--';
-  if (isFailed || isShielded) {
+  if (isFailed || isUnsignedAmount) {
     return ZecAmount.fromZatoshi(amount).activity.toString();
   }
   return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
@@ -157,6 +158,7 @@ String _txTitle(String kind) {
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
+    'migration' => 'Migration',
     _ => 'Transaction',
   };
 }
@@ -173,6 +175,7 @@ String _txIcon(String kind, {required bool isPending}) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'migration' => AppIcons.renew,
     _ => AppIcons.history,
   };
 }
@@ -181,6 +184,7 @@ String? _poolLabel(String pool) {
   return switch (pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
+    'ironwood' => 'Ironwood',
     'mixed' => 'Mixed',
     _ => null,
   };
@@ -190,6 +194,7 @@ String? _poolIcon(String pool) {
   return switch (pool) {
     'transparent' => AppIcons.transparentBalance,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'ironwood' => AppIcons.shieldKeyholeOutline,
     _ => null,
   };
 }

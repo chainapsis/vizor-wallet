@@ -1192,9 +1192,11 @@ class WalletBalance {
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
+  final BigInt ironwood;
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
+  final BigInt ironwoodPending;
 
   /// Wallet-created change that has not reached the trusted confirmation depth.
   final BigInt changePendingConfirmation;
@@ -1216,9 +1218,11 @@ class WalletBalance {
     required this.transparent,
     required this.sapling,
     required this.orchard,
+    required this.ironwood,
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.ironwoodPending,
     required this.changePendingConfirmation,
     required this.valuePendingSpendability,
     required this.uneconomicValue,
@@ -1232,9 +1236,11 @@ class WalletBalance {
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
+      ironwood.hashCode ^
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      ironwoodPending.hashCode ^
       changePendingConfirmation.hashCode ^
       valuePendingSpendability.hashCode ^
       uneconomicValue.hashCode ^
@@ -1250,9 +1256,11 @@ class WalletBalance {
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
+          ironwood == other.ironwood &&
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          ironwoodPending == other.ironwoodPending &&
           changePendingConfirmation == other.changePendingConfirmation &&
           valuePendingSpendability == other.valuePendingSpendability &&
           uneconomicValue == other.uneconomicValue &&

@@ -8,14 +8,16 @@ void main() {
       transparentBalance: BigInt.from(100),
       saplingBalance: BigInt.from(20),
       orchardBalance: BigInt.from(30),
+      ironwoodBalance: BigInt.from(40),
       transparentPendingBalance: BigInt.from(3),
       saplingPendingBalance: BigInt.from(4),
       orchardPendingBalance: BigInt.from(5),
+      ironwoodPendingBalance: BigInt.from(6),
       spendableBalance: BigInt.from(50),
-      totalBalance: BigInt.from(162),
+      totalBalance: BigInt.from(208),
     );
 
-    expect(state.pendingBalance, BigInt.from(12));
+    expect(state.pendingBalance, BigInt.from(18));
   });
 
   test('display spendable defaults to the authoritative balance', () {
@@ -155,9 +157,11 @@ void main() {
       transparent: BigInt.from(1),
       sapling: BigInt.from(2),
       orchard: BigInt.from(3),
+      ironwood: BigInt.zero,
       transparentPending: BigInt.from(4),
       saplingPending: BigInt.from(5),
       orchardPending: BigInt.from(6),
+      ironwoodPending: BigInt.zero,
       changePendingConfirmation: BigInt.from(7),
       valuePendingSpendability: BigInt.from(8),
       uneconomicValue: BigInt.from(9),

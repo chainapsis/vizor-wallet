@@ -345,9 +345,11 @@ pub struct WalletBalance {
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
+    pub ironwood: u64,
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
+    pub ironwood_pending: u64,
     /// Wallet-created change that has not reached the trusted confirmation depth.
     pub change_pending_confirmation: u64,
     /// Other received value awaiting confirmations or additional witness scanning.
@@ -581,17 +583,20 @@ pub fn get_balance(
                 WalletBalanceAvailability::AccountUnavailable
             }
         };
-        let spendable = b.sapling + b.orchard;
-        let total_spendable = b.transparent + b.sapling + b.orchard;
-        let pending = b.transparent_pending + b.sapling_pending + b.orchard_pending;
+        let spendable = b.sapling + b.orchard + b.ironwood;
+        let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
+        let pending =
+            b.transparent_pending + b.sapling_pending + b.orchard_pending + b.ironwood_pending;
         Ok(WalletBalance {
             availability,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,
+            ironwood: b.ironwood,
             transparent_pending: b.transparent_pending,
             sapling_pending: b.sapling_pending,
             orchard_pending: b.orchard_pending,
+            ironwood_pending: b.ironwood_pending,
             change_pending_confirmation: b.change_pending_confirmation,
             value_pending_spendability: b.value_pending_spendability,
             uneconomic_value: b.uneconomic_value,

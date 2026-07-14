@@ -49,9 +49,11 @@ class SyncState {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt ironwoodBalance;
   final BigInt transparentPendingBalance;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodPendingBalance;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -88,7 +90,10 @@ class SyncState {
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
-      transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
+      transparentPendingBalance +
+      saplingPendingBalance +
+      orchardPendingBalance +
+      ironwoodPendingBalance;
 
   bool get isSyncedToTip =>
       isSyncComplete &&
@@ -186,9 +191,11 @@ class SyncState {
       transparentBalance: balance?.transparent,
       saplingBalance: balance?.sapling,
       orchardBalance: balance?.orchard,
+      ironwoodBalance: balance?.ironwood,
       transparentPendingBalance: balance?.transparentPending,
       saplingPendingBalance: balance?.saplingPending,
       orchardPendingBalance: balance?.orchardPending,
+      ironwoodPendingBalance: balance?.ironwoodPending,
       canShieldTransparentBalance: hasAuthoritativeBalance
           ? canShieldTransparentBalance ?? this.canShieldTransparentBalance
           : this.canShieldTransparentBalance,
@@ -223,9 +230,11 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? ironwoodBalance,
     BigInt? transparentPendingBalance,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
+    BigInt? ironwoodPendingBalance,
     this.canShieldTransparentBalance = false,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -248,9 +257,11 @@ class SyncState {
        transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
+       ironwoodBalance = ironwoodBalance ?? BigInt.zero,
        transparentPendingBalance = transparentPendingBalance ?? BigInt.zero,
        saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
        orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
+       ironwoodPendingBalance = ironwoodPendingBalance ?? BigInt.zero,
        shieldTransparentFee = shieldTransparentFee ?? BigInt.zero,
        shieldTransparentAmount = shieldTransparentAmount ?? BigInt.zero,
        spendableBalance = spendableBalance ?? BigInt.zero,
@@ -275,9 +286,11 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? ironwoodBalance,
     BigInt? transparentPendingBalance,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
+    BigInt? ironwoodPendingBalance,
     bool? canShieldTransparentBalance,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -316,12 +329,15 @@ class SyncState {
       transparentBalance: transparentBalance ?? this.transparentBalance,
       saplingBalance: saplingBalance ?? this.saplingBalance,
       orchardBalance: orchardBalance ?? this.orchardBalance,
+      ironwoodBalance: ironwoodBalance ?? this.ironwoodBalance,
       transparentPendingBalance:
           transparentPendingBalance ?? this.transparentPendingBalance,
       saplingPendingBalance:
           saplingPendingBalance ?? this.saplingPendingBalance,
       orchardPendingBalance:
           orchardPendingBalance ?? this.orchardPendingBalance,
+      ironwoodPendingBalance:
+          ironwoodPendingBalance ?? this.ironwoodPendingBalance,
       canShieldTransparentBalance:
           canShieldTransparentBalance ?? this.canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee ?? this.shieldTransparentFee,
@@ -550,6 +566,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       orchardBalance: initialBelongsToActiveAccount
           ? initial.orchardBalance
           : BigInt.zero,
+      ironwoodBalance: initialBelongsToActiveAccount
+          ? initial.ironwoodBalance
+          : BigInt.zero,
       transparentPendingBalance: initialBelongsToActiveAccount
           ? initial.transparentPendingBalance
           : BigInt.zero,
@@ -558,6 +577,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           : BigInt.zero,
       orchardPendingBalance: initialBelongsToActiveAccount
           ? initial.orchardPendingBalance
+          : BigInt.zero,
+      ironwoodPendingBalance: initialBelongsToActiveAccount
+          ? initial.ironwoodPendingBalance
           : BigInt.zero,
       canShieldTransparentBalance: initialBelongsToActiveAccount
           ? initial.canShieldTransparentBalance
@@ -706,9 +728,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -900,9 +924,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -1011,9 +1037,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -1539,9 +1567,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparent;
     BigInt? sapling;
     BigInt? orchard;
+    BigInt? ironwood;
     BigInt? transparentPending;
     BigInt? saplingPending;
     BigInt? orchardPending;
+    BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -1567,9 +1597,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           transparent = balance.transparent;
           sapling = balance.sapling;
           orchard = balance.orchard;
+          ironwood = balance.ironwood;
           transparentPending = balance.transparentPending;
           saplingPending = balance.saplingPending;
           orchardPending = balance.orchardPending;
+          ironwoodPending = balance.ironwoodPending;
           spendable = balance.spendable;
           total = balance.total;
           hasAuthoritativeBalance = true;
@@ -1701,6 +1733,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardBalance: useFetchedBalance
             ? orchard
             : stateScopedPrev?.orchardBalance,
+        ironwoodBalance: useFetchedBalance
+            ? ironwood
+            : stateScopedPrev?.ironwoodBalance,
         transparentPendingBalance: useFetchedBalance
             ? transparentPending
             : stateScopedPrev?.transparentPendingBalance,
@@ -1710,6 +1745,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardPendingBalance: useFetchedBalance
             ? orchardPending
             : stateScopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: useFetchedBalance
+            ? ironwoodPending
+            : stateScopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance: useFetchedBalance
             ? canShieldTransparentBalance ??
                   stateScopedPrev?.canShieldTransparentBalance ??
@@ -1953,9 +1991,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparent;
     BigInt? sapling;
     BigInt? orchard;
+    BigInt? ironwood;
     BigInt? transparentPending;
     BigInt? saplingPending;
     BigInt? orchardPending;
+    BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -1974,9 +2014,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparent = balance.transparent;
         sapling = balance.sapling;
         orchard = balance.orchard;
+        ironwood = balance.ironwood;
         transparentPending = balance.transparentPending;
         saplingPending = balance.saplingPending;
         orchardPending = balance.orchardPending;
+        ironwoodPending = balance.ironwoodPending;
         spendable = balance.spendable;
         total = balance.total;
         hasAuthoritativeBalance = true;
@@ -2081,12 +2123,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: transparent ?? accountFallback?.transparentBalance,
         saplingBalance: sapling ?? accountFallback?.saplingBalance,
         orchardBalance: orchard ?? accountFallback?.orchardBalance,
+        ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
         transparentPendingBalance:
             transparentPending ?? accountFallback?.transparentPendingBalance,
         saplingPendingBalance:
             saplingPending ?? accountFallback?.saplingPendingBalance,
         orchardPendingBalance:
             orchardPending ?? accountFallback?.orchardPendingBalance,
+        ironwoodPendingBalance:
+            ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             canShieldTransparentBalance ??
             accountFallback?.canShieldTransparentBalance ??
