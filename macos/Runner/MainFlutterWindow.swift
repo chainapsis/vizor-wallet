@@ -3,6 +3,9 @@ import FlutterMacOS
 import LocalAuthentication
 import Security
 import desktop_window_bootstrap
+#if DEBUG
+import ScreenCaptureKit
+#endif
 
 private func appWindowBackgroundColor(for brightness: String) -> NSColor {
   if brightness == "dark" {
@@ -494,6 +497,339 @@ final class PrivacyExposureChannel: NSObject, FlutterStreamHandler {
   }
 }
 
+#if DEBUG
+/// Development-only capture bridge used by `lib/figma_compare.dart`.
+///
+/// Capture is a transaction: the bridge records the current app/window state,
+/// restores and activates a minimized window, captures that exact NSWindow,
+/// and then returns focus and visibility to their prior state.
+final class FigmaComparisonCaptureChannel {
+  private static var shared: FigmaComparisonCaptureChannel?
+  private static let readyTimeout = DispatchTimeInterval.seconds(3)
+
+  private struct CaptureSession {
+    let token: String
+    let wasHidden: Bool
+    let wasVisible: Bool
+    let wasMiniaturized: Bool
+    let animationBehavior: NSWindow.AnimationBehavior
+    let previousFrontmostApplication: NSRunningApplication?
+  }
+
+  private weak var window: NSWindow?
+  private let channel: FlutterMethodChannel
+  private var session: CaptureSession?
+
+  private init(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    self.window = window
+    channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/figma_compare_capture",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      self?.handle(call, result: result)
+    }
+  }
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    shared = FigmaComparisonCaptureChannel(window: window, messenger: messenger)
+  }
+
+  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "beginCapture":
+      beginCapture(result: result)
+    case "captureWindow":
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let token = arguments["token"] as? String,
+        let path = arguments["path"] as? String
+      else {
+        result(captureError("bad_args", "Expected capture token and output path."))
+        return
+      }
+      captureWindow(token: token, path: path, result: result)
+    case "endCapture":
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let token = arguments["token"] as? String
+      else {
+        result(captureError("bad_args", "Expected capture token."))
+        return
+      }
+      endCapture(token: token, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func beginCapture(result: @escaping FlutterResult) {
+    guard session == nil else {
+      result(captureError("capture_in_progress", "A comparison capture is already active."))
+      return
+    }
+    guard let window else {
+      result(captureError("missing_window", "The comparison window is unavailable."))
+      return
+    }
+
+    let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
+    let previousFrontmostApplication = NSWorkspace.shared.frontmostApplication
+    let captureSession = CaptureSession(
+      token: UUID().uuidString,
+      wasHidden: NSApp.isHidden,
+      wasVisible: window.isVisible,
+      wasMiniaturized: window.isMiniaturized,
+      animationBehavior: window.animationBehavior,
+      previousFrontmostApplication:
+        previousFrontmostApplication?.processIdentifier == currentProcessIdentifier
+          ? nil
+          : previousFrontmostApplication
+    )
+    session = captureSession
+
+    window.animationBehavior = .none
+    presentForCapture(window)
+
+    waitUntilReady(
+      token: captureSession.token,
+      deadline: DispatchTime.now() + Self.readyTimeout,
+      result: result
+    )
+  }
+
+  private func waitUntilReady(
+    token: String,
+    deadline: DispatchTime,
+    result: @escaping FlutterResult
+  ) {
+    guard let session, session.token == token, let window else {
+      result(captureError("capture_cancelled", "The comparison capture was cancelled."))
+      return
+    }
+
+    let ready =
+      NSApp.isActive &&
+      !NSApp.isHidden &&
+      window.isKeyWindow &&
+      window.isVisible &&
+      !window.isMiniaturized &&
+      window.occlusionState.contains(.visible)
+    if ready {
+      result([
+        "token": token,
+        "windowNumber": window.windowNumber,
+        "backingScaleFactor": window.backingScaleFactor,
+      ])
+      return
+    }
+
+    // Activation is asynchronous and another app can win focus between the
+    // first request and AppKit publishing the new state. Reassert the entire
+    // debug-only capture state on every poll instead of merely waiting for a
+    // one-shot activation that may already have been superseded.
+    presentForCapture(window)
+
+    if DispatchTime.now() >= deadline {
+      restoreSession(session)
+      self.session = nil
+      result(
+        captureError(
+          "window_not_ready",
+          "The comparison window did not become active, key, and visible."
+        )
+      )
+      return
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+      self?.waitUntilReady(token: token, deadline: deadline, result: result)
+    }
+  }
+
+  private func presentForCapture(_ window: NSWindow) {
+    if NSApp.isHidden {
+      NSApp.unhide(nil)
+    }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    window.setIsVisible(true)
+
+    // `activate()` is cooperative on current macOS releases. This bridge is
+    // DEBUG-only and must put the exact comparison window in the foreground
+    // before collecting evidence, so retain the force-activation fallback.
+    if #available(macOS 14.0, *) {
+      NSApp.activate()
+    }
+    if !NSApp.isActive || !window.isKeyWindow {
+      NSApp.activate(ignoringOtherApps: true)
+    }
+    window.makeKeyAndOrderFront(nil)
+    window.orderFrontRegardless()
+  }
+
+  private func captureWindow(
+    token: String,
+    path: String,
+    result: @escaping FlutterResult
+  ) {
+    guard let session, session.token == token else {
+      result(captureError("invalid_token", "The comparison capture token is invalid."))
+      return
+    }
+    guard let window else {
+      result(captureError("missing_window", "The comparison window is unavailable."))
+      return
+    }
+
+    if #available(macOS 14.0, *) {
+      captureWithScreenCaptureKit(window: window, path: path, result: result)
+    } else {
+      captureWithCoreGraphics(window: window, path: path, result: result)
+    }
+  }
+
+  @available(macOS 14.0, *)
+  private func captureWithScreenCaptureKit(
+    window: NSWindow,
+    path: String,
+    result: @escaping FlutterResult
+  ) {
+    let windowID = CGWindowID(window.windowNumber)
+    SCShareableContent.getExcludingDesktopWindows(
+      false,
+      onScreenWindowsOnly: false
+    ) { [weak self] content, error in
+      guard let self else { return }
+      if let error {
+        result(self.captureError("shareable_content_failed", error.localizedDescription))
+        return
+      }
+      guard
+        let capturedWindow = content?.windows.first(where: { $0.windowID == windowID })
+      else {
+        result(self.captureError("window_not_shareable", "The comparison window was not shareable."))
+        return
+      }
+
+      let filter = SCContentFilter(desktopIndependentWindow: capturedWindow)
+      let configuration = SCStreamConfiguration()
+      let scale = window.backingScaleFactor
+      configuration.width = Int(window.frame.width * scale)
+      configuration.height = Int(window.frame.height * scale)
+      configuration.showsCursor = false
+      configuration.ignoreShadowsSingleWindow = true
+
+      SCScreenshotManager.captureImage(
+        contentFilter: filter,
+        configuration: configuration
+      ) { image, captureError in
+        if let captureError {
+          result(self.captureError("window_capture_failed", captureError.localizedDescription))
+          return
+        }
+        guard let image else {
+          result(self.captureError("window_capture_failed", "ScreenCaptureKit returned no image."))
+          return
+        }
+        self.write(image: image, path: path, backend: "ScreenCaptureKit", result: result)
+      }
+    }
+  }
+
+  private func captureWithCoreGraphics(
+    window: NSWindow,
+    path: String,
+    result: @escaping FlutterResult
+  ) {
+    guard
+      let image = CGWindowListCreateImage(
+        .null,
+        .optionIncludingWindow,
+        CGWindowID(window.windowNumber),
+        [.boundsIgnoreFraming, .bestResolution]
+      )
+    else {
+      result(captureError("window_capture_failed", "Core Graphics returned no image."))
+      return
+    }
+    write(image: image, path: path, backend: "CoreGraphics", result: result)
+  }
+
+  private func write(
+    image: CGImage,
+    path: String,
+    backend: String,
+    result: @escaping FlutterResult
+  ) {
+    let representation = NSBitmapImageRep(cgImage: image)
+    guard let data = representation.representation(using: .png, properties: [:]) else {
+      result(captureError("png_encoding_failed", "The window image could not be encoded."))
+      return
+    }
+
+    do {
+      try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+      result([
+        "path": path,
+        "width": image.width,
+        "height": image.height,
+        "backend": backend,
+      ])
+    } catch {
+      result(captureError("png_write_failed", error.localizedDescription))
+    }
+  }
+
+  private func endCapture(token: String, result: @escaping FlutterResult) {
+    guard let session, session.token == token else {
+      result(captureError("invalid_token", "The comparison capture token is invalid."))
+      return
+    }
+    restoreSession(session)
+    self.session = nil
+    // AppKit publishes minimize/hide state on the next run-loop turns. Do not
+    // let a capture-and-exit caller terminate before that restoration settles.
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) { [weak self] in
+      result([
+        "windowMiniaturized": self?.window?.isMiniaturized ?? false,
+        "windowVisible": self?.window?.isVisible ?? false,
+        "appHidden": NSApp.isHidden,
+      ])
+    }
+  }
+
+  private func restoreSession(_ session: CaptureSession) {
+    guard let window else { return }
+
+    window.animationBehavior = .none
+    if session.wasHidden {
+      NSApp.hide(nil)
+    } else if session.wasMiniaturized {
+      window.miniaturize(nil)
+    } else if !session.wasVisible {
+      window.orderOut(nil)
+    }
+    window.animationBehavior = session.animationBehavior
+
+    guard
+      let previousApplication = session.previousFrontmostApplication,
+      !previousApplication.isTerminated,
+      NSWorkspace.shared.frontmostApplication?.processIdentifier ==
+        ProcessInfo.processInfo.processIdentifier
+    else {
+      return
+    }
+    _ = previousApplication.activate(options: [])
+  }
+
+  private func captureError(_ code: String, _ message: String) -> FlutterError {
+    FlutterError(code: code, message: message, details: nil)
+  }
+}
+#endif
+
 final class CameraPermissionSettingsChannel {
   private static var channel: FlutterMethodChannel?
 
@@ -629,6 +965,12 @@ class MainFlutterWindow: NSWindow {
       window: self,
       messenger: flutterViewController.engine.binaryMessenger
     )
+#if DEBUG
+    FigmaComparisonCaptureChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+#endif
     CameraPermissionSettingsChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
