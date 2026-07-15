@@ -204,7 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     IronwoodMigrationAnnouncementState announcement,
   ) async {
     try {
-      context.push('/migration');
+      context.go('/migration/intro');
       await _markIronwoodAnnouncementSeen(announcement);
     } catch (e) {
       log('HomeScreen: migration route is not available yet: $e');
@@ -223,9 +223,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _openIronwoodMigrationFromHomeCta() async {
+  Future<void> _openIronwoodMigrationFromHomeCta(
+    IronwoodHomeMigrationCtaState cta,
+  ) async {
+    final target = _ironwoodMigrationTargetForCta(cta);
+    if (target == null) return;
+
     try {
-      context.push('/migration');
+      context.go(target);
     } catch (e) {
       log('HomeScreen: migration route is not available yet: $e');
     }
@@ -328,8 +333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onDismissShieldBalanceError: _dismissShieldBalanceError,
                 onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
                 ironwoodMigrationCta: ironwoodHomeMigrationCta,
-                onIronwoodMigrationCta: () =>
-                    unawaited(_openIronwoodMigrationFromHomeCta()),
+                onIronwoodMigrationCta: () => unawaited(
+                  _openIronwoodMigrationFromHomeCta(ironwoodHomeMigrationCta),
+                ),
               ),
             ),
           ),
@@ -356,6 +362,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+}
+
+String? _ironwoodMigrationTargetForCta(IronwoodHomeMigrationCtaState cta) {
+  return switch (cta.mode) {
+    IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+    IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
+    IronwoodHomeMigrationCtaMode.hidden => null,
+  };
 }
 
 class _HomePane extends ConsumerStatefulWidget {

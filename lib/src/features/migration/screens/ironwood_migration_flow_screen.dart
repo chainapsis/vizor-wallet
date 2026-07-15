@@ -173,7 +173,12 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
           IronwoodHomeMigrationCtaMode.start => '/migration/intro',
           IronwoodHomeMigrationCtaMode.hidden => '/home',
         };
-        return _RedirectTo(target);
+        return _RedirectTo(
+          target,
+          placeholder: const _IronwoodMigrationLoadingShell(
+            step: IronwoodMigrationFlowStep.intro,
+          ),
+        );
       },
     );
   }
@@ -210,7 +215,12 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
       ),
       data: (cta) {
         if (cta.mode == IronwoodHomeMigrationCtaMode.start) {
-          return const _RedirectTo('/migration/intro');
+          return const _RedirectTo(
+            '/migration/intro',
+            placeholder: _IronwoodMigrationLoadingShell(
+              step: IronwoodMigrationFlowStep.intro,
+            ),
+          );
         }
         final status = cta.status;
         if (cta.mode != IronwoodHomeMigrationCtaMode.resume || status == null) {
@@ -1053,9 +1063,13 @@ class _RedirectHomeState extends State<_RedirectHome> {
 }
 
 class _RedirectTo extends StatefulWidget {
-  const _RedirectTo(this.location);
+  const _RedirectTo(
+    this.location, {
+    this.placeholder = const SizedBox.shrink(),
+  });
 
   final String location;
+  final Widget placeholder;
 
   @override
   State<_RedirectTo> createState() => _RedirectToState();
@@ -1071,7 +1085,7 @@ class _RedirectToState extends State<_RedirectTo> {
   }
 
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) => widget.placeholder;
 }
 
 class _IronwoodMigrationLoadingShell extends StatelessWidget {

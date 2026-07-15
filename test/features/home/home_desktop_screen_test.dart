@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -355,6 +356,43 @@ void main() {
       );
     },
   );
+
+  testWidgets('home Ironwood migration CTA opens intro directly', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState:
+            const IronwoodHomeMigrationCtaState.start(
+              network: 'main',
+              accountUuid: 'account-1',
+            ),
+        ironwoodMigrationFlowData: IronwoodMigrationFlowData(
+          amountZatoshi: BigInt.from(14_312_000_000),
+          accountName: 'Account 1',
+          profilePictureId: 'pfp-03',
+        ),
+        failIfMigrationResolverLoads: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
+    expect(find.text('Zcash Network Update'), findsOneWidget);
+  });
 
   testWidgets(
     'home desktop shows continue copy for resumed Ironwood migration',
@@ -986,6 +1024,8 @@ Widget _appHarness(
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodMigrationFlowData? ironwoodMigrationFlowData,
+  bool failIfMigrationResolverLoads = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -1023,6 +1063,16 @@ Widget _appHarness(
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
       }),
+      ironwoodMigrationRouteCtaProvider.overrideWith((ref) {
+        if (failIfMigrationResolverLoads) {
+          throw StateError('migration resolver should not load');
+        }
+        return ironwoodHomeMigrationCtaState;
+      }),
+      if (ironwoodMigrationFlowData != null)
+        ironwoodMigrationFlowDataProvider.overrideWith((ref) {
+          return ironwoodMigrationFlowData;
+        }),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return const IronwoodMigrationAnnouncementState.hidden();
       }),
