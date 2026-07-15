@@ -999,65 +999,83 @@ class _MigrationOptionCard extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
+        child: SizedBox(
           height: 118,
-          padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: selected ? colors.text.accent : Colors.transparent,
-              width: selected ? 2 : 0,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: selected
+                  ? const []
+                  : const [
+                      BoxShadow(
+                        color: Color(0x10000000),
+                        offset: Offset(0, 2),
+                        blurRadius: 10,
+                      ),
+                    ],
             ),
-            boxShadow: selected
-                ? const []
-                : const [
-                    BoxShadow(
-                      color: Color(0x10000000),
-                      offset: Offset(0, 2),
-                      blurRadius: 10,
-                    ),
-                  ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: _OptionIcon(mode: mode, selected: selected),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: AppTypography.bodyLarge.copyWith(
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: _OptionIcon(mode: mode, selected: selected),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  title,
+                                  style: AppTypography.bodyLarge.copyWith(
+                                    color: colors.text.accent,
+                                  ),
+                                ),
+                                if (badge != null) ...[
+                                  const SizedBox(width: 8),
+                                  _RecommendedBadge(label: badge!),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              body,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _SelectionMark(selected: selected),
+                    ],
+                  ),
+                ),
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
                             color: colors.text.accent,
+                            width: 2,
                           ),
                         ),
-                        if (badge != null) ...[
-                          const SizedBox(width: 8),
-                          _RecommendedBadge(label: badge!),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      body,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              _SelectionMark(selected: selected),
-            ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),
