@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
-    show Colors, CircularProgressIndicator, Divider;
+    show Colors, CircularProgressIndicator, Divider, LinearProgressIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -136,6 +136,81 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   }
 }
 
+class IronwoodMigrationEntryScreen extends ConsumerWidget {
+  const IronwoodMigrationEntryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
+    return ctaAsync.when(
+      skipLoadingOnReload: true,
+      loading: () => const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.intro,
+      ),
+      error: (_, _) => _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: const _IronwoodMigrationPrivateStatusErrorContent(),
+      ),
+      data: (cta) {
+        final target = switch (cta.mode) {
+          IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
+          IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+          IronwoodHomeMigrationCtaMode.hidden => '/home',
+        };
+        return _RedirectTo(target);
+      },
+    );
+  }
+}
+
+class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
+  const IronwoodMigrationPrivateStatusScreen({this.previewStatus, super.key});
+
+  final rust_sync.MigrationStatus? previewStatus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preview = previewStatus;
+    if (preview != null) {
+      return _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: _IronwoodMigrationPrivateStatusContent(status: preview),
+      );
+    }
+
+    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
+    return ctaAsync.when(
+      skipLoadingOnReload: true,
+      loading: () => _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: const _IronwoodMigrationPrivateStatusErrorContent(),
+      ),
+      data: (cta) {
+        if (cta.mode == IronwoodHomeMigrationCtaMode.start) {
+          return const _RedirectTo('/migration/intro');
+        }
+        final status = cta.status;
+        if (cta.mode != IronwoodHomeMigrationCtaMode.resume || status == null) {
+          return const _RedirectHome();
+        }
+        return _IronwoodMigrationFrame(
+          toolbar: _privateStatusToolbar(context),
+          disableSidebarActions: true,
+          child: _IronwoodMigrationPrivateStatusContent(status: status),
+        );
+      },
+    );
+  }
+}
+
 class _RedirectHome extends StatefulWidget {
   const _RedirectHome();
 
@@ -145,10 +220,24 @@ class _RedirectHome extends StatefulWidget {
 
 class _RedirectHomeState extends State<_RedirectHome> {
   @override
+  Widget build(BuildContext context) => const _RedirectTo('/home');
+}
+
+class _RedirectTo extends StatefulWidget {
+  const _RedirectTo(this.location);
+
+  final String location;
+
+  @override
+  State<_RedirectTo> createState() => _RedirectToState();
+}
+
+class _RedirectToState extends State<_RedirectTo> {
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.go('/home');
+      if (mounted) context.go(widget.location);
     });
   }
 
@@ -238,7 +327,7 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
           case IronwoodMigrationFlowStep.intro:
             context.go('/home');
           case IronwoodMigrationFlowStep.howItWorks:
-            context.go('/migration');
+            context.go('/migration/intro');
           case IronwoodMigrationFlowStep.options:
             context.go('/migration/how-it-works');
           case IronwoodMigrationFlowStep.review:
@@ -246,6 +335,12 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         }
       },
     ),
+  );
+}
+
+Widget _privateStatusToolbar(BuildContext context) {
+  return AppPaneToolbar(
+    leading: AppBackLink(label: 'Home', onTap: () => context.go('/home')),
   );
 }
 
@@ -436,7 +531,7 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
               primaryLabel: 'Continue',
               onPrimary: () => context.go('/migration/options'),
               secondaryLabel: 'Go Back',
-              onSecondary: () => context.go('/migration'),
+              onSecondary: () => context.go('/migration/intro'),
             ),
           ),
         ],
@@ -547,7 +642,7 @@ class _IronwoodMigrationOptionsContentState
             width: 230,
             child: AppButton(
               onPressed: _selected == _MigrationMode.private
-                  ? () => context.go('/migration/review')
+                  ? () => context.go('/migration/private/review')
                   : null,
               height: 44,
               minWidth: 230,
@@ -561,6 +656,377 @@ class _IronwoodMigrationOptionsContentState
       ),
     );
   }
+}
+
+class _IronwoodMigrationPrivateStatusContent extends StatelessWidget {
+  const _IronwoodMigrationPrivateStatusContent({required this.status});
+
+  final rust_sync.MigrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final presentation = _statusPresentation(status);
+    final progress = _statusProgress(status);
+
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 29,
+            top: 48,
+            width: 362,
+            child: Column(
+              children: [
+                Text(
+                  presentation.title,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: 318,
+                  child: Text(
+                    presentation.body,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 210,
+            width: 396,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.ground,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+                child: Column(
+                  children: [
+                    if (progress != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 8,
+                          backgroundColor: colors.background.raised,
+                          color: GreenPrimitives.p500Light,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    _ReviewMetricRow(
+                      icon: AppIcons.swapArrows,
+                      label: 'Split progress',
+                      value:
+                          '${status.denominationSplitCompletedCount}/'
+                          '${status.denominationSplitTotalCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.time,
+                      label: 'Pending broadcasts',
+                      value: '${status.pendingTxCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.plane,
+                      label: 'Broadcasted',
+                      value: '${status.broadcastedTxCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.checkCircle,
+                      label: 'Confirmed',
+                      value: '${status.confirmedTxCount}/${status.totalCount}',
+                    ),
+                    if (status.message != null) ...[
+                      const SizedBox(height: 18),
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: colors.border.subtle,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        status.message!,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 51,
+            top: 515,
+            width: 318,
+            child: Text(
+              presentation.footer,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: AppButton(
+              onPressed: null,
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+              child: Text(
+                presentation.buttonLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IronwoodMigrationPrivateStatusErrorContent extends StatelessWidget {
+  const _IronwoodMigrationPrivateStatusErrorContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 29,
+            top: 74,
+            width: 362,
+            child: Column(
+              children: [
+                Text(
+                  'Migration status unavailable',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: 318,
+                  child: Text(
+                    "Vizor couldn't verify the current Ironwood migration "
+                    'state. No new migration will start until the status can '
+                    'be checked.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 262,
+            width: 396,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.ground,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
+                child: Text(
+                  'Return home and try again after sync refreshes. If a '
+                  'migration is already in progress, Vizor will continue from '
+                  'the saved state after it can be read.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: AppButton(
+              onPressed: () => context.go('/home'),
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+              child: const Text(
+                'Back home',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPresentation {
+  const _StatusPresentation({
+    required this.title,
+    required this.body,
+    required this.footer,
+    required this.buttonLabel,
+  });
+
+  final String title;
+  final String body;
+  final String footer;
+  final String buttonLabel;
+}
+
+_StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
+  return switch (status.phase) {
+    kIronwoodMigrationWaitingDenomConfirmationsPhase =>
+      const _StatusPresentation(
+        title: 'Confirming Private Split',
+        body:
+            'Your Orchard funds were split into private common-value notes. '
+            'Vizor is waiting until those notes are spendable.',
+        footer:
+            'Keep Vizor synced. Migration will continue after the split '
+            'transactions reach the required confirmation depth.',
+        buttonLabel: 'Waiting for confirmations',
+      ),
+    kIronwoodMigrationReadyToMigratePhase => const _StatusPresentation(
+      title: 'Ready to Migrate',
+      body:
+          'The private split is ready. The next step will prepare the '
+          'Ironwood migration batch.',
+      footer:
+          'Execution is not connected yet in this build. This screen keeps '
+          'the re-entry state visible.',
+      buttonLabel: 'Continue migration',
+    ),
+    kIronwoodMigrationBroadcastScheduledPhase => const _StatusPresentation(
+      title: 'Broadcast Scheduled',
+      body:
+          'Your migration transaction is prepared and waiting for its '
+          'scheduled broadcast window.',
+      footer:
+          'When Vizor is open, scheduled broadcasts will be advanced by the '
+          'migration worker.',
+      buttonLabel: 'Broadcast scheduled',
+    ),
+    kIronwoodMigrationBroadcastingPhase => const _StatusPresentation(
+      title: 'Broadcasting Migration',
+      body:
+          'Vizor is broadcasting the prepared Ironwood migration transaction.',
+      footer:
+          'Stay connected while the transaction is submitted to the Zcash '
+          'network.',
+      buttonLabel: 'Broadcasting',
+    ),
+    kIronwoodMigrationWaitingConfirmationsPhase => const _StatusPresentation(
+      title: 'Waiting for Ironwood',
+      body:
+          'The migration transaction was broadcast. Vizor is waiting for '
+          'network confirmations.',
+      footer:
+          'Your balance will move to the Ironwood pool once the transaction '
+          'is confirmed and synced.',
+      buttonLabel: 'Waiting for confirmations',
+    ),
+    kIronwoodMigrationCompletePhase => const _StatusPresentation(
+      title: 'Migration Complete',
+      body: 'Your funds have moved into the Ironwood pool.',
+      footer: 'You can return home and continue using Vizor.',
+      buttonLabel: 'Complete',
+    ),
+    kIronwoodMigrationPausedPhase => const _StatusPresentation(
+      title: 'Migration Paused',
+      body: 'The private migration is paused before the next action.',
+      footer:
+          'No new transaction will be prepared until migration execution is '
+          'resumed.',
+      buttonLabel: 'Paused',
+    ),
+    kIronwoodMigrationFailedRecoverablePhase => const _StatusPresentation(
+      title: 'Migration Needs Attention',
+      body:
+          'Vizor hit a recoverable migration error before completing the '
+          'Ironwood transition.',
+      footer:
+          'No funds are lost. The next implementation step will connect '
+          'retry and recovery actions here.',
+      buttonLabel: 'Retry unavailable',
+    ),
+    _ => const _StatusPresentation(
+      title: 'Migration Status',
+      body: 'Vizor is tracking the current Ironwood migration state.',
+      footer:
+          'This state is visible for diagnostics while the migration flow is '
+          'being connected.',
+      buttonLabel: 'Migration in progress',
+    ),
+  };
+}
+
+double? _statusProgress(rust_sync.MigrationStatus status) {
+  if (status.phase == kIronwoodMigrationFailedRecoverablePhase ||
+      status.phase == kIronwoodMigrationPausedPhase) {
+    return null;
+  }
+  if (status.phase == kIronwoodMigrationCompletePhase) return 1;
+
+  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+    final total = status.denominationSplitTotalCount;
+    if (total > 0) {
+      return (status.denominationSplitCompletedCount / total).clamp(0, 1);
+    }
+    final target = status.denominationConfirmationTarget;
+    if (target > 0) {
+      return (status.denominationConfirmationCount / target).clamp(0, 1);
+    }
+    return 0.25;
+  }
+
+  final total = status.totalCount;
+  if (total > 0) {
+    return (status.confirmedTxCount / total).clamp(0, 1);
+  }
+
+  return switch (status.phase) {
+    kIronwoodMigrationReadyToMigratePhase => 0.45,
+    kIronwoodMigrationBroadcastScheduledPhase => 0.65,
+    kIronwoodMigrationBroadcastingPhase => 0.75,
+    kIronwoodMigrationWaitingConfirmationsPhase => 0.85,
+    _ => 0.1,
+  };
 }
 
 class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {

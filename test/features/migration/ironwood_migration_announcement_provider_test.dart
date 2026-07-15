@@ -173,6 +173,30 @@ void main() {
     expect(state.buttonLabel, 'Continue migration');
   });
 
+  test('route CTA resumes active run before requiring sync data', () async {
+    final migrationStatusCalls = <String>[];
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      migrationActiveRunId: 'run-1',
+      migrationStatusCalls: migrationStatusCalls,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        error: 'sync failed before account data refreshed',
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationRouteCtaProvider.future,
+    );
+
+    expect(state.mode, IronwoodHomeMigrationCtaMode.resume);
+    expect(state.status?.activeRunId, 'run-1');
+    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+  });
+
   test('home CTA stays hidden before Ironwood is active', () async {
     final migrationStatusCalls = <String>[];
     final container = _container(

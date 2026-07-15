@@ -95,7 +95,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _migrationOptionsHarness(initialLocation: '/migration/review'),
+      _migrationOptionsHarness(initialLocation: '/migration/private/review'),
     );
     await tester.pumpAndSettle();
 
@@ -109,6 +109,104 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('legacy review route redirects to private review', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/review'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Review Private Migration'), findsOneWidget);
+    expect(find.text('Move to Ironwood'), findsOneWidget);
+  });
+
+  testWidgets('private status shows resume progress state', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/private/status'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Confirming Private Split'), findsOneWidget);
+    expect(find.text('Split progress'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
+    expect(find.text('Waiting for confirmations'), findsOneWidget);
+  });
+
+  testWidgets('migration entry routes start state to intro', (tester) async {
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.start(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: _migrationStatus(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('intro-route'), findsOneWidget);
+  });
+
+  testWidgets('migration entry routes resume state to private status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('private-status-route'), findsOneWidget);
+  });
+
+  testWidgets('migration entry routes hidden state home', (tester) async {
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home-route'), findsOneWidget);
+  });
+
+  testWidgets('private status fails closed when status lookup fails', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: const IronwoodHomeMigrationCtaState.hidden(),
+        initialLocation: '/migration/private/status',
+        routeError: Exception('status unavailable'),
+        realStatusRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration status unavailable'), findsOneWidget);
+    expect(find.text('intro-route'), findsNothing);
+    expect(find.text('home-route'), findsNothing);
   });
 
   test(
@@ -193,6 +291,10 @@ Widget _migrationOptionsHarness({
       ),
       GoRoute(
         path: '/migration/review',
+        redirect: (_, _) => '/migration/private/review',
+      ),
+      GoRoute(
+        path: '/migration/private/review',
         builder: (_, _) => IronwoodMigrationFlowScreen(
           step: IronwoodMigrationFlowStep.review,
           previewData: IronwoodMigrationFlowData(
@@ -202,6 +304,11 @@ Widget _migrationOptionsHarness({
           ),
           previewPrivatePlan: _privatePlan(),
         ),
+      ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) =>
+            IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
       ),
       GoRoute(
         path: '/migration/how-it-works',
@@ -235,6 +342,52 @@ Widget _migrationOptionsHarness({
         ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
+    ),
+  );
+}
+
+Widget _migrationEntryHarness({
+  required IronwoodHomeMigrationCtaState ctaState,
+  String initialLocation = '/migration',
+  Object? routeError,
+  bool realStatusRoute = false,
+}) {
+  final router = GoRouter(
+    initialLocation: initialLocation,
+    routes: [
+      GoRoute(
+        path: '/migration',
+        builder: (_, _) => const IronwoodMigrationEntryScreen(),
+      ),
+      GoRoute(
+        path: '/migration/intro',
+        builder: (_, _) => const Text('intro-route'),
+      ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) => realStatusRoute
+            ? const IronwoodMigrationPrivateStatusScreen()
+            : const Text('private-status-route'),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
+        final error = routeError;
+        if (error != null) throw error;
+        return ctaState;
+      }),
+      appBootstrapProvider.overrideWithValue(_bootstrap),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      swapFeatureEnabledProvider.overrideWithValue(true),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) =>
+          AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
@@ -293,9 +446,13 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
   );
 }
 
-rust_sync.MigrationStatus _migrationStatus() {
+rust_sync.MigrationStatus _migrationStatus({
+  String phase = kIronwoodMigrationReadyPhase,
+  String? activeRunId,
+}) {
   return rust_sync.MigrationStatus(
-    phase: 'ready_to_prepare',
+    phase: phase,
+    activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List.fromList([]),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
@@ -308,6 +465,30 @@ rust_sync.MigrationStatus _migrationStatus() {
     totalCount: 0,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    broadcastWindowSeconds: BigInt.from(180),
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: const [],
+  );
+}
+
+rust_sync.MigrationStatus _status() {
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    activeRunId: 'run-1',
+    targetValuesZatoshi: frb.Uint64List.fromList([10_000_000]),
+    preparedNoteCount: 1,
+    denominationConfirmationCount: 2,
+    denominationConfirmationTarget: 10,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 3,
+    pendingTxCount: 0,
+    broadcastedTxCount: 1,
+    confirmedTxCount: 0,
+    totalCount: 3,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 2,
     canAbandon: false,
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),

@@ -651,7 +651,7 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
 
 Widget buildIronwoodMigrationIntroUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
-    initialLocation: '/migration',
+    initialLocation: '/migration/intro',
     step: IronwoodMigrationFlowStep.intro,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
   );
@@ -675,7 +675,15 @@ Widget buildIronwoodMigrationOptionsUseCase(BuildContext context) {
 
 Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
-    initialLocation: '/migration/review',
+    initialLocation: '/migration/private/review',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationPrivateStatusWaitingUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
   );
@@ -1475,8 +1483,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
     _router = GoRouter(
       initialLocation: widget.initialLocation,
       routes: [
+        GoRoute(path: '/migration', redirect: (_, _) => '/migration/intro'),
         GoRoute(
-          path: '/migration',
+          path: '/migration/intro',
           builder: (_, _) => IronwoodMigrationFlowScreen(
             step: IronwoodMigrationFlowStep.intro,
             previewData: widget.initialStep == IronwoodMigrationFlowStep.intro
@@ -1514,6 +1523,10 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
         ),
         GoRoute(
           path: '/migration/review',
+          redirect: (_, _) => '/migration/private/review',
+        ),
+        GoRoute(
+          path: '/migration/private/review',
           builder: (_, _) => IronwoodMigrationFlowScreen(
             step: IronwoodMigrationFlowStep.review,
             previewData: widget.initialStep == IronwoodMigrationFlowStep.review
@@ -1523,6 +1536,12 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                   ),
             previewPrivatePlan: _previewPrivateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
+          path: '/migration/private/status',
+          builder: (_, _) => IronwoodMigrationPrivateStatusScreen(
+            previewStatus: _previewPrivateMigrationStatus(),
           ),
         ),
         GoRoute(
@@ -2075,6 +2094,37 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),
     maxPreparedNotesPerRun: 64,
+  );
+}
+
+rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    activeRunId: 'preview-run',
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      100_000_000,
+      100_000_000,
+    ]),
+    preparedNoteCount: 6,
+    denominationConfirmationCount: 2,
+    denominationConfirmationTarget: 10,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 3,
+    pendingTxCount: 0,
+    broadcastedTxCount: 1,
+    confirmedTxCount: 0,
+    totalCount: 3,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 2,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    broadcastWindowSeconds: BigInt.from(180),
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: const [],
   );
 }
 

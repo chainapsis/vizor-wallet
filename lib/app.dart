@@ -683,6 +683,10 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(
     path: '/migration',
+    builder: (_, _) => const IronwoodMigrationEntryScreen(),
+  ),
+  GoRoute(
+    path: '/migration/intro',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.intro,
     ),
@@ -701,9 +705,17 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(
     path: '/migration/review',
+    redirect: (_, _) => '/migration/private/review',
+  ),
+  GoRoute(
+    path: '/migration/private/review',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.review,
     ),
+  ),
+  GoRoute(
+    path: '/migration/private/status',
+    builder: (_, _) => const IronwoodMigrationPrivateStatusScreen(),
   ),
   GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
   GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),

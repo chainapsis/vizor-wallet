@@ -494,6 +494,48 @@ final ironwoodHomeMigrationCtaProvider =
       return const IronwoodHomeMigrationCtaState.hidden();
     });
 
+final ironwoodMigrationRouteCtaProvider =
+    FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.ironwoodActiveAtTip) {
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
+
+      final accountUuid = inputs.accountUuid;
+      if (accountUuid == null) {
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
+
+      final request = inputs.statusRequest;
+      if (request == null) {
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
+      final status = await ref.watch(
+        ironwoodMigrationStatusProvider(request).future,
+      );
+
+      if (_shouldResumeIronwoodMigration(status)) {
+        return IronwoodHomeMigrationCtaState.resume(
+          network: inputs.network,
+          accountUuid: accountUuid,
+          status: status,
+        );
+      }
+
+      if (inputs.hasAccountScopedData &&
+          !inputs.hasSyncFailure &&
+          inputs.hasOrchardFunds &&
+          _shouldStartIronwoodMigration(status.phase)) {
+        return IronwoodHomeMigrationCtaState.start(
+          network: inputs.network,
+          accountUuid: accountUuid,
+          status: status,
+        );
+      }
+
+      return const IronwoodHomeMigrationCtaState.hidden();
+    });
+
 bool _shouldStartIronwoodMigration(String phase) {
   return kIronwoodMigrationStartPhases.contains(phase);
 }
