@@ -207,6 +207,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final colors = context.colors;
     final isConfirm = _phase == _PasscodePhase.confirm;
     final isSubmitting = _phase == _PasscodePhase.submitting;
+    final canNavigateBack = Navigator.of(context).canPop();
     final subtitle = isSubmitting
         ? 'Setting up your wallet...'
         : isConfirm
@@ -224,7 +225,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           children: [
             MobileTopNav.steps(
               progress: _progressForFlow(widget.args.flow),
-              onBack: isSubmitting
+              showBackButton: canNavigateBack,
+              onBack: isSubmitting || !canNavigateBack
                   ? null
                   : () => Navigator.of(context).maybePop(),
             ),
