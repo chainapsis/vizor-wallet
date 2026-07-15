@@ -15,8 +15,6 @@ import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../wallet_link/services/wallet_link_completion.dart';
-import '../create/onboarding_split_view.dart'
-    show clearCreateOnboardingSecretState;
 import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
 import '../shared/onboarding_error_messages.dart';
@@ -34,10 +32,9 @@ enum _PasscodePhase { create, confirm, submitting }
 /// Mobile passcode setup — Figma `Passcode 1` / `Passcode Confirm`
 /// (4394:82593 / 4394:82944). Two-phase entry (create → confirm); a
 /// mismatch restarts from the create phase, iOS-style. On a match the
-/// six-digit string is committed as the wallet password and the wallet
-/// is created/imported with exactly the desktop set-password sequence
-/// (prepare → account mutation under the sync pause → commit, with
-/// rollback on failure).
+/// six-digit string is forwarded to account customisation for create flows.
+/// Import flows still use the desktop set-password sequence (prepare → account
+/// mutation under the sync pause → commit, with rollback on failure).
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
   const MobilePasscodeScreen({required this.args, super.key});
 
@@ -96,8 +93,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     }
   }
 
-  /// Mirrors `SetPasswordScreen._submit` — same prepare/commit/rollback
-  /// sequence, same flow branches; only the credential UI differs.
+  /// Create continues to account customisation without persisting the pending
+  /// passcode. Import flows retain the prepare/commit/rollback sequence from
+  /// `SetPasswordScreen._submit`.
   Future<void> _submit(String passcode) async {
     final args = widget.args;
     setState(() {
@@ -106,6 +104,17 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     });
 
     final router = GoRouter.of(context);
+    if (args.flow == SetPasswordFlow.create) {
+      router.go(
+        '/onboarding/customise-account',
+        extra: CustomiseAccountArgs(
+          mnemonic: args.requiredMnemonic,
+          pendingPassword: passcode,
+        ),
+      );
+      return;
+    }
+
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final routerRefresh = ref.read(routerRefreshProvider);
@@ -122,8 +131,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         await runWithSyncPausedForAccountMutation(ref, () async {
           switch (args.flow) {
             case SetPasswordFlow.create:
-              await accountNotifier.createAccountFromMnemonic(
-                mnemonic: args.requiredMnemonic,
+              throw StateError(
+                'Create flow must continue through account customisation.',
               );
             case SetPasswordFlow.importWallet:
               await accountNotifier.importAccount(
@@ -155,9 +164,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         passwordCommitted = true;
         if (args.flow == SetPasswordFlow.importKeystone) {
           ref.read(keystoneOnboardingProvider.notifier).resetScan();
-        }
-        if (args.flow == SetPasswordFlow.create) {
-          clearCreateOnboardingSecretState(ref.read);
         }
         if (args.flow == SetPasswordFlow.importWalletLink) {
           final accountImportResult = walletLinkAccountImportResult;
@@ -201,6 +207,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final colors = context.colors;
     final isConfirm = _phase == _PasscodePhase.confirm;
     final isSubmitting = _phase == _PasscodePhase.submitting;
+    final canNavigateBack = Navigator.of(context).canPop();
     final subtitle = isSubmitting
         ? 'Setting up your wallet...'
         : isConfirm
@@ -218,7 +225,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           children: [
             MobileTopNav.steps(
               progress: _progressForFlow(widget.args.flow),
-              onBack: isSubmitting
+              showBackButton: canNavigateBack,
+              onBack: isSubmitting || !canNavigateBack
                   ? null
                   : () => Navigator.of(context).maybePop(),
             ),

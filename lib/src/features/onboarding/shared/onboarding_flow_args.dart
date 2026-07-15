@@ -9,7 +9,7 @@ class CreateSecretPassphraseArgs {
   final String mnemonic;
 }
 
-/// Ephemeral create-wallet draft passed to the final desktop onboarding step.
+/// Ephemeral create-wallet draft passed to the account-personalisation step.
 ///
 /// [pendingPassword] is present only for the first wallet, before password
 /// setup has been persisted. It stays in route memory and is intentionally not
