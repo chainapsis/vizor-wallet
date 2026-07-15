@@ -160,6 +160,21 @@ pub(crate) struct ShieldTransparentPcztResult {
     pub needs_sapling_params: bool,
 }
 
+pub(crate) struct OrchardMigrationPrivatePlan {
+    pub target_values_zatoshi: Vec<u64>,
+    pub total_input_zatoshi: u64,
+    pub total_migratable_zatoshi: u64,
+    pub orchard_change_zatoshi: Option<u64>,
+    pub denomination_split_fee_zatoshi: u64,
+    pub migration_fee_zatoshi: u64,
+    pub estimated_total_fee_zatoshi: u64,
+    pub planned_batch_count: u32,
+    pub denomination_split_stage_count: u32,
+    pub signing_batch_limit: u32,
+    pub broadcast_window_seconds: u64,
+    pub max_prepared_notes_per_run: u32,
+}
+
 pub(crate) struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
@@ -3233,6 +3248,106 @@ fn create_padded_orchard_denomination_pczts(
         predicted_notes,
         total_migratable_zatoshi: padded_plan.denominations.total_migratable_zatoshi,
         plan: padded_plan.denominations,
+    }))
+}
+
+pub(crate) fn get_orchard_migration_private_plan(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let fee_rule = ConservativeZip317FeeRule;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+    let ufvk = account.ufvk().ok_or("Account cannot create PCZTs")?;
+    let orchard_fvk = ufvk.orchard().ok_or("Orchard viewing key not available")?;
+
+    let (target_height, anchor_height) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| format!("Failed to read anchor height: {e}"))?
+        .ok_or("Wallet must sync before estimating migration plan")?;
+    let mut orchard_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));
+    if orchard_notes.is_empty() {
+        return Ok(None);
+    }
+
+    let input_values = orchard_notes
+        .iter()
+        .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))
+        .collect::<Result<Vec<_>, String>>()?;
+    // Touch the FVK-derived nullifiers in the read-only estimate path so the
+    // note-version/value assumptions match the mutating PCZT builder path.
+    for received in &orchard_notes {
+        let _ = received.note().nullifier(orchard_fvk);
+    }
+
+    let migration_fee_estimate = fee_rule
+        .fee_required(
+            &network,
+            BlockHeight::from(target_height),
+            std::iter::empty::<TransparentInputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
+        )
+        .map_err(|e| format!("Failed to estimate migration fee: {e}"))?;
+    let split_fee = fee_rule
+        .fee_required(
+            &network,
+            BlockHeight::from(target_height),
+            std::iter::empty::<TransparentInputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            super::migration::DENOMINATION_SPLIT_ACTIONS,
+            0,
+        )
+        .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
+    let padded_plan = super::migration::plan_padded_denominations(
+        &input_values,
+        u64::from(split_fee),
+        u64::from(migration_fee_estimate),
+        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
+    )?;
+    let Some(padded_plan) = padded_plan else {
+        return Ok(None);
+    };
+
+    let planned_batch_count = u32::try_from(padded_plan.denominations.migration_outputs.len())
+        .map_err(|_| "Migration batch count exceeds u32".to_string())?;
+    let denomination_split_stage_count = u32::try_from(padded_plan.stages.len())
+        .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
+    let migration_fee_zatoshi = u64::from(migration_fee_estimate)
+        .checked_mul(u64::from(planned_batch_count))
+        .ok_or("Migration fee estimate overflow")?;
+    let estimated_total_fee_zatoshi = padded_plan
+        .denominations
+        .split_fee_zatoshi
+        .checked_add(migration_fee_zatoshi)
+        .ok_or("Migration total fee estimate overflow")?;
+
+    Ok(Some(OrchardMigrationPrivatePlan {
+        target_values_zatoshi: padded_plan.denominations.migration_outputs,
+        total_input_zatoshi: padded_plan.denominations.total_input_zatoshi,
+        total_migratable_zatoshi: padded_plan.denominations.total_migratable_zatoshi,
+        orchard_change_zatoshi: padded_plan.denominations.orchard_change,
+        denomination_split_fee_zatoshi: padded_plan.denominations.split_fee_zatoshi,
+        migration_fee_zatoshi,
+        estimated_total_fee_zatoshi,
+        planned_batch_count,
+        denomination_split_stage_count,
+        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        broadcast_window_seconds: super::migration::MIGRATION_BROADCAST_WINDOW_SECS,
+        max_prepared_notes_per_run: super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
     }))
 }
 

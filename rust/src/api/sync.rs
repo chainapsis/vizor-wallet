@@ -718,6 +718,21 @@ pub struct MigrationStatus {
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
 }
 
+pub struct OrchardMigrationPrivatePlan {
+    pub target_values_zatoshi: Vec<u64>,
+    pub total_input_zatoshi: u64,
+    pub total_migratable_zatoshi: u64,
+    pub orchard_change_zatoshi: Option<u64>,
+    pub denomination_split_fee_zatoshi: u64,
+    pub migration_fee_zatoshi: u64,
+    pub estimated_total_fee_zatoshi: u64,
+    pub planned_batch_count: u32,
+    pub denomination_split_stage_count: u32,
+    pub signing_batch_limit: u32,
+    pub broadcast_window_seconds: u64,
+    pub max_prepared_notes_per_run: u32,
+}
+
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
@@ -990,6 +1005,34 @@ pub fn get_orchard_migration_status(
                 })
                 .collect(),
         })
+    })
+}
+
+pub fn get_orchard_migration_private_plan(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_orchard_migration_private_plan(&db_path, network, &account_uuid).map(
+            |plan| {
+                plan.map(|plan| OrchardMigrationPrivatePlan {
+                    target_values_zatoshi: plan.target_values_zatoshi,
+                    total_input_zatoshi: plan.total_input_zatoshi,
+                    total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                    orchard_change_zatoshi: plan.orchard_change_zatoshi,
+                    denomination_split_fee_zatoshi: plan.denomination_split_fee_zatoshi,
+                    migration_fee_zatoshi: plan.migration_fee_zatoshi,
+                    estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
+                    planned_batch_count: plan.planned_batch_count,
+                    denomination_split_stage_count: plan.denomination_split_stage_count,
+                    signing_batch_limit: plan.signing_batch_limit,
+                    broadcast_window_seconds: plan.broadcast_window_seconds,
+                    max_prepared_notes_per_run: plan.max_prepared_notes_per_run,
+                })
+            },
+        )
     })
 }
 

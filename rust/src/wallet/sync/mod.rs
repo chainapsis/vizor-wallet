@@ -45,6 +45,7 @@ pub use pczt::{
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::get_orchard_migration_private_plan;
 pub use send::{
     broadcast_due_orchard_migration_transactions, estimate_fee, execute_proposal,
     execute_proposal_with_seed_loader, migrate_orchard_to_ironwood, propose_send,

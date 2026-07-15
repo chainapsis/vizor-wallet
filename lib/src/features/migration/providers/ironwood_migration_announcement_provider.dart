@@ -8,40 +8,9 @@ import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/ironwood_migration_phases.dart';
 
-const kIronwoodMigrationReadyPhase = 'ready_to_prepare';
-const kIronwoodMigrationNoOrchardFundsPhase = 'no_orchard_funds';
-const kIronwoodMigrationWaitingForSpendableOrchardPhase =
-    'waiting_for_spendable_orchard';
-const kIronwoodMigrationWaitingDenomConfirmationsPhase =
-    'waiting_denom_confirmations';
-const kIronwoodMigrationReadyToMigratePhase = 'ready_to_migrate';
-const kIronwoodMigrationBroadcastScheduledPhase = 'broadcast_scheduled';
-const kIronwoodMigrationBroadcastingPhase = 'broadcasting';
-const kIronwoodMigrationWaitingConfirmationsPhase =
-    'waiting_migration_confirmations';
-const kIronwoodMigrationCompletePhase = 'complete';
-const kIronwoodMigrationPausedPhase = 'paused';
-const kIronwoodMigrationFailedRecoverablePhase = 'failed_recoverable';
-const kIronwoodMigrationFailedTerminalPhase = 'failed_terminal';
-const kIronwoodMigrationAbandonedPhase = 'abandoned';
-const kIronwoodMigrationReleaseNotesUrl =
-    'https://tachyon.z.cash/blog/auditing-orchard-supply/';
-
-const _ironwoodMigrationStartPhases = {
-  kIronwoodMigrationWaitingForSpendableOrchardPhase,
-  kIronwoodMigrationReadyPhase,
-};
-
-const _ironwoodMigrationContinuePhases = {
-  kIronwoodMigrationWaitingDenomConfirmationsPhase,
-  kIronwoodMigrationReadyToMigratePhase,
-  kIronwoodMigrationBroadcastScheduledPhase,
-  kIronwoodMigrationBroadcastingPhase,
-  kIronwoodMigrationWaitingConfirmationsPhase,
-  kIronwoodMigrationPausedPhase,
-  kIronwoodMigrationFailedRecoverablePhase,
-};
+export '../models/ironwood_migration_phases.dart';
 
 String ironwoodMigrationAnnouncementSeenStorageKey({
   required String network,
@@ -526,10 +495,10 @@ final ironwoodHomeMigrationCtaProvider =
     });
 
 bool _shouldStartIronwoodMigration(String phase) {
-  return _ironwoodMigrationStartPhases.contains(phase);
+  return kIronwoodMigrationStartPhases.contains(phase);
 }
 
 bool _shouldResumeIronwoodMigration(rust_sync.MigrationStatus status) {
   if (status.activeRunId != null) return true;
-  return _ironwoodMigrationContinuePhases.contains(status.phase);
+  return isIronwoodMigrationInProgressPhase(status.phase);
 }

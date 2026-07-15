@@ -553,7 +553,11 @@ class _FlowButtons extends StatelessWidget {
           expand: true,
           constrainContent: true,
           trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-          child: Text(primaryLabel),
+          child: Text(
+            primaryLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         const SizedBox(height: 20),
         AppButton(
@@ -563,7 +567,11 @@ class _FlowButtons extends StatelessWidget {
           minWidth: 230,
           expand: true,
           constrainContent: true,
-          child: Text(secondaryLabel),
+          child: Text(
+            secondaryLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );
@@ -668,22 +676,27 @@ class _PoolMigrationHero extends StatelessWidget {
                 color: GreenPrimitives.p500Light,
                 shape: const StadiumBorder(),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const AppIcon(
-                    AppIcons.shieldKeyhole,
-                    size: 16,
-                    color: Color(0xFFEAFEEF),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AppIcon(
+                        AppIcons.shieldKeyhole,
+                        size: 16,
+                        color: Color(0xFFEAFEEF),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Migration',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: const Color(0xFFEAFEEF),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'Migration',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: const Color(0xFFEAFEEF),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -899,6 +912,8 @@ class _ProcessStep extends StatelessWidget {
               const SizedBox(height: 7),
               Text(
                 step.body,
+                maxLines: step.icon == _ProcessIconKind.split ? 4 : 2,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1033,10 +1048,14 @@ class _MigrationOptionCard extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                Text(
-                                  title,
-                                  style: AppTypography.bodyLarge.copyWith(
-                                    color: colors.text.accent,
+                                Flexible(
+                                  child: Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.bodyLarge.copyWith(
+                                      color: colors.text.accent,
+                                    ),
                                   ),
                                 ),
                                 if (badge != null) ...[
@@ -1046,10 +1065,14 @@ class _MigrationOptionCard extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            Text(
-                              body,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.secondary,
+                            Flexible(
+                              child: Text(
+                                body,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.secondary,
+                                ),
                               ),
                             ),
                           ],

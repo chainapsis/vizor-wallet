@@ -1451,16 +1451,20 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                                 widget.shieldedFiatBalanceText != null) ...[
                               Row(
                                 children: [
-                                  Text(
-                                    widget.shieldedFiatBalanceText!,
-                                    key: const ValueKey(
-                                      'home_desktop_balance_fiat_text',
-                                    ),
-                                    // Label M per Figma (Home Card / Balance
-                                    // Performance): Geist Regular 14/16.
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.homeCard,
-                                      fontWeight: FontWeight.w400,
+                                  Flexible(
+                                    child: Text(
+                                      widget.shieldedFiatBalanceText!,
+                                      key: const ValueKey(
+                                        'home_desktop_balance_fiat_text',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      // Label M per Figma (Home Card / Balance
+                                      // Performance): Geist Regular 14/16.
+                                      style: AppTypography.labelLarge.copyWith(
+                                        color: colors.text.homeCard,
+                                        fontWeight: FontWeight.w400,
+                                      ),
                                     ),
                                   ),
                                   // Figma separates the change run with a 4px
@@ -1485,38 +1489,48 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               ),
                               const SizedBox(height: AppSpacing.xs),
                             ],
-                            Row(
-                              // The Figma balance is one text run (amount 45px,
-                              // ticker 32px) sharing a baseline. The Regular cut
-                              // stands in for the spec'd Medium: white-on-dark
-                              // rasterization runs ~8% heavier than Figma's
-                              // renderer, so Medium reads bolder here than the
-                              // design intends.
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                Text(
-                                  widget.hasBalance ? visibleBalance : '0',
-                                  key: const ValueKey(
-                                    'home_desktop_balance_amount_text',
-                                  ),
-                                  style: AppTypography.displayMedium.copyWith(
-                                    color: colors.text.homeCard,
-                                    fontWeight: FontWeight.w400,
-                                  ),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  // The Figma balance is one text run (amount
+                                  // 45px, ticker 32px) sharing a baseline. The
+                                  // Regular cut stands in for the spec'd Medium:
+                                  // white-on-dark rasterization runs ~8% heavier
+                                  // than Figma's renderer, so Medium reads bolder
+                                  // here than the design intends.
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Text(
+                                      widget.hasBalance ? visibleBalance : '0',
+                                      key: const ValueKey(
+                                        'home_desktop_balance_amount_text',
+                                      ),
+                                      style: AppTypography.displayMedium
+                                          .copyWith(
+                                            color: colors.text.homeCard,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Text(
+                                      kZcashDefaultCurrencyTicker,
+                                      key: const ValueKey(
+                                        'home_desktop_balance_currency_text',
+                                      ),
+                                      style: AppTypography.headlineLarge
+                                          .copyWith(
+                                            color: colors.text.homeCard,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  kZcashDefaultCurrencyTicker,
-                                  key: const ValueKey(
-                                    'home_desktop_balance_currency_text',
-                                  ),
-                                  style: AppTypography.headlineLarge.copyWith(
-                                    color: colors.text.homeCard,
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ],
                         ),

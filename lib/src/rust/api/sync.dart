@@ -327,6 +327,16 @@ Future<MigrationStatus> getOrchardMigrationStatus({
   accountUuid: accountUuid,
 );
 
+Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   required String dbPath,
   required String lightwalletdUrl,
@@ -1190,6 +1200,69 @@ class MigrationStatus {
           broadcastWindowSeconds == other.broadcastWindowSeconds &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledBroadcasts == other.scheduledBroadcasts;
+}
+
+class OrchardMigrationPrivatePlan {
+  final Uint64List targetValuesZatoshi;
+  final BigInt totalInputZatoshi;
+  final BigInt totalMigratableZatoshi;
+  final BigInt? orchardChangeZatoshi;
+  final BigInt denominationSplitFeeZatoshi;
+  final BigInt migrationFeeZatoshi;
+  final BigInt estimatedTotalFeeZatoshi;
+  final int plannedBatchCount;
+  final int denominationSplitStageCount;
+  final int signingBatchLimit;
+  final BigInt broadcastWindowSeconds;
+  final int maxPreparedNotesPerRun;
+
+  const OrchardMigrationPrivatePlan({
+    required this.targetValuesZatoshi,
+    required this.totalInputZatoshi,
+    required this.totalMigratableZatoshi,
+    this.orchardChangeZatoshi,
+    required this.denominationSplitFeeZatoshi,
+    required this.migrationFeeZatoshi,
+    required this.estimatedTotalFeeZatoshi,
+    required this.plannedBatchCount,
+    required this.denominationSplitStageCount,
+    required this.signingBatchLimit,
+    required this.broadcastWindowSeconds,
+    required this.maxPreparedNotesPerRun,
+  });
+
+  @override
+  int get hashCode =>
+      targetValuesZatoshi.hashCode ^
+      totalInputZatoshi.hashCode ^
+      totalMigratableZatoshi.hashCode ^
+      orchardChangeZatoshi.hashCode ^
+      denominationSplitFeeZatoshi.hashCode ^
+      migrationFeeZatoshi.hashCode ^
+      estimatedTotalFeeZatoshi.hashCode ^
+      plannedBatchCount.hashCode ^
+      denominationSplitStageCount.hashCode ^
+      signingBatchLimit.hashCode ^
+      broadcastWindowSeconds.hashCode ^
+      maxPreparedNotesPerRun.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OrchardMigrationPrivatePlan &&
+          runtimeType == other.runtimeType &&
+          targetValuesZatoshi == other.targetValuesZatoshi &&
+          totalInputZatoshi == other.totalInputZatoshi &&
+          totalMigratableZatoshi == other.totalMigratableZatoshi &&
+          orchardChangeZatoshi == other.orchardChangeZatoshi &&
+          denominationSplitFeeZatoshi == other.denominationSplitFeeZatoshi &&
+          migrationFeeZatoshi == other.migrationFeeZatoshi &&
+          estimatedTotalFeeZatoshi == other.estimatedTotalFeeZatoshi &&
+          plannedBatchCount == other.plannedBatchCount &&
+          denominationSplitStageCount == other.denominationSplitStageCount &&
+          signingBatchLimit == other.signingBatchLimit &&
+          broadcastWindowSeconds == other.broadcastWindowSeconds &&
+          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun;
 }
 
 class ProposalResult {
