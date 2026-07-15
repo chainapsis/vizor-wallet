@@ -974,6 +974,7 @@ pub fn get_orchard_migration_status(
             balance.orchard,
             balance.orchard_pending,
             balance.ironwood,
+            balance.ironwood_pending,
         )?;
         Ok(MigrationStatus {
             phase: status.phase,

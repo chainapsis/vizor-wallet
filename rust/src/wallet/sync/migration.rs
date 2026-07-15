@@ -49,6 +49,8 @@ const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
 
 pub(crate) const PHASE_NO_ORCHARD_FUNDS: &str = "no_orchard_funds";
 pub(crate) const PHASE_WAITING_FOR_SPENDABLE_ORCHARD: &str = "waiting_for_spendable_orchard";
+pub(crate) const PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY: &str =
+    "waiting_for_ironwood_spendability";
 pub(crate) const PHASE_READY_TO_PREPARE: &str = "ready_to_prepare";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
@@ -266,6 +268,7 @@ pub(crate) fn migration_status(
     orchard_spendable: u64,
     orchard_pending: u64,
     ironwood_spendable: u64,
+    ironwood_pending: u64,
 ) -> Result<MigrationStatus, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -289,6 +292,8 @@ pub(crate) fn migration_status(
         PHASE_READY_TO_PREPARE
     } else if ironwood_spendable > 0 {
         PHASE_COMPLETE
+    } else if ironwood_pending > 0 {
+        PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY
     } else {
         PHASE_NO_ORCHARD_FUNDS
     };
@@ -2431,6 +2436,7 @@ mod tests {
             MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
+            0,
         )
         .unwrap();
 
@@ -2450,6 +2456,7 @@ mod tests {
             MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
+            0,
         )
         .unwrap();
 
@@ -2490,6 +2497,7 @@ mod tests {
             MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
+            0,
         )
         .unwrap();
 
@@ -2509,6 +2517,7 @@ mod tests {
             MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI + 1,
             0,
             ZATOSHIS_PER_ZEC,
+            0,
         )
         .unwrap();
 
@@ -2528,10 +2537,31 @@ mod tests {
             ZATOSHIS_PER_ZEC,
             ZATOSHIS_PER_ZEC,
             0,
+            0,
         )
         .unwrap();
 
         assert_eq!(status.phase, PHASE_WAITING_FOR_SPENDABLE_ORCHARD);
+    }
+
+    #[test]
+    fn migration_status_waits_for_pending_ironwood_after_external_migration() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+
+        let status = migration_status(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            0,
+            0,
+            0,
+            ZATOSHIS_PER_ZEC,
+        )
+        .unwrap();
+
+        assert_eq!(status.phase, PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY);
     }
 
     #[test]
@@ -3652,7 +3682,8 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let status = migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0).unwrap();
+        let status =
+            migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
 
         let conn = rusqlite::Connection::open(db_path).unwrap();

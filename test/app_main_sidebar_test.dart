@@ -423,6 +423,10 @@ void main() {
                 network: 'main',
                 accountUuid: 'account-1',
               ),
+          ironwoodPostMigrationState: const IronwoodPostMigrationState.required(
+            network: 'main',
+            accountUuid: 'account-1',
+          ),
         ),
       );
       await tester.pump();
@@ -700,6 +704,8 @@ Widget _sidebarHarness(
   bool disableAnimations = true,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodPostMigrationState ironwoodPostMigrationState =
+      const IronwoodPostMigrationState.unavailable(),
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -788,6 +794,9 @@ Widget _sidebarHarness(
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
+      }),
+      ironwoodPostMigrationStateProvider.overrideWith((ref) async {
+        return ironwoodPostMigrationState;
       }),
     ],
     child: MaterialApp.router(

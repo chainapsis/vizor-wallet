@@ -341,7 +341,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     );
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final ironwoodMigrationNavigationLocked =
-        ref.watch(ironwoodHomeMigrationCtaProvider).value?.visible ?? false;
+        ref.watch(ironwoodPostMigrationStateProvider).value?.locksNavigation ??
+        false;
 
     return AppDesktopSidebarSurface(
       glass: true,

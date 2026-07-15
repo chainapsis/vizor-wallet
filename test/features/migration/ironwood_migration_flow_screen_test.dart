@@ -788,6 +788,8 @@ void main() {
               hasSyncFailure: false,
               orchardBalance: BigInt.from(10_000_000),
               orchardPendingBalance: BigInt.zero,
+              ironwoodBalance: BigInt.zero,
+              ironwoodPendingBalance: BigInt.zero,
             ),
           ),
           ironwoodMigrationServiceProvider.overrideWithValue(

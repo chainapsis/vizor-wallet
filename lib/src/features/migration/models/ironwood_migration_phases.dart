@@ -2,6 +2,8 @@ const kIronwoodMigrationReadyPhase = 'ready_to_prepare';
 const kIronwoodMigrationNoOrchardFundsPhase = 'no_orchard_funds';
 const kIronwoodMigrationWaitingForSpendableOrchardPhase =
     'waiting_for_spendable_orchard';
+const kIronwoodMigrationWaitingForIronwoodSpendabilityPhase =
+    'waiting_for_ironwood_spendability';
 const kIronwoodMigrationWaitingDenomConfirmationsPhase =
     'waiting_denom_confirmations';
 const kIronwoodMigrationReadyToMigratePhase = 'ready_to_migrate';

@@ -173,6 +173,146 @@ void main() {
     expect(state.buttonLabel, 'Continue migration');
   });
 
+  test(
+    'post migration state waits for externally migrated pending Ironwood',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationWaitingForIronwoodSpendabilityPhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodPendingBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.pendingIronwoodSpendability);
+      expect(state.locksNavigation, isFalse);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
+    'post migration state treats external Ironwood spendable as complete',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.complete);
+      expect(state.locksNavigation, isFalse);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.resume);
+    },
+  );
+
+  test(
+    'post migration state falls back to Ironwood balance when status fails',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationStatusError: Exception('status unavailable'),
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.complete);
+      expect(state.locksNavigation, isFalse);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
+    'post migration state keeps migratable Orchard required after Ironwood exists',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationReadyPhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(1_000_000),
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(2_000_000),
+          totalBalance: BigInt.from(2_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.required);
+      expect(state.locksNavigation, isTrue);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.start);
+    },
+  );
+
   test('route CTA resumes active run before requiring sync data', () async {
     final migrationStatusCalls = <String>[];
     final container = _container(
@@ -310,6 +450,7 @@ ProviderContainer _container({
   _FakeAnnouncementStore? announcementStore,
   List<String>? migrationStatusCalls,
   SyncState? syncState,
+  Object? migrationStatusError,
 }) {
   return ProviderContainer(
     overrides: [
@@ -348,6 +489,10 @@ ProviderContainer _container({
         required accountUuid,
       }) async {
         migrationStatusCalls?.add('$dbPath|$network|$accountUuid');
+        final error = migrationStatusError;
+        if (error != null) {
+          throw error;
+        }
         return _migrationStatus(
           migrationPhase,
           activeRunId: migrationActiveRunId,

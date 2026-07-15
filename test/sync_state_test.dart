@@ -191,6 +191,39 @@ void main() {
     expect(merged.canShieldTransparentBalance, isTrue);
   });
 
+  test('fetched Ironwood-only balance feeds the spendable display', () {
+    final balance = rust_sync.WalletBalance(
+      availability: rust_sync.WalletBalanceAvailability.available,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: BigInt.zero,
+      ironwood: BigInt.from(100),
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: BigInt.from(100),
+      total: BigInt.from(100),
+    );
+
+    final merged = SyncState().withFetchedAccountData(
+      balance: balance,
+      syncComplete: true,
+    );
+
+    expect(merged.orchardBalance, BigInt.zero);
+    expect(merged.ironwoodBalance, BigInt.from(100));
+    expect(merged.spendableBalance, BigInt.from(100));
+    expect(merged.displaySpendableBalance, BigInt.from(100));
+    expect(
+      merged.displaySpendableFreshness,
+      SpendableBalanceFreshness.authoritative,
+    );
+  });
+
   test('incremental sync keeps the last completed spendable display', () {
     final previous = SyncState(
       spendableBalance: BigInt.zero,

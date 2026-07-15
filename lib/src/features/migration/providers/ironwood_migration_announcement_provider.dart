@@ -103,6 +103,8 @@ class IronwoodMigrationInputs {
     required this.hasSyncFailure,
     required this.orchardBalance,
     required this.orchardPendingBalance,
+    required this.ironwoodBalance,
+    required this.ironwoodPendingBalance,
   });
 
   final bool ironwoodActiveAtTip;
@@ -116,9 +118,15 @@ class IronwoodMigrationInputs {
   final bool hasSyncFailure;
   final BigInt orchardBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodBalance;
+  final BigInt ironwoodPendingBalance;
 
   bool get hasOrchardFunds =>
       orchardBalance > BigInt.zero || orchardPendingBalance > BigInt.zero;
+
+  bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
+
+  bool get hasIronwoodPendingFunds => ironwoodPendingBalance > BigInt.zero;
 
   IronwoodMigrationStatusRequest? get statusRequest {
     final uuid = accountUuid;
@@ -140,7 +148,9 @@ class IronwoodMigrationInputs {
             other.isBackgroundMode == isBackgroundMode &&
             other.hasSyncFailure == hasSyncFailure &&
             other.orchardBalance == orchardBalance &&
-            other.orchardPendingBalance == orchardPendingBalance;
+            other.orchardPendingBalance == orchardPendingBalance &&
+            other.ironwoodBalance == ironwoodBalance &&
+            other.ironwoodPendingBalance == ironwoodPendingBalance;
   }
 
   @override
@@ -156,6 +166,8 @@ class IronwoodMigrationInputs {
     hasSyncFailure,
     orchardBalance,
     orchardPendingBalance,
+    ironwoodBalance,
+    ironwoodPendingBalance,
   );
 }
 
@@ -191,6 +203,8 @@ class _IronwoodMigrationSyncInputs {
     required this.hasSyncFailure,
     required this.orchardBalance,
     required this.orchardPendingBalance,
+    required this.ironwoodBalance,
+    required this.ironwoodPendingBalance,
   });
 
   final bool hasAccountScopedData;
@@ -199,6 +213,8 @@ class _IronwoodMigrationSyncInputs {
   final bool hasSyncFailure;
   final BigInt orchardBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodBalance;
+  final BigInt ironwoodPendingBalance;
 
   @override
   bool operator ==(Object other) {
@@ -209,7 +225,9 @@ class _IronwoodMigrationSyncInputs {
             other.isBackgroundMode == isBackgroundMode &&
             other.hasSyncFailure == hasSyncFailure &&
             other.orchardBalance == orchardBalance &&
-            other.orchardPendingBalance == orchardPendingBalance;
+            other.orchardPendingBalance == orchardPendingBalance &&
+            other.ironwoodBalance == ironwoodBalance &&
+            other.ironwoodPendingBalance == ironwoodPendingBalance;
   }
 
   @override
@@ -220,6 +238,8 @@ class _IronwoodMigrationSyncInputs {
     hasSyncFailure,
     orchardBalance,
     orchardPendingBalance,
+    ironwoodBalance,
+    ironwoodPendingBalance,
   );
 }
 
@@ -299,6 +319,95 @@ class IronwoodHomeMigrationCtaState {
   };
 }
 
+enum IronwoodPostMigrationMode {
+  inactive,
+  unavailable,
+  notNeeded,
+  required,
+  inProgress,
+  pendingIronwoodSpendability,
+  complete,
+}
+
+class IronwoodPostMigrationState {
+  const IronwoodPostMigrationState._({
+    required this.mode,
+    this.network,
+    this.accountUuid,
+    this.status,
+  });
+
+  const IronwoodPostMigrationState.inactive()
+    : this._(mode: IronwoodPostMigrationMode.inactive);
+
+  const IronwoodPostMigrationState.unavailable()
+    : this._(mode: IronwoodPostMigrationMode.unavailable);
+
+  const IronwoodPostMigrationState.notNeeded({
+    required String network,
+    required String accountUuid,
+    rust_sync.MigrationStatus? status,
+  }) : this._(
+         mode: IronwoodPostMigrationMode.notNeeded,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
+  const IronwoodPostMigrationState.required({
+    required String network,
+    required String accountUuid,
+    rust_sync.MigrationStatus? status,
+  }) : this._(
+         mode: IronwoodPostMigrationMode.required,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
+  const IronwoodPostMigrationState.inProgress({
+    required String network,
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) : this._(
+         mode: IronwoodPostMigrationMode.inProgress,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
+  const IronwoodPostMigrationState.pendingIronwoodSpendability({
+    required String network,
+    required String accountUuid,
+    rust_sync.MigrationStatus? status,
+  }) : this._(
+         mode: IronwoodPostMigrationMode.pendingIronwoodSpendability,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
+  const IronwoodPostMigrationState.complete({
+    required String network,
+    required String accountUuid,
+    rust_sync.MigrationStatus? status,
+  }) : this._(
+         mode: IronwoodPostMigrationMode.complete,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
+  final IronwoodPostMigrationMode mode;
+  final String? network;
+  final String? accountUuid;
+  final rust_sync.MigrationStatus? status;
+
+  bool get locksNavigation =>
+      mode == IronwoodPostMigrationMode.required ||
+      mode == IronwoodPostMigrationMode.inProgress;
+}
+
 final ironwoodMigrationAnnouncementStoreProvider =
     Provider<IronwoodMigrationAnnouncementStore>(
       (_) => const SharedPreferencesIronwoodMigrationAnnouncementStore(),
@@ -350,6 +459,8 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
         hasSyncFailure: scoped.failure != null || scoped.error != null,
         orchardBalance: scoped.orchardBalance,
         orchardPendingBalance: scoped.orchardPendingBalance,
+        ironwoodBalance: scoped.ironwoodBalance,
+        ironwoodPendingBalance: scoped.ironwoodPendingBalance,
       );
     }),
   );
@@ -374,6 +485,8 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
     hasSyncFailure: sync.hasSyncFailure,
     orchardBalance: sync.orchardBalance,
     orchardPendingBalance: sync.orchardPendingBalance,
+    ironwoodBalance: sync.ironwoodBalance,
+    ironwoodPendingBalance: sync.ironwoodPendingBalance,
   );
 });
 
@@ -389,6 +502,12 @@ final ironwoodMigrationStatusProvider =
         network: request.network,
         accountUuid: request.accountUuid,
       );
+    });
+
+final ironwoodPostMigrationStateProvider =
+    FutureProvider<IronwoodPostMigrationState>((ref) async {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      return _loadIronwoodPostMigrationState(ref, inputs);
     });
 
 final ironwoodMigrationAnnouncementProvider =
@@ -443,51 +562,33 @@ final ironwoodMigrationAnnouncementProvider =
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.ironwoodActiveAtTip) {
+      final postMigrationState = await _loadIronwoodPostMigrationState(
+        ref,
+        inputs,
+      );
+      final network = postMigrationState.network;
+      final accountUuid = postMigrationState.accountUuid;
+      if (network == null || accountUuid == null) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
-      final accountUuid = inputs.accountUuid;
-      if (accountUuid == null) {
-        return const IronwoodHomeMigrationCtaState.hidden();
-      }
-
-      if (!inputs.hasAccountScopedData || inputs.hasSyncFailure) {
-        return const IronwoodHomeMigrationCtaState.hidden();
-      }
-
-      rust_sync.MigrationStatus status;
-      try {
-        final request = inputs.statusRequest;
-        if (request == null) {
+      if (postMigrationState.mode == IronwoodPostMigrationMode.inProgress) {
+        final status = postMigrationState.status;
+        if (status == null) {
           return const IronwoodHomeMigrationCtaState.hidden();
         }
-        status = await ref.watch(
-          ironwoodMigrationStatusProvider(request).future,
-        );
-      } catch (_) {
-        return inputs.hasOrchardFunds
-            ? IronwoodHomeMigrationCtaState.start(
-                network: inputs.network,
-                accountUuid: accountUuid,
-              )
-            : const IronwoodHomeMigrationCtaState.hidden();
-      }
-
-      if (_shouldResumeIronwoodMigration(status)) {
         return IronwoodHomeMigrationCtaState.resume(
-          network: inputs.network,
+          network: network,
           accountUuid: accountUuid,
           status: status,
         );
       }
 
-      if (inputs.hasOrchardFunds &&
-          _shouldStartIronwoodMigration(status.phase)) {
+      if (postMigrationState.mode == IronwoodPostMigrationMode.required) {
         return IronwoodHomeMigrationCtaState.start(
-          network: inputs.network,
+          network: network,
           accountUuid: accountUuid,
-          status: status,
+          status: postMigrationState.status,
         );
       }
 
@@ -543,6 +644,114 @@ final ironwoodMigrationRouteCtaProvider =
 
       return const IronwoodHomeMigrationCtaState.hidden();
     });
+
+Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
+  Ref ref,
+  IronwoodMigrationInputs inputs,
+) async {
+  if (!inputs.ironwoodActiveAtTip) {
+    return const IronwoodPostMigrationState.inactive();
+  }
+
+  final accountUuid = inputs.accountUuid;
+  if (accountUuid == null) {
+    return const IronwoodPostMigrationState.unavailable();
+  }
+
+  if (!inputs.hasAccountScopedData || inputs.hasSyncFailure) {
+    return const IronwoodPostMigrationState.unavailable();
+  }
+
+  rust_sync.MigrationStatus status;
+  try {
+    final dbPath = await ref.watch(walletDbPathGetterProvider)();
+    final getStatus = ref.watch(orchardMigrationStatusGetterProvider);
+    status = await getStatus(
+      dbPath: dbPath,
+      network: inputs.network,
+      accountUuid: accountUuid,
+    );
+  } catch (_) {
+    return _postMigrationStateForStatusLookupFailure(inputs, accountUuid);
+  }
+
+  return _postMigrationStateForStatus(
+    inputs: inputs,
+    accountUuid: accountUuid,
+    status: status,
+  );
+}
+
+IronwoodPostMigrationState _postMigrationStateForStatusLookupFailure(
+  IronwoodMigrationInputs inputs,
+  String accountUuid,
+) {
+  if (inputs.hasOrchardFunds) {
+    return IronwoodPostMigrationState.required(
+      network: inputs.network,
+      accountUuid: accountUuid,
+    );
+  }
+  if (inputs.hasIronwoodSpendableFunds) {
+    return IronwoodPostMigrationState.complete(
+      network: inputs.network,
+      accountUuid: accountUuid,
+    );
+  }
+  if (inputs.hasIronwoodPendingFunds) {
+    return IronwoodPostMigrationState.pendingIronwoodSpendability(
+      network: inputs.network,
+      accountUuid: accountUuid,
+    );
+  }
+  return const IronwoodPostMigrationState.unavailable();
+}
+
+IronwoodPostMigrationState _postMigrationStateForStatus({
+  required IronwoodMigrationInputs inputs,
+  required String accountUuid,
+  required rust_sync.MigrationStatus status,
+}) {
+  if (_shouldResumeIronwoodMigration(status)) {
+    return IronwoodPostMigrationState.inProgress(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
+  if (inputs.hasOrchardFunds && _shouldStartIronwoodMigration(status.phase)) {
+    return IronwoodPostMigrationState.required(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
+  if (status.phase == kIronwoodMigrationCompletePhase ||
+      inputs.hasIronwoodSpendableFunds) {
+    return IronwoodPostMigrationState.complete(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
+  if (status.phase == kIronwoodMigrationWaitingForIronwoodSpendabilityPhase ||
+      inputs.hasIronwoodPendingFunds) {
+    return IronwoodPostMigrationState.pendingIronwoodSpendability(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
+  return IronwoodPostMigrationState.notNeeded(
+    network: inputs.network,
+    accountUuid: accountUuid,
+    status: status,
+  );
+}
 
 bool _shouldStartIronwoodMigration(String phase) {
   return kIronwoodMigrationStartPhases.contains(phase);
