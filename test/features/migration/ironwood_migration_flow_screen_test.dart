@@ -202,6 +202,44 @@ void main() {
     },
   );
 
+  test('Keystone migration proof helpers distinguish pending states', () {
+    const pending = rust_sync.KeystoneMigrationProofStatus(
+      readyCount: 1,
+      totalCount: 3,
+      isReady: false,
+      isFailed: false,
+    );
+    const ready = rust_sync.KeystoneMigrationProofStatus(
+      readyCount: 3,
+      totalCount: 3,
+      isReady: true,
+      isFailed: false,
+    );
+    const failed = rust_sync.KeystoneMigrationProofStatus(
+      readyCount: 1,
+      totalCount: 3,
+      isReady: false,
+      isFailed: true,
+      message: 'Proof generation failed.',
+    );
+
+    expect(ironwoodMigrationKeystoneProofShouldWait(null), isTrue);
+    expect(ironwoodMigrationKeystoneProofShouldWait(pending), isTrue);
+    expect(ironwoodMigrationKeystoneProofShouldWait(ready), isFalse);
+    expect(ironwoodMigrationKeystoneProofShouldWait(failed), isFalse);
+    expect(ironwoodMigrationKeystoneProofReady(ready), isTrue);
+    expect(ironwoodMigrationKeystoneProofFailed(failed), isTrue);
+    expect(
+      ironwoodMigrationKeystoneProofWaitingMessage(pending),
+      'Signature captured. Vizor is still preparing local proofs (1/3). '
+      'Keep this screen open.',
+    );
+    expect(
+      ironwoodMigrationKeystoneProofFailureMessage(failed),
+      'Proof generation failed.',
+    );
+  });
+
   testWidgets(
     'private review routes Keystone accounts to denomination signing',
     (tester) async {

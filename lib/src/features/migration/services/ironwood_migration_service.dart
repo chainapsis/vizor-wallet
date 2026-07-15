@@ -91,6 +91,10 @@ typedef IronwoodMigrationKeystoneBatchCompleter =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationKeystoneProofStatusGetter =
+    Future<rust_sync.KeystoneMigrationProofStatus> Function({
+      required String requestId,
+    });
 typedef IronwoodMigrationKeystoneRequestDiscarder =
     Future<void> Function({required String requestId});
 
@@ -113,6 +117,7 @@ class IronwoodMigrationService {
     completeKeystoneDenominationMigration,
     IronwoodMigrationKeystoneBatchPreparer? prepareKeystoneBatchMigration,
     IronwoodMigrationKeystoneBatchCompleter? completeKeystoneBatchMigration,
+    IronwoodMigrationKeystoneProofStatusGetter? getKeystoneProofStatus,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
   }) : getEndpoint = getEndpoint ?? _missingEndpoint,
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
@@ -139,6 +144,8 @@ class IronwoodMigrationService {
        completeKeystoneBatchMigration =
            completeKeystoneBatchMigration ??
            rust_sync.completeOrchardMigrationBatchPczt,
+       getKeystoneProofStatus =
+           getKeystoneProofStatus ?? rust_sync.keystoneMigrationProofStatus,
        discardKeystoneMigrationRequest =
            discardKeystoneMigrationRequest ??
            rust_sync.discardKeystoneMigrationRequest;
@@ -160,6 +167,7 @@ class IronwoodMigrationService {
   completeKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneBatchPreparer prepareKeystoneBatchMigration;
   final IronwoodMigrationKeystoneBatchCompleter completeKeystoneBatchMigration;
+  final IronwoodMigrationKeystoneProofStatusGetter getKeystoneProofStatus;
   final IronwoodMigrationKeystoneRequestDiscarder
   discardKeystoneMigrationRequest;
 
@@ -346,6 +354,12 @@ class IronwoodMigrationService {
     required String requestId,
   }) {
     return discardKeystoneMigrationRequest(requestId: requestId);
+  }
+
+  Future<rust_sync.KeystoneMigrationProofStatus> keystoneProofStatus({
+    required String requestId,
+  }) {
+    return getKeystoneProofStatus(requestId: requestId);
   }
 }
 

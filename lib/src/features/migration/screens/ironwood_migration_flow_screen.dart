@@ -36,6 +36,7 @@ import '../services/ironwood_migration_service.dart';
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
 const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
@@ -342,6 +343,7 @@ enum _KeystoneDenominationSignStage {
   preparing,
   showQr,
   scanning,
+  waitingForProofs,
   completing,
   failed,
 }
@@ -355,6 +357,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   String? _accountUuid;
   List<String> _urParts = const [];
   String? _error;
+  Timer? _proofPollTimer;
+  rust_sync.KeystoneMigrationProofStatus? _proofStatus;
+  List<rust_sync.KeystoneSignedMigrationMessage>? _pendingSignedMessages;
   bool _decoding = false;
   bool _requestCompleted = false;
 
@@ -367,6 +372,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   @override
   void dispose() {
+    _stopProofPolling();
     if (!_requestCompleted) {
       final requestId = _request?.requestId;
       if (requestId != null) {
@@ -377,15 +383,19 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _prepareRequest() async {
+    _stopProofPolling();
     setState(() {
       _stage = _KeystoneDenominationSignStage.preparing;
       _request = null;
       _accountUuid = null;
       _urParts = const [];
       _error = null;
+      _proofStatus = null;
+      _pendingSignedMessages = null;
       _decoding = false;
     });
 
+    String? requestIdToDiscard;
     try {
       final accountState = await ref.read(accountProvider.future);
       final accountUuid = accountState.activeAccountUuid;
@@ -401,6 +411,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         _migrationService,
         accountUuid: accountUuid,
       );
+      requestIdToDiscard = request.requestId;
       if (!mounted) {
         await _discardRequest(request.requestId);
         return;
@@ -410,6 +421,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       }
       _request = request;
       _accountUuid = accountUuid;
+      _startProofPolling(request.requestId);
 
       final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
         requestId: request.requestId,
@@ -433,9 +445,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
         'prepare error: $e\n$st',
       );
-      final requestId = _request?.requestId;
+      _stopProofPolling();
+      final requestId = _request?.requestId ?? requestIdToDiscard;
       _request = null;
       _accountUuid = null;
+      _proofStatus = null;
+      _pendingSignedMessages = null;
       if (requestId != null) {
         unawaited(_discardRequest(requestId));
       }
@@ -448,7 +463,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
-    if (_decoding || _stage != _KeystoneDenominationSignStage.scanning) {
+    if (_decoding ||
+        _stage != _KeystoneDenominationSignStage.scanning ||
+        _pendingSignedMessages != null) {
       return;
     }
     final request = _request;
@@ -468,6 +485,114 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         messageIds: request.messages.map((message) => message.id).toList(),
       );
       final signedMessages = _signedMigrationMessagesFor(request, decoded);
+      final proofStatus = _proofStatus;
+      if (ironwoodMigrationKeystoneProofFailed(proofStatus)) {
+        if (!mounted) return;
+        setState(() {
+          _stage = _KeystoneDenominationSignStage.scanning;
+          _decoding = false;
+          _error = ironwoodMigrationKeystoneProofFailureMessage(proofStatus);
+        });
+        return;
+      }
+      if (ironwoodMigrationKeystoneProofShouldWait(proofStatus)) {
+        if (!mounted) return;
+        setState(() {
+          _stage = _KeystoneDenominationSignStage.waitingForProofs;
+          _pendingSignedMessages = signedMessages;
+          _decoding = false;
+          _error = ironwoodMigrationKeystoneProofWaitingMessage(proofStatus);
+        });
+        return;
+      }
+
+      await _completeSignedMessages(signedMessages);
+    } catch (e, st) {
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'complete error: $e\n$st',
+      );
+      if (!mounted) return;
+      setState(() {
+        _stage = _KeystoneDenominationSignStage.scanning;
+        _decoding = false;
+        _error = _keystoneMigrationSigningErrorMessage(e);
+      });
+    }
+  }
+
+  void _startProofPolling(String requestId) {
+    _stopProofPolling();
+    _proofPollTimer = Timer.periodic(
+      _keystoneMigrationProofPollInterval,
+      (_) => unawaited(_refreshProofStatus(requestId)),
+    );
+    unawaited(_refreshProofStatus(requestId));
+  }
+
+  Future<void> _refreshProofStatus(String requestId) async {
+    try {
+      final status = await _migrationService.keystoneProofStatus(
+        requestId: requestId,
+      );
+      if (!mounted || _requestCompleted || _request?.requestId != requestId) {
+        return;
+      }
+
+      final pendingSignedMessages = _pendingSignedMessages;
+      if (status.isReady || status.isFailed) {
+        _stopProofPolling();
+      }
+
+      setState(() {
+        _proofStatus = status;
+        if (status.isFailed) {
+          _pendingSignedMessages = null;
+          _error = ironwoodMigrationKeystoneProofFailureMessage(status);
+          if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
+            _stage = _KeystoneDenominationSignStage.scanning;
+          }
+        } else if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
+          _error = status.isReady
+              ? null
+              : ironwoodMigrationKeystoneProofWaitingMessage(status);
+        }
+      });
+
+      if (status.isReady &&
+          pendingSignedMessages != null &&
+          !_decoding &&
+          !_requestCompleted) {
+        unawaited(_completeSignedMessages(pendingSignedMessages));
+      }
+    } catch (e, st) {
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'proof status error: $e\n$st',
+      );
+      if (!mounted || _requestCompleted || _request?.requestId != requestId) {
+        return;
+      }
+      setState(() {
+        _error = _keystoneMigrationSigningErrorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _completeSignedMessages(
+    List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  ) async {
+    final request = _request;
+    final accountUuid = _accountUuid;
+    if (request == null || accountUuid == null || _requestCompleted) return;
+
+    setState(() {
+      _stage = _KeystoneDenominationSignStage.completing;
+      _decoding = true;
+      _error = null;
+    });
+
+    try {
       await widget.step.complete(
         _migrationService,
         accountUuid: accountUuid,
@@ -475,7 +600,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         signedMessages: signedMessages,
       );
       if (!mounted) return;
+      _stopProofPolling();
       _requestCompleted = true;
+      _pendingSignedMessages = null;
       ref.invalidate(ironwoodMigrationRouteCtaProvider);
       ref.invalidate(ironwoodHomeMigrationCtaProvider);
       ref.invalidate(ironwoodMigrationFlowDataProvider);
@@ -487,8 +614,19 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'complete error: $e\n$st',
       );
       if (!mounted) return;
+      if (_keystoneMigrationProofStillPendingError(e)) {
+        _pendingSignedMessages = signedMessages;
+        _startProofPolling(request.requestId);
+        setState(() {
+          _stage = _KeystoneDenominationSignStage.waitingForProofs;
+          _decoding = false;
+          _error = ironwoodMigrationKeystoneProofWaitingMessage(_proofStatus);
+        });
+        return;
+      }
       setState(() {
         _stage = _KeystoneDenominationSignStage.scanning;
+        _pendingSignedMessages = null;
         _decoding = false;
         _error = _keystoneMigrationSigningErrorMessage(e);
       });
@@ -511,6 +649,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Future<void> _returnToReview() async {
     if (_stage == _KeystoneDenominationSignStage.completing) return;
     final requestId = _request?.requestId;
+    _stopProofPolling();
     _request = null;
     if (requestId != null) {
       await _discardRequest(requestId);
@@ -526,6 +665,24 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     setState(() {
       _error = message;
     });
+  }
+
+  void _stopProofPolling() {
+    _proofPollTimer?.cancel();
+    _proofPollTimer = null;
+  }
+
+  String? get _proofStatusText {
+    final status = _proofStatus;
+    if (status == null) return null;
+    if (status.isFailed) {
+      return ironwoodMigrationKeystoneProofFailureMessage(status);
+    }
+    if (status.isReady) return 'Local proofs ready';
+    if (status.totalCount > 0) {
+      return 'Preparing local proofs ${status.readyCount}/${status.totalCount}';
+    }
+    return 'Preparing local proofs';
   }
 
   @override
@@ -545,6 +702,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           _KeystoneDenominationSignStage.showQr => _buildQrContent(context),
           _KeystoneDenominationSignStage.scanning ||
+          _KeystoneDenominationSignStage.waitingForProofs ||
           _KeystoneDenominationSignStage.completing => _buildScannerContent(
             context,
           ),
@@ -559,6 +717,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Widget _buildQrContent(BuildContext context) {
     final colors = context.colors;
     final request = _request;
+    final proofStatusText = _proofStatusText;
+    final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.xl),
       child: Column(
@@ -600,9 +760,24 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               color: colors.text.secondary,
             ),
           ),
+          if (proofStatusText != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            SizedBox(
+              width: 360,
+              child: Text(
+                proofStatusText,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: proofFailed
+                      ? colors.text.destructive
+                      : colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
-            onPressed: _urParts.isEmpty
+            onPressed: _urParts.isEmpty || proofFailed
                 ? null
                 : () {
                     setState(() {
@@ -632,6 +807,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Widget _buildScannerContent(BuildContext context) {
     final colors = context.colors;
     final completing = _stage == _KeystoneDenominationSignStage.completing;
+    final waitingForProofs =
+        _stage == _KeystoneDenominationSignStage.waitingForProofs;
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.xl),
       child: Column(
@@ -650,6 +827,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             child: Text(
               completing
                   ? 'Applying the Keystone signature to your migration plan.'
+                  : waitingForProofs
+                  ? 'Signature captured. Vizor will continue when local proofs are ready.'
                   : 'Show the signed migration QR on Keystone and scan it here.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
@@ -663,6 +842,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             decoding: _decoding,
             error: _error,
             onProgress: (_) {
+              if (_pendingSignedMessages != null) return;
               if (_error == null || !mounted) return;
               setState(() {
                 _error = null;
@@ -677,7 +857,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.sm),
           AppButton(
-            onPressed: completing
+            onPressed: completing || waitingForProofs
                 ? null
                 : () {
                     setState(() {
@@ -775,6 +955,48 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
 }
 
 @visibleForTesting
+bool ironwoodMigrationKeystoneProofReady(
+  rust_sync.KeystoneMigrationProofStatus? status,
+) {
+  return status?.isReady == true;
+}
+
+@visibleForTesting
+bool ironwoodMigrationKeystoneProofFailed(
+  rust_sync.KeystoneMigrationProofStatus? status,
+) {
+  return status?.isFailed == true;
+}
+
+@visibleForTesting
+bool ironwoodMigrationKeystoneProofShouldWait(
+  rust_sync.KeystoneMigrationProofStatus? status,
+) {
+  return status == null || (!status.isReady && !status.isFailed);
+}
+
+@visibleForTesting
+String ironwoodMigrationKeystoneProofWaitingMessage(
+  rust_sync.KeystoneMigrationProofStatus? status,
+) {
+  if (status != null && status.totalCount > 0) {
+    return 'Signature captured. Vizor is still preparing local proofs '
+        '(${status.readyCount}/${status.totalCount}). Keep this screen open.';
+  }
+  return 'Signature captured. Vizor is still preparing local proofs. '
+      'Keep this screen open.';
+}
+
+@visibleForTesting
+String ironwoodMigrationKeystoneProofFailureMessage(
+  rust_sync.KeystoneMigrationProofStatus? status,
+) {
+  final message = status?.message?.trim();
+  if (message != null && message.isNotEmpty) return message;
+  return 'Vizor could not prepare local proofs. Go back and prepare this request again.';
+}
+
+@visibleForTesting
 String ironwoodMigrationKeystoneScanErrorMessage(Object error) {
   final message = error.toString();
   if (message.contains('Unexpected UR type') &&
@@ -785,6 +1007,14 @@ String ironwoodMigrationKeystoneScanErrorMessage(Object error) {
     return 'Open the signed migration QR on Keystone, then scan again.';
   }
   return 'Keep the QR code steady and fully visible.';
+}
+
+bool _keystoneMigrationProofStillPendingError(Object error) {
+  final lower = error.toString().toLowerCase();
+  return lower.contains('proof') &&
+      (lower.contains('pending') ||
+          lower.contains('not ready') ||
+          lower.contains('still'));
 }
 
 String _keystoneMigrationSigningErrorMessage(Object error) {

@@ -494,6 +494,38 @@ void main() {
 
     expect(seenRequestId, 'request-1');
   });
+
+  test('keystoneProofStatus forwards request id', () async {
+    String? seenRequestId;
+    const expected = rust_sync.KeystoneMigrationProofStatus(
+      readyCount: 1,
+      totalCount: 2,
+      isReady: false,
+      isFailed: false,
+    );
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getKeystoneProofStatus: ({required requestId}) {
+        seenRequestId = requestId;
+        return Future.value(expected);
+      },
+    );
+
+    final status = await service.keystoneProofStatus(requestId: 'request-1');
+
+    expect(status, expected);
+    expect(seenRequestId, 'request-1');
+  });
 }
 
 rust_sync.MigrationStatus _migrationStatus() {
