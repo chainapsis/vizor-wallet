@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -411,6 +412,51 @@ void main() {
     expect(find.text('settings'), findsOneWidget);
   });
 
+  testWidgets(
+    'sidebar disables Swap and Vote while Ironwood migration is required',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+        ),
+      );
+      await tester.pump();
+
+      final swap = _sidebarItemWithLabel(tester, 'Swap');
+      final vote = _sidebarItemWithLabel(tester, 'Vote');
+      final activity = _sidebarItemWithLabel(tester, 'Activity');
+      final settings = _sidebarItemWithLabel(tester, 'Settings');
+
+      expect(swap.onTap, isNull);
+      expect(vote.onTap, isNull);
+      expect(activity.onTap, isNotNull);
+      expect(settings.onTap, isNotNull);
+      expect(_opacityForText(tester, 'Swap'), 0.5);
+      expect(_opacityForText(tester, 'Vote'), 0.5);
+
+      await tester.tap(find.text('Swap'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('swap'), findsNothing);
+
+      await tester.tap(find.text('Vote'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('voting'), findsNothing);
+
+      await tester.tap(find.text('Activity'));
+      await tester.pumpAndSettle();
+      expect(find.text('activity'), findsOneWidget);
+
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('settings'), findsOneWidget);
+    },
+  );
+
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
   ) async {
@@ -633,6 +679,13 @@ MouseCursor _cursorForKey(WidgetTester tester, Key key) {
   return mouseRegion.cursor;
 }
 
+double _opacityForText(WidgetTester tester, String text) {
+  final opacity = tester.widget<Opacity>(
+    find.ancestor(of: find.text(text), matching: find.byType(Opacity)).first,
+  );
+  return opacity.opacity;
+}
+
 final _syncedSyncState = SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
@@ -645,6 +698,8 @@ Widget _sidebarHarness(
   AccountState? accountState,
   String initialLocation = '/home',
   bool disableAnimations = true,
+  IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
+      const IronwoodHomeMigrationCtaState.hidden(),
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -731,6 +786,9 @@ Widget _sidebarHarness(
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
+        return ironwoodHomeMigrationCtaState;
+      }),
     ],
     child: MaterialApp.router(
       routerConfig: router,

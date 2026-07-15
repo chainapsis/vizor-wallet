@@ -15,6 +15,7 @@ import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
+import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/zec_amount.dart';
@@ -339,6 +340,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final ironwoodMigrationNavigationLocked =
+        ref.watch(ironwoodHomeMigrationCtaProvider).value?.visible ?? false;
 
     return AppDesktopSidebarSurface(
       glass: true,
@@ -406,7 +409,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         active: _matches('/swap'),
                         onTap:
                             isImporting ||
-                                widget.disabledRoutePaths.contains('/swap')
+                                widget.disabledRoutePaths.contains('/swap') ||
+                                ironwoodMigrationNavigationLocked
                             ? null
                             : () => _navigateTo('/swap'),
                       ),
@@ -421,7 +425,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       // poll-list refresh when re-tapped on /voting.
                       onTap:
                           isImporting ||
-                              widget.disabledRoutePaths.contains('/voting')
+                              widget.disabledRoutePaths.contains('/voting') ||
+                              ironwoodMigrationNavigationLocked
                           ? null
                           : () => _navigateTo('/voting'),
                     ),
