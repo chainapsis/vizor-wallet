@@ -363,6 +363,111 @@ void main() {
     },
   );
 
+  test(
+    'prepareKeystoneBatchPrivateMigration prepares signing request',
+    () async {
+      String? seenDbPath;
+      String? seenNetwork;
+      String? seenAccountUuid;
+      final expected = _keystoneSigningRequest();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        prepareKeystoneBatchMigration:
+            ({required dbPath, required network, required accountUuid}) {
+              seenDbPath = dbPath;
+              seenNetwork = network;
+              seenAccountUuid = accountUuid;
+              return Future.value(expected);
+            },
+      );
+
+      final request = await service.prepareKeystoneBatchPrivateMigration(
+        accountUuid: 'account-1',
+      );
+
+      expect(request, expected);
+      expect(seenDbPath, '/tmp/wallet.db');
+      expect(seenNetwork, 'test');
+      expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
+    'completeKeystoneBatchPrivateMigration reuses pending tx salt',
+    () async {
+      final seenSalts = <String>[];
+      final seenMessages = <List<rust_sync.KeystoneSignedMigrationMessage>>[];
+      String? seenRequestId;
+      String? seenPassword;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        getSessionPassword: () => 'test-password',
+        completeKeystoneBatchMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) {
+              seenRequestId = requestId;
+              seenPassword = password;
+              seenSalts.add(saltBase64);
+              seenMessages.add(signedMessages);
+              return Future.value(_migrationResult());
+            },
+      );
+      final signedMessages = [_signedMigrationMessage()];
+
+      await service.completeKeystoneBatchPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+      await service.completeKeystoneBatchPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+
+      expect(seenRequestId, 'request-1');
+      expect(seenPassword, 'test-password');
+      expect(seenMessages, [signedMessages, signedMessages]);
+      expect(seenSalts, hasLength(2));
+      expect(seenSalts[1], seenSalts[0]);
+    },
+  );
+
   test('discardKeystonePrivateMigrationRequest discards request id', () async {
     String? seenRequestId;
     final service = IronwoodMigrationService(

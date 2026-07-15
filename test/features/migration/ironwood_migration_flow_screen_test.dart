@@ -357,6 +357,68 @@ void main() {
     expect(continuedAccountUuid, 'account-1');
   });
 
+  testWidgets('private status routes Keystone ready state to batch signing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var softwareContinued = false;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_status());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(_privatePlan());
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            softwareContinued = true;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+        initialLocation: '/migration/private/status',
+        realStatusRoute: true,
+        migrationService: service,
+        activeAccountIsHardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(AppButton, 'Continue migration'));
+    await tester.pumpAndSettle();
+
+    expect(softwareContinued, isFalse);
+    expect(find.text('keystone-batch-sign-route'), findsOneWidget);
+  });
+
   testWidgets('migration entry routes start state to intro', (tester) async {
     await tester.pumpWidget(
       _migrationEntryHarness(
@@ -529,6 +591,10 @@ Widget _migrationOptionsHarness({
         builder: (_, _) => const Text('keystone-denomination-sign-route'),
       ),
       GoRoute(
+        path: '/migration/private/keystone/batch/sign',
+        builder: (_, _) => const Text('keystone-batch-sign-route'),
+      ),
+      GoRoute(
         path: '/migration/how-it-works',
         builder: (_, _) => const Text('how it works'),
       ),
@@ -574,6 +640,7 @@ Widget _migrationEntryHarness({
   Object? routeError,
   bool realStatusRoute = false,
   IronwoodMigrationService? migrationService,
+  bool activeAccountIsHardware = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -592,6 +659,10 @@ Widget _migrationEntryHarness({
             ? const IronwoodMigrationPrivateStatusScreen()
             : const Text('private-status-route'),
       ),
+      GoRoute(
+        path: '/migration/private/keystone/batch/sign',
+        builder: (_, _) => const Text('keystone-batch-sign-route'),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
     ],
   );
@@ -603,7 +674,9 @@ Widget _migrationEntryHarness({
         if (error != null) throw error;
         return ctaState;
       }),
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+      ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
       if (migrationService != null)

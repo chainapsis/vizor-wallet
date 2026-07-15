@@ -228,13 +228,114 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   }
 }
 
-class IronwoodMigrationKeystoneDenominationSignScreen
-    extends ConsumerStatefulWidget {
+class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({super.key});
 
   @override
-  ConsumerState<IronwoodMigrationKeystoneDenominationSignScreen>
-  createState() => _IronwoodMigrationKeystoneDenominationSignScreenState();
+  Widget build(BuildContext context) {
+    return const _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.denominations,
+    );
+  }
+}
+
+class IronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
+  const IronwoodMigrationKeystoneBatchSignScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.batch,
+    );
+  }
+}
+
+class _IronwoodMigrationKeystonePrivateSignScreen
+    extends ConsumerStatefulWidget {
+  const _IronwoodMigrationKeystonePrivateSignScreen({required this.step});
+
+  final _KeystonePrivateSignStep step;
+
+  @override
+  ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> createState() =>
+      _IronwoodMigrationKeystonePrivateSignScreenState();
+}
+
+enum _KeystonePrivateSignStep { denominations, batch }
+
+extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
+  String get logName => switch (this) {
+    _KeystonePrivateSignStep.denominations => 'denominations',
+    _KeystonePrivateSignStep.batch => 'batch',
+  };
+
+  String get toolbarLabel => switch (this) {
+    _KeystonePrivateSignStep.denominations => 'Review migration',
+    _KeystonePrivateSignStep.batch => 'Migration status',
+  };
+
+  String get previousRoute => switch (this) {
+    _KeystonePrivateSignStep.denominations => '/migration/private/review',
+    _KeystonePrivateSignStep.batch => '/migration/private/status',
+  };
+
+  String get previousButtonLabel => switch (this) {
+    _KeystonePrivateSignStep.denominations => 'Back to review',
+    _KeystonePrivateSignStep.batch => 'Back to status',
+  };
+
+  String get qrTitle => switch (this) {
+    _KeystonePrivateSignStep.denominations => 'Sign private split',
+    _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
+  };
+
+  String get qrBody => switch (this) {
+    _KeystonePrivateSignStep.denominations =>
+      'Scan this QR code with Keystone to sign the private split transactions.',
+    _KeystonePrivateSignStep.batch =>
+      'Scan this QR code with Keystone to sign the Ironwood migration batch.',
+  };
+
+  String get messageUnit => switch (this) {
+    _KeystonePrivateSignStep.denominations => 'split transaction',
+    _KeystonePrivateSignStep.batch => 'migration transaction',
+  };
+
+  Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
+    IronwoodMigrationService service, {
+    required String accountUuid,
+  }) {
+    return switch (this) {
+      _KeystonePrivateSignStep.denominations =>
+        service.prepareKeystoneDenominationPrivateMigration(
+          accountUuid: accountUuid,
+        ),
+      _KeystonePrivateSignStep.batch =>
+        service.prepareKeystoneBatchPrivateMigration(accountUuid: accountUuid),
+    };
+  }
+
+  Future<rust_sync.IronwoodMigrationResult> complete(
+    IronwoodMigrationService service, {
+    required String accountUuid,
+    required String requestId,
+    required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  }) {
+    return switch (this) {
+      _KeystonePrivateSignStep.denominations =>
+        service.completeKeystoneDenominationPrivateMigration(
+          accountUuid: accountUuid,
+          requestId: requestId,
+          signedMessages: signedMessages,
+        ),
+      _KeystonePrivateSignStep.batch =>
+        service.completeKeystoneBatchPrivateMigration(
+          accountUuid: accountUuid,
+          requestId: requestId,
+          signedMessages: signedMessages,
+        ),
+    };
+  }
 }
 
 enum _KeystoneDenominationSignStage {
@@ -245,8 +346,8 @@ enum _KeystoneDenominationSignStage {
   failed,
 }
 
-class _IronwoodMigrationKeystoneDenominationSignScreenState
-    extends ConsumerState<IronwoodMigrationKeystoneDenominationSignScreen> {
+class _IronwoodMigrationKeystonePrivateSignScreenState
+    extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> {
   _KeystoneDenominationSignStage _stage =
       _KeystoneDenominationSignStage.preparing;
   late final IronwoodMigrationService _migrationService;
@@ -296,10 +397,10 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
         throw StateError('Active account is not a Keystone account.');
       }
 
-      final request = await _migrationService
-          .prepareKeystoneDenominationPrivateMigration(
-            accountUuid: accountUuid,
-          );
+      final request = await widget.step.prepare(
+        _migrationService,
+        accountUuid: accountUuid,
+      );
       if (!mounted) {
         await _discardRequest(request.requestId);
         return;
@@ -328,7 +429,10 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
         _urParts = urParts;
       });
     } catch (e, st) {
-      log('IronwoodMigrationKeystoneDenominationSign: prepare error: $e\n$st');
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'prepare error: $e\n$st',
+      );
       final requestId = _request?.requestId;
       _request = null;
       _accountUuid = null;
@@ -364,7 +468,8 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
         messageIds: request.messages.map((message) => message.id).toList(),
       );
       final signedMessages = _signedMigrationMessagesFor(request, decoded);
-      await _migrationService.completeKeystoneDenominationPrivateMigration(
+      await widget.step.complete(
+        _migrationService,
         accountUuid: accountUuid,
         requestId: request.requestId,
         signedMessages: signedMessages,
@@ -377,7 +482,10 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
       ref.invalidate(ironwoodMigrationPrivatePlanProvider);
       context.go('/migration/private/status');
     } catch (e, st) {
-      log('IronwoodMigrationKeystoneDenominationSign: complete error: $e\n$st');
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'complete error: $e\n$st',
+      );
       if (!mounted) return;
       setState(() {
         _stage = _KeystoneDenominationSignStage.scanning;
@@ -393,7 +501,10 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
         requestId: requestId,
       );
     } catch (e, st) {
-      log('IronwoodMigrationKeystoneDenominationSign: discard error: $e\n$st');
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'discard error: $e\n$st',
+      );
     }
   }
 
@@ -405,7 +516,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
       await _discardRequest(requestId);
     }
     if (!mounted) return;
-    context.go('/migration/private/review');
+    context.go(widget.step.previousRoute);
   }
 
   void _handleDecodeError(Object error) {
@@ -421,7 +532,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
   Widget build(BuildContext context) {
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
-        context,
+        label: widget.step.toolbarLabel,
         onBack: () => unawaited(_returnToReview()),
       ),
       disableSidebarActions: true,
@@ -454,7 +565,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Sign private split',
+            widget.step.qrTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -464,8 +575,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
           SizedBox(
             width: 360,
             child: Text(
-              'Scan this QR code with Keystone to sign the private split '
-              'transactions.',
+              widget.step.qrBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -483,7 +593,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
           Text(
             request == null
                 ? 'Preparing migration request'
-                : '${request.messages.length} split transaction'
+                : '${request.messages.length} ${widget.step.messageUnit}'
                       '${request.messages.length == 1 ? '' : 's'} to sign',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
@@ -512,7 +622,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
             variant: AppButtonVariant.ghost,
             height: 36,
             minWidth: 230,
-            child: const Text('Back to review'),
+            child: Text(widget.step.previousButtonLabel),
           ),
         ],
       ),
@@ -624,7 +734,7 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
               onPressed: () => unawaited(_returnToReview()),
               variant: AppButtonVariant.ghost,
               minWidth: 230,
-              child: const Text('Back to review'),
+              child: Text(widget.step.previousButtonLabel),
             ),
           ],
         ),
@@ -633,12 +743,12 @@ class _IronwoodMigrationKeystoneDenominationSignScreenState
   }
 }
 
-Widget _keystoneDenominationToolbar(
-  BuildContext context, {
+Widget _keystoneDenominationToolbar({
+  required String label,
   required VoidCallback onBack,
 }) {
   return AppPaneToolbar(
-    leading: AppBackLink(label: 'Review migration', onTap: onBack),
+    leading: AppBackLink(label: label, onTap: onBack),
   );
 }
 
@@ -1219,6 +1329,14 @@ class _IronwoodMigrationPrivateStatusContentState
     final accountUuid = widget.accountUuid;
     if (accountUuid == null) return;
 
+    if (await _shouldOpenKeystoneBatchSigner(accountUuid)) {
+      if (!mounted) return;
+      if (showErrors) {
+        context.go('/migration/private/keystone/batch/sign');
+      }
+      return;
+    }
+
     setState(() {
       _isAdvancing = true;
       if (showErrors) _advanceError = null;
@@ -1244,6 +1362,15 @@ class _IronwoodMigrationPrivateStatusContentState
         });
       }
     }
+  }
+
+  Future<bool> _shouldOpenKeystoneBatchSigner(String accountUuid) async {
+    if (widget.status.phase != kIronwoodMigrationReadyToMigratePhase) {
+      return false;
+    }
+    final accountState = await ref.read(accountProvider.future);
+    return accountState.activeAccountUuid == accountUuid &&
+        (accountState.activeAccount?.isHardware ?? false);
   }
 
   void _refreshMigrationState() {

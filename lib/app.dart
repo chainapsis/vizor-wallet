@@ -721,6 +721,10 @@ List<RouteBase> _desktopRoutes() => [
     path: '/migration/private/keystone/denominations/sign',
     builder: (_, _) => const IronwoodMigrationKeystoneDenominationSignScreen(),
   ),
+  GoRoute(
+    path: '/migration/private/keystone/batch/sign',
+    builder: (_, _) => const IronwoodMigrationKeystoneBatchSignScreen(),
+  ),
   GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
   GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),
   GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),

@@ -75,6 +75,22 @@ typedef IronwoodMigrationKeystoneDenominationCompleter =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationKeystoneBatchPreparer =
+    Future<rust_sync.KeystoneMigrationSigningRequest> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+    });
+typedef IronwoodMigrationKeystoneBatchCompleter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String requestId,
+      required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+      required String password,
+      required String saltBase64,
+    });
 typedef IronwoodMigrationKeystoneRequestDiscarder =
     Future<void> Function({required String requestId});
 
@@ -95,6 +111,8 @@ class IronwoodMigrationService {
     prepareKeystoneDenominationMigration,
     IronwoodMigrationKeystoneDenominationCompleter?
     completeKeystoneDenominationMigration,
+    IronwoodMigrationKeystoneBatchPreparer? prepareKeystoneBatchMigration,
+    IronwoodMigrationKeystoneBatchCompleter? completeKeystoneBatchMigration,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
   }) : getEndpoint = getEndpoint ?? _missingEndpoint,
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
@@ -115,6 +133,12 @@ class IronwoodMigrationService {
        completeKeystoneDenominationMigration =
            completeKeystoneDenominationMigration ??
            rust_sync.completeOrchardMigrationDenominationsPczt,
+       prepareKeystoneBatchMigration =
+           prepareKeystoneBatchMigration ??
+           rust_sync.prepareOrchardMigrationBatchPczt,
+       completeKeystoneBatchMigration =
+           completeKeystoneBatchMigration ??
+           rust_sync.completeOrchardMigrationBatchPczt,
        discardKeystoneMigrationRequest =
            discardKeystoneMigrationRequest ??
            rust_sync.discardKeystoneMigrationRequest;
@@ -134,6 +158,8 @@ class IronwoodMigrationService {
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneDenominationCompleter
   completeKeystoneDenominationMigration;
+  final IronwoodMigrationKeystoneBatchPreparer prepareKeystoneBatchMigration;
+  final IronwoodMigrationKeystoneBatchCompleter completeKeystoneBatchMigration;
   final IronwoodMigrationKeystoneRequestDiscarder
   discardKeystoneMigrationRequest;
 
@@ -270,6 +296,43 @@ class IronwoodMigrationService {
     return completeKeystoneDenominationMigration(
       dbPath: dbPath,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      requestId: requestId,
+      signedMessages: signedMessages,
+      password: password,
+      saltBase64: saltBase64,
+    );
+  }
+
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareKeystoneBatchPrivateMigration({required String accountUuid}) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    return prepareKeystoneBatchMigration(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult>
+  completeKeystoneBatchPrivateMigration({
+    required String accountUuid,
+    required String requestId,
+    required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final network = endpoint.networkName;
+    final password = getSessionPassword();
+    final saltBase64 = await pendingTxSaltBase64(
+      network: network,
+      accountUuid: accountUuid,
+    );
+
+    return completeKeystoneBatchMigration(
+      dbPath: dbPath,
       network: network,
       accountUuid: accountUuid,
       requestId: requestId,
