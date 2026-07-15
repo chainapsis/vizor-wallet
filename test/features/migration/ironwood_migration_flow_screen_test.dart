@@ -331,6 +331,93 @@ void main() {
     expect(find.text('Waiting for confirmations'), findsOneWidget);
   });
 
+  testWidgets('private status maps migration phases to actions', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final cases = [
+      _StatusUiCase(
+        status: _status(),
+        title: 'Confirming Private Split',
+        buttonLabel: 'Waiting for confirmations',
+        buttonEnabled: false,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Ready to Migrate',
+        buttonLabel: 'Continue migration',
+        buttonEnabled: true,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Broadcast Scheduled',
+        buttonLabel: 'Continue migration',
+        buttonEnabled: true,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Broadcasting Migration',
+        buttonLabel: 'Broadcasting',
+        buttonEnabled: false,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Waiting for Ironwood',
+        buttonLabel: 'Waiting for confirmations',
+        buttonEnabled: false,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationFailedRecoverablePhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Migration Needs Attention',
+        buttonLabel: 'Retry migration',
+        buttonEnabled: true,
+      ),
+      _StatusUiCase(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationCompletePhase,
+          activeRunId: 'run-1',
+        ),
+        title: 'Migration Complete',
+        buttonLabel: 'Back home',
+        buttonEnabled: true,
+      ),
+    ];
+
+    for (final uiCase in cases) {
+      await tester.pumpWidget(_privateStatusHarness(status: uiCase.status));
+      await tester.pumpAndSettle();
+
+      expect(find.text(uiCase.title), findsOneWidget);
+      _expectStatusButton(
+        tester,
+        label: uiCase.buttonLabel,
+        enabled: uiCase.buttonEnabled,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
   testWidgets('private status continues due software migration', (
     tester,
   ) async {
@@ -395,6 +482,79 @@ void main() {
     expect(continuedAccountUuid, 'account-1');
   });
 
+  testWidgets('private status auto advances software migration on timer', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var continueCount = 0;
+    final service = _migrationServiceForContinue(
+      onContinue: ({required accountUuid}) {
+        continueCount += 1;
+        expect(accountUuid, 'account-1');
+        return Future.value(_migrationResult());
+      },
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+        ),
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(continueCount, 0);
+
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+
+    expect(continueCount, 1);
+  });
+
+  testWidgets('private status auto advances software migration on resume', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var continueCount = 0;
+    final service = _migrationServiceForContinue(
+      onContinue: ({required accountUuid}) {
+        continueCount += 1;
+        expect(accountUuid, 'account-1');
+        return Future.value(_migrationResult());
+      },
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          activeRunId: 'run-1',
+        ),
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+
+    expect(continueCount, 1);
+  });
+
   testWidgets('private status routes Keystone ready state to batch signing', (
     tester,
   ) async {
@@ -450,11 +610,64 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+
+    expect(softwareContinued, isFalse);
+    expect(find.text('Ready to Migrate'), findsOneWidget);
+    expect(find.text('keystone-batch-sign-route'), findsNothing);
+
     await tester.tap(find.widgetWithText(AppButton, 'Continue migration'));
     await tester.pumpAndSettle();
 
     expect(softwareContinued, isFalse);
     expect(find.text('keystone-batch-sign-route'), findsOneWidget);
+  });
+
+  testWidgets('private status shows continue errors only for manual action', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var continueCount = 0;
+    final service = _migrationServiceForContinue(
+      onContinue: ({required accountUuid}) {
+        continueCount += 1;
+        return Future.error(Exception('sendtransaction failed'));
+      },
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+        ),
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+
+    expect(continueCount, 1);
+    expect(
+      find.text("Couldn't broadcast the migration transaction. Try again."),
+      findsNothing,
+    );
+
+    await tester.tap(find.widgetWithText(AppButton, 'Continue migration'));
+    await tester.pumpAndSettle();
+
+    expect(continueCount, 2);
+    expect(
+      find.text("Couldn't broadcast the migration transaction. Try again."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('migration entry routes start state to intro', (tester) async {
@@ -490,6 +703,38 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('private-status-route'), findsOneWidget);
+  });
+
+  testWidgets('migration entry routes every resume phase to private status', (
+    tester,
+  ) async {
+    const resumePhases = [
+      kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      kIronwoodMigrationReadyToMigratePhase,
+      kIronwoodMigrationBroadcastScheduledPhase,
+      kIronwoodMigrationBroadcastingPhase,
+      kIronwoodMigrationWaitingConfirmationsPhase,
+      kIronwoodMigrationPausedPhase,
+      kIronwoodMigrationFailedRecoverablePhase,
+    ];
+
+    for (final phase in resumePhases) {
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: _migrationStatus(phase: phase, activeRunId: 'run-1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('private-status-route'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
   });
 
   testWidgets('migration entry routes hidden state home', (tester) async {
@@ -672,6 +917,24 @@ Widget _migrationOptionsHarness({
   );
 }
 
+Widget _privateStatusHarness({
+  required rust_sync.MigrationStatus status,
+  IronwoodMigrationService? migrationService,
+  bool activeAccountIsHardware = false,
+}) {
+  return _migrationEntryHarness(
+    ctaState: IronwoodHomeMigrationCtaState.resume(
+      network: 'main',
+      accountUuid: 'account-1',
+      status: status,
+    ),
+    initialLocation: '/migration/private/status',
+    realStatusRoute: true,
+    migrationService: migrationService,
+    activeAccountIsHardware: activeAccountIsHardware,
+  );
+}
+
 Widget _migrationEntryHarness({
   required IronwoodHomeMigrationCtaState ctaState,
   String initialLocation = '/migration',
@@ -726,6 +989,67 @@ Widget _migrationEntryHarness({
           AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+void _expectStatusButton(
+  WidgetTester tester, {
+  required String label,
+  required bool enabled,
+}) {
+  final button = find.widgetWithText(AppButton, label);
+  expect(button, findsOneWidget);
+  expect(
+    tester.widget<AppButton>(button).onPressed,
+    enabled ? isNotNull : isNull,
+  );
+}
+
+typedef _ContinueMigrationCallback =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String accountUuid,
+    });
+
+IronwoodMigrationService _migrationServiceForContinue({
+  required _ContinueMigrationCallback onContinue,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus: ({required dbPath, required network, required accountUuid}) {
+      return Future.value(_status());
+    },
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_privatePlan());
+        },
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    getEndpoint: () => defaultRpcEndpointConfig('main'),
+    getSessionPassword: () => 'test-password',
+    broadcastDueMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) {
+          return onContinue(accountUuid: accountUuid);
+        },
+  );
+}
+
+class _StatusUiCase {
+  const _StatusUiCase({
+    required this.status,
+    required this.title,
+    required this.buttonLabel,
+    required this.buttonEnabled,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final String title;
+  final String buttonLabel;
+  final bool buttonEnabled;
 }
 
 final _bootstrap = AppBootstrapState(
