@@ -5,6 +5,7 @@ import 'package:flutter/material.dart'
     show Colors, CircularProgressIndicator, Divider;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -285,25 +286,23 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
           ),
           Positioned(
             left: 0,
-            top: 231,
+            top: 250,
             width: 420,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const _DarkBadge(label: 'Zcash Network Update'),
-                const SizedBox(height: 20),
-                Text(
-                  'IRONWOOD',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Geist',
-                    fontWeight: FontWeight.w400,
-                    fontSize: 48,
-                    height: 54 / 48,
-                    letterSpacing: -1.1,
-                  ).copyWith(color: colors.text.accent),
+                const SizedBox(height: 24),
+                SvgPicture.asset(
+                  'assets/illustrations/ironwood_wordmark.svg',
+                  width: 290,
+                  height: 39,
+                  colorFilter: ColorFilter.mode(
+                    colors.text.accent,
+                    BlendMode.srcIn,
+                  ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 24),
                 SizedBox(
                   width: 352,
                   child: Text(
