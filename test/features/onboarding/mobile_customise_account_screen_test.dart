@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -183,6 +184,44 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Customise Account'), findsOneWidget);
+  });
+
+  testWidgets('returning to passcode does not reopen the phrase back stack', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => const MobileCustomiseAccountScreen(
+            args: CustomiseAccountArgs(
+              mnemonic: _mnemonic,
+              pendingPassword: '123456',
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/set-passcode',
+          builder: (_, state) =>
+              MobilePasscodeScreen(args: state.extra! as SetPasswordScreenArgs),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Passcode'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
   });
 
   testWidgets('creates the initial account with the selected persona', (
