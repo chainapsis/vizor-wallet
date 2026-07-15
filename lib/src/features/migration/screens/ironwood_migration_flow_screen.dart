@@ -28,6 +28,8 @@ import '../services/ironwood_migration_service.dart';
 
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
+const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+
 class IronwoodMigrationFlowData {
   const IronwoodMigrationFlowData({
     required this.amountZatoshi,
@@ -205,7 +207,10 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         return _IronwoodMigrationFrame(
           toolbar: _privateStatusToolbar(context),
           disableSidebarActions: true,
-          child: _IronwoodMigrationPrivateStatusContent(status: status),
+          child: _IronwoodMigrationPrivateStatusContent(
+            status: status,
+            accountUuid: cta.accountUuid,
+          ),
         );
       },
     );
@@ -659,16 +664,136 @@ class _IronwoodMigrationOptionsContentState
   }
 }
 
-class _IronwoodMigrationPrivateStatusContent extends StatelessWidget {
-  const _IronwoodMigrationPrivateStatusContent({required this.status});
+class _IronwoodMigrationPrivateStatusContent extends ConsumerStatefulWidget {
+  const _IronwoodMigrationPrivateStatusContent({
+    required this.status,
+    this.accountUuid,
+  });
 
   final rust_sync.MigrationStatus status;
+  final String? accountUuid;
+
+  @override
+  ConsumerState<_IronwoodMigrationPrivateStatusContent> createState() =>
+      _IronwoodMigrationPrivateStatusContentState();
+}
+
+class _IronwoodMigrationPrivateStatusContentState
+    extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
+  AppLifecycleListener? _lifecycleListener;
+  Timer? _autoAdvanceTimer;
+  bool _isAdvancing = false;
+  String? _advanceError;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(onResume: _advanceIfAutomatic);
+    _syncAutoAdvanceTimer();
+  }
+
+  @override
+  void didUpdateWidget(_IronwoodMigrationPrivateStatusContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.status.phase != widget.status.phase ||
+        oldWidget.accountUuid != widget.accountUuid) {
+      _advanceError = null;
+      _syncAutoAdvanceTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoAdvanceTimer?.cancel();
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  void _syncAutoAdvanceTimer() {
+    final shouldRun =
+        widget.accountUuid != null && _shouldAutoAdvanceStatus(widget.status);
+    if (!shouldRun) {
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
+      return;
+    }
+    if (_autoAdvanceTimer != null) return;
+
+    _autoAdvanceTimer = Timer.periodic(
+      _privateStatusAutoAdvanceInterval,
+      (_) => unawaited(_advanceIfAutomatic()),
+    );
+  }
+
+  Future<void> _advanceIfAutomatic() async {
+    if (!_shouldAutoAdvanceStatus(widget.status)) return;
+    await _advanceMigration(showErrors: false);
+  }
+
+  Future<void> _advanceMigration({required bool showErrors}) async {
+    if (_isAdvancing) return;
+
+    final accountUuid = widget.accountUuid;
+    if (accountUuid == null) return;
+
+    setState(() {
+      _isAdvancing = true;
+      if (showErrors) _advanceError = null;
+    });
+
+    try {
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+      if (!mounted) return;
+      _refreshMigrationState();
+    } catch (e) {
+      if (!mounted) return;
+      if (showErrors) {
+        setState(() {
+          _advanceError = _privateMigrationContinueErrorMessage(e);
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAdvancing = false;
+        });
+      }
+    }
+  }
+
+  void _refreshMigrationState() {
+    ref.invalidate(ironwoodMigrationRouteCtaProvider);
+    ref.invalidate(ironwoodHomeMigrationCtaProvider);
+    ref.invalidate(ironwoodMigrationFlowDataProvider);
+    ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final status = widget.status;
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
+    final action = _statusAction(status);
+    final canUseAction = widget.accountUuid != null;
+    final actionLabel = _isAdvancing
+        ? action.busyLabel
+        : switch (action) {
+            _StatusAction.advance || _StatusAction.retry => action.label,
+            _StatusAction.backHome ||
+            _StatusAction.none => presentation.buttonLabel,
+          };
+    final footerText = _advanceError ?? presentation.footer;
+    final actionCallback = switch (action) {
+      _StatusAction.advance || _StatusAction.retry =>
+        canUseAction
+            ? () => unawaited(_advanceMigration(showErrors: true))
+            : null,
+      _StatusAction.backHome => () => context.go('/home'),
+      _StatusAction.none => null,
+    };
 
     return SizedBox(
       width: 420,
@@ -778,7 +903,7 @@ class _IronwoodMigrationPrivateStatusContent extends StatelessWidget {
             top: 515,
             width: 318,
             child: Text(
-              presentation.footer,
+              footerText,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -790,14 +915,14 @@ class _IronwoodMigrationPrivateStatusContent extends StatelessWidget {
             top: 596,
             width: 230,
             child: AppButton(
-              onPressed: null,
+              onPressed: _isAdvancing ? null : actionCallback,
               height: 44,
               minWidth: 230,
               expand: true,
               constrainContent: true,
               trailing: const AppIcon(AppIcons.chevronForward, size: 20),
               child: Text(
-                presentation.buttonLabel,
+                actionLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -910,6 +1035,37 @@ class _StatusPresentation {
   final String buttonLabel;
 }
 
+enum _StatusAction { none, advance, retry, backHome }
+
+extension _StatusActionLabels on _StatusAction {
+  String get label => switch (this) {
+    _StatusAction.advance => 'Continue migration',
+    _StatusAction.retry => 'Retry migration',
+    _StatusAction.backHome => 'Back home',
+    _StatusAction.none => '',
+  };
+
+  String get busyLabel => switch (this) {
+    _StatusAction.retry => 'Retrying...',
+    _ => 'Continuing...',
+  };
+}
+
+_StatusAction _statusAction(rust_sync.MigrationStatus status) {
+  return switch (status.phase) {
+    kIronwoodMigrationReadyToMigratePhase ||
+    kIronwoodMigrationBroadcastScheduledPhase => _StatusAction.advance,
+    kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
+    kIronwoodMigrationCompletePhase => _StatusAction.backHome,
+    _ => _StatusAction.none,
+  };
+}
+
+bool _shouldAutoAdvanceStatus(rust_sync.MigrationStatus status) {
+  return status.phase == kIronwoodMigrationReadyToMigratePhase ||
+      status.phase == kIronwoodMigrationBroadcastScheduledPhase;
+}
+
 _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase =>
@@ -929,8 +1085,8 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
           'The private split is ready. The next step will prepare the '
           'Ironwood migration batch.',
       footer:
-          'Execution is not connected yet in this build. This screen keeps '
-          'the re-entry state visible.',
+          'Continue migration to prepare and broadcast the Ironwood '
+          'transaction when it is due.',
       buttonLabel: 'Continue migration',
     ),
     kIronwoodMigrationBroadcastScheduledPhase => const _StatusPresentation(
@@ -941,7 +1097,7 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
       footer:
           'When Vizor is open, scheduled broadcasts will be advanced by the '
           'migration worker.',
-      buttonLabel: 'Broadcast scheduled',
+      buttonLabel: 'Continue migration',
     ),
     kIronwoodMigrationBroadcastingPhase => const _StatusPresentation(
       title: 'Broadcasting Migration',
@@ -966,7 +1122,7 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
       title: 'Migration Complete',
       body: 'Your funds have moved into the Ironwood pool.',
       footer: 'You can return home and continue using Vizor.',
-      buttonLabel: 'Complete',
+      buttonLabel: 'Back home',
     ),
     kIronwoodMigrationPausedPhase => const _StatusPresentation(
       title: 'Migration Paused',
@@ -982,9 +1138,9 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
           'Vizor hit a recoverable migration error before completing the '
           'Ironwood transition.',
       footer:
-          'No funds are lost. The next implementation step will connect '
-          'retry and recovery actions here.',
-      buttonLabel: 'Retry unavailable',
+          'No funds are lost. Retry migration after checking that Vizor is '
+          'synced and online.',
+      buttonLabel: 'Retry migration',
     ),
     _ => const _StatusPresentation(
       title: 'Migration Status',
@@ -1225,6 +1381,21 @@ String _privateMigrationStartErrorMessage(Object error) {
     return "Couldn't broadcast the migration transaction. Try again.";
   }
   return "Couldn't start migration. Try again.";
+}
+
+String _privateMigrationContinueErrorMessage(Object error) {
+  final message = error.toString();
+  final lower = message.toLowerCase();
+  if (lower.contains('secret storage') || lower.contains('unlocked session')) {
+    return 'Unlock Vizor before continuing migration.';
+  }
+  if (lower.contains('sync')) {
+    return 'Wait for sync to finish, then try again.';
+  }
+  if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+    return "Couldn't broadcast the migration transaction. Try again.";
+  }
+  return "Couldn't continue migration. Try again.";
 }
 
 class _PrivateReviewLoading extends StatelessWidget {

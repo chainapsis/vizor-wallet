@@ -212,6 +212,49 @@ void main() {
       expect(seenSalt, isNotEmpty);
     },
   );
+
+  test('continueSoftwarePrivateMigration reuses pending tx salt', () async {
+    final seenSalts = <String>[];
+    String? seenPassword;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => const RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://lwd.example:443',
+      ),
+      getSessionPassword: () => 'test-password',
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            seenPassword = password;
+            seenSalts.add(saltBase64);
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+
+    expect(seenPassword, 'test-password');
+    expect(seenSalts, hasLength(2));
+    expect(seenSalts[1], seenSalts[0]);
+  });
 }
 
 rust_sync.MigrationStatus _migrationStatus() {

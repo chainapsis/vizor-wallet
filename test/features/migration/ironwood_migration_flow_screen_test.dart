@@ -209,6 +209,70 @@ void main() {
     expect(find.text('Waiting for confirmations'), findsOneWidget);
   });
 
+  testWidgets('private status continues due software migration', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    String? continuedAccountUuid;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_status());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(_privatePlan());
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            continuedAccountUuid = accountUuid;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+        initialLocation: '/migration/private/status',
+        realStatusRoute: true,
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final continueButton = find.widgetWithText(AppButton, 'Continue migration');
+    expect(continueButton, findsOneWidget);
+    expect(tester.widget<AppButton>(continueButton).onPressed, isNotNull);
+
+    await tester.tap(continueButton);
+    await tester.pumpAndSettle();
+
+    expect(continuedAccountUuid, 'account-1');
+  });
+
   testWidgets('migration entry routes start state to intro', (tester) async {
     await tester.pumpWidget(
       _migrationEntryHarness(
@@ -418,6 +482,7 @@ Widget _migrationEntryHarness({
   String initialLocation = '/migration',
   Object? routeError,
   bool realStatusRoute = false,
+  IronwoodMigrationService? migrationService,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -450,6 +515,8 @@ Widget _migrationEntryHarness({
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      if (migrationService != null)
+        ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: MaterialApp.router(
       routerConfig: router,

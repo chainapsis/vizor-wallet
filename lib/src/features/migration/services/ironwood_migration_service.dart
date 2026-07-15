@@ -49,6 +49,15 @@ typedef IronwoodMigrationMacosSoftwareStarter =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationDueBroadcaster =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String password,
+      required String saltBase64,
+    });
 
 class IronwoodMigrationService {
   IronwoodMigrationService({
@@ -62,6 +71,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPlatformCheck? isMacOS,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
+    IronwoodMigrationDueBroadcaster? broadcastDueMigration,
   }) : getEndpoint = getEndpoint ?? _missingEndpoint,
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
        getMnemonicBytesForAccount =
@@ -71,7 +81,10 @@ class IronwoodMigrationService {
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ??
-           rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic;
+           rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic,
+       broadcastDueMigration =
+           broadcastDueMigration ??
+           rust_sync.broadcastDueOrchardMigrationTransactions;
 
   final IronwoodMigrationWalletDbPathGetter getWalletDbPath;
   final IronwoodMigrationStatusGetter getStatus;
@@ -83,6 +96,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPlatformCheck isMacOS;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
+  final IronwoodMigrationDueBroadcaster broadcastDueMigration;
 
   Future<rust_sync.MigrationStatus> status({
     required String network,
@@ -162,6 +176,28 @@ class IronwoodMigrationService {
     }
 
     return resultFuture;
+  }
+
+  Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final network = endpoint.networkName;
+    final password = getSessionPassword();
+    final saltBase64 = await pendingTxSaltBase64(
+      network: network,
+      accountUuid: accountUuid,
+    );
+
+    return broadcastDueMigration(
+      dbPath: dbPath,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+      saltBase64: saltBase64,
+    );
   }
 }
 

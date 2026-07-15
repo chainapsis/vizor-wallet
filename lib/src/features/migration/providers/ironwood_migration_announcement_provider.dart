@@ -514,6 +514,14 @@ final ironwoodMigrationRouteCtaProvider =
         ironwoodMigrationStatusProvider(request).future,
       );
 
+      if (status.phase == kIronwoodMigrationCompletePhase) {
+        return IronwoodHomeMigrationCtaState.resume(
+          network: inputs.network,
+          accountUuid: accountUuid,
+          status: status,
+        );
+      }
+
       if (_shouldResumeIronwoodMigration(status)) {
         return IronwoodHomeMigrationCtaState.resume(
           network: inputs.network,
