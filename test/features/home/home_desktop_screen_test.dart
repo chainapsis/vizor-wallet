@@ -3,6 +3,8 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -13,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -297,6 +300,118 @@ void main() {
     await _pumpUntilPresent(tester, find.byType(ReceiveScreen));
 
     expect(find.byType(ReceiveScreen), findsOneWidget);
+  });
+
+  testWidgets(
+    'home desktop replaces Send Receive Pay with Ironwood migration CTA',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('home_desktop_ironwood_migration_required_pill'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('home_desktop_ironwood_background')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('home_desktop_ironwood_migration_cta_button'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Migrate to Ironwood Pool'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('home_desktop_send_button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('home_desktop_receive_button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('home_desktop_pay_button')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'home desktop shows continue copy for resumed Ironwood migration',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _migrationStatus(
+              kIronwoodMigrationWaitingDenomConfirmationsPhase,
+              activeRunId: 'run-1',
+            ),
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.zero,
+            ironwoodBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continue migration'), findsOneWidget);
+      expect(find.text('Migrate to Ironwood Pool'), findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey('home_desktop_ironwood_migration_cta_button'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('home desktop shielded balance includes Ironwood funds', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          ironwoodBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('143.12'), findsOneWidget);
+    expect(find.text('0'), findsNothing);
   });
 
   testWidgets('home desktop pay action opens exact-output pay screen', (
@@ -830,6 +945,33 @@ rust_sync.TransactionInfo _pendingReceivingTx({required String txidHex}) {
   );
 }
 
+rust_sync.MigrationStatus _migrationStatus(
+  String phase, {
+  String? activeRunId,
+}) {
+  return rust_sync.MigrationStatus(
+    phase: phase,
+    activeRunId: activeRunId,
+    targetValuesZatoshi: frb.Uint64List(0),
+    preparedNoteCount: 0,
+    denominationConfirmationCount: 0,
+    denominationConfirmationTarget: 0,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 0,
+    pendingTxCount: 0,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 0,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 0,
+    broadcastWindowSeconds: BigInt.zero,
+    maxPreparedNotesPerRun: 0,
+    scheduledBroadcasts: const [],
+  );
+}
+
 Widget _appHarness(
   String initialLocation, {
   bool? swapEnabled,
@@ -842,6 +984,8 @@ Widget _appHarness(
       const _ClickedPayIntroductionBadgeStore(),
   bool payIntroductionBadgePersistenceEnabled = true,
   ThemeMode themeMode = ThemeMode.system,
+  IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
+      const IronwoodHomeMigrationCtaState.hidden(),
 }) {
   return ProviderScope(
     overrides: [
@@ -876,6 +1020,12 @@ Widget _appHarness(
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
+        return ironwoodHomeMigrationCtaState;
+      }),
+      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
+        return const IronwoodMigrationAnnouncementState.hidden();
+      }),
     ],
     child: const ZcashWalletApp(),
   );

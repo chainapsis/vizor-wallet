@@ -64,6 +64,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
   ),
+  FigmaCompareScenario(
+    id: 'desktop-home-ironwood-migration-required',
+    description:
+        'Desktop home balance card in Ironwood migration-required state',
+    builder: buildDesktopHomeIronwoodMigrationRequiredUseCase,
+  ),
 ];
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {

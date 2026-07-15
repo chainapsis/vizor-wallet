@@ -125,11 +125,73 @@ void main() {
     expect(state.visible, isFalse);
     expect(migrationStatusCalls, isEmpty);
   });
+
+  test(
+    'home CTA shows start even after the announcement has been seen',
+    () async {
+      final announcementStore = _FakeAnnouncementStore(
+        seenKeys: {_seenKey('main', _accountUuid)},
+      );
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        announcementStore: announcementStore,
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodHomeMigrationCtaMode.start);
+      expect(state.visible, isTrue);
+      expect(state.buttonLabel, 'Migrate to Ironwood Pool');
+    },
+  );
+
+  test('home CTA shows continue for an active migration run', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      migrationActiveRunId: 'run-1',
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(ironwoodHomeMigrationCtaProvider.future);
+
+    expect(state.mode, IronwoodHomeMigrationCtaMode.resume);
+    expect(state.visible, isTrue);
+    expect(state.buttonLabel, 'Continue migration');
+  });
+
+  test('home CTA stays hidden before Ironwood is active', () async {
+    final migrationStatusCalls = <String>[];
+    final container = _container(
+      ironwoodActiveAtTip: false,
+      migrationStatusCalls: migrationStatusCalls,
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(ironwoodHomeMigrationCtaProvider.future);
+
+    expect(state.visible, isFalse);
+    expect(migrationStatusCalls, isEmpty);
+  });
 }
 
 ProviderContainer _container({
   bool ironwoodActiveAtTip = true,
   String migrationPhase = kIronwoodMigrationReadyPhase,
+  String? migrationActiveRunId,
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
   _FakeAnnouncementStore? announcementStore,
   List<String>? migrationStatusCalls,
@@ -172,7 +234,10 @@ ProviderContainer _container({
         required accountUuid,
       }) async {
         migrationStatusCalls?.add('$dbPath|$network|$accountUuid');
-        return _migrationStatus(migrationPhase);
+        return _migrationStatus(
+          migrationPhase,
+          activeRunId: migrationActiveRunId,
+        );
       }),
     ],
   );
@@ -245,9 +310,13 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
   );
 }
 
-rust_sync.MigrationStatus _migrationStatus(String phase) {
+rust_sync.MigrationStatus _migrationStatus(
+  String phase, {
+  String? activeRunId,
+}) {
   return rust_sync.MigrationStatus(
     phase: phase,
+    activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List(0),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,

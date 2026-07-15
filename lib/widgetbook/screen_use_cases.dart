@@ -6,10 +6,13 @@ import 'dart:async';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/core/config/swap_feature_config.dart';
 import '../src/core/layout/app_layout.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
@@ -23,7 +26,9 @@ import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
+import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -628,6 +633,21 @@ Widget buildMobileHomeAccountsModalUseCase(BuildContext context) {
   );
 }
 
+Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(99999900000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
+    ),
+  );
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -700,6 +720,42 @@ Widget _buildMobileHomeUseCase({
         child: _MobileHomeHarness(openAccountsSheet: openAccountsSheet),
       ),
     ),
+  );
+}
+
+Widget _buildDesktopHomeUseCase({
+  required AccountState accountState,
+  required SyncState syncState,
+  required IronwoodHomeMigrationCtaState migrationCta,
+}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountState.activeAccountUuid,
+          initialState: syncState,
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      zecMarketDataSourceProvider.overrideWithValue(
+        const _PreviewZecMarketDataSource(
+          ZecMarketData(usdPrice: 1.20012, change24hPct: 13.12),
+        ),
+      ),
+      swapFeatureEnabledProvider.overrideWithValue(false),
+      swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
+        return const [];
+      }),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
+        return migrationCta;
+      }),
+      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
+        return const IronwoodMigrationAnnouncementState.hidden();
+      }),
+    ],
+    child: const _DesktopHomeHarness(),
   );
 }
 
@@ -1238,6 +1294,75 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   }
 }
 
+class _DesktopHomeHarness extends StatefulWidget {
+  const _DesktopHomeHarness();
+
+  @override
+  State<_DesktopHomeHarness> createState() => _DesktopHomeHarnessState();
+}
+
+class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/home',
+      routes: [
+        GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+        ),
+        GoRoute(
+          path: '/receive',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/receive'),
+        ),
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/pay'),
+        ),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
+        ),
+        GoRoute(
+          path: '/activity/tx/:txid',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label: '/activity/tx/${state.pathParameters['txid']}',
+          ),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        ),
+        GoRoute(
+          path: '/settings/endpoint',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/settings/endpoint'),
+        ),
+        GoRoute(
+          path: '/migration',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/migration'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
 class _MobileHomeBody extends StatefulWidget {
   const _MobileHomeBody({required this.openAccountsSheet});
 
@@ -1681,12 +1806,15 @@ SyncState _homeSyncedState({
   BigInt? orchardBalance,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
 }) {
+  final resolvedOrchardBalance = orchardBalance ?? BigInt.zero;
   return SyncState(
     accountUuid: accountUuid ?? _accountsDesignState.activeAccountUuid,
     hasAccountScopedData: true,
     percentage: 1,
     displayPercentage: 1,
-    orchardBalance: orchardBalance ?? BigInt.zero,
+    orchardBalance: resolvedOrchardBalance,
+    spendableBalance: resolvedOrchardBalance,
+    totalBalance: resolvedOrchardBalance,
     recentTransactions: recentTransactions,
   );
 }
@@ -1705,6 +1833,29 @@ rust_sync.TransactionInfo _homeTx(int index) {
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: seconds,
+  );
+}
+
+rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
+  return rust_sync.MigrationStatus(
+    phase: phase,
+    targetValuesZatoshi: frb.Uint64List(0),
+    preparedNoteCount: 0,
+    denominationConfirmationCount: 0,
+    denominationConfirmationTarget: 0,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 0,
+    pendingTxCount: 0,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 0,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 0,
+    broadcastWindowSeconds: BigInt.zero,
+    maxPreparedNotesPerRun: 0,
+    scheduledBroadcasts: const [],
   );
 }
 
