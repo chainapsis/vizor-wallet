@@ -699,6 +699,12 @@ List<RouteBase> _desktopRoutes() => [
       step: IronwoodMigrationFlowStep.options,
     ),
   ),
+  GoRoute(
+    path: '/migration/review',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.review,
+    ),
+  ),
   GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
   GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),
   GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),

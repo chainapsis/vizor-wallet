@@ -23,8 +23,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../providers/ironwood_migration_announcement_provider.dart';
+import '../services/ironwood_migration_service.dart';
 
-enum IronwoodMigrationFlowStep { intro, howItWorks, options }
+enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
 class IronwoodMigrationFlowData {
   const IronwoodMigrationFlowData({
@@ -64,6 +65,24 @@ final ironwoodMigrationFlowDataProvider =
       );
     });
 
+final ironwoodMigrationPrivatePlanProvider =
+    FutureProvider.autoDispose<rust_sync.OrchardMigrationPrivatePlan?>((
+      ref,
+    ) async {
+      final flowData = await ref.watch(
+        ironwoodMigrationFlowDataProvider.future,
+      );
+      if (flowData == null) return null;
+
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      final accountUuid = inputs.accountUuid;
+      if (accountUuid == null || !inputs.hasAccountScopedData) return null;
+
+      return ref
+          .watch(ironwoodMigrationServiceProvider)
+          .privatePlan(network: inputs.network, accountUuid: accountUuid);
+    });
+
 BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
   if (status == null) return BigInt.zero;
   BigInt total = BigInt.zero;
@@ -77,12 +96,14 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   const IronwoodMigrationFlowScreen({
     required this.step,
     this.previewData,
+    this.previewPrivatePlan,
     this.onOpenReleaseNotesOverride,
     super.key,
   });
 
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData? previewData;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
@@ -92,6 +113,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
       return _IronwoodMigrationShell(
         step: step,
         data: preview,
+        previewPrivatePlan: previewPrivatePlan,
         onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
       );
     }
@@ -106,6 +128,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
         return _IronwoodMigrationShell(
           step: step,
           data: data,
+          previewPrivatePlan: previewPrivatePlan,
           onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
         );
       },
@@ -152,11 +175,13 @@ class _IronwoodMigrationShell extends StatelessWidget {
   const _IronwoodMigrationShell({
     required this.step,
     required this.data,
+    this.previewPrivatePlan,
     this.onOpenReleaseNotesOverride,
   });
 
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
@@ -172,6 +197,11 @@ class _IronwoodMigrationShell extends StatelessWidget {
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
       ),
+      IronwoodMigrationFlowStep.review =>
+        _IronwoodMigrationPrivateReviewContent(
+          data: data,
+          previewPlan: previewPrivatePlan,
+        ),
     };
 
     return _IronwoodMigrationFrame(
@@ -201,6 +231,7 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         IronwoodMigrationFlowStep.intro => 'Home',
         IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
         IronwoodMigrationFlowStep.options => 'How Migration Works',
+        IronwoodMigrationFlowStep.review => 'Choose Migration Type',
       },
       onTap: () {
         switch (step) {
@@ -210,6 +241,8 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
             context.go('/migration');
           case IronwoodMigrationFlowStep.options:
             context.go('/migration/how-it-works');
+          case IronwoodMigrationFlowStep.review:
+            context.go('/migration/options');
         }
       },
     ),
@@ -513,7 +546,9 @@ class _IronwoodMigrationOptionsContentState
             top: 596,
             width: 230,
             child: AppButton(
-              onPressed: () {},
+              onPressed: _selected == _MigrationMode.private
+                  ? () => context.go('/migration/review')
+                  : null,
               height: 44,
               minWidth: 230,
               expand: true,
@@ -526,6 +561,326 @@ class _IronwoodMigrationOptionsContentState
       ),
     );
   }
+}
+
+class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
+  const _IronwoodMigrationPrivateReviewContent({
+    required this.data,
+    this.previewPlan,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final amount = data.amountText;
+    final plan = previewPlan;
+
+    final content = plan == null
+        ? ref
+              .watch(ironwoodMigrationPrivatePlanProvider)
+              .when(
+                skipLoadingOnReload: true,
+                loading: () => const _PrivateReviewLoading(),
+                error: (_, _) => const _PrivateReviewUnavailable(
+                  title: "Couldn't load migration review",
+                  body:
+                      'Try again after sync finishes. No transaction has been '
+                      'prepared or broadcast.',
+                ),
+                data: (loadedPlan) => loadedPlan == null
+                    ? const _PrivateReviewUnavailable(
+                        title: 'Private migration is not ready yet',
+                        body:
+                            'Wait for sync to complete or for Orchard funds to '
+                            'become spendable, then try again.',
+                      )
+                    : _PrivateReviewPlan(plan: loadedPlan),
+              )
+        : _PrivateReviewPlan(plan: plan);
+
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 29,
+            top: 32,
+            width: 362,
+            child: Column(
+              children: [
+                Text(
+                  'Review Private Migration\nyour $amount ZEC',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: 314,
+                  child: Text(
+                    'Vizor will prepare a private migration plan before any '
+                    'transaction is broadcast.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(left: 12, top: 180, width: 396, child: content),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppButton(
+                  onPressed: null,
+                  height: 44,
+                  minWidth: 230,
+                  expand: true,
+                  constrainContent: true,
+                  trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+                  child: const Text(
+                    'Prepare migration',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AppButton(
+                  onPressed: () => context.go('/migration/options'),
+                  variant: AppButtonVariant.ghost,
+                  height: 36,
+                  minWidth: 230,
+                  expand: true,
+                  constrainContent: true,
+                  child: const Text(
+                    'Back to options',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrivateReviewLoading extends StatelessWidget {
+  const _PrivateReviewLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 254,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colors.background.ground,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
+
+class _PrivateReviewUnavailable extends StatelessWidget {
+  const _PrivateReviewUnavailable({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 254,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const AppIcon(AppIcons.warning, size: 24),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                body,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivateReviewPlan extends StatelessWidget {
+  const _PrivateReviewPlan({required this.plan});
+
+  final rust_sync.OrchardMigrationPrivatePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final needsSplit = plan.denominationSplitStageCount > 0;
+    final noteCount = plan.targetValuesZatoshi.length;
+
+    return Column(
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+            child: Column(
+              children: [
+                _ReviewMetricRow(
+                  icon: AppIcons.shieldKeyhole,
+                  label: 'Move to Ironwood',
+                  value: _formatZecWithTicker(plan.totalMigratableZatoshi),
+                ),
+                const SizedBox(height: 16),
+                _ReviewMetricRow(
+                  icon: AppIcons.coins,
+                  label: 'Estimated fee',
+                  value: _formatZecWithTicker(plan.estimatedTotalFeeZatoshi),
+                ),
+                const SizedBox(height: 16),
+                _ReviewMetricRow(
+                  icon: AppIcons.time,
+                  label: 'Private batches',
+                  value: '${plan.plannedBatchCount}',
+                ),
+                const SizedBox(height: 16),
+                _ReviewMetricRow(
+                  icon: AppIcons.swapArrows,
+                  label: 'Split stages',
+                  value: needsSplit
+                      ? '${plan.denominationSplitStageCount}'
+                      : 'Not needed',
+                ),
+                const SizedBox(height: 18),
+                Divider(height: 1, thickness: 1, color: colors.border.subtle),
+                const SizedBox(height: 16),
+                Text(
+                  'This plan prepares $noteCount common-value notes, then '
+                  'sends them to Ironwood across scheduled private batches.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: 318,
+          child: Text(
+            'No transaction is broadcast from this review screen. The next '
+            'step will prepare the migration.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewMetricRow extends StatelessWidget {
+  const _ReviewMetricRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final String icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        SizedBox(
+          width: 28,
+          height: 28,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: const Color(0xFFE3FBEE),
+              shape: const OvalBorder(),
+            ),
+            child: Center(
+              child: AppIcon(icon, size: 16, color: GreenPrimitives.p500Light),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _formatZecWithTicker(BigInt zatoshi) {
+  return '${ZecAmount.fromZatoshi(zatoshi).balance.amountText} '
+      '$kZcashDefaultCurrencyTicker';
 }
 
 class _FlowButtons extends StatelessWidget {

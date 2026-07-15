@@ -673,6 +673,14 @@ Widget buildIronwoodMigrationOptionsUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/review',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -804,9 +812,9 @@ Widget _buildIronwoodMigrationUseCase({
             percentage: 0.34,
             displayPercentage: 0.34,
             displayTargetPercentage: 0.34,
-            orchardBalance: BigInt.from(14_223_000_000),
-            spendableBalance: BigInt.from(14_223_000_000),
-            totalBalance: BigInt.from(14_223_000_000),
+            orchardBalance: data.amountZatoshi,
+            spendableBalance: data.amountZatoshi,
+            totalBalance: data.amountZatoshi,
           ),
         ),
       ),
@@ -1505,6 +1513,19 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           ),
         ),
         GoRoute(
+          path: '/migration/review',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.review,
+            previewData: widget.initialStep == IronwoodMigrationFlowStep.review
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_224_000_000),
+                  ),
+            previewPrivatePlan: _previewPrivateMigrationPlan(),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
           path: '/home',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
         ),
@@ -2022,6 +2043,38 @@ IronwoodMigrationFlowData _ironwoodMigrationFlowData({
     amountZatoshi: zatoshi,
     accountName: 'Username',
     profilePictureId: kDefaultProfilePictureId,
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      100_000_000,
+      100_000_000,
+    ]),
+    totalInputZatoshi: BigInt.from(14_224_000_000),
+    totalMigratableZatoshi: BigInt.from(14_200_000_000),
+    orchardChangeZatoshi: BigInt.from(21_000_000),
+    denominationSplitFeeZatoshi: BigInt.from(10_000),
+    migrationFeeZatoshi: BigInt.from(20_000),
+    estimatedTotalFeeZatoshi: BigInt.from(30_000),
+    plannedBatchCount: 3,
+    denominationSplitStageCount: 2,
+    signingBatchLimit: 50,
+    broadcastWindowSeconds: BigInt.from(180),
+    maxPreparedNotesPerRun: 64,
   );
 }
 
