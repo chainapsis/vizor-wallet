@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -186,6 +187,95 @@ void main() {
     expect(state.visible, isFalse);
     expect(migrationStatusCalls, isEmpty);
   });
+
+  test('home CTA ignores sync progress-only updates', () async {
+    final migrationStatusCalls = <String>[];
+    final syncState = _syncingReadyState();
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      syncState: syncState,
+      migrationStatusCalls: migrationStatusCalls,
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final initial = await container.read(
+      ironwoodHomeMigrationCtaProvider.future,
+    );
+    expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      syncState.copyWith(
+        percentage: 0.35,
+        displayPercentage: 0.35,
+        displayTargetPercentage: 0.36,
+        displayTargetBlocks: 25,
+        scannedHeight: 3_499_800,
+        chainTipHeight: 3_500_000,
+        phase: 'scan',
+      ),
+    );
+    await container.pump();
+
+    final afterProgressTick = await container.read(
+      ironwoodHomeMigrationCtaProvider.future,
+    );
+    expect(afterProgressTick.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+  });
+
+  test('migration flow data ignores sync progress-only updates', () async {
+    final migrationStatusCalls = <String>[];
+    final syncState = _syncingReadyState();
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      syncState: syncState,
+      migrationStatusCalls: migrationStatusCalls,
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final flowEvents = <AsyncValue<IronwoodMigrationFlowData?>>[];
+    final subscription = container
+        .listen<AsyncValue<IronwoodMigrationFlowData?>>(
+          ironwoodMigrationFlowDataProvider,
+          (_, next) => flowEvents.add(next),
+          fireImmediately: true,
+        );
+    addTearDown(subscription.close);
+
+    final initial = await container.read(
+      ironwoodMigrationFlowDataProvider.future,
+    );
+    expect(initial?.amountZatoshi, syncState.orchardBalance);
+    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+    flowEvents.clear();
+
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      syncState.copyWith(
+        percentage: 0.35,
+        displayPercentage: 0.35,
+        displayTargetPercentage: 0.36,
+        displayTargetBlocks: 25,
+        scannedHeight: 3_499_800,
+        chainTipHeight: 3_500_000,
+        phase: 'scan',
+      ),
+    );
+    await container.pump();
+
+    final afterProgressTick = await container.read(
+      ironwoodMigrationFlowDataProvider.future,
+    );
+    expect(afterProgressTick?.amountZatoshi, syncState.orchardBalance);
+    expect(flowEvents, isEmpty);
+    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+  });
 }
 
 ProviderContainer _container({
@@ -285,6 +375,23 @@ SyncState _readySyncState() {
     orchardBalance: BigInt.from(1_000_000),
     spendableBalance: BigInt.from(1_000_000),
     totalBalance: BigInt.from(1_000_000),
+  );
+}
+
+SyncState _syncingReadyState() {
+  return SyncState(
+    accountUuid: _accountUuid,
+    hasAccountScopedData: true,
+    isSyncing: true,
+    percentage: 0.34,
+    displayPercentage: 0.34,
+    displayTargetPercentage: 0.34,
+    scannedHeight: 3_499_700,
+    chainTipHeight: 3_500_000,
+    orchardBalance: BigInt.from(1_000_000),
+    spendableBalance: BigInt.from(1_000_000),
+    totalBalance: BigInt.from(1_000_000),
+    phase: 'scan',
   );
 }
 

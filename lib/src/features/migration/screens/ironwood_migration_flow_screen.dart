@@ -15,15 +15,12 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
-import '../../../providers/account_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../providers/ironwood_migration_announcement_provider.dart';
 
@@ -49,33 +46,21 @@ final ironwoodMigrationFlowDataProvider =
       final cta = await ref.watch(ironwoodHomeMigrationCtaProvider.future);
       if (!cta.visible) return null;
 
-      final accountState = ref.watch(accountProvider).value;
-      final accountUuid = accountState?.activeAccountUuid;
-      if (accountUuid == null) return null;
-
-      final sync = (ref.watch(syncProvider).value ?? SyncState())
-          .scopedToAccount(accountUuid);
-      if (!sync.hasAccountScopedData) return null;
-
-      AccountInfo? activeAccount;
-      for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
-        if (account.uuid == accountUuid) {
-          activeAccount = account;
-          break;
-        }
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (inputs.accountUuid == null || !inputs.hasAccountScopedData) {
+        return null;
       }
 
       final targetTotal = _sumTargetValues(cta.status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
-          : sync.orchardBalance + sync.orchardPendingBalance;
+          : inputs.orchardBalance + inputs.orchardPendingBalance;
       if (amount <= BigInt.zero) return null;
 
       return IronwoodMigrationFlowData(
         amountZatoshi: amount,
-        accountName: activeAccount?.name ?? 'Username',
-        profilePictureId:
-            activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
+        accountName: inputs.accountName,
+        profilePictureId: inputs.profilePictureId,
       );
     });
 
@@ -113,6 +98,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
 
     final dataAsync = ref.watch(ironwoodMigrationFlowDataProvider);
     return dataAsync.when(
+      skipLoadingOnReload: true,
       loading: () => _IronwoodMigrationLoadingShell(step: step),
       error: (_, _) => const _RedirectHome(),
       data: (data) {

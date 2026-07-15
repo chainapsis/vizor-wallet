@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
@@ -99,6 +100,160 @@ typedef OrchardMigrationStatusGetter =
 
 typedef WalletDbPathGetter = Future<String> Function();
 
+class IronwoodMigrationStatusRequest {
+  const IronwoodMigrationStatusRequest({
+    required this.network,
+    required this.accountUuid,
+  });
+
+  final String network;
+  final String accountUuid;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is IronwoodMigrationStatusRequest &&
+            other.network == network &&
+            other.accountUuid == accountUuid;
+  }
+
+  @override
+  int get hashCode => Object.hash(network, accountUuid);
+}
+
+class IronwoodMigrationInputs {
+  const IronwoodMigrationInputs({
+    required this.ironwoodActiveAtTip,
+    required this.network,
+    required this.accountUuid,
+    required this.accountName,
+    required this.profilePictureId,
+    required this.hasAccountScopedData,
+    required this.isSyncing,
+    required this.isBackgroundMode,
+    required this.hasSyncFailure,
+    required this.orchardBalance,
+    required this.orchardPendingBalance,
+  });
+
+  final bool ironwoodActiveAtTip;
+  final String network;
+  final String? accountUuid;
+  final String accountName;
+  final String profilePictureId;
+  final bool hasAccountScopedData;
+  final bool isSyncing;
+  final bool isBackgroundMode;
+  final bool hasSyncFailure;
+  final BigInt orchardBalance;
+  final BigInt orchardPendingBalance;
+
+  bool get hasOrchardFunds =>
+      orchardBalance > BigInt.zero || orchardPendingBalance > BigInt.zero;
+
+  IronwoodMigrationStatusRequest? get statusRequest {
+    final uuid = accountUuid;
+    if (uuid == null) return null;
+    return IronwoodMigrationStatusRequest(network: network, accountUuid: uuid);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is IronwoodMigrationInputs &&
+            other.ironwoodActiveAtTip == ironwoodActiveAtTip &&
+            other.network == network &&
+            other.accountUuid == accountUuid &&
+            other.accountName == accountName &&
+            other.profilePictureId == profilePictureId &&
+            other.hasAccountScopedData == hasAccountScopedData &&
+            other.isSyncing == isSyncing &&
+            other.isBackgroundMode == isBackgroundMode &&
+            other.hasSyncFailure == hasSyncFailure &&
+            other.orchardBalance == orchardBalance &&
+            other.orchardPendingBalance == orchardPendingBalance;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    ironwoodActiveAtTip,
+    network,
+    accountUuid,
+    accountName,
+    profilePictureId,
+    hasAccountScopedData,
+    isSyncing,
+    isBackgroundMode,
+    hasSyncFailure,
+    orchardBalance,
+    orchardPendingBalance,
+  );
+}
+
+class _IronwoodMigrationAccountInputs {
+  const _IronwoodMigrationAccountInputs({
+    required this.accountUuid,
+    required this.accountName,
+    required this.profilePictureId,
+  });
+
+  final String? accountUuid;
+  final String accountName;
+  final String profilePictureId;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _IronwoodMigrationAccountInputs &&
+            other.accountUuid == accountUuid &&
+            other.accountName == accountName &&
+            other.profilePictureId == profilePictureId;
+  }
+
+  @override
+  int get hashCode => Object.hash(accountUuid, accountName, profilePictureId);
+}
+
+class _IronwoodMigrationSyncInputs {
+  const _IronwoodMigrationSyncInputs({
+    required this.hasAccountScopedData,
+    required this.isSyncing,
+    required this.isBackgroundMode,
+    required this.hasSyncFailure,
+    required this.orchardBalance,
+    required this.orchardPendingBalance,
+  });
+
+  final bool hasAccountScopedData;
+  final bool isSyncing;
+  final bool isBackgroundMode;
+  final bool hasSyncFailure;
+  final BigInt orchardBalance;
+  final BigInt orchardPendingBalance;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _IronwoodMigrationSyncInputs &&
+            other.hasAccountScopedData == hasAccountScopedData &&
+            other.isSyncing == isSyncing &&
+            other.isBackgroundMode == isBackgroundMode &&
+            other.hasSyncFailure == hasSyncFailure &&
+            other.orchardBalance == orchardBalance &&
+            other.orchardPendingBalance == orchardPendingBalance;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    hasAccountScopedData,
+    isSyncing,
+    isBackgroundMode,
+    hasSyncFailure,
+    orchardBalance,
+    orchardPendingBalance,
+  );
+}
+
 class IronwoodMigrationAnnouncementState {
   const IronwoodMigrationAnnouncementState._({
     required this.visible,
@@ -189,53 +344,128 @@ final walletDbPathGetterProvider = Provider<WalletDbPathGetter>(
   (_) => getWalletDbPath,
 );
 
+final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
+  ref,
+) {
+  final activeAccount = ref.watch(
+    accountProvider.select((accountAsync) {
+      final accountState = accountAsync.value;
+      final activeAccountUuid = accountState?.activeAccountUuid;
+      AccountInfo? activeAccount;
+      if (activeAccountUuid != null) {
+        for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
+          if (account.uuid == activeAccountUuid) {
+            activeAccount = account;
+            break;
+          }
+        }
+      }
+
+      return _IronwoodMigrationAccountInputs(
+        accountUuid: activeAccountUuid,
+        accountName: activeAccount?.name ?? 'Username',
+        profilePictureId:
+            activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
+      );
+    }),
+  );
+  final sync = ref.watch(
+    syncProvider.select((syncAsync) {
+      final scoped = (syncAsync.value ?? SyncState()).scopedToAccount(
+        activeAccount.accountUuid,
+      );
+      return _IronwoodMigrationSyncInputs(
+        hasAccountScopedData: scoped.hasAccountScopedData,
+        isSyncing: scoped.isSyncing,
+        isBackgroundMode: scoped.isBackgroundMode,
+        hasSyncFailure: scoped.failure != null || scoped.error != null,
+        orchardBalance: scoped.orchardBalance,
+        orchardPendingBalance: scoped.orchardPendingBalance,
+      );
+    }),
+  );
+  final ironwoodActiveAtTip = ref.watch(
+    chainUpgradeStatusProvider.select(
+      (chainAsync) => chainAsync.value?.ironwoodActiveAtTip == true,
+    ),
+  );
+  final network = ref.watch(
+    rpcEndpointProvider.select((endpoint) => endpoint.networkName),
+  );
+
+  return IronwoodMigrationInputs(
+    ironwoodActiveAtTip: ironwoodActiveAtTip,
+    network: network,
+    accountUuid: activeAccount.accountUuid,
+    accountName: activeAccount.accountName,
+    profilePictureId: activeAccount.profilePictureId,
+    hasAccountScopedData: sync.hasAccountScopedData,
+    isSyncing: sync.isSyncing,
+    isBackgroundMode: sync.isBackgroundMode,
+    hasSyncFailure: sync.hasSyncFailure,
+    orchardBalance: sync.orchardBalance,
+    orchardPendingBalance: sync.orchardPendingBalance,
+  );
+});
+
+final ironwoodMigrationStatusProvider =
+    FutureProvider.family<
+      rust_sync.MigrationStatus,
+      IronwoodMigrationStatusRequest
+    >((ref, request) async {
+      final dbPath = await ref.watch(walletDbPathGetterProvider)();
+      final getStatus = ref.watch(orchardMigrationStatusGetterProvider);
+      return getStatus(
+        dbPath: dbPath,
+        network: request.network,
+        accountUuid: request.accountUuid,
+      );
+    });
+
 final ironwoodMigrationAnnouncementProvider =
     FutureProvider<IronwoodMigrationAnnouncementState>((ref) async {
-      final chainStatus = ref.watch(chainUpgradeStatusProvider).value;
-      if (chainStatus?.ironwoodActiveAtTip != true) {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.ironwoodActiveAtTip) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      final accountState = ref.watch(accountProvider).value;
-      final accountUuid = accountState?.activeAccountUuid;
+      final accountUuid = inputs.accountUuid;
       if (accountUuid == null) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      final sync = (ref.watch(syncProvider).value ?? SyncState())
-          .scopedToAccount(accountUuid);
-      if (!sync.hasAccountScopedData ||
-          sync.isSyncing ||
-          sync.isBackgroundMode ||
-          sync.failure != null ||
-          sync.error != null) {
+      if (!inputs.hasAccountScopedData ||
+          inputs.isSyncing ||
+          inputs.isBackgroundMode ||
+          inputs.hasSyncFailure) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      if (sync.orchardBalance <= BigInt.zero &&
-          sync.orchardPendingBalance <= BigInt.zero) {
+      if (!inputs.hasOrchardFunds) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      final endpoint = ref.watch(rpcEndpointProvider);
-      final network = endpoint.networkName;
       final store = ref.watch(ironwoodMigrationAnnouncementStoreProvider);
-      if (await store.isSeen(network: network, accountUuid: accountUuid)) {
+      if (await store.isSeen(
+        network: inputs.network,
+        accountUuid: accountUuid,
+      )) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      final dbPath = await ref.watch(walletDbPathGetterProvider)();
-      final status = await ref.watch(orchardMigrationStatusGetterProvider)(
-        dbPath: dbPath,
-        network: network,
-        accountUuid: accountUuid,
+      final request = inputs.statusRequest;
+      if (request == null) {
+        return const IronwoodMigrationAnnouncementState.hidden();
+      }
+      final status = await ref.watch(
+        ironwoodMigrationStatusProvider(request).future,
       );
       if (status.phase != kIronwoodMigrationReadyPhase) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
       return IronwoodMigrationAnnouncementState.visible(
-        network: network,
+        network: inputs.network,
         accountUuid: accountUuid,
         status: status,
       );
@@ -243,43 +473,33 @@ final ironwoodMigrationAnnouncementProvider =
 
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
-      final chainStatus = ref.watch(chainUpgradeStatusProvider).value;
-      if (chainStatus?.ironwoodActiveAtTip != true) {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.ironwoodActiveAtTip) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
-      final accountState = ref.watch(accountProvider).value;
-      final accountUuid = accountState?.activeAccountUuid;
+      final accountUuid = inputs.accountUuid;
       if (accountUuid == null) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
-      final sync = (ref.watch(syncProvider).value ?? SyncState())
-          .scopedToAccount(accountUuid);
-      if (!sync.hasAccountScopedData ||
-          sync.failure != null ||
-          sync.error != null) {
+      if (!inputs.hasAccountScopedData || inputs.hasSyncFailure) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
-      final endpoint = ref.watch(rpcEndpointProvider);
-      final network = endpoint.networkName;
-      final hasOrchardFunds =
-          sync.orchardBalance > BigInt.zero ||
-          sync.orchardPendingBalance > BigInt.zero;
-
       rust_sync.MigrationStatus status;
       try {
-        final dbPath = await ref.watch(walletDbPathGetterProvider)();
-        status = await ref.watch(orchardMigrationStatusGetterProvider)(
-          dbPath: dbPath,
-          network: network,
-          accountUuid: accountUuid,
+        final request = inputs.statusRequest;
+        if (request == null) {
+          return const IronwoodHomeMigrationCtaState.hidden();
+        }
+        status = await ref.watch(
+          ironwoodMigrationStatusProvider(request).future,
         );
       } catch (_) {
-        return hasOrchardFunds
+        return inputs.hasOrchardFunds
             ? IronwoodHomeMigrationCtaState.start(
-                network: network,
+                network: inputs.network,
                 accountUuid: accountUuid,
               )
             : const IronwoodHomeMigrationCtaState.hidden();
@@ -287,15 +507,16 @@ final ironwoodHomeMigrationCtaProvider =
 
       if (_shouldResumeIronwoodMigration(status)) {
         return IronwoodHomeMigrationCtaState.resume(
-          network: network,
+          network: inputs.network,
           accountUuid: accountUuid,
           status: status,
         );
       }
 
-      if (hasOrchardFunds && _shouldStartIronwoodMigration(status.phase)) {
+      if (inputs.hasOrchardFunds &&
+          _shouldStartIronwoodMigration(status.phase)) {
         return IronwoodHomeMigrationCtaState.start(
-          network: network,
+          network: inputs.network,
           accountUuid: accountUuid,
           status: status,
         );
