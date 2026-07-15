@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -37,6 +38,10 @@ void main() {
       }
       await loader.load();
     }
+  });
+
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
   });
 
   testWidgets('option selection does not move card content', (tester) async {
@@ -109,6 +114,65 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('private review starts software migration and opens status', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    String? startedAccountUuid;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_status());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(_privatePlan());
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+      isMacOS: () => false,
+      startSoftwareMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required mnemonicBytes,
+            required password,
+            required saltBase64,
+          }) {
+            startedAccountUuid = accountUuid;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final prepareButton = find.widgetWithText(AppButton, 'Prepare migration');
+    expect(prepareButton, findsOneWidget);
+    expect(tester.widget<AppButton>(prepareButton).onPressed, isNotNull);
+
+    await tester.tap(prepareButton);
+    await tester.pumpAndSettle();
+
+    expect(startedAccountUuid, 'account-1');
+    expect(find.text('Confirming Private Split'), findsOneWidget);
   });
 
   testWidgets('legacy review route redirects to private review', (
@@ -274,6 +338,7 @@ void main() {
 
 Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
+  IronwoodMigrationService? migrationService,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -333,6 +398,8 @@ Widget _migrationOptionsHarness({
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      if (migrationService != null)
+        ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -494,5 +561,16 @@ rust_sync.MigrationStatus _status() {
     broadcastWindowSeconds: BigInt.from(180),
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+  );
+}
+
+rust_sync.IronwoodMigrationResult _migrationResult() {
+  return rust_sync.IronwoodMigrationResult(
+    txids: 'txid',
+    status: 'broadcasted',
+    broadcastedCount: 1,
+    totalCount: 1,
+    feeZatoshi: BigInt.from(10_000),
+    migratedZatoshi: BigInt.from(10_000_000),
   );
 }

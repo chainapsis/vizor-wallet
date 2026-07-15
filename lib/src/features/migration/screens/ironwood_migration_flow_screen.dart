@@ -21,6 +21,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../providers/account_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../services/ironwood_migration_service.dart';
@@ -1029,7 +1030,7 @@ double? _statusProgress(rust_sync.MigrationStatus status) {
   };
 }
 
-class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
+class _IronwoodMigrationPrivateReviewContent extends ConsumerStatefulWidget {
   const _IronwoodMigrationPrivateReviewContent({
     required this.data,
     this.previewPlan,
@@ -1039,33 +1040,82 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.colors;
-    final amount = data.amountText;
-    final plan = previewPlan;
+  ConsumerState<_IronwoodMigrationPrivateReviewContent> createState() =>
+      _IronwoodMigrationPrivateReviewContentState();
+}
 
-    final content = plan == null
-        ? ref
-              .watch(ironwoodMigrationPrivatePlanProvider)
-              .when(
-                skipLoadingOnReload: true,
-                loading: () => const _PrivateReviewLoading(),
-                error: (_, _) => const _PrivateReviewUnavailable(
-                  title: "Couldn't load migration review",
-                  body:
-                      'Try again after sync finishes. No transaction has been '
-                      'prepared or broadcast.',
-                ),
-                data: (loadedPlan) => loadedPlan == null
-                    ? const _PrivateReviewUnavailable(
-                        title: 'Private migration is not ready yet',
-                        body:
-                            'Wait for sync to complete or for Orchard funds to '
-                            'become spendable, then try again.',
-                      )
-                    : _PrivateReviewPlan(plan: loadedPlan),
-              )
-        : _PrivateReviewPlan(plan: plan);
+class _IronwoodMigrationPrivateReviewContentState
+    extends ConsumerState<_IronwoodMigrationPrivateReviewContent> {
+  bool _isStarting = false;
+  String? _startError;
+
+  Future<void> _startMigration() async {
+    if (_isStarting) return;
+
+    setState(() {
+      _isStarting = true;
+      _startError = null;
+    });
+
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .startSoftwarePrivateMigration(accountUuid: accountUuid);
+      if (!mounted) return;
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      ref.invalidate(ironwoodHomeMigrationCtaProvider);
+      ref.invalidate(ironwoodMigrationFlowDataProvider);
+      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      context.go('/migration/private/status');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _startError = _privateMigrationStartErrorMessage(e);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStarting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final amount = widget.data.amountText;
+    final previewPlan = widget.previewPlan;
+    final planAsync = previewPlan == null
+        ? ref.watch(ironwoodMigrationPrivatePlanProvider)
+        : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
+    final plan = planAsync.asData?.value;
+
+    final content = planAsync.when(
+      skipLoadingOnReload: true,
+      loading: () => const _PrivateReviewLoading(),
+      error: (_, _) => const _PrivateReviewUnavailable(
+        title: "Couldn't load migration review",
+        body:
+            'Try again after sync finishes. No transaction has been '
+            'prepared or broadcast.',
+      ),
+      data: (loadedPlan) => loadedPlan == null
+          ? const _PrivateReviewUnavailable(
+              title: 'Private migration is not ready yet',
+              body:
+                  'Wait for sync to complete or for Orchard funds to '
+                  'become spendable, then try again.',
+            )
+          : _PrivateReviewPlan(plan: loadedPlan),
+    );
+    final canStart = plan != null && !_isStarting;
 
     return SizedBox(
       width: 420,
@@ -1101,6 +1151,21 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
             ),
           ),
           Positioned(left: 12, top: 180, width: 396, child: content),
+          if (_startError != null)
+            Positioned(
+              left: 51,
+              top: 542,
+              width: 318,
+              child: Text(
+                _startError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
           Positioned(
             left: 95,
             top: 596,
@@ -1109,14 +1174,14 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AppButton(
-                  onPressed: null,
+                  onPressed: canStart ? _startMigration : null,
                   height: 44,
                   minWidth: 230,
                   expand: true,
                   constrainContent: true,
                   trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                  child: const Text(
-                    'Prepare migration',
+                  child: Text(
+                    _isStarting ? 'Preparing...' : 'Prepare migration',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1142,6 +1207,24 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _privateMigrationStartErrorMessage(Object error) {
+  final message = error.toString();
+  final lower = message.toLowerCase();
+  if (lower.contains('mnemonic')) {
+    return "Secret Passphrase isn't available for this account.";
+  }
+  if (lower.contains('secret storage') || lower.contains('unlocked session')) {
+    return 'Unlock Vizor before starting migration.';
+  }
+  if (lower.contains('sync')) {
+    return 'Wait for sync to finish, then try again.';
+  }
+  if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+    return "Couldn't broadcast the migration transaction. Try again.";
+  }
+  return "Couldn't start migration. Try again.";
 }
 
 class _PrivateReviewLoading extends StatelessWidget {
