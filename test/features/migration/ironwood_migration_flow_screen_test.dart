@@ -175,6 +175,90 @@ void main() {
     expect(find.text('Confirming Private Split'), findsOneWidget);
   });
 
+  test(
+    'Keystone migration scan error asks for firmware update on legacy sign result',
+    () {
+      final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
+        Exception(
+          'Unexpected UR type: got "zcash-sign-result", '
+          'expected "zcash-batch-sig-result"',
+        ),
+      );
+      final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
+        Exception(
+          'Unexpected UR type: got "zcash-pczt", '
+          'expected "zcash-batch-sig-result"',
+        ),
+      );
+
+      expect(
+        legacyMessage,
+        'Update Keystone firmware to sign Ironwood migrations, then try again.',
+      );
+      expect(
+        wrongQrMessage,
+        'Open the signed migration QR on Keystone, then scan again.',
+      );
+    },
+  );
+
+  testWidgets(
+    'private review routes Keystone accounts to denomination signing',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var softwareStarted = false;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_status());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(_privatePlan());
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+        isMacOS: () => false,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) {
+              softwareStarted = true;
+              return Future.value(_migrationResult());
+            },
+      );
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          migrationService: service,
+          activeAccountIsHardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(AppButton, 'Prepare migration'));
+      await tester.pumpAndSettle();
+
+      expect(softwareStarted, isFalse);
+      expect(find.text('keystone-denomination-sign-route'), findsOneWidget);
+    },
+  );
+
   testWidgets('legacy review route redirects to private review', (
     tester,
   ) async {
@@ -403,6 +487,7 @@ void main() {
 Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
   IronwoodMigrationService? migrationService,
+  bool activeAccountIsHardware = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -440,6 +525,10 @@ Widget _migrationOptionsHarness({
             IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
       ),
       GoRoute(
+        path: '/migration/private/keystone/denominations/sign',
+        builder: (_, _) => const Text('keystone-denomination-sign-route'),
+      ),
+      GoRoute(
         path: '/migration/how-it-works',
         builder: (_, _) => const Text('how it works'),
       ),
@@ -459,7 +548,9 @@ Widget _migrationOptionsHarness({
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+      ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
       if (migrationService != null)
@@ -549,6 +640,34 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+AppBootstrapState _bootstrapFor({required bool activeAccountIsHardware}) {
+  if (!activeAccountIsHardware) return _bootstrap;
+  return AppBootstrapState(
+    initialLocation: _bootstrap.initialLocation,
+    initialAccountState: const AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Account 1',
+          order: 0,
+          isHardware: true,
+          profilePictureId: kDefaultProfilePictureId,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1testaddress',
+    ),
+    initialSyncSnapshot: _bootstrap.initialSyncSnapshot,
+    network: _bootstrap.network,
+    rpcEndpointConfig: _bootstrap.rpcEndpointConfig,
+    themeMode: _bootstrap.themeMode,
+    privacyModeEnabled: _bootstrap.privacyModeEnabled,
+    isPasswordConfigured: _bootstrap.isPasswordConfigured,
+    isUnlocked: _bootstrap.isUnlocked,
+    passwordRotationRecoveryFailed: _bootstrap.passwordRotationRecoveryFailed,
+  );
+}
 
 final _syncedSyncState = SyncState(
   accountUuid: 'account-1',

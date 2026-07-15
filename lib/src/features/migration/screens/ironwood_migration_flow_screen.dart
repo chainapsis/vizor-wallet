@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
@@ -9,6 +10,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -22,13 +24,22 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
+import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
+import '../../../services/qr_scanner.dart';
+import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../services/ironwood_migration_service.dart';
 
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
 const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
+const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
+const _keystoneMigrationFirmwareUpdateError =
+    'Update Keystone firmware to sign Ironwood migrations, then try again.';
 
 class IronwoodMigrationFlowData {
   const IronwoodMigrationFlowData({
@@ -215,6 +226,478 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+class IronwoodMigrationKeystoneDenominationSignScreen
+    extends ConsumerStatefulWidget {
+  const IronwoodMigrationKeystoneDenominationSignScreen({super.key});
+
+  @override
+  ConsumerState<IronwoodMigrationKeystoneDenominationSignScreen>
+  createState() => _IronwoodMigrationKeystoneDenominationSignScreenState();
+}
+
+enum _KeystoneDenominationSignStage {
+  preparing,
+  showQr,
+  scanning,
+  completing,
+  failed,
+}
+
+class _IronwoodMigrationKeystoneDenominationSignScreenState
+    extends ConsumerState<IronwoodMigrationKeystoneDenominationSignScreen> {
+  _KeystoneDenominationSignStage _stage =
+      _KeystoneDenominationSignStage.preparing;
+  late final IronwoodMigrationService _migrationService;
+  rust_sync.KeystoneMigrationSigningRequest? _request;
+  String? _accountUuid;
+  List<String> _urParts = const [];
+  String? _error;
+  bool _decoding = false;
+  bool _requestCompleted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _migrationService = ref.read(ironwoodMigrationServiceProvider);
+    unawaited(_prepareRequest());
+  }
+
+  @override
+  void dispose() {
+    if (!_requestCompleted) {
+      final requestId = _request?.requestId;
+      if (requestId != null) {
+        unawaited(_discardRequest(requestId));
+      }
+    }
+    super.dispose();
+  }
+
+  Future<void> _prepareRequest() async {
+    setState(() {
+      _stage = _KeystoneDenominationSignStage.preparing;
+      _request = null;
+      _accountUuid = null;
+      _urParts = const [];
+      _error = null;
+      _decoding = false;
+    });
+
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount == null || !activeAccount.isHardware) {
+        throw StateError('Active account is not a Keystone account.');
+      }
+
+      final request = await _migrationService
+          .prepareKeystoneDenominationPrivateMigration(
+            accountUuid: accountUuid,
+          );
+      if (!mounted) {
+        await _discardRequest(request.requestId);
+        return;
+      }
+      if (request.messages.isEmpty) {
+        throw StateError('Keystone migration request has no messages.');
+      }
+      _request = request;
+      _accountUuid = accountUuid;
+
+      final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
+        requestId: request.requestId,
+        messages: request.messages
+            .map(
+              (message) => rust_keystone_wallet.ZcashBatchMessageInput(
+                id: message.id,
+                pcztBytes: message.redactedPczt,
+              ),
+            )
+            .toList(),
+        maxFragmentLen: BigInt.from(140),
+      );
+      if (!mounted) return;
+      setState(() {
+        _stage = _KeystoneDenominationSignStage.showQr;
+        _urParts = urParts;
+      });
+    } catch (e, st) {
+      log('IronwoodMigrationKeystoneDenominationSign: prepare error: $e\n$st');
+      final requestId = _request?.requestId;
+      _request = null;
+      _accountUuid = null;
+      if (requestId != null) {
+        unawaited(_discardRequest(requestId));
+      }
+      if (!mounted) return;
+      setState(() {
+        _stage = _KeystoneDenominationSignStage.failed;
+        _error = _keystoneMigrationSigningErrorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _handleScanComplete(ScanResult result) async {
+    if (_decoding || _stage != _KeystoneDenominationSignStage.scanning) {
+      return;
+    }
+    final request = _request;
+    final accountUuid = _accountUuid;
+    if (request == null || accountUuid == null) return;
+
+    setState(() {
+      _decoding = true;
+      _stage = _KeystoneDenominationSignStage.completing;
+      _error = null;
+    });
+
+    try {
+      final decoded = await rust_keystone.decodeZcashBatchSignResponse(
+        cbor: result.data,
+        expectedRequestId: request.requestId,
+        messageIds: request.messages.map((message) => message.id).toList(),
+      );
+      final signedMessages = _signedMigrationMessagesFor(request, decoded);
+      await _migrationService.completeKeystoneDenominationPrivateMigration(
+        accountUuid: accountUuid,
+        requestId: request.requestId,
+        signedMessages: signedMessages,
+      );
+      if (!mounted) return;
+      _requestCompleted = true;
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      ref.invalidate(ironwoodHomeMigrationCtaProvider);
+      ref.invalidate(ironwoodMigrationFlowDataProvider);
+      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      context.go('/migration/private/status');
+    } catch (e, st) {
+      log('IronwoodMigrationKeystoneDenominationSign: complete error: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _stage = _KeystoneDenominationSignStage.scanning;
+        _decoding = false;
+        _error = _keystoneMigrationSigningErrorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _discardRequest(String requestId) async {
+    try {
+      await _migrationService.discardKeystonePrivateMigrationRequest(
+        requestId: requestId,
+      );
+    } catch (e, st) {
+      log('IronwoodMigrationKeystoneDenominationSign: discard error: $e\n$st');
+    }
+  }
+
+  Future<void> _returnToReview() async {
+    if (_stage == _KeystoneDenominationSignStage.completing) return;
+    final requestId = _request?.requestId;
+    _request = null;
+    if (requestId != null) {
+      await _discardRequest(requestId);
+    }
+    if (!mounted) return;
+    context.go('/migration/private/review');
+  }
+
+  void _handleDecodeError(Object error) {
+    if (!mounted || _decoding) return;
+    final message = ironwoodMigrationKeystoneScanErrorMessage(error);
+    if (_error == message) return;
+    setState(() {
+      _error = message;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationFrame(
+      toolbar: _keystoneDenominationToolbar(
+        context,
+        onBack: () => unawaited(_returnToReview()),
+      ),
+      disableSidebarActions: true,
+      child: SizedBox(
+        width: 520,
+        child: switch (_stage) {
+          _KeystoneDenominationSignStage.preparing => const SizedBox(
+            height: 560,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          _KeystoneDenominationSignStage.showQr => _buildQrContent(context),
+          _KeystoneDenominationSignStage.scanning ||
+          _KeystoneDenominationSignStage.completing => _buildScannerContent(
+            context,
+          ),
+          _KeystoneDenominationSignStage.failed => _buildFailureContent(
+            context,
+          ),
+        },
+      ),
+    );
+  }
+
+  Widget _buildQrContent(BuildContext context) {
+    final colors = context.colors;
+    final request = _request;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Sign private split',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineLarge.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          SizedBox(
+            width: 360,
+            child: Text(
+              'Scan this QR code with Keystone to sign the private split '
+              'transactions.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          KeystonePcztQrStage(
+            phase: KeystonePcztQrStagePhase.ready,
+            urParts: _urParts,
+            error: _error,
+            size: 264,
+          ),
+          const SizedBox(height: AppSpacing.base),
+          Text(
+            request == null
+                ? 'Preparing migration request'
+                : '${request.messages.length} split transaction'
+                      '${request.messages.length == 1 ? '' : 's'} to sign',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppButton(
+            onPressed: _urParts.isEmpty
+                ? null
+                : () {
+                    setState(() {
+                      _stage = _KeystoneDenominationSignStage.scanning;
+                      _error = null;
+                      _decoding = false;
+                    });
+                  },
+            height: 44,
+            minWidth: 230,
+            trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+            child: const Text('Scan signature'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            onPressed: () => unawaited(_returnToReview()),
+            variant: AppButtonVariant.ghost,
+            height: 36,
+            minWidth: 230,
+            child: const Text('Back to review'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScannerContent(BuildContext context) {
+    final colors = context.colors;
+    final completing = _stage == _KeystoneDenominationSignStage.completing;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Scan Keystone signature',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineLarge.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          SizedBox(
+            width: 360,
+            child: Text(
+              completing
+                  ? 'Applying the Keystone signature to your migration plan.'
+                  : 'Show the signed migration QR on Keystone and scan it here.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          KeystoneQrScannerCard(
+            expectedUrType: _keystoneMigrationSignBatchResultUrType,
+            decoding: _decoding,
+            error: _error,
+            onProgress: (_) {
+              if (_error == null || !mounted) return;
+              setState(() {
+                _error = null;
+              });
+            },
+            onDecodeError: _handleDecodeError,
+            onComplete: (result) => unawaited(_handleScanComplete(result)),
+            decodingLabel: 'Reading signature...',
+            unavailableMessage:
+                'Keystone migration signing uses camera QR scanning only. '
+                'Connect a camera and try again.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            onPressed: completing
+                ? null
+                : () {
+                    setState(() {
+                      _stage = _KeystoneDenominationSignStage.showQr;
+                      _error = null;
+                      _decoding = false;
+                    });
+                  },
+            variant: AppButtonVariant.ghost,
+            height: 36,
+            minWidth: 230,
+            child: const Text('Back to QR'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFailureContent(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 560,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Keystone signing unavailable',
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            SizedBox(
+              width: 360,
+              child: Text(
+                _error ?? 'Try again after sync finishes.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppButton(
+              onPressed: () => unawaited(_prepareRequest()),
+              minWidth: 230,
+              leading: const AppIcon(AppIcons.renew, size: 20),
+              child: const Text('Try again'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(
+              onPressed: () => unawaited(_returnToReview()),
+              variant: AppButtonVariant.ghost,
+              minWidth: 230,
+              child: const Text('Back to review'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _keystoneDenominationToolbar(
+  BuildContext context, {
+  required VoidCallback onBack,
+}) {
+  return AppPaneToolbar(
+    leading: AppBackLink(label: 'Review migration', onTap: onBack),
+  );
+}
+
+List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
+  rust_sync.KeystoneMigrationSigningRequest request,
+  rust_keystone.KeystoneSigResult decoded,
+) {
+  final signedById = <String, List<rust_keystone.KeystoneActionSig>>{};
+  for (final result in decoded.results) {
+    signedById[utf8.decode(result.messageId)] = result.sigs;
+  }
+
+  return [
+    for (final message in request.messages)
+      rust_sync.KeystoneSignedMigrationMessage(
+        id: message.id,
+        sigs:
+            signedById[message.id] ??
+            (throw StateError(
+              'Keystone signature for ${message.id} is missing.',
+            )),
+      ),
+  ];
+}
+
+@visibleForTesting
+String ironwoodMigrationKeystoneScanErrorMessage(Object error) {
+  final message = error.toString();
+  if (message.contains('Unexpected UR type') &&
+      message.contains(_keystoneMigrationLegacySignResultUrType)) {
+    return _keystoneMigrationFirmwareUpdateError;
+  }
+  if (message.contains('Unexpected UR type')) {
+    return 'Open the signed migration QR on Keystone, then scan again.';
+  }
+  return 'Keep the QR code steady and fully visible.';
+}
+
+String _keystoneMigrationSigningErrorMessage(Object error) {
+  final message = error.toString();
+  final lower = message.toLowerCase();
+  if (lower.contains('not a keystone')) {
+    return 'Use a Keystone account to sign this migration.';
+  }
+  if (lower.contains('sync')) {
+    return 'Wait for sync to finish, then try again.';
+  }
+  if (lower.contains('password') ||
+      lower.contains('secret storage') ||
+      lower.contains('unlocked session')) {
+    return 'Unlock Vizor before signing migration.';
+  }
+  if (lower.contains('request') && lower.contains('not found')) {
+    return 'This Keystone signing request expired. Prepare it again.';
+  }
+  if (lower.contains('signature') || lower.contains('qr')) {
+    return 'Keystone signature could not be applied.';
+  }
+  return 'Keystone signing could not be prepared. Try again.';
 }
 
 class _RedirectHome extends StatefulWidget {
@@ -1219,6 +1702,10 @@ class _IronwoodMigrationPrivateReviewContentState
       final accountUuid = accountState.activeAccountUuid;
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
+      }
+      if (accountState.activeAccount?.isHardware ?? false) {
+        context.go('/migration/private/keystone/denominations/sign');
+        return;
       }
       await ref
           .read(ironwoodMigrationServiceProvider)

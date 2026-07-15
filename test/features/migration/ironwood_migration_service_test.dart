@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
@@ -255,6 +256,139 @@ void main() {
     expect(seenSalts, hasLength(2));
     expect(seenSalts[1], seenSalts[0]);
   });
+
+  test(
+    'prepareKeystoneDenominationPrivateMigration prepares signing request',
+    () async {
+      String? seenDbPath;
+      String? seenNetwork;
+      String? seenAccountUuid;
+      final expected = _keystoneSigningRequest();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        prepareKeystoneDenominationMigration:
+            ({required dbPath, required network, required accountUuid}) {
+              seenDbPath = dbPath;
+              seenNetwork = network;
+              seenAccountUuid = accountUuid;
+              return Future.value(expected);
+            },
+      );
+
+      final request = await service.prepareKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+      );
+
+      expect(request, expected);
+      expect(seenDbPath, '/tmp/wallet.db');
+      expect(seenNetwork, 'test');
+      expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
+    'completeKeystoneDenominationPrivateMigration reuses pending tx salt',
+    () async {
+      final seenSalts = <String>[];
+      final seenMessages = <List<rust_sync.KeystoneSignedMigrationMessage>>[];
+      String? seenRequestId;
+      String? seenPassword;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        getSessionPassword: () => 'test-password',
+        completeKeystoneDenominationMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) {
+              seenRequestId = requestId;
+              seenPassword = password;
+              seenSalts.add(saltBase64);
+              seenMessages.add(signedMessages);
+              return Future.value(_migrationResult());
+            },
+      );
+      final signedMessages = [_signedMigrationMessage()];
+
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+
+      expect(seenRequestId, 'request-1');
+      expect(seenPassword, 'test-password');
+      expect(seenMessages, [signedMessages, signedMessages]);
+      expect(seenSalts, hasLength(2));
+      expect(seenSalts[1], seenSalts[0]);
+    },
+  );
+
+  test('discardKeystonePrivateMigrationRequest discards request id', () async {
+    String? seenRequestId;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      discardKeystoneMigrationRequest: ({required requestId}) {
+        seenRequestId = requestId;
+        return Future.value();
+      },
+    );
+
+    await service.discardKeystonePrivateMigrationRequest(
+      requestId: 'request-1',
+    );
+
+    expect(seenRequestId, 'request-1');
+  });
 }
 
 rust_sync.MigrationStatus _migrationStatus() {
@@ -288,5 +422,31 @@ rust_sync.IronwoodMigrationResult _migrationResult() {
     totalCount: 1,
     feeZatoshi: BigInt.from(10_000),
     migratedZatoshi: BigInt.from(100_000_000),
+  );
+}
+
+rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {
+  return rust_sync.KeystoneMigrationSigningRequest(
+    requestId: 'request-1',
+    messages: [
+      rust_sync.KeystoneMigrationMessage(
+        id: 'message-1',
+        redactedPczt: Uint8List.fromList([1, 2, 3]),
+      ),
+    ],
+    signingBatchLimit: 50,
+  );
+}
+
+rust_sync.KeystoneSignedMigrationMessage _signedMigrationMessage() {
+  return rust_sync.KeystoneSignedMigrationMessage(
+    id: 'message-1',
+    sigs: [
+      rust_keystone.KeystoneActionSig(
+        pool: 0,
+        actionIndex: 0,
+        sig: Uint8List.fromList(List<int>.filled(64, 7)),
+      ),
+    ],
   );
 }
