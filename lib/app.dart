@@ -30,6 +30,7 @@ import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/about/screens/mobile/mobile_about_screens.dart';
@@ -202,6 +203,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
   ref.listen(swapFeatureEnabledProvider, (_, _) {
     refresh.requestRefresh();
   });
+  ref.listen(ironwoodPostMigrationStateProvider, (_, _) {
+    refresh.requestRefresh();
+  });
   log('router: initialized');
 
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -345,8 +349,27 @@ String? appRedirect({
   if (hasWallet && state.matchedLocation == '/welcome') {
     return requiresUnlock ? '/unlock' : '/home';
   }
+  final ironwoodPostMigrationState = ref
+      .read(ironwoodPostMigrationStateProvider)
+      .value;
+  if (ironwoodPostMigrationState?.locksNavigation == true &&
+      _isIronwoodMigrationRestrictedRoute(state.matchedLocation)) {
+    return '/migration';
+  }
   if (!swapFeatureEnabled && isSwap) return '/home';
   return null;
+}
+
+bool _isIronwoodMigrationRestrictedRoute(String matchedLocation) {
+  return _matchesRoutePrefix(matchedLocation, '/send') ||
+      _matchesRoutePrefix(matchedLocation, '/receive') ||
+      _matchesRoutePrefix(matchedLocation, '/pay') ||
+      _matchesRoutePrefix(matchedLocation, '/swap');
+}
+
+bool _matchesRoutePrefix(String matchedLocation, String routePath) {
+  return matchedLocation == routePath ||
+      matchedLocation.startsWith('$routePath/');
 }
 
 /// Entry, onboarding, and auth routes shared by the desktop and mobile
