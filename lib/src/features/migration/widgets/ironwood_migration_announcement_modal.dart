@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -12,11 +13,11 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
   });
 
   static const width = 312.0;
-  static const height = 452.0;
+  static const height = 414.0;
   static const _contentWidth = 280.0;
-  static const _heroHeight = 176.0;
-  static const _symbolWidth = 106.0;
-  static const _symbolHeight = 115.0;
+  static const _heroHeight = 154.0;
+  static const _symbolWidth = 92.0;
+  static const _symbolHeight = 100.0;
 
   final VoidCallback onStartMigration;
   final VoidCallback onOpenReleaseNotes;
@@ -60,8 +61,8 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
             ),
           ),
           const Positioned(
-            left: 103,
-            top: 24,
+            left: 110,
+            top: 23,
             width: _symbolWidth,
             height: _symbolHeight,
             child: Image(
@@ -73,20 +74,24 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
           ),
           Positioned(
             left: AppSpacing.sm,
-            top: 163,
+            top: 168,
             width: _contentWidth,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Ironwood\nMigration is Live',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
+                Center(
+                  child: SvgPicture.asset(
+                    'assets/illustrations/ironwood_wordmark.svg',
+                    width: 184,
+                    height: 25,
+                    colorFilter: ColorFilter.mode(
+                      colors.text.accent,
+                      BlendMode.srcIn,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 13),
                 Text(
                   'Ironwood is the latest Zcash shielded pool.\n'
                   "It's the first formally verified pool with\n"
@@ -101,7 +106,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
           ),
           Positioned(
             left: AppSpacing.sm,
-            top: 328,
+            top: 290,
             width: _contentWidth,
             child: Column(
               mainAxisSize: MainAxisSize.min,

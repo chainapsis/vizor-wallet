@@ -340,6 +340,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           if (visibleIronwoodAnnouncement != null)
             AppPaneModalOverlay(
+              alignment: const Alignment(0, -0.08),
+              scrimColor: const Color(0xB3858686),
               onDismiss: () =>
                   _dismissIronwoodAnnouncement(visibleIronwoodAnnouncement),
               child: IronwoodMigrationAnnouncementModal(

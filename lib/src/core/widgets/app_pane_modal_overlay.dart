@@ -9,6 +9,7 @@ class AppPaneModalOverlay extends StatelessWidget {
     required this.onDismiss,
     this.borderRadius = defaultBorderRadius,
     this.alignment = Alignment.center,
+    this.scrimColor,
     super.key,
   });
 
@@ -20,6 +21,7 @@ class AppPaneModalOverlay extends StatelessWidget {
   final VoidCallback onDismiss;
   final BorderRadius? borderRadius;
   final Alignment alignment;
+  final Color? scrimColor;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +50,7 @@ class AppPaneModalOverlay extends StatelessWidget {
               onTap: onDismiss,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: colors.background.neutralScrim,
+                  color: scrimColor ?? colors.background.neutralScrim,
                 ),
                 child: Align(
                   alignment: alignment,

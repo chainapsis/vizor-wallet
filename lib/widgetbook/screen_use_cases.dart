@@ -649,6 +649,29 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
   );
 }
 
+Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
+  BuildContext context,
+) {
+  final accountUuid = _accountsDesignState.activeAccountUuid!;
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_223_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: accountUuid,
+      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
+    ),
+    announcement: IronwoodMigrationAnnouncementState.visible(
+      network: 'main',
+      accountUuid: accountUuid,
+      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
+    ),
+  );
+}
+
 Widget buildIronwoodMigrationIntroUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/intro',
@@ -768,6 +791,8 @@ Widget _buildDesktopHomeUseCase({
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
+  IronwoodMigrationAnnouncementState announcement =
+      const IronwoodMigrationAnnouncementState.hidden(),
 }) {
   return ProviderScope(
     overrides: [
@@ -793,7 +818,7 @@ Widget _buildDesktopHomeUseCase({
         return migrationCta;
       }),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-        return const IronwoodMigrationAnnouncementState.hidden();
+        return announcement;
       }),
     ],
     child: const _DesktopHomeHarness(),
@@ -2085,14 +2110,14 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     ]),
     totalInputZatoshi: BigInt.from(14_224_000_000),
     totalMigratableZatoshi: BigInt.from(14_200_000_000),
-    orchardChangeZatoshi: BigInt.from(21_000_000),
-    denominationSplitFeeZatoshi: BigInt.from(10_000),
-    migrationFeeZatoshi: BigInt.from(20_000),
-    estimatedTotalFeeZatoshi: BigInt.from(30_000),
-    plannedBatchCount: 3,
+    orchardChangeZatoshi: BigInt.from(100_000),
+    denominationSplitFeeZatoshi: BigInt.from(600_000),
+    migrationFeeZatoshi: BigInt.from(600_000),
+    estimatedTotalFeeZatoshi: BigInt.from(1_200_000),
+    plannedBatchCount: 12,
     denominationSplitStageCount: 2,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    broadcastWindowSeconds: BigInt.from(14_400),
     maxPreparedNotesPerRun: 64,
   );
 }
@@ -2102,12 +2127,30 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     activeRunId: 'preview-run',
     targetValuesZatoshi: frb.Uint64List.fromList([
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
       100_000_000,
       100_000_000,
+      100_000_000,
+      100_000_000,
+      10_000_000,
+      10_000_000,
+      10_000_000,
+      1_000_000,
+      1_000_000,
+      1_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      879_000_000,
     ]),
     preparedNoteCount: 6,
     denominationConfirmationCount: 2,

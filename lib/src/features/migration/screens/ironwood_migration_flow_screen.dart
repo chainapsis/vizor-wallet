@@ -1149,7 +1149,7 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         IronwoodMigrationFlowStep.intro => 'Home',
         IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
         IronwoodMigrationFlowStep.options => 'How Migration Works',
-        IronwoodMigrationFlowStep.review => 'Choose Migration Type',
+        IronwoodMigrationFlowStep.review => 'Migration Options',
       },
       onTap: () {
         switch (step) {
@@ -1635,6 +1635,16 @@ class _IronwoodMigrationPrivateStatusContentState
       _StatusAction.none => null,
     };
 
+    if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      return _PrivateDenominationWaitingStatusContent(
+        status: status,
+        presentation: presentation,
+        footerText: footerText,
+        actionLabel: actionLabel,
+        actionCallback: actionCallback,
+      );
+    }
+
     return SizedBox(
       width: 420,
       height: 656,
@@ -1893,6 +1903,7 @@ extension _StatusActionLabels on _StatusAction {
 
 _StatusAction _statusAction(rust_sync.MigrationStatus status) {
   return switch (status.phase) {
+    kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.backHome,
     kIronwoodMigrationReadyToMigratePhase ||
     kIronwoodMigrationBroadcastScheduledPhase => _StatusAction.advance,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
@@ -1910,14 +1921,14 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase =>
       const _StatusPresentation(
-        title: 'Confirming Private Split',
+        title: 'Preparing your notes',
         body:
-            'Your Orchard funds were split into private common-value notes. '
-            'Vizor is waiting until those notes are spendable.',
+            'We are preparing the Migration.\n'
+            'This usually takes about 10-20 minutes.',
         footer:
-            'Keep Vizor synced. Migration will continue after the split '
-            'transactions reach the required confirmation depth.',
-        buttonLabel: 'Waiting for confirmations',
+            'You can leave this screen — keep Vizor open or running in the '
+            'background. Progress will be checked when Vizor can run again.',
+        buttonLabel: 'Back to Home',
       ),
     kIronwoodMigrationReadyToMigratePhase => const _StatusPresentation(
       title: 'Ready to Migrate',
@@ -2128,33 +2139,31 @@ class _IronwoodMigrationPrivateReviewContentState
             width: 362,
             child: Column(
               children: [
+                const AppIcon(AppIcons.shieldKeyhole, size: 18),
+                const SizedBox(height: 16),
                 Text(
-                  'Review Private Migration\nyour $amount ZEC',
+                  'Review Migration Plan',
                   textAlign: TextAlign.center,
-                  style: AppTypography.headlineLarge.copyWith(
+                  style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: 314,
-                  child: Text(
-                    'Vizor will prepare a private migration plan before any '
-                    'transaction is broadcast.',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  '$amount ZEC',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
               ],
             ),
           ),
-          Positioned(left: 12, top: 180, width: 396, child: content),
+          Positioned(left: 12, top: 174, width: 396, child: content),
           if (_startError != null)
             Positioned(
               left: 51,
-              top: 542,
+              top: 528,
               width: 318,
               child: Text(
                 _startError!,
@@ -2168,39 +2177,20 @@ class _IronwoodMigrationPrivateReviewContentState
             ),
           Positioned(
             left: 95,
-            top: 596,
+            top: 582,
             width: 230,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppButton(
-                  onPressed: canStart ? _startMigration : null,
-                  height: 44,
-                  minWidth: 230,
-                  expand: true,
-                  constrainContent: true,
-                  trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                  child: Text(
-                    _isStarting ? 'Preparing...' : 'Prepare migration',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                AppButton(
-                  onPressed: () => context.go('/migration/options'),
-                  variant: AppButtonVariant.ghost,
-                  height: 36,
-                  minWidth: 230,
-                  expand: true,
-                  constrainContent: true,
-                  child: const Text(
-                    'Back to options',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            child: AppButton(
+              onPressed: canStart ? _startMigration : null,
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+              child: Text(
+                _isStarting ? 'Preparing...' : 'Authorize & Start',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ],
@@ -2314,71 +2304,538 @@ class _PrivateReviewPlan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final needsSplit = plan.denominationSplitStageCount > 0;
-    final noteCount = plan.targetValuesZatoshi.length;
+    final feeText =
+        '~${_formatZecAmountCompact(plan.estimatedTotalFeeZatoshi)} ZEC';
+    final orchardRemainderText =
+        '~${_formatZecAmountCompact(plan.orchardChangeZatoshi ?? BigInt.zero)} ZEC';
 
     return Column(
       children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(28),
+        SizedBox(
+          width: double.infinity,
+          height: 112,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _ReviewTextRow(
+                    label: '${plan.plannedBatchCount} Planned batches',
+                    value: 'View',
+                    trailingIcon: AppIcons.chevronForward,
+                    semiboldLabel: true,
+                  ),
+                  const SizedBox(height: 14),
+                  _ReviewTextRow(
+                    label: 'Estimated arrival time',
+                    value: _estimatedMigrationArrivalLabel(plan),
+                  ),
+                ],
+              ),
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          height: 112,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _ReviewTextRow(
+                    label: 'Fees (estimate)',
+                    value: 'Total, $feeText',
+                    mutedLabel: true,
+                  ),
+                  const SizedBox(height: 14),
+                  _ReviewTextRow(
+                    label: 'Orchard remains',
+                    value: orchardRemainderText,
+                    trailingIcon: AppIcons.help,
+                    mutedLabel: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AppIcon(AppIcons.shieldKeyhole, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Privacy',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Separate windows reduce correlation — the total '
+                      'crossing amount stays publicly visible. Spending is '
+                      'best effort, not a delivery time.',
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewTextRow extends StatelessWidget {
+  const _ReviewTextRow({
+    required this.label,
+    required this.value,
+    this.trailingIcon,
+    this.mutedLabel = false,
+    this.semiboldLabel = false,
+  });
+
+  final String label;
+  final String value;
+  final String? trailingIcon;
+  final bool mutedLabel;
+  final bool semiboldLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final rowStyle = mutedLabel
+        ? AppTypography.bodyMediumStrong
+        : AppTypography.labelLarge;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: rowStyle.copyWith(
+              color: mutedLabel ? colors.text.secondary : colors.text.accent,
+              fontWeight: semiboldLabel ? FontWeight.w600 : rowStyle.fontWeight,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: rowStyle.copyWith(color: colors.text.accent),
+                ),
+              ),
+              if (trailingIcon != null) ...[
+                const SizedBox(width: 4),
+                AppIcon(trailingIcon!, size: 12, color: colors.icon.regular),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PrivateDenominationWaitingStatusContent extends StatelessWidget {
+  const _PrivateDenominationWaitingStatusContent({
+    required this.status,
+    required this.presentation,
+    required this.footerText,
+    required this.actionLabel,
+    required this.actionCallback,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final _StatusPresentation presentation;
+  final String footerText;
+  final String actionLabel;
+  final VoidCallback? actionCallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 43,
+            top: 52,
+            width: 334,
             child: Column(
               children: [
-                _ReviewMetricRow(
-                  icon: AppIcons.shieldKeyhole,
-                  label: 'Move to Ironwood',
-                  value: _formatZecWithTicker(plan.totalMigratableZatoshi),
-                ),
-                const SizedBox(height: 16),
-                _ReviewMetricRow(
-                  icon: AppIcons.coins,
-                  label: 'Estimated fee',
-                  value: _formatZecWithTicker(plan.estimatedTotalFeeZatoshi),
-                ),
-                const SizedBox(height: 16),
-                _ReviewMetricRow(
-                  icon: AppIcons.time,
-                  label: 'Private batches',
-                  value: '${plan.plannedBatchCount}',
-                ),
-                const SizedBox(height: 16),
-                _ReviewMetricRow(
-                  icon: AppIcons.swapArrows,
-                  label: 'Split stages',
-                  value: needsSplit
-                      ? '${plan.denominationSplitStageCount}'
-                      : 'Not needed',
+                Text(
+                  presentation.title,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
                 const SizedBox(height: 18),
-                Divider(height: 1, thickness: 1, color: colors.border.subtle),
-                const SizedBox(height: 16),
                 Text(
-                  'This plan prepares $noteCount common-value notes, then '
-                  'sends them to Ironwood across scheduled private batches.',
+                  presentation.body,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
+                    color: colors.text.accent,
                   ),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 18),
-        SizedBox(
-          width: 318,
-          child: Text(
-            'No transaction is broadcast from this review screen. The next '
-            'step will prepare the migration.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
+          Positioned(
+            left: 12,
+            top: 156,
+            width: 396,
+            height: 110,
+            child: _PreparingNotesDiagram(status: status),
+          ),
+          Positioned(
+            left: 12,
+            top: 286,
+            width: 396,
+            height: 222,
+            child: _SplitSubmittingCard(status: status),
+          ),
+          Positioned(
+            left: 70,
+            top: 526,
+            width: 280,
+            child: Text(
+              footerText,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
             ),
           ),
+          Positioned(
+            left: 129,
+            top: 606,
+            width: 162,
+            child: AppButton(
+              onPressed: actionCallback,
+              height: 36,
+              minWidth: 162,
+              expand: true,
+              constrainContent: true,
+              child: Text(
+                actionLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreparingNotesDiagram extends StatelessWidget {
+  const _PreparingNotesDiagram({required this.status});
+
+  final rust_sync.MigrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final targetTotal = _sumTargetValues(status);
+    final amountText = targetTotal > BigInt.zero
+        ? '${_formatZecAmountCompact(targetTotal)} ZEC'
+        : '${status.preparedNoteCount} notes';
+    final noteLabels = _statusNoteLabels(status);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 91,
+            top: 47,
+            child: Text(
+              amountText,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 190,
+            top: 0,
+            bottom: 0,
+            child: CustomPaint(
+              size: const Size(1, 110),
+              painter: _PreparingNotesConnectorPainter(
+                color: GreenPrimitives.p500Light,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 204,
+            top: 25,
+            width: 192,
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final label in noteLabels)
+                  _NoteChip(label: label, dimmed: label != noteLabels.first),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoteChip extends StatelessWidget {
+  const _NoteChip({required this.label, required this.dimmed});
+
+  final String label;
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: dimmed ? colors.background.raised : const Color(0xFFEAFBF1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: dimmed ? colors.border.subtle : GreenPrimitives.p500Light,
+          width: 0.6,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Text(
+          label,
+          style: AppTypography.labelLarge.copyWith(
+            color: dimmed ? colors.text.secondary : colors.text.accent,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreparingNotesConnectorPainter extends CustomPainter {
+  const _PreparingNotesConnectorPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final x = size.width / 2;
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    canvas.drawCircle(Offset(x, size.height / 2), 12, Paint()..color = color);
+
+    final arrowPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    final center = Offset(x, size.height / 2);
+    final path = Path()
+      ..moveTo(center.dx - 3, center.dy - 4.4)
+      ..lineTo(center.dx + 2.5, center.dy)
+      ..lineTo(center.dx - 3, center.dy + 4.4);
+    canvas.drawPath(path, arrowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PreparingNotesConnectorPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _SplitSubmittingCard extends StatelessWidget {
+  const _SplitSubmittingCard({required this.status});
+
+  final rust_sync.MigrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    const confirmationText =
+        'Confirm waiting for the source chain\n'
+        'and provider to recognise the deposit';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 11,
+              top: 40,
+              height: 92,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.border.subtle,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+                child: const SizedBox(width: 2),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: colors.background.inverse,
+                          shape: const OvalBorder(),
+                        ),
+                        child: const Center(
+                          child: AppIcon(
+                            AppIcons.loader,
+                            size: 16,
+                            color: Colors.white,
+                            animated: false,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Submitting split transaction...',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.only(left: 28),
+                  child: Text(
+                    confirmationText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _StatusCheckRow(
+                  icon: AppIcons.scroll,
+                  label: 'Confirmation',
+                  complete:
+                      status.denominationConfirmationTarget > 0 &&
+                      status.denominationConfirmationCount >=
+                          status.denominationConfirmationTarget,
+                ),
+                const SizedBox(height: 14),
+                _StatusCheckRow(
+                  icon: AppIcons.calendar,
+                  label: 'Migration schedule ready',
+                  complete:
+                      status.denominationSplitCompletedCount >=
+                      status.denominationSplitTotalCount,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusCheckRow extends StatelessWidget {
+  const _StatusCheckRow({
+    required this.icon,
+    required this.label,
+    required this.complete,
+  });
+
+  final String icon;
+  final String label;
+  final bool complete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = complete ? GreenPrimitives.p500Light : colors.icon.muted;
+    return Row(
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: complete
+                  ? const Color(0xFFE3FBEE)
+                  : colors.background.raised,
+              shape: const OvalBorder(),
+            ),
+            child: Center(child: AppIcon(icon, size: 16, color: color)),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
       ],
     );
@@ -2442,9 +2899,58 @@ class _ReviewMetricRow extends StatelessWidget {
   }
 }
 
-String _formatZecWithTicker(BigInt zatoshi) {
-  return '${ZecAmount.fromZatoshi(zatoshi).balance.amountText} '
-      '$kZcashDefaultCurrencyTicker';
+String _formatZecAmountCompact(BigInt zatoshi) {
+  return ZecAmount.fromZatoshi(
+    zatoshi,
+  ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
+}
+
+String _estimatedMigrationArrivalLabel(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) {
+  final batches = math.max(1, plan.plannedBatchCount);
+  final totalSeconds = plan.broadcastWindowSeconds * BigInt.from(batches);
+  const minute = 60;
+  const hour = minute * 60;
+  const day = hour * 24;
+
+  if (totalSeconds >= BigInt.from(day)) {
+    final days = (totalSeconds + BigInt.from(day - 1)) ~/ BigInt.from(day);
+    return '~$days days';
+  }
+  if (totalSeconds >= BigInt.from(hour)) {
+    final hours = (totalSeconds + BigInt.from(hour - 1)) ~/ BigInt.from(hour);
+    return '~$hours hr';
+  }
+  if (totalSeconds >= BigInt.from(minute)) {
+    final minutes =
+        (totalSeconds + BigInt.from(minute - 1)) ~/ BigInt.from(minute);
+    return '~$minutes min';
+  }
+  return 'Scheduled';
+}
+
+List<String> _statusNoteLabels(rust_sync.MigrationStatus status) {
+  final labels = <String>[
+    for (final value in status.targetValuesZatoshi.take(9))
+      '${_formatZecAmountCompact(value)} ZEC',
+  ];
+  const fallbackLabels = [
+    '1 ZEC',
+    '1 ZEC',
+    '1 ZEC',
+    '1 ZEC',
+    '0.1 ZEC',
+    '0.1 ZEC',
+    '0.1 ZEC',
+    '0.01 ZEC',
+    '0.01 ZEC',
+    '0.01 ZEC',
+  ];
+  for (var i = labels.length; i < 9; i++) {
+    labels.add(fallbackLabels[i]);
+  }
+  return labels;
 }
 
 class _FlowButtons extends StatelessWidget {

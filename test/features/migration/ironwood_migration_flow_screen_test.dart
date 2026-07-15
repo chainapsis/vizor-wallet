@@ -86,9 +86,9 @@ void main() {
     await tester.tap(find.text('Select & Review'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Review Private Migration'), findsOneWidget);
-    expect(find.text('Move to Ironwood'), findsOneWidget);
-    expect(find.text('Prepare migration'), findsOneWidget);
+    expect(find.textContaining('Review Migration Plan'), findsOneWidget);
+    expect(find.text('1 Planned batches'), findsOneWidget);
+    expect(find.text('Authorize & Start'), findsOneWidget);
   });
 
   testWidgets('private review shows plan without preparing a transaction', (
@@ -104,16 +104,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Move to Ironwood'), findsOneWidget);
-    expect(find.text('0.10 ZEC'), findsWidgets);
-    expect(find.text('Estimated fee'), findsOneWidget);
-    expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(
-      find.textContaining(
-        'No transaction is broadcast from this review screen',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('1 Planned batches'), findsOneWidget);
+    expect(find.text('~3 min'), findsOneWidget);
+    expect(find.text('Fees (estimate)'), findsOneWidget);
+    expect(find.text('Total, ~0.0001 ZEC'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
   });
 
   testWidgets('private review starts software migration and opens status', (
@@ -164,7 +159,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final prepareButton = find.widgetWithText(AppButton, 'Prepare migration');
+    final prepareButton = find.widgetWithText(AppButton, 'Authorize & Start');
     expect(prepareButton, findsOneWidget);
     expect(tester.widget<AppButton>(prepareButton).onPressed, isNotNull);
 
@@ -172,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(startedAccountUuid, 'account-1');
-    expect(find.text('Confirming Private Split'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
   });
 
   test(
@@ -289,7 +284,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(AppButton, 'Prepare migration'));
+      await tester.tap(find.widgetWithText(AppButton, 'Authorize & Start'));
       await tester.pumpAndSettle();
 
       expect(softwareStarted, isFalse);
@@ -310,8 +305,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Review Private Migration'), findsOneWidget);
-    expect(find.text('Move to Ironwood'), findsOneWidget);
+    expect(find.textContaining('Review Migration Plan'), findsOneWidget);
+    expect(find.text('1 Planned batches'), findsOneWidget);
   });
 
   testWidgets('private status shows resume progress state', (tester) async {
@@ -325,10 +320,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Confirming Private Split'), findsOneWidget);
-    expect(find.text('Split progress'), findsOneWidget);
-    expect(find.text('1/3'), findsOneWidget);
-    expect(find.text('Waiting for confirmations'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Submitting split transaction...'), findsOneWidget);
+    expect(find.text('Back to Home'), findsOneWidget);
   });
 
   testWidgets('private status maps migration phases to actions', (
@@ -342,9 +336,9 @@ void main() {
     final cases = [
       _StatusUiCase(
         status: _status(),
-        title: 'Confirming Private Split',
-        buttonLabel: 'Waiting for confirmations',
-        buttonEnabled: false,
+        title: 'Preparing your notes',
+        buttonLabel: 'Back to Home',
+        buttonEnabled: true,
       ),
       _StatusUiCase(
         status: _migrationStatus(
