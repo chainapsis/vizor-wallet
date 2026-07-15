@@ -31,7 +31,9 @@ import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
 
 class AppMainSidebar extends ConsumerStatefulWidget {
-  const AppMainSidebar({super.key});
+  const AppMainSidebar({this.disabledRoutePaths = const {}, super.key});
+
+  final Set<String> disabledRoutePaths;
 
   @override
   ConsumerState<AppMainSidebar> createState() => _AppMainSidebarState();
@@ -53,7 +55,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   bool get _isHomeRoute => _matches('/home');
 
   bool get _homeShouldBeActive =>
-      _isHomeRoute || _matches('/send') || _matches('/receive');
+      _isHomeRoute ||
+      _matches('/send') ||
+      _matches('/receive') ||
+      _matches('/migration');
 
   bool get _isAccountMenuOpen => _accountMenuEntry != null;
 
@@ -71,6 +76,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _navigateTo(String routePath) {
+    if (widget.disabledRoutePaths.contains(routePath)) return;
     if (_matches(routePath)) {
       if (routePath == '/voting') {
         ref.read(votingPollListRefreshRequestProvider.notifier).request();
@@ -398,7 +404,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         label: 'Swap',
                         iconName: AppIcons.swapArrows,
                         active: _matches('/swap'),
-                        onTap: isImporting ? null : () => _navigateTo('/swap'),
+                        onTap:
+                            isImporting ||
+                                widget.disabledRoutePaths.contains('/swap')
+                            ? null
+                            : () => _navigateTo('/swap'),
                       ),
                     ],
                     const SizedBox(height: AppSpacing.xs),
@@ -409,7 +419,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _matches('/voting'),
                       // Stays tappable while active: _navigateTo requests a
                       // poll-list refresh when re-tapped on /voting.
-                      onTap: isImporting ? null : () => _navigateTo('/voting'),
+                      onTap:
+                          isImporting ||
+                              widget.disabledRoutePaths.contains('/voting')
+                          ? null
+                          : () => _navigateTo('/voting'),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(

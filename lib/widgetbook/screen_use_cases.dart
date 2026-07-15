@@ -29,6 +29,7 @@ import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -648,6 +649,30 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationIntroUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration',
+    step: IronwoodMigrationFlowStep.intro,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationHowItWorksUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/how-it-works',
+    step: IronwoodMigrationFlowStep.howItWorks,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_232_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationOptionsUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/options',
+    step: IronwoodMigrationFlowStep.options,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -759,6 +784,43 @@ Widget _buildDesktopHomeUseCase({
   );
 }
 
+Widget _buildIronwoodMigrationUseCase({
+  required String initialLocation,
+  required IronwoodMigrationFlowStep step,
+  required IronwoodMigrationFlowData data,
+}) {
+  final accountState = _ironwoodMigrationAccountState();
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountState.activeAccountUuid,
+          initialState: SyncState(
+            accountUuid: accountState.activeAccountUuid,
+            hasAccountScopedData: true,
+            isSyncing: true,
+            percentage: 0.34,
+            displayPercentage: 0.34,
+            displayTargetPercentage: 0.34,
+            orchardBalance: BigInt.from(14_223_000_000),
+            spendableBalance: BigInt.from(14_223_000_000),
+            totalBalance: BigInt.from(14_223_000_000),
+          ),
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      swapFeatureEnabledProvider.overrideWithValue(true),
+    ],
+    child: _IronwoodMigrationHarness(
+      initialLocation: initialLocation,
+      initialStep: step,
+      data: data,
+    ),
+  );
+}
+
 Widget _buildMobileAccountsUseCase(
   AccountState accountState, {
   String? initialSheetAccountUuid,
@@ -816,29 +878,26 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
       routes: [
         GoRoute(
           path: '/import',
-          builder:
-              (_, _) => MobileImportScreen(
-                initialPreviewError: widget.initialPasteError,
-                initialPreviewErrorDuration: _previewErrorToastDuration,
-              ),
+          builder: (_, _) => MobileImportScreen(
+            initialPreviewError: widget.initialPasteError,
+            initialPreviewErrorDuration: _previewErrorToastDuration,
+          ),
         ),
         GoRoute(
           path: '/import/manual',
-          builder:
-              (_, _) => const MobileImportManualScreen(
-                wordListOverride: _previewManualWordList,
-              ),
+          builder: (_, _) => const MobileImportManualScreen(
+            wordListOverride: _previewManualWordList,
+          ),
         ),
         GoRoute(
           path: '/import/review',
           builder: (_, state) {
             final extra = state.extra;
-            final args =
-                extra is ImportSecretPassphraseArgs
-                    ? extra
-                    : ImportSecretPassphraseArgs(
-                      mnemonic: widget.initialReviewMnemonic,
-                    );
+            final args = extra is ImportSecretPassphraseArgs
+                ? extra
+                : ImportSecretPassphraseArgs(
+                    mnemonic: widget.initialReviewMnemonic,
+                  );
             return MobileImportReviewScreen(
               args: args,
               screenshotStream: const Stream.empty(),
@@ -848,9 +907,8 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
         ),
         GoRoute(
           path: '/import/birthday',
-          builder:
-              (_, _) =>
-                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );
@@ -907,17 +965,16 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder:
-              (_, _) => AccountsScreen(
-                initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
-                initialModalAccountUuid: widget.initialModalAccountUuid,
-                initialModal: widget.initialModal,
-              ),
+          builder: (_, _) => AccountsScreen(
+            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+            initialModalAccountUuid: widget.initialModalAccountUuid,
+            initialModal: widget.initialModal,
+          ),
         ),
         GoRoute(
           path: '/add-account',
-          builder:
-              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/home',
@@ -1044,10 +1101,9 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(
           path: '/settings/link-mobile',
-          builder:
-              (_, _) => const WalletLinkDesktopScreen(
-                previewState: WalletLinkState.initial(),
-              ),
+          builder: (_, _) => const WalletLinkDesktopScreen(
+            previewState: WalletLinkState.initial(),
+          ),
         ),
         for (final path in const [
           '/settings/secret-passphrase',
@@ -1179,16 +1235,15 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder:
-              (_, _) => MobileAccountsScreen(
-                initialSheetAccountUuid: widget.initialSheetAccountUuid,
-                initialSheet: widget.initialSheet,
-              ),
+          builder: (_, _) => MobileAccountsScreen(
+            initialSheetAccountUuid: widget.initialSheetAccountUuid,
+            initialSheet: widget.initialSheet,
+          ),
         ),
         GoRoute(
           path: '/add-account',
-          builder:
-              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/send',
@@ -1230,17 +1285,14 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
       routes: [
         GoRoute(
           path: '/home',
-          builder:
-              (_, _) => AppMobileShell(
-                body: _MobileHomeBody(
-                  openAccountsSheet: widget.openAccountsSheet,
-                ),
-                tabBar: AppMobileTabBar(
-                  items: _mobileHomeTabItems,
-                  currentIndex: 0,
-                  onSelect: (_) {},
-                ),
-              ),
+          builder: (_, _) => AppMobileShell(
+            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
+            tabBar: AppMobileTabBar(
+              items: _mobileHomeTabItems,
+              currentIndex: 0,
+              onSelect: (_) {},
+            ),
+          ),
         ),
         GoRoute(
           path: '/send',
@@ -1260,10 +1312,9 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder:
-              (_, state) => _PreviewRoutePlaceholder(
-                label: '/activity/tx/${state.pathParameters['txid']}',
-              ),
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label: '/activity/tx/${state.pathParameters['txid']}',
+          ),
         ),
         GoRoute(
           path: '/settings',
@@ -1275,8 +1326,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/add-account',
-          builder:
-              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
       ],
     );
@@ -1391,6 +1442,99 @@ class _MobileHomeBodyState extends State<_MobileHomeBody> {
   }
 }
 
+class _IronwoodMigrationHarness extends StatefulWidget {
+  const _IronwoodMigrationHarness({
+    required this.initialLocation,
+    required this.initialStep,
+    required this.data,
+  });
+
+  final String initialLocation;
+  final IronwoodMigrationFlowStep initialStep;
+  final IronwoodMigrationFlowData data;
+
+  @override
+  State<_IronwoodMigrationHarness> createState() =>
+      _IronwoodMigrationHarnessState();
+}
+
+class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.initialLocation,
+      routes: [
+        GoRoute(
+          path: '/migration',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.intro,
+            previewData: widget.initialStep == IronwoodMigrationFlowStep.intro
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_223_000_000),
+                  ),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
+          path: '/migration/how-it-works',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.howItWorks,
+            previewData:
+                widget.initialStep == IronwoodMigrationFlowStep.howItWorks
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_232_000_000),
+                  ),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
+          path: '/migration/options',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.options,
+            previewData: widget.initialStep == IronwoodMigrationFlowStep.options
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_224_000_000),
+                  ),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
+        ),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
+  }
+}
+
 class _WelcomeHarness extends StatefulWidget {
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
@@ -1411,9 +1555,8 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
         // satisfy the router.
         GoRoute(
           path: '/onboarding/intro',
-          builder:
-              (_, _) =>
-                  const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
           path: '/import',
@@ -1465,8 +1608,8 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
         ),
         GoRoute(
           path: '/lost-password',
-          builder:
-              (_, _) => const _PreviewRoutePlaceholder(label: '/lost-password'),
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/lost-password'),
         ),
       ],
     );
@@ -1726,6 +1869,19 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
+AccountState _ironwoodMigrationAccountState() {
+  return AccountState(
+    accounts: [
+      for (final account in _accountsDesignState.accounts)
+        account.uuid == _accountsDesignState.activeAccountUuid
+            ? account.copyWith(name: 'Username')
+            : account,
+    ],
+    activeAccountUuid: _accountsDesignState.activeAccountUuid,
+    activeAddress: _accountsDesignState.activeAddress,
+  );
+}
+
 const _homeKeystoneAccountUuid = 'preview-keystone-account';
 
 final _homeKeystoneState = AccountState(
@@ -1856,6 +2012,16 @@ rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
     broadcastWindowSeconds: BigInt.zero,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
+  );
+}
+
+IronwoodMigrationFlowData _ironwoodMigrationFlowData({
+  required BigInt zatoshi,
+}) {
+  return IronwoodMigrationFlowData(
+    amountZatoshi: zatoshi,
+    accountName: 'Username',
+    profilePictureId: kDefaultProfilePictureId,
   );
 }
 

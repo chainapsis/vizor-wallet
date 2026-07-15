@@ -70,6 +70,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
         'Desktop home balance card in Ironwood migration-required state',
     builder: buildDesktopHomeIronwoodMigrationRequiredUseCase,
   ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-intro',
+    description: 'Ironwood migration intro screen',
+    builder: buildIronwoodMigrationIntroUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-how-it-works',
+    description: 'Ironwood migration explanation screen',
+    builder: buildIronwoodMigrationHowItWorksUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-options',
+    description: 'Ironwood migration option selection screen',
+    builder: buildIronwoodMigrationOptionsUseCase,
+  ),
 ];
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
