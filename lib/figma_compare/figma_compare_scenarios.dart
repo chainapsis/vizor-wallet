@@ -3,6 +3,7 @@
 
 import 'package:flutter/widgets.dart';
 
+import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 
@@ -57,6 +58,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileHomeDefaultUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-announcement-modal',
+    description: 'Ironwood migration announcement modal',
+    builder: buildIronwoodMigrationAnnouncementModalUseCase,
   ),
 ];
 

@@ -19,6 +19,7 @@ void main() {
         'pay-in-progress',
         'pay-completed',
         'mobile-home-default',
+        'ironwood-migration-announcement-modal',
       ]),
     );
   });

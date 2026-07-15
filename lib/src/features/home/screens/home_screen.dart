@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
@@ -24,6 +25,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -37,6 +39,8 @@ import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
@@ -170,6 +174,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  Future<void> _markIronwoodAnnouncementSeen(
+    IronwoodMigrationAnnouncementState announcement,
+  ) async {
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return;
+    try {
+      await ref
+          .read(ironwoodMigrationAnnouncementStoreProvider)
+          .markSeen(network: network, accountUuid: accountUuid);
+    } catch (e) {
+      log('HomeScreen: failed to store Ironwood announcement state: $e');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(ironwoodMigrationAnnouncementProvider);
+  }
+
+  void _dismissIronwoodAnnouncement(
+    IronwoodMigrationAnnouncementState announcement,
+  ) {
+    unawaited(_markIronwoodAnnouncementSeen(announcement));
+  }
+
+  Future<void> _openIronwoodMigration(
+    IronwoodMigrationAnnouncementState announcement,
+  ) async {
+    try {
+      context.push('/migration');
+      await _markIronwoodAnnouncementSeen(announcement);
+    } catch (e) {
+      log('HomeScreen: migration route is not available yet: $e');
+    }
+  }
+
+  Future<void> _openIronwoodReleaseNotes() async {
+    final uri = Uri.parse(kIronwoodMigrationReleaseNotesUrl);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        log('HomeScreen: failed to open Ironwood release notes: $uri');
+      }
+    } catch (e) {
+      log('HomeScreen: failed to open Ironwood release notes: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
@@ -211,6 +262,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? 'importing'
         : 'default';
     final backgroundTheme = isDark ? 'dark' : 'light';
+    final ironwoodAnnouncement = ref
+        .watch(ironwoodMigrationAnnouncementProvider)
+        .value;
+    final visibleIronwoodAnnouncement = (ironwoodAnnouncement?.visible ?? false)
+        ? ironwoodAnnouncement
+        : null;
 
     return AppDesktopBackdropShell(
       background: _HomeFullPageBackground(
@@ -262,6 +319,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             KeystoneShieldSigningOverlay(
               onCancel: _closeKeystoneShieldSigning,
               onComplete: _closeKeystoneShieldSigning,
+            ),
+          if (visibleIronwoodAnnouncement != null)
+            AppPaneModalOverlay(
+              onDismiss: () =>
+                  _dismissIronwoodAnnouncement(visibleIronwoodAnnouncement),
+              child: IronwoodMigrationAnnouncementModal(
+                onStartMigration: () => unawaited(
+                  _openIronwoodMigration(visibleIronwoodAnnouncement),
+                ),
+                onOpenReleaseNotes: () =>
+                    unawaited(_openIronwoodReleaseNotes()),
+              ),
             ),
         ],
       ),
