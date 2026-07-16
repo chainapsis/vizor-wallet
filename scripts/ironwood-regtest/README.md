@@ -21,6 +21,28 @@ is rejected; reset or restore a checkpoint created with the desired height.
 
 ## Full migration E2E
 
+Run the real Flutter desktop app on macOS:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration.sh
+```
+
+This runner resets the chain, derives and funds the deterministic E2E wallet,
+starts a small local chain-control driver, and launches the Flutter integration
+test on the macOS device. It verifies all of the following through the app UI:
+
+- migration UI stays hidden before activation;
+- live NU6.3 activation is detected without restarting the app;
+- the announcement can be dismissed and the home CTA still starts migration;
+- unavailable migration options cannot continue;
+- denomination preparation broadcasts a real Orchard transaction;
+- locking and unlocking preserves and resumes the active migration run;
+- confirmed denominations advance to the scheduled Ironwood broadcast;
+- confirmation completes the run, creates spendable Ironwood funds, and removes
+  the home migration CTA.
+
+Run the lower-level Rust migration path independently:
+
 ```bash
 scripts/e2e/ironwood-regtest-migration.sh
 ```

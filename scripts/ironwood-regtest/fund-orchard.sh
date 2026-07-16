@@ -27,6 +27,7 @@ shield_opid="$(extract_opid "$(zcash_cli z_shieldcoinbase "$sender" "$sapling_fa
 wait_for_operation "$shield_opid" >/dev/null
 zcash_cli generate 20 >/dev/null
 wait_for_lightwalletd_tip "$(current_height)"
+wait_for_spendable_shielded_note "$sapling_faucet"
 
 recipients="$(python3 - "$destination" "$amount" <<'PY'
 import json
@@ -34,8 +35,19 @@ import sys
 print(json.dumps([{"address": sys.argv[1], "amount": float(sys.argv[2])}]))
 PY
 )"
-opid="$(extract_opid "$(zcash_cli z_sendmany "$sapling_faucet" "$recipients" 1 0.0001 AllowRevealedAmounts)")"
-txid="$(wait_for_operation "$opid")"
+txid=""
+for attempt in $(seq 1 10); do
+  opid="$(extract_opid "$(zcash_cli z_sendmany "$sapling_faucet" "$recipients" 1 0.0001 AllowRevealedAmounts)")"
+  if txid="$(wait_for_operation "$opid")"; then
+    break
+  fi
+  echo "Orchard funding anchor is not ready (attempt ${attempt}/10); retrying" >&2
+  sleep 1
+done
+if [[ -z "$txid" ]]; then
+  echo "failed to fund Orchard address after 10 attempts" >&2
+  exit 1
+fi
 zcash_cli generate "$confirming_blocks" >/dev/null
 wait_for_lightwalletd_tip "$(current_height)"
 

@@ -346,6 +346,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           if (visibleIronwoodAnnouncement != null)
             AppPaneModalOverlay(
+              key: const ValueKey('ironwood_migration_announcement_overlay'),
               alignment: const Alignment(0, -0.08),
               scrimColor: const Color(0xB3858686),
               onDismiss: () =>

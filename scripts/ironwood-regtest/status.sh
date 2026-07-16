@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 wait_for_zcashd
 wait_for_lightwalletd
 tip="$(current_height)"
-branch_id="$(zcash_cli getblockchaininfo | python3 -c 'import json,sys; print(json.load(sys.stdin)["consensus"]["chaintip"]')"
+branch_id="$(zcash_cli getblockchaininfo | python3 -c 'import json,sys; print(json.load(sys.stdin)["consensus"]["chaintip"])')"
 lwd_tip="$(lightwalletd_tip_height)"
 
 python3 - "$tip" "$lwd_tip" "$IRONWOOD_ACTIVATION_HEIGHT" "$branch_id" <<'PY'

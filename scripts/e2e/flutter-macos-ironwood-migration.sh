@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
+ACTIVATION_HEIGHT="${IRONWOOD_ACTIVATION_HEIGHT:-500}"
+LIGHTWALLETD_URL="${E2E_LIGHTWALLETD_URL:-http://127.0.0.1:19067}"
+FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
+DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
+DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
+DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/driver.log"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+json_file_field() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+print(data[sys.argv[2]])
+PY
+}
+
+derive_addresses() {
+  local output_file="$1"
+  local attempt
+
+  for attempt in 1 2 3; do
+    (cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$MNEMONIC") >"$output_file"
+    if python3 - "$output_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+if not data.get("unifiedAddress"):
+    raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
+
+    echo "address derivation produced invalid output (attempt ${attempt}/3); retrying" >&2
+    sleep 1
+  done
+
+  echo "failed to derive the deterministic regtest wallet address" >&2
+  return 1
+}
+
+require_cmd cargo
+require_cmd docker
+require_cmd fvm
+require_cmd python3
+
+cd "$ROOT_DIR"
+export IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
+
+scripts/ironwood-regtest/reset.sh
+scripts/ironwood-regtest/up.sh
+
+addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
+derive_addresses "$addresses_file"
+unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
+scripts/ironwood-regtest/fund-orchard.sh "$unified_address" 1.0002 10 >/dev/null
+
+mkdir -p "$ROOT_DIR/.ironwood-regtest"
+: > "$DRIVER_LOG"
+python3 -u scripts/e2e/ironwood-regtest-driver.py \
+  --repo-root "$ROOT_DIR" \
+  --port "$DRIVER_PORT" \
+  --activation-height "$ACTIVATION_HEIGHT" \
+  >"$DRIVER_LOG" 2>&1 &
+driver_pid="$!"
+
+cleanup() {
+  kill "$driver_pid" >/dev/null 2>&1 || true
+  wait "$driver_pid" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+python3 - "$DRIVER_URL" <<'PY'
+import sys
+import time
+import urllib.request
+
+url = sys.argv[1] + "/health"
+for _ in range(100):
+    try:
+        with urllib.request.urlopen(url, timeout=1) as response:
+            if response.status == 200:
+                raise SystemExit(0)
+    except Exception:
+        time.sleep(0.1)
+raise SystemExit("Timed out waiting for Ironwood E2E driver")
+PY
+
+echo "running Flutter macOS Ironwood migration integration test"
+set +e
+fvm flutter test \
+  integration_test/regtest_ironwood_migration_test.dart \
+  -d "$FLUTTER_DEVICE" \
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
+  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
+  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+status="$?"
+set -e
+
+if [[ "$status" -ne 0 ]]; then
+  echo "Ironwood E2E driver log:" >&2
+  sed -n '1,260p' "$DRIVER_LOG" >&2 || true
+fi
+
+exit "$status"

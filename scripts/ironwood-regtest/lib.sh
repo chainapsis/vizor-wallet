@@ -139,12 +139,41 @@ PY
   return 1
 }
 
+wait_for_spendable_shielded_note() {
+  local address="$1"
+  for _ in $(seq 1 180); do
+    local notes
+    notes="$(zcash_cli z_listunspent 1 9999999 true)"
+    if python3 - "$address" "$notes" <<'PY'
+import json
+import sys
+
+address = sys.argv[1]
+if not any(
+    note.get("address") == address and note.get("spendable")
+    for note in json.loads(sys.argv[2])
+):
+    raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timed out waiting for shielded note at $address" >&2
+  return 1
+}
+
 extract_opid() {
   python3 - "$1" <<'PY'
 import json
 import sys
 
-value = json.loads(sys.argv[1])
+raw = sys.argv[1].strip()
+if raw.startswith("opid-"):
+    print(raw)
+    raise SystemExit(0)
+value = json.loads(raw)
 print(value if isinstance(value, str) else value["opid"])
 PY
 }

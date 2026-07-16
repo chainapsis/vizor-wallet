@@ -17,8 +17,9 @@ if [[ "$tip" -lt "$IRONWOOD_ACTIVATION_HEIGHT" ]]; then
 fi
 wait_for_lightwalletd_tip "$IRONWOOD_ACTIVATION_HEIGHT"
 
-branch_id="$(zcash_cli getblockchaininfo | python3 -c 'import json,sys; print(json.load(sys.stdin)["consensus"]["chaintip"]')"
-if [[ "${branch_id,,}" != "37a5165b" ]]; then
+branch_id="$(zcash_cli getblockchaininfo | python3 -c 'import json,sys; print(json.load(sys.stdin)["consensus"]["chaintip"])')"
+normalized_branch_id="$(printf '%s' "$branch_id" | tr '[:upper:]' '[:lower:]')"
+if [[ "$normalized_branch_id" != "37a5165b" ]]; then
   echo "expected NU6.3 branch 37a5165b at activation, got $branch_id" >&2
   exit 1
 fi

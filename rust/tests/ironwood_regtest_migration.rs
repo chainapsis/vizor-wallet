@@ -103,17 +103,21 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
 
     let migrated = balance(&db, &wallet.account_uuid);
     assert!(
-        migrated.ironwood >= 99_990_000,
+        migrated.ironwood >= orchard_funded.orchard * 99 / 100,
         "migrated value must be spendable in Ironwood: orchard={}, ironwood={}, total={}",
         migrated.orchard,
         migrated.ironwood,
         migrated.total
     );
     assert!(
-        migrated.orchard < orchard_funded.orchard,
-        "Orchard balance must decrease after migration: before={}, after={}",
+        migrated.ironwood < orchard_funded.orchard,
+        "migration fees must reduce the migrated value: before={}, after={}",
         orchard_funded.orchard,
-        migrated.orchard
+        migrated.ironwood
+    );
+    assert_eq!(
+        migrated.orchard, 0,
+        "the deterministic migration must consume all funded Orchard value"
     );
 }
 
