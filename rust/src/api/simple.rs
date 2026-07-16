@@ -15,3 +15,9 @@ pub fn init_app() {
     // "no process-level CryptoProvider installed".
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
+
+/// Keep wallet consensus parameters aligned with the local Ironwood regtest
+/// node. Production builds leave the default activation-at-height-1 behavior.
+pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), String> {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(height)
+}

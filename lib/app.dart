@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
+import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
@@ -87,6 +88,7 @@ import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/rust/api/simple.dart' as rust_simple;
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -94,6 +96,12 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
+      kZcashRegtestIronwoodActivationHeight > 1) {
+    await rust_simple.configureRegtestIronwoodActivationHeight(
+      height: kZcashRegtestIronwoodActivationHeight,
+    );
+  }
 
   // Order matters: window_manager creates and shows the NSWindow inside
   // `initializeDesktopWindow`; the acrylic setup is only effective once

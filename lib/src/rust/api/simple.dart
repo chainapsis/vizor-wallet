@@ -8,3 +8,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 String greet({required String name}) =>
     RustLib.instance.api.crateApiSimpleGreet(name: name);
+
+/// Keep wallet consensus parameters aligned with the local Ironwood regtest
+/// node. Production builds leave the default activation-at-height-1 behavior.
+Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
+    RustLib.instance.api.crateApiSimpleConfigureRegtestIronwoodActivationHeight(
+      height: height,
+    );

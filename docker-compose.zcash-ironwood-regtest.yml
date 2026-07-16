@@ -1,0 +1,42 @@
+name: vizor-ironwood-regtest
+
+services:
+  zcashd:
+    image: ghcr.io/shieldedlabs/zero-zcashd@sha256:dce56bfbfc64a3d7c5562ccd59d70aed005bea8cd68dce063d687bef7ce181f5
+    platform: linux/amd64
+    entrypoint: ["zcashd"]
+    command:
+      - "-printtoconsole"
+      - "-conf=/etc/zcash/zcash.conf"
+      - "-datadir=/srv/zcash/.zcash"
+      - "-nuparams=37a5165b:${IRONWOOD_ACTIVATION_HEIGHT:-500}"
+    ports:
+      - "${IRONWOOD_ZCASHD_RPC_PORT:-19232}:18232"
+      - "${IRONWOOD_LIGHTWALLETD_PORT:-19067}:9067"
+    volumes:
+      - ./.ironwood-regtest/zcashd:/srv/zcash/.zcash
+      - ./scripts/ironwood-regtest/zcash.conf:/etc/zcash/zcash.conf:ro
+
+  lightwalletd:
+    platform: linux/amd64
+    build:
+      context: https://github.com/nullcopy/lightwalletd.git#54c6277ad0fce0a8bbed598c207b2ed1caf58d11
+      dockerfile: Dockerfile
+    entrypoint: ["lightwalletd"]
+    command:
+      - "--no-tls-very-insecure"
+      - "--grpc-bind-addr"
+      - "0.0.0.0:9067"
+      - "--zcash-conf-path"
+      - "/etc/zcash/lightwalletd-zcash.conf"
+      - "--data-dir"
+      - "/var/lib/lightwalletd"
+      - "--log-file"
+      - "/dev/stdout"
+    depends_on:
+      - zcashd
+    network_mode: "service:zcashd"
+    volumes:
+      - ./.ironwood-regtest/zcashd:/srv/zcash/.zcash:ro
+      - ./.ironwood-regtest/lightwalletd:/var/lib/lightwalletd
+      - ./scripts/ironwood-regtest/lightwalletd-zcash.conf:/etc/zcash/lightwalletd-zcash.conf:ro
