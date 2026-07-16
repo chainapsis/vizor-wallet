@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 
 void main() {
-  test('regtest Ironwood activation defaults to legacy height 1', () {
-    expect(kZcashRegtestIronwoodActivationHeight, 1);
+  test('regtest Ironwood activation is opt-in by default', () {
+    expect(kZcashRegtestIronwoodActivationHeight, 0xFFFFFFFF);
   });
 
   group('normalizeZcashNetworkName', () {

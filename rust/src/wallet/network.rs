@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use zcash_protocol::consensus::{BlockHeight, Network, NetworkType, NetworkUpgrade, Parameters};
 
-const DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = 1;
+// Keep ordinary regtest builds Orchard-only unless an Ironwood E2E explicitly
+// configures a controlled activation height.
+const DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = u32::MAX;
 static REGTEST_NU6_3_ACTIVATION_HEIGHT: AtomicU32 =
     AtomicU32::new(DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT);
 

@@ -24,12 +24,18 @@ class SharedPreferencesIronwoodActivationStore
 
   @override
   Future<bool> isActiveSeen(String network) async {
+    if (normalizeZcashNetworkName(network) == ZcashNetwork.regtest.name) {
+      return false;
+    }
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(ironwoodActiveSeenStorageKey(network)) ?? false;
   }
 
   @override
   Future<void> markActiveSeen(String network) async {
+    if (normalizeZcashNetworkName(network) == ZcashNetwork.regtest.name) {
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(ironwoodActiveSeenStorageKey(network), true);
   }

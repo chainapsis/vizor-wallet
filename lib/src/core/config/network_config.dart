@@ -85,7 +85,7 @@ const kZcashRegtestIronwoodActivationHeightEnvKey =
     'ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT';
 const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
   kZcashRegtestIronwoodActivationHeightEnvKey,
-  defaultValue: 1,
+  defaultValue: 0xFFFFFFFF,
 );
 
 /// Opt-in test build for Adam's private Ironwood chain that presents itself as
