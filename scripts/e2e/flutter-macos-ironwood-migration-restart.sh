@@ -8,16 +8,7 @@ LIGHTWALLETD_URL="${E2E_LIGHTWALLETD_URL:-http://127.0.0.1:19067}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
 DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
-TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
-TEST_NAME="$(basename "$TEST_FILE" .dart)"
-DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "missing required command: $1" >&2
-    exit 1
-  fi
-}
+DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/restart-driver.log"
 
 json_file_field() {
   python3 - "$1" "$2" <<'PY'
@@ -48,19 +39,21 @@ PY
     then
       return 0
     fi
-
-    echo "address derivation produced invalid output (attempt ${attempt}/3); retrying" >&2
     sleep 1
   done
-
-  echo "failed to derive the deterministic regtest wallet address" >&2
   return 1
 }
 
-require_cmd cargo
-require_cmd docker
-require_cmd fvm
-require_cmd python3
+run_flutter_phase() {
+  local test_file="$1"
+  fvm flutter test \
+    "$test_file" \
+    -d "$FLUTTER_DEVICE" \
+    --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+    --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
+    --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
+    --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+}
 
 cd "$ROOT_DIR"
 export IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
@@ -68,13 +61,12 @@ export IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
 scripts/ironwood-regtest/reset.sh
 scripts/ironwood-regtest/up.sh
 
-addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
+addresses_file="$ROOT_DIR/.ironwood-regtest/restart-e2e-addresses.json"
 derive_addresses "$addresses_file"
 unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
 scripts/ironwood-regtest/fund-orchard.sh "$unified_address" 1.0002 10 >/dev/null
 
-mkdir -p "$ROOT_DIR/.ironwood-regtest"
-: > "$DRIVER_LOG"
+: >"$DRIVER_LOG"
 python3 -u scripts/e2e/ironwood-regtest-driver.py \
   --repo-root "$ROOT_DIR" \
   --port "$DRIVER_PORT" \
@@ -104,21 +96,14 @@ for _ in range(100):
 raise SystemExit("Timed out waiting for Ironwood E2E driver")
 PY
 
-echo "running Flutter macOS Ironwood migration integration test: $TEST_FILE"
-set +e
-fvm flutter test \
-  "$TEST_FILE" \
-  -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
-  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
-  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
-  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
-status="$?"
-set -e
-
-if [[ "$status" -ne 0 ]]; then
-  echo "Ironwood E2E driver log:" >&2
-  sed -n '1,260p' "$DRIVER_LOG" >&2 || true
+echo "running migration outage preparation phase"
+if ! run_flutter_phase integration_test/regtest_ironwood_migration_restart_prepare_test.dart; then
+  sed -n '1,320p' "$DRIVER_LOG" >&2 || true
+  exit 1
 fi
 
-exit "$status"
+echo "running migration process-restart resume phase"
+if ! run_flutter_phase integration_test/regtest_ironwood_migration_restart_resume_test.dart; then
+  sed -n '1,320p' "$DRIVER_LOG" >&2 || true
+  exit 1
+fi

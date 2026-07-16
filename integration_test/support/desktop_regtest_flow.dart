@@ -10,12 +10,20 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 const desktopRegtestMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
+const secondDesktopRegtestMnemonic =
+    'return try reason flat civil wolf dwarf announce toddler uphold equip '
+    'range neck proof gauge east rifle swim tray twin venue fossil will '
+    'version';
 const desktopRegtestPassword = 'Vizor123!';
+var _nextE2ePointer = 1000;
+
+int _takeE2ePointer() => _nextE2ePointer++;
 
 Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
   await tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
@@ -45,6 +53,145 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
     ),
     description: 'desktop home to render',
     timeout: const Duration(minutes: 2),
+  );
+}
+
+Future<void> importAdditionalDesktopRegtestWallet(WidgetTester tester) async {
+  await tapAppWidget(tester, const ValueKey('sidebar_accounts_button'));
+  await tapAppWidget(tester, const ValueKey('sidebar_accounts_add'));
+  await pumpUntil(
+    tester,
+    () =>
+        tester.any(find.byKey(const ValueKey('welcome_import_wallet_button'))),
+    description: 'add-account import option',
+  );
+  await tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await enterAppText(
+    tester,
+    const ValueKey('import_mnemonic_first_word_field'),
+    secondDesktopRegtestMnemonic,
+  );
+  await tapAppButton(tester, const ValueKey('import_secret_submit_button'));
+  await tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
+  await tapAppButton(tester, const ValueKey('unknown_birthday_confirm_button'));
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
+    description: 'home after importing an additional account',
+    timeout: const Duration(minutes: 2),
+  );
+}
+
+Future<void> switchDesktopRegtestAccount(
+  WidgetTester tester,
+  String accountUuid,
+) async {
+  await tapAppWidget(tester, const ValueKey('sidebar_accounts_button'));
+  await tapAppWidget(
+    tester,
+    ValueKey('sidebar_account_popover_row_$accountUuid'),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
+    description: 'home after account switch',
+    timeout: const Duration(minutes: 2),
+  );
+}
+
+Future<List<rust_wallet.AccountInfo>> desktopRegtestAccounts() {
+  return getWalletDbPath().then(
+    (dbPath) => rust_wallet.listAccounts(dbPath: dbPath, network: 'regtest'),
+  );
+}
+
+Future<void> unlockDesktopRegtestWallet(WidgetTester tester) async {
+  await enterAppText(
+    tester,
+    const ValueKey('unlock_password_field'),
+    desktopRegtestPassword,
+  );
+  await tapAppButton(tester, const ValueKey('unlock_submit_button'));
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
+    description: 'desktop home after unlock',
+    timeout: const Duration(minutes: 2),
+  );
+}
+
+Future<void> dismissIronwoodAnnouncement(WidgetTester tester) async {
+  final overlay = find.byKey(
+    const ValueKey('ironwood_migration_announcement_overlay'),
+  );
+  final origin = tester.getTopLeft(overlay);
+  await tester.tapAt(origin + const Offset(16, 16), pointer: _takeE2ePointer());
+  await tester.pump(const Duration(milliseconds: 250));
+  await pumpUntil(
+    tester,
+    () => !tester.any(
+      find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+    ),
+    description: 'dismissed Ironwood announcement',
+  );
+}
+
+Future<void> openPrivateMigrationReview(WidgetTester tester) async {
+  await tapAppButton(
+    tester,
+    const ValueKey('home_desktop_ironwood_migration_cta_button'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_intro_continue_button'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_how_it_works_continue_button'),
+  );
+  await tapAppWidget(
+    tester,
+    const ValueKey('ironwood_migration_private_option'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_select_review_button'),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_review_screen')),
+    ),
+    description: 'private migration review',
+  );
+}
+
+Future<String> firstDesktopRegtestAccountUuid() async {
+  final accounts = await rust_wallet.listAccounts(
+    dbPath: await getWalletDbPath(),
+    network: 'regtest',
+  );
+  if (accounts.length != 1) {
+    throw StateError('Expected one regtest account, found ${accounts.length}.');
+  }
+  return accounts.single.uuid;
+}
+
+Future<rust_sync.MigrationStatus> desktopRegtestMigrationStatus(
+  String accountUuid,
+) {
+  return getWalletDbPath().then(
+    (dbPath) => rust_sync.getOrchardMigrationStatus(
+      dbPath: dbPath,
+      network: 'regtest',
+      accountUuid: accountUuid,
+    ),
   );
 }
 
@@ -99,7 +246,7 @@ Future<void> tapAppButton(WidgetTester tester, Key key) async {
   );
   await tester.ensureVisible(finder);
   await tester.pump(const Duration(milliseconds: 50));
-  await tester.tap(finder);
+  await tester.tap(finder, pointer: _takeE2ePointer());
   await tester.pump(const Duration(milliseconds: 250));
   e2eLog('tapped $key');
 }
@@ -112,7 +259,7 @@ Future<void> tapAppWidget(WidgetTester tester, Key key) async {
     description: '$key widget to render',
   );
   await tester.ensureVisible(finder);
-  await tester.tap(finder);
+  await tester.tap(finder, pointer: _takeE2ePointer());
   await tester.pump(const Duration(milliseconds: 250));
   e2eLog('tapped $key');
 }
@@ -127,8 +274,17 @@ Future<void> enterAppText(WidgetTester tester, Key key, String text) async {
     () => tester.any(editable),
     description: '$key editable text field',
   );
-  await tester.tap(editable);
+  await tester.tap(editable, pointer: _takeE2ePointer());
   await tester.enterText(editable, text);
+  await tester.pump(const Duration(milliseconds: 100));
+  final editableText = tester.widget<EditableText>(editable);
+  final actualText = editableText.controller.text;
+  if (actualText.isEmpty) {
+    fail('$key did not receive text input.');
+  }
+  // Pasted mnemonics distribute across multiple controllers, so notify with
+  // the value retained by this field rather than the original input string.
+  editableText.onChanged?.call(actualText);
   await tester.pump(const Duration(milliseconds: 100));
 }
 

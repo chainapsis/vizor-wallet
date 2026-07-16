@@ -41,6 +41,35 @@ test on the macOS device. It verifies all of the following through the app UI:
 - confirmation completes the run, creates spendable Ironwood funds, and removes
   the home migration CTA.
 
+Test recovery across a real Flutter process restart and a lightwalletd outage:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration-restart.sh
+```
+
+The first app process activates Ironwood, stops lightwalletd immediately before
+authorization, and persists an active run with an encrypted denomination
+transaction that could not be broadcast. A second app process starts from the
+same wallet database, unlocks the wallet, restarts lightwalletd, rebroadcasts
+the pending transaction through the normal migration status flow, and completes
+the migration.
+
+Test migration isolation between two accounts in the same wallet database:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration-multi-account.sh
+```
+
+This scenario imports two software accounts, funds only the first account,
+starts its migration, and switches accounts while the run is active. It verifies
+that the unfunded account has no migration CTA or active run, then returns to the
+funded account, resumes the same run, and checks the final balances of both
+accounts independently.
+
+The base runner accepts `E2E_TEST_FILE` and `E2E_DRIVER_PORT` overrides so new
+single-process scenarios can reuse chain reset, deterministic Orchard funding,
+driver startup, and Flutter launch without duplicating the harness.
+
 Run the lower-level Rust migration path independently:
 
 ```bash

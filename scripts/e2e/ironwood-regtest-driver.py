@@ -58,6 +58,16 @@ class DriverHandler(BaseHTTPRequestHandler):
                 )
                 self.respond(200, json.loads(output))
                 return
+            if self.path == "/mempool":
+                output = run_command(
+                    self.repo_root,
+                    ["scripts/ironwood-regtest/rpc.sh", "getrawmempool"],
+                    timeout=60,
+                    env=self.ironwood_env(),
+                )
+                txids = json.loads(output)
+                self.respond(200, {"size": len(txids), "txids": txids})
+                return
             self.respond(404, {"error": "not found"})
         except Exception as exc:
             self.respond(500, {"error": str(exc)})

@@ -613,6 +613,44 @@ void main() {
     expect(continueCount, 1);
   });
 
+  testWidgets(
+    'private status retries a persisted denomination broadcast on timer',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var continueCount = 0;
+      final service = _migrationServiceForContinue(
+        onContinue: ({required accountUuid}) {
+          continueCount += 1;
+          expect(accountUuid, 'account-1');
+          return Future.value(_migrationResult());
+        },
+      );
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+            pendingSplitStageCount: 1,
+          ),
+          migrationService: service,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(continueCount, 0);
+
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump();
+
+      expect(continueCount, 1);
+    },
+  );
+
   testWidgets('private status auto advances software migration on resume', (
     tester,
   ) async {
@@ -1300,6 +1338,7 @@ rust_sync.MigrationStatus _migrationStatus({
   int broadcastedTxCount = 0,
   int confirmedTxCount = 0,
   int totalCount = 0,
+  int pendingSplitStageCount = 0,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
@@ -1316,7 +1355,7 @@ rust_sync.MigrationStatus _migrationStatus({
     confirmedTxCount: confirmedTxCount,
     totalCount: totalCount,
     signedChildPcztCount: 0,
-    pendingSplitStageCount: 0,
+    pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),

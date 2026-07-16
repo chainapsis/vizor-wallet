@@ -1989,7 +1989,9 @@ _StatusAction _statusAction(rust_sync.MigrationStatus status) {
 }
 
 bool _shouldAutoAdvanceStatus(rust_sync.MigrationStatus status) {
-  return status.phase == kIronwoodMigrationReadyToMigratePhase ||
+  return (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+          status.pendingSplitStageCount > 0) ||
+      status.phase == kIronwoodMigrationReadyToMigratePhase ||
       status.phase == kIronwoodMigrationBroadcastScheduledPhase;
 }
 

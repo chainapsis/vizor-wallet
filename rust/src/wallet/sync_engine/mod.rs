@@ -1331,8 +1331,15 @@ async fn run_sync_impl(
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
     with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
-        db.update_chain_tip(tip_height)
-            .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
+        db.update_chain_tip(tip_height).map_err(|e| {
+            if is_sqlite_lock_contention(&e) {
+                SyncError::other(format!(
+                    "update_chain_tip: transient SQLite lock contention: {e}"
+                ))
+            } else {
+                SyncError::db(format!("update_chain_tip: {e}"))
+            }
+        })
     })?;
 
     // Match the cancellation granularity we already use for
