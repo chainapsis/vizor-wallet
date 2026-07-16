@@ -6,14 +6,11 @@ use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, ShardTreeError};
 use tonic::transport::Channel;
-use zcash_client_backend::{
-    data_api::{
-        chain::{self, error::Error as ChainError, scan_cached_blocks},
-        scanning::{ScanPriority, ScanRange},
-        wallet::ConfirmationsPolicy,
-        WalletCommitmentTrees, WalletRead, WalletWrite,
-    },
-    proto::service,
+use zcash_client_backend::data_api::{
+    chain::{self, error::Error as ChainError, scan_cached_blocks},
+    scanning::{ScanPriority, ScanRange},
+    wallet::ConfirmationsPolicy,
+    WalletCommitmentTrees, WalletRead, WalletWrite,
 };
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 use zcash_primitives::block::BlockHash;
@@ -54,7 +51,7 @@ pub(crate) mod mempool;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use lwd::{download_blocks, download_subtree_roots, get_tree_state};
+use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, next_stream_message, open_lwd_channel, send_transaction,
     send_transaction_with_status,
@@ -880,11 +877,15 @@ async fn refresh_utxos(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     tip_height: BlockHeight,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
     {
+        if should_exit() {
+            return Ok(());
+        }
         let account_uuid = account_id.expose_uuid().to_string();
         let safety_start_height = db
             .utxo_query_height(account_id)
@@ -952,8 +953,12 @@ async fn refresh_utxos(
                 start_height,
                 &label,
                 || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
+                should_exit,
             )
             .await?;
+            if should_exit() {
+                return Ok(());
+            }
             if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
                 db_data_path,
                 network,
@@ -991,6 +996,7 @@ async fn refresh_utxos(
                 safety_start_height,
                 "transparent non-external UTXOs",
                 || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
+                should_exit,
             )
             .await?;
         }
@@ -1036,8 +1042,12 @@ async fn refresh_transparent_addresses(
     start_height: BlockHeight,
     label: &str,
     mut mark_cache_dirty: impl FnMut(),
+    should_exit: &impl Fn() -> bool,
 ) -> Result<bool, SyncError> {
     if addresses.is_empty() {
+        return Ok(false);
+    }
+    if should_exit() {
         return Ok(false);
     }
 
@@ -1049,22 +1059,22 @@ async fn refresh_transparent_addresses(
         addresses.len(),
     );
 
-    let mut stream = client
-        .get_address_utxos_stream(service::GetAddressUtxosArg {
-            addresses,
-            start_height: u32::from(start_height) as u64,
-            max_entries: 0,
-        })
-        .await
-        .map_err(|e| SyncError::net(format!("get_address_utxos_stream: {e}")))?
-        .into_inner();
+    let mut stream = get_address_utxos_stream(client, addresses, start_height).await?;
 
     let mut received_any = false;
-    while let Some(reply) = stream
-        .message()
-        .await
-        .map_err(|e| SyncError::net(format!("get_address_utxos_stream message: {e}")))?
-    {
+    loop {
+        if should_exit() {
+            log::info!(
+                "[{}] sync: exiting during {} transparent UTXO refresh",
+                elapsed(),
+                label,
+            );
+            return Ok(received_any);
+        }
+        let Some(reply) = next_stream_message(&mut stream, "get_address_utxos_stream").await?
+        else {
+            break;
+        };
         let txid: [u8; 32] = reply
             .txid
             .try_into()
@@ -1269,7 +1279,17 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
+    let should_exit =
+        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
+    refresh_utxos(
+        &mut client,
+        db_data_path,
+        &mut db,
+        network,
+        tip_height,
+        &should_exit,
+    )
+    .await?;
 
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
