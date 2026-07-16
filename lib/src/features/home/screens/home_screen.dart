@@ -1402,9 +1402,11 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   Container(
                     width: 396,
                     height: 200,
-                    padding: const EdgeInsets.all(AppSpacing.sm),
                     decoration: BoxDecoration(
                       color: colors.background.homeCard,
+                      borderRadius: cardRadius,
+                    ),
+                    foregroundDecoration: BoxDecoration(
                       borderRadius: cardRadius,
                       border: Border.all(
                         color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
@@ -1428,127 +1430,134 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                               fit: BoxFit.fill,
                             ),
                           ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (showIronwoodMigrationState)
-                              _HomeDesktopMigrationRequiredPill(
-                                onTap: widget.onIronwoodMigrationCta,
-                              )
-                            else
-                              Row(
-                                children: [
-                                  AppIcon(
-                                    AppIcons.shieldKeyhole,
-                                    key: const ValueKey(
-                                      'home_desktop_shielded_balance_icon',
-                                    ),
-                                    size: 20,
-                                    color: colors.text.homeCard,
-                                  ),
-                                  const SizedBox(width: AppSpacing.xs),
-                                  Text(
-                                    'Shielded balance',
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: colors.text.homeCard,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  _HomeDesktopPrivacyButton(
-                                    privacyModeEnabled:
-                                        widget.privacyModeEnabled,
-                                    onTap: widget.onTogglePrivacyMode,
-                                  ),
-                                ],
-                              ),
-                            const Spacer(),
-                            if (widget.hasBalance &&
-                                widget.shieldedFiatBalanceText != null) ...[
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      widget.shieldedFiatBalanceText!,
+                        Padding(
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (showIronwoodMigrationState)
+                                _HomeDesktopMigrationRequiredPill(
+                                  onTap: widget.onIronwoodMigrationCta,
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    AppIcon(
+                                      AppIcons.shieldKeyhole,
                                       key: const ValueKey(
-                                        'home_desktop_balance_fiat_text',
+                                        'home_desktop_shielded_balance_icon',
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      // Label M per Figma (Home Card / Balance
-                                      // Performance): Geist Regular 14/16.
+                                      size: 20,
+                                      color: colors.text.homeCard,
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Text(
+                                      'Shielded balance',
                                       style: AppTypography.labelLarge.copyWith(
                                         color: colors.text.homeCard,
                                         fontWeight: FontWeight.w400,
                                       ),
                                     ),
-                                  ),
-                                  // Figma separates the change run with a 4px
-                                  // gap plus a leading space character (~8px
-                                  // effective at 14px Geist).
-                                  if (priceChangeColor != null) ...[
-                                    const SizedBox(width: AppSpacing.xs),
-                                    Text(
-                                      formatZecPriceChange24hPct(
-                                        widget.priceChange24hPct!,
-                                      ),
-                                      key: const ValueKey(
-                                        'home_desktop_balance_price_change_text',
-                                      ),
-                                      style: AppTypography.labelLarge.copyWith(
-                                        color: priceChangeColor,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                            ],
-                            SizedBox(
-                              width: double.infinity,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Row(
-                                  // The Figma balance is one text run (amount
-                                  // 45px, ticker 32px) sharing a baseline. The
-                                  // Regular cut stands in for the spec'd Medium:
-                                  // white-on-dark rasterization runs ~8% heavier
-                                  // than Figma's renderer, so Medium reads bolder
-                                  // here than the design intends.
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.baseline,
-                                  textBaseline: TextBaseline.alphabetic,
-                                  children: [
-                                    Text(
-                                      widget.hasBalance ? visibleBalance : '0',
-                                      key: const ValueKey(
-                                        'home_desktop_balance_amount_text',
-                                      ),
-                                      style: AppTypography.displayMedium
-                                          .copyWith(
-                                            color: colors.text.homeCard,
-                                            fontWeight: FontWeight.w400,
-                                          ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    Text(
-                                      kZcashDefaultCurrencyTicker,
-                                      key: const ValueKey(
-                                        'home_desktop_balance_currency_text',
-                                      ),
-                                      style: AppTypography.headlineLarge
-                                          .copyWith(
-                                            color: colors.text.homeCard,
-                                            fontWeight: FontWeight.w400,
-                                          ),
+                                    const Spacer(),
+                                    _HomeDesktopPrivacyButton(
+                                      privacyModeEnabled:
+                                          widget.privacyModeEnabled,
+                                      onTap: widget.onTogglePrivacyMode,
                                     ),
                                   ],
                                 ),
+                              const Spacer(),
+                              if (widget.hasBalance &&
+                                  widget.shieldedFiatBalanceText != null) ...[
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        widget.shieldedFiatBalanceText!,
+                                        key: const ValueKey(
+                                          'home_desktop_balance_fiat_text',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        // Label M per Figma (Home Card / Balance
+                                        // Performance): Geist Regular 14/16.
+                                        style: AppTypography.labelLarge
+                                            .copyWith(
+                                              color: colors.text.homeCard,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                      ),
+                                    ),
+                                    // Figma separates the change run with a 4px
+                                    // gap plus a leading space character (~8px
+                                    // effective at 14px Geist).
+                                    if (priceChangeColor != null) ...[
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Text(
+                                        formatZecPriceChange24hPct(
+                                          widget.priceChange24hPct!,
+                                        ),
+                                        key: const ValueKey(
+                                          'home_desktop_balance_price_change_text',
+                                        ),
+                                        style: AppTypography.labelLarge
+                                            .copyWith(
+                                              color: priceChangeColor,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                              ],
+                              SizedBox(
+                                width: double.infinity,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    // The Figma balance is one text run (amount
+                                    // 45px, ticker 32px) sharing a baseline. The
+                                    // Regular cut stands in for the spec'd Medium:
+                                    // white-on-dark rasterization runs ~8% heavier
+                                    // than Figma's renderer, so Medium reads bolder
+                                    // here than the design intends.
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
+                                      Text(
+                                        widget.hasBalance
+                                            ? visibleBalance
+                                            : '0',
+                                        key: const ValueKey(
+                                          'home_desktop_balance_amount_text',
+                                        ),
+                                        style: AppTypography.displayMedium
+                                            .copyWith(
+                                              color: colors.text.homeCard,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Text(
+                                        kZcashDefaultCurrencyTicker,
+                                        key: const ValueKey(
+                                          'home_desktop_balance_currency_text',
+                                        ),
+                                        style: AppTypography.headlineLarge
+                                            .copyWith(
+                                              color: colors.text.homeCard,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
