@@ -12,7 +12,7 @@ bundle exec fastlane mac release
 
 `release` lane 순서:
 
-1. mainnet/testnet flavor별로 `match`로 Developer ID 인증서 + provisioning profile 설치
+1. flavor별로 `match`로 Developer ID 인증서 + provisioning profile 설치
 2. flavor별 `fvm flutter build macos --release --dart-define=ZCASH_DEFAULT_NETWORK=<network> --build-name <tag version> --build-number <RELEASE_BUILD_NUMBER>`
 3. flavor별 `.app` notarize + staple
 4. flavor별 `.dmg` 생성
@@ -26,12 +26,16 @@ GitHub Release 생성, asset 업로드, draft publish는 deployment repo의
 Flavor별 앱 이름, bundle id, 기본 네트워크, macOS 앱 아이콘은
 `fastlane/macos/Fastfile`의 `MACOS_RELEASE_FLAVOR_CONFIGS`에서 선택합니다.
 testnet 빌드는 `macos/Runner/TestnetAppIcon.icon`을 사용합니다.
+`ironwood-masquerade`는 mainnet 주소 파생 규칙을 유지하면서 전용 Ironwood
+테스트 체인에 연결하며, 별도 bundle ID, secure store, 주황색
+`macos/Runner/IronwoodMasqueradeAppIcon.icon`을 사용합니다.
 
 기본 release flavor는 `mainnet,testnet`입니다. 단일 flavor만 빌드하려면:
 
 ```bash
 VIZOR_MACOS_FLAVOR=mainnet bundle exec fastlane mac build
 VIZOR_MACOS_FLAVOR=testnet bundle exec fastlane mac build
+VIZOR_MACOS_FLAVOR=ironwood-masquerade bundle exec fastlane mac build
 VIZOR_MACOS_FLAVORS=mainnet,testnet bundle exec fastlane mac release
 ```
 

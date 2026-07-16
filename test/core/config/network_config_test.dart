@@ -48,7 +48,9 @@ void main() {
     test('keeps the existing mainnet service name', () {
       expect(
         secureStoreServiceForNetwork('main'),
-        'com.keplr.vizor.secure_store',
+        kZcashIronwoodMasquerade
+            ? 'com.keplr.vizor.ironwood.secure_store'
+            : 'com.keplr.vizor.secure_store',
       );
     });
 
@@ -66,7 +68,9 @@ void main() {
     test('normalizes unknown values before choosing the service', () {
       expect(
         secureStoreServiceForNetwork('unknown'),
-        'com.keplr.vizor.secure_store',
+        kZcashIronwoodMasquerade
+            ? 'com.keplr.vizor.ironwood.secure_store'
+            : 'com.keplr.vizor.secure_store',
       );
     });
   });
