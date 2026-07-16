@@ -195,6 +195,37 @@ Future<rust_sync.MigrationStatus> desktopRegtestMigrationStatus(
   );
 }
 
+Future<rust_sync.MigrationStatus> waitForDesktopRegtestMigrationStatus(
+  WidgetTester tester,
+  String accountUuid,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  final end = DateTime.now().add(timeout);
+  Object? lastError;
+  rust_sync.MigrationStatus? lastStatus;
+  var polls = 0;
+  while (DateTime.now().isBefore(end)) {
+    try {
+      lastStatus = await desktopRegtestMigrationStatus(accountUuid);
+      lastError = null;
+      if (condition(lastStatus)) return lastStatus;
+    } catch (error) {
+      lastError = error;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    polls++;
+    if (polls % 20 == 0) e2eLog('still waiting for $description');
+  }
+  final statusDetail = lastStatus == null
+      ? ''
+      : ' Last phase: ${lastStatus.phase}, run: ${lastStatus.activeRunId}.';
+  final errorDetail = lastError == null ? '' : ' Last error: $lastError';
+  fail('Timed out waiting for $description.$statusDetail$errorDetail');
+}
+
 Future<void> cleanupDesktopRegtestWallet() async {
   if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
     throw StateError(

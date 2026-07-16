@@ -12,4 +12,5 @@ fi
 wait_for_zcashd
 wait_for_lightwalletd
 zcash_cli generate "$blocks"
-wait_for_lightwalletd_tip "$(current_height)"
+tip_hash="$(zcash_cli getblockhash "$(current_height)")"
+wait_for_lightwalletd_tip_hash "$tip_hash"

@@ -66,6 +66,19 @@ that the unfunded account has no migration CTA or active run, then returns to th
 funded account, resumes the same run, and checks the final balances of both
 accounts independently.
 
+Test both denomination and final Ironwood transaction reorg recovery:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration-reorg.sh
+```
+
+The runner replaces the chain after denomination confirmation and verifies that
+the same migration run returns to denomination preparation, then rebuilds its
+Ironwood child. It mines that child below trusted depth, replaces the chain
+again, verifies the child becomes broadcastable, and completes the original run.
+The reusable `reorg.sh` primitive holds transactions displaced by the old chain
+out of replacement blocks until `release-reorg-transactions.sh` is called.
+
 The base runner accepts `E2E_TEST_FILE` and `E2E_DRIVER_PORT` overrides so new
 single-process scenarios can reuse chain reset, deterministic Orchard funding,
 driver startup, and Flutter launch without duplicating the harness.
@@ -98,6 +111,10 @@ scripts/ironwood-regtest/checkpoint.sh save orchard-funded
 scripts/ironwood-regtest/activate-ironwood.sh
 scripts/ironwood-regtest/checkpoint.sh restore orchard-funded
 scripts/ironwood-regtest/up.sh
+
+# Replace the chain after a fork height while holding displaced transactions.
+scripts/ironwood-regtest/reorg.sh 500
+scripts/ironwood-regtest/release-reorg-transactions.sh "<txid>"
 ```
 
 `mine.sh`, `rpc.sh`, `status.sh`, and named checkpoints are intentionally

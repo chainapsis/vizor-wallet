@@ -97,6 +97,20 @@ lightwalletd_tip_height() {
     python3 -c 'import json,sys; print(json.load(sys.stdin).get("height", 0))'
 }
 
+lightwalletd_tip_hash() {
+  grpcurl \
+    -plaintext \
+    -import-path "$ROOT_DIR/protos" \
+    -proto service.proto \
+    -d '{}' \
+    "${LIGHTWALLETD_HOST}:${LIGHTWALLETD_PORT}" \
+    cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock 2>/dev/null |
+    python3 -c 'import base64,json,sys
+value = json.load(sys.stdin).get("hash", "")
+raw = base64.b64decode(value) if value else b""
+print(raw[::-1].hex())'
+}
+
 wait_for_lightwalletd_tip() {
   local target_height="$1"
   for _ in $(seq 1 180); do
@@ -108,6 +122,20 @@ wait_for_lightwalletd_tip() {
     sleep 1
   done
   echo "timed out waiting for lightwalletd to reach height $target_height" >&2
+  return 1
+}
+
+wait_for_lightwalletd_tip_hash() {
+  local target_hash="$1"
+  for _ in $(seq 1 180); do
+    local tip_hash
+    tip_hash="$(lightwalletd_tip_hash 2>/dev/null || true)"
+    if [[ "$tip_hash" == "$target_hash" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timed out waiting for lightwalletd tip hash $target_hash" >&2
   return 1
 }
 

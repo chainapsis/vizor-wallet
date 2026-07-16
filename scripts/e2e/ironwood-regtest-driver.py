@@ -98,6 +98,33 @@ class DriverHandler(BaseHTTPRequestHandler):
                 self.respond(200, {"ok": True, "output": output})
                 return
 
+            if self.path == "/reorg":
+                fork_height = int(payload["forkHeight"])
+                output = run_command(
+                    self.repo_root,
+                    ["scripts/ironwood-regtest/reorg.sh", str(fork_height)],
+                    timeout=300,
+                    env=self.ironwood_env(),
+                )
+                self.respond(200, json.loads(output))
+                return
+
+            if self.path == "/reorg/release":
+                txids = payload.get("txids", [])
+                if not isinstance(txids, list) or not txids:
+                    raise ValueError("txids must be a non-empty list")
+                output = run_command(
+                    self.repo_root,
+                    [
+                        "scripts/ironwood-regtest/release-reorg-transactions.sh",
+                        *[str(txid) for txid in txids],
+                    ],
+                    timeout=120,
+                    env=self.ironwood_env(),
+                )
+                self.respond(200, json.loads(output))
+                return
+
             if self.path in {"/lightwalletd/stop", "/lightwalletd/start"}:
                 action = "stop" if self.path.endswith("/stop") else "start"
                 run_command(
