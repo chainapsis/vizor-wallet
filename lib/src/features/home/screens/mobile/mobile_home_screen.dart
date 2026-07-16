@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
@@ -31,6 +32,8 @@ import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
@@ -56,6 +59,9 @@ class MobileHomeScreen extends ConsumerWidget {
       activeAccountUuid,
     );
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final ironwoodMigrationCta =
+        ref.watch(ironwoodHomeMigrationCtaProvider).value ??
+        const IronwoodHomeMigrationCtaState.hidden();
 
     final isImporting =
         activeAccountUuid != null &&
@@ -71,6 +77,7 @@ class MobileHomeScreen extends ConsumerWidget {
             bottom: false,
             child: Column(
               children: [
+                const SizedBox(height: AppSpacing.s),
                 Builder(
                   builder: (context) => MobileTopNavAccount(
                     showSyncStatus: !isImporting,
@@ -87,6 +94,7 @@ class MobileHomeScreen extends ConsumerWidget {
                             sync: sync,
                             activeAccountUuid: activeAccountUuid,
                             privacyModeEnabled: privacyModeEnabled,
+                            ironwoodMigrationCta: ironwoodMigrationCta,
                             onTogglePrivacyMode: () =>
                                 ref.read(privacyModeProvider.notifier).toggle(),
                           ),
@@ -96,9 +104,101 @@ class MobileHomeScreen extends ConsumerWidget {
             ),
           ),
           const _SyncKeepAwakePromptHost(),
+          const _IronwoodMigrationAnnouncementHost(),
         ],
       ),
     );
+  }
+}
+
+enum _IronwoodAnnouncementAction { startMigration }
+
+class _IronwoodMigrationAnnouncementHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationAnnouncementHost();
+
+  @override
+  ConsumerState<_IronwoodMigrationAnnouncementHost> createState() =>
+      _IronwoodMigrationAnnouncementHostState();
+}
+
+class _IronwoodMigrationAnnouncementHostState
+    extends ConsumerState<_IronwoodMigrationAnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _evaluate(ref.read(ironwoodMigrationAnnouncementProvider).value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(ironwoodMigrationAnnouncementProvider, (_, next) {
+      _evaluate(next.value);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate(IronwoodMigrationAnnouncementState? announcement) {
+    if (announcement == null || !announcement.visible || _showing) return;
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return;
+    final key = '$network:$accountUuid';
+    if (_shownFor == key) return;
+    _shownFor = key;
+    unawaited(_show(announcement));
+  }
+
+  Future<void> _show(IronwoodMigrationAnnouncementState announcement) async {
+    _showing = true;
+    try {
+      final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
+        context: context,
+        builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
+          onStartMigration: () => Navigator.of(
+            sheetContext,
+          ).pop(_IronwoodAnnouncementAction.startMigration),
+          onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
+        ),
+      );
+      if (!mounted) return;
+      if (action == _IronwoodAnnouncementAction.startMigration) {
+        context.push('/migration/intro');
+      }
+      await _markSeen(announcement);
+    } finally {
+      _showing = false;
+    }
+  }
+
+  Future<void> _markSeen(
+    IronwoodMigrationAnnouncementState announcement,
+  ) async {
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return;
+    try {
+      await ref
+          .read(ironwoodMigrationAnnouncementStoreProvider)
+          .markSeen(network: network, accountUuid: accountUuid);
+    } catch (_) {
+      return;
+    }
+    if (mounted) ref.invalidate(ironwoodMigrationAnnouncementProvider);
+  }
+
+  Future<void> _openReleaseNotes() async {
+    final uri = Uri.parse(kIronwoodMigrationReleaseNotesUrl);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // The announcement remains open so the user can retry.
+    }
   }
 }
 
@@ -385,12 +485,14 @@ class _HomeContent extends ConsumerStatefulWidget {
     required this.sync,
     required this.activeAccountUuid,
     required this.privacyModeEnabled,
+    required this.ironwoodMigrationCta,
     required this.onTogglePrivacyMode,
   });
 
   final SyncState sync;
   final String? activeAccountUuid;
   final bool privacyModeEnabled;
+  final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
   final VoidCallback onTogglePrivacyMode;
 
   @override
@@ -494,14 +596,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final shieldedBalance =
         sync.saplingBalance +
         sync.orchardBalance +
+        sync.ironwoodBalance +
         sync.saplingPendingBalance +
-        sync.orchardPendingBalance;
+        sync.orchardPendingBalance +
+        sync.ironwoodPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
     final hasBalance =
         shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
-    final fiatBalanceText = fiatTextForZatoshi(
+    final fiatBalanceText = _mobileHomeFiatTextForZatoshi(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,
     );
@@ -568,7 +672,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.s,
+        AppSpacing.sm,
         AppSpacing.sm,
         kMobileTabBarHeight + AppSpacing.lg,
       ),
@@ -593,7 +697,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   canShieldBalance: sync.canShieldTransparentBalance,
                   isShieldingBalance: _isShieldingBalance,
                   privacyModeEnabled: privacyModeEnabled,
+                  ironwoodMigrationCta: widget.ironwoodMigrationCta,
                   onTogglePrivacyMode: widget.onTogglePrivacyMode,
+                  onIronwoodMigrationTap: () {
+                    final target = switch (widget.ironwoodMigrationCta.mode) {
+                      IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+                      IronwoodHomeMigrationCtaMode.resume =>
+                        '/migration/private/status',
+                      IronwoodHomeMigrationCtaMode.hidden => null,
+                    };
+                    if (target != null) context.push(target);
+                  },
                   onShieldBalancePressed: () =>
                       unawaited(_shieldTransparentBalance()),
                 ),
@@ -762,6 +876,30 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 }
 
+String? _mobileHomeFiatTextForZatoshi(
+  BigInt zatoshi, {
+  required double? zecUsdUnitPrice,
+}) {
+  final compactText = fiatTextForZatoshi(
+    zatoshi,
+    zecUsdUnitPrice: zecUsdUnitPrice,
+  );
+  if (compactText == null || zecUsdUnitPrice == null) return compactText;
+
+  final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
+  final value = zec * zecUsdUnitPrice;
+  if (!value.isFinite || value >= 1000000) return compactText;
+
+  final parts = value.toStringAsFixed(2).split('.');
+  final whole = parts.first;
+  final grouped = StringBuffer();
+  for (var index = 0; index < whole.length; index++) {
+    if (index > 0 && (whole.length - index) % 3 == 0) grouped.write(',');
+    grouped.write(whole[index]);
+  }
+  return '\$$grouped.${parts.last}';
+}
+
 /// The dark shielded-balance card — Figma `Full Width Card`
 /// (4394:88394): 200px tall, home-card surface, chip + privacy eye on
 /// top, fiat line and serif ZEC balance at the bottom.
@@ -775,7 +913,9 @@ class _BalanceCard extends StatelessWidget {
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
+    required this.ironwoodMigrationCta,
     required this.onTogglePrivacyMode,
+    required this.onIronwoodMigrationTap,
     required this.onShieldBalancePressed,
   });
 
@@ -787,7 +927,9 @@ class _BalanceCard extends StatelessWidget {
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
+  final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
   final VoidCallback onTogglePrivacyMode;
+  final VoidCallback onIronwoodMigrationTap;
   final VoidCallback onShieldBalancePressed;
 
   @override
@@ -805,6 +947,7 @@ class _BalanceCard extends StatelessWidget {
         : roundedPriceChangePct < 0
         ? colors.text.destructive
         : cardText;
+    final showIronwoodMigrationState = ironwoodMigrationCta.visible;
 
     return Container(
       decoration: BoxDecoration(
@@ -819,7 +962,6 @@ class _BalanceCard extends StatelessWidget {
           children: [
             Container(
               height: 200,
-              padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
                 borderRadius: cardRadius,
@@ -828,84 +970,114 @@ class _BalanceCard extends StatelessWidget {
                   width: 1.5,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Row(
-                    children: [
-                      AppIcon(
-                        AppIcons.shieldKeyhole,
-                        size: 20,
-                        color: cardText,
+                  if (showIronwoodMigrationState)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      width: 312,
+                      height: 200,
+                      child: Image.asset(
+                        'assets/illustrations/'
+                        'ironwood_migration_home_card_background.png',
+                        key: const ValueKey('mobile_home_ironwood_background'),
+                        fit: BoxFit.fill,
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          'Shielded balance',
-                          style: _mobileHomeLabelMStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                      ),
-                      _PrivacyEyeButton(
-                        enabled: privacyModeEnabled,
-                        onTap: onTogglePrivacyMode,
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  if (fiatBalanceText != null) ...[
-                    Row(
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            fiatBalanceText!,
-                            key: const ValueKey(
-                              'mobile_home_balance_fiat_text',
+                        Row(
+                          children: [
+                            if (showIronwoodMigrationState)
+                              _MobileIronwoodMigrationPill(
+                                onTap: onIronwoodMigrationTap,
+                              )
+                            else ...[
+                              AppIcon(
+                                AppIcons.shieldKeyhole,
+                                size: 20,
+                                color: cardText,
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              Expanded(
+                                child: Text(
+                                  'Shielded balance',
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: cardText,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (showIronwoodMigrationState) const Spacer(),
+                            _PrivacyEyeButton(
+                              enabled: privacyModeEnabled,
+                              onTap: onTogglePrivacyMode,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _mobileHomeLabelMStyle.copyWith(
-                              color: cardText.withValues(alpha: 0.8),
-                            ),
-                          ),
+                          ],
                         ),
-                        if (priceChangeColor != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            formatZecPriceChange24hPct(priceChange24hPct!),
-                            key: const ValueKey(
-                              'mobile_home_balance_price_change_text',
-                            ),
-                            style: _mobileHomeLabelMStyle.copyWith(
-                              color: priceChangeColor,
-                            ),
+                        const Spacer(),
+                        if (fiatBalanceText != null) ...[
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  fiatBalanceText!,
+                                  key: const ValueKey(
+                                    'mobile_home_balance_fiat_text',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: cardText.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ),
+                              if (priceChangeColor != null) ...[
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  formatZecPriceChange24hPct(
+                                    priceChange24hPct!,
+                                  ),
+                                  key: const ValueKey(
+                                    'mobile_home_balance_price_change_text',
+                                  ),
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: priceChangeColor,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                          const SizedBox(height: AppSpacing.xs),
                         ],
+                        Text.rich(
+                          key: const ValueKey('mobile_home_shielded_balance'),
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: '$balanceText ',
+                                style: _mobileHomeBalanceAmountStyle.copyWith(
+                                  color: cardText,
+                                ),
+                              ),
+                              TextSpan(
+                                text: kZcashDefaultCurrencyTicker,
+                                style: _mobileHomeBalanceTickerStyle.copyWith(
+                                  color: cardText,
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                  ],
-                  Text.rich(
-                    key: const ValueKey('mobile_home_shielded_balance'),
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '$balanceText ',
-                          style: _mobileHomeBalanceAmountStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                        TextSpan(
-                          text: kZcashDefaultCurrencyTicker,
-                          style: _mobileHomeBalanceTickerStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -919,6 +1091,58 @@ class _BalanceCard extends StatelessWidget {
               onShieldBalancePressed: onShieldBalancePressed,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileIronwoodMigrationPill extends StatelessWidget {
+  const _MobileIronwoodMigrationPill({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const contentColor = Color(0xFFEAFEEF);
+    return Semantics(
+      button: true,
+      label: 'Migration required',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          key: const ValueKey('mobile_home_ironwood_migration_required_pill'),
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: const ShapeDecoration(
+            color: Color(0xFF00A460),
+            shape: StadiumBorder(),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppIcon(
+                AppIcons.shieldKeyhole,
+                size: 20,
+                color: contentColor,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Migration required',
+                style: AppTypography.labelLarge.copyWith(
+                  color: contentColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              const AppIcon(
+                AppIcons.chevronForward,
+                size: 20,
+                color: contentColor,
+              ),
+            ],
+          ),
         ),
       ),
     );
