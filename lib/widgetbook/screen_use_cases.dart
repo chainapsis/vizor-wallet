@@ -709,6 +709,18 @@ Widget buildIronwoodMigrationPrivateStatusWaitingUseCase(BuildContext context) {
     initialLocation: '/migration/private/status',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewStatus: _previewPrivateMigrationStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationPrivateStatusMigratingUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
+    previewStatus: _previewPrivateMigrationTransferStatus(),
   );
 }
 
@@ -829,6 +841,7 @@ Widget _buildIronwoodMigrationUseCase({
   required String initialLocation,
   required IronwoodMigrationFlowStep step,
   required IronwoodMigrationFlowData data,
+  rust_sync.MigrationStatus? previewStatus,
 }) {
   final accountState = _ironwoodMigrationAccountState();
   return ProviderScope(
@@ -858,6 +871,7 @@ Widget _buildIronwoodMigrationUseCase({
       initialLocation: initialLocation,
       initialStep: step,
       data: data,
+      previewStatus: previewStatus,
     ),
   );
 }
@@ -1488,11 +1502,13 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     required this.initialLocation,
     required this.initialStep,
     required this.data,
+    this.previewStatus,
   });
 
   final String initialLocation;
   final IronwoodMigrationFlowStep initialStep;
   final IronwoodMigrationFlowData data;
+  final rust_sync.MigrationStatus? previewStatus;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -1566,7 +1582,8 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
         GoRoute(
           path: '/migration/private/status',
           builder: (_, _) => IronwoodMigrationPrivateStatusScreen(
-            previewStatus: _previewPrivateMigrationStatus(),
+            previewStatus:
+                widget.previewStatus ?? _previewPrivateMigrationStatus(),
           ),
         ),
         GoRoute(
@@ -2126,48 +2143,68 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
   return rust_sync.MigrationStatus(
     phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     activeRunId: 'preview-run',
-    targetValuesZatoshi: frb.Uint64List.fromList([
-      100_000_000,
-      100_000_000,
-      100_000_000,
-      100_000_000,
-      10_000_000,
-      10_000_000,
-      10_000_000,
-      1_000_000,
-      1_000_000,
-      1_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      879_000_000,
-    ]),
+    targetValuesZatoshi: frb.Uint64List.fromList([14_223_000_000]),
     preparedNoteCount: 6,
     denominationConfirmationCount: 2,
-    denominationConfirmationTarget: 10,
-    denominationSplitCompletedCount: 1,
-    denominationSplitTotalCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 1,
     pendingTxCount: 0,
-    broadcastedTxCount: 1,
+    broadcastedTxCount: 0,
     confirmedTxCount: 0,
-    totalCount: 3,
+    totalCount: 12,
     signedChildPcztCount: 0,
-    pendingSplitStageCount: 2,
+    pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+  );
+}
+
+rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingConfirmationsPhase,
+    activeRunId: 'preview-run',
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      412_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_000_000_000,
+      1_811_000_000,
+    ]),
+    preparedNoteCount: 14,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 6,
+    broadcastedTxCount: 5,
+    confirmedTxCount: 3,
+    totalCount: 11,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    broadcastWindowSeconds: BigInt.from(14_400),
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: [
+      rust_sync.MigrationScheduledBroadcast(
+        txidHex: 'preview-txid',
+        scheduledAtMs: DateTime(2026, 7, 18, 12).millisecondsSinceEpoch,
+        status: 'scheduled',
+      ),
+    ],
   );
 }
 

@@ -95,6 +95,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Ironwood private migration waiting status screen',
     builder: buildIronwoodMigrationPrivateStatusWaitingUseCase,
   ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-private-status-migrating',
+    description: 'Ironwood private migration transfer status screen',
+    builder: buildIronwoodMigrationPrivateStatusMigratingUseCase,
+  ),
 ];
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {

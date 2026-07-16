@@ -167,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(startedAccountUuid, 'account-1');
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Preparing...'), findsOneWidget);
   });
 
   test(
@@ -320,9 +320,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing your notes'), findsOneWidget);
-    expect(find.text('Submitting split transaction...'), findsOneWidget);
-    expect(find.text('Back to Home'), findsOneWidget);
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.text('Transaction splits submitted'), findsOneWidget);
+    expect(find.text('Waiting for confirmation ...'), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Back to Home'), findsNothing);
   });
 
   testWidgets('private status maps migration phases to actions', (
@@ -334,12 +336,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final cases = [
-      _StatusUiCase(
-        status: _status(),
-        title: 'Preparing your notes',
-        buttonLabel: 'Back to Home',
-        buttonEnabled: true,
-      ),
+      _StatusUiCase(status: _status(), title: 'Preparing...'),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationReadyToMigratePhase,
@@ -363,18 +360,14 @@ void main() {
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Broadcasting Migration',
-        buttonLabel: 'Broadcasting',
-        buttonEnabled: false,
+        title: 'Migrating...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Waiting for Ironwood',
-        buttonLabel: 'Waiting for confirmations',
-        buttonEnabled: false,
+        title: 'Migrating...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
@@ -401,15 +394,123 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(uiCase.title), findsOneWidget);
-      _expectStatusButton(
-        tester,
-        label: uiCase.buttonLabel,
-        enabled: uiCase.buttonEnabled,
-      );
+      if (uiCase.buttonLabel == null) {
+        expect(find.widgetWithText(AppButton, 'Back to Home'), findsNothing);
+        expect(
+          find.widgetWithText(AppButton, 'Continue migration'),
+          findsNothing,
+        );
+      } else {
+        _expectStatusButton(
+          tester,
+          label: uiCase.buttonLabel!,
+          enabled: uiCase.buttonEnabled,
+        );
+      }
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     }
+  });
+
+  testWidgets(
+    'private transfer status uses confirmed progress while confirming',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingConfirmationsPhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+            broadcastedTxCount: 2,
+            confirmedTxCount: 1,
+            totalCount: 3,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('33%'), findsOneWidget);
+      expect(find.text('Left to transfer: ~0.4 ZEC'), findsOneWidget);
+      expect(find.text('02'), findsOneWidget);
+      expect(find.text('~0.2 ZEC'), findsOneWidget);
+      expect(find.text('Confirming'), findsOneWidget);
+      expect(find.text('~6 min'), findsNothing);
+    },
+  );
+
+  testWidgets('private transfer status waits for trusted completion', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 3,
+          confirmedTxCount: 3,
+          totalCount: 3,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('99%'), findsOneWidget);
+    expect(find.text('Left to transfer: ~0.006 ZEC'), findsOneWidget);
+    expect(find.text('100%'), findsNothing);
+    expect(find.text('Left to transfer: 0 ZEC'), findsNothing);
+    expect(find.text('Confirming'), findsOneWidget);
+  });
+
+  testWidgets('private transfer ETA uses the next scheduled broadcast', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final oldBroadcast = DateTime(2020, 1, 1);
+    final nextBroadcast = DateTime(2030, 1, 2, 3, 4);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 1,
+          totalCount: 3,
+          scheduledBroadcasts: [
+            rust_sync.MigrationScheduledBroadcast(
+              txidHex: 'broadcasted',
+              scheduledAtMs: oldBroadcast.millisecondsSinceEpoch,
+              status: 'broadcasted',
+            ),
+            rust_sync.MigrationScheduledBroadcast(
+              txidHex: 'next',
+              scheduledAtMs: nextBroadcast.millisecondsSinceEpoch,
+              status: 'scheduled',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Jan 2, 03:04'), findsOneWidget);
+    expect(find.text('Jan 1, 00:00'), findsNothing);
   });
 
   testWidgets('private status continues due software migration', (
@@ -1038,13 +1139,13 @@ class _StatusUiCase {
   const _StatusUiCase({
     required this.status,
     required this.title,
-    required this.buttonLabel,
-    required this.buttonEnabled,
+    this.buttonLabel,
+    this.buttonEnabled = false,
   });
 
   final rust_sync.MigrationStatus status;
   final String title;
-  final String buttonLabel;
+  final String? buttonLabel;
   final bool buttonEnabled;
 }
 
@@ -1133,27 +1234,33 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
 rust_sync.MigrationStatus _migrationStatus({
   String phase = kIronwoodMigrationReadyPhase,
   String? activeRunId,
+  List<int> targetValuesZatoshi = const [],
+  int pendingTxCount = 0,
+  int broadcastedTxCount = 0,
+  int confirmedTxCount = 0,
+  int totalCount = 0,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
     activeRunId: activeRunId,
-    targetValuesZatoshi: frb.Uint64List.fromList([]),
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValuesZatoshi),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
     denominationConfirmationTarget: 0,
     denominationSplitCompletedCount: 0,
     denominationSplitTotalCount: 0,
-    pendingTxCount: 0,
-    broadcastedTxCount: 0,
-    confirmedTxCount: 0,
-    totalCount: 0,
+    pendingTxCount: pendingTxCount,
+    broadcastedTxCount: broadcastedTxCount,
+    confirmedTxCount: confirmedTxCount,
+    totalCount: totalCount,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),
     maxPreparedNotesPerRun: 64,
-    scheduledBroadcasts: const [],
+    scheduledBroadcasts: scheduledBroadcasts,
   );
 }
 
@@ -1164,15 +1271,15 @@ rust_sync.MigrationStatus _status() {
     targetValuesZatoshi: frb.Uint64List.fromList([10_000_000]),
     preparedNoteCount: 1,
     denominationConfirmationCount: 2,
-    denominationConfirmationTarget: 10,
-    denominationSplitCompletedCount: 1,
-    denominationSplitTotalCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 1,
     pendingTxCount: 0,
-    broadcastedTxCount: 1,
+    broadcastedTxCount: 0,
     confirmedTxCount: 0,
     totalCount: 3,
     signedChildPcztCount: 0,
-    pendingSplitStageCount: 2,
+    pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
     broadcastWindowSeconds: BigInt.from(180),
