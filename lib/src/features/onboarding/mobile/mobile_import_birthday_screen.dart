@@ -15,6 +15,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
@@ -352,47 +353,52 @@ class _MobileImportBirthdayScreenState
     final router = GoRouter.of(context);
     final accountNotifier = ref.read(accountProvider.notifier);
     try {
-      final imported = await runWithSyncPausedForAccountMutation(
-        ref,
-        () async {
-          final selectedAdditionalAccountIndices =
-              await _resolveAdditionalAccountIndices(
-                mnemonic: widget.args.mnemonic,
-                birthdayHeight: height,
-              );
-          if (selectedAdditionalAccountIndices == null) return false;
-          if (!mounted) return false;
-          setState(() {
-            _submitPhase = _MobileImportSubmitPhase.importing;
-          });
-          await accountNotifier.importAccount(
-            mnemonic: widget.args.mnemonic,
-            birthdayHeight: height,
-            additionalAccountIndices: selectedAdditionalAccountIndices,
-          );
-          return true;
-        },
-        onStoppingSync: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _MobileImportSubmitPhase.stoppingSync;
-          });
-        },
-        onSyncPaused: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _MobileImportSubmitPhase.importing;
-          });
-        },
-      );
-      if (!imported) {
-        if (mounted) {
-          setState(() {
-            _submitPhase = _MobileImportSubmitPhase.idle;
-          });
+      final routerRefresh = ref.read(routerRefreshProvider);
+      await routerRefresh.pauseWhile(() async {
+        final imported = await runWithSyncPausedForAccountMutation(
+          ref,
+          () async {
+            final selectedAdditionalAccountIndices =
+                await _resolveAdditionalAccountIndices(
+                  mnemonic: widget.args.mnemonic,
+                  birthdayHeight: height,
+                );
+            if (selectedAdditionalAccountIndices == null) return false;
+            if (!mounted) return false;
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.importing;
+            });
+            await accountNotifier.importAccount(
+              mnemonic: widget.args.mnemonic,
+              birthdayHeight: height,
+              additionalAccountIndices: selectedAdditionalAccountIndices,
+            );
+            return true;
+          },
+          onStoppingSync: () {
+            if (!mounted) return;
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.stoppingSync;
+            });
+          },
+          onSyncPaused: () {
+            if (!mounted) return;
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.importing;
+            });
+          },
+        );
+        if (!imported) {
+          if (mounted) {
+            setState(() {
+              _submitPhase = _MobileImportSubmitPhase.idle;
+            });
+          }
+          return;
         }
-        return;
-      }
+        if (!mounted) return;
+        router.go('/home');
+      });
     } catch (e, st) {
       log('MobileImportBirthday: import failed: $e\n$st');
       if (!mounted) return;
@@ -402,7 +408,6 @@ class _MobileImportBirthdayScreenState
       });
       return;
     }
-    router.go('/home');
   }
 
   Future<List<int>?> _resolveAdditionalAccountIndices({

@@ -194,6 +194,7 @@ Future<void> runZcashWalletApp() async {
 final _routerProvider = Provider<_AppRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
   final refresh = ref.watch(routerRefreshProvider);
+  late final GoRouter router;
   ref.listen(walletProvider, (_, _) {
     refresh.requestRefresh();
   });
@@ -204,13 +205,15 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     refresh.requestRefresh();
   });
   ref.listen(ironwoodPostMigrationStateProvider, (_, _) {
-    refresh.requestRefresh();
+    final path = router.routerDelegate.currentConfiguration.uri.path;
+    if (_isIronwoodMigrationRestrictedRoute(path)) {
+      refresh.requestRefresh();
+    }
   });
   log('router: initialized');
 
   final navigatorKey = GlobalKey<NavigatorState>();
   final mobileExitBackGuard = MobileExitBackGuard();
-  late final GoRouter router;
   final mobileExitBackDispatcher = MobileExitBackDispatcher(
     exitBackGuard: mobileExitBackGuard,
     navigatorKey: navigatorKey,
