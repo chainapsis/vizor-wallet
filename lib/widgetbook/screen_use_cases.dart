@@ -31,6 +31,8 @@ import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -594,6 +596,44 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
+  final accountUuid = _ironwoodMobileHomeAccountState.activeAccountUuid!;
+  return _buildMobileHomeUseCase(
+    accountState: _ironwoodMobileHomeAccountState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(211_200_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: accountUuid,
+      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
+    ),
+    marketData: const ZecMarketData(usdPrice: 568.2386363, change24hPct: 13.12),
+    swapEnabled: false,
+  );
+}
+
+Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
+  final accountUuid = _ironwoodMobileHomeAccountState.activeAccountUuid!;
+  final status = _previewMigrationStatus(kIronwoodMigrationReadyPhase);
+  return _buildMobileHomeUseCase(
+    accountState: _ironwoodMobileHomeAccountState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(211_200_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: accountUuid,
+      status: status,
+    ),
+    marketData: const ZecMarketData(usdPrice: 568.2386363, change24hPct: 13.12),
+    swapEnabled: false,
+    showStaticIronwoodAnnouncement: true,
+  );
+}
+
 Widget buildMobileHomeNoActivityUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
@@ -792,6 +832,58 @@ Widget buildIronwoodMigrationPrivateStatusNeedsInputUseCase(
   );
 }
 
+Widget buildMobileIronwoodMigrationIntroUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.intro,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHowItWorksUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.howItWorks,
+  );
+}
+
+Widget buildMobileIronwoodMigrationOptionsUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.options,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.privateReview,
+  );
+}
+
+Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.fastReview,
+  );
+}
+
+Widget _buildMobileIronwoodMigrationUseCase({
+  required MobileIronwoodMigrationStep step,
+}) {
+  final zatoshi = switch (step) {
+    MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
+    MobileIronwoodMigrationStep.howItWorks => BigInt.from(14_232_000_000),
+    MobileIronwoodMigrationStep.options ||
+    MobileIronwoodMigrationStep.privateReview ||
+    MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
+  };
+  return ProviderScope(
+    child: _MobilePreviewFrame(
+      child: MobileIronwoodMigrationFlowScreen(
+        step: step,
+        previewData: _ironwoodMigrationFlowData(zatoshi: zatoshi),
+        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+        previewArrivalLabel: 'July 18, 12:00 (~2days)',
+      ),
+    ),
+  );
+}
+
 Widget _buildAccountsUseCase(
   AccountState accountState, {
   String? initialOpenMenuAccountUuid,
@@ -833,6 +925,16 @@ Widget _buildMobileHomeUseCase({
   required AccountState accountState,
   required SyncState syncState,
   bool openAccountsSheet = false,
+  IronwoodHomeMigrationCtaState migrationCta =
+      const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodMigrationAnnouncementState announcement =
+      const IronwoodMigrationAnnouncementState.hidden(),
+  ZecMarketData marketData = const ZecMarketData(
+    usdPrice: 70,
+    change24hPct: 13.12,
+  ),
+  bool swapEnabled = true,
+  bool showStaticIronwoodAnnouncement = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -849,19 +951,25 @@ Widget _buildMobileHomeUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
-        const _PreviewZecMarketDataSource(
-          ZecMarketData(usdPrice: 70, change24hPct: 13.12),
-        ),
+        _PreviewZecMarketDataSource(marketData),
       ),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(marketData.usdPrice),
+      zecPriceChange24hPctProvider.overrideWithValue(marketData.change24hPct),
+      swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
+        return migrationCta;
+      }),
+      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
+        return announcement;
+      }),
     ],
-    child: Center(
-      child: SizedBox(
-        width: 393,
-        height: 852,
-        child: _MobileHomeHarness(openAccountsSheet: openAccountsSheet),
+    child: _MobilePreviewFrame(
+      child: _MobileHomeHarness(
+        openAccountsSheet: openAccountsSheet,
+        showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
       ),
     ),
   );
@@ -1156,6 +1264,17 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
           path: '/unlock',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/unlock'),
         ),
+        GoRoute(
+          path: '/migration/intro',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/migration/intro'),
+        ),
+        GoRoute(
+          path: '/migration/private/status',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/migration/private/status',
+          ),
+        ),
       ],
     );
   }
@@ -1414,9 +1533,13 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
 }
 
 class _MobileHomeHarness extends StatefulWidget {
-  const _MobileHomeHarness({required this.openAccountsSheet});
+  const _MobileHomeHarness({
+    required this.openAccountsSheet,
+    required this.showStaticIronwoodAnnouncement,
+  });
 
   final bool openAccountsSheet;
+  final bool showStaticIronwoodAnnouncement;
 
   @override
   State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
@@ -1489,7 +1612,27 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    final router = Router.withConfig(config: _router);
+    if (!widget.showStaticIronwoodAnnouncement) return router;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        router,
+        ColoredBox(
+          color: context.colors.background.neutralScrim,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: MobileModalCard(
+              child: MobileIronwoodMigrationAnnouncementSheet(
+                onStartMigration: () {},
+                onOpenReleaseNotes: () {},
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -2028,6 +2171,15 @@ final _accountsDesignState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
+final _ironwoodMobileHomeAccountState = _accountsDesignState.copyWith(
+  accounts: [
+    for (final account in _accountsDesignState.accounts)
+      account.uuid == _accountsDesignState.activeAccountUuid
+          ? account.copyWith(name: 'Wallet 1')
+          : account,
+  ],
+);
+
 final _accountsManyState = AccountState(
   accounts: [
     const AccountInfo(
@@ -2285,6 +2437,23 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
         blockOffset: 864,
       ),
     ],
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList([]),
+    totalInputZatoshi: BigInt.from(14_224_000_000),
+    totalMigratableZatoshi: BigInt.from(14_209_500_000),
+    orchardChangeZatoshi: BigInt.from(100_000),
+    denominationSplitFeeZatoshi: BigInt.from(100_000),
+    migrationFeeZatoshi: BigInt.from(14_400_000),
+    estimatedTotalFeeZatoshi: BigInt.from(14_500_000),
+    plannedBatchCount: 12,
+    denominationSplitStageCount: 2,
+    signingBatchLimit: 50,
+    broadcastWindowSeconds: BigInt.from(14_400),
+    maxPreparedNotesPerRun: 64,
   );
 }
 

@@ -60,6 +60,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-ironwood-migration-required',
+    description:
+        'Mobile home balance card in Ironwood migration-required state',
+    builder: buildMobileHomeIronwoodMigrationRequiredUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-announcement',
+    description: 'Mobile Ironwood migration announcement sheet',
+    builder: buildMobileHomeIronwoodAnnouncementUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
@@ -120,6 +135,41 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-private-status-needs-input',
     description: 'Ironwood Keystone migration status requiring a signature',
     builder: buildIronwoodMigrationPrivateStatusNeedsInputUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-intro',
+    description: 'Mobile About Ironwood migration screen',
+    builder: buildMobileIronwoodMigrationIntroUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-how-it-works',
+    description: 'Mobile Ironwood migration steps screen',
+    builder: buildMobileIronwoodMigrationHowItWorksUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-options',
+    description: 'Mobile Ironwood migration type screen',
+    builder: buildMobileIronwoodMigrationOptionsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-private-review',
+    description: 'Mobile private Ironwood migration review screen',
+    builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-fast-review',
+    description: 'Mobile immediate Ironwood migration review screen',
+    builder: buildMobileIronwoodMigrationFastReviewUseCase,
+    desktop: false,
+    mobile: true,
   ),
 ];
 

@@ -314,6 +314,44 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Ironwood migration',
+              children: [
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Home - Migration required',
+                      builder: buildMobileHomeIronwoodMigrationRequiredUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Announcement modal',
+                      builder: buildMobileHomeIronwoodAnnouncementUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'About Ironwood',
+                      builder: buildMobileIronwoodMigrationIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ironwood steps',
+                      builder: buildMobileIronwoodMigrationHowItWorksUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type',
+                      builder: buildMobileIronwoodMigrationOptionsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Private',
+                      builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Fast',
+                      builder: buildMobileIronwoodMigrationFastReviewUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Accounts',
               children: [
                 WidgetbookComponent(
