@@ -105,6 +105,18 @@ chain, migration batches, fees, and final pool balances. Set
 `E2E_ORCHARD_FUNDING_NOTE_COUNT` on the base runner to reuse this multi-note
 funding path with another scenario.
 
+Test uneven Orchard notes received across multiple transactions:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration-mixed-notes.sh
+```
+
+This spreads 20 notes across four funding transactions with transaction totals
+weighted 1:2:3:4. It verifies all four receive transactions, distinct txids and
+amounts, the chained denomination plan, migration fees, and final balances. Set
+`E2E_ORCHARD_FUNDING_TX_COUNT` to partition another scenario's addresses and
+total amount across multiple weighted funding transactions.
+
 The base runner accepts `E2E_TEST_FILE` and `E2E_DRIVER_PORT` overrides so new
 single-process scenarios can reuse chain reset, deterministic Orchard funding,
 driver startup, and Flutter launch without duplicating the harness.

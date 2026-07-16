@@ -15,6 +15,7 @@ FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-1.0002}"
 FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
 FUNDING_COINBASE_LIMIT="${E2E_ORCHARD_FUNDING_COINBASE_LIMIT:-1}"
 FUNDING_NOTE_COUNT="${E2E_ORCHARD_FUNDING_NOTE_COUNT:-1}"
+FUNDING_TX_COUNT="${E2E_ORCHARD_FUNDING_TX_COUNT:-1}"
 PREFUND_BLOCKS="${E2E_ORCHARD_PREFUND_BLOCKS:-0}"
 
 require_cmd() {
@@ -22,17 +23,6 @@ require_cmd() {
     echo "missing required command: $1" >&2
     exit 1
   fi
-}
-
-json_file_field() {
-  python3 - "$1" "$2" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as source:
-    data = json.load(source)
-print(data[sys.argv[2]])
-PY
 }
 
 derive_addresses() {
@@ -84,30 +74,63 @@ if ! [[ "$FUNDING_NOTE_COUNT" =~ ^[1-9][0-9]*$ ]]; then
   echo "E2E_ORCHARD_FUNDING_NOTE_COUNT must be a positive integer" >&2
   exit 1
 fi
+if ! [[ "$FUNDING_TX_COUNT" =~ ^[1-9][0-9]*$ ]] ||
+  [[ "$FUNDING_TX_COUNT" -gt "$FUNDING_NOTE_COUNT" ]]; then
+  echo "E2E_ORCHARD_FUNDING_TX_COUNT must be between 1 and the note count" >&2
+  exit 1
+fi
 if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
   scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
 fi
 
 addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
 derive_addresses "$addresses_file"
-unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
-funding_destinations="$unified_address"
-if [[ "$FUNDING_NOTE_COUNT" != "1" ]]; then
-  funding_destinations="$(python3 - "$addresses_file" <<'PY'
+funding_manifest="$ROOT_DIR/.ironwood-regtest/e2e-funding-manifest.tsv"
+python3 - \
+  "$addresses_file" \
+  "$FUNDING_AMOUNT" \
+  "$FUNDING_TX_COUNT" \
+  >"$funding_manifest" <<'PY'
+from decimal import Decimal, InvalidOperation
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as source:
-    print(json.dumps(json.load(source)["unifiedAddresses"], separators=(",", ":")))
+    addresses = json.load(source)["unifiedAddresses"]
+try:
+    amount = Decimal(sys.argv[2])
+except InvalidOperation as error:
+    raise SystemExit(f"invalid E2E_ORCHARD_FUNDING_AMOUNT: {sys.argv[2]}") from error
+total_zatoshis = amount * Decimal(100_000_000)
+if total_zatoshis != total_zatoshis.to_integral_value() or total_zatoshis <= 0:
+    raise SystemExit("E2E_ORCHARD_FUNDING_AMOUNT must be positive with at most 8 decimals")
+
+tx_count = int(sys.argv[3])
+base_count, extra = divmod(len(addresses), tx_count)
+note_counts = [base_count + (1 if index < extra else 0) for index in range(tx_count)]
+weight_total = tx_count * (tx_count + 1) // 2
+batch_zatoshis = [int(total_zatoshis) * weight // weight_total for weight in range(1, tx_count + 1)]
+batch_zatoshis[-1] += int(total_zatoshis) - sum(batch_zatoshis)
+
+offset = 0
+for count, zatoshis in zip(note_counts, batch_zatoshis):
+    if zatoshis < count:
+        raise SystemExit("funding batch must provide at least one zatoshi per note")
+    destinations = addresses[offset:offset + count]
+    offset += count
+    amount_text = format(Decimal(zatoshis) / Decimal(100_000_000), ".8f")
+    addresses_text = json.dumps(destinations, separators=(",", ":"))
+    print(f"{amount_text}\t{count}\t{addresses_text}")
 PY
-)"
-fi
-scripts/ironwood-regtest/fund-orchard.sh \
-  "$funding_destinations" \
-  "$FUNDING_AMOUNT" \
-  "$FUNDING_CONFIRMATIONS" \
-  "$FUNDING_COINBASE_LIMIT" \
-  "$FUNDING_NOTE_COUNT" >/dev/null
+
+while IFS=$'\t' read -r batch_amount batch_note_count batch_destinations; do
+  scripts/ironwood-regtest/fund-orchard.sh \
+    "$batch_destinations" \
+    "$batch_amount" \
+    "$FUNDING_CONFIRMATIONS" \
+    "$FUNDING_COINBASE_LIMIT" \
+    "$batch_note_count" </dev/null >/dev/null
+done <"$funding_manifest"
 
 mkdir -p "$ROOT_DIR/.ironwood-regtest"
 : > "$DRIVER_LOG"
@@ -148,7 +171,8 @@ fvm flutter test \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
-  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
+  --dart-define=ZCASH_E2E_ORCHARD_FUNDING_TX_COUNT="$FUNDING_TX_COUNT"
 status="$?"
 set -e
 
