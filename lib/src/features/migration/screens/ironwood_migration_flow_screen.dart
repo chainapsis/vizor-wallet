@@ -200,9 +200,15 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
       );
     }
 
-    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
-    return ctaAsync.when(
-      skipLoadingOnReload: true,
+    final inputs = ref.watch(ironwoodMigrationInputsProvider);
+    final request = inputs.statusRequest;
+    if (!inputs.ironwoodActiveAtTip || request == null) {
+      return const _RedirectHome();
+    }
+
+    final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
+    return statusAsync.when(
+      skipLoadingOnReload: false,
       loading: () => _IronwoodMigrationFrame(
         toolbar: _privateStatusToolbar(context),
         disableSidebarActions: true,
@@ -213,8 +219,14 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         disableSidebarActions: true,
         child: const _IronwoodMigrationPrivateStatusErrorContent(),
       ),
-      data: (cta) {
-        if (cta.mode == IronwoodHomeMigrationCtaMode.start) {
+      data: (status) {
+        if (status.activeRunId == null &&
+            kIronwoodMigrationStartPhases.contains(status.phase)) {
+          if (!inputs.hasAccountScopedData ||
+              inputs.hasSyncFailure ||
+              !inputs.hasOrchardFunds) {
+            return const _RedirectHome();
+          }
           return const _RedirectTo(
             '/migration/intro',
             placeholder: _IronwoodMigrationLoadingShell(
@@ -222,21 +234,30 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
             ),
           );
         }
-        final status = cta.status;
-        if (cta.mode != IronwoodHomeMigrationCtaMode.resume || status == null) {
-          return const _RedirectHome();
-        }
         return _IronwoodMigrationFrame(
           toolbar: _privateStatusToolbar(context),
           disableSidebarActions: true,
           child: _IronwoodMigrationPrivateStatusContent(
             status: status,
-            accountUuid: cta.accountUuid,
+            accountUuid: request.accountUuid,
           ),
         );
       },
     );
   }
+}
+
+void _invalidateIronwoodMigrationStatusState(
+  WidgetRef ref, {
+  IronwoodMigrationStatusRequest? statusRequest,
+}) {
+  if (statusRequest != null) {
+    ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
+  }
+  ref.invalidate(ironwoodMigrationRouteCtaProvider);
+  ref.invalidate(ironwoodHomeMigrationCtaProvider);
+  ref.invalidate(ironwoodMigrationFlowDataProvider);
+  ref.invalidate(ironwoodMigrationPrivatePlanProvider);
 }
 
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
@@ -613,10 +634,13 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;
-      ref.invalidate(ironwoodMigrationRouteCtaProvider);
-      ref.invalidate(ironwoodHomeMigrationCtaProvider);
-      ref.invalidate(ironwoodMigrationFlowDataProvider);
-      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      _invalidateIronwoodMigrationStatusState(
+        ref,
+        statusRequest: IronwoodMigrationStatusRequest(
+          network: ref.read(ironwoodMigrationInputsProvider).network,
+          accountUuid: accountUuid,
+        ),
+      );
       context.go('/migration/private/status');
     } catch (e, st) {
       log(
@@ -1618,10 +1642,16 @@ class _IronwoodMigrationPrivateStatusContentState
   }
 
   void _refreshMigrationState() {
-    ref.invalidate(ironwoodMigrationRouteCtaProvider);
-    ref.invalidate(ironwoodHomeMigrationCtaProvider);
-    ref.invalidate(ironwoodMigrationFlowDataProvider);
-    ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+    final accountUuid = widget.accountUuid;
+    _invalidateIronwoodMigrationStatusState(
+      ref,
+      statusRequest: accountUuid == null
+          ? null
+          : IronwoodMigrationStatusRequest(
+              network: ref.read(ironwoodMigrationInputsProvider).network,
+              accountUuid: accountUuid,
+            ),
+    );
   }
 
   @override
@@ -2088,6 +2118,10 @@ class _IronwoodMigrationPrivateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
+      final statusRequest = IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      );
       if (accountState.activeAccount?.isHardware ?? false) {
         context.go('/migration/private/keystone/denominations/sign');
         return;
@@ -2096,10 +2130,10 @@ class _IronwoodMigrationPrivateReviewContentState
           .read(ironwoodMigrationServiceProvider)
           .startSoftwarePrivateMigration(accountUuid: accountUuid);
       if (!mounted) return;
-      ref.invalidate(ironwoodMigrationRouteCtaProvider);
-      ref.invalidate(ironwoodHomeMigrationCtaProvider);
-      ref.invalidate(ironwoodMigrationFlowDataProvider);
-      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      _invalidateIronwoodMigrationStatusState(
+        ref,
+        statusRequest: statusRequest,
+      );
       context.go('/migration/private/status');
     } catch (e) {
       if (!mounted) return;

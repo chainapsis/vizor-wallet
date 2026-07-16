@@ -800,6 +800,35 @@ void main() {
     expect(find.text('private-status-route'), findsOneWidget);
   });
 
+  testWidgets('private status reads status directly when route CTA is stale', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.start(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: _migrationStatus(),
+        ),
+        routeStatus: _migrationStatus(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          pendingTxCount: 1,
+          broadcastedTxCount: 1,
+          confirmedTxCount: 0,
+          totalCount: 1,
+        ),
+        initialLocation: '/migration/private/status',
+        realStatusRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('intro-route'), findsNothing);
+    expect(find.text('Migrating...'), findsOneWidget);
+  });
+
   testWidgets('migration entry routes every resume phase to private status', (
     tester,
   ) async {
@@ -1037,9 +1066,13 @@ Widget _migrationEntryHarness({
   String initialLocation = '/migration',
   Object? routeError,
   bool realStatusRoute = false,
+  rust_sync.MigrationStatus? routeStatus,
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
 }) {
+  final network = ctaState.network ?? 'test';
+  final accountUuid = ctaState.accountUuid ?? 'account-1';
+  final status = routeStatus ?? ctaState.status ?? _migrationStatus();
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -1072,6 +1105,34 @@ Widget _migrationEntryHarness({
         if (error != null) throw error;
         return ctaState;
       }),
+      ironwoodMigrationInputsProvider.overrideWithValue(
+        IronwoodMigrationInputs(
+          ironwoodActiveAtTip: true,
+          network: network,
+          accountUuid: accountUuid,
+          accountName: 'Account 1',
+          profilePictureId: kDefaultProfilePictureId,
+          hasAccountScopedData: true,
+          isSyncing: false,
+          isBackgroundMode: false,
+          hasSyncFailure: false,
+          orchardBalance: BigInt.from(10_000_000),
+          orchardPendingBalance: BigInt.zero,
+          ironwoodBalance: BigInt.zero,
+          ironwoodPendingBalance: BigInt.zero,
+        ),
+      ),
+      walletDbPathGetterProvider.overrideWithValue(
+        () async => '/tmp/wallet.db',
+      ),
+      orchardMigrationStatusGetterProvider.overrideWith(
+        (ref) =>
+            ({required dbPath, required network, required accountUuid}) async {
+              final error = routeError;
+              if (error != null) throw error;
+              return status;
+            },
+      ),
       appBootstrapProvider.overrideWithValue(
         _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
       ),
