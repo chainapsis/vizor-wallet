@@ -6,6 +6,17 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
+## Changed
+- Aligned the Ironwood crate line on `voting-circuits 0.9.0-rc.2` and a pinned
+  librustzcash revision containing Ironwood historical note selection. Wallet
+  integrations resolve one shielded/PCZT stack, vote tree storage APIs use
+  `shardtree 0.7`, and the wallet crates require Rust 1.88 or newer.
+- Updated snapshot selection and governance PCZT construction to use only
+  Ironwood/V3 notes. Pre-NU6.3 Orchard/V2 voting is no longer supported on this
+  branch.
+- Persisted each voting round's wallet network and validate governance PCZT
+  branch IDs against the stored round snapshot before writing PCZT setup state.
+
 ## v1.0.0
 
 ### Added
@@ -131,7 +142,7 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Added shared wallet note-selection helpers and delegation input gathering
   (`select_snapshot_notes`, `select_snapshot_note_infos`, and
   `gather_delegation_wallet_inputs`) so wallet SDKs can reuse the snapshot
-  eligibility, Orchard note-info extraction, and selected-note summary logic.
+  eligibility, shielded note-info extraction, and selected-note summary logic.
 - Added `select_notes_with_wallet_db` and tree-sync-gated `select_notes_with_lwd`
   so wallet SDKs can reuse scan-height validation, wallet/network consistency
   checks, lightwalletd snapshot-anchor fetching, and selected-note assembly
@@ -154,8 +165,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   `VotingDb::generate_hotkey`.
 - Added `delegate::LightwalletdBranchIdProvider` and
   `delegate::branch_id_for_height` so wallet SDKs can resolve delegation
-  consensus branches from `lightwalletd_url` plus `Network` without duplicating
-  lightwalletd tip-fetching code.
+  consensus branches from a voting snapshot height plus `Network` without
+  duplicating consensus activation logic.
 - Added `vote::VoteCommitStage` plus `VoteCommitStageReporter` and
   `VoteCommitStageBridge` so wallet SDKs can consume library-owned cast-vote
   lifecycle and proof-progress stages without defining local event enums.
@@ -165,11 +176,12 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   voting hotkey, consensus branch, and PIR transport at their own boundaries.
   Callers that need a non-default bundle policy can use
   `VotingDb::prepare_delegation_pir_with_policy`.
-- Added `zcash_voting::witness::generate_note_witnesses` for Orchard note
-  witness generation from a stored voting round snapshot. The V2 API validates
-  the cached lightwalletd `TreeState` height and Orchard root against the
-  persisted round parameters before asking the wallet DB for historical Merkle
-  paths, then returns `WitnessData` for each bundled note.
+- Added `zcash_voting::witness::generate_note_witnesses` for shielded note
+  witness generation from a stored voting round snapshot. The API selects the
+  shielded voting protocol from the snapshot height, validates the cached
+  lightwalletd `TreeState` height and selected tree root against the persisted
+  round parameters, asks the wallet DB for historical Merkle paths, then returns
+  `WitnessData` for each bundled note.
 - Added `zcash_voting::witness::store_tree_state_and_generate_note_witnesses`
   so wallet SDKs can share the snapshot tree-state persistence, witness
   generation, and bundle witness caching flow while keeping wallet DB opening at

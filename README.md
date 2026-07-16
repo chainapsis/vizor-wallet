@@ -34,13 +34,19 @@ cargo check                    # check all crates
 cargo build -p zcash_voting   # build just the core library
 ```
 
+Ironwood / NU6.3 code paths are cfg-gated. Build or test those paths with:
+
+```bash
+RUSTFLAGS='--cfg zcash_unstable="nu6.3"' cargo test -p zcash_voting --locked
+```
+
 ## Wallet API Lifecycle
 
 New wallet integrations should import `zcash_voting::prelude::*` and use the
 stage-oriented API:
 
 - `round::*` creates rounds and binds eligible notes into bundles.
-- `precompute::*` prepares Orchard witnesses, delegation PIR inputs, and VAN
+- `precompute::*` prepares shielded note witnesses, delegation PIR inputs, and VAN
   witnesses for vote proofs.
 - `delegate::*` builds delegation PCZTs, proves delegation, prepares signing
   requests, and assembles signed delegation submissions. Wallets keep root seed
@@ -105,15 +111,25 @@ Pre-launch wallet databases with older schema versions are reset when opened by
 this branch; callers that need to preserve test data should export it before
 upgrading the crate.
 
-The workspace depends on the private [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits) repo. The `.cargo/config.toml` enables `git-fetch-with-cli` so your local git credentials are used automatically.
+The workspace uses the published `voting-circuits 0.9.0-rc.2` release.
 
 ## Dependency Strategy
 
-This workspace uses `[patch.crates-io]` (in the root `Cargo.toml`) to override two dependency trees:
+The root manifest selects one upstream Ironwood dependency stack for every
+workspace member:
 
-- **orchard 0.11** — Resolved from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits), which bundles an orchard fork with public visibility for `constants`, `spec`, and a `shared_primitives::spend_authority` gadget.
+- **`orchard 0.15.0`** from [zcash/orchard](https://github.com/zcash/orchard),
+  with `unstable-voting-circuits` enabled for the governance proof paths.
+- **`pczt`, `zcash_client_backend`, `zcash_client_sqlite`, `zcash_keys`,
+  `zcash_primitives`, and `zcash_protocol`** from a pinned upstream
+  librustzcash revision containing Ironwood historical note selection.
+- **`voting-circuits 0.9.0-rc.2`** from
+  [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+  for the delegation and vote proof circuits.
 
-- **librustzcash crates** (pczt, zcash_keys, zcash_client_sqlite, etc.) — Resolved from [valargroup/librustzcash](https://github.com/valargroup/librustzcash) branch `valargroup/pczt-governance-extensions-0.11`. Adds public getters and methods needed for governance PCZT construction and Merkle witness generation.
+`Cargo.toml` is the source of truth for version and feature requirements, and
+`Cargo.lock` records the exact package sources and versions used by this branch.
+The Zcash wallet crates require Rust 1.88 or newer.
 
 ## FFI
 

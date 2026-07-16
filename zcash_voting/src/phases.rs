@@ -436,7 +436,8 @@ mod tests {
     fn db_with_bundle() -> VotingDb {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         db
     }
@@ -534,7 +535,8 @@ mod tests {
     fn delegation_phases_are_sorted_by_bundle_index() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         db.ensure_bundles(
             ROUND_ID,
             &[note(0), note(1), note(2), note(3), note(4), note(5)],

@@ -32,6 +32,43 @@ fn nullifier_bytes_to_base(bytes: &[u8], label: &str) -> Result<pallas::Base, Vo
     })
 }
 
+fn validate_consensus_branch_id_for_round(
+    params: &VotingRoundParams,
+    stored_network: Network,
+    keys: &DelegationKeys,
+    consensus_branch_id: u32,
+) -> Result<(), VotingError> {
+    validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
+
+    let expected = crate::lwd::branch_id_for_height(stored_network, params.snapshot_height)?;
+    if consensus_branch_id != expected {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "consensus_branch_id 0x{consensus_branch_id:08X} does not match snapshot height {} branch id 0x{expected:08X}",
+                params.snapshot_height
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_network_matches_round(
+    stored_network: Network,
+    requested_network: Network,
+    label: &str,
+) -> Result<(), VotingError> {
+    if requested_network != stored_network {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "{label} network {:?} does not match stored round network {:?}",
+                requested_network, stored_network
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 fn delegation_nullifier_targets(
     notes: &[NoteInfo],
     dummy_nullifiers: &[Vec<u8>],
@@ -263,18 +300,38 @@ fn verify_witnesses(witnesses: &[WitnessData]) -> Result<(), VotingError> {
     Ok(())
 }
 
+fn validate_witnesses_for_round(
+    witnesses: &[WitnessData],
+    params: &VotingRoundParams,
+) -> Result<(), VotingError> {
+    verify_witnesses(witnesses)?;
+    for witness in witnesses {
+        if witness.root != params.nc_root {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "witness root for position {} does not match stored round nc_root",
+                    witness.position
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 impl VotingDb {
     // --- Round management ---
 
     /// Initialize a new voting round. Stores params, sets phase to Initialized.
     pub fn init_round(
         &self,
+        network: Network,
         params: &VotingRoundParams,
         session_json: Option<&str>,
     ) -> Result<(), VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
-        queries::insert_round(&conn, &wallet_id, params, session_json)
+        queries::insert_round(&conn, &wallet_id, network, params, session_json)
     }
 
     /// Get the current state of a voting round.
@@ -282,6 +339,20 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         queries::get_round_state(&conn, round_id, &wallet_id)
+    }
+
+    /// Loads the stored round network and rejects a caller-supplied mismatch.
+    pub(crate) fn require_round_network(
+        &self,
+        round_id: &str,
+        network: Network,
+        label: &str,
+    ) -> Result<Network, VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        let stored_network = queries::load_round_network(&conn, round_id, &wallet_id)?;
+        validate_network_matches_round(stored_network, network, label)?;
+        Ok(stored_network)
     }
 
     /// Advance the round phase without allowing regressions.
@@ -453,12 +524,14 @@ impl VotingDb {
     ) -> Result<DelegationSigningRequest, VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
+        let stored_network = queries::load_round_network(&conn, round_id, &wallet_id)?;
+        validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
         let sighash = queries::load_pczt_sighash(&conn, round_id, &wallet_id, bundle_index)?;
         let alpha = queries::load_alpha(&conn, round_id, &wallet_id, bundle_index)?;
 
         Ok(DelegationSigningRequest {
             account_index: keys.account_index,
-            network: keys.network,
+            network: stored_network,
             seed_fingerprint: keys.seed_fingerprint,
             sighash: sighash
                 .as_slice()
@@ -477,10 +550,10 @@ impl VotingDb {
 
     /// Build a governance-specific PCZT for Keystone signing.
     /// Loads round params from db. Notes come from caller.
-    /// Computes governance values and builds a PCZT whose single Orchard action
-    /// IS the governance dummy action (spend of signed note → output to hotkey).
+    /// Computes governance values and builds a PCZT whose governance action
+    /// belongs to the selected shielded protocol.
     ///
-    /// - `consensus_branch_id`: NU6 = 0xC8E71055
+    /// - `consensus_branch_id`: branch ID active at the stored round snapshot height
     /// - `keys`: wallet account and voting hotkey metadata for the delegation PCZT
     pub fn build_governance_pczt(
         &self,
@@ -490,14 +563,25 @@ impl VotingDb {
         keys: &DelegationKeys,
         consensus_branch_id: u32,
     ) -> Result<GovernancePczt, VotingError> {
-        let padded_note_secrets = self.ensure_padded_secrets(round_id, bundle_index, notes)?;
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
-        let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
-        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
+        let (params, stored_network) = {
+            let conn = self.conn();
+            let (params, stored_network) =
+                queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
+            validate_consensus_branch_id_for_round(
+                &params,
+                stored_network,
+                keys,
+                consensus_branch_id,
+            )?;
+            queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
+            (params, stored_network)
+        };
+        let padded_note_secrets = self.ensure_padded_secrets(round_id, bundle_index, notes)?;
         let result = crate::action::build_governance_pczt(
             notes,
             &params,
+            stored_network,
             &keys.fvk_bytes,
             &keys.hotkey_raw_address,
             consensus_branch_id,
@@ -516,6 +600,7 @@ impl VotingDb {
             })?;
         // Persist delegation data fields
         // plus padded_note_secrets and pczt_sighash for ZCA-74 randomness threading.
+        let conn = self.conn();
         queries::store_delegation_data_with_pczt_fields(
             &conn,
             round_id,
@@ -608,6 +693,7 @@ impl VotingDb {
     ) -> Result<(), VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
+        let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
 
         let cached_count = queries::witness_count(&conn, round_id, &wallet_id, bundle_index)?;
         // Return early if already cached
@@ -615,7 +701,7 @@ impl VotingDb {
             return Ok(());
         }
 
-        verify_witnesses(witnesses)?;
+        validate_witnesses_for_round(witnesses, &params)?;
 
         if cached_count == 0 {
             queries::store_witnesses(&conn, round_id, &wallet_id, bundle_index, witnesses)
@@ -632,10 +718,10 @@ impl VotingDb {
         bundle_index: u32,
         witnesses: &[WitnessData],
     ) -> Result<(), VotingError> {
-        verify_witnesses(witnesses)?;
-
         let mut conn = self.conn();
         let wallet_id = self.wallet_id();
+        let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        validate_witnesses_for_round(witnesses, &params)?;
         queries::replace_bundle_witnesses(&mut conn, round_id, &wallet_id, bundle_index, witnesses)
     }
 
@@ -662,11 +748,14 @@ impl VotingDb {
     ) -> Result<DelegationPirPrecomputeResult, VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
-        let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        let (params, stored_network) =
+            queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
+        validate_network_matches_round(stored_network, network, "delegation PIR")?;
         queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let padded_secrets =
             queries::load_padded_note_secrets(&conn, round_id, &wallet_id, bundle_index)?;
-        let padded_nullifiers = padded_nullifiers_for_circuit(notes, &padded_secrets, network)?;
+        let padded_nullifiers =
+            padded_nullifiers_for_circuit(notes, &padded_secrets, stored_network)?;
         let targets = delegation_nullifier_targets(notes, &padded_nullifiers)?;
 
         let mut cached_count = 0u32;
@@ -767,11 +856,14 @@ impl VotingDb {
         let db_start = std::time::Instant::now();
         let conn = self.conn();
         let wallet_id = self.wallet_id();
-        let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        let (params, stored_network) =
+            queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
+        validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
         queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let alpha = queries::load_alpha(&conn, round_id, &wallet_id, bundle_index)?;
         let van_comm_rand = queries::load_van_comm_rand(&conn, round_id, &wallet_id, bundle_index)?;
         let witnesses = queries::load_witnesses(&conn, round_id, &wallet_id, bundle_index)?;
+        validate_witnesses_for_round(&witnesses, &params)?;
 
         // Load Phase 1 randomness for ZCA-74 fix: ensures Phase 2 produces
         // the same nf_signed/cmx_new that Phase 1 committed to in the PCZT.
@@ -782,7 +874,7 @@ impl VotingDb {
         // These are the zero-value circuit-side padded nullifiers derived
         // from the Phase 1 padded-note rho/rseed pairs.
         let padded_nullifiers =
-            padded_nullifiers_for_circuit(notes, &padded_secrets, keys.network)?;
+            padded_nullifiers_for_circuit(notes, &padded_secrets, stored_network)?;
 
         // Align witnesses (keyed by commitment) to notes order
         let witness_count = witnesses.len();
@@ -974,7 +1066,7 @@ impl VotingDb {
     ///
     /// Loads ZKP #2 inputs (gov_comm_rand, total_note_value, address_index, ea_pk,
     /// voting_round_id) from the DB, derives the SpendingKey from hotkey_seed
-    /// using the typed network carried by the vote signer,
+    /// using the stored round network after checking it against the vote signer,
     /// and generates a real Halo2 vote proof.
     ///
     /// The builder handles share decomposition and El Gamal encryption internally.
@@ -984,7 +1076,7 @@ impl VotingDb {
         round_id: &str,
         bundle_index: u32,
         hotkey_seed: &[u8],
-        network: crate::Network,
+        signer_network: crate::Network,
         proposal_id: u32,
         choice: u32,
         num_options: u32,
@@ -996,6 +1088,8 @@ impl VotingDb {
     ) -> Result<VoteCommitmentBundle, VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
+        let stored_network = queries::load_round_network(&conn, round_id, &wallet_id)?;
+        validate_network_matches_round(stored_network, signer_network, "vote signer")?;
         let zkp2_data = queries::load_zkp2_inputs(&conn, round_id, &wallet_id, bundle_index)?;
 
         // Decode voting_round_id from hex string to 32 bytes
@@ -1009,7 +1103,7 @@ impl VotingDb {
 
         let bundle = crate::zkp2::build_vote_commitment(
             hotkey_seed,
-            network,
+            stored_network,
             zkp2_data.address_index,
             zkp2_data.total_note_value,
             &zkp2_data.gov_comm_rand,
@@ -1495,6 +1589,10 @@ mod tests {
     // hex-decodes vote_round_id and validates it as exactly 32 bytes (a Pallas field element).
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
     const W: &str = "test-wallet";
+    const TESTNET_NU6_SNAPSHOT_HEIGHT: u64 = 3_536_500;
+    const TESTNET_NU6_BRANCH_ID: u32 = 0x4DEC_4DF0;
+    #[cfg(zcash_unstable = "nu6.3")]
+    const REGTEST_NU6_3_SNAPSHOT_HEIGHT: u64 = crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT as u64;
 
     fn test_db() -> VotingDb {
         let db = VotingDb::open(":memory:").unwrap();
@@ -1508,10 +1606,30 @@ mod tests {
         let ea_pk = pasta_curves::pallas::Point::from(voting_circuits::spend_auth_g_affine());
         VotingRoundParams {
             vote_round_id: ROUND_ID.to_string(),
-            snapshot_height: 1000,
+            snapshot_height: TESTNET_NU6_SNAPSHOT_HEIGHT,
             ea_pk: ea_pk.to_bytes().to_vec(),
             nc_root: vec![0xAA; 32],
             nullifier_imt_root: vec![0xBB; 32],
+        }
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn test_params_nu6_3() -> VotingRoundParams {
+        VotingRoundParams {
+            snapshot_height: REGTEST_NU6_3_SNAPSHOT_HEIGHT,
+            ..test_params()
+        }
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn nu6_3_branch_id() -> u32 {
+        u32::from(zcash_protocol::consensus::BranchId::Nu6_3)
+    }
+
+    fn test_params_with_nc_root(nc_root: Vec<u8>) -> VotingRoundParams {
+        VotingRoundParams {
+            nc_root,
+            ..test_params()
         }
     }
 
@@ -1557,6 +1675,7 @@ mod tests {
         (rk, (&sig).into())
     }
 
+    #[cfg(zcash_unstable = "nu6.3")]
     fn sign_delegation_request(seed: &[u8], request: &DelegationSigningRequest) -> [u8; 64] {
         use orchard::keys::SpendAuthorizingKey;
         use zcash_keys::keys::UnifiedSpendingKey;
@@ -1577,6 +1696,76 @@ mod tests {
         let sig = rsk.sign(&mut rng, &request.sighash);
 
         (&sig).into()
+    }
+
+    struct StaticPirTransport;
+
+    impl pir_client::Transport for StaticPirTransport {
+        fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
+            Box::pin(async move {
+                let path = request_path(url);
+                match path {
+                    "/tier0" => Ok(transport_response(vec![
+                        0;
+                        ((1usize
+                            << pir_types::TIER0_LAYERS)
+                            - 1)
+                            * 32
+                            + pir_types::TIER1_ROWS * 64
+                    ])),
+                    "/params/tier1" => Ok(transport_response(
+                        serde_json::to_vec(&pir_types::YpirScenario {
+                            num_items: pir_types::TIER1_YPIR_ROWS,
+                            item_size_bits: pir_types::TIER1_ITEM_BITS,
+                        })
+                        .unwrap(),
+                    )),
+                    "/params/tier2" => Ok(transport_response(
+                        serde_json::to_vec(&pir_types::YpirScenario {
+                            num_items: pir_types::TIER1_YPIR_ROWS,
+                            item_size_bits: pir_types::TIER2_ITEM_BITS,
+                        })
+                        .unwrap(),
+                    )),
+                    "/root" => Ok(transport_response(
+                        serde_json::to_vec(&pir_types::RootInfo {
+                            root29: hex::encode([0u8; 32]),
+                            root25: hex::encode([0u8; 32]),
+                            num_ranges: 1,
+                            pir_depth: pir_types::PIR_DEPTH,
+                            height: None,
+                        })
+                        .unwrap(),
+                    )),
+                    _ => Err(anyhow::anyhow!("unexpected GET {path}")),
+                }
+            })
+        }
+
+        fn post<'a>(&'a self, url: &'a str, _body: Vec<u8>) -> pir_client::TransportFuture<'a> {
+            Box::pin(async move {
+                Err(anyhow::anyhow!(
+                    "unexpected POST {}; proofs should be cached",
+                    request_path(url)
+                ))
+            })
+        }
+    }
+
+    fn request_path(url: &str) -> &str {
+        let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+        without_scheme
+            .find('/')
+            .map(|idx| &without_scheme[idx..])
+            .unwrap_or("/")
+    }
+
+    fn transport_response(body: Vec<u8>) -> pir_client::TransportResponse {
+        pir_client::TransportResponse {
+            status: 200,
+            headers: Vec::new(),
+            body,
+        }
     }
 
     fn identity_test_note() -> NoteInfo {
@@ -1671,20 +1860,33 @@ mod tests {
         valid_tree_witness(position, leaf)
     }
 
+    fn init_round_for_witnesses(db: &VotingDb, witnesses: &[WitnessData]) {
+        let nc_root = witnesses
+            .first()
+            .expect("test witness fixture is not empty")
+            .root
+            .clone();
+        db.init_round(Network::Testnet, &test_params_with_nc_root(nc_root), None)
+            .unwrap();
+    }
+
     #[test]
     fn test_init_and_get_round() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let state = db.get_round_state(ROUND_ID).unwrap();
         assert_eq!(state.phase, RoundPhase::Initialized);
-        assert_eq!(state.snapshot_height, 1000);
+        assert_eq!(state.network, Network::Testnet);
+        assert_eq!(state.snapshot_height, TESTNET_NU6_SNAPSHOT_HEIGHT);
     }
 
     #[test]
     fn test_advance_round_phase_is_idempotent() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         db.advance_round_phase(ROUND_ID, RoundPhase::HotkeyGenerated)
             .unwrap();
@@ -1698,7 +1900,8 @@ mod tests {
     #[test]
     fn test_advance_round_phase_rejects_regression() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         db.advance_round_phase(ROUND_ID, RoundPhase::DelegationConstructed)
             .unwrap();
@@ -1714,7 +1917,8 @@ mod tests {
         let db = test_db();
         assert!(!db.has_round(ROUND_ID).unwrap());
 
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         assert!(db.has_round(ROUND_ID).unwrap());
 
         db.set_wallet_id("other-wallet");
@@ -1724,7 +1928,8 @@ mod tests {
     #[test]
     fn test_list_and_clear_rounds() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let rounds = db.list_rounds().unwrap();
         assert_eq!(rounds.len(), 1);
@@ -1743,34 +1948,40 @@ mod tests {
         assert!(err.to_string().contains("rseed_signed"), "{err}");
     }
 
+    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_padded_pir_nullifiers_match_persisted_dummy_nullifiers() {
-        use orchard::{note::Rho, value::NoteValue};
+        use orchard::{
+            note::{NoteVersion, Rho},
+            value::NoteValue,
+        };
         use rand::rngs::OsRng;
         use zcash_keys::keys::UnifiedSpendingKey;
-        use zcash_protocol::consensus::TEST_NETWORK;
         use zip32::{AccountId, Scope};
 
         let seed = [0x42u8; 32];
         let account = AccountId::try_from(0u32).unwrap();
-        let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, &seed, account).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&Network::Regtest, &seed, account).unwrap();
         let ufvk = usk.to_unified_full_viewing_key();
         let fvk = ufvk.orchard().unwrap().clone();
         let address = fvk.address_at(0u32, Scope::External);
 
         let mut rng = OsRng;
-        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V3);
         let note = orchard::Note::new(
             address,
             NoteValue::from_raw(13_000_000),
             Rho::from_nf_old(parent_note.nullifier(&fvk)),
+            NoteVersion::V3,
             &mut rng,
         );
         let note_info =
-            NoteInfo::from_orchard_note(&note, 7, Scope::External, &ufvk, &TEST_NETWORK).unwrap();
+            NoteInfo::from_orchard_note(&note, 7, Scope::External, &ufvk, &Network::Regtest)
+                .unwrap();
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Regtest, &test_params_nu6_3(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note_info.clone()]).unwrap();
         {
             let conn = db.conn();
@@ -1793,27 +2004,27 @@ mod tests {
             .unwrap();
         assert_eq!(warmed, warmed_again);
         let precompute_nullifiers =
-            padded_nullifiers_for_circuit(&[note_info.clone()], &warmed, Network::Testnet).unwrap();
+            padded_nullifiers_for_circuit(&[note_info.clone()], &warmed, Network::Regtest).unwrap();
         {
             let conn = db.conn();
             assert!(queries::load_pczt_sighash(&conn, ROUND_ID, W, 0).is_err());
         }
 
         let voting_hotkey =
-            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Testnet).unwrap();
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Regtest).unwrap();
         let seed_fingerprint = [0x42u8; 32];
         let keys =
             test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, seed_fingerprint, 0);
 
         let result = db
-            .build_governance_pczt(ROUND_ID, 0, &[note_info.clone()], &keys, 0xC8E71055)
+            .build_governance_pczt(ROUND_ID, 0, &[note_info.clone()], &keys, nu6_3_branch_id())
             .unwrap();
 
         let conn = db.conn();
         let stored_dummy = queries::load_dummy_nullifiers(&conn, ROUND_ID, W, 0).unwrap();
         let padded_secrets = queries::load_padded_note_secrets(&conn, ROUND_ID, W, 0).unwrap();
         let pir_nullifiers =
-            padded_nullifiers_for_circuit(&[note_info], &padded_secrets, Network::Testnet).unwrap();
+            padded_nullifiers_for_circuit(&[note_info], &padded_secrets, Network::Regtest).unwrap();
 
         assert_eq!(result.padded_note_secrets, warmed_again);
         assert_eq!(precompute_nullifiers, result.dummy_nullifiers);
@@ -1823,82 +2034,15 @@ mod tests {
 
     #[test]
     fn test_padded_secret_warmup_reuses_cached_pir_proofs_without_pczt() {
-        use orchard::{note::Rho, value::NoteValue};
+        use orchard::{
+            note::{NoteVersion, Rho},
+            value::NoteValue,
+        };
         use rand::rngs::OsRng;
         use voting_circuits::delegation::ImtProvider;
         use zcash_keys::keys::UnifiedSpendingKey;
         use zcash_protocol::consensus::TEST_NETWORK;
         use zip32::{AccountId, Scope};
-
-        struct StaticPirTransport;
-
-        impl pir_client::Transport for StaticPirTransport {
-            fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
-                Box::pin(async move {
-                    let path = request_path(url);
-                    match path {
-                        "/tier0" => Ok(transport_response(vec![
-                            0;
-                            ((1usize
-                                << pir_types::TIER0_LAYERS)
-                                - 1)
-                                * 32
-                                + pir_types::TIER1_ROWS * 64
-                        ])),
-                        "/params/tier1" => Ok(transport_response(
-                            serde_json::to_vec(&pir_types::YpirScenario {
-                                num_items: pir_types::TIER1_YPIR_ROWS,
-                                item_size_bits: pir_types::TIER1_ITEM_BITS,
-                            })
-                            .unwrap(),
-                        )),
-                        "/params/tier2" => Ok(transport_response(
-                            serde_json::to_vec(&pir_types::YpirScenario {
-                                num_items: pir_types::TIER1_YPIR_ROWS,
-                                item_size_bits: pir_types::TIER2_ITEM_BITS,
-                            })
-                            .unwrap(),
-                        )),
-                        "/root" => Ok(transport_response(
-                            serde_json::to_vec(&pir_types::RootInfo {
-                                root29: hex::encode([0u8; 32]),
-                                root25: hex::encode([0u8; 32]),
-                                num_ranges: 1,
-                                pir_depth: pir_types::PIR_DEPTH,
-                                height: None,
-                            })
-                            .unwrap(),
-                        )),
-                        _ => Err(anyhow::anyhow!("unexpected GET {path}")),
-                    }
-                })
-            }
-
-            fn post<'a>(&'a self, url: &'a str, _body: Vec<u8>) -> pir_client::TransportFuture<'a> {
-                Box::pin(async move {
-                    Err(anyhow::anyhow!(
-                        "unexpected POST {}; proofs should be cached",
-                        request_path(url)
-                    ))
-                })
-            }
-        }
-
-        fn request_path(url: &str) -> &str {
-            let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-            without_scheme
-                .find('/')
-                .map(|idx| &without_scheme[idx..])
-                .unwrap_or("/")
-        }
-
-        fn transport_response(body: Vec<u8>) -> pir_client::TransportResponse {
-            pir_client::TransportResponse {
-                status: 200,
-                headers: Vec::new(),
-                body,
-            }
-        }
 
         let seed = [0x42u8; 32];
         let account = AccountId::try_from(0u32).unwrap();
@@ -1910,11 +2054,12 @@ mod tests {
         let mut rng = OsRng;
         let mut notes = Vec::new();
         for position in 0..BUNDLE_NOTE_SLOTS {
-            let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+            let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
             let note = orchard::Note::new(
                 address,
                 NoteValue::from_raw(13_000_000),
                 Rho::from_nf_old(parent_note.nullifier(&fvk)),
+                NoteVersion::V2,
                 &mut rng,
             );
             notes.push(
@@ -1934,7 +2079,7 @@ mod tests {
         params.nullifier_imt_root = imt.root().to_repr().to_vec();
 
         let db = test_db();
-        db.init_round(&params, None).unwrap();
+        db.init_round(Network::Testnet, &params, None).unwrap();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         {
             let conn = db.conn();
@@ -1964,9 +2109,67 @@ mod tests {
     }
 
     #[test]
+    fn test_precompute_delegation_pir_rejects_network_mismatch() {
+        let notes = vec![identity_test_note()];
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
+
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            std::sync::Arc::new(StaticPirTransport),
+        )
+        .unwrap();
+
+        let err = db
+            .precompute_delegation_pir(ROUND_ID, 0, &notes, &pir_client, Network::Mainnet)
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains(
+                "delegation PIR network Mainnet does not match stored round network Testnet"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_build_vote_commitment_rejects_network_mismatch_before_zkp2_inputs() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+
+        let err = db
+            .build_vote_commitment(
+                ROUND_ID,
+                0,
+                &[0x99; 64],
+                Network::Mainnet,
+                1,
+                0,
+                2,
+                &[[0u8; 32]; crate::vote::VAN_AUTH_PATH_LEN],
+                0,
+                100,
+                false,
+                &crate::types::NoopProgressReporter,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains(
+                "vote signer network Mainnet does not match stored round network Testnet"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn test_ensure_bundles() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         // A full slot count of 13M notes fits in one default bundle.
         let notes: Vec<NoteInfo> = (0..BUNDLE_NOTE_SLOTS)
@@ -1993,7 +2196,8 @@ mod tests {
     #[test]
     fn test_ensure_bundles_creates_once_then_reuses_matching_rows() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         let notes = vec![identity_test_note()];
 
         let created = db.ensure_bundles(ROUND_ID, &notes).unwrap();
@@ -2007,7 +2211,8 @@ mod tests {
     #[test]
     fn test_ensure_bundles_rejects_current_note_selection_drift() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[identity_test_note()])
             .unwrap();
 
@@ -2045,7 +2250,8 @@ mod tests {
     #[test]
     fn test_ensure_bundles_rolls_back_partial_insert_on_error() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let notes: Vec<NoteInfo> = (0..6)
             .map(|i| NoteInfo {
@@ -2116,7 +2322,8 @@ mod tests {
         }
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         let note = identity_test_note();
         let conn = db.conn();
         queries::insert_bundle_notes(&conn, ROUND_ID, W, 0, &[note.clone()]).unwrap();
@@ -2146,7 +2353,8 @@ mod tests {
     #[test]
     fn test_require_bundle_notes_allows_legacy_position_only_rows() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         let note = identity_test_note();
         let conn = db.conn();
         queries::insert_bundle(&conn, ROUND_ID, W, 0, &[note.position]).unwrap();
@@ -2164,7 +2372,8 @@ mod tests {
         use orchard::keys::{FullViewingKey, SpendingKey};
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let notes = vec![NoteInfo {
             commitment: vec![0x01; 32],
@@ -2191,16 +2400,304 @@ mod tests {
             test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, seed_fingerprint, 0);
 
         let err = db
-            .build_governance_pczt(ROUND_ID, 0, &substituted_notes, &keys, 0xC8E71055)
+            .build_governance_pczt(
+                ROUND_ID,
+                0,
+                &substituted_notes,
+                &keys,
+                TESTNET_NU6_BRANCH_ID,
+            )
             .unwrap_err();
 
         assert!(err.to_string().contains("note identity mismatch"));
     }
 
     #[test]
+    fn test_build_governance_pczt_rejects_branch_mismatch_before_padded_secrets() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+
+        let note = identity_test_note();
+        db.ensure_bundles(ROUND_ID, &[note.clone()]).unwrap();
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Testnet).unwrap();
+        let seed_fingerprint = [0x42u8; 32];
+        let keys =
+            test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, seed_fingerprint, 0);
+
+        let err = db
+            .build_governance_pczt(ROUND_ID, 0, &[note], &keys, 0xC8E7_1055)
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("does not match snapshot height"),
+            "{err}"
+        );
+        let conn = db.conn();
+        assert!(
+            queries::load_padded_note_secrets_optional(&conn, ROUND_ID, W, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_build_governance_pczt_rejects_key_network_mismatch_before_padded_secrets() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+
+        let note = identity_test_note();
+        db.ensure_bundles(ROUND_ID, &[note.clone()]).unwrap();
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Mainnet).unwrap();
+        let seed_fingerprint = [0x42u8; 32];
+        let keys =
+            test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, seed_fingerprint, 0);
+
+        let err = db
+            .build_governance_pczt(ROUND_ID, 0, &[note], &keys, TESTNET_NU6_BRANCH_ID)
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("does not match stored round network"),
+            "{err}"
+        );
+        let conn = db.conn();
+        assert!(
+            queries::load_padded_note_secrets_optional(&conn, ROUND_ID, W, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_get_delegation_signing_request_rejects_key_network_mismatch() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Mainnet).unwrap();
+        let keys = test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, [0x42; 32], 0);
+        let alpha = pallas::Scalar::from(7).to_repr();
+        let pczt_sighash = [0x99; 32];
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+            queries::store_delegation_data(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &[0x11; 32],
+                &[],
+                &[0x22; 32],
+                &[],
+                &[0x33; 32],
+                &[0x44; 32],
+                &alpha,
+                &[0x66; 32],
+                &[0x77; 32],
+                &[0x88; 32],
+                1,
+                0,
+                &[],
+                &pczt_sighash,
+            )
+            .unwrap();
+        }
+
+        let err = db
+            .get_delegation_signing_request(ROUND_ID, 0, &keys)
+            .expect_err("signing request network must match stored round");
+
+        assert!(
+            err.to_string().contains(
+                "delegation keys network Mainnet does not match stored round network Testnet"
+            ),
+            "{err}"
+        );
+    }
+
+    fn store_minimal_delegation_setup(conn: &rusqlite::Connection, alpha: &[u8]) {
+        queries::store_delegation_data(
+            conn,
+            ROUND_ID,
+            W,
+            0,
+            &[0x11; 32],
+            &[],
+            &[0x22; 32],
+            &[],
+            &[0x33; 32],
+            &[0x44; 32],
+            alpha,
+            &[0x66; 32],
+            &[0x77; 32],
+            &[0x88; 32],
+            1,
+            0,
+            &[],
+            &[0x99; 32],
+        )
+        .unwrap();
+        queries::store_padded_note_secrets_if_absent(conn, ROUND_ID, W, 0, &[]).unwrap();
+    }
+
+    #[test]
+    fn test_build_and_prove_delegation_rejects_key_network_mismatch_before_pir() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        let db = test_db();
+        let witnesses = vec![valid_empty_tree_witness(0)];
+        init_round_for_witnesses(&db, &witnesses);
+        let note = note_info_for_witness(&witnesses[0]);
+        let alpha = pallas::Scalar::from(7).to_repr();
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[note.position]).unwrap();
+            store_minimal_delegation_setup(&conn, &alpha);
+            queries::store_witnesses(&conn, ROUND_ID, W, 0, &witnesses).unwrap();
+        }
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Mainnet).unwrap();
+        let keys = test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, [0x42; 32], 0);
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            std::sync::Arc::new(StaticPirTransport),
+        )
+        .unwrap();
+
+        let err = db
+            .build_and_prove_delegation(
+                ROUND_ID,
+                0,
+                &[note],
+                &keys,
+                &pir_client,
+                &crate::types::NoopProgressReporter,
+            )
+            .expect_err("prove path must validate delegation key network");
+
+        assert!(
+            err.to_string().contains(
+                "delegation keys network Mainnet does not match stored round network Testnet"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_build_and_prove_delegation_rejects_raw_wrong_root_witness() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        let witnesses = vec![valid_empty_tree_witness(0)];
+        let note = note_info_for_witness(&witnesses[0]);
+        let alpha = pallas::Scalar::from(7).to_repr();
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[note.position]).unwrap();
+            store_minimal_delegation_setup(&conn, &alpha);
+            queries::store_witnesses(&conn, ROUND_ID, W, 0, &witnesses).unwrap();
+        }
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Testnet).unwrap();
+        let keys = test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, [0x42; 32], 0);
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            std::sync::Arc::new(StaticPirTransport),
+        )
+        .unwrap();
+
+        let err = db
+            .build_and_prove_delegation(
+                ROUND_ID,
+                0,
+                &[note],
+                &keys,
+                &pir_client,
+                &crate::types::NoopProgressReporter,
+            )
+            .expect_err("raw witness rows must match stored round root before proving");
+
+        assert!(
+            err.to_string()
+                .contains("witness root for position 0 does not match stored round nc_root"),
+            "{err}"
+        );
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    #[test]
+    fn test_build_governance_pczt_rejects_nu6_3_branch_for_pre_nu6_3_snapshot() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+        use zcash_protocol::consensus::BranchId;
+
+        let mut params = test_params();
+        params.snapshot_height = u64::from(crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT) - 1;
+
+        let db = test_db();
+        db.init_round(Network::Regtest, &params, None).unwrap();
+
+        let note = identity_test_note();
+        db.ensure_bundles(ROUND_ID, &[note.clone()]).unwrap();
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let voting_hotkey =
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Regtest).unwrap();
+        let seed_fingerprint = [0x42u8; 32];
+        let keys =
+            test_delegation_keys(fvk.to_bytes().to_vec(), &voting_hotkey, seed_fingerprint, 0);
+
+        let err = db
+            .build_governance_pczt(ROUND_ID, 0, &[note], &keys, u32::from(BranchId::Nu6_3))
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("does not match snapshot height"),
+            "{err}"
+        );
+        let conn = db.conn();
+        assert!(
+            queries::load_padded_note_secrets_optional(&conn, ROUND_ID, W, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_store_proof_result_fields_rejects_pczt_mismatch() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let rk = [0x10; 32];
         let wrong_rk = [0x11; 32];
@@ -2279,7 +2776,8 @@ mod tests {
     #[test]
     fn test_store_proof_result_fields_allows_legacy_missing_pczt_fields() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let rk = [0x10; 32];
         let gov_nullifiers = vec![vec![0x20; 32]; 5];
@@ -2328,7 +2826,8 @@ mod tests {
     #[test]
     fn test_store_and_load_tree_state() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let tree_state = vec![0xCC; 1024];
         db.store_tree_state(ROUND_ID, &tree_state).unwrap();
@@ -2341,7 +2840,8 @@ mod tests {
     #[test]
     fn test_get_commitment_bundle_rejects_missing_tree_position() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         let conn = db.conn();
         queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
         queries::store_vote(&conn, ROUND_ID, W, 0, 1, 0, b"commitment").unwrap();
@@ -2364,8 +2864,8 @@ mod tests {
     #[test]
     fn has_witnesses_reflects_cached_state() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
         let witnesses = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        init_round_for_witnesses(&db, &witnesses);
         let notes = witnesses
             .iter()
             .map(note_info_for_witness)
@@ -2392,16 +2892,40 @@ mod tests {
     }
 
     #[test]
+    fn test_store_witnesses_rejects_wrong_round_root() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        let witnesses = vec![valid_empty_tree_witness(0)];
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+        }
+
+        let err = db
+            .store_witnesses(ROUND_ID, 0, &witnesses)
+            .expect_err("witness root must match stored round root");
+
+        assert!(
+            err.to_string()
+                .contains("witness root for position 0 does not match stored round nc_root"),
+            "{err}"
+        );
+        assert!(!db.has_witnesses(ROUND_ID, 0).unwrap());
+    }
+
+    #[test]
     fn test_replace_bundle_witnesses_replaces_cached_bundle() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        init_round_for_witnesses(&db, &original);
 
         {
             let conn = db.conn();
             queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0, 1]).unwrap();
         }
 
-        let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
         db.store_witnesses(ROUND_ID, 0, &original).unwrap();
 
         let ignored = vec![
@@ -2420,10 +2944,7 @@ mod tests {
             assert_eq!(loaded[1].position, 1);
         }
 
-        let replacement = vec![
-            valid_field_tree_witness(0, 1),
-            valid_field_tree_witness(1, 2),
-        ];
+        let replacement = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
         db.replace_bundle_witnesses(ROUND_ID, 0, &replacement)
             .unwrap();
 
@@ -2437,16 +2958,49 @@ mod tests {
     }
 
     #[test]
-    fn test_replace_bundle_witnesses_rejects_position_mismatch_without_clearing_cache() {
+    fn test_replace_bundle_witnesses_rejects_wrong_round_root_without_clearing_cache() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        init_round_for_witnesses(&db, &original);
 
         {
             let conn = db.conn();
             queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0, 1]).unwrap();
         }
 
+        db.store_witnesses(ROUND_ID, 0, &original).unwrap();
+
+        let invalid_replacement = vec![
+            valid_field_tree_witness(0, 7),
+            valid_field_tree_witness(1, 8),
+        ];
+        let err = db
+            .replace_bundle_witnesses(ROUND_ID, 0, &invalid_replacement)
+            .expect_err("replacement witness root must match stored round root");
+        assert!(
+            err.to_string()
+                .contains("witness root for position 0 does not match stored round nc_root"),
+            "{err}"
+        );
+
+        let conn = db.conn();
+        let loaded = queries::load_witnesses(&conn, ROUND_ID, W, 0).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].note_commitment, original[0].note_commitment);
+        assert_eq!(loaded[1].note_commitment, original[1].note_commitment);
+    }
+
+    #[test]
+    fn test_replace_bundle_witnesses_rejects_position_mismatch_without_clearing_cache() {
+        let db = test_db();
         let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        init_round_for_witnesses(&db, &original);
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0, 1]).unwrap();
+        }
+
         db.store_witnesses(ROUND_ID, 0, &original).unwrap();
 
         let invalid_replacement = vec![valid_empty_tree_witness(2)];
@@ -2469,7 +3023,8 @@ mod tests {
     #[test]
     fn test_record_vote_submission() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(
             ROUND_ID,
             &[NoteInfo {
@@ -2502,7 +3057,8 @@ mod tests {
     #[test]
     fn test_mark_recovery_submission_writes_are_idempotent_and_conflict_checked() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[identity_test_note()])
             .unwrap();
         db.insert_vote_fixture(ROUND_ID, 0, 1, 0, &[0xAA; 32])
@@ -2532,7 +3088,8 @@ mod tests {
     #[test]
     fn test_get_commitment_bundle_recovery_fields_reports_pending_position() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[identity_test_note()])
             .unwrap();
         db.insert_vote_fixture(ROUND_ID, 0, 1, 0, &[0xAA; 32])
@@ -2568,7 +3125,8 @@ mod tests {
         }
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         assert_invalid_input(
             db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx")
@@ -2630,7 +3188,8 @@ mod tests {
     #[test]
     fn test_clear_recovery_state_resets_vote_recovery() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[identity_test_note()])
             .unwrap();
         db.insert_vote_fixture(ROUND_ID, 0, 1, 0, &[0xAA; 32])
@@ -2653,7 +3212,8 @@ mod tests {
     #[test]
     fn test_insert_vote_fixture() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(
             ROUND_ID,
             &[NoteInfo {
@@ -2680,12 +3240,15 @@ mod tests {
         assert_eq!(votes[0].choice, 1);
     }
 
+    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_delegation_signing_request_signature_path_submits() {
-        use orchard::{note::Rho, value::NoteValue};
+        use orchard::{
+            note::{NoteVersion, Rho},
+            value::NoteValue,
+        };
         use rand::rngs::OsRng;
         use zcash_keys::keys::UnifiedSpendingKey;
-        use zcash_protocol::consensus::TEST_NETWORK;
         use zip32::{fingerprint::SeedFingerprint, AccountId, Scope};
 
         struct StaticBranchId(u32);
@@ -2697,29 +3260,32 @@ mod tests {
         }
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Regtest, &test_params_nu6_3(), None)
+            .unwrap();
 
         let sender_seed = [0x42; 32];
         let account_index = 0;
         let account = AccountId::try_from(account_index).unwrap();
-        let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, &sender_seed, account).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&Network::Regtest, &sender_seed, account).unwrap();
         let ufvk = usk.to_unified_full_viewing_key();
         let fvk = ufvk.orchard().unwrap().clone();
         let address = fvk.address_at(0u32, Scope::External);
         let mut rng = OsRng;
-        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V3);
         let note = orchard::Note::new(
             address,
             NoteValue::from_raw(13_000_000),
             Rho::from_nf_old(parent_note.nullifier(&fvk)),
+            NoteVersion::V3,
             &mut rng,
         );
         let note_info =
-            NoteInfo::from_orchard_note(&note, 7, Scope::External, &ufvk, &TEST_NETWORK).unwrap();
+            NoteInfo::from_orchard_note(&note, 7, Scope::External, &ufvk, &Network::Regtest)
+                .unwrap();
         db.ensure_bundles(ROUND_ID, &[note_info.clone()]).unwrap();
 
         let voting_hotkey =
-            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Testnet).unwrap();
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Regtest).unwrap();
         let seed_fingerprint = SeedFingerprint::from_seed(&sender_seed).unwrap().to_bytes();
         let keys = test_delegation_keys(
             fvk.to_bytes().to_vec(),
@@ -2733,7 +3299,7 @@ mod tests {
             0,
             &[note_info],
             &keys,
-            &StaticBranchId(0xC8E71055),
+            &StaticBranchId(nu6_3_branch_id()),
             &crate::types::NoopProgressReporter,
         )
         .unwrap();
@@ -2741,7 +3307,7 @@ mod tests {
 
         let request = crate::delegate::signing_request(&db, ROUND_ID, 0, &keys).unwrap();
         assert_eq!(request.account_index, account_index);
-        assert_eq!(request.network, crate::types::Network::Testnet);
+        assert_eq!(request.network, crate::types::Network::Regtest);
         assert_eq!(request.seed_fingerprint, seed_fingerprint);
         assert_eq!(request.sighash, setup.pczt_sighash);
 
@@ -2762,7 +3328,8 @@ mod tests {
     #[test]
     fn test_get_delegation_submission_with_signature_requires_stored_sighash() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
 
         let stored_sighash = [0x99; 32];
         let wrong_sighash = [0x98; 32];
@@ -2842,12 +3409,14 @@ mod tests {
     }
 
     /// Multi-bundle test: 6 notes → 2 bundles (5+1), independent delegation + vote storage per bundle.
+    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_multi_bundle_delegation_and_voting() {
         use orchard::keys::{FullViewingKey, SpendingKey};
 
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Regtest, &test_params_nu6_3(), None)
+            .unwrap();
 
         // Create 6 notes with distinct positions and unique nullifiers
         let notes: Vec<NoteInfo> = (0..6)
@@ -2890,7 +3459,7 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let fvk_bytes = fvk.to_bytes().to_vec();
         let voting_hotkey =
-            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Testnet).unwrap();
+            VotingHotkey::from_stored_secret(&[0x43; 64], crate::types::Network::Regtest).unwrap();
         let seed_fingerprint = [0x42u8; 32];
         let keys = test_delegation_keys(fvk_bytes.clone(), &voting_hotkey, seed_fingerprint, 0);
 
@@ -2899,7 +3468,7 @@ mod tests {
 
         for (i, chunk) in chunk_result.bundles.iter().enumerate() {
             let result = db
-                .build_governance_pczt(ROUND_ID, i as u32, chunk, &keys, 0xC8E71055)
+                .build_governance_pczt(ROUND_ID, i as u32, chunk, &keys, nu6_3_branch_id())
                 .unwrap();
 
             // Each bundle should have valid delegation data
@@ -2970,7 +3539,8 @@ mod tests {
     #[test]
     fn test_share_delegation_lifecycle() {
         let db = test_db();
-        db.init_round(&test_params(), None).unwrap();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
         db.ensure_bundles(
             ROUND_ID,
             &[NoteInfo {

@@ -569,6 +569,9 @@ pub fn commit(
 ) -> Result<VoteCommit, VotingError> {
     validate_draft_vote(draft)?;
 
+    let (secret, network) = signer_secret_and_network(signer);
+    db.require_round_network(round_id, network, "vote signer")?;
+
     if let Some(recovered) = recovery_bundle(db, round_id, bundle_index, draft.proposal_id)? {
         if recovery_matches_draft(&recovered, draft) {
             return commit_from_recovery(&recovered);
@@ -576,7 +579,6 @@ pub fn commit(
     }
     ensure_vote_rebuild_allowed(db, round_id, bundle_index, draft.proposal_id)?;
 
-    let (secret, network) = signer_secret_and_network(signer);
     stages.on_stage(VoteCommitStage::ProofStarting {
         proposal_id: draft.proposal_id,
         bundle_index,
@@ -1536,7 +1538,8 @@ mod tests {
     fn db_with_vote() -> VotingDb {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         queries::store_vote(&db.conn(), ROUND_ID, WALLET_ID, 0, 1, 2, &[0xCA; 32]).unwrap();
         db
@@ -1974,6 +1977,63 @@ mod tests {
                 .unwrap()
                 .vc_tree_position,
             789
+        );
+    }
+
+    #[test]
+    fn commit_rejects_signer_network_mismatch_before_recovery_replay() {
+        let db = db_with_vote();
+        let recovery = recovery_bundle_fixture();
+        let commitment = stored_vote_commitment_bytes(&recovery).unwrap();
+        queries::store_vote(
+            &db.conn(),
+            ROUND_ID,
+            WALLET_ID,
+            recovery.bundle_index,
+            recovery.proposal_id,
+            recovery.vote_decision,
+            &commitment,
+        )
+        .unwrap();
+        store_recovery_json_for_vote(
+            &db,
+            ROUND_ID,
+            recovery.bundle_index,
+            recovery.proposal_id,
+            recovery.vote_decision,
+            Some(&commitment),
+            &serialize_recovery(&recovery).unwrap(),
+        )
+        .unwrap();
+
+        let err = commit(
+            &db,
+            ROUND_ID,
+            0,
+            &DraftVote {
+                proposal_id: 1,
+                choice: 2,
+                num_options: 3,
+                single_share: false,
+                vc_tree_position: 456,
+            },
+            &VanWitness {
+                auth_path: vec![vec![0xAA; 32]; VAN_AUTH_PATH_LEN],
+                position: 7,
+                anchor_height: 123,
+            },
+            VoteSigner::hotkey(
+                &VotingHotkey::from_stored_secret(&[0x99; 64], Network::Mainnet).unwrap(),
+            ),
+            &NoopProgressReporter,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains(
+                "vote signer network Mainnet does not match stored round network Testnet"
+            ),
+            "{err}"
         );
     }
 

@@ -20,6 +20,7 @@
 //! | `0x0F`    | `0x0F \|\| u64 BE shard_index`   | shard blob      |
 //! | `0x10`    | `0x10`                           | cap blob        |
 //! | `0x11`    | `0x11 \|\| u32 BE checkpoint_id` | checkpoint blob |
+//! | `0x12`    | `0x12 \|\| u32 BE checkpoint_id` | retained marker |
 //!
 //! # Buffer ownership
 //!
@@ -86,12 +87,13 @@ impl fmt::Display for KvError {
 impl std::error::Error for KvError {}
 
 // ---------------------------------------------------------------------------
-// KV key constants (must match keys.go 0x0F / 0x10 / 0x11)
+// KV key constants (must match keys.go 0x0F / 0x10 / 0x11 / 0x12)
 // ---------------------------------------------------------------------------
 
 const SHARD_PREFIX: u8 = 0x0F;
 const CAP_KEY: u8 = 0x10;
 const CHECKPOINT_PREFIX: u8 = 0x11;
+const RETAINED_CHECKPOINT_PREFIX: u8 = 0x12;
 
 fn shard_key(index: u64) -> [u8; 9] {
     let mut k = [0u8; 9];
@@ -107,6 +109,13 @@ fn cap_key() -> [u8; 1] {
 fn checkpoint_key(id: u32) -> [u8; 5] {
     let mut k = [0u8; 5];
     k[0] = CHECKPOINT_PREFIX;
+    k[1..].copy_from_slice(&id.to_be_bytes());
+    k
+}
+
+fn retained_checkpoint_key(id: u32) -> [u8; 5] {
+    let mut k = [0u8; 5];
+    k[0] = RETAINED_CHECKPOINT_PREFIX;
     k[1..].copy_from_slice(&id.to_be_bytes());
     k
 }
@@ -554,6 +563,29 @@ impl ShardStore for KvShardStore {
     fn remove_checkpoint(&mut self, checkpoint_id: &u32) -> Result<(), KvError> {
         let key = checkpoint_key(*checkpoint_id);
         self.cb.delete(&key)
+    }
+
+    fn add_retained_checkpoint(&mut self, checkpoint_id: u32) -> Result<(), KvError> {
+        let key = retained_checkpoint_key(checkpoint_id);
+        self.cb.set(&key, &[])
+    }
+
+    fn remove_retained_checkpoint(&mut self, checkpoint_id: &u32) -> Result<(), KvError> {
+        let key = retained_checkpoint_key(*checkpoint_id);
+        self.cb.delete(&key)
+    }
+
+    fn retained_checkpoints(&self) -> Result<BTreeSet<u32>, KvError> {
+        let prefix = [RETAINED_CHECKPOINT_PREFIX];
+        let mut iter = self.cb.iter(&prefix, false);
+        let mut checkpoints = BTreeSet::new();
+        while let Some((key, _)) = iter.next() {
+            if key.len() < 5 {
+                continue;
+            }
+            checkpoints.insert(u32::from_be_bytes(key[1..5].try_into().unwrap()));
+        }
+        Ok(checkpoints)
     }
 
     fn truncate_checkpoints_retaining(&mut self, checkpoint_id: &u32) -> Result<(), KvError> {

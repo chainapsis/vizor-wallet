@@ -1,6 +1,7 @@
 CREATE TABLE rounds (
     round_id            TEXT NOT NULL,
     wallet_id           TEXT NOT NULL DEFAULT '',
+    network             TEXT NOT NULL CHECK (network IN ('mainnet', 'testnet', 'regtest')),
     snapshot_height     INTEGER NOT NULL,
     ea_pk               BLOB NOT NULL,
     nc_root             BLOB NOT NULL,

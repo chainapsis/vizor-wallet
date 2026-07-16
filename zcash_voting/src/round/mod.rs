@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     note_bundling::{canonical_note_bundle_plan_for_notes, BundlePolicy},
     storage::{queries, RoundState, VotingDb as InnerVotingDb},
-    types::{NoteInfo, VotingError, VotingRoundParams},
+    types::{Network, NoteInfo, VotingError, VotingRoundParams},
 };
 
 /// Stable public name for vote-round parameters supplied by the vote chain.
@@ -25,6 +25,7 @@ pub type VotingDb = InnerVotingDb;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoundInfo {
     pub round_id: String,
+    pub network: Network,
     pub snapshot_height: u64,
     pub hotkey_address: Option<String>,
     pub eligible_weight: Option<u64>,
@@ -228,11 +229,12 @@ impl VotingDb {
     /// underlying SQLite constraint.
     pub fn create_round(
         &self,
+        network: Network,
         params: &RoundParams,
         session_json: Option<&str>,
     ) -> Result<(), VotingError> {
         crate::types::validate_round_params(params)?;
-        self.init_round(params, session_json)
+        self.init_round(network, params, session_json)
     }
 
     /// Ensures a round exists for `params`, initializing it when absent.
@@ -241,14 +243,27 @@ impl VotingDb {
     /// first insert.
     pub fn ensure_round(
         &self,
+        network: Network,
         params: &RoundParams,
         session_json: Option<&str>,
     ) -> Result<(), VotingError> {
         crate::types::validate_round_params(params)?;
         if self.has_round(&params.vote_round_id)? {
+            let conn = self.conn();
+            let wallet_id = self.wallet_id();
+            let stored_network =
+                queries::load_round_network(&conn, &params.vote_round_id, &wallet_id)?;
+            if stored_network != network {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "round {} exists for network {:?}, not {:?}",
+                        params.vote_round_id, stored_network, network
+                    ),
+                });
+            }
             return Ok(());
         }
-        self.init_round(params, session_json)
+        self.init_round(network, params, session_json)
     }
 
     /// Ensures a round exists and returns its persisted state.
@@ -257,10 +272,11 @@ impl VotingDb {
     /// with `session_json` and then reloaded.
     pub fn ensure_round_state(
         &self,
+        network: Network,
         params: &RoundParams,
         session_json: Option<&str>,
     ) -> Result<RoundState, VotingError> {
-        self.ensure_round(params, session_json)?;
+        self.ensure_round(network, params, session_json)?;
         self.get_round_state(&params.vote_round_id)
     }
 
@@ -273,26 +289,34 @@ impl VotingDb {
         let wallet_id = self.wallet_id();
         let row = conn
             .query_row(
-                "SELECT snapshot_height, created_at
+                "SELECT network, snapshot_height, created_at
                  FROM rounds
                  WHERE round_id = :round_id AND wallet_id = :wallet_id",
                 named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()
             .map_err(|e| VotingError::Internal {
                 message: format!("failed to load round {round_id}: {e}"),
             })?;
 
-        let Some((snapshot_height, created_at)) = row else {
+        let Some((network, snapshot_height, created_at)) = row else {
             return Ok(None);
         };
+        let network = queries::network_from_storage(&network)?;
 
         let bundle_count = queries::get_bundle_count(&conn, round_id, &wallet_id)?;
         let eligible_weight = round_eligible_weight(&conn, round_id, &wallet_id)?;
 
         Ok(Some(RoundInfo {
             round_id: round_id.to_string(),
+            network,
             snapshot_height: snapshot_height as u64,
             hotkey_address: None,
             eligible_weight,
@@ -498,7 +522,8 @@ mod tests {
     fn test_db(wallet_id: &str) -> VotingDb {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(wallet_id);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(Network::Testnet, &round_params(), None)
+            .unwrap();
         db
     }
 
@@ -539,6 +564,20 @@ mod tests {
             nc_root: vec![0xAA; 32],
             nullifier_imt_root: vec![0xBB; 32],
         }
+    }
+
+    #[test]
+    fn ensure_round_rejects_existing_round_network_mismatch() {
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id("wallet-network");
+        let params = round_params();
+
+        db.ensure_round(Network::Testnet, &params, None).unwrap();
+        let err = db
+            .ensure_round(Network::Mainnet, &params, None)
+            .expect_err("existing round cannot be rebound to another network");
+
+        assert!(err.to_string().contains("exists for network"), "{err}");
     }
 
     fn note(position: u64, value: u64) -> NoteInfo {

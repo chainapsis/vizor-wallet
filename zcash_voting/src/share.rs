@@ -233,7 +233,8 @@ mod tests {
     fn db_with_vote_recovery() -> VotingDb {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         queries::store_vote(&db.conn(), ROUND_ID, WALLET_ID, 0, 1, 2, &[0xCA; 32]).unwrap();
         let json = serialize_recovery(&recovery_bundle_fixture()).unwrap();

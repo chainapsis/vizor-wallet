@@ -46,7 +46,8 @@ mod tests {
     fn sync_rebuilds_when_recovery_marks_already_synced_position() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         let notes = (0..6).map(note).collect::<Vec<_>>();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();

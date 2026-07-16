@@ -30,6 +30,9 @@ pub const MIN_VOTE_OPTIONS: u32 = 2;
 /// Maximum number of options a proposal can declare.
 pub const MAX_VOTE_OPTIONS: u32 = 8;
 
+#[cfg(zcash_unstable = "nu6.3")]
+pub(crate) const REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = 10;
+
 #[derive(Debug, Error)]
 pub enum VotingError {
     #[error("Invalid input: {message}")]
@@ -75,6 +78,12 @@ impl Parameters for Network {
                 | NetworkUpgrade::Nu6
                 | NetworkUpgrade::Nu6_1
                 | NetworkUpgrade::Nu6_2 => Some(BlockHeight::from_u32(1)),
+                #[cfg(zcash_unstable = "nu6.3")]
+                NetworkUpgrade::Nu6_3 => {
+                    Some(BlockHeight::from_u32(REGTEST_NU6_3_ACTIVATION_HEIGHT))
+                }
+                #[cfg(not(zcash_unstable = "nu6.3"))]
+                NetworkUpgrade::Nu6_3 => None,
             },
         }
     }
@@ -177,8 +186,11 @@ impl fmt::Debug for VotingHotkey {
     }
 }
 
-/// A shielded Orchard note from the wallet DB, containing all fields needed
-/// for delegation proof construction and governance PCZT building.
+/// A shielded voting note from the wallet DB.
+///
+/// This branch supports Ironwood/V3 note material for NU6.3 voting rounds.
+/// `NoteInfo` contains the fields needed for delegation proof construction and
+/// governance PCZT building.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteInfo {
     /// Extracted note commitment (cmx), recomputed from note parts.
@@ -202,7 +214,11 @@ pub struct NoteInfo {
 }
 
 impl NoteInfo {
-    /// Build voting note metadata from an Orchard note owned by the given UFVK.
+    /// Builds voting note metadata from a shielded note owned by the given UFVK.
+    ///
+    /// The `orchard` crate represents both Orchard/V2 and Ironwood/V3 notes.
+    /// Callers are responsible for selecting Ironwood/V3 notes for the voting
+    /// round.
     pub fn from_orchard_note<P: consensus::Parameters>(
         note: &orchard::note::Note,
         position: u64,
@@ -234,12 +250,13 @@ impl NoteInfo {
     }
 }
 
-/// A snapshot-eligible Orchard note selected for voting.
+/// A snapshot-eligible shielded note selected for voting.
 ///
 /// `NoteInfo` is the executable proof input. `NoteRef` keeps wallet/UI metadata
 /// beside the same note material so SDKs can display the selected notes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteRef {
+    /// Shielded pool label for wallet/UI display, such as `orchard` or `ironwood`.
     pub pool: String,
     pub txid_hex: String,
     pub output_index: u32,
@@ -331,10 +348,10 @@ pub struct DelegationAction {
 
 /// Governance PCZT for Keystone signing.
 ///
-/// Contains a serialized PCZT whose single Orchard action IS the governance
-/// dummy action (spend of signed note → output to hotkey). The PCZT's rk and
-/// ZIP-244 sighash are internally consistent, so Keystone's SpendAuth signature
-/// will verify against them.
+/// Contains a serialized PCZT whose governance action belongs to the Ironwood
+/// shielded protocol for NU6.3 voting rounds. The PCZT's rk and ZIP-244 sighash
+/// are internally consistent, so Keystone's SpendAuth signature will verify
+/// against them.
 #[derive(Clone, Debug)]
 pub struct GovernancePczt {
     /// Serialized PCZT bytes ready for UR-encoding and Keystone signing.
@@ -576,7 +593,7 @@ pub struct DelegationPirPrecomputeResult {
     pub fetched_count: u32,
 }
 
-/// Merkle witness for a note in the Orchard commitment tree.
+/// Merkle witness for a note in the selected shielded commitment tree.
 #[derive(Clone, Debug)]
 pub struct WitnessData {
     pub note_commitment: Vec<u8>,
@@ -881,7 +898,7 @@ pub fn validate_notes_for_round(notes: &[NoteInfo]) -> Result<(), VotingError> {
 mod tests {
     use super::*;
     use crate::governance::BALLOT_DIVISOR;
-    use orchard::note::{ExtractedNoteCommitment, Rho};
+    use orchard::note::{ExtractedNoteCommitment, NoteVersion, Rho};
     use orchard::value::NoteValue;
     use rand::rngs::OsRng;
     use zcash_keys::keys::UnifiedSpendingKey;
@@ -896,6 +913,7 @@ mod tests {
             time: 0,
             sapling_tree: String::new(),
             orchard_tree: String::new(),
+            ironwood_tree: String::new(),
         }
     }
 
@@ -1015,11 +1033,12 @@ mod tests {
         let address = fvk.address_at(0u32, Scope::External);
 
         let mut rng = OsRng;
-        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
         let note = orchard::Note::new(
             address,
             NoteValue::from_raw(12_500_000),
             Rho::from_nf_old(parent_note.nullifier(&fvk)),
+            NoteVersion::V2,
             &mut rng,
         );
 

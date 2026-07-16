@@ -2,6 +2,7 @@
 name = "zcash_voting"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.88"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/valargroup/zcash_voting"
@@ -62,25 +63,28 @@ anyhow = "1"
 thiserror = "2"
 zeroize = "1"
 
-# Single orchard node: every consumer resolves upstream `orchard` from
-# crates.io at 0.14. The `unstable-voting-circuits` feature is required by
-# integration tests in `zkp1.rs` (`Note::new`, `Note::dummy`,
+# Orchard and voting-circuits use workspace dependencies so every consumer gets
+# the same circuit-compatible pair. Orchard's `unstable-voting-circuits` feature is
+# required by integration tests in `zkp1.rs` (`Note::new`, `Note::dummy`,
 # `Rho::from_nf_old`).
 subtle = "2.6"
-orchard = { version = "0.14", features = ["unstable-voting-circuits"] }
-voting-circuits = "=0.8.0"
+orchard = { workspace = true }
+voting-circuits = { workspace = true }
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"
 
-zcash_protocol = "0.9"
-zcash_client_backend = { version = "0.23", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zcash_client_sqlite = { version = "0.21", default-features = false, features = ["orchard"] }
-zcash_keys = { version = "0.14", features = ["orchard"] }
-pczt = { version = "0.7", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zcash_primitives = "0.28"
+zcash_protocol = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_client_sqlite = { workspace = true }
+zcash_keys = { workspace = true }
+pczt = { workspace = true }
+zcash_primitives = { workspace = true }
 uuid = "1.23.1"
 
 [dev-dependencies]
 secrecy = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("nu6.3"))'] }

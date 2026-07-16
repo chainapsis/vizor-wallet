@@ -14,11 +14,11 @@ ff = "0.13"
 halo2_gadgets = { version = "=0.5.0", default-features = false }
 anyhow = "1.0"
 incrementalmerkletree = "0.8.1"
-shardtree = "0.6"
+shardtree = "0.7"
 lazy_static = "1"
 libc = "0.2"
 
 [dev-dependencies]
 rand = "0.8"
-orchard = { version = "0.14", features = ["unstable-voting-circuits"] }
-voting-circuits = "=0.8.0"
+orchard = { workspace = true }
+voting-circuits = { workspace = true }

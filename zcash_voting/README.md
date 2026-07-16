@@ -7,10 +7,14 @@ Client-side library for integrating [Zcash shielded voting](https://github.com/v
 Wallets should import `zcash_voting::prelude::*` and follow the stable setup →
 precompute → delegate → vote → share lifecycle:
 
-1. Open a `VotingDb`, set the wallet id, and call `create_round` (pass `None`
-   when no round session metadata is available).
-2. Convert eligible Orchard notes into `NoteInfo` with
-   `NoteInfo::from_orchard_note`, then call `ensure_bundles`.
+1. Open a `VotingDb`, set the wallet id, and call `create_round` with the
+   wallet/voting `Network` (pass `None` when no round session metadata is
+   available).
+2. Convert eligible shielded notes into `NoteInfo` with
+   `NoteInfo::from_orchard_note`, then call `ensure_bundles`. Snapshot
+   selection is Ironwood / NU6.3-only on this branch and rejects non-NU6.3
+   snapshots. Ironwood / NU6.3 code paths are cfg-gated; build them with
+   `RUSTFLAGS='--cfg zcash_unstable="nu6.3"'`.
    The default `BundlePolicy` fills each bundle up to the circuit note-slot
    count. Wallets that need fewer real notes per bundle can call the
    `*_with_policy` variants with `BundlePolicy::new(...)`; proof construction
@@ -53,7 +57,7 @@ precompute → delegate → vote → share lifecycle:
 |---|---|
 | `prelude` | Recommended imports for wallet SDKs. |
 | `round` | `VotingDb`, `RoundParams`, `RoundInfo`, idempotent `ensure_bundles`, and policy-aware bundle planning. |
-| `precompute` | Orchard note witness generation and PIR precompute wrappers. |
+| `precompute` | Shielded note witness generation and PIR precompute wrappers. |
 | `delegate` | PCZT setup, proof generation, submission assembly, and chain recovery writes. |
 | `confirmation` | Chain tx event parsing plus atomic delegation and cast-vote confirmation recording. |
 | `vote` | ZKP2 construction, cast-vote signing, and vote recovery bundle persistence. |
@@ -181,21 +185,28 @@ The crate no longer accepts root wallet seed material for delegation signing.
 
 ## Dependency notes
 
-`zcash_voting` tracks the upstream Zcash crates directly:
+`zcash_voting` uses the upstream Ironwood dependency stack selected by the
+workspace root. `Cargo.toml` is the source of truth for version and
+feature requirements, and `Cargo.lock` records the exact package sources and
+versions used by this branch.
+This release line requires Rust 1.88 or newer.
 
-- **`orchard 0.14`** from crates.io, with the
-  `unstable-voting-circuits` feature enabled for the governance proof paths.
-- **`voting-circuits 0.8`** for the delegation and vote proof circuits.
+- **`orchard 0.15.0`** from [zcash/orchard](https://github.com/zcash/orchard),
+  with `unstable-voting-circuits` enabled for the governance proof paths.
+- **`voting-circuits 0.9.0-rc.2`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+  for the delegation and vote proof circuits.
 - **`vote-commitment-tree 0.3`** and **`vote-commitment-tree-client 0.5`** for
   vote commitment tree state and optional HTTP sync.
-- **`pczt`, `zcash_keys`, `zcash_primitives`, and `zcash_protocol`** from the
-  published upstream Zcash crate line used by this release.
+- **`pczt`, `zcash_client_backend`, `zcash_client_sqlite`, `zcash_keys`,
+  `zcash_primitives`, and `zcash_protocol`** from the pinned librustzcash
+  revision for the Zcash protocol, wallet, PCZT, and storage dependencies.
 
 ## Migrating from 0.10
 
 - PIR and tree-sync APIs are now always compiled; no feature flags are required.
 - Prefer `VotingDb::create_round`, `VotingDb::ensure_bundles`, and
-  `VotingDb::delegation_phases` over direct `storage::queries` calls.
+  `VotingDb::delegation_phases` over direct `storage::queries` calls. Pass the
+  round's wallet/voting `Network` when creating or ensuring a round.
 - Use `BundlePolicy` plus the `*_with_policy` APIs when an integration needs
   fewer real notes per bundle. Omit the policy for the default circuit-slot
   behavior.

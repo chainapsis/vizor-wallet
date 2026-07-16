@@ -36,7 +36,7 @@ pub struct PirPrecomputeReport {
     pub fetched: u32,
 }
 
-/// Persists a snapshot tree state, generates Orchard witnesses, and caches them.
+/// Persists a snapshot tree state, generates shielded note witnesses, and caches them.
 ///
 /// This is the FFI-friendly variant for callers that pass the round tree state
 /// with the note-witness request.
@@ -62,7 +62,7 @@ where
     )
 }
 
-/// Loads a round's cached tree state, generates Orchard witnesses, and caches them.
+/// Loads a round's cached tree state, generates shielded note witnesses, and caches them.
 ///
 /// This is the FFI-friendly variant for callers that already persisted the
 /// round tree state through [`VotingDb`] and should not reach into storage
@@ -83,7 +83,7 @@ where
     Ok(witnesses)
 }
 
-/// Verifies an Orchard note witness against its stored root.
+/// Verifies a shielded note witness against its stored root.
 ///
 /// Returns `Ok(())` when the witness recomputes to the expected root and
 /// [`VotingError::InvalidInput`] when the bytes are malformed or mismatched.
@@ -296,6 +296,7 @@ mod pir_tests {
             ufvk_str: "uviewtest".to_string(),
         }];
         db.create_round(
+            crate::Network::Testnet,
             &crate::round::RoundParams {
                 vote_round_id: ROUND_ID.to_string(),
                 snapshot_height: 100,
@@ -356,7 +357,8 @@ mod tree_sync_tests {
     fn vote_tree_sync_witness_and_reset_happy_path() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 2);
@@ -567,7 +569,8 @@ mod session_reset_tests {
     fn reset_voting_session_state_clears_unsigned_setup_fields() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(ROUND_ID), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0), note(1)]).unwrap();
         seed_unsigned_setup_fields(&db, ROUND_ID, 0);
         seed_unsigned_setup_fields(&db, ROUND_ID, 1);
@@ -582,7 +585,8 @@ mod session_reset_tests {
     fn reset_voting_session_state_preserves_keystone_signed_bundles() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(ROUND_ID), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0), note(1)]).unwrap();
         seed_unsigned_setup_fields(&db, ROUND_ID, 0);
         seed_unsigned_setup_fields(&db, ROUND_ID, 1);
@@ -599,11 +603,13 @@ mod session_reset_tests {
     fn reset_voting_session_state_preserves_submitted_bundles() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(ROUND_ID), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0), note(1)]).unwrap();
         seed_unsigned_setup_fields(&db, ROUND_ID, 0);
         seed_unsigned_setup_fields(&db, ROUND_ID, 1);
-        db.store_delegation_tx_hash(ROUND_ID, 0, "submitted-tx").unwrap();
+        db.store_delegation_tx_hash(ROUND_ID, 0, "submitted-tx")
+            .unwrap();
 
         reset_voting_session_state(&db, ROUND_ID).unwrap();
 
@@ -615,8 +621,10 @@ mod session_reset_tests {
     fn reset_voting_session_state_is_round_scoped() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(&round_params(ROUND_ID), None).unwrap();
-        db.create_round(&round_params(OTHER_ROUND_ID), None).unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
+        db.create_round(crate::Network::Testnet, &round_params(OTHER_ROUND_ID), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         db.ensure_bundles(OTHER_ROUND_ID, &[note(0)]).unwrap();
         seed_unsigned_setup_fields(&db, ROUND_ID, 0);

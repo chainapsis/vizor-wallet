@@ -4,7 +4,9 @@ use rusqlite::{named_params, Connection, OptionalExtension};
 use voting_circuits::delegation::ImtProofData;
 
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
-use crate::types::{NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData};
+use crate::types::{
+    Network, NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData,
+};
 
 const NOTE_IDENTITY_HASH_BYTES: usize = 32;
 const NOTE_IDENTITY_DOMAIN: &[u8] = b"zcash-voting-note-identity-v1";
@@ -89,9 +91,29 @@ fn decode_padded_note_secrets(blob: Vec<u8>) -> Result<Vec<(Vec<u8>, Vec<u8>)>, 
 
 // --- Rounds ---
 
+pub(crate) fn network_to_storage(network: Network) -> &'static str {
+    match network {
+        Network::Mainnet => "mainnet",
+        Network::Testnet => "testnet",
+        Network::Regtest => "regtest",
+    }
+}
+
+pub(crate) fn network_from_storage(value: &str) -> Result<Network, VotingError> {
+    match value {
+        "mainnet" => Ok(Network::Mainnet),
+        "testnet" => Ok(Network::Testnet),
+        "regtest" => Ok(Network::Regtest),
+        _ => Err(VotingError::Internal {
+            message: format!("stored round network is invalid: {value}"),
+        }),
+    }
+}
+
 pub fn insert_round(
     conn: &Connection,
     wallet_id: &str,
+    network: Network,
     params: &VotingRoundParams,
     session_json: Option<&str>,
 ) -> Result<(), VotingError> {
@@ -101,11 +123,12 @@ pub fn insert_round(
         .as_secs() as i64;
 
     conn.execute(
-        "INSERT INTO rounds (round_id, wallet_id, snapshot_height, ea_pk, nc_root, nullifier_imt_root, session_json, phase, created_at)
-         VALUES (:round_id, :wallet_id, :snapshot_height, :ea_pk, :nc_root, :nullifier_imt_root, :session_json, :phase, :created_at)",
+        "INSERT INTO rounds (round_id, wallet_id, network, snapshot_height, ea_pk, nc_root, nullifier_imt_root, session_json, phase, created_at)
+         VALUES (:round_id, :wallet_id, :network, :snapshot_height, :ea_pk, :nc_root, :nullifier_imt_root, :session_json, :phase, :created_at)",
         named_params! {
             ":round_id": params.vote_round_id,
             ":wallet_id": wallet_id,
+            ":network": network_to_storage(network),
             ":snapshot_height": params.snapshot_height as i64,
             ":ea_pk": params.ea_pk,
             ":nc_root": params.nc_root,
@@ -211,22 +234,51 @@ pub fn load_round_params(
     round_id: &str,
     wallet_id: &str,
 ) -> Result<VotingRoundParams, VotingError> {
+    load_round_params_with_network(conn, round_id, wallet_id).map(|(params, _)| params)
+}
+
+pub fn load_round_params_with_network(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<(VotingRoundParams, Network), VotingError> {
     conn.query_row(
-        "SELECT round_id, snapshot_height, ea_pk, nc_root, nullifier_imt_root FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
+        "SELECT round_id, network, snapshot_height, ea_pk, nc_root, nullifier_imt_root FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
         named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
         |row| {
-            Ok(VotingRoundParams {
+            let network: String = row.get(1)?;
+            Ok((
+                VotingRoundParams {
                 vote_round_id: row.get(0)?,
-                snapshot_height: row.get::<_, i64>(1)? as u64,
-                ea_pk: row.get(2)?,
-                nc_root: row.get(3)?,
-                nullifier_imt_root: row.get(4)?,
-            })
+                    snapshot_height: row.get::<_, i64>(2)? as u64,
+                    ea_pk: row.get(3)?,
+                    nc_root: row.get(4)?,
+                    nullifier_imt_root: row.get(5)?,
+                },
+                network,
+            ))
         },
     )
     .map_err(|e| VotingError::InvalidInput {
         message: format!("round not found: {} ({})", round_id, e),
     })
+    .and_then(|(params, network)| Ok((params, network_from_storage(&network)?)))
+}
+
+pub fn load_round_network(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<Network, VotingError> {
+    conn.query_row(
+        "SELECT network FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
+        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+        |row| row.get::<_, String>(0),
+    )
+    .map_err(|e| VotingError::InvalidInput {
+        message: format!("round not found: {} ({})", round_id, e),
+    })
+    .and_then(|network| network_from_storage(&network))
 }
 
 pub fn has_round(conn: &Connection, round_id: &str, wallet_id: &str) -> Result<bool, VotingError> {
@@ -247,15 +299,16 @@ pub fn get_round_state(
     round_id: &str,
     wallet_id: &str,
 ) -> Result<RoundState, VotingError> {
-    let (phase_int, snapshot_height): (i32, i64) = conn
+    let (phase_int, network, snapshot_height): (i32, String, i64) = conn
         .query_row(
-            "SELECT phase, snapshot_height FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
+            "SELECT phase, network, snapshot_height FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
             named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| VotingError::InvalidInput {
             message: format!("round not found: {} ({})", round_id, e),
         })?;
+    let network = network_from_storage(&network)?;
 
     // proof_generated is true only when ALL bundles have a successful proof
     // AND all bundles have a VAN leaf position (delegation TX landed on chain).
@@ -300,6 +353,7 @@ pub fn get_round_state(
     Ok(RoundState {
         round_id: round_id.to_string(),
         phase: RoundPhase::from_i32(phase_int),
+        network,
         snapshot_height: snapshot_height as u64,
         hotkey_address: None,
         delegated_weight: None,
@@ -309,7 +363,7 @@ pub fn get_round_state(
 
 pub fn list_rounds(conn: &Connection, wallet_id: &str) -> Result<Vec<RoundSummary>, VotingError> {
     let mut stmt = conn
-        .prepare("SELECT round_id, wallet_id, phase, snapshot_height, created_at FROM rounds WHERE wallet_id = :wallet_id ORDER BY created_at DESC")
+        .prepare("SELECT round_id, wallet_id, phase, network, snapshot_height, created_at FROM rounds WHERE wallet_id = :wallet_id ORDER BY created_at DESC")
         .map_err(|e| VotingError::Internal {
             message: format!("failed to prepare list_rounds query: {}", e),
         })?;
@@ -320,8 +374,15 @@ pub fn list_rounds(conn: &Connection, wallet_id: &str) -> Result<Vec<RoundSummar
                 round_id: row.get(0)?,
                 wallet_id: row.get(1)?,
                 phase: RoundPhase::from_i32(row.get(2)?),
-                snapshot_height: row.get::<_, i64>(3)? as u64,
-                created_at: row.get::<_, i64>(4)? as u64,
+                network: network_from_storage(&row.get::<_, String>(3)?).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?,
+                snapshot_height: row.get::<_, i64>(4)? as u64,
+                created_at: row.get::<_, i64>(5)? as u64,
             })
         })
         .map_err(|e| VotingError::Internal {
@@ -1470,7 +1531,7 @@ pub fn load_tree_state(
     })
 }
 
-// --- Witnesses (Merkle inclusion proofs for Orchard notes) ---
+// --- Witnesses (Merkle inclusion proofs for shielded notes) ---
 
 /// Check if witnesses are already cached for a bundle.
 pub fn has_witnesses(

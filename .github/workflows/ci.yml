@@ -10,3 +10,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test --workspace
         run: cargo test --workspace --locked
+      - name: cargo test -p zcash_voting (NU6.3)
+        env:
+          RUSTFLAGS: --cfg zcash_unstable="nu6.3"
+        run: cargo test -p zcash_voting --locked
+
+  msrv:
+    name: Rust 1.88
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check workspace at MSRV
+        run: cargo check --workspace --all-targets --all-features --locked
+      - name: Check workspace at MSRV (NU6.3)
+        env:
+          RUSTFLAGS: --cfg zcash_unstable="nu6.3"
+        run: cargo check --workspace --all-targets --all-features --locked

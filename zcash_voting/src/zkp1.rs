@@ -10,7 +10,7 @@ use halo2_proofs::{
 use incrementalmerkletree::Hashable;
 use orchard::{
     keys::{Diversifier, FullViewingKey, Scope, SpendValidatingKey},
-    note::{RandomSeed, Rho},
+    note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
     NOTE_COMMITMENT_TREE_DEPTH,
@@ -128,6 +128,28 @@ fn bytes_to_scalar(bytes: &[u8], name: &str) -> Result<pallas::Scalar, VotingErr
     })
 }
 
+fn supported_note_versions() -> &'static [NoteVersion] {
+    #[cfg(zcash_unstable = "nu6.3")]
+    {
+        &[NoteVersion::V3]
+    }
+
+    #[cfg(not(zcash_unstable = "nu6.3"))]
+    {
+        &[]
+    }
+}
+
+fn note_matches_stored_identity(
+    note: &orchard::Note,
+    fvk: &FullViewingKey,
+    full_note: &NoteInfo,
+) -> bool {
+    let commitment: ExtractedNoteCommitment = note.commitment().into();
+    commitment.to_bytes().as_slice() == full_note.commitment.as_slice()
+        && note.nullifier(fvk).to_bytes().as_slice() == full_note.nullifier.as_slice()
+}
+
 /// Reconstruct an `orchard::Note` from raw wallet DB fields.
 fn reconstruct_note(
     full_note: &NoteInfo,
@@ -194,10 +216,26 @@ fn reconstruct_note(
     )?;
 
     let note_value = NoteValue::from_raw(full_note.value);
-    let note = ct_option_to_result(
-        orchard::Note::from_parts(address, note_value, rho, rseed),
-        "failed to reconstruct note from parts",
-    )?;
+    let mut matched_note = None;
+    for version in supported_note_versions() {
+        let Some(candidate) = Option::<orchard::Note>::from(orchard::Note::from_parts(
+            address, note_value, rho, rseed, *version,
+        )) else {
+            continue;
+        };
+
+        if note_matches_stored_identity(&candidate, &fvk, full_note) {
+            if matched_note.is_some() {
+                return Err(VotingError::Internal {
+                    message: "note fields match multiple Orchard note versions".to_string(),
+                });
+            }
+            matched_note = Some(candidate);
+        }
+    }
+    let note = matched_note.ok_or_else(|| VotingError::Internal {
+        message: "reconstructed note does not match stored commitment/nullifier".to_string(),
+    })?;
 
     Ok((note, fvk.clone()))
 }
@@ -528,6 +566,7 @@ mod tests {
         keys::Scope, note::commitment::ExtractedNoteCommitment, note::Rho, tree::MerkleHashOrchard,
         value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
     };
+    use rand::RngCore;
     use voting_circuits::delegation::SpacedLeafImtProvider;
 
     struct TestReporter {
@@ -623,44 +662,162 @@ mod tests {
             .contains(&format!("1..={BUNDLE_NOTE_SLOTS} notes")));
     }
 
-    #[test]
-    fn reconstruct_note_accepts_regtest_network() {
+    fn test_viewing_key(network: &Network) -> (String, FullViewingKey) {
         use zcash_keys::keys::UnifiedSpendingKey;
         use zip32::AccountId;
 
-        let network = Network::Regtest;
         let seed = [0x42u8; 64];
         let account = AccountId::try_from(0u32).unwrap();
-        let usk = UnifiedSpendingKey::from_seed(&network, &seed, account).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(network, &seed, account).unwrap();
         let ufvk = usk.to_unified_full_viewing_key();
-        let ufvk_str = ufvk.encode(&network);
+        let ufvk_str = ufvk.encode(network);
         let fvk = ufvk.orchard().unwrap().clone();
-        let address = fvk.address_at(0u32, Scope::External);
+        (ufvk_str, fvk)
+    }
 
-        let mut rng = OsRng;
-        let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None);
-        let note = orchard::Note::new(
-            address,
-            NoteValue::from_raw(1),
-            Rho::from_nf_old(dummy_parent.nullifier(&fvk)),
-            &mut rng,
-        );
+    fn random_seed_for_rho(rho: &Rho, rng: &mut impl RngCore) -> RandomSeed {
+        loop {
+            let mut bytes = [0u8; 32];
+            rng.fill_bytes(&mut bytes);
+            if let Some(rseed) = Option::<RandomSeed>::from(RandomSeed::from_bytes(bytes, rho)) {
+                break rseed;
+            }
+        }
+    }
+
+    fn test_note_with_version(
+        fvk: &FullViewingKey,
+        address: orchard::Address,
+        value: u64,
+        version: NoteVersion,
+        rng: &mut impl RngCore,
+    ) -> orchard::Note {
+        loop {
+            let (_, _, dummy_parent) = orchard::Note::dummy(&mut *rng, None, NoteVersion::V2);
+            let rho = Rho::from_nf_old(dummy_parent.nullifier(fvk));
+            let rseed = random_seed_for_rho(&rho, rng);
+            if let Some(note) = Option::<orchard::Note>::from(orchard::Note::from_parts(
+                address,
+                NoteValue::from_raw(value),
+                rho,
+                rseed,
+                version,
+            )) {
+                break note;
+            }
+        }
+    }
+
+    fn note_info_for_test_note(
+        note: &orchard::Note,
+        fvk: &FullViewingKey,
+        ufvk_str: String,
+        value: u64,
+    ) -> NoteInfo {
         let cmx: ExtractedNoteCommitment = note.commitment().into();
-        let full_note = NoteInfo {
+        NoteInfo {
             commitment: cmx.to_bytes().to_vec(),
             diversifier: note.recipient().diversifier().as_array().to_vec(),
-            value: 1,
+            value,
             rho: note.rho().to_bytes().to_vec(),
             rseed: note.rseed().as_bytes().to_vec(),
-            nullifier: note.nullifier(&fvk).to_bytes().to_vec(),
+            nullifier: note.nullifier(fvk).to_bytes().to_vec(),
             position: 0,
             scope: 0,
             ufvk_str,
-        };
+        }
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    fn rebuild_test_note_with_version(
+        full_note: &NoteInfo,
+        network: &Network,
+        version: NoteVersion,
+    ) -> orchard::Note {
+        let ufvk = UnifiedFullViewingKey::decode(network, &full_note.ufvk_str).unwrap();
+        let fvk = ufvk.orchard().unwrap().clone();
+        let diversifier_arr: [u8; 11] = full_note.diversifier.as_slice().try_into().unwrap();
+        let address = fvk.address(Diversifier::from_bytes(diversifier_arr), Scope::External);
+        let rho_arr: [u8; 32] = full_note.rho.as_slice().try_into().unwrap();
+        let rho = Rho::from_bytes(&rho_arr).unwrap();
+        let rseed_arr: [u8; 32] = full_note.rseed.as_slice().try_into().unwrap();
+        let rseed = RandomSeed::from_bytes(rseed_arr, &rho).unwrap();
+        orchard::Note::from_parts(
+            address,
+            NoteValue::from_raw(full_note.value),
+            rho,
+            rseed,
+            version,
+        )
+        .unwrap()
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    #[test]
+    fn reconstruct_note_accepts_regtest_network() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V3, &mut rng);
+        let full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
 
         let (rebuilt, rebuilt_fvk) = reconstruct_note(&full_note, &network).unwrap();
 
+        assert_eq!(rebuilt.version(), NoteVersion::V3);
+        assert_eq!(
+            ExtractedNoteCommitment::from(rebuilt.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
         assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
+    }
+
+    #[cfg(zcash_unstable = "nu6.3")]
+    #[test]
+    fn reconstruct_note_infers_ironwood_note_version() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V3, &mut rng);
+        let full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
+
+        let v2_candidate = rebuild_test_note_with_version(&full_note, &network, NoteVersion::V2);
+        assert_ne!(
+            ExtractedNoteCommitment::from(v2_candidate.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
+
+        let (rebuilt, rebuilt_fvk) = reconstruct_note(&full_note, &network).unwrap();
+
+        assert_eq!(rebuilt.version(), NoteVersion::V3);
+        assert_eq!(
+            ExtractedNoteCommitment::from(rebuilt.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
+        assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
+    }
+
+    #[test]
+    fn reconstruct_note_rejects_mismatched_identity() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V2, &mut rng);
+        let mut full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
+        full_note.commitment[0] ^= 1;
+
+        let err = reconstruct_note(&full_note, &network).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("reconstructed note does not match stored commitment/nullifier"),
+            "unexpected error: {err}"
+        );
     }
 
     /// Real Halo2 delegation proof end-to-end test.
@@ -714,11 +871,12 @@ mod tests {
 
         let mut notes = Vec::new();
         for &v in &note_values {
-            let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None);
+            let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
             let note = orchard::Note::new(
                 address,
                 NoteValue::from_raw(v),
                 Rho::from_nf_old(dummy_parent.nullifier(&fvk)),
+                NoteVersion::V2,
                 &mut rng,
             );
             notes.push(note);

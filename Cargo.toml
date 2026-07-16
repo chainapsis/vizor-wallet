@@ -6,3 +6,18 @@ members = [
     "wallet-example",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+# orchard, voting-circuits, and librustzcash all resolve to the same Orchard
+# release, keeping the dependency graph type-compatible across PCZT construction
+# and vote proofs.
+orchard = { version = "=0.15.0", features = ["unstable-voting-circuits"] }
+voting-circuits = "=0.9.0-rc.2"
+
+# Temporary until librustzcash releases the merged Ironwood historical selector.
+pczt = { version = "0.8.0-rc.1", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+zcash_client_backend = { version = "0.24.0-rc.1", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zcash_client_sqlite = { version = "0.22.0-rc.1", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2", default-features = false, features = ["orchard"] }
+zcash_keys = { version = "0.15.0", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2", features = ["orchard"] }
+zcash_primitives = { version = "0.29.0", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2" }
+zcash_protocol = { version = "0.10.0", git = "https://github.com/zcash/librustzcash", rev = "30bbc8990c3f7987868ea56fb483a7c11c56bad2" }
