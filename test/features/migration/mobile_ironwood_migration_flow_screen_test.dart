@@ -55,6 +55,10 @@ Widget _app({
       MobileIronwoodMigrationStep.options => '/migration/options',
       MobileIronwoodMigrationStep.privateReview => '/migration/private/review',
       MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
+      MobileIronwoodMigrationStep.preparing => '/migration/private/preparing',
+      MobileIronwoodMigrationStep.migrating => '/migration/private/status',
+      MobileIronwoodMigrationStep.passcodeWhileSyncing =>
+        '/migration/private/unlock',
     },
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
@@ -78,6 +82,19 @@ Widget _app({
         path: '/migration/fast/review',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.fastReview),
       ),
+      GoRoute(
+        path: '/migration/private/preparing',
+        builder: (_, _) => screen(MobileIronwoodMigrationStep.preparing),
+      ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) => screen(MobileIronwoodMigrationStep.migrating),
+      ),
+      GoRoute(
+        path: '/migration/private/unlock',
+        builder: (_, _) =>
+            screen(MobileIronwoodMigrationStep.passcodeWhileSyncing),
+      ),
     ],
   );
 
@@ -87,6 +104,15 @@ Widget _app({
       child: MaterialApp.router(routerConfig: router),
     ),
   );
+}
+
+void _useMobileViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(393, 852);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 
 void main() {
@@ -157,5 +183,60 @@ void main() {
     final warning = tester.widget<Text>(find.text('Privacy trade-off'));
     expect(warning.style?.color, AppThemeData.dark.colors.text.homeCard);
     expect(find.text('Authorise anyway'), findsOneWidget);
+  });
+
+  testWidgets('renders the preparing migration state', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.preparing));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.text('142.24 ZEC'), findsOneWidget);
+    expect(find.text('Transaction splits submitted'), findsOneWidget);
+    expect(find.text('Waiting for confirmation ...'), findsOneWidget);
+    expect(find.text('Migration schedule'), findsOneWidget);
+    expect(find.text('Back home'), findsOneWidget);
+  });
+
+  testWidgets('opens and closes the migrating batch plan', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.migrating));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('142.24 ZEC'), findsOneWidget);
+    expect(find.text('12 planned batches'), findsOneWidget);
+    expect(find.text('Current batch'), findsOneWidget);
+    expect(find.text('Confirming...'), findsOneWidget);
+    expect(find.text('July 18, 12:00'), findsOneWidget);
+
+    await tester.tap(find.text('View'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('12 batches'), findsOneWidget);
+    expect(find.text('ETA: Jul 18, 12:00'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('migration_batch_scrollbar')),
+      findsOneWidget,
+    );
+    expect(find.text('Close'), findsOneWidget);
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('12 batches'), findsNothing);
+  });
+
+  testWidgets('renders passcode while migration keeps running', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(step: MobileIronwoodMigrationStep.passcodeWhileSyncing),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
   });
 }

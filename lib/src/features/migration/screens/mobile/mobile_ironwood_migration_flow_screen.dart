@@ -16,6 +16,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../onboarding/mobile/mobile_passcode_screen.dart'
+    show kMobilePasscodeLength;
+import '../../../onboarding/mobile/passcode_widgets.dart';
 import '../../models/ironwood_migration_phases.dart';
 import '../ironwood_migration_flow_screen.dart';
 
@@ -25,6 +28,11 @@ enum MobileIronwoodMigrationStep {
   options,
   privateReview,
   fastReview,
+  // The status variants are deterministic preview surfaces until the
+  // remaining completion, failure, and hardware-signing designs are ready.
+  preparing,
+  migrating,
+  passcodeWhileSyncing,
 }
 
 const _migrationProgress = 60 / 196;
@@ -35,6 +43,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewData,
     this.previewPrivatePlan,
     this.previewArrivalLabel,
+    this.previewShowBatchModal = false,
     super.key,
   });
 
@@ -42,6 +51,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final String? previewArrivalLabel;
+  final bool previewShowBatchModal;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,6 +63,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
         previewArrivalLabel: previewArrivalLabel,
+        previewShowBatchModal: previewShowBatchModal,
       );
     }
 
@@ -70,6 +81,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
                   previewMode: false,
                   previewPrivatePlan: previewPrivatePlan,
                   previewArrivalLabel: previewArrivalLabel,
+                  previewShowBatchModal: previewShowBatchModal,
                 ),
         );
   }
@@ -82,6 +94,7 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
     required this.previewMode,
     required this.previewPrivatePlan,
     required this.previewArrivalLabel,
+    required this.previewShowBatchModal,
   });
 
   final MobileIronwoodMigrationStep step;
@@ -89,6 +102,7 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final String? previewArrivalLabel;
+  final bool previewShowBatchModal;
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +124,15 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
         data: data,
         previewMode: previewMode,
       ),
+      MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
+        data: data,
+      ),
+      MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
+        data: data,
+        initialShowBatchModal: previewShowBatchModal,
+      ),
+      MobileIronwoodMigrationStep.passcodeWhileSyncing =>
+        const _MobileMigrationPasscode(),
     };
   }
 }
@@ -492,6 +515,935 @@ class _MobileMigrationFastReview extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MobileMigrationPreparing extends StatelessWidget {
+  const _MobileMigrationPreparing({required this.data});
+
+  final IronwoodMigrationFlowData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return _MobileMigrationStatusScaffold(
+      data: data,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 220,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _PreparingParticlesPainter(
+                      color: colors.border.subtle,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 80,
+                  child: Text(
+                    '${data.amountText} ZEC',
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 117,
+                  child: Text(
+                    'Preparing...',
+                    style: AppTypography.displayLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 28,
+                  child: Text(
+                    'This will take around 10-20m',
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: colors.text.secondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            height: 240,
+            child: _MobileStatusCard(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: const [
+                  _PreparingStatusRow(
+                    state: _PreparingStatusState.complete,
+                    label: 'Transaction splits submitted',
+                  ),
+                  _PreparingStatusRow(
+                    state: _PreparingStatusState.waiting,
+                    label: 'Waiting for confirmation ...',
+                  ),
+                  _PreparingStatusRow(
+                    state: _PreparingStatusState.pending,
+                    label: 'Migration schedule',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          const _MigrationCanLeaveMessage(),
+          const SizedBox(height: AppSpacing.s),
+          _MobileStatusBackHomeButton(onPressed: () => context.go('/home')),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileMigrationMigrating extends StatefulWidget {
+  const _MobileMigrationMigrating({
+    required this.data,
+    required this.initialShowBatchModal,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final bool initialShowBatchModal;
+
+  @override
+  State<_MobileMigrationMigrating> createState() =>
+      _MobileMigrationMigratingState();
+}
+
+class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
+  late bool _showBatchModal = widget.initialShowBatchModal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        _MobileMigrationStatusScaffold(
+          data: widget.data,
+          child: Column(
+            children: [
+              _MigrationProgressHero(amount: widget.data.amountText),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                height: 240,
+                child: _MobileStatusCard(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _StatusTextRow(
+                        label: '12 planned batches',
+                        value: 'View',
+                        trailing: const AppIcon(
+                          AppIcons.chevronForward,
+                          size: 16,
+                        ),
+                        onTap: () => setState(() => _showBatchModal = true),
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('Current batch'),
+                          SizedBox(height: AppSpacing.xs),
+                          _CurrentBatchRow(),
+                        ],
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      const _StatusTextRow(
+                        label: 'Estimated arrival time',
+                        value: 'July 18, 12:00',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const _MigrationCanLeaveMessage(),
+              const SizedBox(height: AppSpacing.s),
+              _MobileStatusBackHomeButton(onPressed: () => context.go('/home')),
+            ],
+          ),
+        ),
+        if (_showBatchModal)
+          Positioned.fill(
+            child: _MigrationBatchModal(
+              onClose: () => setState(() => _showBatchModal = false),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MobileMigrationPasscode extends StatefulWidget {
+  const _MobileMigrationPasscode();
+
+  @override
+  State<_MobileMigrationPasscode> createState() =>
+      _MobileMigrationPasscodeState();
+}
+
+class _MobileMigrationPasscodeState extends State<_MobileMigrationPasscode> {
+  var _entryLength = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            36,
+            AppSpacing.sm,
+            AppSpacing.md,
+          ),
+          child: Column(
+            children: [
+              const _MigrationPasscodeHero(),
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                height: 57,
+                child: Center(
+                  child: PasscodeDots(
+                    length: kMobilePasscodeLength,
+                    filled: _entryLength,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 46),
+              PasscodeNumpad(
+                onDigit: (_) {
+                  if (_entryLength >= kMobilePasscodeLength) return;
+                  setState(() => _entryLength += 1);
+                },
+                onBackspace: () {
+                  if (_entryLength == 0) return;
+                  setState(() => _entryLength -= 1);
+                },
+                canDelete: _entryLength > 0,
+                onHelp: () {},
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationStatusScaffold extends StatelessWidget {
+  const _MobileMigrationStatusScaffold({
+    required this.data,
+    required this.child,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          children: [
+            MobileTopNav.account(
+              accountName: data.accountName,
+              syncLabel: 'Vizor is synced',
+              avatar: AppProfilePicture(
+                profilePictureId: data.profilePictureId,
+                size: AppProfilePictureSize.navLarge,
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  44,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: child,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileStatusCard extends StatelessWidget {
+  const _MobileStatusCard({
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(
+      horizontal: AppSpacing.sm,
+      vertical: AppSpacing.md,
+    ),
+  });
+
+  final Widget child;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+        ),
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+enum _PreparingStatusState { complete, waiting, pending }
+
+class _PreparingStatusRow extends StatelessWidget {
+  const _PreparingStatusRow({required this.state, required this.label});
+
+  final _PreparingStatusState state;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final leading = switch (state) {
+      _PreparingStatusState.complete => DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0xFF00A460),
+          shape: BoxShape.circle,
+        ),
+        child: const SizedBox.square(
+          dimension: 20,
+          child: Center(
+            child: AppIcon(AppIcons.check, size: 14, color: Color(0xFFFFFFFF)),
+          ),
+        ),
+      ),
+      _PreparingStatusState.waiting => AppIcon(
+        AppIcons.loader,
+        size: 20,
+        color: colors.icon.accent,
+        animated: false,
+      ),
+      _PreparingStatusState.pending => Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            bottom: 26,
+            child: SizedBox(
+              width: 1,
+              height: 24,
+              child: ColoredBox(color: colors.border.subtle),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.neutralSubtleOpacity,
+              shape: BoxShape.circle,
+            ),
+            child: SizedBox.square(
+              dimension: 20,
+              child: Center(
+                child: Text(
+                  '3',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    };
+    return Row(
+      children: [
+        leading,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationProgressHero extends StatelessWidget {
+  const _MigrationProgressHero({required this.amount});
+
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 220,
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _MigrationArcPainter(
+                trackColor: colors.border.subtle,
+                progressColor: const Color(0xFF00A460),
+                progress: 0.1,
+                rectTop: 0,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 7,
+            top: 61,
+            child: Transform.rotate(
+              angle: -0.86,
+              child: Text(
+                '10% DONE',
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.text.secondary,
+                  fontSize: 9,
+                ),
+              ),
+            ),
+          ),
+          const Positioned(
+            top: 43,
+            child: AppIcon(
+              AppIcons.shieldKeyhole,
+              size: 28,
+              color: Color(0xFF00A460),
+            ),
+          ),
+          Positioned(
+            top: 80,
+            child: Text(
+              'Migrating...',
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 117,
+            child: Text(
+              '$amount ZEC',
+              style: AppTypography.displayLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 28,
+            child: Text(
+              'Left to transfer',
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.secondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusTextRow extends StatelessWidget {
+  const _StatusTextRow({
+    required this.label,
+    required this.value,
+    this.trailing,
+    this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: onTap != null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: onTap == null ? 0 : 44),
+          child: Align(
+            alignment: Alignment.center,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  value,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                if (trailing != null) ...[
+                  const SizedBox(width: AppSpacing.xxs),
+                  trailing!,
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentBatchRow extends StatelessWidget {
+  const _CurrentBatchRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        Text(
+          '04',
+          style: AppTypography.codeMedium.copyWith(color: colors.text.muted),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        const _ZecBatchBadge(),
+        const SizedBox(width: AppSpacing.xxs),
+        Expanded(
+          child: Text(
+            '4.12 ZEC',
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ),
+        Text(
+          'Confirming...',
+          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationCanLeaveMessage extends StatelessWidget {
+  const _MigrationCanLeaveMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'You can leave this screen.\nBut keep Vizor open & running.',
+      textAlign: TextAlign.center,
+      style: AppTypography.bodySmall.copyWith(
+        color: context.colors.text.secondary,
+        height: 20 / 14,
+      ),
+    );
+  }
+}
+
+class _MobileStatusBackHomeButton extends StatelessWidget {
+  const _MobileStatusBackHomeButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      height: 44,
+      minWidth: 100,
+      onPressed: onPressed,
+      child: const Text('Back home'),
+    );
+  }
+}
+
+class _MigrationBatchModal extends StatefulWidget {
+  const _MigrationBatchModal({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  State<_MigrationBatchModal> createState() => _MigrationBatchModalState();
+}
+
+class _MigrationBatchModalState extends State<_MigrationBatchModal> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ColoredBox(
+      color: colors.background.neutralScrim,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.base,
+            AppSpacing.sm,
+            AppSpacing.base,
+          ),
+          child: SizedBox(
+            height: 480,
+            width: double.infinity,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.base,
+                borderRadius: BorderRadius.circular(AppRadii.large),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x24000000),
+                    blurRadius: 28,
+                    offset: Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.base + AppSpacing.xs,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '12 batches',
+                            style: AppTypography.bodyLarge.copyWith(
+                              color: colors.text.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'ETA: Jul 18, 12:00',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    Expanded(
+                      child: RawScrollbar(
+                        key: const ValueKey('migration_batch_scrollbar'),
+                        controller: _scrollController,
+                        thumbVisibility: true,
+                        interactive: true,
+                        radius: const Radius.circular(AppRadii.full),
+                        thickness: 4,
+                        mainAxisMargin: 20,
+                        padding: EdgeInsets.zero,
+                        crossAxisMargin: AppSpacing.xs,
+                        thumbColor: colors.background.overlay,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: AppSpacing.md),
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(
+                              context,
+                            ).copyWith(scrollbars: false),
+                            child: ListView.separated(
+                              controller: _scrollController,
+                              physics: const ClampingScrollPhysics(),
+                              padding: EdgeInsets.zero,
+                              itemCount: 12,
+                              separatorBuilder: (_, _) => Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: colors.border.subtle,
+                              ),
+                              itemBuilder: (context, index) {
+                                final number = '${index + 1}'.padLeft(2, '0');
+                                final eta = switch (index) {
+                                  0 => '~in 4 hrs',
+                                  1 => '~in 12 hrs',
+                                  2 || 3 || 4 => '~in 24 hrs',
+                                  _ => '~in 30 hrs',
+                                };
+                                return SizedBox(
+                                  height: 53,
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 30,
+                                        child: Text(
+                                          number,
+                                          style: AppTypography.codeMedium
+                                              .copyWith(
+                                                color: colors.text.muted,
+                                              ),
+                                        ),
+                                      ),
+                                      const _ZecBatchBadge(),
+                                      const SizedBox(width: AppSpacing.xxs),
+                                      Expanded(
+                                        child: Text(
+                                          '4.12 ZEC',
+                                          style: AppTypography.labelLarge
+                                              .copyWith(
+                                                color: colors.text.accent,
+                                              ),
+                                        ),
+                                      ),
+                                      Text(
+                                        eta,
+                                        style: AppTypography.labelLarge
+                                            .copyWith(
+                                              color: colors.text.accent,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    SizedBox(
+                      width: double.infinity,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.background.ground,
+                          borderRadius: BorderRadius.circular(AppRadii.full),
+                        ),
+                        child: AppButton(
+                          variant: AppButtonVariant.ghost,
+                          expand: true,
+                          height: 44,
+                          onPressed: widget.onClose,
+                          child: const Text('Close'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZecBatchBadge extends StatelessWidget {
+  const _ZecBatchBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color(0xFFF6C744),
+        shape: BoxShape.circle,
+      ),
+      child: SizedBox.square(
+        dimension: 16,
+        child: Center(
+          child: AppIcon(
+            AppIcons.zcashCurrency,
+            size: 10,
+            color: Color(0xFFFFFFFF),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationPasscodeHero extends StatelessWidget {
+  const _MigrationPasscodeHero();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 194,
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _MigrationArcPainter(
+                trackColor: colors.border.subtle,
+                progressColor: const Color(0xFF00A460),
+                progress: 0.1,
+                rectTop: 14,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 7,
+            top: 75,
+            child: Transform.rotate(
+              angle: -0.86,
+              child: Text(
+                '10% DONE',
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.text.secondary,
+                  fontSize: 9,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 107,
+            child: Text(
+              'Welcome Back',
+              style: AppTypography.displayLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 10,
+            child: Text(
+              'Migrating...',
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.secondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreparingParticlesPainter extends CustomPainter {
+  const _PreparingParticlesPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const particles = <(double, double, double)>[
+      (0.02, 0.47, 3),
+      (0.04, 0.41, 7),
+      (0.08, 0.36, 5),
+      (0.11, 0.31, 8),
+      (0.15, 0.29, 5),
+      (0.19, 0.22, 10),
+      (0.25, 0.19, 6),
+      (0.30, 0.13, 8),
+      (0.36, 0.11, 4),
+      (0.41, 0.06, 5),
+      (0.47, 0.03, 9),
+      (0.53, 0.02, 15),
+      (0.61, 0.06, 8),
+      (0.66, 0.05, 5),
+      (0.71, 0.10, 7),
+      (0.77, 0.13, 5),
+      (0.81, 0.18, 9),
+      (0.86, 0.23, 5),
+      (0.89, 0.29, 8),
+      (0.93, 0.35, 5),
+      (0.96, 0.40, 8),
+      (0.98, 0.47, 3),
+    ];
+    final paint = Paint()..color = color;
+    for (final particle in particles) {
+      canvas.drawCircle(
+        Offset(size.width * particle.$1, size.height * particle.$2),
+        particle.$3,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PreparingParticlesPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _MigrationArcPainter extends CustomPainter {
+  const _MigrationArcPainter({
+    required this.trackColor,
+    required this.progressColor,
+    required this.progress,
+    required this.rectTop,
+  });
+
+  final Color trackColor;
+  final Color progressColor;
+  final double progress;
+  final double rectTop;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTWH(10, rectTop, size.width - 20, 250);
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final progressPaint = Paint()
+      ..color = progressColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect, math.pi, math.pi, false, trackPaint);
+    canvas.drawArc(
+      rect,
+      math.pi,
+      math.pi * progress.clamp(0, 1),
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationArcPainter oldDelegate) =>
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.progressColor != progressColor ||
+      oldDelegate.progress != progress ||
+      oldDelegate.rectTop != rectTop;
 }
 
 class _MobileMigrationStepScaffold extends StatelessWidget {

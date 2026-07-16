@@ -862,23 +862,66 @@ Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationPreparingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.preparing,
+  );
+}
+
+Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.migrating,
+  );
+}
+
+Widget buildMobileIronwoodMigrationMigratingModalUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.migrating,
+    showBatchModal: true,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.passcodeWhileSyncing,
+  );
+}
+
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
+  bool showBatchModal = false,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.howItWorks => BigInt.from(14_232_000_000),
     MobileIronwoodMigrationStep.options ||
     MobileIronwoodMigrationStep.privateReview ||
-    MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
+    MobileIronwoodMigrationStep.fastReview ||
+    MobileIronwoodMigrationStep.passcodeWhileSyncing => BigInt.from(
+      14_224_000_000,
+    ),
+    MobileIronwoodMigrationStep.preparing => BigInt.from(14_223_000_000),
+    MobileIronwoodMigrationStep.migrating => BigInt.from(13_112_000_000),
+  };
+  final accountName = switch (step) {
+    MobileIronwoodMigrationStep.preparing ||
+    MobileIronwoodMigrationStep.migrating ||
+    MobileIronwoodMigrationStep.passcodeWhileSyncing => 'Account1',
+    _ => 'Username',
   };
   return ProviderScope(
     child: _MobilePreviewFrame(
       child: MobileIronwoodMigrationFlowScreen(
         step: step,
-        previewData: _ironwoodMigrationFlowData(zatoshi: zatoshi),
+        previewData: _ironwoodMigrationFlowData(
+          zatoshi: zatoshi,
+          accountName: accountName,
+        ),
         previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
         previewArrivalLabel: 'July 18, 12:00 (~2days)',
+        previewShowBatchModal: showBatchModal,
       ),
     ),
   );
@@ -2375,10 +2418,11 @@ rust_sync.MigrationStatus _previewMigrationStatus(
 
 IronwoodMigrationFlowData _ironwoodMigrationFlowData({
   required BigInt zatoshi,
+  String accountName = 'Username',
 }) {
   return IronwoodMigrationFlowData(
     amountZatoshi: zatoshi,
-    accountName: 'Username',
+    accountName: accountName,
     profilePictureId: kDefaultProfilePictureId,
   );
 }

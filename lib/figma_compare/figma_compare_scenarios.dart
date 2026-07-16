@@ -171,6 +171,34 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     desktop: false,
     mobile: true,
   ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-preparing',
+    description: 'Mobile Ironwood migration preparing screen',
+    builder: buildMobileIronwoodMigrationPreparingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-migrating',
+    description: 'Mobile Ironwood migration progress screen',
+    builder: buildMobileIronwoodMigrationMigratingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-migrating-modal',
+    description: 'Mobile Ironwood migration batch detail modal',
+    builder: buildMobileIronwoodMigrationMigratingModalUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-passcode-while-syncing',
+    description: 'Mobile passcode screen while Ironwood migration continues',
+    builder: buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
 ];
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {

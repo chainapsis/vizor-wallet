@@ -347,6 +347,24 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Migration type - Fast',
                       builder: buildMobileIronwoodMigrationFastReviewUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Preparing',
+                      builder: buildMobileIronwoodMigrationPreparingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Migrating',
+                      builder: buildMobileIronwoodMigrationMigratingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Migrating modal',
+                      builder:
+                          buildMobileIronwoodMigrationMigratingModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Passcode while syncing',
+                      builder:
+                          buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
+                    ),
                   ],
                 ),
               ],
