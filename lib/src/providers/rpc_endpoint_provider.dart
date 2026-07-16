@@ -19,6 +19,7 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
       preset.url,
       allowDefaultPort: true,
     );
+    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(lightwalletdUrl: normalized, presetId: preset.id),
@@ -27,6 +28,7 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
 
   Future<void> setCustom(String input) async {
     final normalized = normalizeRpcEndpointUrl(input, allowDefaultPort: true);
+    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(
@@ -34,6 +36,14 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
         presetId: kCustomRpcEndpointPresetId,
       ),
     );
+  }
+
+  void _requireAllowedEndpoint(String lightwalletdUrl) {
+    if (!isRpcEndpointAllowedForBuild(lightwalletdUrl)) {
+      throw const FormatException(
+        'Ironwood Masquerade uses a fixed test endpoint.',
+      );
+    }
   }
 
   Future<void> _persist(RpcEndpointConfig next) async {

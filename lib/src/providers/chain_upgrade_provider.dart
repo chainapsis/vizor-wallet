@@ -6,6 +6,10 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_failover_provider.dart';
 
 String ironwoodActiveSeenStorageKey(String network) {
+  if (kZcashIronwoodMasquerade &&
+      normalizeZcashNetworkName(network) == 'main') {
+    return 'zcash_ironwood_active_seen_ironwood_masquerade_main';
+  }
   return 'zcash_ironwood_active_seen_$network';
 }
 
