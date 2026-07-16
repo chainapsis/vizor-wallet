@@ -14,6 +14,7 @@ DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
 FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-1.0002}"
 FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
 FUNDING_COINBASE_LIMIT="${E2E_ORCHARD_FUNDING_COINBASE_LIMIT:-1}"
+FUNDING_NOTE_COUNT="${E2E_ORCHARD_FUNDING_NOTE_COUNT:-1}"
 PREFUND_BLOCKS="${E2E_ORCHARD_PREFUND_BLOCKS:-0}"
 
 require_cmd() {
@@ -39,14 +40,17 @@ derive_addresses() {
   local attempt
 
   for attempt in 1 2 3; do
-    (cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$MNEMONIC") >"$output_file"
-    if python3 - "$output_file" <<'PY'
+    (cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$MNEMONIC" "$FUNDING_NOTE_COUNT") >"$output_file"
+    if python3 - "$output_file" "$FUNDING_NOTE_COUNT" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as source:
     data = json.load(source)
-if not data.get("unifiedAddress"):
+addresses = data.get("unifiedAddresses")
+if not data.get("unifiedAddress") or not isinstance(addresses, list):
+    raise SystemExit(1)
+if len(addresses) != int(sys.argv[2]) or len(set(addresses)) != len(addresses):
     raise SystemExit(1)
 PY
     then
@@ -76,6 +80,10 @@ if ! [[ "$PREFUND_BLOCKS" =~ ^[0-9]+$ ]]; then
   echo "E2E_ORCHARD_PREFUND_BLOCKS must be a non-negative integer" >&2
   exit 1
 fi
+if ! [[ "$FUNDING_NOTE_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "E2E_ORCHARD_FUNDING_NOTE_COUNT must be a positive integer" >&2
+  exit 1
+fi
 if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
   scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
 fi
@@ -83,11 +91,23 @@ fi
 addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
 derive_addresses "$addresses_file"
 unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
+funding_destinations="$unified_address"
+if [[ "$FUNDING_NOTE_COUNT" != "1" ]]; then
+  funding_destinations="$(python3 - "$addresses_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    print(json.dumps(json.load(source)["unifiedAddresses"], separators=(",", ":")))
+PY
+)"
+fi
 scripts/ironwood-regtest/fund-orchard.sh \
-  "$unified_address" \
+  "$funding_destinations" \
   "$FUNDING_AMOUNT" \
   "$FUNDING_CONFIRMATIONS" \
-  "$FUNDING_COINBASE_LIMIT" >/dev/null
+  "$FUNDING_COINBASE_LIMIT" \
+  "$FUNDING_NOTE_COUNT" >/dev/null
 
 mkdir -p "$ROOT_DIR/.ironwood-regtest"
 : > "$DRIVER_LOG"
