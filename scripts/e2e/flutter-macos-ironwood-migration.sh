@@ -11,6 +11,10 @@ DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
 TEST_NAME="$(basename "$TEST_FILE" .dart)"
 DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
+FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-1.0002}"
+FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
+FUNDING_COINBASE_LIMIT="${E2E_ORCHARD_FUNDING_COINBASE_LIMIT:-1}"
+PREFUND_BLOCKS="${E2E_ORCHARD_PREFUND_BLOCKS:-0}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -68,10 +72,22 @@ export IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
 scripts/ironwood-regtest/reset.sh
 scripts/ironwood-regtest/up.sh
 
+if ! [[ "$PREFUND_BLOCKS" =~ ^[0-9]+$ ]]; then
+  echo "E2E_ORCHARD_PREFUND_BLOCKS must be a non-negative integer" >&2
+  exit 1
+fi
+if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
+  scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
+fi
+
 addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
 derive_addresses "$addresses_file"
 unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
-scripts/ironwood-regtest/fund-orchard.sh "$unified_address" 1.0002 10 >/dev/null
+scripts/ironwood-regtest/fund-orchard.sh \
+  "$unified_address" \
+  "$FUNDING_AMOUNT" \
+  "$FUNDING_CONFIRMATIONS" \
+  "$FUNDING_COINBASE_LIMIT" >/dev/null
 
 mkdir -p "$ROOT_DIR/.ironwood-regtest"
 : > "$DRIVER_LOG"

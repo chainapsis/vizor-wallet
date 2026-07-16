@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -613,6 +615,62 @@ void main() {
     expect(continueCount, 1);
   });
 
+  testWidgets('private status refreshes while software migration advances', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var status = _migrationStatus(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      activeRunId: 'run-1',
+      pendingSplitStageCount: 1,
+    );
+    final continued = Completer<rust_sync.IronwoodMigrationResult>();
+    var continueCount = 0;
+    final service = _migrationServiceForContinue(
+      onContinue: ({required accountUuid}) {
+        continueCount += 1;
+        return continued.future;
+      },
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: status,
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) async {
+              return status;
+            },
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+    expect(continueCount, 1);
+
+    status = _migrationStatus(
+      phase: kIronwoodMigrationBroadcastingPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: const [10_000_000],
+      broadcastedTxCount: 1,
+      totalCount: 1,
+    );
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('1 Planned batches'), findsOneWidget);
+    expect(continueCount, 1);
+
+    continued.complete(_migrationResult());
+    await tester.pump();
+  });
+
   testWidgets(
     'private status retries a persisted denomination broadcast on timer',
     (tester) async {
@@ -1083,6 +1141,7 @@ Widget _migrationOptionsHarness({
 
 Widget _privateStatusHarness({
   required rust_sync.MigrationStatus status,
+  OrchardMigrationStatusGetter? statusGetter,
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
 }) {
@@ -1094,6 +1153,7 @@ Widget _privateStatusHarness({
     ),
     initialLocation: '/migration/private/status',
     realStatusRoute: true,
+    statusGetter: statusGetter,
     migrationService: migrationService,
     activeAccountIsHardware: activeAccountIsHardware,
   );
@@ -1105,6 +1165,7 @@ Widget _migrationEntryHarness({
   Object? routeError,
   bool realStatusRoute = false,
   rust_sync.MigrationStatus? routeStatus,
+  OrchardMigrationStatusGetter? statusGetter,
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
 }) {
@@ -1168,6 +1229,14 @@ Widget _migrationEntryHarness({
             ({required dbPath, required network, required accountUuid}) async {
               final error = routeError;
               if (error != null) throw error;
+              final getter = statusGetter;
+              if (getter != null) {
+                return getter(
+                  dbPath: dbPath,
+                  network: network,
+                  accountUuid: accountUuid,
+                );
+              }
               return status;
             },
       ),

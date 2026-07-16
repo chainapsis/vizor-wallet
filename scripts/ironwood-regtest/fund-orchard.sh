@@ -3,9 +3,10 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-destination="${1:?usage: fund-orchard.sh <unified-address> [zec-amount] [confirming-blocks]}"
+destination="${1:?usage: fund-orchard.sh <unified-address> [zec-amount] [confirming-blocks] [coinbase-limit]}"
 amount="${2:-1.0002}"
 confirming_blocks="${3:-10}"
+coinbase_limit="${4:-1}"
 
 if [[ "$destination" != uregtest1* ]]; then
   echo "fund-orchard.sh requires a regtest unified address" >&2
@@ -13,6 +14,10 @@ if [[ "$destination" != uregtest1* ]]; then
 fi
 if ! [[ "$confirming_blocks" =~ ^[1-9][0-9]*$ ]]; then
   echo "confirming-blocks must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "$coinbase_limit" =~ ^[0-9]+$ ]]; then
+  echo "coinbase-limit must be a non-negative integer" >&2
   exit 1
 fi
 
@@ -23,7 +28,7 @@ assert_pre_ironwood_room "$((20 + confirming_blocks))"
 
 sender="$(faucet_sender)"
 sapling_faucet="$(zcash_cli z_getnewaddress sapling)"
-shield_opid="$(extract_opid "$(zcash_cli z_shieldcoinbase "$sender" "$sapling_faucet" 0.0001 1)")"
+shield_opid="$(extract_opid "$(zcash_cli z_shieldcoinbase "$sender" "$sapling_faucet" 0.0001 "$coinbase_limit")")"
 wait_for_operation "$shield_opid" >/dev/null
 zcash_cli generate 20 >/dev/null
 wait_for_lightwalletd_tip "$(current_height)"

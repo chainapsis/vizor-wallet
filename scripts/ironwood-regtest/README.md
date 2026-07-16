@@ -79,6 +79,20 @@ again, verifies the child becomes broadcastable, and completes the original run.
 The reusable `reorg.sh` primitive holds transactions displaced by the old chain
 out of replacement blocks until `release-reorg-transactions.sh` is called.
 
+Test a large balance that requires multiple denomination stages and migration
+transactions:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-migration-large-balance.sh
+```
+
+This funds the deterministic wallet with 99.0002 ZEC, verifies the exact
+two-stage padded denomination plan and 18 migration batches, observes partial
+split and transfer progress, and checks the exact ZIP 317 fee delta after all
+transactions confirm. The base runner accepts `E2E_ORCHARD_FUNDING_AMOUNT`,
+`E2E_ORCHARD_PREFUND_BLOCKS`, and `E2E_ORCHARD_FUNDING_COINBASE_LIMIT` so other
+large-balance scenarios can reuse the same setup.
+
 The base runner accepts `E2E_TEST_FILE` and `E2E_DRIVER_PORT` overrides so new
 single-process scenarios can reuse chain reset, deterministic Orchard funding,
 driver startup, and Flutter launch without duplicating the harness.
@@ -104,7 +118,7 @@ scripts/ironwood-regtest/up.sh
 cd rust
 cargo run --quiet --example regtest_wallet_addresses -- "<mnemonic>"
 cd ..
-scripts/ironwood-regtest/fund-orchard.sh "<uregtest-address>" 1.0002 10
+scripts/ironwood-regtest/fund-orchard.sh "<uregtest-address>" 1.0002 10 1
 
 scripts/ironwood-regtest/status.sh
 scripts/ironwood-regtest/checkpoint.sh save orchard-funded

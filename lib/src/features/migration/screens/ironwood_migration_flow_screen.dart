@@ -209,7 +209,7 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
 
     final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
     return statusAsync.when(
-      skipLoadingOnReload: false,
+      skipLoadingOnReload: true,
       loading: () => _IronwoodMigrationFrame(
         toolbar: _privateStatusToolbar(context),
         disableSidebarActions: true,
@@ -1553,6 +1553,7 @@ class _IronwoodMigrationPrivateStatusContentState
     extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
   AppLifecycleListener? _lifecycleListener;
   Timer? _statusPollTimer;
+  Timer? _autoAdvanceTimer;
   bool _isAdvancing = false;
   String? _advanceError;
 
@@ -1560,7 +1561,7 @@ class _IronwoodMigrationPrivateStatusContentState
   void initState() {
     super.initState();
     _lifecycleListener = AppLifecycleListener(onResume: _pollMigrationStatus);
-    _syncStatusPollTimer();
+    _syncStatusPollTimers();
   }
 
   @override
@@ -1571,18 +1572,21 @@ class _IronwoodMigrationPrivateStatusContentState
       _advanceError = null;
       _statusPollTimer?.cancel();
       _statusPollTimer = null;
-      _syncStatusPollTimer();
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
+      _syncStatusPollTimers();
     }
   }
 
   @override
   void dispose() {
     _statusPollTimer?.cancel();
+    _autoAdvanceTimer?.cancel();
     _lifecycleListener?.dispose();
     super.dispose();
   }
 
-  void _syncStatusPollTimer() {
+  void _syncStatusPollTimers() {
     final shouldRun =
         widget.accountUuid != null &&
         widget.status.activeRunId != null &&
@@ -1594,25 +1598,31 @@ class _IronwoodMigrationPrivateStatusContentState
     if (!shouldRun) {
       _statusPollTimer?.cancel();
       _statusPollTimer = null;
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
       return;
     }
-    if (_statusPollTimer != null) return;
-
-    _statusPollTimer = Timer.periodic(
-      _shouldAutoAdvanceStatus(widget.status)
-          ? _privateStatusAutoAdvanceInterval
-          : _privateStatusRefreshInterval,
-      (_) => unawaited(_pollMigrationStatus()),
+    _statusPollTimer ??= Timer.periodic(
+      _privateStatusRefreshInterval,
+      (_) => _refreshMigrationState(),
     );
+    if (_shouldAutoAdvanceStatus(widget.status)) {
+      _autoAdvanceTimer ??= Timer.periodic(
+        _privateStatusAutoAdvanceInterval,
+        (_) => unawaited(_advanceMigration(showErrors: false)),
+      );
+    } else {
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
+    }
   }
 
   Future<void> _pollMigrationStatus() async {
     if (!mounted) return;
+    _refreshMigrationState();
     if (_shouldAutoAdvanceStatus(widget.status)) {
       await _advanceMigration(showErrors: false);
-      return;
     }
-    _refreshMigrationState();
   }
 
   Future<void> _advanceMigration({required bool showErrors}) async {
