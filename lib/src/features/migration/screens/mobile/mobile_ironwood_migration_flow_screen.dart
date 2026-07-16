@@ -1,0 +1,1374 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart'
+    show CircularProgressIndicator, Divider, Scaffold;
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../../core/config/network_config.dart';
+import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../models/ironwood_migration_phases.dart';
+import '../ironwood_migration_flow_screen.dart';
+
+enum MobileIronwoodMigrationStep {
+  intro,
+  howItWorks,
+  options,
+  privateReview,
+  fastReview,
+}
+
+const _migrationProgress = 60 / 196;
+
+class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
+  const MobileIronwoodMigrationFlowScreen({
+    required this.step,
+    this.previewData,
+    this.previewPrivatePlan,
+    this.previewArrivalLabel,
+    super.key,
+  });
+
+  final MobileIronwoodMigrationStep step;
+  final IronwoodMigrationFlowData? previewData;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final String? previewArrivalLabel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preview = previewData;
+    if (preview != null) {
+      return _MobileIronwoodMigrationContent(
+        step: step,
+        data: preview,
+        previewMode: true,
+        previewPrivatePlan: previewPrivatePlan,
+        previewArrivalLabel: previewArrivalLabel,
+      );
+    }
+
+    return ref
+        .watch(ironwoodMigrationFlowDataProvider)
+        .when(
+          skipLoadingOnReload: true,
+          loading: () => const _MobileMigrationLoadingScreen(),
+          error: (_, _) => const _MobileMigrationRedirectHome(),
+          data: (data) => data == null
+              ? const _MobileMigrationRedirectHome()
+              : _MobileIronwoodMigrationContent(
+                  step: step,
+                  data: data,
+                  previewMode: false,
+                  previewPrivatePlan: previewPrivatePlan,
+                  previewArrivalLabel: previewArrivalLabel,
+                ),
+        );
+  }
+}
+
+class _MobileIronwoodMigrationContent extends StatelessWidget {
+  const _MobileIronwoodMigrationContent({
+    required this.step,
+    required this.data,
+    required this.previewMode,
+    required this.previewPrivatePlan,
+    required this.previewArrivalLabel,
+  });
+
+  final MobileIronwoodMigrationStep step;
+  final IronwoodMigrationFlowData data;
+  final bool previewMode;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final String? previewArrivalLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (step) {
+      MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
+      MobileIronwoodMigrationStep.howItWorks => _MobileMigrationHowItWorks(
+        data: data,
+      ),
+      MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        data: data,
+      ),
+      MobileIronwoodMigrationStep.privateReview =>
+        _MobileMigrationPrivateReview(
+          data: data,
+          previewPlan: previewPrivatePlan,
+          previewArrivalLabel: previewArrivalLabel,
+        ),
+      MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
+        data: data,
+        previewMode: previewMode,
+      ),
+    };
+  }
+}
+
+class _MobileMigrationIntro extends StatelessWidget {
+  const _MobileMigrationIntro({required this.data});
+
+  final IronwoodMigrationFlowData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Transform.translate(
+              offset: const Offset(0, 20),
+              child: MobileTopNav.back(
+                title: 'Zcash Network Update',
+                titleStyle: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+                onBack: () => context.go('/home'),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  30,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 172,
+                      child: _MobilePoolMigrationHero(data: data),
+                    ),
+                    const SizedBox(height: 46),
+                    SvgPicture.asset(
+                      'assets/illustrations/ironwood_wordmark.svg',
+                      key: const ValueKey('mobile_ironwood_wordmark'),
+                      width: 273,
+                      height: 37,
+                      colorFilter: ColorFilter.mode(
+                        colors.text.accent,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Ironwood is the latest Zcash shielded pool. It’s '
+                      'the first formally verified pool with cutting edge '
+                      'cryptography.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
+                        height: 24 / 16,
+                      ),
+                    ),
+                    const SizedBox(height: 27),
+                    Text(
+                      'There will be a one-time mandatory upgrade from '
+                      'the legacy (orchard) shielded pool. You need to '
+                      'transition your ${data.amountText} ZEC from the old '
+                      'Orchard pool into the new Ironwood pool.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                        height: 25 / 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.sm,
+                AppSpacing.s,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppButton(
+                    variant: AppButtonVariant.ghost,
+                    expand: true,
+                    height: 44,
+                    onPressed: () => _openIronwoodReleaseNotes(),
+                    child: const Text('Official release note'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  _MobileMigrationPrimaryButton(
+                    label: 'How the migration works',
+                    onPressed: () => context.go('/migration/how-it-works'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationHowItWorks extends StatelessWidget {
+  const _MobileMigrationHowItWorks({required this.data});
+
+  final IronwoodMigrationFlowData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobileMigrationStepScaffold(
+      onBack: () => context.go('/migration/intro'),
+      topGap: 31,
+      childGap: 30,
+      title: 'How Migration Works',
+      bottom: _MobileMigrationPrimaryButton(
+        label: 'Continue',
+        onPressed: () => context.go('/migration/options'),
+      ),
+      child: _MobileMigrationProcessCard(amount: data.amountText),
+    );
+  }
+}
+
+class _MobileMigrationOptions extends StatelessWidget {
+  const _MobileMigrationOptions({required this.data});
+
+  final IronwoodMigrationFlowData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return _MobileMigrationStepScaffold(
+      onBack: () => context.go('/migration/how-it-works'),
+      topGap: 83,
+      title: 'Choose How to Migrate\nyour ${data.amountText} ZEC',
+      subtitle:
+          'Whichever option you choose, your funds will be safely deposited '
+          'into the Ironwood pool.',
+      bottom: _MobileMigrationPrimaryButton(
+        label: 'Continue',
+        onPressed: () => context.go('/migration/private/review'),
+      ),
+      child: Column(
+        children: [
+          const _MobileMigrationOptionCard(
+            title: 'Private',
+            body:
+                'Sends independent parts over time windows. Slower, harder '
+                'to track.',
+            selected: true,
+            recommended: true,
+            icon: _MigrationChoiceIcon.private,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          const _MobileMigrationOptionCard(
+            key: ValueKey('mobile_ironwood_immediate_unavailable'),
+            title: 'Immediate',
+            body:
+                'Sends now in one step. Amount and timing are easier to '
+                'associate.',
+            selected: false,
+            recommended: false,
+            icon: _MigrationChoiceIcon.immediate,
+            enabled: false,
+          ),
+          const SizedBox(height: 25),
+          Text(
+            'Speed vs. correlation exposure. No anchors, cohorts, PCZTs, '
+            'or action counts here.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+              height: 24 / 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileMigrationPrivateReview extends ConsumerWidget {
+  const _MobileMigrationPrivateReview({
+    required this.data,
+    required this.previewPlan,
+    required this.previewArrivalLabel,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
+  final String? previewArrivalLabel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preview = previewPlan;
+    final planAsync = preview != null
+        ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
+        : ref.watch(ironwoodMigrationPrivatePlanProvider);
+
+    return _MobileMigrationReviewScaffold(
+      onBack: () => context.go('/migration/options'),
+      icon: const AppIcon(
+        AppIcons.shieldKeyhole,
+        size: 28,
+        color: Color(0xFF00A460),
+      ),
+      title: 'Review Migration Plan',
+      amount: '${data.amountText} ZEC',
+      bottom: _MobileMigrationPrimaryButton(
+        label: 'Continue',
+        // The provided mobile handoff ends at this review surface. The
+        // private-status and signing surfaces remain a later implementation
+        // round, so production does not start a migration from an incomplete
+        // mobile flow.
+        onPressed: preview == null ? null : () {},
+      ),
+      child: planAsync.when(
+        skipLoadingOnReload: true,
+        loading: () => const SizedBox(
+          height: 240,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        error: (_, _) => const _MobileMigrationUnavailable(),
+        data: (plan) => plan == null
+            ? const _MobileMigrationUnavailable()
+            : _MobilePrivatePlan(
+                plan: plan,
+                arrivalLabel:
+                    previewArrivalLabel ?? _migrationArrivalLabel(plan),
+              ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationFastReview extends StatelessWidget {
+  const _MobileMigrationFastReview({
+    required this.data,
+    required this.previewMode,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final bool previewMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return _MobileMigrationReviewScaffold(
+      onBack: () => context.go('/migration/options'),
+      topGap: 40,
+      iconTitleGap: 26,
+      icon: SizedBox(
+        width: 28,
+        height: 28,
+        child: CustomPaint(
+          painter: _ImmediateMigrationIconPainter(colors.icon.disabled),
+        ),
+      ),
+      title: 'Review Migration Plan',
+      amount: '${data.amountText} ZEC',
+      bottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppButton(
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            height: 44,
+            onPressed: () => context.go('/migration/options'),
+            leading: const AppIcon(AppIcons.chevronBackward, size: 20),
+            child: const Text('Consider another option'),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            variant: AppButtonVariant.destructive,
+            expand: true,
+            height: 50,
+            onPressed: previewMode ? () {} : null,
+            leading: const AppIcon(AppIcons.warning, size: 20),
+            child: const Text('Authorise anyway'),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _MobileReviewCard(
+            child: Column(
+              children: [
+                _ReviewRow(
+                  label: 'Fees (estimate)',
+                  value: 'shown before send',
+                ),
+                const SizedBox(height: AppSpacing.s),
+                const _ReviewRow(
+                  label: 'Orchard remains',
+                  value: '<0.001 ZEC',
+                  showInfo: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.homeCard,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.md,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppIcon(
+                    AppIcons.shieldKeyholeOutline,
+                    size: 24,
+                    color: colors.text.homeCard,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Privacy trade-off',
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.homeCard,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text.rich(
+                          TextSpan(
+                            style: AppTypography.bodySmall.copyWith(
+                              color: colors.text.homeCard,
+                              height: 21 / 14,
+                              letterSpacing: -0.21,
+                            ),
+                            children: [
+                              TextSpan(
+                                text:
+                                    'Crosses in one visible step — your '
+                                    '${data.amountText} ZEC and timing are ',
+                              ),
+                              TextSpan(
+                                text: 'easier to associate with your wallet',
+                                style: TextStyle(
+                                  color: colors.text.destructive,
+                                ),
+                              ),
+                              const TextSpan(text: '. '),
+                              const TextSpan(
+                                text:
+                                    'Consider choosing a Private Migration '
+                                    'option.',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileMigrationStepScaffold extends StatelessWidget {
+  const _MobileMigrationStepScaffold({
+    required this.onBack,
+    required this.title,
+    required this.child,
+    required this.bottom,
+    this.subtitle,
+    this.topGap = 31,
+    this.childGap = 28,
+  });
+
+  final VoidCallback onBack;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+  final Widget bottom;
+  final double topGap;
+  final double childGap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Transform.translate(
+              offset: const Offset(0, 20),
+              child: MobileTopNav.steps(
+                progress: _migrationProgress,
+                onBack: onBack,
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  topGap,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        subtitle!,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.accent,
+                          height: 24 / 16,
+                        ),
+                      ),
+                    ],
+                    SizedBox(height: childGap),
+                    child,
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                0,
+                AppSpacing.sm,
+                AppSpacing.s,
+              ),
+              child: bottom,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationReviewScaffold extends StatelessWidget {
+  const _MobileMigrationReviewScaffold({
+    required this.onBack,
+    required this.icon,
+    required this.title,
+    required this.amount,
+    required this.child,
+    required this.bottom,
+    this.topGap = 29,
+    this.iconTitleGap = 36,
+  });
+
+  final VoidCallback onBack;
+  final Widget icon;
+  final String title;
+  final String amount;
+  final Widget child;
+  final Widget bottom;
+  final double topGap;
+  final double iconTitleGap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Transform.translate(
+              offset: const Offset(0, 20),
+              child: MobileTopNav.steps(
+                progress: _migrationProgress,
+                onBack: onBack,
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  topGap,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
+                child: Column(
+                  children: [
+                    icon,
+                    SizedBox(height: iconTitleGap),
+                    Text(
+                      title,
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      amount,
+                      style: AppTypography.displayLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    child,
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                0,
+                AppSpacing.sm,
+                AppSpacing.s,
+              ),
+              child: bottom,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationPrimaryButton extends StatelessWidget {
+  const _MobileMigrationPrimaryButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      expand: true,
+      constrainContent: true,
+      height: 50,
+      onPressed: onPressed,
+      trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+      child: Text(label),
+    );
+  }
+}
+
+class _MobilePoolMigrationHero extends StatelessWidget {
+  const _MobilePoolMigrationHero({required this.data});
+
+  final IronwoodMigrationFlowData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.xLarge),
+      child: ColoredBox(
+        color: colors.background.ground,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 16,
+              child: Row(
+                children: [
+                  AppProfilePicture(
+                    profilePictureId: data.profilePictureId,
+                    size: AppProfilePictureSize.navLarge,
+                  ),
+                  Expanded(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          height: 3,
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFB8B8B8), Color(0xFF00A460)],
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        DecoratedBox(
+                          decoration: const ShapeDecoration(
+                            color: Color(0xFF00A460),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(6),
+                              ),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xs,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const AppIcon(
+                                  AppIcons.shieldKeyhole,
+                                  size: 20,
+                                  color: Color(0xFFEAFEEF),
+                                ),
+                                const SizedBox(width: AppSpacing.xxs),
+                                Text(
+                                  'Migration',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: const Color(0xFFEAFEEF),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AppProfilePicture(
+                    profilePictureId: data.profilePictureId,
+                    size: AppProfilePictureSize.navLarge,
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '(Legacy)',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                        Text(
+                          'Orchard Pool',
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                        Text(
+                          amount,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Ironwood Pool',
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: const Color(0xFF00A460),
+                          ),
+                        ),
+                        Text(
+                          amount,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationProcessCard extends StatelessWidget {
+  const _MobileMigrationProcessCard({required this.amount});
+
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobileReviewCard(
+      padding: const EdgeInsets.fromLTRB(20, 29, 16, 42),
+      borderRadius: 32,
+      child: Column(
+        children: [
+          _ProcessRow(
+            icon: _ProcessIcon.split,
+            title: 'Split funds',
+            body:
+                'Your $amount ZEC balance is divided into several smaller '
+                'common notes (10/1/0.1 ZEC). Splitting the balance into '
+                'smaller batches mixes your transactions with other users '
+                'maximizing privacy.',
+          ),
+          const Divider(height: 33),
+          const _ProcessRow(
+            icon: _ProcessIcon.schedule,
+            title: 'Schedule',
+            body:
+                'Transactions dispatch at irregular intervals instead of all '
+                'at once.',
+          ),
+          const Divider(height: 33),
+          const _ProcessRow(
+            icon: _ProcessIcon.sign,
+            title: 'Sign once',
+            body:
+                'You grant permission at the start, and Vizor executes the '
+                'remaining steps.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _ProcessIcon { split, schedule, sign }
+
+class _ProcessRow extends StatelessWidget {
+  const _ProcessRow({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final _ProcessIcon icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: CustomPaint(
+            painter: _ProcessIconPainter(icon, const Color(0xFF00A460)),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                body,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                  height: 25 / 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProcessIconPainter extends CustomPainter {
+  const _ProcessIconPainter(this.kind, this.color);
+
+  final _ProcessIcon kind;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    switch (kind) {
+      case _ProcessIcon.split:
+        canvas.drawLine(const Offset(5, 5), const Offset(5, 11), paint);
+        canvas.drawLine(const Offset(5, 11), const Offset(12, 11), paint);
+        canvas.drawLine(const Offset(12, 11), const Offset(12, 16), paint);
+        canvas.drawLine(const Offset(12, 11), const Offset(16, 7), paint);
+      case _ProcessIcon.schedule:
+        canvas.drawCircle(const Offset(10, 10), 6.5, paint);
+        canvas.drawLine(const Offset(10, 10), const Offset(10, 6), paint);
+        canvas.drawLine(const Offset(10, 10), const Offset(13, 12), paint);
+      case _ProcessIcon.sign:
+        canvas.drawLine(const Offset(4, 15), const Offset(16, 15), paint);
+        canvas.drawLine(const Offset(5, 12), const Offset(8, 6), paint);
+        canvas.drawLine(const Offset(8, 6), const Offset(12, 12), paint);
+        canvas.drawLine(const Offset(12, 12), const Offset(15, 5), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProcessIconPainter oldDelegate) =>
+      oldDelegate.kind != kind || oldDelegate.color != color;
+}
+
+enum _MigrationChoiceIcon { private, immediate }
+
+class _MobileMigrationOptionCard extends StatelessWidget {
+  const _MobileMigrationOptionCard({
+    required this.title,
+    required this.body,
+    required this.selected,
+    required this.recommended,
+    required this.icon,
+    this.enabled = true,
+    super.key,
+  });
+
+  final String title;
+  final String body;
+  final bool selected;
+  final bool recommended;
+  final _MigrationChoiceIcon icon;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Opacity(
+      opacity: enabled ? 1 : 0.96,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(24),
+          border: selected
+              ? Border.all(color: const Color(0xFF00A460), width: 2)
+              : null,
+          boxShadow: appSurfaceShadow(colors),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 16, 18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: icon == _MigrationChoiceIcon.private
+                    ? AppIcon(
+                        AppIcons.shieldKeyhole,
+                        color: colors.icon.regular,
+                      )
+                    : CustomPaint(
+                        painter: _ImmediateMigrationIconPainter(
+                          colors.icon.disabled,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (recommended) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00C77B),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
+                              child: Text(
+                                'Recommended',
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: const Color(0xFFFFFFFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      body,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                        height: 25 / 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected
+                      ? colors.background.inverse
+                      : colors.background.overlay,
+                ),
+                child: selected
+                    ? AppIcon(
+                        AppIcons.check,
+                        size: 16,
+                        color: colors.text.inverse,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImmediateMigrationIconPainter extends CustomPainter {
+  const _ImmediateMigrationIconPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(size.width * 0.56, 0)
+      ..lineTo(size.width * 0.18, size.height * 0.54)
+      ..lineTo(size.width * 0.48, size.height * 0.54)
+      ..lineTo(size.width * 0.37, size.height)
+      ..lineTo(size.width * 0.84, size.height * 0.39)
+      ..lineTo(size.width * 0.57, size.height * 0.39)
+      ..close();
+    canvas.drawPath(path, paint);
+    canvas.drawLine(
+      Offset.zero,
+      Offset(size.width * 0.22, 0),
+      Paint()
+        ..color = color
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ImmediateMigrationIconPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _MobilePrivatePlan extends StatelessWidget {
+  const _MobilePrivatePlan({required this.plan, required this.arrivalLabel});
+
+  final rust_sync.OrchardMigrationPrivatePlan plan;
+  final String arrivalLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final perBatchFee = plan.plannedBatchCount <= 0
+        ? plan.migrationFeeZatoshi
+        : plan.migrationFeeZatoshi ~/ BigInt.from(plan.plannedBatchCount);
+    final orchardRemainder = plan.orchardChangeZatoshi ?? BigInt.zero;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _MobileReviewCard(
+          child: Column(
+            children: [
+              _ReviewRow(
+                label: '${plan.plannedBatchCount} planned batches',
+                value: 'View  ›',
+                strongLabel: true,
+              ),
+              const SizedBox(height: AppSpacing.s),
+              _ReviewRow(label: '~ Arrival time', value: arrivalLabel),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _MobileReviewCard(
+          child: Column(
+            children: [
+              _ReviewRow(
+                label: 'Fees (estimate)',
+                value: 'Per batch, ~${_compactZec(perBatchFee)} ZEC',
+              ),
+              const SizedBox(height: AppSpacing.s),
+              _ReviewRow(
+                label: 'Orchard remains',
+                value: '<${_compactZec(orchardRemainder)} ZEC',
+                showInfo: true,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 28),
+        Text(
+          'Privacy',
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Separate windows reduce correlation — the total crossing amount '
+          'stays publicly visible. Sending is best effort, not a delivery '
+          'time.',
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.accent,
+            height: 25 / 16,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileReviewCard extends StatelessWidget {
+  const _MobileReviewCard({
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
+    this.borderRadius = 24,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: appSurfaceShadow(colors),
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
+}
+
+class _ReviewRow extends StatelessWidget {
+  const _ReviewRow({
+    required this.label,
+    required this.value,
+    this.strongLabel = false,
+    this.showInfo = false,
+  });
+
+  final String label;
+  final String value;
+  final bool strongLabel;
+  final bool showInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        Text(
+          label,
+          style:
+              (strongLabel
+                      ? AppTypography.bodyMediumStrong
+                      : AppTypography.bodyMedium)
+                  .copyWith(
+                    color: strongLabel
+                        ? colors.text.accent
+                        : colors.text.secondary,
+                  ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Flexible(
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              if (showInfo) ...[
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(AppIcons.help, size: 14, color: colors.icon.regular),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileMigrationUnavailable extends StatelessWidget {
+  const _MobileMigrationUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return _MobileReviewCard(
+      child: Text(
+        'Migration review is not available yet. Wait for sync to finish and '
+        'try again.',
+        textAlign: TextAlign.center,
+        style: AppTypography.bodyMedium.copyWith(
+          color: context.colors.text.secondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationLoadingScreen extends StatelessWidget {
+  const _MobileMigrationLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.colors.background.window,
+      body: const SafeArea(
+        child: Column(
+          children: [
+            MobileTopNav.steps(
+              progress: _migrationProgress,
+              showBackButton: false,
+            ),
+            Expanded(child: Center(child: CircularProgressIndicator())),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMigrationRedirectHome extends StatefulWidget {
+  const _MobileMigrationRedirectHome();
+
+  @override
+  State<_MobileMigrationRedirectHome> createState() =>
+      _MobileMigrationRedirectHomeState();
+}
+
+class _MobileMigrationRedirectHomeState
+    extends State<_MobileMigrationRedirectHome> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.go('/home');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const _MobileMigrationLoadingScreen();
+}
+
+String _compactZec(BigInt zatoshi) {
+  return ZecAmount.fromZatoshi(zatoshi).balance.amountText;
+}
+
+String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
+  final batches = math.max(1, plan.plannedBatchCount);
+  final seconds = plan.broadcastWindowSeconds * BigInt.from(batches - 1);
+  final duration = Duration(seconds: seconds.toInt());
+  final arrival = DateTime.now().add(duration);
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final minute = arrival.minute.toString().padLeft(2, '0');
+  final days = math.max(1, duration.inHours / 24).ceil();
+  return '${months[arrival.month - 1]} ${arrival.day}, '
+      '${arrival.hour}:$minute (~$days days)';
+}
+
+Future<void> _openIronwoodReleaseNotes() async {
+  await launchUrl(
+    Uri.parse(kIronwoodMigrationReleaseNotesUrl),
+    mode: LaunchMode.externalApplication,
+  );
+}

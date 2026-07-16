@@ -7,6 +7,7 @@ import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
+import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -262,6 +263,63 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/receive',
       pageBuilder: (context, state) =>
           CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
+    ),
+    GoRoute(
+      path: '/migration',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.intro,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/intro',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.intro,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/how-it-works',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.howItWorks,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/options',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.options,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.privateReview,
+        ),
+      ),
+    ),
+    // The Immediate path is intentionally not linked from the production
+    // option picker until its migration backend exists. Keeping the supplied
+    // review UI routable lets deterministic previews validate the design.
+    GoRoute(
+      path: '/migration/fast/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+        ),
+      ),
     ),
     GoRoute(
       path: '/about',
