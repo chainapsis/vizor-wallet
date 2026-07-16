@@ -54,7 +54,7 @@ MACOS_RELEASE_FLAVOR_CONFIGS = {
     artifact_name: "Ironwood-Masquerade",
     bundle_id: "com.keplr.vizor.ironwood-masquerade",
     bundle_id_name: "Ironwood Masquerade",
-    app_icon_file: "TestnetAppIcon",
+    app_icon_file: "IronwoodMasqueradeAppIcon",
     sparkle_feed_asset_name: "appcast-ironwood-masquerade.xml",
     sparkle_public_key_env: "SPARKLE_PUBLIC_ED_KEY_IRONWOOD_MASQUERADE",
     sparkle_private_key_env: "SPARKLE_PRIVATE_ED_KEY_IRONWOOD_MASQUERADE",

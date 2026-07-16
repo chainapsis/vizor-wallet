@@ -29,6 +29,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		8A0F5C532F8B001200A1C001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C522F8B001200A1C001 /* AppIcon.icon */; };
 		8A0F5C542F8B001200A1C001 /* TestnetAppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */; };
+		8A0F5C572F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C562F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon */; };
 		86D631C82662CFADA25E93A1 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34FFD12E0E0D09282CBC1131 /* Pods_Runner.framework */; };
 		CB9BE22086B38194355E9C44 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CD78EC47695D0CDAA4C59781 /* Sparkle */; };
 /* End PBXBuildFile section */
@@ -74,6 +75,7 @@
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8A0F5C522F8B001200A1C001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = Runner/AppIcon.icon; sourceTree = "<group>"; };
 		8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = TestnetAppIcon.icon; path = Runner/TestnetAppIcon.icon; sourceTree = "<group>"; };
+		8A0F5C562F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = IronwoodMasqueradeAppIcon.icon; path = Runner/IronwoodMasqueradeAppIcon.icon; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 			children = (
 				8A0F5C522F8B001200A1C001 /* AppIcon.icon */,
 				8A0F5C552F8B001200A1C001 /* TestnetAppIcon.icon */,
+				8A0F5C562F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon */,
 				33CC10F42044A3C60003C045 /* MainMenu.xib */,
 				33CC10F72044A3C60003C045 /* Info.plist */,
 			);
@@ -327,6 +330,7 @@
 			files = (
 				8A0F5C532F8B001200A1C001 /* AppIcon.icon in Resources */,
 				8A0F5C542F8B001200A1C001 /* TestnetAppIcon.icon in Resources */,
+				8A0F5C572F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
