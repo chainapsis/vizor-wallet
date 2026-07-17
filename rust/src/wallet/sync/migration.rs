@@ -34,6 +34,8 @@ pub(crate) use stages::{
 };
 
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
+pub(crate) const ZIP318_DUST_FLOOR_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
+pub(crate) const ZIP318_DENOM_CAP_ZATOSHI: u64 = 100 * ZATOSHIS_PER_ZEC;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
@@ -65,6 +67,8 @@ pub(crate) const PHASE_ABANDONED: &str = "abandoned";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DenominationPlan {
+    /// Canonical ZIP 318 denominations to be emitted as Ironwood outputs.
+    /// The note-preparation outputs that fund these are `denomination + fee`.
     pub migration_outputs: Vec<u64>,
     pub orchard_change: Option<u64>,
     pub split_fee_zatoshi: u64,
@@ -90,62 +94,37 @@ pub(crate) fn plan_denominations(
         });
     }
 
-    let available = total_input_zatoshi
+    let mut remaining = total_input_zatoshi
         .checked_sub(split_fee_zatoshi)
         .ok_or("Denomination split fee underflow")?;
-
-    let whole_zec = available / ZATOSHIS_PER_ZEC;
-    let mut remainder = available % ZATOSHIS_PER_ZEC;
     let mut outputs = Vec::new();
 
-    let mut denom = 1u64;
-    while denom <= whole_zec / 10 {
-        denom = denom.checked_mul(10).ok_or("Denomination overflow")?;
-    }
-
-    let mut remaining_whole = whole_zec;
-    while denom > 0 {
-        while remaining_whole >= denom {
-            outputs.push(
-                denom
-                    .checked_mul(ZATOSHIS_PER_ZEC)
-                    .ok_or("Denomination zatoshi overflow")?,
-            );
-            remaining_whole -= denom;
+    while let Some(spendable_after_fee) = remaining.checked_sub(migration_fee_zatoshi) {
+        let Some(denomination) =
+            largest_zip318_power_of_ten_denomination_at_or_below(spendable_after_fee)
+        else {
+            break;
+        };
+        outputs.push(denomination);
+        if outputs.len() > MIGRATION_MAX_PREPARED_NOTES_PER_RUN {
+            return Err(format!(
+                "Migration plan would create {} prepared notes, above the {} note limit",
+                outputs.len(),
+                MIGRATION_MAX_PREPARED_NOTES_PER_RUN
+            ));
         }
-        denom /= 10;
+        remaining = remaining
+            .checked_sub(denomination)
+            .and_then(|value| value.checked_sub(migration_fee_zatoshi))
+            .ok_or("Canonical denomination fee underflow")?;
     }
 
-    let migratable_residual_threshold = migration_fee_zatoshi
-        .checked_add(minimum_output_zatoshi)
-        .ok_or("Residual fee threshold overflow")?;
-    let orchard_change = if remainder > migratable_residual_threshold {
-        outputs.push(remainder);
-        None
-    } else if remainder >= minimum_output_zatoshi {
-        Some(remainder)
-    } else {
-        remainder = 0;
-        None
-    };
-
-    if outputs.len() > MIGRATION_MAX_PREPARED_NOTES_PER_RUN {
-        return Err(format!(
-            "Migration plan would create {} prepared notes, above the {} note limit",
-            outputs.len(),
-            MIGRATION_MAX_PREPARED_NOTES_PER_RUN
-        ));
-    }
+    let orchard_change = (remaining >= minimum_output_zatoshi).then_some(remaining);
 
     let total_migratable_zatoshi = outputs.iter().try_fold(0u64, |acc, value| {
         acc.checked_add(*value)
             .ok_or("Migratable total overflow".to_string())
     })?;
-
-    // When `remainder` is below minimum output it intentionally becomes extra
-    // transaction fee. Keep the variable assignment explicit so tests can lock
-    // the policy.
-    let _dust_remainder_added_to_fee = remainder < minimum_output_zatoshi;
 
     Ok(DenominationPlan {
         migration_outputs: outputs,
@@ -155,6 +134,29 @@ pub(crate) fn plan_denominations(
         total_input_zatoshi,
         total_migratable_zatoshi,
     })
+}
+
+pub(crate) fn is_zip318_canonical_denomination(value_zatoshi: u64) -> bool {
+    largest_zip318_power_of_ten_denomination_at_or_below(value_zatoshi) == Some(value_zatoshi)
+}
+
+fn largest_zip318_power_of_ten_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
+    if value_zatoshi < ZIP318_DUST_FLOOR_ZATOSHI {
+        return None;
+    }
+
+    let mut denomination = ZIP318_DUST_FLOOR_ZATOSHI;
+    let mut best = None;
+    loop {
+        if denomination <= value_zatoshi {
+            best = Some(denomination);
+        }
+        if denomination >= ZIP318_DENOM_CAP_ZATOSHI {
+            break;
+        }
+        denomination = denomination.checked_mul(10)?;
+    }
+    best
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2315,20 +2317,57 @@ mod tests {
     }
 
     #[test]
-    fn planner_creates_decimal_denominations_and_fee_positive_residual() {
-        let plan = plan_denominations(1_234_500_000, 0, 10_000, MINIMUM_OUTPUT_FOR_TEST).unwrap();
+    fn planner_creates_zip318_power_of_ten_denominations() {
+        let plan = plan_denominations(12_345_000_000, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
 
         assert_eq!(
             plan.migration_outputs,
-            vec![1_000_000_000, 100_000_000, 100_000_000, 34_500_000]
+            vec![
+                100 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+                ZATOSHIS_PER_ZEC,
+                ZATOSHIS_PER_ZEC,
+                ZATOSHIS_PER_ZEC,
+                ZATOSHIS_PER_ZEC / 10,
+                ZATOSHIS_PER_ZEC / 10,
+                ZATOSHIS_PER_ZEC / 10,
+                ZATOSHIS_PER_ZEC / 10,
+                ZIP318_DUST_FLOOR_ZATOSHI,
+                ZIP318_DUST_FLOOR_ZATOSHI,
+                ZIP318_DUST_FLOOR_ZATOSHI,
+                ZIP318_DUST_FLOOR_ZATOSHI,
+                ZIP318_DUST_FLOOR_ZATOSHI,
+            ]
         );
         assert_eq!(plan.orchard_change, None);
-        assert_eq!(plan.total_migratable_zatoshi, 1_234_500_000);
+        assert_eq!(plan.total_migratable_zatoshi, 12_345_000_000);
     }
 
     #[test]
-    fn planner_keeps_non_fee_positive_residual_as_orchard_change() {
-        let plan = plan_denominations(100_010_000, 0, 10_000, MINIMUM_OUTPUT_FOR_TEST).unwrap();
+    fn planner_splits_above_cap_into_multiple_cap_and_power_outputs() {
+        let plan =
+            plan_denominations(540 * ZATOSHIS_PER_ZEC, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
+
+        assert_eq!(
+            plan.migration_outputs,
+            vec![
+                100 * ZATOSHIS_PER_ZEC,
+                100 * ZATOSHIS_PER_ZEC,
+                100 * ZATOSHIS_PER_ZEC,
+                100 * ZATOSHIS_PER_ZEC,
+                100 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+                10 * ZATOSHIS_PER_ZEC,
+            ]
+        );
+    }
+
+    #[test]
+    fn planner_keeps_sub_dust_residual_as_orchard_change() {
+        let plan = plan_denominations(100_020_000, 0, 10_000, MINIMUM_OUTPUT_FOR_TEST).unwrap();
 
         assert_eq!(plan.migration_outputs, vec![100_000_000]);
         assert_eq!(plan.orchard_change, Some(10_000));
@@ -2338,21 +2377,40 @@ mod tests {
     fn planner_reserves_split_fee_before_decomposition() {
         let plan = plan_denominations(1_000_000_000, 10_000, 10_000, 1).unwrap();
 
-        assert_eq!(
-            plan.migration_outputs,
-            vec![
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                100_000_000,
-                99_990_000,
-            ]
-        );
+        assert!(plan
+            .migration_outputs
+            .iter()
+            .all(|value| is_zip318_canonical_denomination(*value)));
+        assert_eq!(plan.migration_outputs.len(), 27);
+        assert_eq!(plan.orchard_change, Some(720_000));
+        let prepared_total = plan
+            .migration_outputs
+            .iter()
+            .try_fold(0u64, |sum, output| {
+                sum.checked_add(*output + plan.migration_fee_zatoshi)
+            })
+            .unwrap()
+            + plan.orchard_change.unwrap_or_default()
+            + plan.split_fee_zatoshi;
+        assert_eq!(prepared_total, plan.total_input_zatoshi);
+    }
+
+    #[test]
+    fn planner_accepts_only_zip318_power_of_ten_denominations() {
+        assert!(is_zip318_canonical_denomination(ZIP318_DUST_FLOOR_ZATOSHI));
+        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC / 10));
+        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(10 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(ZIP318_DENOM_CAP_ZATOSHI));
+        assert!(!is_zip318_canonical_denomination(
+            ZIP318_DUST_FLOOR_ZATOSHI - 1
+        ));
+        assert!(!is_zip318_canonical_denomination(2 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(5 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(50 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(
+            ZIP318_DENOM_CAP_ZATOSHI + ZATOSHIS_PER_ZEC
+        ));
     }
 
     #[test]
@@ -2447,7 +2505,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_status_treats_threshold_residual_as_complete() {
+    fn migration_status_treats_sub_dust_plus_fee_residual_as_complete() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
@@ -2456,7 +2514,7 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_DUST_FLOOR_ZATOSHI - 1,
             0,
             ZATOSHIS_PER_ZEC,
             0,
@@ -2517,7 +2575,7 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI + 1,
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_DUST_FLOOR_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
             0,
