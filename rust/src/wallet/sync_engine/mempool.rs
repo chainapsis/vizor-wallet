@@ -927,6 +927,9 @@ fn trial_decrypt_account_uuids(
     for output in decrypted.orchard_outputs() {
         accounts.insert(output.account().expose_uuid().to_string());
     }
+    for output in decrypted.ironwood_outputs() {
+        accounts.insert(output.account().expose_uuid().to_string());
+    }
 
     Ok(accounts.into_iter().collect())
 }

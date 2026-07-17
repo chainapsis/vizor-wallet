@@ -81,6 +81,13 @@ const kZcashDefaultNetworkRaw = String.fromEnvironment(
   defaultValue: 'main',
 );
 
+const kZcashRegtestIronwoodActivationHeightEnvKey =
+    'ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT';
+const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
+  kZcashRegtestIronwoodActivationHeightEnvKey,
+  defaultValue: 0xFFFFFFFF,
+);
+
 /// Opt-in test build for Adam's private Ironwood chain that presents itself as
 /// mainnet so normal-mode Keystone devices can use mainnet 133'/u1 derivation.
 const kZcashIronwoodMasqueradeEnvKey = 'ZCASH_IRONWOOD_MASQUERADE';

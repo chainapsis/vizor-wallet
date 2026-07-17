@@ -1090,9 +1090,13 @@ mod tests {
 
     #[test]
     fn regtest_ironwood_activation_status_uses_local_activation_height() {
-        assert_eq!(nu6_3_activation_height(WalletNetwork::Regtest), Some(1));
-        assert!(!is_ironwood_active_at_height(WalletNetwork::Regtest, 0).unwrap());
-        assert!(is_ironwood_active_at_height(WalletNetwork::Regtest, 1).unwrap());
+        let activation = u32::MAX as u64;
+        assert_eq!(
+            nu6_3_activation_height(WalletNetwork::Regtest),
+            Some(activation)
+        );
+        assert!(!is_ironwood_active_at_height(WalletNetwork::Regtest, activation - 1).unwrap());
+        assert!(is_ironwood_active_at_height(WalletNetwork::Regtest, activation).unwrap());
     }
 
     #[test]

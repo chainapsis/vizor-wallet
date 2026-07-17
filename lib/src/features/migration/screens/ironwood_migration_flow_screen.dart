@@ -35,7 +35,9 @@ import '../services/ironwood_migration_service.dart';
 
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
+const _privateStatusRefreshInterval = Duration(seconds: 5);
 const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
@@ -208,7 +210,7 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
 
     final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
     return statusAsync.when(
-      skipLoadingOnReload: false,
+      skipLoadingOnReload: true,
       loading: () => _IronwoodMigrationFrame(
         toolbar: _privateStatusToolbar(context),
         disableSidebarActions: true,
@@ -1318,6 +1320,9 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
             top: 540,
             width: 230,
             child: _FlowButtons(
+              primaryKey: const ValueKey(
+                'ironwood_migration_intro_continue_button',
+              ),
               primaryLabel: 'How the Migration works',
               onPrimary: () => context.go('/migration/how-it-works'),
               secondaryLabel: 'Official Release Note',
@@ -1395,6 +1400,9 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
             top: 540,
             width: 230,
             child: _FlowButtons(
+              primaryKey: const ValueKey(
+                'ironwood_migration_how_it_works_continue_button',
+              ),
               primaryLabel: 'Continue',
               onPrimary: () => context.go('/migration/options'),
               secondaryLabel: 'Go Back',
@@ -1466,6 +1474,7 @@ class _IronwoodMigrationOptionsContentState
             child: Column(
               children: [
                 _MigrationOptionCard(
+                  key: const ValueKey('ironwood_migration_private_option'),
                   mode: _MigrationMode.private,
                   selected: _selected == _MigrationMode.private,
                   title: 'Private Migration',
@@ -1478,6 +1487,7 @@ class _IronwoodMigrationOptionsContentState
                 ),
                 const SizedBox(height: 12),
                 _MigrationOptionCard(
+                  key: const ValueKey('ironwood_migration_fast_option'),
                   mode: _MigrationMode.fast,
                   selected: _selected == _MigrationMode.fast,
                   title: 'Fast Migration',
@@ -1508,6 +1518,7 @@ class _IronwoodMigrationOptionsContentState
             top: 596,
             width: 230,
             child: AppButton(
+              key: const ValueKey('ironwood_migration_select_review_button'),
               onPressed: _selected == _MigrationMode.private
                   ? () => context.go('/migration/private/review')
                   : null,
@@ -1542,6 +1553,7 @@ class _IronwoodMigrationPrivateStatusContent extends ConsumerStatefulWidget {
 class _IronwoodMigrationPrivateStatusContentState
     extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
   AppLifecycleListener? _lifecycleListener;
+  Timer? _statusPollTimer;
   Timer? _autoAdvanceTimer;
   bool _isAdvancing = false;
   String? _advanceError;
@@ -1549,46 +1561,76 @@ class _IronwoodMigrationPrivateStatusContentState
   @override
   void initState() {
     super.initState();
-    _lifecycleListener = AppLifecycleListener(onResume: _advanceIfAutomatic);
-    _syncAutoAdvanceTimer();
+    _lifecycleListener = AppLifecycleListener(onResume: _pollMigrationStatus);
+    _syncStatusPollTimers();
   }
 
   @override
   void didUpdateWidget(_IronwoodMigrationPrivateStatusContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.status.phase != widget.status.phase ||
-        oldWidget.accountUuid != widget.accountUuid) {
+        oldWidget.accountUuid != widget.accountUuid ||
+        oldWidget.status.activeRunId != widget.status.activeRunId) {
       _advanceError = null;
-      _syncAutoAdvanceTimer();
+      _statusPollTimer?.cancel();
+      _statusPollTimer = null;
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
     }
+    _syncStatusPollTimers();
   }
 
   @override
   void dispose() {
+    _statusPollTimer?.cancel();
     _autoAdvanceTimer?.cancel();
     _lifecycleListener?.dispose();
     super.dispose();
   }
 
-  void _syncAutoAdvanceTimer() {
+  void _syncStatusPollTimers() {
     final shouldRun =
-        widget.accountUuid != null && _shouldAutoAdvanceStatus(widget.status);
+        widget.accountUuid != null &&
+        widget.status.activeRunId != null &&
+        !{
+          kIronwoodMigrationCompletePhase,
+          kIronwoodMigrationFailedTerminalPhase,
+          kIronwoodMigrationAbandonedPhase,
+        }.contains(widget.status.phase);
     if (!shouldRun) {
+      _statusPollTimer?.cancel();
+      _statusPollTimer = null;
       _autoAdvanceTimer?.cancel();
       _autoAdvanceTimer = null;
       return;
     }
-    if (_autoAdvanceTimer != null) return;
-
-    _autoAdvanceTimer = Timer.periodic(
-      _privateStatusAutoAdvanceInterval,
-      (_) => unawaited(_advanceIfAutomatic()),
+    _statusPollTimer ??= Timer.periodic(
+      _privateStatusRefreshInterval,
+      (_) => _refreshMigrationState(),
     );
+    if (_shouldAutoAdvanceStatus(widget.status)) {
+      _autoAdvanceTimer ??= Timer.periodic(_privateStatusAutoAdvanceInterval, (
+        _,
+      ) {
+        if (widget.status.activeRunId == null ||
+            !_shouldAutoAdvanceStatus(widget.status)) {
+          _syncStatusPollTimers();
+          return;
+        }
+        unawaited(_advanceMigration(showErrors: false));
+      });
+    } else {
+      _autoAdvanceTimer?.cancel();
+      _autoAdvanceTimer = null;
+    }
   }
 
-  Future<void> _advanceIfAutomatic() async {
-    if (!_shouldAutoAdvanceStatus(widget.status)) return;
-    await _advanceMigration(showErrors: false);
+  Future<void> _pollMigrationStatus() async {
+    if (!mounted) return;
+    _refreshMigrationState();
+    if (_shouldAutoAdvanceStatus(widget.status)) {
+      await _advanceMigration(showErrors: false);
+    }
   }
 
   Future<void> _advanceMigration({required bool showErrors}) async {
@@ -1696,6 +1738,7 @@ class _IronwoodMigrationPrivateStatusContentState
     }
 
     return SizedBox(
+      key: ValueKey('ironwood_migration_status_${status.phase}'),
       width: 420,
       height: 656,
       child: Stack(
@@ -1815,6 +1858,7 @@ class _IronwoodMigrationPrivateStatusContentState
             top: 596,
             width: 230,
             child: AppButton(
+              key: const ValueKey('ironwood_migration_status_action_button'),
               onPressed: _isAdvancing ? null : actionCallback,
               height: 44,
               minWidth: 230,
@@ -1963,7 +2007,9 @@ _StatusAction _statusAction(rust_sync.MigrationStatus status) {
 }
 
 bool _shouldAutoAdvanceStatus(rust_sync.MigrationStatus status) {
-  return status.phase == kIronwoodMigrationReadyToMigratePhase ||
+  return (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+          status.pendingSplitStageCount > 0) ||
+      status.phase == kIronwoodMigrationReadyToMigratePhase ||
       status.phase == kIronwoodMigrationBroadcastScheduledPhase;
 }
 
@@ -2106,6 +2152,8 @@ class _IronwoodMigrationPrivateReviewContentState
   Future<void> _startMigration() async {
     if (_isStarting) return;
 
+    IronwoodMigrationStatusRequest? statusRequest;
+    var softwareStartAttempted = false;
     setState(() {
       _isStarting = true;
       _startError = null;
@@ -2118,7 +2166,7 @@ class _IronwoodMigrationPrivateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final statusRequest = IronwoodMigrationStatusRequest(
+      statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
@@ -2126,16 +2174,24 @@ class _IronwoodMigrationPrivateReviewContentState
         context.go('/migration/private/keystone/denominations/sign');
         return;
       }
+      softwareStartAttempted = true;
       await ref
           .read(ironwoodMigrationServiceProvider)
           .startSoftwarePrivateMigration(accountUuid: accountUuid);
       if (!mounted) return;
-      _invalidateIronwoodMigrationStatusState(
-        ref,
-        statusRequest: statusRequest,
-      );
-      context.go('/migration/private/status');
+      await _refreshMigrationStatusBestEffort(statusRequest);
+      if (!mounted) return;
+      _openMigrationStatus();
     } catch (e) {
+      if (!mounted) return;
+      final request = statusRequest;
+      if (softwareStartAttempted &&
+          request != null &&
+          await _migrationMayHaveStarted(request)) {
+        if (!mounted) return;
+        _openMigrationStatus();
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _startError = _privateMigrationStartErrorMessage(e);
@@ -2147,6 +2203,40 @@ class _IronwoodMigrationPrivateReviewContentState
         });
       }
     }
+  }
+
+  Future<bool> _migrationMayHaveStarted(
+    IronwoodMigrationStatusRequest request,
+  ) async {
+    ref.invalidate(ironwoodMigrationStatusProvider(request));
+    try {
+      final status = await ref
+          .read(ironwoodMigrationStatusProvider(request).future)
+          .timeout(_privateStatusStartVerificationTimeout);
+      return status.activeRunId != null;
+    } catch (_) {
+      // The start operation may already have persisted a run. An unavailable
+      // status is not sufficient evidence that retrying start is safe.
+      return true;
+    }
+  }
+
+  Future<void> _refreshMigrationStatusBestEffort(
+    IronwoodMigrationStatusRequest request,
+  ) async {
+    ref.invalidate(ironwoodMigrationStatusProvider(request));
+    try {
+      await ref
+          .read(ironwoodMigrationStatusProvider(request).future)
+          .timeout(_privateStatusStartVerificationTimeout);
+    } catch (_) {
+      // The status route owns unavailable-state rendering after start.
+    }
+  }
+
+  void _openMigrationStatus() {
+    _invalidateIronwoodMigrationStatusState(ref);
+    context.go('/migration/private/status');
   }
 
   @override
@@ -2180,6 +2270,7 @@ class _IronwoodMigrationPrivateReviewContentState
     final canStart = plan != null && !_isStarting;
 
     return SizedBox(
+      key: const ValueKey('ironwood_migration_review_screen'),
       width: 420,
       height: 656,
       child: Stack(
@@ -2231,6 +2322,7 @@ class _IronwoodMigrationPrivateReviewContentState
             top: 582,
             width: 230,
             child: AppButton(
+              key: const ValueKey('ironwood_migration_authorize_start_button'),
               onPressed: canStart ? _startMigration : null,
               height: 44,
               minWidth: 230,
@@ -2543,6 +2635,9 @@ class _PrivateDenominationWaitingStatusContent extends StatelessWidget {
         : '${status.preparedNoteCount} notes';
 
     return SizedBox(
+      key: const ValueKey(
+        'ironwood_migration_status_waiting_denom_confirmations',
+      ),
       width: 420,
       height: 656,
       child: Stack(
@@ -2640,6 +2735,7 @@ class _PrivateMigrationTransferStatusContent extends StatelessWidget {
     final leftToTransfer = _leftToTransferAmount(status, progress: progress);
 
     return SizedBox(
+      key: ValueKey('ironwood_migration_status_${status.phase}'),
       width: 420,
       height: 656,
       child: Stack(
@@ -3434,12 +3530,14 @@ String _formatBroadcastWindowSeconds(BigInt totalSeconds) {
 
 class _FlowButtons extends StatelessWidget {
   const _FlowButtons({
+    this.primaryKey,
     required this.primaryLabel,
     required this.onPrimary,
     required this.secondaryLabel,
     required this.onSecondary,
   });
 
+  final Key? primaryKey;
   final String primaryLabel;
   final VoidCallback onPrimary;
   final String secondaryLabel;
@@ -3451,6 +3549,7 @@ class _FlowButtons extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppButton(
+          key: primaryKey,
           onPressed: onPrimary,
           height: 44,
           minWidth: 230,
@@ -3895,6 +3994,7 @@ enum _MigrationMode { private, fast }
 
 class _MigrationOptionCard extends StatelessWidget {
   const _MigrationOptionCard({
+    super.key,
     required this.mode,
     required this.selected,
     required this.title,

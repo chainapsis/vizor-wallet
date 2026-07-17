@@ -495,6 +495,23 @@ final ironwoodMigrationStatusProvider =
       rust_sync.MigrationStatus,
       IronwoodMigrationStatusRequest
     >((ref, request) async {
+      ref.watch(
+        syncProvider.select((syncAsync) {
+          final scoped = (syncAsync.value ?? SyncState()).scopedToAccount(
+            request.accountUuid,
+          );
+          return _IronwoodMigrationSyncInputs(
+            hasAccountScopedData: scoped.hasAccountScopedData,
+            isSyncing: scoped.isSyncing,
+            isBackgroundMode: scoped.isBackgroundMode,
+            hasSyncFailure: scoped.failure != null || scoped.error != null,
+            orchardBalance: scoped.orchardBalance,
+            orchardPendingBalance: scoped.orchardPendingBalance,
+            ironwoodBalance: scoped.ironwoodBalance,
+            ironwoodPendingBalance: scoped.ironwoodPendingBalance,
+          );
+        }),
+      );
       final dbPath = await ref.watch(walletDbPathGetterProvider)();
       final getStatus = ref.watch(orchardMigrationStatusGetterProvider);
       return getStatus(

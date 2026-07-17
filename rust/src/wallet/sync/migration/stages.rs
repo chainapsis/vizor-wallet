@@ -190,7 +190,10 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             CHECK (
                 (status = 'awaiting_inputs' AND encrypted_raw_tx IS NULL)
                 OR
-                (status != 'awaiting_inputs' AND encrypted_raw_tx IS NOT NULL)
+                (status IN ('pending', 'broadcasted')
+                 AND encrypted_raw_tx IS NOT NULL)
+                OR
+                status = 'confirmed'
             ),
             CHECK (
                 (status != 'confirmed'
@@ -242,6 +245,103 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
     ))
     .map_err(|e| format!("Initialize migration denomination stage schema: {e}"))?;
 
+    migrate_confirmed_stage_without_raw_constraint(conn)?;
+
+    Ok(())
+}
+
+fn migrate_confirmed_stage_without_raw_constraint(conn: &Connection) -> Result<(), String> {
+    let table_sql = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![STAGES_TABLE],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration denomination stage schema: {e}"))?;
+    if !table_sql.contains("status != 'awaiting_inputs' AND encrypted_raw_tx IS NOT NULL") {
+        return Ok(());
+    }
+    if !conn.is_autocommit() {
+        return Err(
+            "Cannot upgrade migration denomination stage schema inside a transaction".to_string(),
+        );
+    }
+
+    let foreign_keys_enabled = conn
+        .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, bool>(0))
+        .map_err(|e| format!("Read SQLite foreign key state: {e}"))?;
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")
+        .map_err(|e| format!("Disable foreign keys for denomination stage upgrade: {e}"))?;
+    let upgrade = conn.execute_batch(&format!(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE {STAGES_TABLE}_v2 (
+             run_id TEXT NOT NULL,
+             stage_index INTEGER NOT NULL,
+             encrypted_base_pczt TEXT NOT NULL,
+             encrypted_compact_sigs TEXT NOT NULL,
+             encrypted_raw_tx TEXT,
+             expected_txid_hex TEXT NOT NULL,
+             target_height INTEGER NOT NULL,
+             expiry_height INTEGER NOT NULL,
+             fee_zatoshi INTEGER NOT NULL,
+             confirmed_mined_height INTEGER,
+             confirmed_block_hash BLOB,
+             status TEXT NOT NULL CHECK (
+                 status IN ('awaiting_inputs', 'pending', 'broadcasted', 'confirmed')
+             ),
+             PRIMARY KEY (run_id, stage_index),
+             UNIQUE (run_id, expected_txid_hex),
+             CHECK (
+                 (status = 'awaiting_inputs' AND encrypted_raw_tx IS NULL)
+                 OR
+                 (status IN ('pending', 'broadcasted')
+                  AND encrypted_raw_tx IS NOT NULL)
+                 OR
+                 status = 'confirmed'
+             ),
+             CHECK (
+                 (status != 'confirmed'
+                  AND confirmed_mined_height IS NULL
+                  AND confirmed_block_hash IS NULL)
+                 OR
+                 (status = 'confirmed'
+                  AND confirmed_mined_height IS NOT NULL
+                  AND confirmed_block_hash IS NOT NULL
+                  AND length(confirmed_block_hash) = 32)
+             )
+         );
+         INSERT INTO {STAGES_TABLE}_v2
+         SELECT * FROM {STAGES_TABLE};
+         DROP TABLE {STAGES_TABLE};
+         ALTER TABLE {STAGES_TABLE}_v2 RENAME TO {STAGES_TABLE};
+         CREATE INDEX idx_vizor_migration_denomination_stages_status
+             ON {STAGES_TABLE}(run_id, status, stage_index);
+         COMMIT;"
+    ));
+    if let Err(error) = upgrade {
+        let _ = conn.execute_batch("ROLLBACK;");
+        if foreign_keys_enabled {
+            let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+        }
+        return Err(format!(
+            "Upgrade migration denomination stage schema: {error}"
+        ));
+    }
+    if foreign_keys_enabled {
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| format!("Restore foreign keys after denomination stage upgrade: {e}"))?;
+    }
+    let foreign_key_error = conn
+        .query_row("PRAGMA foreign_key_check", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(|e| format!("Check denomination stage foreign keys: {e}"))?;
+    if let Some(table) = foreign_key_error {
+        return Err(format!(
+            "Denomination stage schema upgrade left an invalid foreign key in {table}"
+        ));
+    }
     Ok(())
 }
 
@@ -948,9 +1048,10 @@ pub(crate) fn denomination_stage_chain_records(
     Ok(records)
 }
 
-/// Replaces the recorded inclusion for a stage known to be present on the
-/// canonical chain. The raw transaction is retained because this transaction
-/// itself does not need to be rebuilt; only off-chain descendants do.
+/// Records the inclusion for a stage known to be present on the canonical
+/// chain. A retained raw transaction remains available; an `awaiting_inputs`
+/// stage may have no raw bytes after a prior reorg reset, but canonical
+/// inclusion means it no longer needs to be rebuilt.
 pub(crate) fn replace_denomination_stage_confirmation_identity(
     conn: &Connection,
     run_id: &str,
@@ -967,8 +1068,8 @@ pub(crate) fn replace_denomination_stage_confirmation_identity(
                  SET status = 'confirmed', confirmed_mined_height = ?1,
                      confirmed_block_hash = ?2
                  WHERE run_id = ?3 AND expected_txid_hex = ?4
-                   AND status IN ('pending', 'broadcasted', 'confirmed')
-                   AND encrypted_raw_tx IS NOT NULL"
+                   AND status IN ('awaiting_inputs', 'pending', 'broadcasted',
+                                  'confirmed')"
             ),
             params![
                 mined_height,
@@ -1295,6 +1396,86 @@ mod tests {
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         ensure_schema(&conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn schema_upgrade_allows_confirmed_stage_without_raw_transaction() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE {STAGES_TABLE} (
+                 run_id TEXT NOT NULL,
+                 stage_index INTEGER NOT NULL,
+                 encrypted_base_pczt TEXT NOT NULL,
+                 encrypted_compact_sigs TEXT NOT NULL,
+                 encrypted_raw_tx TEXT,
+                 expected_txid_hex TEXT NOT NULL,
+                 target_height INTEGER NOT NULL,
+                 expiry_height INTEGER NOT NULL,
+                 fee_zatoshi INTEGER NOT NULL,
+                 confirmed_mined_height INTEGER,
+                 confirmed_block_hash BLOB,
+                 status TEXT NOT NULL CHECK (
+                     status IN ('awaiting_inputs', 'pending', 'broadcasted', 'confirmed')
+                 ),
+                 PRIMARY KEY (run_id, stage_index),
+                 UNIQUE (run_id, expected_txid_hex),
+                 CHECK (
+                     (status = 'awaiting_inputs' AND encrypted_raw_tx IS NULL)
+                     OR
+                     (status != 'awaiting_inputs' AND encrypted_raw_tx IS NOT NULL)
+                 ),
+                 CHECK (
+                     (status != 'confirmed'
+                      AND confirmed_mined_height IS NULL
+                      AND confirmed_block_hash IS NULL)
+                     OR
+                     (status = 'confirmed'
+                      AND confirmed_mined_height IS NOT NULL
+                      AND confirmed_block_hash IS NOT NULL
+                      AND length(confirmed_block_hash) = 32)
+                 )
+             );
+             INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
+              fee_zatoshi, confirmed_mined_height, confirmed_block_hash, status)
+             VALUES ('run-1', 0, 'base', 'sigs', 'raw', '{txid}', 10, 0,
+                     80000, 20, X'{block_hash}', 'confirmed');",
+            txid = txid(0x11),
+            block_hash = hex::encode([0xabu8; 32]),
+        ))
+        .unwrap();
+
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE} SET encrypted_raw_tx = NULL
+                 WHERE run_id = 'run-1'"
+            ),
+            [],
+        )
+        .unwrap();
+
+        let retained: (String, Option<String>) = conn
+            .query_row(
+                &format!(
+                    "SELECT status, encrypted_raw_tx FROM {STAGES_TABLE}
+                     WHERE run_id = 'run-1'"
+                ),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(retained, ("confirmed".to_string(), None));
+        assert!(conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, bool>(0))
+            .unwrap());
+        assert!(conn
+            .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+            .optional()
+            .unwrap()
+            .is_none());
     }
 
     #[test]

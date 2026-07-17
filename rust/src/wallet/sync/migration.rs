@@ -1002,6 +1002,9 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
     for record in &records {
         let txid = record.expected_txid_hex.to_ascii_lowercase();
         match (record.status, current.get(&txid).and_then(Option::as_ref)) {
+            (DenominationStageStatus::AwaitingInputs, Some(identity)) => {
+                identities_to_record.insert(txid, identity.clone());
+            }
             (
                 DenominationStageStatus::Pending | DenominationStageStatus::Broadcasted,
                 Some(identity),
@@ -3555,6 +3558,86 @@ mod tests {
         assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
         assert!(nullifier.is_none());
         assert_eq!(lock_state, "locked");
+    }
+
+    #[test]
+    fn reorged_awaiting_stage_accepts_canonical_reinclusion() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 block INTEGER,
+                 mined_height INTEGER
+             );",
+        )
+        .unwrap();
+
+        let run_id = "run-reincluded-awaiting";
+        let denomination_txid = "11".repeat(32);
+        let block_hash = [0xabu8; 32];
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                         '[100000000]')"
+            ),
+            params![run_id, db_path, PHASE_WAITING_DENOM_CONFIRMATIONS],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO blocks (height, hash) VALUES (20, ?1)",
+            params![block_hash.as_slice()],
+        )
+        .unwrap();
+        let mut stored_txid = hex::decode(&denomination_txid).unwrap();
+        stored_txid.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, block, mined_height)
+             VALUES (?1, 20, 20)",
+            params![stored_txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
+              fee_zatoshi, status)
+             VALUES (?1, 0, 'base', 'sigs', NULL, ?2, 10, 0, 80000,
+                     'awaiting_inputs')",
+            params![run_id, denomination_txid],
+        )
+        .unwrap();
+        drop(conn);
+
+        reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let (status, mined_height, stored_hash, raw_tx): (
+            String,
+            Option<u32>,
+            Option<Vec<u8>>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT status, confirmed_mined_height, confirmed_block_hash,
+                        encrypted_raw_tx
+                 FROM vizor_migration_denomination_stages
+                 WHERE run_id = ?1",
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "confirmed");
+        assert_eq!(mined_height, Some(20));
+        assert_eq!(stored_hash.as_deref(), Some(block_hash.as_slice()));
+        assert!(raw_tx.is_none());
     }
 
     #[test]

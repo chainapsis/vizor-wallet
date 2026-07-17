@@ -440,6 +440,58 @@ void main() {
     expect(flowEvents, isEmpty);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
+
+  test(
+    'migration status refreshes when account-scoped sync data changes',
+    () async {
+      var phase = kIronwoodMigrationWaitingForSpendableOrchardPhase;
+      var statusCalls = 0;
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncing: true,
+          scannedHeight: 3_499_900,
+          chainTipHeight: 3_500_000,
+        ),
+        getMigrationStatus:
+            ({required dbPath, required network, required accountUuid}) async {
+              statusCalls += 1;
+              return _migrationStatus(phase);
+            },
+      );
+      addTearDown(container.dispose);
+
+      final request = const IronwoodMigrationStatusRequest(
+        network: 'main',
+        accountUuid: _accountUuid,
+      );
+      final subscription = container.listen(
+        ironwoodMigrationStatusProvider(request),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+
+      final initial = await container.read(
+        ironwoodMigrationStatusProvider(request).future,
+      );
+      expect(initial.phase, kIronwoodMigrationWaitingForSpendableOrchardPhase);
+      final initialStatusCalls = statusCalls;
+
+      phase = kIronwoodMigrationReadyPhase;
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(_readySyncState());
+      await container.pump();
+
+      final refreshed = await container.read(
+        ironwoodMigrationStatusProvider(request).future,
+      );
+      expect(refreshed.phase, kIronwoodMigrationReadyPhase);
+      expect(statusCalls, greaterThan(initialStatusCalls));
+    },
+  );
 }
 
 ProviderContainer _container({
@@ -451,6 +503,7 @@ ProviderContainer _container({
   List<String>? migrationStatusCalls,
   SyncState? syncState,
   Object? migrationStatusError,
+  OrchardMigrationStatusGetter? getMigrationStatus,
 }) {
   return ProviderContainer(
     overrides: [
@@ -483,21 +536,20 @@ ProviderContainer _container({
         announcementStore ?? _FakeAnnouncementStore(),
       ),
       walletDbPathGetterProvider.overrideWithValue(() async => _dbPath),
-      orchardMigrationStatusGetterProvider.overrideWithValue(({
-        required dbPath,
-        required network,
-        required accountUuid,
-      }) async {
-        migrationStatusCalls?.add('$dbPath|$network|$accountUuid');
-        final error = migrationStatusError;
-        if (error != null) {
-          throw error;
-        }
-        return _migrationStatus(
-          migrationPhase,
-          activeRunId: migrationActiveRunId,
-        );
-      }),
+      orchardMigrationStatusGetterProvider.overrideWithValue(
+        getMigrationStatus ??
+            ({required dbPath, required network, required accountUuid}) async {
+              migrationStatusCalls?.add('$dbPath|$network|$accountUuid');
+              final error = migrationStatusError;
+              if (error != null) {
+                throw error;
+              }
+              return _migrationStatus(
+                migrationPhase,
+                activeRunId: migrationActiveRunId,
+              );
+            },
+      ),
     ],
   );
 }

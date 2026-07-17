@@ -253,6 +253,17 @@ void main() {
       expect(prefs.getBool(ironwoodActiveSeenStorageKey('test')), isNull);
     },
   );
+
+  test('SharedPreferences store does not persist regtest activation', () async {
+    const store = SharedPreferencesIronwoodActivationStore();
+    final prefs = await SharedPreferences.getInstance();
+
+    await store.markActiveSeen('regtest');
+    expect(prefs.getBool(ironwoodActiveSeenStorageKey('regtest')), isNull);
+
+    await prefs.setBool(ironwoodActiveSeenStorageKey('regtest'), true);
+    expect(await store.isActiveSeen('regtest'), isFalse);
+  });
 }
 
 ProviderContainer _container({

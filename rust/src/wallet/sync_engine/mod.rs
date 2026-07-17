@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
-use shardtree::error::{InsertionError, ShardTreeError};
+use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{
@@ -675,8 +675,27 @@ fn queue_witness_repairs_if_needed(
     }
 
     let rescan_ranges = with_wallet_db_write_lock("sync_engine.check_witnesses", || {
-        db.check_witnesses()
-            .map_err(|e| SyncError::db(format!("check_witnesses: {e}")))
+        match db.check_witnesses() {
+            Ok(ranges) => Ok(ranges),
+            Err(error) if is_witness_position_beyond_tree(&error) => {
+                let cleared = clear_unmined_note_commitment_positions(db_data_path)?;
+                if cleared == 0 {
+                    return Err(SyncError::db(format!("check_witnesses: {error}")));
+                }
+
+                log::warn!(
+                    "[{}] sync: cleared {} stale commitment-tree position(s) from unmined notes after reorg; retrying witness check",
+                    elapsed(),
+                    cleared,
+                );
+                db.check_witnesses().map_err(|retry_error| {
+                    SyncError::db(format!(
+                        "check_witnesses after clearing unmined note positions: {retry_error}"
+                    ))
+                })
+            }
+            Err(error) => Err(SyncError::db(format!("check_witnesses: {error}"))),
+        }
     })?;
 
     let Some(nonempty_ranges) = NonEmpty::from_vec(rescan_ranges) else {
@@ -1331,8 +1350,15 @@ async fn run_sync_impl(
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
     with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
-        db.update_chain_tip(tip_height)
-            .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
+        db.update_chain_tip(tip_height).map_err(|e| {
+            if is_sqlite_lock_contention(&e) {
+                SyncError::other(format!(
+                    "update_chain_tip: transient SQLite lock contention: {e}"
+                ))
+            } else {
+                SyncError::db(format!("update_chain_tip: {e}"))
+            }
+        })
     })?;
 
     // Match the cancellation granularity we already use for
@@ -2247,6 +2273,59 @@ fn is_commitment_tree_root_conflict(err: &SqliteClientError) -> bool {
     )
 }
 
+fn is_witness_position_beyond_tree(err: &SqliteClientError) -> bool {
+    matches!(
+        err,
+        SqliteClientError::CommitmentTree(ShardTreeError::Query(QueryError::NotContained(_)))
+    )
+}
+
+fn clear_unmined_note_commitment_positions(db_data_path: &str) -> Result<usize, SyncError> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("open DB to repair unmined note positions: {e}")))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| SyncError::db(format!("begin unmined note position repair: {e}")))?;
+    let mut cleared = 0;
+
+    for table in [
+        "sapling_received_notes",
+        "orchard_received_notes",
+        "ironwood_received_notes",
+    ] {
+        let exists = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| SyncError::db(format!("inspect {table} before position repair: {e}")))?;
+        if !exists {
+            continue;
+        }
+
+        cleared += tx
+            .execute(
+                &format!(
+                    "UPDATE {table} AS rn
+                     SET commitment_tree_position = NULL
+                     WHERE commitment_tree_position IS NOT NULL
+                     AND EXISTS (
+                         SELECT 1 FROM transactions AS tx
+                         WHERE tx.id_tx = rn.transaction_id
+                         AND tx.mined_height IS NULL
+                     )"
+                ),
+                [],
+            )
+            .map_err(|e| SyncError::db(format!("repair unmined positions in {table}: {e}")))?;
+    }
+
+    tx.commit()
+        .map_err(|e| SyncError::db(format!("commit unmined note position repair: {e}")))?;
+    Ok(cleared)
+}
+
 fn should_use_empty_chain_state(
     network: &WalletNetwork,
     start: BlockHeight,
@@ -2529,5 +2608,74 @@ mod tests {
             zcash_protocol::consensus::BlockHeight::from_u32(2_500_000),
         );
         assert!(!is_commitment_tree_root_conflict(&block_conflict));
+    }
+
+    #[test]
+    fn witness_position_beyond_tree_is_recognised() {
+        use incrementalmerkletree::{Address, Level};
+
+        let not_contained = SqliteClientError::CommitmentTree(ShardTreeError::Query(
+            QueryError::NotContained(Address::from_parts(Level::new(0), 0)),
+        ));
+        assert!(is_witness_position_beyond_tree(&not_contained));
+
+        let incomplete = SqliteClientError::CommitmentTree(ShardTreeError::Query(
+            QueryError::TreeIncomplete(vec![]),
+        ));
+        assert!(!is_witness_position_beyond_tree(&incomplete));
+    }
+
+    #[test]
+    fn unmined_note_position_repair_preserves_mined_notes() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                id_tx INTEGER PRIMARY KEY,
+                mined_height INTEGER
+             );
+             CREATE TABLE sapling_received_notes (
+                id INTEGER PRIMARY KEY,
+                transaction_id INTEGER NOT NULL,
+                commitment_tree_position INTEGER
+             );
+             CREATE TABLE ironwood_received_notes (
+                id INTEGER PRIMARY KEY,
+                transaction_id INTEGER NOT NULL,
+                commitment_tree_position INTEGER
+             );
+             INSERT INTO transactions (id_tx, mined_height) VALUES (1, NULL), (2, 500);
+             INSERT INTO sapling_received_notes
+                (id, transaction_id, commitment_tree_position)
+                VALUES (1, 1, 3), (2, 2, 4);
+             INSERT INTO ironwood_received_notes
+                (id, transaction_id, commitment_tree_position)
+                VALUES (1, 1, 0), (2, 2, 1);",
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(clear_unmined_note_commitment_positions(db_path).unwrap(), 2);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let sapling_positions = conn
+            .prepare("SELECT commitment_tree_position FROM sapling_received_notes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Option<u64>>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let ironwood_positions = conn
+            .prepare("SELECT commitment_tree_position FROM ironwood_received_notes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Option<u64>>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(sapling_positions, vec![None, Some(4)]);
+        assert_eq!(ironwood_positions, vec![None, Some(1)]);
+        assert_eq!(clear_unmined_note_commitment_positions(db_path).unwrap(), 0);
     }
 }
