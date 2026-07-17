@@ -3,6 +3,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/home/widgets/pay_floating_badge.dart';
@@ -392,6 +394,53 @@ void main() {
 
     expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
     expect(find.text('Zcash Network Update'), findsOneWidget);
+  });
+
+  testWidgets('home keeps Ironwood announcement visible during sync changes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodMigrationAnnouncementStateListenable:
+            _ironwoodAnnouncementTestProvider,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    );
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(
+          IronwoodMigrationAnnouncementState.visible(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _migrationStatus(kIronwoodMigrationReadyPhase),
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    final overlay = find.byKey(
+      const ValueKey('ironwood_migration_announcement_overlay'),
+    );
+    expect(overlay, findsOneWidget);
+    expect(tester.widget<AppPaneModalOverlay>(overlay).scrimColor, isNull);
+
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
+    await tester.pumpAndSettle();
+
+    expect(overlay, findsOneWidget);
   });
 
   testWidgets(
@@ -1024,6 +1073,8 @@ Widget _appHarness(
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
+  ProviderListenable<IronwoodMigrationAnnouncementState>?
+  ironwoodMigrationAnnouncementStateListenable,
   IronwoodMigrationFlowData? ironwoodMigrationFlowData,
   bool failIfMigrationResolverLoads = false,
 }) {
@@ -1074,6 +1125,10 @@ Widget _appHarness(
           return ironwoodMigrationFlowData;
         }),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
+        final listenable = ironwoodMigrationAnnouncementStateListenable;
+        if (listenable != null) {
+          return ref.watch(listenable);
+        }
         return const IronwoodMigrationAnnouncementState.hidden();
       }),
     ],
@@ -1164,6 +1219,24 @@ class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
   Future<void> markPayClicked() async {
     clicked = true;
     markCount += 1;
+  }
+}
+
+final _ironwoodAnnouncementTestProvider =
+    NotifierProvider<
+      _IronwoodAnnouncementTestNotifier,
+      IronwoodMigrationAnnouncementState
+    >(_IronwoodAnnouncementTestNotifier.new);
+
+class _IronwoodAnnouncementTestNotifier
+    extends Notifier<IronwoodMigrationAnnouncementState> {
+  @override
+  IronwoodMigrationAnnouncementState build() {
+    return const IronwoodMigrationAnnouncementState.hidden();
+  }
+
+  void setAnnouncement(IronwoodMigrationAnnouncementState next) {
+    state = next;
   }
 }
 
