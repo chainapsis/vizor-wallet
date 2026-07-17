@@ -516,6 +516,7 @@ void main() {
 
     expect(find.text('Welcome Back'), findsOneWidget);
     expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.bySemanticsLabel('10% done'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
     expect(find.text('0'), findsOneWidget);
   });
