@@ -100,6 +100,12 @@ void main() {
         timeout: const Duration(minutes: 5),
       );
       await dismissIronwoodAnnouncement(tester);
+      final migrationPlan = await rust_sync.getOrchardMigrationPrivatePlan(
+        dbPath: await getWalletDbPath(),
+        network: 'regtest',
+        accountUuid: firstAccount.uuid,
+      );
+      expect(migrationPlan, isNotNull);
       await openPrivateMigrationReview(tester);
       await tapAppButton(
         tester,
@@ -163,17 +169,11 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      await pumpUntil(
+      await prepareDesktopRegtestMigrationSchedule(tester, firstAccount.uuid);
+      await advanceDesktopRegtestMigrationSchedule(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_migration_confirmations',
-            ),
-          ),
-        ),
-        description: 'first-account migration broadcast',
-        timeout: const Duration(minutes: 5),
+        _driverUrl,
+        firstAccount.uuid,
       );
       await ironwoodDriverPost(
         _driverUrl,
@@ -199,10 +199,14 @@ void main() {
         network: 'regtest',
         accountUuid: firstAccount.uuid,
       );
-      expect(firstBalance.orchard, BigInt.zero);
       expect(
-        firstBalance.ironwood,
-        greaterThan(_fundedAmount - BigInt.from(1000000)),
+        firstBalance.orchard,
+        migrationPlan!.orchardChangeZatoshi ?? BigInt.zero,
+      );
+      expect(firstBalance.ironwood, migrationPlan.totalMigratableZatoshi);
+      expect(
+        _fundedAmount - firstBalance.orchard - firstBalance.ironwood,
+        migrationPlan.estimatedTotalFeeZatoshi,
       );
       final secondBalance = await rust_sync.getBalance(
         dbPath: dbPath,
@@ -332,7 +336,7 @@ void main() {
       final senderFinalBalance = await _waitForPoolBalance(
         tester,
         accountUuid: firstAccount.uuid,
-        orchard: BigInt.zero,
+        orchard: firstBalance.orchard,
         ironwood: firstBalance.ironwood - _sendAmount - confirmedSent.fee,
       );
       expect(senderFinalBalance.sapling, BigInt.zero);

@@ -67,6 +67,12 @@ void main() {
         timeout: const Duration(minutes: 5),
       );
       await dismissIronwoodAnnouncement(tester);
+      final plan = await rust_sync.getOrchardMigrationPrivatePlan(
+        dbPath: await getWalletDbPath(),
+        network: 'regtest',
+        accountUuid: accountUuid,
+      );
+      expect(plan, isNotNull);
       await openPrivateMigrationReview(tester);
       await tapAppButton(
         tester,
@@ -89,14 +95,17 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      final firstChild = await waitForDesktopRegtestMigrationStatus(
+      await prepareDesktopRegtestMigrationSchedule(tester, accountUuid);
+      final firstChild = await advanceDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.phase == 'waiting_migration_confirmations' &&
-            status.broadcastedTxCount > 0,
-        description: 'first Ironwood child broadcast',
+        submittedTarget: 1,
+      );
+      expect(firstChild.activeRunId, runId);
+      expect(
+        firstChild.broadcastedTxCount + firstChild.confirmedTxCount,
+        greaterThan(0),
       );
       expect(firstChild.totalCount, greaterThan(0));
 
@@ -140,14 +149,17 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      final rebuiltChild = await waitForDesktopRegtestMigrationStatus(
+      await prepareDesktopRegtestMigrationSchedule(tester, accountUuid);
+      final rebuiltChild = await advanceDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.phase == 'waiting_migration_confirmations' &&
-            status.broadcastedTxCount > 0,
-        description: 'rebuilt Ironwood child after denomination reorg',
+        submittedTarget: 1,
+      );
+      expect(rebuiltChild.activeRunId, runId);
+      expect(
+        rebuiltChild.broadcastedTxCount + rebuiltChild.confirmedTxCount,
+        greaterThan(0),
       );
       expect(rebuiltChild.totalCount, firstChild.totalCount);
 
@@ -170,7 +182,7 @@ void main() {
             status.confirmedTxCount > 0,
         description: 'untrusted Ironwood child confirmation',
       );
-      expect(minedChild.confirmedTxCount, minedChild.totalCount);
+      expect(minedChild.confirmedTxCount, lessThan(minedChild.totalCount));
 
       e2eLog('reorging the untrusted Ironwood child transaction');
       final childReorg = await ironwoodDriverPost(
@@ -195,6 +207,11 @@ void main() {
       );
 
       await _releaseTransactions(_txids(childReorg, 'heldTxids'));
+      await advanceDesktopRegtestMigrationSchedule(
+        tester,
+        _driverUrl,
+        accountUuid,
+      );
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
@@ -213,12 +230,12 @@ void main() {
         network: 'regtest',
         accountUuid: accountUuid,
       );
-      expect(balance.orchard, BigInt.zero);
+      expect(balance.orchard, plan!.orchardChangeZatoshi ?? BigInt.zero);
+      expect(balance.ironwood, plan.totalMigratableZatoshi);
       expect(
-        balance.ironwood,
-        greaterThan(_fundedAmount - BigInt.from(1000000)),
+        _fundedAmount - balance.orchard - balance.ironwood,
+        plan.estimatedTotalFeeZatoshi,
       );
-      expect(balance.ironwood, lessThan(_fundedAmount));
     },
     timeout: const Timeout(Duration(minutes: 30)),
   );

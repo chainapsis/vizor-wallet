@@ -13,6 +13,8 @@ const _driverUrl = String.fromEnvironment(
 );
 const _network = 'regtest';
 final _fundedAmount = BigInt.from(100020000);
+final _expectedIronwoodBalance = BigInt.from(99000000);
+final _expectedOrchardChange = BigInt.from(850000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -61,17 +63,15 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      await pumpUntil(
+      final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_migration_confirmations',
-            ),
-          ),
-        ),
-        description: 'migration broadcast after process restart',
-        timeout: const Duration(minutes: 5),
+        accountUuid,
+      );
+      expect(scheduled.activeRunId, persisted.activeRunId);
+      await advanceDesktopRegtestMigrationSchedule(
+        tester,
+        _driverUrl,
+        accountUuid,
       );
 
       await ironwoodDriverPost(
@@ -97,12 +97,12 @@ void main() {
         network: _network,
         accountUuid: accountUuid,
       );
+      expect(balance.ironwood, _expectedIronwoodBalance);
+      expect(balance.orchard, _expectedOrchardChange);
       expect(
-        balance.ironwood,
-        greaterThan(_fundedAmount - BigInt.from(1000000)),
+        _fundedAmount - balance.ironwood - balance.orchard,
+        BigInt.from(170000),
       );
-      expect(balance.ironwood, lessThan(_fundedAmount));
-      expect(balance.orchard, BigInt.zero);
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );

@@ -23,9 +23,8 @@ before_mempool="$(zcash_cli getrawmempool)"
 zcash_cli invalidateblock "$invalidated_hash"
 after_mempool="$(zcash_cli getrawmempool)"
 
-held_txids=()
 while IFS= read -r txid; do
-  held_txids+=("$txid")
+  [[ -z "$txid" ]] || zcash_cli prioritisetransaction "$txid" 0 -100000000 >/dev/null
 done < <(
   python3 - "$after_mempool" <<'PY'
 import json
@@ -35,9 +34,6 @@ for txid in json.loads(sys.argv[1]):
     print(txid)
 PY
 )
-for txid in "${held_txids[@]}"; do
-  zcash_cli prioritisetransaction "$txid" 0 -100000000 >/dev/null
-done
 
 # Extend one block past the old tip so height-only clients are forced to sync
 # and discover the changed block hash.
