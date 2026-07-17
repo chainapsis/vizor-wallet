@@ -280,6 +280,30 @@ void main() {
   );
 
   test(
+    'post migration state defers the status failure fallback while syncing',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationStatusError: Exception('wallet database is busy'),
+        syncState: _syncingReadyState(),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.unavailable);
+      expect(state.locksNavigation, isFalse);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
     'post migration state keeps migratable Orchard required after Ironwood exists',
     () async {
       final container = _container(

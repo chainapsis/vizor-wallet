@@ -22,6 +22,62 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
+  test('waits until the next scheduled broadcast is due', () {
+    final now = DateTime(2026, 7, 17, 12);
+    final status = _status(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'confirmed',
+          scheduledAtMs: now
+              .subtract(const Duration(minutes: 5))
+              .millisecondsSinceEpoch,
+          status: 'confirmed',
+        ),
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'next',
+          scheduledAtMs: now
+              .add(const Duration(seconds: 17))
+              .millisecondsSinceEpoch,
+          status: 'scheduled',
+        ),
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'later',
+          scheduledAtMs: now
+              .add(const Duration(seconds: 48))
+              .millisecondsSinceEpoch,
+          status: 'scheduled',
+        ),
+      ],
+    );
+
+    expect(
+      ironwoodMigrationScheduledAdvanceDelay(status, now: now),
+      const Duration(seconds: 17),
+    );
+  });
+
+  test('advances immediately when a scheduled broadcast is overdue', () {
+    final now = DateTime(2026, 7, 17, 12);
+    final status = _status(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'due',
+          scheduledAtMs: now
+              .subtract(const Duration(seconds: 1))
+              .millisecondsSinceEpoch,
+          status: 'scheduled',
+        ),
+      ],
+    );
+
+    expect(
+      ironwoodMigrationScheduledAdvanceDelay(status, now: now),
+      Duration.zero,
+    );
+  });
+
   for (final phase in [
     kIronwoodMigrationWaitingDenomConfirmationsPhase,
     kIronwoodMigrationReadyToMigratePhase,
@@ -205,6 +261,7 @@ IronwoodMigrationService _migrationService({
 rust_sync.MigrationStatus _status({
   required String phase,
   int pendingSplitStageCount = 0,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -225,7 +282,7 @@ rust_sync.MigrationStatus _status({
     signingBatchLimit: 0,
     broadcastWindowSeconds: BigInt.zero,
     maxPreparedNotesPerRun: 0,
-    scheduledBroadcasts: const [],
+    scheduledBroadcasts: scheduledBroadcasts,
   );
 }
 

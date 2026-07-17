@@ -780,6 +780,9 @@ Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
       accountUuid: accountUuid,
     );
   } catch (_) {
+    if (inputs.isSyncing || inputs.isBackgroundMode) {
+      return const IronwoodPostMigrationState.unavailable();
+    }
     return _postMigrationStateForStatusLookupFailure(inputs, accountUuid);
   }
 

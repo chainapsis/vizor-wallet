@@ -104,6 +104,11 @@ class _IronwoodMigrationCoordinatorHostState
     }
 
     if (_shouldAutomaticallyContinue(status)) {
+      final scheduledDelay = ironwoodMigrationScheduledAdvanceDelay(status);
+      if (scheduledDelay > Duration.zero) {
+        _schedule(scheduledDelay);
+        return;
+      }
       final delay = _remainingActionRetryDelay(status);
       if (delay == Duration.zero) {
         unawaited(_advance(cta));
@@ -185,6 +190,29 @@ class _IronwoodMigrationCoordinatorHostState
     if (elapsed >= widget.actionRetryInterval) return Duration.zero;
     return widget.actionRetryInterval - elapsed;
   }
+}
+
+Duration ironwoodMigrationScheduledAdvanceDelay(
+  rust_sync.MigrationStatus status, {
+  DateTime? now,
+}) {
+  if (status.phase != kIronwoodMigrationBroadcastScheduledPhase) {
+    return Duration.zero;
+  }
+
+  final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+  int? nextScheduledAtMs;
+  for (final broadcast in status.scheduledBroadcasts) {
+    if (broadcast.status != 'scheduled') continue;
+    if (broadcast.scheduledAtMs <= nowMs) return Duration.zero;
+    if (nextScheduledAtMs == null ||
+        broadcast.scheduledAtMs < nextScheduledAtMs) {
+      nextScheduledAtMs = broadcast.scheduledAtMs;
+    }
+  }
+
+  if (nextScheduledAtMs == null) return Duration.zero;
+  return Duration(milliseconds: nextScheduledAtMs - nowMs);
 }
 
 bool _shouldAutomaticallyContinue(rust_sync.MigrationStatus status) {
