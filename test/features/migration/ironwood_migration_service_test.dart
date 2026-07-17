@@ -64,7 +64,9 @@ void main() {
         plannedBatchCount: 1,
         denominationSplitStageCount: 1,
         signingBatchLimit: 50,
-        broadcastWindowSeconds: BigInt.from(180),
+        scheduleMeanDelayBlocks: 144,
+        scheduleMaxDelayBlocks: 576,
+        scheduledTransfers: const [],
         maxPreparedNotesPerRun: 64,
       );
       final service = IronwoodMigrationService(
@@ -131,6 +133,7 @@ void main() {
               required lightwalletdUrl,
               required network,
               required accountUuid,
+              required approvedSchedule,
               required mnemonicBytes,
               required password,
               required saltBase64,
@@ -141,8 +144,14 @@ void main() {
             },
       );
 
-      await service.startSoftwarePrivateMigration(accountUuid: 'account-1');
-      await service.startSoftwarePrivateMigration(accountUuid: 'account-1');
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
 
       expect(seenSalts, hasLength(2));
       expect(seenSalts[1], seenSalts[0]);
@@ -188,6 +197,7 @@ void main() {
               required lightwalletdUrl,
               required network,
               required accountUuid,
+              required approvedSchedule,
               required password,
               required saltBase64,
             }) {
@@ -201,13 +211,17 @@ void main() {
               required lightwalletdUrl,
               required network,
               required accountUuid,
+              required approvedSchedule,
               required mnemonicBytes,
               required password,
               required saltBase64,
             }) => throw StateError('in-memory mnemonic path should not run'),
       );
 
-      await service.startSoftwarePrivateMigration(accountUuid: 'account-1');
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
 
       expect(seenPassword, 'test-password');
       expect(seenSalt, isNotEmpty);
@@ -545,7 +559,8 @@ rust_sync.MigrationStatus _migrationStatus() {
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
   );

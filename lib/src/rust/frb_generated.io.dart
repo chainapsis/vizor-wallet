@@ -317,6 +317,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_migration_scheduled_broadcast(dynamic raw);
 
   @protected
+  List<MigrationScheduledTransfer> dco_decode_list_migration_scheduled_transfer(
+    dynamic raw,
+  );
+
+  @protected
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
 
   @protected
@@ -410,6 +415,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationScheduledTransfer dco_decode_migration_scheduled_transfer(
     dynamic raw,
   );
 
@@ -1005,6 +1015,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer);
 
   @protected
+  List<MigrationScheduledTransfer> sse_decode_list_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NextStepView> sse_decode_list_next_step_view(
     SseDeserializer deserializer,
   );
@@ -1118,6 +1133,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationScheduledBroadcast sse_decode_migration_scheduled_broadcast(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationScheduledTransfer sse_decode_migration_scheduled_transfer(
     SseDeserializer deserializer,
   );
 
@@ -1845,6 +1865,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_migration_scheduled_transfer(
+    List<MigrationScheduledTransfer> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_next_step_view(
     List<NextStepView> self,
     SseSerializer serializer,
@@ -1994,6 +2020,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_migration_scheduled_broadcast(
     MigrationScheduledBroadcast self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_scheduled_transfer(
+    MigrationScheduledTransfer self,
     SseSerializer serializer,
   );
 

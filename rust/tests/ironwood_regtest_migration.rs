@@ -200,6 +200,24 @@ fn balance(db_path: &str, account_uuid: &str) -> sync_api::WalletBalance {
 }
 
 fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResult {
+    let status = sync_api::get_orchard_migration_status(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+    )
+    .expect("read migration status");
+    let approved_schedule = if status.active_run_id.is_some() {
+        Vec::new()
+    } else {
+        sync_api::get_orchard_migration_private_plan(
+            db_path.to_string(),
+            NETWORK.to_string(),
+            account_uuid.to_string(),
+        )
+        .expect("read migration plan")
+        .map(|plan| plan.scheduled_transfers)
+        .unwrap_or_default()
+    };
     sync_api::migrate_orchard_to_ironwood(
         db_path.to_string(),
         lightwalletd_url(),
@@ -208,6 +226,7 @@ fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResu
         MNEMONIC.as_bytes().to_vec(),
         PENDING_PASSWORD.to_string(),
         PENDING_SALT_BASE64.to_string(),
+        approved_schedule,
     )
     .expect("migrate Orchard to Ironwood")
 }

@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -307,6 +307,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required List<int> mnemonicBytes,
   required String password,
   required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -315,6 +316,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   mnemonicBytes: mnemonicBytes,
   password: password,
   saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
 );
 
 Future<MigrationStatus> getOrchardMigrationStatus({
@@ -462,6 +464,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String accountUuid,
   required String password,
   required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
 }) => RustLib.instance.api
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
@@ -470,6 +473,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
       accountUuid: accountUuid,
       password: password,
       saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
     );
 
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
@@ -1073,18 +1077,26 @@ class KeystoneSignedMigrationMessage {
 
 class MigrationScheduledBroadcast {
   final String txidHex;
+  final BigInt valueZatoshi;
   final PlatformInt64 scheduledAtMs;
+  final int scheduledHeight;
   final String status;
 
   const MigrationScheduledBroadcast({
     required this.txidHex,
+    required this.valueZatoshi,
     required this.scheduledAtMs,
+    required this.scheduledHeight,
     required this.status,
   });
 
   @override
   int get hashCode =>
-      txidHex.hashCode ^ scheduledAtMs.hashCode ^ status.hashCode;
+      txidHex.hashCode ^
+      valueZatoshi.hashCode ^
+      scheduledAtMs.hashCode ^
+      scheduledHeight.hashCode ^
+      status.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1092,8 +1104,31 @@ class MigrationScheduledBroadcast {
       other is MigrationScheduledBroadcast &&
           runtimeType == other.runtimeType &&
           txidHex == other.txidHex &&
+          valueZatoshi == other.valueZatoshi &&
           scheduledAtMs == other.scheduledAtMs &&
+          scheduledHeight == other.scheduledHeight &&
           status == other.status;
+}
+
+class MigrationScheduledTransfer {
+  final BigInt valueZatoshi;
+  final int blockOffset;
+
+  const MigrationScheduledTransfer({
+    required this.valueZatoshi,
+    required this.blockOffset,
+  });
+
+  @override
+  int get hashCode => valueZatoshi.hashCode ^ blockOffset.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationScheduledTransfer &&
+          runtimeType == other.runtimeType &&
+          valueZatoshi == other.valueZatoshi &&
+          blockOffset == other.blockOffset;
 }
 
 class MigrationStatus {
@@ -1122,7 +1157,8 @@ class MigrationStatus {
   final String? message;
   final bool canAbandon;
   final int signingBatchLimit;
-  final BigInt broadcastWindowSeconds;
+  final int scheduleMeanDelayBlocks;
+  final int scheduleMaxDelayBlocks;
   final int maxPreparedNotesPerRun;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
 
@@ -1144,7 +1180,8 @@ class MigrationStatus {
     this.message,
     required this.canAbandon,
     required this.signingBatchLimit,
-    required this.broadcastWindowSeconds,
+    required this.scheduleMeanDelayBlocks,
+    required this.scheduleMaxDelayBlocks,
     required this.maxPreparedNotesPerRun,
     required this.scheduledBroadcasts,
   });
@@ -1168,7 +1205,8 @@ class MigrationStatus {
       message.hashCode ^
       canAbandon.hashCode ^
       signingBatchLimit.hashCode ^
-      broadcastWindowSeconds.hashCode ^
+      scheduleMeanDelayBlocks.hashCode ^
+      scheduleMaxDelayBlocks.hashCode ^
       maxPreparedNotesPerRun.hashCode ^
       scheduledBroadcasts.hashCode;
 
@@ -1197,7 +1235,8 @@ class MigrationStatus {
           message == other.message &&
           canAbandon == other.canAbandon &&
           signingBatchLimit == other.signingBatchLimit &&
-          broadcastWindowSeconds == other.broadcastWindowSeconds &&
+          scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
+          scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledBroadcasts == other.scheduledBroadcasts;
 }
@@ -1213,8 +1252,10 @@ class OrchardMigrationPrivatePlan {
   final int plannedBatchCount;
   final int denominationSplitStageCount;
   final int signingBatchLimit;
-  final BigInt broadcastWindowSeconds;
+  final int scheduleMeanDelayBlocks;
+  final int scheduleMaxDelayBlocks;
   final int maxPreparedNotesPerRun;
+  final List<MigrationScheduledTransfer> scheduledTransfers;
 
   const OrchardMigrationPrivatePlan({
     required this.targetValuesZatoshi,
@@ -1227,8 +1268,10 @@ class OrchardMigrationPrivatePlan {
     required this.plannedBatchCount,
     required this.denominationSplitStageCount,
     required this.signingBatchLimit,
-    required this.broadcastWindowSeconds,
+    required this.scheduleMeanDelayBlocks,
+    required this.scheduleMaxDelayBlocks,
     required this.maxPreparedNotesPerRun,
+    required this.scheduledTransfers,
   });
 
   @override
@@ -1243,8 +1286,10 @@ class OrchardMigrationPrivatePlan {
       plannedBatchCount.hashCode ^
       denominationSplitStageCount.hashCode ^
       signingBatchLimit.hashCode ^
-      broadcastWindowSeconds.hashCode ^
-      maxPreparedNotesPerRun.hashCode;
+      scheduleMeanDelayBlocks.hashCode ^
+      scheduleMaxDelayBlocks.hashCode ^
+      maxPreparedNotesPerRun.hashCode ^
+      scheduledTransfers.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1261,8 +1306,10 @@ class OrchardMigrationPrivatePlan {
           plannedBatchCount == other.plannedBatchCount &&
           denominationSplitStageCount == other.denominationSplitStageCount &&
           signingBatchLimit == other.signingBatchLimit &&
-          broadcastWindowSeconds == other.broadcastWindowSeconds &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun;
+          scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
+          scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
+          scheduledTransfers == other.scheduledTransfers;
 }
 
 class ProposalResult {

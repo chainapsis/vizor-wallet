@@ -6,6 +6,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -158,6 +159,40 @@ void main() {
         tester,
         const ValueKey('ironwood_migration_select_review_button'),
       );
+      final approvedPlan = await providerContainer.read(
+        ironwoodMigrationPrivatePlanProvider.future,
+      );
+      expect(approvedPlan, isNotNull);
+      await tapAppWidget(
+        tester,
+        const ValueKey('ironwood_migration_schedule_view'),
+      );
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_schedule_list')),
+        findsOneWidget,
+      );
+      final displayedSchedule = <rust_sync.MigrationScheduledTransfer>[];
+      for (
+        var index = 0;
+        index < approvedPlan!.scheduledTransfers.length;
+        index++
+      ) {
+        final row = find.byKey(
+          ValueKey('ironwood_migration_schedule_batch_$index'),
+        );
+        final texts = tester
+            .widgetList<Text>(
+              find.descendant(of: row, matching: find.byType(Text)),
+            )
+            .map((text) => text.data)
+            .whereType<String>()
+            .toList();
+        displayedSchedule.add(_parseDisplayedScheduleTransfer(texts.last));
+      }
+      await tapAppButton(
+        tester,
+        const ValueKey('ironwood_migration_schedule_close'),
+      );
       await tapAppButton(
         tester,
         const ValueKey('ironwood_migration_authorize_start_button'),
@@ -211,39 +246,58 @@ void main() {
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
-        payload: const {'blocks': 10},
+        payload: const {'blocks': 12},
       );
 
-      await pumpUntil(
+      await waitForDesktopRegtestMigrationStatus(
         tester,
-        () =>
-            tester.any(
-              find.byKey(
-                const ValueKey('ironwood_migration_status_broadcast_scheduled'),
-              ),
-            ) ||
-            tester.any(
-              find.byKey(
-                const ValueKey(
-                  'ironwood_migration_status_waiting_migration_confirmations',
-                ),
-              ),
-            ),
-        description: 'migration broadcast scheduling',
+        accountUuid,
+        (status) => status.phase == kIronwoodMigrationReadyToMigratePhase,
+        description: 'migration denomination readiness',
         timeout: const Duration(minutes: 5),
       );
-
       await pumpUntil(
         tester,
         () => tester.any(
           find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_migration_confirmations',
-            ),
+            const ValueKey('ironwood_migration_status_ready_to_migrate'),
           ),
         ),
-        description: 'migration transaction broadcast',
-        timeout: const Duration(minutes: 5),
+        description: 'migration ready status UI',
+      );
+      await tapAppButton(
+        tester,
+        const ValueKey('ironwood_migration_status_action_button'),
+      );
+
+      final scheduled = await waitForDesktopRegtestMigrationStatus(
+        tester,
+        accountUuid,
+        (status) => status.scheduledBroadcasts.isNotEmpty,
+        description: 'persisted migration broadcast schedule',
+      );
+      final scheduleBase =
+          scheduled.scheduledBroadcasts.first.scheduledHeight -
+          displayedSchedule.first.blockOffset;
+      expect(
+        scheduled.scheduledBroadcasts.map((entry) => entry.valueZatoshi),
+        displayedSchedule.map((entry) => entry.valueZatoshi),
+      );
+      for (
+        var index = 0;
+        index < scheduled.scheduledBroadcasts.length;
+        index++
+      ) {
+        expect(
+          scheduled.scheduledBroadcasts[index].scheduledHeight,
+          scheduleBase + displayedSchedule[index].blockOffset,
+        );
+      }
+
+      await advanceDesktopRegtestMigrationSchedule(
+        tester,
+        _driverUrl,
+        accountUuid,
       );
 
       final broadcast = await _migrationStatus(accountUuid);
@@ -275,12 +329,12 @@ void main() {
         network: _network,
         accountUuid: accountUuid,
       );
-      expect(
-        balance.ironwood,
-        greaterThan(_fundedAmount - BigInt.from(1000000)),
-      );
+      expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
       expect(balance.ironwood, lessThan(_fundedAmount));
-      expect(balance.orchard, BigInt.zero);
+      expect(
+        balance.orchard,
+        approvedPlan.orchardChangeZatoshi ?? BigInt.zero,
+      );
 
       await tapAppButton(
         tester,
@@ -301,6 +355,24 @@ void main() {
       );
     },
     timeout: const Timeout(Duration(minutes: 20)),
+  );
+}
+
+rust_sync.MigrationScheduledTransfer _parseDisplayedScheduleTransfer(
+  String value,
+) {
+  final match = RegExp(
+    r'^(\d+)(?:\.(\d+))? ZEC\s+·\s+\+(\d+) blocks$',
+  ).firstMatch(value);
+  if (match == null) {
+    throw StateError('Unexpected migration schedule row: $value');
+  }
+  final fractional = (match.group(2) ?? '').padRight(8, '0');
+  return rust_sync.MigrationScheduledTransfer(
+    valueZatoshi:
+        BigInt.parse(match.group(1)!) * BigInt.from(100000000) +
+        BigInt.parse(fractional.isEmpty ? '0' : fractional),
+    blockOffset: int.parse(match.group(3)!),
   );
 }
 

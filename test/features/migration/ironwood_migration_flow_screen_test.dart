@@ -107,10 +107,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1 Planned batches'), findsOneWidget);
-    expect(find.text('~3 min'), findsOneWidget);
+    expect(find.text('~144 blocks'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('Total, ~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Privacy'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_schedule_view')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Migration schedule'), findsOneWidget);
+    expect(find.text('Batch 1'), findsOneWidget);
+    expect(find.text('0.1 ZEC  ·  +144 blocks'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_schedule_close')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Migration schedule'), findsNothing);
   });
 
   testWidgets('private review starts software migration and opens status', (
@@ -122,6 +135,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     String? startedAccountUuid;
+    List<rust_sync.MigrationScheduledTransfer>? startedSchedule;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -144,11 +158,13 @@ void main() {
             required lightwalletdUrl,
             required network,
             required accountUuid,
+            required approvedSchedule,
             required mnemonicBytes,
             required password,
             required saltBase64,
           }) {
             startedAccountUuid = accountUuid;
+            startedSchedule = approvedSchedule;
             return Future.value(_migrationResult());
           },
     );
@@ -171,6 +187,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(startedAccountUuid, 'account-1');
+    expect(startedSchedule, _privatePlan().scheduledTransfers);
     expect(find.text('Preparing...'), findsOneWidget);
   });
 
@@ -347,6 +364,7 @@ void main() {
               required lightwalletdUrl,
               required network,
               required accountUuid,
+              required approvedSchedule,
               required mnemonicBytes,
               required password,
               required saltBase64,
@@ -562,9 +580,6 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final oldBroadcast = DateTime(2020, 1, 1);
-    final nextBroadcast = DateTime(2030, 1, 2, 3, 4);
-
     await tester.pumpWidget(
       _privateStatusHarness(
         status: _migrationStatus(
@@ -576,12 +591,16 @@ void main() {
           scheduledBroadcasts: [
             rust_sync.MigrationScheduledBroadcast(
               txidHex: 'broadcasted',
-              scheduledAtMs: oldBroadcast.millisecondsSinceEpoch,
+              valueZatoshi: BigInt.from(10_000_000),
+              scheduledAtMs: 0,
+              scheduledHeight: 800,
               status: 'broadcasted',
             ),
             rust_sync.MigrationScheduledBroadcast(
               txidHex: 'next',
-              scheduledAtMs: nextBroadcast.millisecondsSinceEpoch,
+              valueZatoshi: BigInt.from(20_000_000),
+              scheduledAtMs: 0,
+              scheduledHeight: 900,
               status: 'scheduled',
             ),
           ],
@@ -590,8 +609,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Jan 2, 03:04'), findsOneWidget);
-    expect(find.text('Jan 1, 00:00'), findsNothing);
+    expect(find.text('Block 900'), findsOneWidget);
+    expect(find.text('Block 800'), findsNothing);
   });
 
   testWidgets('private status continues due software migration', (
@@ -1183,6 +1202,99 @@ void main() {
       expect(seenAccountUuid, 'account-1');
     },
   );
+
+  test(
+    'private plan stays stable when volatile migration inputs change',
+    () async {
+      final inputsProvider =
+          NotifierProvider<_MigrationInputsNotifier, IronwoodMigrationInputs>(
+            _MigrationInputsNotifier.new,
+          );
+      var planCallCount = 0;
+      final expected = _privatePlan();
+      final container = ProviderContainer(
+        overrides: [
+          ironwoodMigrationInputsProvider.overrideWith(
+            (ref) => ref.watch(inputsProvider),
+          ),
+          ironwoodMigrationServiceProvider.overrideWithValue(
+            IronwoodMigrationService(
+              getWalletDbPath: () async => '/tmp/wallet.db',
+              getStatus:
+                  ({required dbPath, required network, required accountUuid}) {
+                    return Future.value(_migrationStatus());
+                  },
+              getPrivatePlan:
+                  ({required dbPath, required network, required accountUuid}) {
+                    planCallCount += 1;
+                    return Future.value(expected);
+                  },
+              secureStore: AppSecureStore.testing(
+                storage: const FlutterSecureStorage(),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationPrivatePlanProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      expect(
+        await container.read(ironwoodMigrationPrivatePlanProvider.future),
+        expected,
+      );
+      container.read(inputsProvider.notifier).setSyncing(true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        await container.read(ironwoodMigrationPrivatePlanProvider.future),
+        expected,
+      );
+      expect(planCallCount, 1);
+    },
+  );
+}
+
+class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
+  @override
+  IronwoodMigrationInputs build() => IronwoodMigrationInputs(
+    ironwoodActiveAtTip: true,
+    network: 'test',
+    accountUuid: 'account-1',
+    accountName: 'Account 1',
+    profilePictureId: kDefaultProfilePictureId,
+    hasAccountScopedData: true,
+    isSyncing: false,
+    isBackgroundMode: false,
+    hasSyncFailure: false,
+    orchardBalance: BigInt.from(10_000_000),
+    orchardPendingBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
+  );
+
+  void setSyncing(bool value) {
+    state = IronwoodMigrationInputs(
+      ironwoodActiveAtTip: state.ironwoodActiveAtTip,
+      network: state.network,
+      accountUuid: state.accountUuid,
+      accountName: state.accountName,
+      profilePictureId: state.profilePictureId,
+      hasAccountScopedData: state.hasAccountScopedData,
+      isSyncing: value,
+      isBackgroundMode: state.isBackgroundMode,
+      hasSyncFailure: state.hasSyncFailure,
+      orchardBalance: state.orchardBalance,
+      orchardPendingBalance: state.orchardPendingBalance,
+      ironwoodBalance: state.ironwoodBalance,
+      ironwoodPendingBalance: state.ironwoodPendingBalance,
+    );
+  }
 }
 
 Widget _migrationOptionsHarness({
@@ -1462,6 +1574,7 @@ IronwoodMigrationService _migrationServiceForStart({
           required lightwalletdUrl,
           required network,
           required accountUuid,
+          required approvedSchedule,
           required mnemonicBytes,
           required password,
           required saltBase64,
@@ -1591,8 +1704,15 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     plannedBatchCount: 1,
     denominationSplitStageCount: 0,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
+    scheduledTransfers: [
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(10_000_000),
+        blockOffset: 144,
+      ),
+    ],
   );
 }
 
@@ -1624,7 +1744,8 @@ rust_sync.MigrationStatus _migrationStatus({
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: scheduledBroadcasts,
   );
@@ -1648,7 +1769,8 @@ rust_sync.MigrationStatus _status() {
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
   );

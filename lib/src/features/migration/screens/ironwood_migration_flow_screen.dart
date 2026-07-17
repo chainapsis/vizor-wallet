@@ -3,7 +3,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
-    show Colors, CircularProgressIndicator, Divider, LinearProgressIndicator;
+    show
+        Colors,
+        CircularProgressIndicator,
+        Dialog,
+        Divider,
+        LinearProgressIndicator,
+        showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -36,7 +42,11 @@ import '../services/ironwood_migration_service.dart';
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
 const _privateStatusRefreshInterval = Duration(seconds: 5);
-const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+const _privateStatusAutoAdvanceInterval = Duration(
+  seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
+      ? 1
+      : 30,
+);
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
@@ -86,18 +96,19 @@ final ironwoodMigrationPrivatePlanProvider =
     FutureProvider.autoDispose<rust_sync.OrchardMigrationPrivatePlan?>((
       ref,
     ) async {
-      final flowData = await ref.watch(
-        ironwoodMigrationFlowDataProvider.future,
+      final request = ref.watch(
+        ironwoodMigrationInputsProvider.select(
+          (inputs) => inputs.statusRequest,
+        ),
       );
-      if (flowData == null) return null;
-
-      final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      final accountUuid = inputs.accountUuid;
-      if (accountUuid == null || !inputs.hasAccountScopedData) return null;
+      if (request == null) return null;
 
       return ref
           .watch(ironwoodMigrationServiceProvider)
-          .privatePlan(network: inputs.network, accountUuid: accountUuid);
+          .privatePlan(
+            network: request.network,
+            accountUuid: request.accountUuid,
+          );
     });
 
 BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
@@ -1374,7 +1385,7 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
                   title: 'Split funds',
                   body:
                       'Your $amount ZEC balance is divided into several '
-                      'smaller common notes (10/1/0.1 ZEC). Splitting the '
+                      'canonical notes from 0.01 to 10,000 ZEC. Splitting the '
                       'balance into smaller batches mixes your transactions '
                       'with other users maximizing privacy.',
                 ),
@@ -1569,6 +1580,8 @@ class _IronwoodMigrationPrivateStatusContentState
   void didUpdateWidget(_IronwoodMigrationPrivateStatusContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.status.phase != widget.status.phase ||
+        oldWidget.status.pendingSplitStageCount !=
+            widget.status.pendingSplitStageCount ||
         oldWidget.accountUuid != widget.accountUuid ||
         oldWidget.status.activeRunId != widget.status.activeRunId) {
       _advanceError = null;
@@ -2149,7 +2162,9 @@ class _IronwoodMigrationPrivateReviewContentState
   bool _isStarting = false;
   String? _startError;
 
-  Future<void> _startMigration() async {
+  Future<void> _startMigration(
+    rust_sync.OrchardMigrationPrivatePlan plan,
+  ) async {
     if (_isStarting) return;
 
     IronwoodMigrationStatusRequest? statusRequest;
@@ -2177,7 +2192,10 @@ class _IronwoodMigrationPrivateReviewContentState
       softwareStartAttempted = true;
       await ref
           .read(ironwoodMigrationServiceProvider)
-          .startSoftwarePrivateMigration(accountUuid: accountUuid);
+          .startSoftwarePrivateMigration(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
       if (!mounted) return;
       await _refreshMigrationStatusBestEffort(statusRequest);
       if (!mounted) return;
@@ -2323,7 +2341,7 @@ class _IronwoodMigrationPrivateReviewContentState
             width: 230,
             child: AppButton(
               key: const ValueKey('ironwood_migration_authorize_start_button'),
-              onPressed: canStart ? _startMigration : null,
+              onPressed: canStart ? () => _startMigration(plan) : null,
               height: 44,
               minWidth: 230,
               expand: true,
@@ -2468,10 +2486,15 @@ class _PrivateReviewPlan extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _ReviewTextRow(
+                    key: const ValueKey('ironwood_migration_schedule_view'),
                     label: '${plan.plannedBatchCount} Planned batches',
                     value: 'View',
                     trailingIcon: AppIcons.chevronForward,
                     semiboldLabel: true,
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => _MigrationScheduleDialog(plan: plan),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   _ReviewTextRow(
@@ -2555,13 +2578,86 @@ class _PrivateReviewPlan extends StatelessWidget {
   }
 }
 
+class _MigrationScheduleDialog extends StatelessWidget {
+  const _MigrationScheduleDialog({required this.plan});
+
+  final rust_sync.OrchardMigrationPrivatePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380, maxHeight: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Migration schedule',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                'Broadcast heights are relative to the block where the '
+                'migration transactions are prepared.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Flexible(
+                child: ListView.separated(
+                  key: const ValueKey('ironwood_migration_schedule_list'),
+                  shrinkWrap: true,
+                  itemCount: plan.scheduledTransfers.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final transfer = plan.scheduledTransfers[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: _ReviewTextRow(
+                        key: ValueKey(
+                          'ironwood_migration_schedule_batch_$index',
+                        ),
+                        label: 'Batch ${index + 1}',
+                        value:
+                            '${_formatZecAmountCompact(transfer.valueZatoshi)} '
+                            'ZEC  ·  +${transfer.blockOffset} blocks',
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppButton(
+                key: const ValueKey('ironwood_migration_schedule_close'),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ReviewTextRow extends StatelessWidget {
   const _ReviewTextRow({
+    super.key,
     required this.label,
     required this.value,
     this.trailingIcon,
     this.mutedLabel = false,
     this.semiboldLabel = false,
+    this.onTap,
   });
 
   final String label;
@@ -2569,6 +2665,7 @@ class _ReviewTextRow extends StatelessWidget {
   final String? trailingIcon;
   final bool mutedLabel;
   final bool semiboldLabel;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2576,7 +2673,7 @@ class _ReviewTextRow extends StatelessWidget {
     final rowStyle = mutedLabel
         ? AppTypography.bodyMediumStrong
         : AppTypography.labelLarge;
-    return Row(
+    final row = Row(
       children: [
         Expanded(
           child: Text(
@@ -2611,6 +2708,15 @@ class _ReviewTextRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+    if (onTap == null) return row;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: row,
+      ),
     );
   }
 }
@@ -3449,52 +3555,23 @@ String _currentTransferBatchStatus(rust_sync.MigrationStatus status) {
 String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
   final nextScheduledBroadcast = _nextScheduledBroadcast(status);
   if (nextScheduledBroadcast != null) {
-    final scheduledAtMs = nextScheduledBroadcast.scheduledAtMs;
-    final scheduledAt = DateTime.fromMillisecondsSinceEpoch(
-      scheduledAtMs,
-    ).toLocal();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final hour = scheduledAt.hour.toString().padLeft(2, '0');
-    final minute = scheduledAt.minute.toString().padLeft(2, '0');
-    return '${months[scheduledAt.month - 1]} '
-        '${scheduledAt.day}, $hour:$minute';
+    return 'Block ${nextScheduledBroadcast.scheduledHeight}';
   }
 
   if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
     return 'Confirming';
   }
 
-  final remainingBatches = math.max(
-    1,
-    _plannedTransferBatchCount(status) - _currentTransferBatchIndex(status) + 1,
-  );
-  return _formatBroadcastWindowSeconds(
-    status.broadcastWindowSeconds * BigInt.from(remainingBatches),
-  );
+  return '~${status.scheduleMeanDelayBlocks} blocks';
 }
 
 rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
   rust_sync.MigrationStatus status,
 ) {
   rust_sync.MigrationScheduledBroadcast? fallbackScheduled;
-  final nowMs = DateTime.now().millisecondsSinceEpoch;
   for (final broadcast in status.scheduledBroadcasts) {
     if (broadcast.status != 'scheduled') continue;
     fallbackScheduled ??= broadcast;
-    if (broadcast.scheduledAtMs >= nowMs) return broadcast;
   }
   return fallbackScheduled;
 }
@@ -3502,30 +3579,8 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
 String _estimatedMigrationArrivalLabel(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
-  final batches = math.max(1, plan.plannedBatchCount);
-  final totalSeconds = plan.broadcastWindowSeconds * BigInt.from(batches);
-  return _formatBroadcastWindowSeconds(totalSeconds);
-}
-
-String _formatBroadcastWindowSeconds(BigInt totalSeconds) {
-  const minute = 60;
-  const hour = minute * 60;
-  const day = hour * 24;
-
-  if (totalSeconds >= BigInt.from(day)) {
-    final days = (totalSeconds + BigInt.from(day - 1)) ~/ BigInt.from(day);
-    return '~$days days';
-  }
-  if (totalSeconds >= BigInt.from(hour)) {
-    final hours = (totalSeconds + BigInt.from(hour - 1)) ~/ BigInt.from(hour);
-    return '~$hours hr';
-  }
-  if (totalSeconds >= BigInt.from(minute)) {
-    final minutes =
-        (totalSeconds + BigInt.from(minute - 1)) ~/ BigInt.from(minute);
-    return '~$minutes min';
-  }
-  return 'Scheduled';
+  if (plan.scheduledTransfers.isEmpty) return 'Not scheduled';
+  return '~${plan.scheduledTransfers.last.blockOffset} blocks';
 }
 
 class _FlowButtons extends StatelessWidget {

@@ -687,6 +687,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> mnemonicBytes,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   });
 
   Future<IronwoodMigrationResult>
@@ -697,6 +698,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   });
 
   List<String> crateApiWalletMnemonicWordList();
@@ -4832,6 +4834,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> mnemonicBytes,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4844,6 +4847,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4864,6 +4871,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           mnemonicBytes,
           password,
           saltBase64,
+          approvedSchedule,
         ],
         apiImpl: this,
       ),
@@ -4881,6 +4889,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "mnemonicBytes",
           "password",
           "saltBase64",
+          "approvedSchedule",
         ],
       );
 
@@ -4893,6 +4902,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4904,6 +4914,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4924,6 +4938,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           password,
           saltBase64,
+          approvedSchedule,
         ],
         apiImpl: this,
       ),
@@ -4941,6 +4956,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "password",
           "saltBase64",
+          "approvedSchedule",
         ],
       );
 
@@ -7677,6 +7693,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MigrationScheduledTransfer> dco_decode_list_migration_scheduled_transfer(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_scheduled_transfer)
+        .toList();
+  }
+
+  @protected
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_next_step_view).toList();
@@ -7871,12 +7897,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return MigrationScheduledBroadcast(
       txidHex: dco_decode_String(arr[0]),
-      scheduledAtMs: dco_decode_i_64(arr[1]),
-      status: dco_decode_String(arr[2]),
+      valueZatoshi: dco_decode_u_64(arr[1]),
+      scheduledAtMs: dco_decode_i_64(arr[2]),
+      scheduledHeight: dco_decode_u_32(arr[3]),
+      status: dco_decode_String(arr[4]),
+    );
+  }
+
+  @protected
+  MigrationScheduledTransfer dco_decode_migration_scheduled_transfer(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return MigrationScheduledTransfer(
+      valueZatoshi: dco_decode_u_64(arr[0]),
+      blockOffset: dco_decode_u_32(arr[1]),
     );
   }
 
@@ -7884,8 +7926,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 20)
-      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -7904,10 +7946,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       message: dco_decode_opt_String(arr[14]),
       canAbandon: dco_decode_bool(arr[15]),
       signingBatchLimit: dco_decode_u_32(arr[16]),
-      broadcastWindowSeconds: dco_decode_u_64(arr[17]),
-      maxPreparedNotesPerRun: dco_decode_u_32(arr[18]),
+      scheduleMeanDelayBlocks: dco_decode_u_32(arr[17]),
+      scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[19]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[19],
+        arr[20],
       ),
     );
   }
@@ -8009,8 +8052,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return OrchardMigrationPrivatePlan(
       targetValuesZatoshi: dco_decode_list_prim_u_64_strict(arr[0]),
       totalInputZatoshi: dco_decode_u_64(arr[1]),
@@ -8022,8 +8065,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       plannedBatchCount: dco_decode_u_32(arr[7]),
       denominationSplitStageCount: dco_decode_u_32(arr[8]),
       signingBatchLimit: dco_decode_u_32(arr[9]),
-      broadcastWindowSeconds: dco_decode_u_64(arr[10]),
-      maxPreparedNotesPerRun: dco_decode_u_32(arr[11]),
+      scheduleMeanDelayBlocks: dco_decode_u_32(arr[10]),
+      scheduleMaxDelayBlocks: dco_decode_u_32(arr[11]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[12]),
+      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[13]),
     );
   }
 
@@ -9857,6 +9902,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MigrationScheduledTransfer> sse_decode_list_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationScheduledTransfer>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_scheduled_transfer(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<NextStepView> sse_decode_list_next_step_view(
     SseDeserializer deserializer,
   ) {
@@ -10174,12 +10233,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_txidHex = sse_decode_String(deserializer);
+    var var_valueZatoshi = sse_decode_u_64(deserializer);
     var var_scheduledAtMs = sse_decode_i_64(deserializer);
+    var var_scheduledHeight = sse_decode_u_32(deserializer);
     var var_status = sse_decode_String(deserializer);
     return MigrationScheduledBroadcast(
       txidHex: var_txidHex,
+      valueZatoshi: var_valueZatoshi,
       scheduledAtMs: var_scheduledAtMs,
+      scheduledHeight: var_scheduledHeight,
       status: var_status,
+    );
+  }
+
+  @protected
+  MigrationScheduledTransfer sse_decode_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_valueZatoshi = sse_decode_u_64(deserializer);
+    var var_blockOffset = sse_decode_u_32(deserializer);
+    return MigrationScheduledTransfer(
+      valueZatoshi: var_valueZatoshi,
+      blockOffset: var_blockOffset,
     );
   }
 
@@ -10205,7 +10281,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_message = sse_decode_opt_String(deserializer);
     var var_canAbandon = sse_decode_bool(deserializer);
     var var_signingBatchLimit = sse_decode_u_32(deserializer);
-    var var_broadcastWindowSeconds = sse_decode_u_64(deserializer);
+    var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
+    var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
     var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
     var var_scheduledBroadcasts = sse_decode_list_migration_scheduled_broadcast(
       deserializer,
@@ -10228,7 +10305,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       message: var_message,
       canAbandon: var_canAbandon,
       signingBatchLimit: var_signingBatchLimit,
-      broadcastWindowSeconds: var_broadcastWindowSeconds,
+      scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
+      scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
       scheduledBroadcasts: var_scheduledBroadcasts,
     );
@@ -10400,8 +10478,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_plannedBatchCount = sse_decode_u_32(deserializer);
     var var_denominationSplitStageCount = sse_decode_u_32(deserializer);
     var var_signingBatchLimit = sse_decode_u_32(deserializer);
-    var var_broadcastWindowSeconds = sse_decode_u_64(deserializer);
+    var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
+    var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
     var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
+    var var_scheduledTransfers = sse_decode_list_migration_scheduled_transfer(
+      deserializer,
+    );
     return OrchardMigrationPrivatePlan(
       targetValuesZatoshi: var_targetValuesZatoshi,
       totalInputZatoshi: var_totalInputZatoshi,
@@ -10413,8 +10495,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       plannedBatchCount: var_plannedBatchCount,
       denominationSplitStageCount: var_denominationSplitStageCount,
       signingBatchLimit: var_signingBatchLimit,
-      broadcastWindowSeconds: var_broadcastWindowSeconds,
+      scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
+      scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
+      scheduledTransfers: var_scheduledTransfers,
     );
   }
 
@@ -12223,6 +12307,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_migration_scheduled_transfer(
+    List<MigrationScheduledTransfer> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_scheduled_transfer(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_next_step_view(
     List<NextStepView> self,
     SseSerializer serializer,
@@ -12523,8 +12619,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.txidHex, serializer);
+    sse_encode_u_64(self.valueZatoshi, serializer);
     sse_encode_i_64(self.scheduledAtMs, serializer);
+    sse_encode_u_32(self.scheduledHeight, serializer);
     sse_encode_String(self.status, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_scheduled_transfer(
+    MigrationScheduledTransfer self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.valueZatoshi, serializer);
+    sse_encode_u_32(self.blockOffset, serializer);
   }
 
   @protected
@@ -12550,7 +12658,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.message, serializer);
     sse_encode_bool(self.canAbandon, serializer);
     sse_encode_u_32(self.signingBatchLimit, serializer);
-    sse_encode_u_64(self.broadcastWindowSeconds, serializer);
+    sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
+    sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
     sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
     sse_encode_list_migration_scheduled_broadcast(
       self.scheduledBroadcasts,
@@ -12702,8 +12811,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.plannedBatchCount, serializer);
     sse_encode_u_32(self.denominationSplitStageCount, serializer);
     sse_encode_u_32(self.signingBatchLimit, serializer);
-    sse_encode_u_64(self.broadcastWindowSeconds, serializer);
+    sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
+    sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
     sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
+    sse_encode_list_migration_scheduled_transfer(
+      self.scheduledTransfers,
+      serializer,
+    );
   }
 
   @protected

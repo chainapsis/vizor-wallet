@@ -226,6 +226,59 @@ Future<rust_sync.MigrationStatus> waitForDesktopRegtestMigrationStatus(
   fail('Timed out waiting for $description.$statusDetail$errorDetail');
 }
 
+Future<rust_sync.MigrationStatus> advanceDesktopRegtestMigrationSchedule(
+  WidgetTester tester,
+  String driverUrl,
+  String accountUuid, {
+  int? submittedTarget,
+  Duration timeout = const Duration(minutes: 6),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final status = await desktopRegtestMigrationStatus(accountUuid);
+    final submitted = status.broadcastedTxCount + status.confirmedTxCount;
+    final target = submittedTarget ?? status.totalCount;
+    if (target > 0 && submitted >= target) return status;
+
+    final scheduled = status.scheduledBroadcasts
+        .where((entry) => entry.status == 'scheduled')
+        .toList()
+      ..sort(
+        (left, right) => left.scheduledHeight.compareTo(right.scheduledHeight),
+      );
+    if (scheduled.isEmpty) {
+      await tester.pump(const Duration(milliseconds: 250));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      continue;
+    }
+
+    final chain = await ironwoodDriverGet(driverUrl, '/status');
+    final currentHeight = (chain['zcashdHeight'] as num).toInt();
+    final nextHeight = scheduled.first.scheduledHeight;
+    if (nextHeight > currentHeight) {
+      final blocks = nextHeight - currentHeight;
+      e2eLog(
+        'mining $blocks block(s) to migration broadcast height $nextHeight',
+      );
+      await ironwoodDriverPost(
+        driverUrl,
+        '/mine',
+        payload: {'blocks': blocks},
+      );
+    }
+
+    await waitForDesktopRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (next) =>
+          next.broadcastedTxCount + next.confirmedTxCount > submitted,
+      description: 'migration transaction at block $nextHeight',
+      timeout: const Duration(minutes: 2),
+    );
+  }
+  fail('Timed out advancing the regtest migration broadcast schedule.');
+}
+
 Future<void> cleanupDesktopRegtestWallet() async {
   if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
     throw StateError(

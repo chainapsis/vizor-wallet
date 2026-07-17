@@ -38,7 +38,7 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
-pub(crate) use migration::migration_status;
+pub(crate) use migration::{migration_status, MigrationScheduleEntry};
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
@@ -48,15 +48,15 @@ pub(crate) use send::estimate_send_max;
 pub(crate) use send::get_orchard_migration_private_plan;
 pub use send::{
     broadcast_due_orchard_migration_transactions, estimate_fee, execute_proposal,
-    execute_proposal_with_seed_loader, migrate_orchard_to_ironwood, propose_send,
-    ExecuteProposalResult, IronwoodMigrationResult,
+    execute_proposal_with_seed_loader, propose_send, ExecuteProposalResult,
+    IronwoodMigrationResult,
 };
 pub(crate) use send::{
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
     complete_orchard_migration_single_qr_pczt, discard_keystone_migration_request,
-    keystone_migration_proof_status, prepare_orchard_migration_batch_pczt,
-    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
-    KeystoneSignedMigrationMessage,
+    keystone_migration_proof_status, migrate_orchard_to_ironwood,
+    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    prepare_orchard_migration_single_qr_pczt, KeystoneSignedMigrationMessage,
 };
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,

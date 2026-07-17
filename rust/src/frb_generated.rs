@@ -3720,6 +3720,8 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
             let api_mnemonic_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
+            let api_approved_schedule =
+                <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -3731,6 +3733,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                         api_mnemonic_bytes,
                         api_password,
                         api_salt_base64,
+                        api_approved_schedule,
                     )?;
                     Ok(output_ok)
                 })())
@@ -3766,6 +3769,8 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
+            let api_approved_schedule =
+                <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -3777,6 +3782,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                             api_account_uuid,
                             api_password,
                             api_salt_base64,
+                            api_approved_schedule,
                         )?;
                     Ok(output_ok)
                 })())
@@ -6876,6 +6882,20 @@ impl SseDecode for Vec<crate::api::sync::MigrationScheduledBroadcast> {
     }
 }
 
+impl SseDecode for Vec<crate::api::sync::MigrationScheduledTransfer> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::sync::MigrationScheduledTransfer>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<zcash_voting::wire::NextStepView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7178,12 +7198,28 @@ impl SseDecode for crate::api::sync::MigrationScheduledBroadcast {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_txidHex = <String>::sse_decode(deserializer);
+        let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
         let mut var_scheduledAtMs = <i64>::sse_decode(deserializer);
+        let mut var_scheduledHeight = <u32>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         return crate::api::sync::MigrationScheduledBroadcast {
             txid_hex: var_txidHex,
+            value_zatoshi: var_valueZatoshi,
             scheduled_at_ms: var_scheduledAtMs,
+            scheduled_height: var_scheduledHeight,
             status: var_status,
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::MigrationScheduledTransfer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_blockOffset = <u32>::sse_decode(deserializer);
+        return crate::api::sync::MigrationScheduledTransfer {
+            value_zatoshi: var_valueZatoshi,
+            block_offset: var_blockOffset,
         };
     }
 }
@@ -7208,7 +7244,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_message = <Option<String>>::sse_decode(deserializer);
         let mut var_canAbandon = <bool>::sse_decode(deserializer);
         let mut var_signingBatchLimit = <u32>::sse_decode(deserializer);
-        let mut var_broadcastWindowSeconds = <u64>::sse_decode(deserializer);
+        let mut var_scheduleMeanDelayBlocks = <u32>::sse_decode(deserializer);
+        let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_maxPreparedNotesPerRun = <u32>::sse_decode(deserializer);
         let mut var_scheduledBroadcasts =
             <Vec<crate::api::sync::MigrationScheduledBroadcast>>::sse_decode(deserializer);
@@ -7230,7 +7267,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             message: var_message,
             can_abandon: var_canAbandon,
             signing_batch_limit: var_signingBatchLimit,
-            broadcast_window_seconds: var_broadcastWindowSeconds,
+            schedule_mean_delay_blocks: var_scheduleMeanDelayBlocks,
+            schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             max_prepared_notes_per_run: var_maxPreparedNotesPerRun,
             scheduled_broadcasts: var_scheduledBroadcasts,
         };
@@ -7388,8 +7426,11 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
         let mut var_plannedBatchCount = <u32>::sse_decode(deserializer);
         let mut var_denominationSplitStageCount = <u32>::sse_decode(deserializer);
         let mut var_signingBatchLimit = <u32>::sse_decode(deserializer);
-        let mut var_broadcastWindowSeconds = <u64>::sse_decode(deserializer);
+        let mut var_scheduleMeanDelayBlocks = <u32>::sse_decode(deserializer);
+        let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_maxPreparedNotesPerRun = <u32>::sse_decode(deserializer);
+        let mut var_scheduledTransfers =
+            <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(deserializer);
         return crate::api::sync::OrchardMigrationPrivatePlan {
             target_values_zatoshi: var_targetValuesZatoshi,
             total_input_zatoshi: var_totalInputZatoshi,
@@ -7401,8 +7442,10 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
             planned_batch_count: var_plannedBatchCount,
             denomination_split_stage_count: var_denominationSplitStageCount,
             signing_batch_limit: var_signingBatchLimit,
-            broadcast_window_seconds: var_broadcastWindowSeconds,
+            schedule_mean_delay_blocks: var_scheduleMeanDelayBlocks,
+            schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             max_prepared_notes_per_run: var_maxPreparedNotesPerRun,
+            scheduled_transfers: var_scheduledTransfers,
         };
     }
 }
@@ -9422,7 +9465,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationScheduledBroad
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.txid_hex.into_into_dart().into_dart(),
+            self.value_zatoshi.into_into_dart().into_dart(),
             self.scheduled_at_ms.into_into_dart().into_dart(),
+            self.scheduled_height.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -9436,6 +9481,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationScheduledBroad
     for crate::api::sync::MigrationScheduledBroadcast
 {
     fn into_into_dart(self) -> crate::api::sync::MigrationScheduledBroadcast {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationScheduledTransfer {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.value_zatoshi.into_into_dart().into_dart(),
+            self.block_offset.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::MigrationScheduledTransfer
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationScheduledTransfer>
+    for crate::api::sync::MigrationScheduledTransfer
+{
+    fn into_into_dart(self) -> crate::api::sync::MigrationScheduledTransfer {
         self
     }
 }
@@ -9468,7 +9534,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
             self.message.into_into_dart().into_dart(),
             self.can_abandon.into_into_dart().into_dart(),
             self.signing_batch_limit.into_into_dart().into_dart(),
-            self.broadcast_window_seconds.into_into_dart().into_dart(),
+            self.schedule_mean_delay_blocks.into_into_dart().into_dart(),
+            self.schedule_max_delay_blocks.into_into_dart().into_dart(),
             self.max_prepared_notes_per_run.into_into_dart().into_dart(),
             self.scheduled_broadcasts.into_into_dart().into_dart(),
         ]
@@ -9530,8 +9597,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::OrchardMigrationPrivate
                 .into_into_dart()
                 .into_dart(),
             self.signing_batch_limit.into_into_dart().into_dart(),
-            self.broadcast_window_seconds.into_into_dart().into_dart(),
+            self.schedule_mean_delay_blocks.into_into_dart().into_dart(),
+            self.schedule_max_delay_blocks.into_into_dart().into_dart(),
             self.max_prepared_notes_per_run.into_into_dart().into_dart(),
+            self.scheduled_transfers.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -11395,6 +11464,16 @@ impl SseEncode for Vec<crate::api::sync::MigrationScheduledBroadcast> {
     }
 }
 
+impl SseEncode for Vec<crate::api::sync::MigrationScheduledTransfer> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::MigrationScheduledTransfer>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<zcash_voting::wire::NextStepView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -11629,8 +11708,18 @@ impl SseEncode for crate::api::sync::MigrationScheduledBroadcast {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.txid_hex, serializer);
+        <u64>::sse_encode(self.value_zatoshi, serializer);
         <i64>::sse_encode(self.scheduled_at_ms, serializer);
+        <u32>::sse_encode(self.scheduled_height, serializer);
         <String>::sse_encode(self.status, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::MigrationScheduledTransfer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.value_zatoshi, serializer);
+        <u32>::sse_encode(self.block_offset, serializer);
     }
 }
 
@@ -11654,7 +11743,8 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <Option<String>>::sse_encode(self.message, serializer);
         <bool>::sse_encode(self.can_abandon, serializer);
         <u32>::sse_encode(self.signing_batch_limit, serializer);
-        <u64>::sse_encode(self.broadcast_window_seconds, serializer);
+        <u32>::sse_encode(self.schedule_mean_delay_blocks, serializer);
+        <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
         <u32>::sse_encode(self.max_prepared_notes_per_run, serializer);
         <Vec<crate::api::sync::MigrationScheduledBroadcast>>::sse_encode(
             self.scheduled_broadcasts,
@@ -11787,8 +11877,13 @@ impl SseEncode for crate::api::sync::OrchardMigrationPrivatePlan {
         <u32>::sse_encode(self.planned_batch_count, serializer);
         <u32>::sse_encode(self.denomination_split_stage_count, serializer);
         <u32>::sse_encode(self.signing_batch_limit, serializer);
-        <u64>::sse_encode(self.broadcast_window_seconds, serializer);
+        <u32>::sse_encode(self.schedule_mean_delay_blocks, serializer);
+        <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
         <u32>::sse_encode(self.max_prepared_notes_per_run, serializer);
+        <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_encode(
+            self.scheduled_transfers,
+            serializer,
+        );
     }
 }
 

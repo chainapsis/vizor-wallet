@@ -171,8 +171,10 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     pub planned_batch_count: u32,
     pub denomination_split_stage_count: u32,
     pub signing_batch_limit: u32,
-    pub broadcast_window_seconds: u64,
+    pub schedule_mean_delay_blocks: u32,
+    pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
+    pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
 }
 
 pub(crate) struct KeystoneMigrationMessage {
@@ -716,7 +718,7 @@ async fn execute_stored_proposal(
     )
 }
 
-pub async fn migrate_orchard_to_ironwood(
+pub(crate) async fn migrate_orchard_to_ironwood(
     db_path: &str,
     lightwalletd_url: &str,
     network: WalletNetwork,
@@ -724,6 +726,7 @@ pub async fn migrate_orchard_to_ironwood(
     seed: SecretVec<u8>,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
@@ -800,6 +803,7 @@ pub async fn migrate_orchard_to_ironwood(
         fee_zatoshi,
         total_migratable_zatoshi,
     } = prepared;
+    super::migration::validate_schedule(&approved_schedule, &plan.migration_outputs, network)?;
     let prepared_count = u32::try_from(prepared_refs.len())
         .map_err(|_| "Migration output count exceeds u32".to_string())?;
     let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
@@ -812,6 +816,13 @@ pub async fn migrate_orchard_to_ironwood(
         denomination_stages,
         pending_password.as_slice(),
         pending_salt_base64,
+    )?;
+    super::migration::set_run_approved_schedule(
+        db_path,
+        &run_id,
+        network,
+        &approved_schedule,
+        &plan.migration_outputs,
     )?;
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
@@ -3338,6 +3349,11 @@ pub(crate) fn get_orchard_migration_private_plan(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
+    let scheduled_transfers = super::migration::planned_transfer_schedule(
+        padded_plan.denominations.migration_outputs.iter().copied(),
+        network,
+        &mut OsRng,
+    );
 
     Ok(Some(OrchardMigrationPrivatePlan {
         target_values_zatoshi: padded_plan.denominations.migration_outputs,
@@ -3350,8 +3366,10 @@ pub(crate) fn get_orchard_migration_private_plan(
         planned_batch_count,
         denomination_split_stage_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        broadcast_window_seconds: super::migration::MIGRATION_BROADCAST_WINDOW_SECS,
+        schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
+        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
         max_prepared_notes_per_run: super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
+        scheduled_transfers,
     }))
 }
 
@@ -3609,6 +3627,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let Some(anchor_boundary_height) = super::migration::zip318_draw_anchor_boundary_for_note(
+        network,
         anchor_height_u32,
         u32::from(mined_height),
         nu6_3_activation_height,
@@ -4696,6 +4715,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
     let anchor_boundary_height = preferred_anchor_boundary_height
         .filter(|boundary| {
             super::migration::zip318_anchor_boundary_is_candidate(
+                network,
                 *boundary,
                 anchor_height_u32,
                 mined_height,
@@ -4704,6 +4724,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         })
         .or_else(|| {
             super::migration::zip318_draw_anchor_boundary_for_note(
+                network,
                 anchor_height_u32,
                 mined_height,
                 nu6_3_activation_height,
@@ -5046,10 +5067,18 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
-    let due =
-        super::migration::due_pending_txs(db_path, run_id, pending_password, pending_salt_base64)?;
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    let due = super::migration::due_pending_txs(
+        db_path,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )?;
     if due.is_empty() {
-        let status = if super::migration::next_scheduled_delay_ms(db_path, run_id)?.is_some() {
+        let status = if super::migration::next_scheduled_height(db_path, run_id)?.is_some() {
             super::migration::PHASE_BROADCAST_SCHEDULED
         } else {
             super::migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
@@ -5119,6 +5148,12 @@ async fn broadcast_due_scheduled_migration_txs(
         )? {
             return Ok(result);
         }
+        super::migration::reschedule_overdue_pending_txs(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+        )?;
         log::info!("migration: broadcast scheduled tx {}", pending.txid_hex);
     }
 

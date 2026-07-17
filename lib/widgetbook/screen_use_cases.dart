@@ -2091,7 +2091,8 @@ rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 0,
-    broadcastWindowSeconds: BigInt.zero,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
   );
@@ -2134,8 +2135,15 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     plannedBatchCount: 12,
     denominationSplitStageCount: 2,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(14_400),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
+    scheduledTransfers: [
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(1_000_000_000),
+        blockOffset: 144,
+      ),
+    ],
   );
 }
 
@@ -2157,7 +2165,8 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
   );
@@ -2196,12 +2205,15 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(14_400),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       rust_sync.MigrationScheduledBroadcast(
         txidHex: 'preview-txid',
+        valueZatoshi: BigInt.from(1_000_000_000),
         scheduledAtMs: DateTime(2026, 7, 18, 12).millisecondsSinceEpoch,
+        scheduledHeight: 3_000_144,
         status: 'scheduled',
       ),
     ],

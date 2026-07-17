@@ -686,8 +686,15 @@ pub struct KeystoneMigrationProofStatus {
 
 pub struct MigrationScheduledBroadcast {
     pub txid_hex: String,
+    pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub scheduled_height: u32,
     pub status: String,
+}
+
+pub struct MigrationScheduledTransfer {
+    pub value_zatoshi: u64,
+    pub block_offset: u32,
 }
 
 pub struct MigrationStatus {
@@ -713,7 +720,8 @@ pub struct MigrationStatus {
     pub message: Option<String>,
     pub can_abandon: bool,
     pub signing_batch_limit: u32,
-    pub broadcast_window_seconds: u64,
+    pub schedule_mean_delay_blocks: u32,
+    pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
 }
@@ -729,8 +737,22 @@ pub struct OrchardMigrationPrivatePlan {
     pub planned_batch_count: u32,
     pub denomination_split_stage_count: u32,
     pub signing_batch_limit: u32,
-    pub broadcast_window_seconds: u64,
+    pub schedule_mean_delay_blocks: u32,
+    pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
+    pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
+}
+
+fn to_wallet_migration_schedule(
+    schedule: Vec<MigrationScheduledTransfer>,
+) -> Vec<wallet_sync::MigrationScheduleEntry> {
+    schedule
+        .into_iter()
+        .map(|entry| wallet_sync::MigrationScheduleEntry {
+            value_zatoshi: entry.value_zatoshi,
+            block_offset: entry.block_offset,
+        })
+        .collect()
 }
 
 pub struct ExtractAndBroadcastPcztResult {
@@ -929,6 +951,7 @@ pub fn migrate_orchard_to_ironwood(
     mnemonic_bytes: Vec<u8>,
     password: String,
     salt_base64: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
@@ -946,6 +969,7 @@ pub fn migrate_orchard_to_ironwood(
             seed,
             password,
             &salt_base64,
+            to_wallet_migration_schedule(approved_schedule),
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,
@@ -994,14 +1018,17 @@ pub fn get_orchard_migration_status(
             message: status.message,
             can_abandon: status.can_abandon,
             signing_batch_limit: status.signing_batch_limit,
-            broadcast_window_seconds: status.broadcast_window_seconds,
+            schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
+            schedule_max_delay_blocks: status.schedule_max_delay_blocks,
             max_prepared_notes_per_run: status.max_prepared_notes_per_run,
             scheduled_broadcasts: status
                 .scheduled_broadcasts
                 .into_iter()
                 .map(|broadcast| MigrationScheduledBroadcast {
                     txid_hex: broadcast.txid_hex,
+                    value_zatoshi: broadcast.value_zatoshi,
                     scheduled_at_ms: broadcast.scheduled_at_ms,
+                    scheduled_height: broadcast.scheduled_height,
                     status: broadcast.status,
                 })
                 .collect(),
@@ -1029,8 +1056,17 @@ pub fn get_orchard_migration_private_plan(
                     planned_batch_count: plan.planned_batch_count,
                     denomination_split_stage_count: plan.denomination_split_stage_count,
                     signing_batch_limit: plan.signing_batch_limit,
-                    broadcast_window_seconds: plan.broadcast_window_seconds,
+                    schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
+                    schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
                     max_prepared_notes_per_run: plan.max_prepared_notes_per_run,
+                    scheduled_transfers: plan
+                        .scheduled_transfers
+                        .into_iter()
+                        .map(|entry| MigrationScheduledTransfer {
+                            value_zatoshi: entry.value_zatoshi,
+                            block_offset: entry.block_offset,
+                        })
+                        .collect(),
                 })
             },
         )
@@ -1329,6 +1365,7 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
     account_uuid: String,
     password: String,
     salt_base64: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1348,6 +1385,7 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
             seed,
             Zeroizing::new(password_bytes),
             &salt_base64,
+            to_wallet_migration_schedule(approved_schedule),
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,

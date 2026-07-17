@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rand::{rngs::OsRng, Rng};
+use rand::{rngs::OsRng, seq::SliceRandom, Rng};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
@@ -37,15 +37,32 @@ pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
 pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOSHIS_PER_ZEC;
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
+pub(crate) const REGTEST_ANCHOR_BUCKET_MODULUS: u32 = 1;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
 pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
-pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
+pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
+pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
+pub(crate) const REGTEST_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 1;
+pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 // Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
 // 3 logical actions (a 2-action padded Orchard bundle and a 1-action
 // unpadded Ironwood bundle).
 const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
+
+pub(crate) fn schedule_parameters(network: WalletNetwork) -> (u32, u32) {
+    match network {
+        WalletNetwork::Regtest => (
+            REGTEST_TRANSFER_MEAN_DELAY_BLOCKS,
+            REGTEST_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+        WalletNetwork::Main | WalletNetwork::Test => (
+            ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+    }
+}
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
@@ -181,35 +198,65 @@ fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
     best
 }
 
-pub(crate) fn zip318_anchor_boundary_at_or_before(height: u32) -> Option<u32> {
-    let boundary = height - (height % ZIP318_ANCHOR_BUCKET_MODULUS);
+fn anchor_bucket_modulus(network: WalletNetwork) -> u32 {
+    match network {
+        WalletNetwork::Regtest => REGTEST_ANCHOR_BUCKET_MODULUS,
+        WalletNetwork::Main | WalletNetwork::Test => ZIP318_ANCHOR_BUCKET_MODULUS,
+    }
+}
+
+fn anchor_bucket_min_age(network: WalletNetwork) -> u32 {
+    match network {
+        // Empty regtest blocks do not add commitment-tree checkpoints. Allow
+        // the checkpoint containing the denomination note so E2E can advance.
+        WalletNetwork::Regtest => 0,
+        WalletNetwork::Main | WalletNetwork::Test => 1,
+    }
+}
+
+pub(crate) fn zip318_anchor_boundary_at_or_before(
+    network: WalletNetwork,
+    height: u32,
+) -> Option<u32> {
+    let modulus = anchor_bucket_modulus(network);
+    let boundary = height - (height % modulus);
     (boundary > 0).then_some(boundary)
 }
 
-fn zip318_anchor_boundary_age(latest_boundary: u32, anchor_boundary: u32) -> Option<u32> {
-    if anchor_boundary >= latest_boundary {
+fn zip318_anchor_boundary_age(
+    network: WalletNetwork,
+    latest_boundary: u32,
+    anchor_boundary: u32,
+) -> Option<u32> {
+    if anchor_boundary > latest_boundary {
         return None;
     }
     let delta = latest_boundary.checked_sub(anchor_boundary)?;
-    if delta % ZIP318_ANCHOR_BUCKET_MODULUS != 0 {
+    let modulus = anchor_bucket_modulus(network);
+    if delta % modulus != 0 {
         return None;
     }
-    let age = delta / ZIP318_ANCHOR_BUCKET_MODULUS;
-    (1..=ZIP318_ANCHOR_AGE_CAP).contains(&age).then_some(age)
+    let age = delta / modulus;
+    (anchor_bucket_min_age(network)..=ZIP318_ANCHOR_AGE_CAP)
+        .contains(&age)
+        .then_some(age)
 }
 
 pub(crate) fn zip318_anchor_candidate_boundaries(
+    network: WalletNetwork,
     observed_anchor_height: u32,
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> Vec<u32> {
-    let Some(latest_boundary) = zip318_anchor_boundary_at_or_before(observed_anchor_height) else {
+    let Some(latest_boundary) =
+        zip318_anchor_boundary_at_or_before(network, observed_anchor_height)
+    else {
         return Vec::new();
     };
     let lower_bound = note_mined_height.max(nu6_3_activation_height.saturating_add(1));
     let mut candidates = Vec::new();
-    for age in 1..=ZIP318_ANCHOR_AGE_CAP {
-        let Some(distance) = age.checked_mul(ZIP318_ANCHOR_BUCKET_MODULUS) else {
+    for age in anchor_bucket_min_age(network)..=ZIP318_ANCHOR_AGE_CAP {
+        let Some(distance) = age.checked_mul(anchor_bucket_modulus(network)) else {
             break;
         };
         let Some(boundary) = latest_boundary.checked_sub(distance) else {
@@ -224,30 +271,35 @@ pub(crate) fn zip318_anchor_candidate_boundaries(
 }
 
 pub(crate) fn zip318_anchor_boundary_is_candidate(
+    network: WalletNetwork,
     anchor_boundary: u32,
     observed_anchor_height: u32,
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> bool {
-    if anchor_boundary == 0 || anchor_boundary % ZIP318_ANCHOR_BUCKET_MODULUS != 0 {
+    if anchor_boundary == 0 || anchor_boundary % anchor_bucket_modulus(network) != 0 {
         return false;
     }
     if anchor_boundary < note_mined_height || anchor_boundary <= nu6_3_activation_height {
         return false;
     }
-    let Some(latest_boundary) = zip318_anchor_boundary_at_or_before(observed_anchor_height) else {
+    let Some(latest_boundary) =
+        zip318_anchor_boundary_at_or_before(network, observed_anchor_height)
+    else {
         return false;
     };
-    zip318_anchor_boundary_age(latest_boundary, anchor_boundary).is_some()
+    zip318_anchor_boundary_age(network, latest_boundary, anchor_boundary).is_some()
 }
 
 pub(crate) fn zip318_draw_anchor_boundary_for_note(
+    network: WalletNetwork,
     observed_anchor_height: u32,
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> Option<u32> {
-    let latest_boundary = zip318_anchor_boundary_at_or_before(observed_anchor_height)?;
+    let latest_boundary = zip318_anchor_boundary_at_or_before(network, observed_anchor_height)?;
     let candidates = zip318_anchor_candidate_boundaries(
+        network,
         observed_anchor_height,
         note_mined_height,
         nu6_3_activation_height,
@@ -259,7 +311,7 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note(
     let mut weighted = Vec::with_capacity(candidates.len());
     let mut total_weight = 0u32;
     for boundary in candidates {
-        let age = zip318_anchor_boundary_age(latest_boundary, boundary)?;
+        let age = zip318_anchor_boundary_age(network, latest_boundary, boundary)?;
         let weight = 1u32 << (ZIP318_ANCHOR_AGE_CAP - age);
         total_weight = total_weight.checked_add(weight)?;
         weighted.push((boundary, weight));
@@ -289,6 +341,12 @@ pub(crate) struct PendingMigrationTxMetadata {
     pub tx_kind: String,
     pub funding_account_uuid: String,
     pub selected_note: PreparedOrchardNoteRef,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct MigrationScheduleEntry {
+    pub value_zatoshi: u64,
+    pub block_offset: u32,
 }
 
 pub(crate) struct PendingMigrationTxInsert {
@@ -351,7 +409,9 @@ pub(crate) struct PendingMigrationTotals {
 #[derive(Clone, Debug)]
 pub(crate) struct ScheduledMigrationBroadcast {
     pub txid_hex: String,
+    pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub scheduled_height: u32,
     pub status: String,
 }
 
@@ -377,7 +437,8 @@ pub(crate) struct MigrationStatus {
     pub message: Option<String>,
     pub can_abandon: bool,
     pub signing_batch_limit: u32,
-    pub broadcast_window_seconds: u64,
+    pub schedule_mean_delay_blocks: u32,
+    pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
 }
@@ -437,7 +498,8 @@ pub(crate) fn migration_status(
         message: None,
         can_abandon: false,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        broadcast_window_seconds: MIGRATION_BROADCAST_WINDOW_SECS,
+        schedule_mean_delay_blocks: schedule_parameters(network).0,
+        schedule_max_delay_blocks: schedule_parameters(network).1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts: Vec::new(),
     })
@@ -714,6 +776,33 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     Ok(())
 }
 
+pub(crate) fn set_run_approved_schedule(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+) -> Result<(), String> {
+    validate_schedule(schedule, target_values, network)?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let schedule_json = serde_json::to_string(schedule)
+        .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
+    let updated = conn
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE} SET schedule_json = ?1
+                 WHERE run_id = ?2 AND network = ?3"
+            ),
+            params![schedule_json, run_id, network_name(network)],
+        )
+        .map_err(|e| format!("Save approved migration schedule: {e}"))?;
+    if updated != 1 {
+        return Err("Migration run disappeared before schedule approval".to_string());
+    }
+    Ok(())
+}
+
 fn insert_pending_txs_with_tx(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
@@ -721,11 +810,64 @@ fn insert_pending_txs_with_tx(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
-    let offsets = random_schedule_offsets(pending_txs.len());
+    let network = tx
+        .query_row(
+            &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration run network: {e}"))?;
+    let network = WalletNetwork::from_str(&network)
+        .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
+    let mut pending_txs = pending_txs;
+    let schedule_json = tx
+        .query_row(
+            &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read approved migration schedule: {e}"))?;
+    let mut schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode approved migration schedule: {e}"))?;
+    if schedule.is_empty() {
+        schedule = planned_transfer_schedule(
+            pending_txs.iter().map(|pending| pending.value_zatoshi),
+            network,
+            &mut OsRng,
+        );
+        let schedule_json = serde_json::to_string(&schedule)
+            .map_err(|e| format!("Encode generated migration schedule: {e}"))?;
+        tx.execute(
+            &format!("UPDATE {RUNS_TABLE} SET schedule_json = ?1 WHERE run_id = ?2"),
+            params![schedule_json, run_id],
+        )
+        .map_err(|e| format!("Save generated migration schedule: {e}"))?;
+    }
+    validate_schedule(
+        &schedule,
+        &pending_txs
+            .iter()
+            .map(|pending| pending.value_zatoshi)
+            .collect::<Vec<_>>(),
+        network,
+    )?;
+    let construction_height = pending_txs
+        .iter()
+        .map(|pending| pending.target_height.saturating_sub(1))
+        .max()
+        .ok_or("Migration schedule has no transactions")?;
+    let mut scheduled_pending = Vec::with_capacity(pending_txs.len());
+    for entry in &schedule {
+        let position = pending_txs
+            .iter()
+            .position(|pending| pending.value_zatoshi == entry.value_zatoshi)
+            .ok_or("Approved migration schedule no longer matches prepared values")?;
+        scheduled_pending.push((pending_txs.swap_remove(position), entry.block_offset));
+    }
     let scheduled_start_ms = now_ms()?;
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
 
-    for (pending, offset_seconds) in pending_txs.into_iter().zip(offsets.into_iter()) {
+    for (pending, block_offset) in scheduled_pending {
         let encrypted_raw_tx = secret_payload::encrypt_payload(
             Zeroizing::new(pending.raw_tx),
             password,
@@ -734,12 +876,11 @@ fn insert_pending_txs_with_tx(
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode migration pending metadata: {e}"))?;
         let scheduled_at_ms = scheduled_start_ms
-            .checked_add(
-                i64::try_from(offset_seconds)
-                    .map_err(|_| "Migration schedule offset overflow".to_string())?
-                    .saturating_mul(1000),
-            )
+            .checked_add(i64::from(block_offset).saturating_mul(1000))
             .ok_or("Migration scheduled time overflow")?;
+        let scheduled_height = construction_height
+            .checked_add(block_offset)
+            .ok_or("Migration scheduled height overflow")?;
 
         let inserted = tx
             .execute(
@@ -748,8 +889,8 @@ fn insert_pending_txs_with_tx(
                  (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'scheduled', ?13)"
+                  scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'scheduled', ?14)"
                 ),
                 params![
                     run_id,
@@ -764,6 +905,7 @@ fn insert_pending_txs_with_tx(
                     pending.selected_note.output_index,
                     pending.selected_note.value_zatoshi,
                     scheduled_at_ms,
+                    scheduled_height,
                     metadata_json,
                 ],
             )
@@ -1215,23 +1357,24 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
 pub(crate) fn due_pending_txs(
     db_path: &str,
     run_id: &str,
+    chain_tip_height: u32,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<Vec<DuePendingMigrationTx>, String> {
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    let now = now_ms()?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT txid_hex, encrypted_raw_tx
              FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_at_ms <= ?2
-             ORDER BY scheduled_at_ms ASC, txid_hex ASC"
+             WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2
+             ORDER BY scheduled_height ASC, txid_hex ASC
+             LIMIT 1"
         ))
         .map_err(|e| format!("Prepare due migration tx query: {e}"))?;
     let rows = stmt
-        .query_map(params![run_id, now], |row| {
+        .query_map(params![run_id, chain_tip_height], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| format!("Query due migration txs: {e}"))?;
@@ -1253,32 +1396,74 @@ pub(crate) fn due_pending_txs(
     Ok(due)
 }
 
-pub(crate) fn next_scheduled_delay_ms(db_path: &str, run_id: &str) -> Result<Option<u64>, String> {
+pub(crate) fn next_scheduled_height(db_path: &str, run_id: &str) -> Result<Option<u32>, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    let next_scheduled_at_ms = conn
-        .query_row(
-            &format!(
-                "SELECT MIN(scheduled_at_ms)
+    conn.query_row(
+        &format!(
+            "SELECT MIN(scheduled_height)
                  FROM {PENDING_TXS_TABLE}
                  WHERE run_id = ?1 AND status = 'scheduled'"
-            ),
-            params![run_id],
-            |row| row.get::<_, Option<i64>>(0),
-        )
-        .map_err(|e| format!("Read next migration schedule: {e}"))?;
+        ),
+        params![run_id],
+        |row| row.get::<_, Option<u32>>(0),
+    )
+    .map_err(|e| format!("Read next migration schedule: {e}"))
+}
 
-    let Some(next_scheduled_at_ms) = next_scheduled_at_ms else {
-        return Ok(None);
-    };
-    let now = now_ms()?;
-    if next_scheduled_at_ms <= now {
-        Ok(Some(0))
-    } else {
-        u64::try_from(next_scheduled_at_ms - now)
-            .map(Some)
-            .map_err(|_| "Migration schedule delay overflow".to_string())
+pub(crate) fn reschedule_overdue_pending_txs(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2"
+        ))
+        .map_err(|e| format!("Prepare overdue migration query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id, chain_tip_height], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|e| format!("Query overdue migration transactions: {e}"))?;
+    let mut txids = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read overdue migration transaction: {e}"))?;
+    drop(stmt);
+    if txids.is_empty() {
+        return Ok(());
     }
+
+    txids.shuffle(&mut OsRng);
+    let (mean_delay_blocks, max_delay_blocks) = schedule_parameters(network);
+    let offsets = random_schedule_block_offsets_with_rng(
+        txids.len(),
+        mean_delay_blocks,
+        max_delay_blocks,
+        &mut OsRng,
+    );
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin overdue migration reschedule: {e}"))?;
+    for (txid, offset) in txids.into_iter().zip(offsets) {
+        let scheduled_height = chain_tip_height
+            .checked_add(offset)
+            .ok_or("Migration rescheduled height overflow")?;
+        tx.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE} SET scheduled_height = ?1
+                 WHERE run_id = ?2 AND txid_hex = ?3 AND status = 'scheduled'"
+            ),
+            params![scheduled_height, run_id, txid],
+        )
+        .map_err(|e| format!("Reschedule overdue migration transaction: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit overdue migration reschedule: {e}"))
 }
 
 pub(crate) fn mark_pending_broadcasted(
@@ -1395,18 +1580,20 @@ fn scheduled_broadcasts_for_run(
     }
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, scheduled_at_ms, status
+            "SELECT txid_hex, value_zatoshi, scheduled_at_ms, scheduled_height, status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
-             ORDER BY scheduled_at_ms ASC, txid_hex ASC"
+             ORDER BY scheduled_height ASC, txid_hex ASC"
         ))
         .map_err(|e| format!("Prepare migration schedule query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id], |row| {
             Ok(ScheduledMigrationBroadcast {
                 txid_hex: row.get(0)?,
-                scheduled_at_ms: row.get(1)?,
-                status: row.get(2)?,
+                value_zatoshi: row.get(1)?,
+                scheduled_at_ms: row.get(2)?,
+                scheduled_height: row.get(3)?,
+                status: row.get(4)?,
             })
         })
         .map_err(|e| format!("Query migration schedule: {e}"))?;
@@ -1464,6 +1651,15 @@ pub(crate) fn locked_migration_note_refs(
 }
 
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
+    let network = conn
+        .query_row(
+            &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run.run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration status network: {e}"))?;
+    let network = WalletNetwork::from_str(&network)
+        .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
     let prepared_note_count = count_for_run(conn, PREPARED_NOTES_TABLE, &run.run_id)?;
     let pending_split_stage_count = pending_split_stage_count_for_run(conn, &run.run_id)?;
     let pending_tx_count = count_for_run(conn, PENDING_TXS_TABLE, &run.run_id)?;
@@ -1531,7 +1727,8 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         message: run.last_error,
         can_abandon,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        broadcast_window_seconds: MIGRATION_BROADCAST_WINDOW_SECS,
+        schedule_mean_delay_blocks: schedule_parameters(network).0,
+        schedule_max_delay_blocks: schedule_parameters(network).1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts,
     })
@@ -1619,7 +1816,8 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                 conn.execute(
                     &format!(
                         "UPDATE {PENDING_TXS_TABLE}
-                         SET status = 'scheduled', scheduled_at_ms = ?1
+                         SET status = 'scheduled', scheduled_at_ms = ?1,
+                             scheduled_height = target_height
                          WHERE run_id = ?2 AND txid_hex = ?3"
                     ),
                     params![now, run_id, txid_hex],
@@ -2210,30 +2408,92 @@ fn count_pending_with_status(
     u32::try_from(count).map_err(|_| "Migration count overflow".to_string())
 }
 
-pub(crate) fn random_schedule_offsets(count: usize) -> Vec<u64> {
-    if count == 0 {
-        return Vec::new();
-    }
+fn random_schedule_block_offsets_with_rng<R: Rng + ?Sized>(
+    count: usize,
+    mean_delay_blocks: u32,
+    max_delay_blocks: u32,
+    rng: &mut R,
+) -> Vec<u32> {
+    assert!(mean_delay_blocks > 0);
+    assert!(max_delay_blocks > 0);
 
     let mut offsets = Vec::with_capacity(count);
-    offsets.push(0);
-    if count == 1 {
-        return offsets;
+    let mut elapsed_blocks = 0u32;
+    for _ in 0..count {
+        let delay = loop {
+            let uniform = rng.gen_range(f64::MIN_POSITIVE..1.0);
+            let sampled = (-uniform.ln() * f64::from(mean_delay_blocks)).ceil() as u32;
+            let sampled = sampled.max(1);
+            if sampled <= max_delay_blocks {
+                break sampled;
+            }
+        };
+        elapsed_blocks = elapsed_blocks.saturating_add(delay);
+        offsets.push(elapsed_blocks);
+    }
+    offsets
+}
+
+pub(crate) fn planned_transfer_schedule<R, I>(
+    values: I,
+    network: WalletNetwork,
+    rng: &mut R,
+) -> Vec<MigrationScheduleEntry>
+where
+    R: Rng + ?Sized,
+    I: IntoIterator<Item = u64>,
+{
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    values.shuffle(rng);
+    let (mean_delay_blocks, max_delay_blocks) = schedule_parameters(network);
+    let offsets = random_schedule_block_offsets_with_rng(
+        values.len(),
+        mean_delay_blocks,
+        max_delay_blocks,
+        rng,
+    );
+    values
+        .into_iter()
+        .zip(offsets)
+        .map(|(value_zatoshi, block_offset)| MigrationScheduleEntry {
+            value_zatoshi,
+            block_offset,
+        })
+        .collect()
+}
+
+pub(crate) fn validate_schedule(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+    network: WalletNetwork,
+) -> Result<(), String> {
+    if schedule.len() != target_values.len() {
+        return Err("Approved migration schedule count changed".to_string());
+    }
+    let mut scheduled_values = schedule
+        .iter()
+        .map(|entry| entry.value_zatoshi)
+        .collect::<Vec<_>>();
+    let mut target_values = target_values.to_vec();
+    scheduled_values.sort_unstable();
+    target_values.sort_unstable();
+    if scheduled_values != target_values {
+        return Err("Approved migration schedule values changed".to_string());
     }
 
-    let mean_gap_seconds = MIGRATION_BROADCAST_WINDOW_SECS as f64 / (count - 1) as f64;
-    let mut elapsed_seconds = 0.0;
-    for _ in 1..count {
-        let sample = OsRng.gen_range(f64::EPSILON..1.0);
-        elapsed_seconds += -sample.ln() * mean_gap_seconds;
-        offsets.push(
-            elapsed_seconds
-                .round()
-                .clamp(0.0, MIGRATION_BROADCAST_WINDOW_SECS as f64) as u64,
-        );
+    let (_, max_delay_blocks) = schedule_parameters(network);
+    let mut previous_offset = 0;
+    for entry in schedule {
+        let gap = entry
+            .block_offset
+            .checked_sub(previous_offset)
+            .ok_or("Approved migration schedule is not ordered")?;
+        if !(1..=max_delay_blocks).contains(&gap) {
+            return Err("Approved migration schedule delay is outside policy".to_string());
+        }
+        previous_offset = entry.block_offset;
     }
-    offsets.sort_unstable();
-    offsets
+    Ok(())
 }
 
 fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -2248,6 +2508,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             created_at_ms INTEGER NOT NULL,
             updated_at_ms INTEGER NOT NULL,
             target_values_json TEXT NOT NULL DEFAULT '[]',
+            schedule_json TEXT NOT NULL DEFAULT '[]',
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_runs_active
@@ -2277,12 +2538,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             selected_note_output_index INTEGER NOT NULL,
             selected_note_value INTEGER NOT NULL,
             scheduled_at_ms INTEGER NOT NULL,
+            scheduled_height INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             metadata_json TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_pending_due
             ON {PENDING_TXS_TABLE}(status, scheduled_at_ms);
-
         CREATE TABLE IF NOT EXISTS {SIGNED_CHILD_PCZTS_TABLE} (
             run_id TEXT NOT NULL,
             message_id TEXT NOT NULL,
@@ -2305,6 +2566,30 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     ))
     .map_err(|e| format!("Initialize migration schema: {e}"))?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "anchor_boundary_height", "INTEGER")?;
+    add_column_if_missing(
+        conn,
+        RUNS_TABLE,
+        "schedule_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = target_height
+             WHERE scheduled_height IS NULL"
+        ),
+        [],
+    )
+    .map_err(|e| format!("Backfill migration scheduled heights: {e}"))?;
+    conn.execute(
+        &format!(
+            "CREATE INDEX IF NOT EXISTS idx_vizor_migration_pending_height_due
+             ON {PENDING_TXS_TABLE}(status, scheduled_height)"
+        ),
+        [],
+    )
+    .map_err(|e| format!("Create migration scheduled-height index: {e}"))?;
     add_column_if_missing(
         conn,
         SIGNED_CHILD_PCZTS_TABLE,
@@ -2382,6 +2667,7 @@ fn network_name(network: WalletNetwork) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
 
     const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
     const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
@@ -2596,39 +2882,85 @@ mod tests {
 
     #[test]
     fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
-        assert_eq!(zip318_anchor_boundary_at_or_before(143), None);
-        assert_eq!(zip318_anchor_boundary_at_or_before(144), Some(144));
-        assert_eq!(zip318_anchor_boundary_at_or_before(5700), Some(5616));
+        assert_eq!(
+            zip318_anchor_boundary_at_or_before(WalletNetwork::Test, 143),
+            None
+        );
+        assert_eq!(
+            zip318_anchor_boundary_at_or_before(WalletNetwork::Test, 144),
+            Some(144)
+        );
+        assert_eq!(
+            zip318_anchor_boundary_at_or_before(WalletNetwork::Test, 5700),
+            Some(5616)
+        );
 
         assert_eq!(
-            zip318_anchor_candidate_boundaries(5700, 5000, 5000),
+            zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
             vec![5472, 5328, 5184, 5040]
         );
         assert_eq!(
-            zip318_anchor_candidate_boundaries(5700, 5600, 5000),
+            zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
             Vec::<u32>::new()
         );
         assert_eq!(
-            zip318_anchor_candidate_boundaries(5900, 5600, 5000),
+            zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5900, 5600, 5000),
             vec![5616]
         );
 
-        assert!(zip318_anchor_boundary_is_candidate(5472, 5700, 5000, 5000));
-        assert!(!zip318_anchor_boundary_is_candidate(5616, 5700, 5000, 5000));
-        assert!(!zip318_anchor_boundary_is_candidate(4896, 5700, 1, 5000));
-        assert!(!zip318_anchor_boundary_is_candidate(5500, 5700, 1, 5000));
+        assert!(zip318_anchor_boundary_is_candidate(
+            WalletNetwork::Test,
+            5472,
+            5700,
+            5000,
+            5000
+        ));
+        assert!(!zip318_anchor_boundary_is_candidate(
+            WalletNetwork::Test,
+            5616,
+            5700,
+            5000,
+            5000
+        ));
+        assert!(!zip318_anchor_boundary_is_candidate(
+            WalletNetwork::Test,
+            4896,
+            5700,
+            1,
+            5000
+        ));
+        assert!(!zip318_anchor_boundary_is_candidate(
+            WalletNetwork::Test,
+            5500,
+            5700,
+            1,
+            5000
+        ));
     }
 
     #[test]
     fn anchor_bucket_draw_stays_within_candidate_set() {
-        let candidates = zip318_anchor_candidate_boundaries(5700, 5000, 5000);
+        let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
         assert!(!candidates.is_empty());
 
         for _ in 0..32 {
-            let boundary = zip318_draw_anchor_boundary_for_note(5700, 5000, 5000).unwrap();
+            let boundary =
+                zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5000, 5000)
+                    .unwrap();
             assert!(candidates.contains(&boundary));
         }
-        assert_eq!(zip318_draw_anchor_boundary_for_note(5700, 5600, 5000), None);
+        assert_eq!(
+            zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
+            None
+        );
+        assert_eq!(
+            zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 503, 501, 500)[0],
+            503
+        );
+        assert_eq!(
+            zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 501, 501, 500),
+            vec![501]
+        );
     }
 
     #[test]
@@ -2639,15 +2971,142 @@ mod tests {
     }
 
     #[test]
-    fn schedule_offsets_are_sorted_and_within_window() {
-        let offsets = random_schedule_offsets(32);
+    fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
+        let mut rng = StdRng::seed_from_u64(0x318);
+        let offsets = random_schedule_block_offsets_with_rng(
+            32,
+            ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+            &mut rng,
+        );
 
         assert_eq!(offsets.len(), 32);
-        assert_eq!(offsets[0], 0);
-        assert!(offsets.windows(2).all(|w| w[0] <= w[1]));
-        assert!(offsets
-            .iter()
-            .all(|offset| *offset <= MIGRATION_BROADCAST_WINDOW_SECS));
+        assert!(offsets[0] >= 1);
+        assert!(offsets.windows(2).all(|w| {
+            let gap = w[1] - w[0];
+            (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+        }));
+    }
+
+    #[test]
+    fn regtest_schedule_is_short_but_still_requires_blocks() {
+        assert_eq!(
+            schedule_parameters(WalletNetwork::Regtest),
+            (1, REGTEST_TRANSFER_MAX_DELAY_BLOCKS)
+        );
+        assert_eq!(
+            schedule_parameters(WalletNetwork::Test),
+            (
+                ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
+                ZIP318_TRANSFER_MAX_DELAY_BLOCKS
+            )
+        );
+    }
+
+    #[test]
+    fn approved_schedule_controls_storage_and_overdue_catch_up() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200,300]')"
+            ),
+            params![db_path, PHASE_READY_TO_MIGRATE],
+        )
+        .unwrap();
+        drop(conn);
+
+        let schedule = vec![
+            MigrationScheduleEntry {
+                value_zatoshi: 200,
+                block_offset: 1,
+            },
+            MigrationScheduleEntry {
+                value_zatoshi: 100,
+                block_offset: 2,
+            },
+            MigrationScheduleEntry {
+                value_zatoshi: 300,
+                block_offset: 3,
+            },
+        ];
+        set_run_approved_schedule(
+            &db_path,
+            "run-1",
+            WalletNetwork::Regtest,
+            &schedule,
+            &[100, 200, 300],
+        )
+        .unwrap();
+
+        let pending = [100u64, 200, 300]
+            .into_iter()
+            .enumerate()
+            .map(|(index, value_zatoshi)| {
+                let txid_hex = format!("{index:064x}");
+                let selected_note = PreparedOrchardNoteRef {
+                    txid_hex: format!("{:064x}", index + 10),
+                    output_index: 0,
+                    value_zatoshi,
+                    note_version: 2,
+                    nullifier_hex: None,
+                };
+                PendingMigrationTxInsert {
+                    txid_hex,
+                    raw_tx: vec![index as u8],
+                    target_height: 501,
+                    anchor_boundary_height: None,
+                    expiry_height: 1_000,
+                    value_zatoshi,
+                    fee_zatoshi: 10,
+                    selected_note: selected_note.clone(),
+                    metadata: PendingMigrationTxMetadata {
+                        tx_kind: "migration".to_string(),
+                        funding_account_uuid: "account-1".to_string(),
+                        selected_note,
+                    },
+                }
+            })
+            .collect();
+        insert_pending_txs(&db_path, "run-1", pending, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+
+        let stored = {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT value_zatoshi, scheduled_height
+                     FROM vizor_migration_pending_txs
+                     ORDER BY scheduled_height",
+                )
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get::<_, u64>(0)?, row.get::<_, u32>(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(stored, vec![(200, 501), (100, 502), (300, 503)]);
+
+        let due = due_pending_txs(&db_path, "run-1", 503, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+        assert_eq!(due.len(), 1);
+        mark_pending_broadcasted(&db_path, "run-1", &due[0].txid_hex).unwrap();
+        reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 503).unwrap();
+
+        let remaining = scheduled_broadcasts_for_run(
+            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+            "run-1",
+        )
+        .unwrap()
+        .into_iter()
+        .filter(|entry| entry.status == "scheduled")
+        .collect::<Vec<_>>();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
     }
 
     #[test]

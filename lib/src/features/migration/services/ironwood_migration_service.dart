@@ -39,6 +39,7 @@ typedef IronwoodMigrationSoftwareStarter =
       required List<int> mnemonicBytes,
       required String password,
       required String saltBase64,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -48,6 +49,7 @@ typedef IronwoodMigrationMacosSoftwareStarter =
       required String accountUuid,
       required String password,
       required String saltBase64,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationDueBroadcaster =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -207,6 +209,7 @@ class IronwoodMigrationService {
 
   Future<rust_sync.IronwoodMigrationResult> startSoftwarePrivateMigration({
     required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -225,6 +228,7 @@ class IronwoodMigrationService {
         accountUuid: accountUuid,
         password: password,
         saltBase64: saltBase64,
+        approvedSchedule: approvedSchedule,
       );
     }
 
@@ -243,6 +247,7 @@ class IronwoodMigrationService {
         mnemonicBytes: mnemonicBytes,
         password: password,
         saltBase64: saltBase64,
+        approvedSchedule: approvedSchedule,
       );
     } finally {
       mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);

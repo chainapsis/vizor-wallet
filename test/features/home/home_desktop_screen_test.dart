@@ -1053,7 +1053,8 @@ rust_sync.MigrationStatus _migrationStatus(
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 0,
-    broadcastWindowSeconds: BigInt.zero,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
   );
