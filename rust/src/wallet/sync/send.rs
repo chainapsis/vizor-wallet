@@ -1332,6 +1332,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     base_pczt: child.base_pczt.clone(),
                     sigs,
                     target_height: child.target_height,
+                    anchor_boundary_height: child.anchor_boundary_height,
                     expiry_height: child.expiry_height,
                     value_zatoshi: child.migrated_zatoshi,
                     fee_zatoshi: child.fee_zatoshi,
@@ -1592,6 +1593,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                 txid_hex: extracted.txid.to_string(),
                 raw_tx: extracted.raw_tx,
                 target_height: message.target_height,
+                anchor_boundary_height: message.anchor_boundary_height,
                 expiry_height: message.expiry_height,
                 value_zatoshi: message.migrated_zatoshi,
                 fee_zatoshi: message.fee_zatoshi,
@@ -1951,6 +1953,7 @@ fn prepare_software_migration_run(
                 base_pczt: child.base_pczt.clone(),
                 sigs,
                 target_height: child.target_height,
+                anchor_boundary_height: child.anchor_boundary_height,
                 expiry_height: child.expiry_height,
                 value_zatoshi: child.migrated_zatoshi,
                 fee_zatoshi: child.fee_zatoshi,
@@ -2056,6 +2059,7 @@ struct CreatedMigrationPczt {
     pczt_with_proofs: Option<Vec<u8>>,
     redacted_pczt: Vec<u8>,
     target_height: u32,
+    anchor_boundary_height: Option<u32>,
     expiry_height: u32,
     fee_zatoshi: u64,
     migrated_zatoshi: u64,
@@ -3379,8 +3383,12 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
     network: P,
     target_height: BlockHeight,
     orchard_anchor: orchard::Anchor,
-) -> Builder<P, ()> {
-    Builder::new(
+) -> Result<Builder<P, ()>, String> {
+    let target_height_u32: u32 = target_height.into();
+    let expiry_height =
+        super::migration::zip318_canonical_migration_expiry_height(target_height_u32)?;
+
+    Ok(Builder::new(
         network,
         target_height,
         BuildConfig::Standard {
@@ -3391,7 +3399,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
             ironwood_bundle_type: orchard::builder::BundleType::UNPADDED,
         },
     )
-    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
+    .with_expiry_height(BlockHeight::from(expiry_height)))
 }
 
 fn create_orchard_to_ironwood_pczt_from_predicted_note(
@@ -3436,7 +3444,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor);
+            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor)?;
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -3468,6 +3476,11 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     }
     let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Predicted migration amount underflow".to_string())?;
+    if !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount)) {
+        return Err(
+            "Predicted migration amount is not a ZIP 318 canonical denomination".to_string(),
+        );
+    }
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3491,6 +3504,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         pczt_with_proofs: None,
         redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
+        anchor_boundary_height: None,
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
         migrated_zatoshi: u64::from(migrated_amount),
@@ -3588,6 +3602,19 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if u64::from(selected_value) != note_ref.value_zatoshi {
         return Err("Prepared note value changed during revalidation".to_string());
     }
+    let target_height_u32: u32 = target_height.into();
+    let anchor_height_u32 = u32::from(anchor_height);
+    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
+    let mined_height = selected
+        .mined_height()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let Some(anchor_boundary_height) = super::migration::zip318_draw_anchor_boundary_for_note(
+        anchor_height_u32,
+        u32::from(mined_height),
+        nu6_3_activation_height,
+    ) else {
+        return Ok(None);
+    };
 
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
@@ -3601,13 +3628,13 @@ fn create_orchard_to_ironwood_pczt_from_note(
     );
     let (orchard_anchor, orchard_inputs) = orchard_witnesses(
         &mut db,
-        anchor_height,
+        BlockHeight::from(anchor_boundary_height),
         std::slice::from_ref(&orchard_selected),
     )?;
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor)?;
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -3641,6 +3668,11 @@ fn create_orchard_to_ironwood_pczt_from_note(
     }
     let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
+    if !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount)) {
+        return Err(
+            "Exact-note migration amount is not a ZIP 318 canonical denomination".to_string(),
+        );
+    }
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3661,8 +3693,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_inputs.len(),
         0,
     )?;
-    let target_height_u32: u32 = target_height.into();
-
     Ok(Some(CreatedMigrationPczt {
         id: format!("migration-{migration_index}"),
         base_pczt: built_pczt.bytes,
@@ -3670,6 +3700,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         pczt_with_proofs: None,
         redacted_pczt: built_pczt.redacted_bytes,
         target_height: target_height_u32,
+        anchor_boundary_height: Some(anchor_boundary_height),
         expiry_height,
         fee_zatoshi: u64::from(fee_amount),
         migrated_zatoshi: u64::from(migrated_amount),
@@ -3684,6 +3715,13 @@ fn parse_txid_hex(txid_hex: &str) -> Result<TxId, String> {
         .map_err(|_| "Migration txid must be 32 bytes".to_string())?;
     bytes.reverse();
     Ok(TxId::from_bytes(bytes))
+}
+
+fn nu6_3_activation_height_u32(network: WalletNetwork) -> Result<u32, String> {
+    network
+        .activation_height(consensus::NetworkUpgrade::Nu6_3)
+        .map(u32::from)
+        .ok_or("NU6.3 activation height unavailable".to_string())
 }
 
 fn orchard_witnesses(
@@ -4613,7 +4651,8 @@ fn orchard_anchor_and_witness_for_prepared_note(
     network: WalletNetwork,
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
-) -> Result<Option<(orchard::Anchor, orchard::tree::MerklePath)>, String> {
+    preferred_anchor_boundary_height: Option<u32>,
+) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
     }
@@ -4648,6 +4687,32 @@ fn orchard_anchor_and_witness_for_prepared_note(
     if u64::from(selected_value) != note_ref.value_zatoshi {
         return Err("Prepared note value changed during revalidation".to_string());
     }
+    let anchor_height_u32 = u32::from(anchor_height);
+    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
+    let mined_height = selected
+        .mined_height()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let mined_height = u32::from(mined_height);
+    let anchor_boundary_height = preferred_anchor_boundary_height
+        .filter(|boundary| {
+            super::migration::zip318_anchor_boundary_is_candidate(
+                *boundary,
+                anchor_height_u32,
+                mined_height,
+                nu6_3_activation_height,
+            )
+        })
+        .or_else(|| {
+            super::migration::zip318_draw_anchor_boundary_for_note(
+                anchor_height_u32,
+                mined_height,
+                nu6_3_activation_height,
+            )
+        });
+    let Some(anchor_boundary_height) = anchor_boundary_height else {
+        return Ok(None);
+    };
+
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
         *selected.txid(),
@@ -4660,13 +4725,13 @@ fn orchard_anchor_and_witness_for_prepared_note(
     );
     let (orchard_anchor, mut orchard_inputs) = orchard_witnesses(
         &mut db,
-        anchor_height,
+        BlockHeight::from(anchor_boundary_height),
         std::slice::from_ref(&orchard_selected),
     )?;
     let (_, witness) = orchard_inputs
         .pop()
         .ok_or("Prepared migration note witness missing")?;
-    Ok(Some((orchard_anchor, witness)))
+    Ok(Some((anchor_boundary_height, orchard_anchor, witness)))
 }
 
 fn finalize_presigned_migration_children(
@@ -4708,12 +4773,13 @@ fn finalize_presigned_migration_children(
             .iter()
             .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
             .ok_or("Prepared migration notes changed before child finalization")?;
-        let Some((orchard_anchor, orchard_witness)) =
+        let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
             (match orchard_anchor_and_witness_for_prepared_note(
                 db_path,
                 network,
                 account_uuid,
                 current_note,
+                child.anchor_boundary_height,
             ) {
                 Ok(result) => result,
                 Err(e) if is_orchard_witness_not_ready_error(&e) => {
@@ -4749,6 +4815,7 @@ fn finalize_presigned_migration_children(
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,
             target_height: child.target_height,
+            anchor_boundary_height: Some(anchor_boundary_height),
             expiry_height: child.expiry_height,
             value_zatoshi: child.value_zatoshi,
             fee_zatoshi: child.fee_zatoshi,
@@ -6288,6 +6355,7 @@ mod tests {
                 txid_hex: pending_txid.to_string(),
                 raw_tx: vec![5, 6, 7, 8],
                 target_height: 100,
+                anchor_boundary_height: None,
                 expiry_height: 120,
                 value_zatoshi: 100_000,
                 fee_zatoshi: 10_000,

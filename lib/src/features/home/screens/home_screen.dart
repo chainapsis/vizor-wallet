@@ -71,6 +71,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _showKeystoneShieldSigning = false;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
+  IronwoodMigrationAnnouncementState? _visibleIronwoodAnnouncement;
+  String? _suppressedIronwoodAnnouncementScope;
 
   @override
   void initState() {
@@ -176,6 +178,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  String? _ironwoodAnnouncementScope(
+    IronwoodMigrationAnnouncementState announcement,
+  ) {
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return null;
+    return '$network|$accountUuid';
+  }
+
+  void _clearVisibleIronwoodAnnouncement(
+    IronwoodMigrationAnnouncementState announcement,
+  ) {
+    final scope = _ironwoodAnnouncementScope(announcement);
+    setState(() {
+      _visibleIronwoodAnnouncement = null;
+      _suppressedIronwoodAnnouncementScope = scope;
+    });
+  }
+
   Future<void> _markIronwoodAnnouncementSeen(
     IronwoodMigrationAnnouncementState announcement,
   ) async {
@@ -197,6 +218,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _dismissIronwoodAnnouncement(
     IronwoodMigrationAnnouncementState announcement,
   ) {
+    _clearVisibleIronwoodAnnouncement(announcement);
     unawaited(_markIronwoodAnnouncementSeen(announcement));
   }
 
@@ -204,6 +226,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     IronwoodMigrationAnnouncementState announcement,
   ) async {
     try {
+      _clearVisibleIronwoodAnnouncement(announcement);
       context.go('/migration/intro');
       await _markIronwoodAnnouncementSeen(announcement);
     } catch (e) {
@@ -282,9 +305,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final ironwoodAnnouncement = ref
         .watch(ironwoodMigrationAnnouncementProvider)
         .value;
-    final visibleIronwoodAnnouncement = (ironwoodAnnouncement?.visible ?? false)
-        ? ironwoodAnnouncement
-        : null;
+    final latestVisibleIronwoodAnnouncement =
+        (ironwoodAnnouncement?.visible ?? false) ? ironwoodAnnouncement : null;
+    if (_visibleIronwoodAnnouncement?.accountUuid != null &&
+        _visibleIronwoodAnnouncement?.accountUuid != activeAccountUuid) {
+      _visibleIronwoodAnnouncement = null;
+    }
+    final latestIronwoodScope = latestVisibleIronwoodAnnouncement == null
+        ? null
+        : _ironwoodAnnouncementScope(latestVisibleIronwoodAnnouncement);
+    if (latestVisibleIronwoodAnnouncement != null &&
+        latestIronwoodScope != _suppressedIronwoodAnnouncementScope) {
+      _visibleIronwoodAnnouncement = latestVisibleIronwoodAnnouncement;
+    }
+    final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
     final ironwoodHomeMigrationCta =
         ref.watch(ironwoodHomeMigrationCtaProvider).value ??
         const IronwoodHomeMigrationCtaState.hidden();
@@ -348,7 +382,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             AppPaneModalOverlay(
               key: const ValueKey('ironwood_migration_announcement_overlay'),
               alignment: const Alignment(0, -0.08),
-              scrimColor: const Color(0xB3858686),
               onDismiss: () =>
                   _dismissIronwoodAnnouncement(visibleIronwoodAnnouncement),
               child: IronwoodMigrationAnnouncementModal(
