@@ -96,7 +96,7 @@ pub(crate) fn plan_padded_denominations(
         if denominations.migration_outputs.is_empty() {
             return Ok(None);
         }
-        let terminals = terminal_outputs(&denominations)?;
+        let terminals = terminal_outputs(&denominations);
         let terminal_total = terminals.iter().try_fold(0u64, |acc, output| {
             acc.checked_add(output.value_zatoshi)
                 .ok_or_else(|| "Denomination terminal total overflow".to_string())
@@ -125,21 +125,17 @@ pub(crate) fn plan_padded_denominations(
     ))
 }
 
-fn terminal_outputs(plan: &DenominationPlan) -> Result<Vec<SplitTerminalOutput>, String> {
+fn terminal_outputs(plan: &DenominationPlan) -> Vec<SplitTerminalOutput> {
     let mut outputs = plan
         .migration_outputs
         .iter()
         .enumerate()
-        .map(|(logical_index, denomination_zatoshi)| {
-            Ok(SplitTerminalOutput {
-                logical_index,
-                value_zatoshi: denomination_zatoshi
-                    .checked_add(plan.migration_fee_zatoshi)
-                    .ok_or("Prepared migration note value overflow")?,
-                kind: SplitTerminalKind::Migration,
-            })
+        .map(|(logical_index, value_zatoshi)| SplitTerminalOutput {
+            logical_index,
+            value_zatoshi: *value_zatoshi,
+            kind: SplitTerminalKind::Migration,
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Vec<_>>();
     if let Some(value_zatoshi) = plan.orchard_change {
         outputs.push(SplitTerminalOutput {
             logical_index: plan.migration_outputs.len(),
@@ -147,7 +143,7 @@ fn terminal_outputs(plan: &DenominationPlan) -> Result<Vec<SplitTerminalOutput>,
             kind: SplitTerminalKind::OrchardChange,
         });
     }
-    Ok(outputs)
+    outputs
 }
 
 fn plan_exact_stage_count(

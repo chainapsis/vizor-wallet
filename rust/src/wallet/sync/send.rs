@@ -3468,11 +3468,6 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     }
     let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Predicted migration amount underflow".to_string())?;
-    if !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount)) {
-        return Err(
-            "Predicted migration amount is not a ZIP 318 canonical denomination".to_string(),
-        );
-    }
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
@@ -3646,11 +3641,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
     }
     let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
-    if !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount)) {
-        return Err(
-            "Exact-note migration amount is not a ZIP 318 canonical denomination".to_string(),
-        );
-    }
     let builder = if migrated_amount
         == Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
             .map_err(|_| "Bad migration minimum output")?
