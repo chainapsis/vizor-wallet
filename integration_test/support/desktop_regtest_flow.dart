@@ -240,12 +240,14 @@ Future<rust_sync.MigrationStatus> advanceDesktopRegtestMigrationSchedule(
     final target = submittedTarget ?? status.totalCount;
     if (target > 0 && submitted >= target) return status;
 
-    final scheduled = status.scheduledBroadcasts
-        .where((entry) => entry.status == 'scheduled')
-        .toList()
-      ..sort(
-        (left, right) => left.scheduledHeight.compareTo(right.scheduledHeight),
-      );
+    final scheduled =
+        status.scheduledBroadcasts
+            .where((entry) => entry.status == 'scheduled')
+            .toList()
+          ..sort(
+            (left, right) =>
+                left.scheduledHeight.compareTo(right.scheduledHeight),
+          );
     if (scheduled.isEmpty) {
       await tester.pump(const Duration(milliseconds: 250));
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -260,23 +262,52 @@ Future<rust_sync.MigrationStatus> advanceDesktopRegtestMigrationSchedule(
       e2eLog(
         'mining $blocks block(s) to migration broadcast height $nextHeight',
       );
-      await ironwoodDriverPost(
-        driverUrl,
-        '/mine',
-        payload: {'blocks': blocks},
-      );
+      await ironwoodDriverPost(driverUrl, '/mine', payload: {'blocks': blocks});
     }
 
     await waitForDesktopRegtestMigrationStatus(
       tester,
       accountUuid,
-      (next) =>
-          next.broadcastedTxCount + next.confirmedTxCount > submitted,
+      (next) => next.broadcastedTxCount + next.confirmedTxCount > submitted,
       description: 'migration transaction at block $nextHeight',
       timeout: const Duration(minutes: 2),
     );
   }
   fail('Timed out advancing the regtest migration broadcast schedule.');
+}
+
+Future<rust_sync.MigrationStatus> prepareDesktopRegtestMigrationSchedule(
+  WidgetTester tester,
+  String accountUuid, {
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  await waitForDesktopRegtestMigrationStatus(
+    tester,
+    accountUuid,
+    (status) => status.phase == 'ready_to_migrate',
+    description: 'migration denomination readiness',
+    timeout: timeout,
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_status_ready_to_migrate')),
+    ),
+    description: 'migration ready status UI',
+    timeout: timeout,
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_status_action_button'),
+  );
+
+  return waitForDesktopRegtestMigrationStatus(
+    tester,
+    accountUuid,
+    (status) => status.scheduledBroadcasts.isNotEmpty,
+    description: 'persisted migration broadcast schedule',
+    timeout: timeout,
+  );
 }
 
 Future<void> cleanupDesktopRegtestWallet() async {

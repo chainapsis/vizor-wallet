@@ -16,9 +16,10 @@ const _driverUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:39081',
 );
 final _fundedAmount = BigInt.from(9900020000);
-final _expectedSplitFee = BigInt.from(160000);
-final _expectedMigrationFee = BigInt.from(270000);
+final _expectedSplitFee = BigInt.from(80000);
+final _expectedMigrationFee = BigInt.from(180000);
 final _expectedTotalFee = _expectedSplitFee + _expectedMigrationFee;
+final _expectedOrchardChange = BigInt.from(760000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -86,8 +87,8 @@ void main() {
         find.text('${migrationPlan.plannedBatchCount} Planned batches'),
         findsOneWidget,
       );
-      expect(find.text('Total, ~0.0043 ZEC'), findsOneWidget);
-      expect(find.text('~0 ZEC'), findsOneWidget);
+      expect(find.text('Total, ~0.0026 ZEC'), findsOneWidget);
+      expect(find.text('~0.0076 ZEC'), findsOneWidget);
 
       await tapAppButton(
         tester,
@@ -98,55 +99,41 @@ void main() {
         accountUuid,
         (status) =>
             status.phase == 'waiting_denom_confirmations' &&
-            status.denominationSplitTotalCount == 2 &&
+            status.denominationSplitTotalCount == 1 &&
             status.denominationSplitCompletedCount == 0 &&
-            status.pendingSplitStageCount == 2,
-        description: 'first large-balance denomination stage',
+            status.pendingSplitStageCount == 1,
+        description: 'large-balance denomination stage',
       );
       final runId = started.activeRunId;
       expect(runId, isNotNull);
       _expectRunMatchesPlan(started, migrationPlan);
       expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
 
-      e2eLog('confirming large-balance denomination stage 1/2');
+      e2eLog('confirming large-balance denomination stage');
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
         payload: const {'blocks': 10},
       );
-      final halfwaySplit = await waitForDesktopRegtestMigrationStatus(
+      final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.phase == 'waiting_denom_confirmations' &&
-            status.denominationSplitCompletedCount == 1 &&
-            status.denominationSplitTotalCount == 2,
-        description: 'large-balance denomination progress 1/2',
       );
-      // This is a reconciliation retry signal, so it stays at the full stage
-      // count until the denomination phase advances.
-      expect(halfwaySplit.pendingSplitStageCount, 2);
-      expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
+      expect(scheduled.activeRunId, runId);
+      expect(scheduled.denominationSplitCompletedCount, 1);
+      expect(scheduled.totalCount, migrationPlan.plannedBatchCount);
+      expect(scheduled.pendingSplitStageCount, 0);
+      expect(scheduled.scheduledBroadcasts, hasLength(12));
 
-      e2eLog('confirming large-balance denomination stage 2/2');
-      await ironwoodDriverPost(
-        _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
-      );
-      final firstChild = await waitForDesktopRegtestMigrationStatus(
+      final firstChild = await advanceDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.denominationSplitCompletedCount == 2 &&
-            status.totalCount == migrationPlan.plannedBatchCount &&
-            status.broadcastedTxCount > 0 &&
-            status.broadcastedTxCount < status.totalCount,
-        description: 'partial large-balance migration broadcast',
-        timeout: const Duration(minutes: 5),
+        submittedTarget: 1,
       );
+      expect(firstChild.broadcastedTxCount, 1);
+      expect(firstChild.confirmedTxCount, 0);
+      expect(firstChild.broadcastedTxCount, lessThan(firstChild.totalCount));
       expect(firstChild.pendingSplitStageCount, 0);
       expect(firstChild.pendingTxCount, migrationPlan.plannedBatchCount);
       expect(firstChild.signedChildPcztCount, 0);
@@ -180,17 +167,18 @@ void main() {
         partiallyConfirmed,
       );
 
-      final allSubmitted = await waitForDesktopRegtestMigrationStatus(
+      final allSubmitted = await advanceDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.broadcastedTxCount + status.confirmedTxCount ==
-                status.totalCount,
-        description: 'all large-balance migration broadcasts',
         timeout: const Duration(minutes: 6),
       );
-      expect(allSubmitted.totalCount, 18);
+      expect(allSubmitted.activeRunId, runId);
+      expect(
+        allSubmitted.broadcastedTxCount + allSubmitted.confirmedTxCount,
+        allSubmitted.totalCount,
+      );
+      expect(allSubmitted.totalCount, 12);
       expect(
         allSubmitted.scheduledBroadcasts.where(
           (broadcast) => broadcast.status == 'scheduled',
@@ -227,13 +215,15 @@ void main() {
         network: 'regtest',
         accountUuid: accountUuid,
       );
-      expect(balance.orchard, BigInt.zero);
       expect(
-        balance.ironwood,
-        migrationPlan.totalMigratableZatoshi -
-            migrationPlan.migrationFeeZatoshi,
+        balance.orchard,
+        migrationPlan.orchardChangeZatoshi ?? BigInt.zero,
       );
-      expect(_fundedAmount - balance.ironwood, _expectedTotalFee);
+      expect(balance.ironwood, migrationPlan.totalMigratableZatoshi);
+      expect(
+        _fundedAmount - balance.orchard - balance.ironwood,
+        _expectedTotalFee,
+      );
     },
     timeout: const Timeout(Duration(minutes: 30)),
   );
@@ -255,17 +245,19 @@ Future<void> _refreshMigrationStatusUi(
 
 void _expectLargePlan(rust_sync.OrchardMigrationPrivatePlan plan) {
   expect(plan.totalInputZatoshi, _fundedAmount);
-  expect(plan.plannedBatchCount, 18);
+  expect(plan.plannedBatchCount, 12);
   expect(plan.targetValuesZatoshi, hasLength(plan.plannedBatchCount));
-  expect(plan.denominationSplitStageCount, 2);
+  expect(plan.denominationSplitStageCount, 1);
   expect(plan.denominationSplitFeeZatoshi, _expectedSplitFee);
   expect(plan.migrationFeeZatoshi, _expectedMigrationFee);
   expect(plan.estimatedTotalFeeZatoshi, _expectedTotalFee);
-  expect(plan.orchardChangeZatoshi, isNull);
+  expect(plan.orchardChangeZatoshi, _expectedOrchardChange);
   expect(_sumTargets(plan.targetValuesZatoshi), plan.totalMigratableZatoshi);
   expect(
-    plan.totalInputZatoshi - plan.totalMigratableZatoshi,
-    plan.denominationSplitFeeZatoshi,
+    plan.totalInputZatoshi -
+        plan.totalMigratableZatoshi -
+        plan.orchardChangeZatoshi!,
+    plan.estimatedTotalFeeZatoshi,
   );
 }
 
@@ -296,7 +288,13 @@ Future<void> _expectIntermediateProgressUi(
       description: 'large-balance scheduled broadcast progress UI',
     );
     expect(find.text('Broadcast Scheduled'), findsOneWidget);
-    expect(find.text('2/2'), findsOneWidget);
+    expect(
+      find.text(
+        '${status.denominationSplitCompletedCount}/'
+        '${status.denominationSplitTotalCount}',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('${status.pendingTxCount}'), findsOneWidget);
     expect(find.text('${status.broadcastedTxCount}'), findsOneWidget);
     expect(

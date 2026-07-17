@@ -27,8 +27,9 @@ final _expectedReceiveAmounts = [
   BigInt.from(400008000),
 ];
 final _expectedSplitFee = BigInt.from(160000);
-final _expectedMigrationFee = BigInt.from(150000);
+final _expectedMigrationFee = BigInt.from(135000);
 final _expectedTotalFee = _expectedSplitFee + _expectedMigrationFee;
+final _expectedOrchardChange = BigInt.from(725000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -106,7 +107,7 @@ void main() {
         find.text('${migrationPlan.plannedBatchCount} Planned batches'),
         findsOneWidget,
       );
-      expect(find.text('Total, ~0.0031 ZEC'), findsOneWidget);
+      expect(find.text('Total, ~0.0029 ZEC'), findsOneWidget);
 
       await tapAppButton(
         tester,
@@ -153,30 +154,27 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      final migrationStarted = await waitForDesktopRegtestMigrationStatus(
+      final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.denominationSplitCompletedCount == 2 &&
-            status.totalCount == migrationPlan.plannedBatchCount &&
-            status.broadcastedTxCount > 0,
-        description: 'mixed-note migration broadcasts',
-        timeout: const Duration(minutes: 5),
       );
-      expect(migrationStarted.pendingSplitStageCount, 0);
+      expect(scheduled.activeRunId, runId);
+      expect(scheduled.denominationSplitCompletedCount, 2);
+      expect(scheduled.pendingSplitStageCount, 0);
+      expect(scheduled.scheduledBroadcasts, hasLength(9));
 
-      final allSubmitted = await waitForDesktopRegtestMigrationStatus(
+      final allSubmitted = await advanceDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.broadcastedTxCount + status.confirmedTxCount ==
-                status.totalCount,
-        description: 'all mixed-note migration broadcasts',
         timeout: const Duration(minutes: 6),
       );
-      expect(allSubmitted.totalCount, 10);
+      expect(allSubmitted.activeRunId, runId);
+      expect(
+        allSubmitted.broadcastedTxCount + allSubmitted.confirmedTxCount,
+        allSubmitted.totalCount,
+      );
+      expect(allSubmitted.totalCount, 9);
       expect(
         allSubmitted.scheduledBroadcasts.where(
           (broadcast) => broadcast.status == 'scheduled',
@@ -211,13 +209,15 @@ void main() {
         network: 'regtest',
         accountUuid: accountUuid,
       );
-      expect(balance.orchard, BigInt.zero);
       expect(
-        balance.ironwood,
-        migrationPlan.totalMigratableZatoshi -
-            migrationPlan.migrationFeeZatoshi,
+        balance.orchard,
+        migrationPlan.orchardChangeZatoshi ?? BigInt.zero,
       );
-      expect(_fundedAmount - balance.ironwood, _expectedTotalFee);
+      expect(balance.ironwood, migrationPlan.totalMigratableZatoshi);
+      expect(
+        _fundedAmount - balance.orchard - balance.ironwood,
+        _expectedTotalFee,
+      );
     },
     timeout: const Timeout(Duration(minutes: 35)),
   );
@@ -257,17 +257,19 @@ Future<void> _expectFundingHistory(
 
 void _expectMixedNotePlan(rust_sync.OrchardMigrationPrivatePlan plan) {
   expect(plan.totalInputZatoshi, _fundedAmount);
-  expect(plan.plannedBatchCount, 10);
+  expect(plan.plannedBatchCount, 9);
   expect(plan.targetValuesZatoshi, hasLength(plan.plannedBatchCount));
   expect(plan.denominationSplitStageCount, 2);
   expect(plan.denominationSplitFeeZatoshi, _expectedSplitFee);
   expect(plan.migrationFeeZatoshi, _expectedMigrationFee);
   expect(plan.estimatedTotalFeeZatoshi, _expectedTotalFee);
-  expect(plan.orchardChangeZatoshi, isNull);
+  expect(plan.orchardChangeZatoshi, _expectedOrchardChange);
   expect(_sumTargets(plan.targetValuesZatoshi), plan.totalMigratableZatoshi);
   expect(
-    plan.totalInputZatoshi - plan.totalMigratableZatoshi,
-    plan.denominationSplitFeeZatoshi,
+    plan.totalInputZatoshi -
+        plan.totalMigratableZatoshi -
+        plan.orchardChangeZatoshi!,
+    plan.estimatedTotalFeeZatoshi,
   );
 }
 
