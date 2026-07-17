@@ -166,10 +166,89 @@ void main() {
     expect(tester.widget<AppButton>(prepareButton).onPressed, isNotNull);
 
     await tester.tap(prepareButton);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
     expect(startedAccountUuid, 'account-1');
     expect(find.text('Preparing...'), findsOneWidget);
+  });
+
+  testWidgets(
+    'private review opens status when post-start status is unavailable',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var startCount = 0;
+      final service = _migrationServiceForStart(
+        onStart: ({required accountUuid}) async {
+          startCount += 1;
+          return _migrationResult();
+        },
+      );
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          migrationService: service,
+          realStatusRoute: true,
+          statusGetter:
+              ({required dbPath, required network, required accountUuid}) {
+                return Future.error(Exception('status unavailable'));
+              },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(AppButton, 'Authorize & Start'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(startCount, 1);
+      expect(find.byType(IronwoodMigrationPrivateStatusScreen), findsOneWidget);
+      expect(find.text("Couldn't start migration. Try again."), findsNothing);
+    },
+  );
+
+  testWidgets('private review resumes a run persisted before start failed', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final service = _migrationServiceForStart(
+      onStart: ({required accountUuid}) {
+        return Future.error(Exception('sendtransaction failed'));
+      },
+    );
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        migrationService: service,
+        realStatusRoute: true,
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) async {
+              return _status();
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(AppButton, 'Authorize & Start'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(
+      find.text("Couldn't broadcast the migration transaction. Try again."),
+      findsNothing,
+    );
   });
 
   test(
@@ -709,6 +788,61 @@ void main() {
     },
   );
 
+  testWidgets(
+    'private status cancels auto advance when pending split stages clear',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        pendingSplitStageCount: 1,
+      );
+      var statusReadCount = 0;
+      var continueCount = 0;
+      final service = _migrationServiceForContinue(
+        onContinue: ({required accountUuid}) async {
+          continueCount += 1;
+          return _migrationResult();
+        },
+      );
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: status,
+          statusGetter:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async {
+                statusReadCount += 1;
+                return status;
+              },
+          migrationService: service,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        pendingSplitStageCount: 0,
+      );
+      await tester.pump(const Duration(seconds: 11));
+      await tester.pump();
+      expect(statusReadCount, greaterThanOrEqualTo(2));
+
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump();
+
+      expect(continueCount, 0);
+    },
+  );
+
   testWidgets('private status auto advances software migration on resume', (
     tester,
   ) async {
@@ -1055,6 +1189,8 @@ Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  bool realStatusRoute = false,
+  OrchardMigrationStatusGetter? statusGetter,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -1088,8 +1224,9 @@ Widget _migrationOptionsHarness({
       ),
       GoRoute(
         path: '/migration/private/status',
-        builder: (_, _) =>
-            IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
+        builder: (_, _) => realStatusRoute
+            ? const IronwoodMigrationPrivateStatusScreen()
+            : IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
@@ -1124,6 +1261,29 @@ Widget _migrationOptionsHarness({
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      if (statusGetter != null) ...[
+        ironwoodMigrationInputsProvider.overrideWithValue(
+          IronwoodMigrationInputs(
+            ironwoodActiveAtTip: true,
+            network: 'main',
+            accountUuid: 'account-1',
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+            hasAccountScopedData: true,
+            isSyncing: false,
+            isBackgroundMode: false,
+            hasSyncFailure: false,
+            orchardBalance: BigInt.from(10_000_000),
+            orchardPendingBalance: BigInt.zero,
+            ironwoodBalance: BigInt.zero,
+            ironwoodPendingBalance: BigInt.zero,
+          ),
+        ),
+        walletDbPathGetterProvider.overrideWithValue(
+          () async => '/tmp/wallet.db',
+        ),
+        orchardMigrationStatusGetterProvider.overrideWithValue(statusGetter),
+      ],
       if (migrationService != null)
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
@@ -1273,6 +1433,43 @@ typedef _ContinueMigrationCallback =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String accountUuid,
     });
+
+typedef _StartMigrationCallback =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String accountUuid,
+    });
+
+IronwoodMigrationService _migrationServiceForStart({
+  required _StartMigrationCallback onStart,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus: ({required dbPath, required network, required accountUuid}) {
+      return Future.value(_status());
+    },
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_privatePlan());
+        },
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    getEndpoint: () => defaultRpcEndpointConfig('main'),
+    getSessionPassword: () => 'test-password',
+    getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+    isMacOS: () => false,
+    startSoftwareMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) {
+          return onStart(accountUuid: accountUuid);
+        },
+  );
+}
 
 IronwoodMigrationService _migrationServiceForContinue({
   required _ContinueMigrationCallback onContinue,

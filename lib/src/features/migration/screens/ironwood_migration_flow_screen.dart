@@ -37,6 +37,7 @@ enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
 const _privateStatusRefreshInterval = Duration(seconds: 5);
 const _privateStatusAutoAdvanceInterval = Duration(seconds: 30);
+const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
@@ -1568,14 +1569,15 @@ class _IronwoodMigrationPrivateStatusContentState
   void didUpdateWidget(_IronwoodMigrationPrivateStatusContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.status.phase != widget.status.phase ||
-        oldWidget.accountUuid != widget.accountUuid) {
+        oldWidget.accountUuid != widget.accountUuid ||
+        oldWidget.status.activeRunId != widget.status.activeRunId) {
       _advanceError = null;
       _statusPollTimer?.cancel();
       _statusPollTimer = null;
       _autoAdvanceTimer?.cancel();
       _autoAdvanceTimer = null;
-      _syncStatusPollTimers();
     }
+    _syncStatusPollTimers();
   }
 
   @override
@@ -1607,10 +1609,16 @@ class _IronwoodMigrationPrivateStatusContentState
       (_) => _refreshMigrationState(),
     );
     if (_shouldAutoAdvanceStatus(widget.status)) {
-      _autoAdvanceTimer ??= Timer.periodic(
-        _privateStatusAutoAdvanceInterval,
-        (_) => unawaited(_advanceMigration(showErrors: false)),
-      );
+      _autoAdvanceTimer ??= Timer.periodic(_privateStatusAutoAdvanceInterval, (
+        _,
+      ) {
+        if (widget.status.activeRunId == null ||
+            !_shouldAutoAdvanceStatus(widget.status)) {
+          _syncStatusPollTimers();
+          return;
+        }
+        unawaited(_advanceMigration(showErrors: false));
+      });
     } else {
       _autoAdvanceTimer?.cancel();
       _autoAdvanceTimer = null;
@@ -2144,6 +2152,8 @@ class _IronwoodMigrationPrivateReviewContentState
   Future<void> _startMigration() async {
     if (_isStarting) return;
 
+    IronwoodMigrationStatusRequest? statusRequest;
+    var softwareStartAttempted = false;
     setState(() {
       _isStarting = true;
       _startError = null;
@@ -2156,7 +2166,7 @@ class _IronwoodMigrationPrivateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final statusRequest = IronwoodMigrationStatusRequest(
+      statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
@@ -2164,21 +2174,24 @@ class _IronwoodMigrationPrivateReviewContentState
         context.go('/migration/private/keystone/denominations/sign');
         return;
       }
+      softwareStartAttempted = true;
       await ref
           .read(ironwoodMigrationServiceProvider)
           .startSoftwarePrivateMigration(accountUuid: accountUuid);
       if (!mounted) return;
-      ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
-      final startedStatus = await ref.read(
-        ironwoodMigrationStatusProvider(statusRequest).future,
-      );
+      await _refreshMigrationStatusBestEffort(statusRequest);
       if (!mounted) return;
-      if (startedStatus.activeRunId == null) {
-        throw StateError('Migration did not create an active run.');
-      }
-      _invalidateIronwoodMigrationStatusState(ref);
-      context.go('/migration/private/status');
+      _openMigrationStatus();
     } catch (e) {
+      if (!mounted) return;
+      final request = statusRequest;
+      if (softwareStartAttempted &&
+          request != null &&
+          await _migrationMayHaveStarted(request)) {
+        if (!mounted) return;
+        _openMigrationStatus();
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _startError = _privateMigrationStartErrorMessage(e);
@@ -2190,6 +2203,40 @@ class _IronwoodMigrationPrivateReviewContentState
         });
       }
     }
+  }
+
+  Future<bool> _migrationMayHaveStarted(
+    IronwoodMigrationStatusRequest request,
+  ) async {
+    ref.invalidate(ironwoodMigrationStatusProvider(request));
+    try {
+      final status = await ref
+          .read(ironwoodMigrationStatusProvider(request).future)
+          .timeout(_privateStatusStartVerificationTimeout);
+      return status.activeRunId != null;
+    } catch (_) {
+      // The start operation may already have persisted a run. An unavailable
+      // status is not sufficient evidence that retrying start is safe.
+      return true;
+    }
+  }
+
+  Future<void> _refreshMigrationStatusBestEffort(
+    IronwoodMigrationStatusRequest request,
+  ) async {
+    ref.invalidate(ironwoodMigrationStatusProvider(request));
+    try {
+      await ref
+          .read(ironwoodMigrationStatusProvider(request).future)
+          .timeout(_privateStatusStartVerificationTimeout);
+    } catch (_) {
+      // The status route owns unavailable-state rendering after start.
+    }
+  }
+
+  void _openMigrationStatus() {
+    _invalidateIronwoodMigrationStatusState(ref);
+    context.go('/migration/private/status');
   }
 
   @override
