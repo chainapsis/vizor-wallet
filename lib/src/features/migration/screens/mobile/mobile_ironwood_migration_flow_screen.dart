@@ -15,11 +15,13 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../providers/account_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
-import '../../models/ironwood_migration_phases.dart';
+import '../../providers/ironwood_migration_announcement_provider.dart';
+import '../../services/ironwood_migration_service.dart';
 import '../ironwood_migration_flow_screen.dart';
 
 enum MobileIronwoodMigrationStep {
@@ -28,10 +30,10 @@ enum MobileIronwoodMigrationStep {
   options,
   privateReview,
   fastReview,
-  // The status variants are deterministic preview surfaces until the
-  // remaining completion, failure, and hardware-signing designs are ready.
   preparing,
   migrating,
+  // The passcode state remains a deterministic design surface until its
+  // privacy-lock trigger is specified for migration work.
   passcodeWhileSyncing,
 }
 
@@ -64,6 +66,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewPrivatePlan: previewPrivatePlan,
         previewArrivalLabel: previewArrivalLabel,
         previewShowBatchModal: previewShowBatchModal,
+        status: null,
       );
     }
 
@@ -82,6 +85,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
                   previewPrivatePlan: previewPrivatePlan,
                   previewArrivalLabel: previewArrivalLabel,
                   previewShowBatchModal: previewShowBatchModal,
+                  status: null,
                 ),
         );
   }
@@ -95,6 +99,7 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
     required this.previewPrivatePlan,
     required this.previewArrivalLabel,
     required this.previewShowBatchModal,
+    this.status,
   });
 
   final MobileIronwoodMigrationStep step;
@@ -103,6 +108,7 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final String? previewArrivalLabel;
   final bool previewShowBatchModal;
+  final rust_sync.MigrationStatus? status;
 
   @override
   Widget build(BuildContext context) {
@@ -126,14 +132,81 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,
+        status: status,
       ),
       MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
         data: data,
+        status: status,
         initialShowBatchModal: previewShowBatchModal,
       ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
         const _MobileMigrationPasscode(),
     };
+  }
+}
+
+class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
+  const MobileIronwoodMigrationPrivateStatusScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
+    final dataAsync = ref.watch(ironwoodMigrationFlowDataProvider);
+
+    return ctaAsync.when(
+      skipLoadingOnReload: true,
+      loading: () => const _MobileMigrationLoadingScreen(),
+      error: (_, _) => const _MobileMigrationRedirectHome(),
+      data: (cta) {
+        if (cta.mode == IronwoodHomeMigrationCtaMode.start) {
+          return const _MobileMigrationRedirectTo('/migration/intro');
+        }
+        final status = cta.status;
+        final accountUuid = cta.accountUuid;
+        if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
+            status == null ||
+            accountUuid == null ||
+            !_hasMobileMigrationStatusDesign(status.phase)) {
+          return const _MobileMigrationRedirectHome();
+        }
+
+        return dataAsync.when(
+          skipLoadingOnReload: true,
+          loading: () => const _MobileMigrationLoadingScreen(),
+          error: (_, _) => const _MobileMigrationRedirectHome(),
+          data: (data) => data == null
+              ? const _MobileMigrationRedirectHome()
+              : _MobileMigrationLiveStatus(data: data, status: status),
+        );
+      },
+    );
+  }
+}
+
+bool _hasMobileMigrationStatusDesign(String phase) {
+  return phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+      phase == kIronwoodMigrationReadyToMigratePhase ||
+      phase == kIronwoodMigrationBroadcastScheduledPhase ||
+      phase == kIronwoodMigrationBroadcastingPhase ||
+      phase == kIronwoodMigrationWaitingConfirmationsPhase;
+}
+
+class _MobileMigrationLiveStatus extends StatelessWidget {
+  const _MobileMigrationLiveStatus({required this.data, required this.status});
+
+  final IronwoodMigrationFlowData data;
+  final rust_sync.MigrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      return _MobileMigrationPreparing(data: data, status: status);
+    }
+    return _MobileMigrationMigrating(
+      data: data,
+      status: status,
+      initialShowBatchModal: false,
+    );
   }
 }
 
@@ -325,7 +398,7 @@ class _MobileMigrationOptions extends StatelessWidget {
   }
 }
 
-class _MobileMigrationPrivateReview extends ConsumerWidget {
+class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
   const _MobileMigrationPrivateReview({
     required this.data,
     required this.previewPlan,
@@ -337,11 +410,80 @@ class _MobileMigrationPrivateReview extends ConsumerWidget {
   final String? previewArrivalLabel;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewPlan;
+  ConsumerState<_MobileMigrationPrivateReview> createState() =>
+      _MobileMigrationPrivateReviewState();
+}
+
+class _MobileMigrationPrivateReviewState
+    extends ConsumerState<_MobileMigrationPrivateReview> {
+  bool _isStarting = false;
+  String? _startError;
+
+  Future<void> _startMigration() async {
+    if (_isStarting) return;
+    setState(() {
+      _isStarting = true;
+      _startError = null;
+    });
+
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      final statusRequest = IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      );
+      if (accountState.activeAccount?.isHardware ?? false) {
+        setState(() {
+          _startError =
+              'Keystone migration signing is not available on mobile yet.';
+        });
+        return;
+      }
+
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .startSoftwarePrivateMigration(accountUuid: accountUuid);
+      if (!mounted) return;
+      ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
+      final startedStatus = await ref.read(
+        ironwoodMigrationStatusProvider(statusRequest).future,
+      );
+      if (!mounted) return;
+      if (startedStatus.activeRunId == null) {
+        throw StateError('Migration did not create an active run.');
+      }
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      ref.invalidate(ironwoodHomeMigrationCtaProvider);
+      ref.invalidate(ironwoodMigrationFlowDataProvider);
+      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      context.go('/migration/private/status');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _startError = _mobilePrivateMigrationStartErrorMessage(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStarting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = widget.previewPlan;
     final planAsync = preview != null
         ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
         : ref.watch(ironwoodMigrationPrivatePlanProvider);
+    final plan = planAsync.asData?.value;
+    final canStart = plan != null && !_isStarting;
 
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
@@ -351,14 +493,29 @@ class _MobileMigrationPrivateReview extends ConsumerWidget {
         color: Color(0xFF00A460),
       ),
       title: 'Review Migration Plan',
-      amount: '${data.amountText} ZEC',
-      bottom: _MobileMigrationPrimaryButton(
-        label: 'Continue',
-        // The provided mobile handoff ends at this review surface. The
-        // private-status and signing surfaces remain a later implementation
-        // round, so production does not start a migration from an incomplete
-        // mobile flow.
-        onPressed: preview == null ? null : () {},
+      amount: '${widget.data.amountText} ZEC',
+      bottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_startError != null) ...[
+            Text(
+              _startError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          _MobileMigrationPrimaryButton(
+            label: _isStarting ? 'Preparing...' : 'Continue',
+            onPressed: canStart
+                ? preview != null
+                      ? () {}
+                      : _startMigration
+                : null,
+          ),
+        ],
       ),
       child: planAsync.when(
         skipLoadingOnReload: true,
@@ -372,11 +529,29 @@ class _MobileMigrationPrivateReview extends ConsumerWidget {
             : _MobilePrivatePlan(
                 plan: plan,
                 arrivalLabel:
-                    previewArrivalLabel ?? _migrationArrivalLabel(plan),
+                    widget.previewArrivalLabel ?? _migrationArrivalLabel(plan),
               ),
       ),
     );
   }
+}
+
+String _mobilePrivateMigrationStartErrorMessage(Object error) {
+  final message = error.toString().toLowerCase();
+  if (message.contains('mnemonic')) {
+    return "Secret Passphrase isn't available for this account.";
+  }
+  if (message.contains('secret storage') ||
+      message.contains('unlocked session')) {
+    return 'Unlock Vizor before starting migration.';
+  }
+  if (message.contains('sync')) {
+    return 'Wait for sync to finish, then try again.';
+  }
+  if (message.contains('broadcast') || message.contains('sendtransaction')) {
+    return "Couldn't broadcast the migration transaction. Try again.";
+  }
+  return "Couldn't start migration. Try again.";
 }
 
 class _MobileMigrationFastReview extends StatelessWidget {
@@ -518,13 +693,21 @@ class _MobileMigrationFastReview extends StatelessWidget {
 }
 
 class _MobileMigrationPreparing extends StatelessWidget {
-  const _MobileMigrationPreparing({required this.data});
+  const _MobileMigrationPreparing({required this.data, this.status});
 
   final IronwoodMigrationFlowData data;
+  final rust_sync.MigrationStatus? status;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final splitSubmitted =
+        status == null || status!.denominationSplitTotalCount > 0;
+    final confirmationsReady =
+        status != null &&
+        status!.denominationConfirmationTarget > 0 &&
+        status!.denominationConfirmationCount >=
+            status!.denominationConfirmationTarget;
     return _MobileMigrationStatusScaffold(
       data: data,
       child: Column(
@@ -579,16 +762,20 @@ class _MobileMigrationPreparing extends StatelessWidget {
             child: _MobileStatusCard(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: const [
+                children: [
                   _PreparingStatusRow(
-                    state: _PreparingStatusState.complete,
+                    state: splitSubmitted
+                        ? _PreparingStatusState.complete
+                        : _PreparingStatusState.waiting,
                     label: 'Transaction splits submitted',
                   ),
                   _PreparingStatusRow(
-                    state: _PreparingStatusState.waiting,
+                    state: confirmationsReady
+                        ? _PreparingStatusState.complete
+                        : _PreparingStatusState.waiting,
                     label: 'Waiting for confirmation ...',
                   ),
-                  _PreparingStatusRow(
+                  const _PreparingStatusRow(
                     state: _PreparingStatusState.pending,
                     label: 'Migration schedule',
                   ),
@@ -610,10 +797,12 @@ class _MobileMigrationMigrating extends StatefulWidget {
   const _MobileMigrationMigrating({
     required this.data,
     required this.initialShowBatchModal,
+    this.status,
   });
 
   final IronwoodMigrationFlowData data;
   final bool initialShowBatchModal;
+  final rust_sync.MigrationStatus? status;
 
   @override
   State<_MobileMigrationMigrating> createState() =>
@@ -625,13 +814,21 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
 
   @override
   Widget build(BuildContext context) {
+    final status = widget.status;
+    final plannedBatchCount = _mobilePlannedBatchCount(status);
+    final progress = _mobileMigrationProgress(status);
+    final currentBatch = _mobileCurrentBatch(status);
+    final arrivalLabel = _mobileStatusArrivalLabel(status);
     return Stack(
       children: [
         _MobileMigrationStatusScaffold(
           data: widget.data,
           child: Column(
             children: [
-              _MigrationProgressHero(amount: widget.data.amountText),
+              _MigrationProgressHero(
+                amount: widget.data.amountText,
+                progress: progress,
+              ),
               const SizedBox(height: AppSpacing.sm),
               SizedBox(
                 height: 240,
@@ -641,7 +838,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _StatusTextRow(
-                        label: '12 planned batches',
+                        label: '$plannedBatchCount planned batches',
                         value: 'View',
                         trailing: const AppIcon(
                           AppIcons.chevronForward,
@@ -650,18 +847,18 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                         onTap: () => setState(() => _showBatchModal = true),
                       ),
                       const Divider(height: 1, thickness: 1),
-                      const Column(
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text('Current batch'),
-                          SizedBox(height: AppSpacing.xs),
-                          _CurrentBatchRow(),
+                          const Text('Current batch'),
+                          const SizedBox(height: AppSpacing.xs),
+                          _CurrentBatchRow(batch: currentBatch),
                         ],
                       ),
                       const Divider(height: 1, thickness: 1),
-                      const _StatusTextRow(
+                      _StatusTextRow(
                         label: 'Estimated arrival time',
-                        value: 'July 18, 12:00',
+                        value: arrivalLabel,
                       ),
                     ],
                   ),
@@ -677,6 +874,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
         if (_showBatchModal)
           Positioned.fill(
             child: _MigrationBatchModal(
+              status: status,
               onClose: () => setState(() => _showBatchModal = false),
             ),
           ),
@@ -893,9 +1091,10 @@ class _PreparingStatusRow extends StatelessWidget {
 }
 
 class _MigrationProgressHero extends StatelessWidget {
-  const _MigrationProgressHero({required this.amount});
+  const _MigrationProgressHero({required this.amount, required this.progress});
 
   final String amount;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -911,7 +1110,7 @@ class _MigrationProgressHero extends StatelessWidget {
               painter: _MigrationArcPainter(
                 trackColor: colors.border.subtle,
                 progressColor: const Color(0xFF00A460),
-                progress: 0.1,
+                progress: progress,
                 rectTop: 0,
               ),
             ),
@@ -922,7 +1121,7 @@ class _MigrationProgressHero extends StatelessWidget {
             child: Transform.rotate(
               angle: -0.86,
               child: Text(
-                '10% DONE',
+                '${(progress * 100).round()}% DONE',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.text.secondary,
                   fontSize: 9,
@@ -1003,6 +1202,8 @@ class _StatusTextRow extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
                       fontWeight: FontWeight.w500,
@@ -1011,6 +1212,8 @@ class _StatusTextRow extends StatelessWidget {
                 ),
                 Text(
                   value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),
@@ -1029,7 +1232,9 @@ class _StatusTextRow extends StatelessWidget {
 }
 
 class _CurrentBatchRow extends StatelessWidget {
-  const _CurrentBatchRow();
+  const _CurrentBatchRow({required this.batch});
+
+  final _MobileCurrentBatch batch;
 
   @override
   Widget build(BuildContext context) {
@@ -1037,7 +1242,7 @@ class _CurrentBatchRow extends StatelessWidget {
     return Row(
       children: [
         Text(
-          '04',
+          batch.number.toString().padLeft(2, '0'),
           style: AppTypography.codeMedium.copyWith(color: colors.text.muted),
         ),
         const SizedBox(width: AppSpacing.xs),
@@ -1045,12 +1250,12 @@ class _CurrentBatchRow extends StatelessWidget {
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
-            '4.12 ZEC',
+            batch.amount,
             style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
         ),
         Text(
-          'Confirming...',
+          batch.status,
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
       ],
@@ -1090,10 +1295,93 @@ class _MobileStatusBackHomeButton extends StatelessWidget {
   }
 }
 
+int _mobilePlannedBatchCount(rust_sync.MigrationStatus? status) {
+  if (status == null) return 12;
+  if (status.totalCount > 0) return status.totalCount;
+  if (status.targetValuesZatoshi.isNotEmpty) {
+    return status.targetValuesZatoshi.length;
+  }
+  return math.max(1, status.preparedNoteCount);
+}
+
+double _mobileMigrationProgress(rust_sync.MigrationStatus? status) {
+  if (status == null) return 0.1;
+  final total = _mobilePlannedBatchCount(status);
+  if (total <= 0) return 0.1;
+  return (status.confirmedTxCount / total).clamp(0, 1);
+}
+
+class _MobileCurrentBatch {
+  const _MobileCurrentBatch({
+    required this.number,
+    required this.amount,
+    required this.status,
+  });
+
+  final int number;
+  final String amount;
+  final String status;
+}
+
+_MobileCurrentBatch _mobileCurrentBatch(rust_sync.MigrationStatus? status) {
+  if (status == null) {
+    return const _MobileCurrentBatch(
+      number: 4,
+      amount: '4.12 ZEC',
+      status: 'Confirming...',
+    );
+  }
+  final count = _mobilePlannedBatchCount(status);
+  final number = math.min(count, math.max(1, status.confirmedTxCount + 1));
+  final values = status.targetValuesZatoshi;
+  final amount = number <= values.length
+      ? '${ZecAmount.fromZatoshi(values[number - 1]).balance.amountText} ZEC'
+      : '${ZecAmount.fromZatoshi(BigInt.zero).balance.amountText} ZEC';
+  final label = switch (status.phase) {
+    kIronwoodMigrationReadyToMigratePhase => 'Preparing...',
+    kIronwoodMigrationBroadcastScheduledPhase => 'Scheduled',
+    kIronwoodMigrationBroadcastingPhase => 'Broadcasting...',
+    _ => 'Confirming...',
+  };
+  return _MobileCurrentBatch(number: number, amount: amount, status: label);
+}
+
+String _mobileStatusArrivalLabel(rust_sync.MigrationStatus? status) {
+  if (status == null) return 'July 18, 12:00';
+  final broadcasts = status.scheduledBroadcasts;
+  if (broadcasts.isEmpty) return 'Schedule pending';
+  var latestMs = broadcasts.first.scheduledAtMs;
+  for (final broadcast in broadcasts.skip(1)) {
+    latestMs = math.max(latestMs, broadcast.scheduledAtMs);
+  }
+  return _shortDateTime(DateTime.fromMillisecondsSinceEpoch(latestMs));
+}
+
+String _shortDateTime(DateTime dateTime) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final minute = dateTime.minute.toString().padLeft(2, '0');
+  return '${months[dateTime.month - 1]} ${dateTime.day}, '
+      '${dateTime.hour}:$minute';
+}
+
 class _MigrationBatchModal extends StatefulWidget {
-  const _MigrationBatchModal({required this.onClose});
+  const _MigrationBatchModal({required this.onClose, this.status});
 
   final VoidCallback onClose;
+  final rust_sync.MigrationStatus? status;
 
   @override
   State<_MigrationBatchModal> createState() => _MigrationBatchModalState();
@@ -1111,6 +1399,12 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final batchCount = _mobilePlannedBatchCount(widget.status);
+    final targetValues = widget.status?.targetValuesZatoshi;
+    final arrivalLabel = _mobileStatusArrivalLabel(widget.status);
+    final modalArrivalLabel = arrivalLabel == 'Schedule pending'
+        ? 'pending'
+        : arrivalLabel.replaceFirst('July', 'Jul');
     return ColoredBox(
       color: colors.background.neutralScrim,
       child: Align(
@@ -1150,7 +1444,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                       children: [
                         Expanded(
                           child: Text(
-                            '12 batches',
+                            '$batchCount batches',
                             style: AppTypography.bodyLarge.copyWith(
                               color: colors.text.accent,
                               fontWeight: FontWeight.w500,
@@ -1158,7 +1452,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                           ),
                         ),
                         Text(
-                          'ETA: Jul 18, 12:00',
+                          'ETA: $modalArrivalLabel',
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -1188,7 +1482,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                               controller: _scrollController,
                               physics: const ClampingScrollPhysics(),
                               padding: EdgeInsets.zero,
-                              itemCount: 12,
+                              itemCount: batchCount,
                               separatorBuilder: (_, _) => Divider(
                                 height: 1,
                                 thickness: 1,
@@ -1196,12 +1490,10 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                               ),
                               itemBuilder: (context, index) {
                                 final number = '${index + 1}'.padLeft(2, '0');
-                                final eta = switch (index) {
-                                  0 => '~in 4 hrs',
-                                  1 => '~in 12 hrs',
-                                  2 || 3 || 4 => '~in 24 hrs',
-                                  _ => '~in 30 hrs',
-                                };
+                                final eta = _mobileBatchEta(
+                                  status: widget.status,
+                                  index: index,
+                                );
                                 return SizedBox(
                                   height: 53,
                                   child: Row(
@@ -1220,7 +1512,10 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                                       const SizedBox(width: AppSpacing.xxs),
                                       Expanded(
                                         child: Text(
-                                          '4.12 ZEC',
+                                          targetValues != null &&
+                                                  index < targetValues.length
+                                              ? '${ZecAmount.fromZatoshi(targetValues[index]).balance.amountText} ZEC'
+                                              : '4.12 ZEC',
                                           style: AppTypography.labelLarge
                                               .copyWith(
                                                 color: colors.text.accent,
@@ -1269,6 +1564,28 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
       ),
     );
   }
+}
+
+String _mobileBatchEta({
+  required rust_sync.MigrationStatus? status,
+  required int index,
+}) {
+  if (status == null) {
+    return switch (index) {
+      0 => '~in 4 hrs',
+      1 => '~in 12 hrs',
+      2 || 3 || 4 => '~in 24 hrs',
+      _ => '~in 30 hrs',
+    };
+  }
+  if (index >= status.scheduledBroadcasts.length) return 'Pending';
+  final scheduledAt = DateTime.fromMillisecondsSinceEpoch(
+    status.scheduledBroadcasts[index].scheduledAtMs,
+  );
+  final remaining = scheduledAt.difference(DateTime.now());
+  if (remaining <= Duration.zero) return 'Due now';
+  final hours = math.max(1, remaining.inMinutes / 60).ceil();
+  return '~in $hours hrs';
 }
 
 class _ZecBatchBadge extends StatelessWidget {
@@ -2265,6 +2582,30 @@ class _MobileMigrationLoadingScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MobileMigrationRedirectTo extends StatefulWidget {
+  const _MobileMigrationRedirectTo(this.location);
+
+  final String location;
+
+  @override
+  State<_MobileMigrationRedirectTo> createState() =>
+      _MobileMigrationRedirectToState();
+}
+
+class _MobileMigrationRedirectToState
+    extends State<_MobileMigrationRedirectTo> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.go(widget.location);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const _MobileMigrationLoadingScreen();
 }
 
 class _MobileMigrationRedirectHome extends StatefulWidget {

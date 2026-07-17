@@ -34,6 +34,7 @@ import 'src/features/home/screens/home_screen.dart';
 import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'src/features/migration/widgets/ironwood_migration_coordinator_host.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';

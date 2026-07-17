@@ -309,6 +309,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         ),
       ),
     ),
+    GoRoute(
+      path: '/migration/private/status',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationPrivateStatusScreen(),
+      ),
+    ),
     // The Immediate path is intentionally not linked from the production
     // option picker until its migration backend exists. Keeping the supplied
     // review UI routable lets deterministic previews validate the design.
