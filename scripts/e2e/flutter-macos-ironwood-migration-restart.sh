@@ -64,7 +64,7 @@ scripts/ironwood-regtest/up.sh
 addresses_file="$ROOT_DIR/.ironwood-regtest/restart-e2e-addresses.json"
 derive_addresses "$addresses_file"
 unified_address="$(json_file_field "$addresses_file" unifiedAddress)"
-scripts/ironwood-regtest/fund-orchard.sh "$unified_address" 1.0002 10 >/dev/null
+scripts/ironwood-regtest/fund-orchard.sh "$unified_address" 0.011 10 >/dev/null
 
 : >"$DRIVER_LOG"
 python3 -u scripts/e2e/ironwood-regtest-driver.py \

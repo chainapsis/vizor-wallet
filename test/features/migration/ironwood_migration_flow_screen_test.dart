@@ -707,10 +707,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var continueCount = 0;
+    String? continuedAccountUuid;
     final service = _migrationServiceForContinue(
       onContinue: ({required accountUuid}) {
         continueCount += 1;
-        expect(accountUuid, 'account-1');
+        continuedAccountUuid = accountUuid;
         return Future.value(_migrationResult());
       },
     );
@@ -732,6 +733,7 @@ void main() {
     await tester.pump();
 
     expect(continueCount, 1);
+    expect(continuedAccountUuid, 'account-1');
   });
 
   testWidgets('private status refreshes while software migration advances', (
@@ -929,10 +931,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var continueCount = 0;
+    String? continuedAccountUuid;
     final service = _migrationServiceForContinue(
       onContinue: ({required accountUuid}) {
         continueCount += 1;
-        expect(accountUuid, 'account-1');
+        continuedAccountUuid = accountUuid;
         return Future.value(_migrationResult());
       },
     );
@@ -955,6 +958,7 @@ void main() {
     await tester.pump();
 
     expect(continueCount, 1);
+    expect(continuedAccountUuid, 'account-1');
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (

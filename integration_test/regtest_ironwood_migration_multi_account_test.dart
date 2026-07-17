@@ -16,8 +16,8 @@ const _driverUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:39079',
 );
-final _fundedAmount = BigInt.from(100020000);
-final _sendAmount = BigInt.from(10000000);
+final _fundedAmount = BigInt.from(1100000);
+final _sendAmount = BigInt.from(100000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +42,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '1.0002',
+            '0.011',
         description: 'funded first-account Orchard balance',
         timeout: const Duration(minutes: 5),
       );
@@ -199,13 +199,15 @@ void main() {
         network: 'regtest',
         accountUuid: firstAccount.uuid,
       );
+      final orchardResidual =
+          firstBalance.orchard + firstBalance.uneconomicValue;
       expect(
-        firstBalance.orchard,
+        orchardResidual,
         migrationPlan!.orchardChangeZatoshi ?? BigInt.zero,
       );
       expect(firstBalance.ironwood, migrationPlan.totalMigratableZatoshi);
       expect(
-        _fundedAmount - firstBalance.orchard - firstBalance.ironwood,
+        _fundedAmount - orchardResidual - firstBalance.ironwood,
         migrationPlan.estimatedTotalFeeZatoshi,
       );
       final secondBalance = await rust_sync.getBalance(
@@ -238,7 +240,7 @@ void main() {
       await _openHome(tester);
 
       e2eLog('sending migrated Ironwood funds through the desktop UI');
-      await _sendShielded(tester, receiverAddress, '0.1');
+      await _sendShielded(tester, receiverAddress, '0.001');
       final mempool = await _waitForMempool(tester, (size) => size == 1);
       final rpcTxid = (mempool['txids'] as List<Object?>).single as String;
       final walletTxid = _reverseTxidBytes(rpcTxid);
@@ -267,7 +269,7 @@ void main() {
         tester,
         const ValueKey('home_desktop_activity_row_0'),
         title: 'Receiving',
-        amount: '+0.1 $kZcashDefaultCurrencyTicker',
+        amount: '+0.001 $kZcashDefaultCurrencyTicker',
         status: 'In progress',
       );
 
@@ -298,7 +300,7 @@ void main() {
         tester,
         const ValueKey('home_desktop_activity_row_0'),
         title: 'Received',
-        amount: '+0.1 $kZcashDefaultCurrencyTicker',
+        amount: '+0.001 $kZcashDefaultCurrencyTicker',
         status: 'Completed',
       );
 
@@ -345,7 +347,7 @@ void main() {
         tester,
         const ValueKey('home_desktop_activity_row_0'),
         title: 'Sent',
-        amount: '-0.1 $kZcashDefaultCurrencyTicker',
+        amount: '-0.001 $kZcashDefaultCurrencyTicker',
         status: 'Completed',
       );
     },

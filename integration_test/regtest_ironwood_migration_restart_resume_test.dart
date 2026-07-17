@@ -12,9 +12,9 @@ const _driverUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:39078',
 );
 const _network = 'regtest';
-final _fundedAmount = BigInt.from(100020000);
-final _expectedIronwoodBalance = BigInt.from(99000000);
-final _expectedOrchardChange = BigInt.from(850000);
+final _fundedAmount = BigInt.from(1100000);
+final _expectedIronwoodBalance = BigInt.from(1000000);
+final _expectedOrchardChange = BigInt.from(5000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -98,10 +98,11 @@ void main() {
         accountUuid: accountUuid,
       );
       expect(balance.ironwood, _expectedIronwoodBalance);
-      expect(balance.orchard, _expectedOrchardChange);
+      final orchardResidual = balance.orchard + balance.uneconomicValue;
+      expect(orchardResidual, _expectedOrchardChange);
       expect(
-        _fundedAmount - balance.ironwood - balance.orchard,
-        BigInt.from(170000),
+        _fundedAmount - balance.ironwood - orchardResidual,
+        BigInt.from(95000),
       );
     },
     timeout: const Timeout(Duration(minutes: 15)),

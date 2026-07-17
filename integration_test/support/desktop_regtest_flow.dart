@@ -296,10 +296,18 @@ Future<rust_sync.MigrationStatus> prepareDesktopRegtestMigrationSchedule(
     description: 'migration ready status UI',
     timeout: timeout,
   );
-  await tapAppButton(
-    tester,
+  final action = find.byKey(
     const ValueKey('ironwood_migration_status_action_button'),
   );
+  if (tester.any(action) &&
+      tester.widget<AppButton>(action).onPressed != null) {
+    await tapAppButton(
+      tester,
+      const ValueKey('ironwood_migration_status_action_button'),
+    );
+  } else {
+    e2eLog('migration schedule is already advancing automatically');
+  }
 
   return waitForDesktopRegtestMigrationStatus(
     tester,

@@ -115,9 +115,31 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
+      await waitForDesktopRegtestMigrationStatus(
+        tester,
+        accountUuid,
+        (status) =>
+            status.activeRunId == runId &&
+            status.phase == 'ready_to_migrate' &&
+            status.denominationSplitCompletedCount == 1,
+        description: 'confirmed large-balance denomination stage',
+      );
+      e2eLog('mining four additional large-balance anchor cohort blocks');
+      await ironwoodDriverPost(
+        _driverUrl,
+        '/mine',
+        payload: const {'blocks': 4},
+      );
+      final cohortChain = await ironwoodDriverGet(_driverUrl, '/status');
+      await _waitForIdleSync(
+        tester,
+        container,
+        cohortChain['zcashdHeight'] as num,
+      );
       final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
         accountUuid,
+        timeout: const Duration(minutes: 8),
       );
       expect(scheduled.activeRunId, runId);
       expect(scheduled.denominationSplitCompletedCount, 1);

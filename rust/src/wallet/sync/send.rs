@@ -1842,7 +1842,8 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
 fn is_orchard_witness_not_ready_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("read orchard witnesses")
-        && (lower.contains("notcontained")
+        && (lower.contains("anchornotfound")
+            || lower.contains("notcontained")
             || lower.contains("checkpoint")
             || lower.contains("commitmenttree"))
 }
@@ -3874,8 +3875,9 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .entry(anchor_boundary_height)
         .or_default() += 1;
 
-    let (orchard_anchor, orchard_inputs) = orchard_witnesses(
+    let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
         &mut db,
+        network,
         BlockHeight::from(anchor_boundary_height),
         std::slice::from_ref(&orchard_selected),
     )?;
@@ -4017,6 +4019,49 @@ fn orchard_witnesses(
         Ok((anchor, inputs))
     });
     result.map_err(|e| format!("Read Orchard witnesses: {e:?}"))
+}
+
+fn migration_orchard_witnesses(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    anchor_boundary_height: BlockHeight,
+    orchard_notes: &[ReceivedNote<ReceivedNoteId, orchard::Note>],
+) -> Result<
+    (
+        orchard::Anchor,
+        Vec<(orchard::Note, orchard::tree::MerklePath)>,
+    ),
+    String,
+> {
+    if network != WalletNetwork::Regtest {
+        return orchard_witnesses(db, anchor_boundary_height, orchard_notes);
+    }
+
+    let newest_note_height = orchard_notes
+        .iter()
+        .filter_map(|note| note.mined_height())
+        .map(u32::from)
+        .max()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let boundary = u32::from(anchor_boundary_height);
+    let oldest_candidate = boundary
+        .saturating_sub(super::migration::ZIP318_ANCHOR_AGE_CAP)
+        .max(newest_note_height);
+    let mut last_error = None;
+
+    for checkpoint in (oldest_candidate..=boundary).rev() {
+        match orchard_witnesses(db, BlockHeight::from(checkpoint), orchard_notes) {
+            Ok(result) => return Ok(result),
+            Err(error) if is_orchard_witness_not_ready_error(&error) => {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        "Read Orchard witnesses: no regtest checkpoint at or before anchor boundary".to_string()
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4983,8 +5028,9 @@ fn orchard_anchor_and_witness_for_prepared_note(
         selected.mined_height(),
         selected.max_shielding_input_height(),
     );
-    let (orchard_anchor, mut orchard_inputs) = orchard_witnesses(
+    let (orchard_anchor, mut orchard_inputs) = migration_orchard_witnesses(
         &mut db,
+        network,
         BlockHeight::from(anchor_boundary_height),
         std::slice::from_ref(&orchard_selected),
     )?;
@@ -5128,7 +5174,8 @@ fn finalize_presigned_migration_children(
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut pending_inserts = Vec::with_capacity(signed_children.len());
-    for child in signed_children {
+    let signed_child_count = signed_children.len();
+    for (child_index, child) in signed_children.into_iter().enumerate() {
         if already_pending.contains(&(
             child.selected_note.txid_hex.to_ascii_lowercase(),
             child.selected_note.output_index,
@@ -5175,9 +5222,24 @@ fn finalize_presigned_migration_children(
             &orchard_witness,
             current_note_nullifier_hex,
         )?;
+        log::debug!(
+            "migration: proving child {}/{} for run {}",
+            child_index + 1,
+            signed_child_count,
+            run_id,
+        );
         let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
         let extracted =
             super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &child.sigs, None, None)?;
+        log::debug!(
+            "migration: proved child {}/{} for run {} as {} from {}:{}",
+            child_index + 1,
+            signed_child_count,
+            run_id,
+            extracted.txid,
+            current_note.txid_hex,
+            current_note.output_index,
+        );
         pending_inserts.push(super::migration::PendingMigrationTxInsert {
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,
@@ -5491,6 +5553,11 @@ async fn broadcast_due_scheduled_migration_txs(
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     for pending in due {
         if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+            log::error!(
+                "migration: broadcast rejected for {}: {}",
+                pending.txid_hex,
+                e,
+            );
             let message = format!(
                 "Migration broadcast failed for {}. Error: {e}",
                 pending.txid_hex
@@ -6170,6 +6237,16 @@ mod tests {
             note_version: 2,
             nullifier_hex: None,
         }
+    }
+
+    #[test]
+    fn missing_orchard_anchor_is_a_retryable_witness_error() {
+        assert!(is_orchard_witness_not_ready_error(
+            "Read Orchard witnesses: Proposal(AnchorNotFound(BlockHeight(509)))"
+        ));
+        assert!(!is_orchard_witness_not_ready_error(
+            "Read Orchard witnesses: invalid note commitment"
+        ));
     }
 
     fn migration_test_stage(

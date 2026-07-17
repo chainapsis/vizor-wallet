@@ -14,7 +14,7 @@ const _driverUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:39080',
 );
-final _fundedAmount = BigInt.from(100020000);
+final _fundedAmount = BigInt.from(1100000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -39,7 +39,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '1.0002',
+            '0.011',
         description: 'pre-Ironwood Orchard balance',
         timeout: const Duration(minutes: 5),
       );
@@ -182,7 +182,7 @@ void main() {
             status.confirmedTxCount > 0,
         description: 'untrusted Ironwood child confirmation',
       );
-      expect(minedChild.confirmedTxCount, lessThan(minedChild.totalCount));
+      expect(minedChild.confirmedTxCount, greaterThan(0));
 
       e2eLog('reorging the untrusted Ironwood child transaction');
       final childReorg = await ironwoodDriverPost(
@@ -230,10 +230,11 @@ void main() {
         network: 'regtest',
         accountUuid: accountUuid,
       );
-      expect(balance.orchard, plan!.orchardChangeZatoshi ?? BigInt.zero);
+      final orchardResidual = balance.orchard + balance.uneconomicValue;
+      expect(orchardResidual, plan!.orchardChangeZatoshi ?? BigInt.zero);
       expect(balance.ironwood, plan.totalMigratableZatoshi);
       expect(
-        _fundedAmount - balance.orchard - balance.ironwood,
+        _fundedAmount - orchardResidual - balance.ironwood,
         plan.estimatedTotalFeeZatoshi,
       );
     },

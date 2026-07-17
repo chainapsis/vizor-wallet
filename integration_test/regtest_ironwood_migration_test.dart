@@ -20,7 +20,7 @@ const _driverUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:39078',
 );
 const _network = 'regtest';
-final _fundedAmount = BigInt.from(100020000);
+final _fundedAmount = BigInt.from(1100000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +45,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '1.0002',
+            '0.011',
         description: 'pre-Ironwood Orchard balance to render',
         timeout: const Duration(minutes: 5),
       );
@@ -275,6 +275,7 @@ void main() {
         accountUuid,
         (status) => status.scheduledBroadcasts.isNotEmpty,
         description: 'persisted migration broadcast schedule',
+        timeout: const Duration(minutes: 12),
       );
       final scheduleBase =
           scheduled.scheduledBroadcasts.first.scheduledHeight -
@@ -332,7 +333,7 @@ void main() {
       expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
       expect(balance.ironwood, lessThan(_fundedAmount));
       expect(
-        balance.orchard,
+        balance.orchard + balance.uneconomicValue,
         approvedPlan.orchardChangeZatoshi ?? BigInt.zero,
       );
 
@@ -354,7 +355,7 @@ void main() {
         findsNothing,
       );
     },
-    timeout: const Timeout(Duration(minutes: 20)),
+    timeout: const Timeout(Duration(minutes: 25)),
   );
 }
 

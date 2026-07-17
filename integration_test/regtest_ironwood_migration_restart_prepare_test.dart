@@ -36,7 +36,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '1.0002',
+            '0.011',
         description: 'pre-Ironwood Orchard balance to render',
         timeout: const Duration(minutes: 5),
       );
