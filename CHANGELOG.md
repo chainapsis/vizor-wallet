@@ -17,6 +17,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   branch.
 - Persisted each voting round's wallet network and validate governance PCZT
   branch IDs against the stored round snapshot before writing PCZT setup state.
+- Expressed the librustzcash revision pin as a `[patch.crates-io]` stanza with
+  plain crates.io version requirements, rather than inline `git`/`rev` on each
+  workspace dependency. Building this workspace directly is unaffected, but a
+  downstream consumer can now redirect the whole librustzcash stack to a
+  revision of its choosing via its own `[patch.crates-io]`.
 
 ## v1.0.0
 
