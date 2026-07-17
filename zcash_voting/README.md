@@ -12,9 +12,7 @@ precompute → delegate → vote → share lifecycle:
    available).
 2. Convert eligible shielded notes into `NoteInfo` with
    `NoteInfo::from_orchard_note`, then call `ensure_bundles`. Snapshot
-   selection is Ironwood / NU6.3-only on this branch and rejects non-NU6.3
-   snapshots. Ironwood / NU6.3 code paths are cfg-gated; build them with
-   `RUSTFLAGS='--cfg zcash_unstable="nu6.3"'`.
+   selection is Ironwood / NU6.3-only and rejects non-NU6.3 snapshots.
    The default `BundlePolicy` fills each bundle up to the circuit note-slot
    count. Wallets that need fewer real notes per bundle can call the
    `*_with_policy` variants with `BundlePolicy::new(...)`; proof construction

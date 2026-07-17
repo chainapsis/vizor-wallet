@@ -1591,7 +1591,6 @@ mod tests {
     const W: &str = "test-wallet";
     const TESTNET_NU6_SNAPSHOT_HEIGHT: u64 = 3_536_500;
     const TESTNET_NU6_BRANCH_ID: u32 = 0x4DEC_4DF0;
-    #[cfg(zcash_unstable = "nu6.3")]
     const REGTEST_NU6_3_SNAPSHOT_HEIGHT: u64 = crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT as u64;
 
     fn test_db() -> VotingDb {
@@ -1613,7 +1612,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn test_params_nu6_3() -> VotingRoundParams {
         VotingRoundParams {
             snapshot_height: REGTEST_NU6_3_SNAPSHOT_HEIGHT,
@@ -1621,7 +1619,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn nu6_3_branch_id() -> u32 {
         u32::from(zcash_protocol::consensus::BranchId::Nu6_3)
     }
@@ -1675,7 +1672,6 @@ mod tests {
         (rk, (&sig).into())
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn sign_delegation_request(seed: &[u8], request: &DelegationSigningRequest) -> [u8; 64] {
         use orchard::keys::SpendAuthorizingKey;
         use zcash_keys::keys::UnifiedSpendingKey;
@@ -1951,7 +1947,6 @@ mod tests {
         assert!(err.to_string().contains("rseed_signed"), "{err}");
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_padded_pir_nullifiers_match_persisted_dummy_nullifiers() {
         use orchard::{
@@ -2657,7 +2652,6 @@ mod tests {
         );
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_rejects_nu6_3_branch_for_pre_nu6_3_snapshot() {
         use orchard::keys::{FullViewingKey, SpendingKey};
@@ -3243,7 +3237,6 @@ mod tests {
         assert_eq!(votes[0].choice, 1);
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_delegation_signing_request_signature_path_submits() {
         use orchard::{
@@ -3412,7 +3405,6 @@ mod tests {
     }
 
     /// Multi-bundle test: 6 notes → 2 bundles (5+1), independent delegation + vote storage per bundle.
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_multi_bundle_delegation_and_voting() {
         use orchard::keys::{FullViewingKey, SpendingKey};

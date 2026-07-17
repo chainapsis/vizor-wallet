@@ -36,7 +36,6 @@ const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
 /// Orchard key diversification personalization for DiversifyHash^Orchard.
 const ORCHARD_GD_PERSONALIZATION: &str = "z.cash:Orchard-gd";
 
-#[cfg(zcash_unstable = "nu6.3")]
 fn pczt_actions_for_protocol(
     pczt: &pczt::Pczt,
     bundle_version: BundleVersion,
@@ -50,43 +49,21 @@ fn pczt_actions_for_protocol(
     }
 }
 
-#[cfg(not(zcash_unstable = "nu6.3"))]
-fn pczt_actions_for_protocol(
-    _pczt: &pczt::Pczt,
-    _bundle_version: BundleVersion,
-) -> Result<&[pczt::orchard::Action], VotingError> {
-    Err(VotingError::InvalidInput {
-        message: "Ironwood PCZT actions require a NU6.3 build".to_string(),
-    })
-}
-
 fn signed_pczt_actions(
     pczt: &pczt::Pczt,
 ) -> Result<(&[pczt::orchard::Action], &'static str), VotingError> {
     let orchard_actions = pczt.orchard().actions();
 
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        let ironwood_actions = pczt.ironwood().actions();
-        match (!orchard_actions.is_empty(), !ironwood_actions.is_empty()) {
-            (false, true) => Ok((ironwood_actions, "Ironwood")),
-            (true, _) => Err(VotingError::InvalidInput {
-                message:
-                    "signed PCZT contains Orchard actions; zcash voting only supports Ironwood"
-                        .to_string(),
-            }),
-            (false, false) => Err(VotingError::InvalidInput {
-                message: "signed PCZT contains no Ironwood actions".to_string(),
-            }),
-        }
-    }
-
-    #[cfg(not(zcash_unstable = "nu6.3"))]
-    {
-        let _ = orchard_actions;
-        Err(VotingError::InvalidInput {
-            message: "Ironwood signed PCZTs require a NU6.3 build".to_string(),
-        })
+    let ironwood_actions = pczt.ironwood().actions();
+    match (!orchard_actions.is_empty(), !ironwood_actions.is_empty()) {
+        (false, true) => Ok((ironwood_actions, "Ironwood")),
+        (true, _) => Err(VotingError::InvalidInput {
+            message: "signed PCZT contains Orchard actions; zcash voting only supports Ironwood"
+                .to_string(),
+        }),
+        (false, false) => Err(VotingError::InvalidInput {
+            message: "signed PCZT contains no Ironwood actions".to_string(),
+        }),
     }
 }
 
@@ -648,14 +625,8 @@ pub(crate) fn build_governance_pczt(
                 message: format!("PCZT updater failed: {:?}", e),
             })?;
 
-        #[cfg(zcash_unstable = "nu6.3")]
         let ironwood_bundle = Some(pczt_bundle);
-        #[cfg(not(zcash_unstable = "nu6.3"))]
-        let ironwood_bundle = None;
-        #[cfg(zcash_unstable = "nu6.3")]
         let orchard_bundle = None;
-        #[cfg(not(zcash_unstable = "nu6.3"))]
-        let orchard_bundle = Some(pczt_bundle);
 
         let parts = PcztParts {
             params: consensus_network,
@@ -848,14 +819,12 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn mock_nu6_3_params() -> VotingRoundParams {
         let mut params = mock_params();
         params.snapshot_height = u64::from(crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT);
         params
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn build_mock_nu6_3_pczt(notes: &[NoteInfo]) -> GovernancePczt {
         build_governance_pczt(
             notes,
@@ -951,7 +920,6 @@ mod tests {
     /// Mock account index
     const MOCK_ACCOUNT: u32 = 0;
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_one_note() {
         let result = build_mock_nu6_3_pczt(&[mock_note()]);
@@ -1027,7 +995,6 @@ mod tests {
         assert_eq!(output_value, NoteValue::ZERO.inner());
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_action_index_points_to_paired_governance_action() {
         for _ in 0..64 {
@@ -1051,7 +1018,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_rejects_nu6_3_branch_before_activation() {
         let mut params = mock_params();
@@ -1078,7 +1044,6 @@ mod tests {
         );
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_uses_ironwood_for_nu6_3() {
         let result = build_mock_nu6_3_pczt(&[mock_note()]);
@@ -1123,7 +1088,6 @@ mod tests {
         assert!(err.to_string().contains("coin_type"), "{err}");
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_padded_slots_match_synthetic_circuit_slots() {
         let note = mock_note();
@@ -1172,7 +1136,6 @@ mod tests {
         assert_eq!(result.rho_signed, expected_rho_signed);
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_full_note_slots() {
         let notes: Vec<NoteInfo> = (0..BUNDLE_NOTE_SLOTS)
@@ -1203,7 +1166,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn test_build_governance_pczt_different_rk_each_call() {
         let result1 = build_mock_nu6_3_pczt(&[mock_note()]);

@@ -129,15 +129,7 @@ fn bytes_to_scalar(bytes: &[u8], name: &str) -> Result<pallas::Scalar, VotingErr
 }
 
 fn supported_note_versions() -> &'static [NoteVersion] {
-    #[cfg(zcash_unstable = "nu6.3")]
-    {
-        &[NoteVersion::V3]
-    }
-
-    #[cfg(not(zcash_unstable = "nu6.3"))]
-    {
-        &[]
-    }
+    &[NoteVersion::V3]
 }
 
 fn note_matches_stored_identity(
@@ -728,7 +720,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn rebuild_test_note_with_version(
         full_note: &NoteInfo,
         network: &Network,
@@ -752,7 +743,6 @@ mod tests {
         .unwrap()
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn reconstruct_note_accepts_regtest_network() {
         let network = Network::Regtest;
@@ -773,7 +763,6 @@ mod tests {
         assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn reconstruct_note_infers_ironwood_note_version() {
         let network = Network::Regtest;

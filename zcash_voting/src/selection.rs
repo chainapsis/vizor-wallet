@@ -361,7 +361,6 @@ mod tests {
     use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
     use zip32::Scope;
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn select_snapshot_notes_returns_snapshot_eligible_ironwood_notes() {
         let network = crate::Network::Regtest;
@@ -423,7 +422,6 @@ mod tests {
         assert!(selected.notes.iter().all(|note| !note.ufvk_str.is_empty()));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn select_snapshot_notes_counts_only_ironwood_notes_at_nu6_3() {
         let network = crate::Network::Regtest;
@@ -454,7 +452,6 @@ mod tests {
         assert_eq!(crate::voting_power(&selected), divisor * 2);
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn select_notes_with_wallet_db_keeps_sub_divisor_notes_for_smart_bundles() {
         let network = crate::Network::Regtest;
@@ -544,7 +541,6 @@ mod tests {
         assert!(err.contains("does not match voting network"));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn select_snapshot_note_infos_returns_sorted_snapshot_note_inputs() {
         let network = crate::Network::Regtest;
@@ -577,7 +573,6 @@ mod tests {
         assert!(notes.iter().all(|note| !note.ufvk_str.is_empty()));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn select_snapshot_notes_rejects_empty_snapshot() {
         let network = crate::Network::Regtest;
@@ -699,7 +694,6 @@ mod tests {
         )
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn insert_ironwood_note(
         conn: &Connection,
         account_ref: i64,

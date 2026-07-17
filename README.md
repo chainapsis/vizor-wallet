@@ -34,10 +34,10 @@ cargo check                    # check all crates
 cargo build -p zcash_voting   # build just the core library
 ```
 
-Ironwood / NU6.3 code paths are cfg-gated. Build or test those paths with:
+Run the Ironwood / NU6.3 tests with:
 
 ```bash
-RUSTFLAGS='--cfg zcash_unstable="nu6.3"' cargo test -p zcash_voting --locked
+cargo test -p zcash_voting --locked
 ```
 
 ## Wallet API Lifecycle

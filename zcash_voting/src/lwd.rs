@@ -232,7 +232,6 @@ mod tests {
             branch_id_for_height(Network::Regtest, 1).unwrap(),
             0x5437_F330
         );
-        #[cfg(zcash_unstable = "nu6.3")]
         {
             for (network, activation_height) in
                 [(Network::Mainnet, 3_428_143), (Network::Testnet, 4_134_000)]

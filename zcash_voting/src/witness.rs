@@ -84,29 +84,15 @@ where
     let note_commitment_tree: CommitmentTree<
         MerkleHashOrchard,
         { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-    > = {
-        #[cfg(zcash_unstable = "nu6.3")]
-        {
-            match voting_protocol {
-                VotingShieldedProtocol::Ironwood => tree_state.ironwood_tree(),
-            }
-            .map_err(|e| VotingError::Internal {
-                message: format!(
-                    "failed to parse {} tree from TreeState: {e}",
-                    voting_protocol.pool()
-                ),
-            })?
-        }
-
-        #[cfg(not(zcash_unstable = "nu6.3"))]
-        {
-            let _ = tree_state;
-            let _ = voting_protocol;
-            return Err(VotingError::InvalidInput {
-                message: "Ironwood witness generation requires a NU6.3 build".to_string(),
-            });
-        }
-    };
+    > = match voting_protocol {
+        VotingShieldedProtocol::Ironwood => tree_state.ironwood_tree(),
+    }
+    .map_err(|e| VotingError::Internal {
+        message: format!(
+            "failed to parse {} tree from TreeState: {e}",
+            voting_protocol.pool()
+        ),
+    })?;
 
     let frontier_root_bytes = note_commitment_tree.root().to_bytes();
     validate_cached_tree_state_for_round(
@@ -129,34 +115,17 @@ where
         .collect();
     let merkle_paths: Vec<
         MerklePath<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
-    > = {
-        #[cfg(zcash_unstable = "nu6.3")]
-        {
-            match voting_protocol {
-                VotingShieldedProtocol::Ironwood => {
-                    WalletDb::generate_ironwood_witnesses_at_historical_height(
-                        wallet_db,
-                        &positions,
-                        nonempty_frontier,
-                        snapshot_block_height,
-                    )
-                    .map_err(|e| VotingError::Internal {
-                        message: format!(
-                            "generate_ironwood_witnesses_at_historical_height failed: {e}"
-                        ),
-                    })?
-                }
-            }
-        }
-
-        #[cfg(not(zcash_unstable = "nu6.3"))]
-        {
-            let _ = wallet_db;
-            let _ = positions;
-            let _ = nonempty_frontier;
-            return Err(VotingError::InvalidInput {
-                message: "Ironwood witness generation requires a NU6.3 build".to_string(),
-            });
+    > = match voting_protocol {
+        VotingShieldedProtocol::Ironwood => {
+            WalletDb::generate_ironwood_witnesses_at_historical_height(
+                wallet_db,
+                &positions,
+                nonempty_frontier,
+                snapshot_block_height,
+            )
+            .map_err(|e| VotingError::Internal {
+                message: format!("generate_ironwood_witnesses_at_historical_height failed: {e}"),
+            })?
         }
     };
 
@@ -356,7 +325,6 @@ mod tests {
     use zcash_primitives::merkle_tree::write_commitment_tree;
     use zcash_protocol::consensus::Network;
 
-    #[cfg(zcash_unstable = "nu6.3")]
     use crate::types::{Network as VotingNetwork, REGTEST_NU6_3_ACTIVATION_HEIGHT};
 
     const ROUND_ID: &str = "round1";
@@ -511,7 +479,6 @@ mod tests {
         (wallet_db, frontier)
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     fn seeded_ironwood_wallet_db(
         snapshot_height: u64,
         later_height: u32,
@@ -566,7 +533,6 @@ mod tests {
         (wallet_db, frontier)
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn store_tree_state_and_generate_note_witnesses_caches_bundle_witnesses() {
         let positions = vec![Position::from(1), Position::from(2)];
@@ -616,7 +582,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn store_tree_state_and_generate_note_witnesses_rejects_invalid_tree_state() {
         let positions = vec![Position::from(1)];
@@ -654,7 +619,6 @@ mod tests {
         assert!(err.to_string().contains("orchard") || err.to_string().contains("TreeState"));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn generate_note_witnesses_returns_valid_witnesses() {
         let positions = vec![Position::from(1), Position::from(2)];
@@ -755,7 +719,6 @@ mod tests {
             .is_empty());
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn generate_note_witnesses_uses_ironwood_tree_at_nu6_3() {
         let snapshot_height = u64::from(REGTEST_NU6_3_ACTIVATION_HEIGHT);
@@ -790,7 +753,6 @@ mod tests {
         }
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn generate_note_witnesses_rejects_stale_tree_state() {
         let frontier = test_frontier();
@@ -808,7 +770,6 @@ mod tests {
         assert!(err.to_string().contains("snapshot_height"));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn generate_note_witnesses_rejects_wrong_round_root() {
         let frontier = test_frontier();
@@ -827,7 +788,6 @@ mod tests {
         assert!(err.to_string().contains("ironwood root"));
     }
 
-    #[cfg(zcash_unstable = "nu6.3")]
     #[test]
     fn generate_note_witnesses_rejects_wrong_ironwood_round_root() {
         let frontier = test_frontier();

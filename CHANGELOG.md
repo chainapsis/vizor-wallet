@@ -14,7 +14,7 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   and the wallet crates require Rust 1.88 or newer.
 - Updated snapshot selection and governance PCZT construction to use only
   Ironwood/V3 notes. Pre-NU6.3 Orchard/V2 voting is no longer supported on this
-  branch.
+  branch, and Ironwood voting no longer requires a custom Rust compile flag.
 - Persisted each voting round's wallet network and validate governance PCZT
   branch IDs against the stored round snapshot before writing PCZT setup state.
 - Expressed the librustzcash revision pin as a `[patch.crates-io]` stanza with
