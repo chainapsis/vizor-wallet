@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -13,6 +15,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
@@ -20,8 +23,17 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+
+class _RustApiFake implements RustLibApi {
+  @override
+  void crateApiKeystoneResetUrSession() {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 final _data = IronwoodMigrationFlowData(
   amountZatoshi: BigInt.from(14_224_000_000),
@@ -29,7 +41,11 @@ final _data = IronwoodMigrationFlowData(
   profilePictureId: 'default',
 );
 
-rust_sync.OrchardMigrationPrivatePlan get _plan =>
+rust_sync.OrchardMigrationPrivatePlan _planWith({
+  int plannedBatchCount = 12,
+  int denominationSplitStageCount = 1,
+  int signingBatchLimit = 12,
+}) =>
     rust_sync.OrchardMigrationPrivatePlan(
       targetValuesZatoshi: frb.Uint64List.fromList([]),
       totalInputZatoshi: BigInt.from(14_224_000_000),
@@ -38,12 +54,14 @@ rust_sync.OrchardMigrationPrivatePlan get _plan =>
       denominationSplitFeeZatoshi: BigInt.from(20_000),
       migrationFeeZatoshi: BigInt.from(14_400_000),
       estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
-      plannedBatchCount: 12,
-      denominationSplitStageCount: 1,
-      signingBatchLimit: 12,
+      plannedBatchCount: plannedBatchCount,
+      denominationSplitStageCount: denominationSplitStageCount,
+      signingBatchLimit: signingBatchLimit,
       broadcastWindowSeconds: BigInt.from(172_800),
       maxPreparedNotesPerRun: 12,
     );
+
+rust_sync.OrchardMigrationPrivatePlan get _plan => _planWith();
 
 rust_sync.MigrationStatus _status({
   required String phase,
@@ -76,29 +94,30 @@ rust_sync.MigrationStatus _status({
   );
 }
 
-final _bootstrap = AppBootstrapState(
-  initialLocation: '/migration/private/review',
-  initialAccountState: AccountState(
-    accounts: [
-      AccountInfo(
-        uuid: 'account-1',
-        name: 'Wallet 1',
-        order: 0,
-        profilePictureId: kDefaultProfilePictureId,
+AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
+      initialLocation: '/migration/private/review',
+      initialAccountState: AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'account-1',
+            name: 'Wallet 1',
+            order: 0,
+            profilePictureId: kDefaultProfilePictureId,
+            isHardware: hardware,
+          ),
+        ],
+        activeAccountUuid: 'account-1',
+        activeAddress: 'u1testaddress',
       ),
-    ],
-    activeAccountUuid: 'account-1',
-    activeAddress: 'u1testaddress',
-  ),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.system,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.system,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 Widget _app({
   required MobileIronwoodMigrationStep step,
@@ -177,6 +196,8 @@ Widget _productionApp({
   rust_sync.MigrationStatus? status,
   rust_sync.MigrationStatus? startedStatus,
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
+  bool hardware = false,
+  rust_sync.OrchardMigrationPrivatePlan? privatePlan,
 }) {
   final cta = status == null
       ? const IronwoodHomeMigrationCtaState.start(
@@ -206,19 +227,29 @@ Widget _productionApp({
         path: '/migration/private/status',
         builder: (_, _) => const MobileIronwoodMigrationPrivateStatusScreen(),
       ),
+      GoRoute(
+        path: '/migration/private/keystone/denominations/sign',
+        builder: (_, _) => const Text('keystone denomination sign route'),
+      ),
+      GoRoute(
+        path: '/migration/private/keystone/batch/sign',
+        builder: (_, _) => const Text('keystone batch sign route'),
+      ),
     ],
   );
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
         ),
       ),
       ironwoodMigrationFlowDataProvider.overrideWith((ref) async => _data),
-      ironwoodMigrationPrivatePlanProvider.overrideWith((ref) async => _plan),
+      ironwoodMigrationPrivatePlanProvider.overrideWith(
+        (ref) async => privatePlan ?? _plan,
+      ),
       ironwoodMigrationRouteCtaProvider.overrideWith(
         (ref) async => ctaBuilder?.call() ?? cta,
       ),
@@ -239,42 +270,42 @@ Widget _productionApp({
 
 IronwoodMigrationService _migrationService({
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
-  onStart,
+      onStart,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
-  onContinue,
+      onContinue,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus:
-        ({required dbPath, required network, required accountUuid}) async =>
-            _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
-    getPrivatePlan:
-        ({required dbPath, required network, required accountUuid}) async =>
-            _plan,
+    getStatus: (
+            {required dbPath, required network, required accountUuid}) async =>
+        _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
+    getPrivatePlan: (
+            {required dbPath, required network, required accountUuid}) async =>
+        _plan,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
-    startSoftwareMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required mnemonicBytes,
-          required password,
-          required saltBase64,
-        }) => onStart?.call(accountUuid) ?? Future.value(_migrationResult()),
-    broadcastDueMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
+    startSoftwareMigration: ({
+      required dbPath,
+      required lightwalletdUrl,
+      required network,
+      required accountUuid,
+      required mnemonicBytes,
+      required password,
+      required saltBase64,
+    }) =>
+        onStart?.call(accountUuid) ?? Future.value(_migrationResult()),
+    broadcastDueMigration: ({
+      required dbPath,
+      required lightwalletdUrl,
+      required network,
+      required accountUuid,
+      required password,
+      required saltBase64,
+    }) =>
+        onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
   );
 }
 
@@ -289,8 +320,11 @@ rust_sync.IronwoodMigrationResult _migrationResult() {
   );
 }
 
-void _useMobileViewport(WidgetTester tester) {
-  tester.view.physicalSize = const Size(393, 852);
+void _useMobileViewport(
+  WidgetTester tester, {
+  Size size = const Size(393, 852),
+}) {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(() {
     tester.view.resetPhysicalSize();
@@ -299,6 +333,12 @@ void _useMobileViewport(WidgetTester tester) {
 }
 
 void main() {
+  setUpAll(() {
+    RustLib.initMock(api: _RustApiFake());
+  });
+
+  tearDownAll(RustLib.dispose);
+
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
   });
@@ -471,6 +511,156 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(find.text('Preparing...'), findsOneWidget);
+  });
+
+  testWidgets('routes a Keystone account to split signing from review', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var softwareStartCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(
+          onStart: (_) async {
+            softwareStartCount += 1;
+            return _migrationResult();
+          },
+        ),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue with Keystone'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_authorize_start_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(softwareStartCount, 0);
+    expect(find.text('keystone denomination sign route'), findsOneWidget);
+  });
+
+  testWidgets('renders the mobile Keystone split signing QR', (tester) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    final request = rust_sync.KeystoneMigrationSigningRequest(
+      requestId: 'preview-request',
+      messages: [
+        rust_sync.KeystoneMigrationMessage(
+          id: 'split-1',
+          redactedPczt: Uint8List.fromList([1]),
+        ),
+        rust_sync.KeystoneMigrationMessage(
+          id: 'split-2',
+          redactedPczt: Uint8List.fromList([2]),
+        ),
+      ],
+      signingBatchLimit: 50,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: MaterialApp(
+            home: MobileIronwoodMigrationKeystoneDenominationSignScreen(
+              previewRequest: request,
+              previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Sign private split'), findsOneWidget);
+    expect(find.text('2 split transactions to sign'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_ironwood_keystone_scan_signature_button'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(
+      find.text('Scan the signed migration QR shown on Keystone.'),
+      findsOneWidget,
+    );
+    expect(find.text('Back to QR'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('blocks an oversized Keystone signing plan before QR', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        hardware: true,
+        privatePlan: _planWith(
+          denominationSplitStageCount: 13,
+          signingBatchLimit: 12,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'This migration needs more transactions than one Keystone signing '
+        'request supports.',
+      ),
+      findsOneWidget,
+    );
+    final button = tester.widget<AppButton>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_authorize_start_button'),
+        ),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('routes a Keystone ready state to migration batch signing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(phase: kIronwoodMigrationReadyToMigratePhase),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready for Keystone'), findsOneWidget);
+    expect(find.text('3 migration transactions ready to sign'), findsOneWidget);
+    final signButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+    );
+    await tester.ensureVisible(signButton);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(signButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('keystone batch sign route'), findsOneWidget);
   });
 
   testWidgets('keeps review visible when start has no durable run', (

@@ -70,9 +70,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       );
     }
 
-    return ref
-        .watch(ironwoodMigrationFlowDataProvider)
-        .when(
+    return ref.watch(ironwoodMigrationFlowDataProvider).when(
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
@@ -109,44 +107,46 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final shouldLoadPlan =
-        !previewMode &&
+    final isHardware = !previewMode &&
+        (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
+    final shouldLoadPlan = !previewMode &&
         (step == MobileIronwoodMigrationStep.howItWorks ||
             step == MobileIronwoodMigrationStep.options);
-    final plan =
-        previewPrivatePlan ??
+    final plan = previewPrivatePlan ??
         (shouldLoadPlan
             ? ref.watch(ironwoodMigrationPrivatePlanProvider).asData?.value
             : null);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks => _MobileMigrationHowItWorks(
-        data: data,
-        plan: plan,
-      ),
+          data: data,
+          plan: plan,
+          isHardware: isHardware,
+        ),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-        data: data,
-        plan: plan,
-      ),
+          data: data,
+          plan: plan,
+        ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
           previewPlan: previewPrivatePlan,
+          isHardware: isHardware,
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
-        data: data,
-        previewMode: previewMode,
-      ),
+          data: data,
+          previewMode: previewMode,
+        ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
-        data: data,
-        status: status,
-      ),
+          data: data,
+          status: status,
+        ),
       MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
-        data: data,
-        status: status,
-        previewPlan: previewPrivatePlan,
-        initialShowBatchModal: previewShowBatchModal,
-      ),
+          data: data,
+          status: status,
+          previewPlan: previewPrivatePlan,
+          initialShowBatchModal: previewShowBatchModal,
+        ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
         const _MobileMigrationPasscode(),
     };
@@ -184,7 +184,16 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           error: (_, _) => const _MobileMigrationRedirectHome(),
           data: (data) => data == null
               ? const _MobileMigrationRedirectHome()
-              : _MobileMigrationLiveStatus(data: data, status: status),
+              : _MobileMigrationLiveStatus(
+                  data: data,
+                  status: status,
+                  isHardware: ref
+                          .watch(accountProvider)
+                          .value
+                          ?.activeAccount
+                          ?.isHardware ??
+                      false,
+                ),
         );
       },
     );
@@ -200,15 +209,23 @@ bool _hasMobileMigrationStatusDesign(String phase) {
 }
 
 class _MobileMigrationLiveStatus extends StatelessWidget {
-  const _MobileMigrationLiveStatus({required this.data, required this.status});
+  const _MobileMigrationLiveStatus({
+    required this.data,
+    required this.status,
+    required this.isHardware,
+  });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus status;
+  final bool isHardware;
 
   @override
   Widget build(BuildContext context) {
     if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return _MobileMigrationPreparing(data: data, status: status);
+    }
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase && isHardware) {
+      return _MobileKeystoneMigrationReady(data: data, status: status);
     }
     return _MobileMigrationMigrating(
       data: data,
@@ -329,10 +346,15 @@ class _MobileMigrationIntro extends StatelessWidget {
 }
 
 class _MobileMigrationHowItWorks extends StatelessWidget {
-  const _MobileMigrationHowItWorks({required this.data, required this.plan});
+  const _MobileMigrationHowItWorks({
+    required this.data,
+    required this.plan,
+    required this.isHardware,
+  });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? plan;
+  final bool isHardware;
 
   @override
   Widget build(BuildContext context) {
@@ -345,7 +367,11 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
         label: 'Continue',
         onPressed: () => context.go('/migration/options'),
       ),
-      child: _MobileMigrationProcessCard(amount: data.amountText, plan: plan),
+      child: _MobileMigrationProcessCard(
+        amount: data.amountText,
+        plan: plan,
+        isHardware: isHardware,
+      ),
     );
   }
 }
@@ -376,7 +402,7 @@ class _MobileMigrationOptions extends StatelessWidget {
             title: 'Private',
             body: plan == null
                 ? 'Prepares separate migration transactions and spreads their '
-                      'sends when the plan allows it.'
+                    'sends when the plan allows it.'
                 : privateMigrationMethodDescription(plan!),
             selected: true,
             icon: _MigrationChoiceIcon.private,
@@ -385,8 +411,7 @@ class _MobileMigrationOptions extends StatelessWidget {
           const _MobileMigrationOptionCard(
             key: ValueKey('mobile_ironwood_immediate_unavailable'),
             title: 'Immediate',
-            body:
-                'Sends now in one step. Amount and timing are easier to '
+            body: 'Sends now in one step. Amount and timing are easier to '
                 'associate.',
             selected: false,
             icon: _MigrationChoiceIcon.immediate,
@@ -412,10 +437,12 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
   const _MobileMigrationPrivateReview({
     required this.data,
     required this.previewPlan,
+    required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
+  final bool isHardware;
 
   @override
   ConsumerState<_MobileMigrationPrivateReview> createState() =>
@@ -427,7 +454,9 @@ class _MobileMigrationPrivateReviewState
   bool _isStarting = false;
   String? _startError;
 
-  Future<void> _startMigration() async {
+  Future<void> _startMigration(
+    rust_sync.OrchardMigrationPrivatePlan plan,
+  ) async {
     if (_isStarting) return;
     setState(() {
       _isStarting = true;
@@ -446,16 +475,19 @@ class _MobileMigrationPrivateReviewState
         accountUuid: accountUuid,
       );
       if (accountState.activeAccount?.isHardware ?? false) {
-        setState(() {
-          _startError =
-              'Keystone migration signing is not available on mobile yet.';
-        });
+        context.go(
+          '/migration/private/keystone/denominations/sign',
+          extra: plan.scheduledTransfers,
+        );
         return;
       }
 
       await ref
           .read(ironwoodMigrationServiceProvider)
-          .startSoftwarePrivateMigration(accountUuid: accountUuid);
+          .startSoftwarePrivateMigration(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
       if (!mounted) return;
       ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
       final startedStatus = await ref.read(
@@ -491,7 +523,10 @@ class _MobileMigrationPrivateReviewState
         ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
         : ref.watch(ironwoodMigrationPrivatePlanProvider);
     final plan = planAsync.asData?.value;
-    final canStart = plan != null && !_isStarting;
+    final keystonePlanSupported = !widget.isHardware ||
+        plan == null ||
+        _keystoneTwoRoundPlanSupported(plan);
+    final canStart = plan != null && !_isStarting && keystonePlanSupported;
 
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
@@ -515,12 +550,28 @@ class _MobileMigrationPrivateReviewState
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
+          if (!keystonePlanSupported) ...[
+            Text(
+              'This migration needs more transactions than one Keystone '
+              'signing request supports.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           _MobileMigrationPrimaryButton(
-            label: _isStarting ? 'Preparing...' : 'Continue',
+            key: const ValueKey('mobile_ironwood_authorize_start_button'),
+            label: _isStarting
+                ? 'Preparing...'
+                : widget.isHardware
+                    ? 'Continue with Keystone'
+                    : 'Continue',
             onPressed: canStart
                 ? preview != null
-                      ? () {}
-                      : _startMigration
+                    ? () {}
+                    : () => _startMigration(plan)
                 : null,
           ),
         ],
@@ -541,6 +592,15 @@ class _MobileMigrationPrivateReviewState
       ),
     );
   }
+}
+
+bool _keystoneTwoRoundPlanSupported(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) {
+  final limit = plan.signingBatchLimit;
+  if (limit <= 0) return false;
+  return plan.denominationSplitStageCount <= limit &&
+      plan.plannedBatchCount <= limit;
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {
@@ -666,8 +726,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                             ),
                             children: [
                               TextSpan(
-                                text:
-                                    'Crosses in one visible step — your '
+                                text: 'Crosses in one visible step — your '
                                     '${data.amountText} ZEC and timing are ',
                               ),
                               TextSpan(
@@ -678,8 +737,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                               ),
                               const TextSpan(text: '. '),
                               const TextSpan(
-                                text:
-                                    'Consider choosing a Private Migration '
+                                text: 'Consider choosing a Private Migration '
                                     'option.',
                                 style: TextStyle(fontWeight: FontWeight.w500),
                               ),
@@ -714,8 +772,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
       splitTotal,
     );
     final splitComplete = splitTotal > 0 && splitCompleted >= splitTotal;
-    final confirmationsReady =
-        status != null &&
+    final confirmationsReady = status != null &&
         status!.denominationConfirmationTarget > 0 &&
         status!.denominationConfirmationCount >=
             status!.denominationConfirmationTarget;
@@ -790,8 +847,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
                         ? _PreparingStatusState.complete
                         : _PreparingStatusState.waiting,
                     label: 'Waiting for confirmation ...',
-                    trailing:
-                        status != null &&
+                    trailing: status != null &&
                             status!.denominationConfirmationTarget > 0
                         ? '${math.min(status!.denominationConfirmationCount, status!.denominationConfirmationTarget)}/${status!.denominationConfirmationTarget}'
                         : null,
@@ -810,6 +866,119 @@ class _MobileMigrationPreparing extends StatelessWidget {
           const _MigrationCanLeaveMessage(),
           const SizedBox(height: AppSpacing.s),
           _MobileStatusBackHomeButton(onPressed: () => context.go('/home')),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileKeystoneMigrationReady extends StatelessWidget {
+  const _MobileKeystoneMigrationReady({
+    required this.data,
+    required this.status,
+  });
+
+  final IronwoodMigrationFlowData data;
+  final rust_sync.MigrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final batchCount = _mobilePlannedBatchCount(status);
+    final transactionLabel = batchCount == 1
+        ? '1 migration transaction'
+        : '$batchCount migration transactions';
+    return _MobileMigrationStatusScaffold(
+      key: const ValueKey('mobile_ironwood_keystone_ready'),
+      data: data,
+      child: CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              children: [
+                const SizedBox(height: AppSpacing.s),
+                const AppIcon(AppIcons.qr, size: 40),
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  'Ready for Keystone',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  'The split transactions are confirmed. Use Keystone again to '
+                  'approve the Ironwood migration transactions.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                _MobileStatusCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFF00A460),
+                              shape: BoxShape.circle,
+                            ),
+                            child: SizedBox.square(
+                              dimension: 20,
+                              child: Center(
+                                child: AppIcon(
+                                  AppIcons.check,
+                                  size: 14,
+                                  color: Color(0xFFFFFFFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          const Expanded(
+                            child: Text('Split transactions confirmed'),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: AppSpacing.lg),
+                      Text(
+                        'Keystone approval',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        '$transactionLabel ready to sign',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                AppButton(
+                  key: const ValueKey(
+                    'mobile_ironwood_keystone_batch_sign_button',
+                  ),
+                  expand: true,
+                  onPressed: () =>
+                      context.go('/migration/private/keystone/batch/sign'),
+                  child: const Text('Continue'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _MobileStatusBackHomeButton(
+                    onPressed: () => context.go('/home')),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1071,54 +1240,55 @@ class _PreparingStatusRow extends StatelessWidget {
     final colors = context.colors;
     final leading = switch (state) {
       _PreparingStatusState.complete => DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xFF00A460),
-          shape: BoxShape.circle,
-        ),
-        child: const SizedBox.square(
-          dimension: 20,
-          child: Center(
-            child: AppIcon(AppIcons.check, size: 14, color: Color(0xFFFFFFFF)),
+          decoration: const BoxDecoration(
+            color: Color(0xFF00A460),
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox.square(
+            dimension: 20,
+            child: Center(
+              child:
+                  AppIcon(AppIcons.check, size: 14, color: Color(0xFFFFFFFF)),
+            ),
           ),
         ),
-      ),
       _PreparingStatusState.waiting => AppIcon(
-        AppIcons.loader,
-        size: 20,
-        color: colors.icon.accent,
-        animated: false,
-      ),
+          AppIcons.loader,
+          size: 20,
+          color: colors.icon.accent,
+          animated: false,
+        ),
       _PreparingStatusState.pending => Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            bottom: 26,
-            child: SizedBox(
-              width: 1,
-              height: 24,
-              child: ColoredBox(color: colors.border.subtle),
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              bottom: 26,
+              child: SizedBox(
+                width: 1,
+                height: 24,
+                child: ColoredBox(color: colors.border.subtle),
+              ),
             ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.background.neutralSubtleOpacity,
-              shape: BoxShape.circle,
-            ),
-            child: SizedBox.square(
-              dimension: 20,
-              child: Center(
-                child: Text(
-                  '3',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.text.secondary,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.neutralSubtleOpacity,
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox.square(
+                dimension: 20,
+                child: Center(
+                  child: Text(
+                    '3',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
     };
     return Row(
       children: [
@@ -1455,8 +1625,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
       widget.status,
       previewPlan: widget.previewPlan,
     );
-    final targetValues =
-        widget.status?.targetValuesZatoshi ??
+    final targetValues = widget.status?.targetValuesZatoshi ??
         widget.previewPlan?.targetValuesZatoshi;
     final arrivalLabel = _mobileStatusArrivalLabel(
       widget.status,
@@ -1561,10 +1730,10 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                                         width: 30,
                                         child: Text(
                                           number,
-                                          style: AppTypography.codeMedium
-                                              .copyWith(
-                                                color: colors.text.muted,
-                                              ),
+                                          style:
+                                              AppTypography.codeMedium.copyWith(
+                                            color: colors.text.muted,
+                                          ),
                                         ),
                                       ),
                                       const _ZecBatchBadge(),
@@ -1575,18 +1744,18 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                                                   index < targetValues.length
                                               ? '${ZecAmount.fromZatoshi(targetValues[index]).balance.amountText} ZEC'
                                               : 'Amount pending',
-                                          style: AppTypography.labelLarge
-                                              .copyWith(
-                                                color: colors.text.accent,
-                                              ),
+                                          style:
+                                              AppTypography.labelLarge.copyWith(
+                                            color: colors.text.accent,
+                                          ),
                                         ),
                                       ),
                                       Text(
                                         dispatchLabel,
-                                        style: AppTypography.labelLarge
-                                            .copyWith(
-                                              color: colors.text.accent,
-                                            ),
+                                        style:
+                                            AppTypography.labelLarge.copyWith(
+                                          color: colors.text.accent,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -2147,10 +2316,15 @@ class _MobilePoolMigrationHero extends StatelessWidget {
 }
 
 class _MobileMigrationProcessCard extends StatelessWidget {
-  const _MobileMigrationProcessCard({required this.amount, required this.plan});
+  const _MobileMigrationProcessCard({
+    required this.amount,
+    required this.plan,
+    required this.isHardware,
+  });
 
   final String amount;
   final rust_sync.OrchardMigrationPrivatePlan? plan;
+  final bool isHardware;
 
   @override
   Widget build(BuildContext context) {
@@ -2164,7 +2338,7 @@ class _MobileMigrationProcessCard extends StatelessWidget {
             title: 'Split funds',
             body: plan == null
                 ? 'Vizor will calculate the split transactions and migration '
-                      'batches from your current Orchard notes.'
+                    'batches from your current Orchard notes.'
                 : migrationPlanPreparationDescription(
                     plan: plan!,
                     amountText: amount,
@@ -2174,17 +2348,18 @@ class _MobileMigrationProcessCard extends StatelessWidget {
           const _ProcessRow(
             icon: _ProcessIcon.schedule,
             title: 'Schedule',
-            body:
-                'Transactions dispatch at irregular intervals instead of all '
+            body: 'Transactions dispatch at irregular intervals instead of all '
                 'at once.',
           ),
           const Divider(height: 33),
-          const _ProcessRow(
+          _ProcessRow(
             icon: _ProcessIcon.sign,
-            title: 'Sign once',
-            body:
-                'You grant permission at the start, and Vizor executes the '
-                'remaining steps.',
+            title: isHardware ? 'Sign with Keystone twice' : 'Sign once',
+            body: isHardware
+                ? 'First approve the split transactions. After they confirm, '
+                    'return to approve the Ironwood migration transactions.'
+                : 'You grant permission at the start, and Vizor executes the '
+                    'remaining steps.',
           ),
         ],
       ),
@@ -2527,15 +2702,12 @@ class _ReviewRow extends StatelessWidget {
       children: [
         Text(
           label,
-          style:
-              (strongLabel
-                      ? AppTypography.bodyMediumStrong
-                      : AppTypography.bodyMedium)
-                  .copyWith(
-                    color: strongLabel
-                        ? colors.text.accent
-                        : colors.text.secondary,
-                  ),
+          style: (strongLabel
+                  ? AppTypography.bodyMediumStrong
+                  : AppTypography.bodyMedium)
+              .copyWith(
+            color: strongLabel ? colors.text.accent : colors.text.secondary,
+          ),
         ),
         const SizedBox(width: AppSpacing.xs),
         Expanded(

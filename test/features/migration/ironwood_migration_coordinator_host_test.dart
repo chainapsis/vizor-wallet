@@ -29,23 +29,20 @@ void main() {
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'confirmed',
-          scheduledAtMs: now
-              .subtract(const Duration(minutes: 5))
-              .millisecondsSinceEpoch,
+          scheduledAtMs:
+              now.subtract(const Duration(minutes: 5)).millisecondsSinceEpoch,
           status: 'confirmed',
         ),
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'next',
-          scheduledAtMs: now
-              .add(const Duration(seconds: 17))
-              .millisecondsSinceEpoch,
+          scheduledAtMs:
+              now.add(const Duration(seconds: 17)).millisecondsSinceEpoch,
           status: 'scheduled',
         ),
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'later',
-          scheduledAtMs: now
-              .add(const Duration(seconds: 48))
-              .millisecondsSinceEpoch,
+          scheduledAtMs:
+              now.add(const Duration(seconds: 48)).millisecondsSinceEpoch,
           status: 'scheduled',
         ),
       ],
@@ -64,9 +61,8 @@ void main() {
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'due',
-          scheduledAtMs: now
-              .subtract(const Duration(seconds: 1))
-              .millisecondsSinceEpoch,
+          scheduledAtMs:
+              now.subtract(const Duration(seconds: 1)).millisecondsSinceEpoch,
           status: 'scheduled',
         ),
       ],
@@ -93,8 +89,8 @@ void main() {
             phase: phase,
             pendingSplitStageCount:
                 phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
-                ? 1
-                : 0,
+                    ? 1
+                    : 0,
           ),
           migrationService: _migrationService(
             onContinue: (_) async {
@@ -130,8 +126,11 @@ void main() {
     expect(continueCount, 0);
   });
 
-  testWidgets('does not auto-continue a hardware account', (tester) async {
+  testWidgets('waits for a hardware signature when migration is ready', (
+    tester,
+  ) async {
     var continueCount = 0;
+    var statusReadCount = 0;
     await tester.pumpWidget(
       _app(
         status: _status(phase: kIronwoodMigrationReadyToMigratePhase),
@@ -142,12 +141,49 @@ void main() {
           },
         ),
         hardware: true,
+        onStatusRead: () => statusReadCount += 1,
       ),
     );
     await tester.pumpAndSettle();
 
     expect(continueCount, 0);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    final readsAfterRefresh = statusReadCount;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(statusReadCount, readsAfterRefresh);
   });
+
+  for (final phase in [
+    kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    kIronwoodMigrationBroadcastScheduledPhase,
+  ]) {
+    testWidgets('continues signed hardware work in $phase', (tester) async {
+      var continueCount = 0;
+      await tester.pumpWidget(
+        _app(
+          status: _status(
+            phase: phase,
+            pendingSplitStageCount:
+                phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
+                    ? 1
+                    : 0,
+          ),
+          migrationService: _migrationService(
+            onContinue: (_) async {
+              continueCount += 1;
+              return _migrationResult();
+            },
+          ),
+          hardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(continueCount, 1);
+    });
+  }
 
   testWidgets('keeps automatic continuation single-flight', (tester) async {
     final continuation = Completer<rust_sync.IronwoodMigrationResult>();
@@ -178,6 +214,7 @@ Widget _app({
   required IronwoodMigrationService migrationService,
   bool unlocked = true,
   bool hardware = false,
+  VoidCallback? onStatusRead,
 }) {
   return ProviderScope(
     overrides: [
@@ -185,11 +222,14 @@ Widget _app({
         _bootstrap(unlocked: unlocked, hardware: hardware),
       ),
       ironwoodMigrationRouteCtaProvider.overrideWith(
-        (ref) async => IronwoodHomeMigrationCtaState.resume(
-          network: 'main',
-          accountUuid: _accountUuid,
-          status: status,
-        ),
+        (ref) async {
+          onStatusRead?.call();
+          return IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: _accountUuid,
+            status: status,
+          );
+        },
       ),
       ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
@@ -230,31 +270,30 @@ AppBootstrapState _bootstrap({required bool unlocked, required bool hardware}) {
 IronwoodMigrationService _migrationService({
   required Future<rust_sync.IronwoodMigrationResult> Function(
     String accountUuid,
-  )
-  onContinue,
+  ) onContinue,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus:
-        ({required dbPath, required network, required accountUuid}) async =>
-            _status(phase: kIronwoodMigrationReadyToMigratePhase),
-    getPrivatePlan:
-        ({required dbPath, required network, required accountUuid}) async =>
-            null,
+    getStatus: (
+            {required dbPath, required network, required accountUuid}) async =>
+        _status(phase: kIronwoodMigrationReadyToMigratePhase),
+    getPrivatePlan: (
+            {required dbPath, required network, required accountUuid}) async =>
+        null,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
-    broadcastDueMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) => onContinue(accountUuid),
+    broadcastDueMigration: ({
+      required dbPath,
+      required lightwalletdUrl,
+      required network,
+      required accountUuid,
+      required password,
+      required saltBase64,
+    }) =>
+        onContinue(accountUuid),
   );
 }
 

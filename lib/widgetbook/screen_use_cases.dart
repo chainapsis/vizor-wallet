@@ -2,6 +2,7 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
@@ -889,6 +890,47 @@ Widget buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase(
   );
 }
 
+Widget buildMobileIronwoodMigrationKeystoneSplitSignUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationKeystoneSignUseCase(batch: false);
+}
+
+Widget buildMobileIronwoodMigrationKeystoneBatchSignUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationKeystoneSignUseCase(batch: true);
+}
+
+Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({
+  required bool batch,
+}) {
+  final request = rust_sync.KeystoneMigrationSigningRequest(
+    requestId: batch ? 'preview-batch-request' : 'preview-split-request',
+    messages: [
+      rust_sync.KeystoneMigrationMessage(
+        id: batch ? 'migration-1' : 'split-1',
+        redactedPczt: Uint8List.fromList([1]),
+      ),
+      rust_sync.KeystoneMigrationMessage(
+        id: batch ? 'migration-2' : 'split-2',
+        redactedPczt: Uint8List.fromList([2]),
+      ),
+    ],
+    signingBatchLimit: 50,
+  );
+  final screen = batch
+      ? MobileIronwoodMigrationKeystoneBatchSignScreen(
+          previewRequest: request,
+          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-BATCH'],
+        )
+      : MobileIronwoodMigrationKeystoneDenominationSignScreen(
+          previewRequest: request,
+          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-SPLIT'],
+        );
+  return ProviderScope(child: _MobilePreviewFrame(child: screen));
+}
+
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
   bool showBatchModal = false,
@@ -899,16 +941,18 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.options ||
     MobileIronwoodMigrationStep.privateReview ||
     MobileIronwoodMigrationStep.fastReview ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing => BigInt.from(
-      14_224_000_000,
-    ),
+    MobileIronwoodMigrationStep.passcodeWhileSyncing =>
+      BigInt.from(
+        14_224_000_000,
+      ),
     MobileIronwoodMigrationStep.preparing => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.migrating => BigInt.from(13_112_000_000),
   };
   final accountName = switch (step) {
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing => 'Account1',
+    MobileIronwoodMigrationStep.passcodeWhileSyncing =>
+      'Account1',
     _ => 'Username',
   };
   return ProviderScope(
@@ -1826,10 +1870,10 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             step: IronwoodMigrationFlowStep.howItWorks,
             previewData:
                 widget.initialStep == IronwoodMigrationFlowStep.howItWorks
-                ? widget.data
-                : _ironwoodMigrationFlowData(
-                    zatoshi: BigInt.from(14_232_000_000),
-                  ),
+                    ? widget.data
+                    : _ironwoodMigrationFlowData(
+                        zatoshi: BigInt.from(14_232_000_000),
+                      ),
             previewPrivatePlan: _previewPrivateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
           ),

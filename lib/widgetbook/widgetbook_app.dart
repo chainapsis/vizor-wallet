@@ -365,6 +365,16 @@ class WidgetbookApp extends StatelessWidget {
                       builder:
                           buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Sign split',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneSplitSignUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Sign migration',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneBatchSignUseCase,
+                    ),
                   ],
                 ),
               ],

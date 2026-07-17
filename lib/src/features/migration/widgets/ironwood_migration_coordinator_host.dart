@@ -9,8 +9,9 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../services/ironwood_migration_service.dart';
 
-/// Keeps an active software migration progressing for the lifetime of the app,
-/// independently from whichever route is currently visible.
+/// Keeps signed migration work progressing for the lifetime of the app,
+/// independently from whichever route is currently visible. Hardware runs
+/// pause only at the phase that requires the second Keystone signature.
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({
     required this.child,
@@ -131,15 +132,17 @@ class _IronwoodMigrationCoordinatorHostState
       final status = cta.status;
       if (accountUuid == null || status == null) return;
 
+      _lastAdvanceKey = _advanceKey(status);
+      _lastAdvanceAt = DateTime.now();
       final accountState = await ref.read(accountProvider.future);
-      if (!mounted ||
-          accountState.activeAccountUuid != accountUuid ||
-          (accountState.activeAccount?.isHardware ?? false)) {
+      if (!mounted || accountState.activeAccountUuid != accountUuid) {
+        return;
+      }
+      final isHardware = accountState.activeAccount?.isHardware ?? false;
+      if (isHardware && status.phase == kIronwoodMigrationReadyToMigratePhase) {
         return;
       }
 
-      _lastAdvanceKey = _advanceKey(status);
-      _lastAdvanceAt = DateTime.now();
       await ref
           .read(ironwoodMigrationServiceProvider)
           .continueSoftwarePrivateMigration(accountUuid: accountUuid);

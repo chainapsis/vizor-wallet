@@ -8,6 +8,10 @@ import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
 import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
+    show
+        MobileIronwoodMigrationKeystoneBatchSignScreen,
+        MobileIronwoodMigrationKeystoneDenominationSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -22,6 +26,7 @@ import '../../features/send/services/send_flow.dart'
     show KeystoneBroadcastArgs, SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
@@ -153,9 +158,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final extra = state.extra;
         final child = switch (extra) {
           KeystoneBroadcastArgs() => MobileSendStatusScreen(
-            args: extra.reviewArgs,
-            keystone: extra,
-          ),
+              args: extra.reviewArgs,
+              keystone: extra,
+            ),
           SendReviewArgs() => MobileSendStatusScreen(args: extra),
           _ => const MobileSendScreen(useRouteSteps: true),
         };
@@ -202,8 +207,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         return CupertinoPage(
           key: state.pageKey,
           child: MobilePayScreen(
-            preservePreparedComposer:
-                args is PayComposerNavigationArgs &&
+            preservePreparedComposer: args is PayComposerNavigationArgs &&
                 args.preservePreparedComposer,
           ),
         );
@@ -240,7 +244,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             ),
             autoSignZecDeposit:
                 state.uri.queryParameters[swapActivitySignQueryKey] ==
-                swapActivitySignZecDepositValue,
+                    swapActivitySignZecDepositValue,
           ),
         );
       },
@@ -249,7 +253,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/send/keystone-sign',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: MobileKeystoneSignScreen(args: state.extra! as SendReviewArgs),
+        child: MobileKeystoneSignScreen(
+          args: state.extra! as SendReviewArgs,
+        ),
       ),
     ),
     GoRoute(
@@ -261,8 +267,10 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/receive',
-      pageBuilder: (context, state) =>
-          CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileReceiveScreen(),
+      ),
     ),
     GoRoute(
       path: '/migration',
@@ -316,6 +324,28 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         child: const MobileIronwoodMigrationPrivateStatusScreen(),
       ),
     ),
+    GoRoute(
+      path: '/migration/private/keystone/denominations/sign',
+      pageBuilder: (context, state) {
+        final approvedSchedule = switch (state.extra) {
+          List<rust_sync.MigrationScheduledTransfer> schedule => schedule,
+          _ => const <rust_sync.MigrationScheduledTransfer>[],
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationKeystoneDenominationSignScreen(
+            approvedSchedule: approvedSchedule,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/migration/private/keystone/batch/sign',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
+      ),
+    ),
     // The Immediate path is intentionally not linked from the production
     // option picker until its migration backend exists. Keeping the supplied
     // review UI routable lets deterministic previews validate the design.
@@ -330,8 +360,10 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/about',
-      pageBuilder: (context, state) =>
-          CupertinoPage(key: state.pageKey, child: const MobileAboutScreen()),
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileAboutScreen(),
+      ),
     ),
   ];
 }
@@ -389,12 +421,11 @@ class _MobileTabShell extends ConsumerWidget {
     final currentBranchIndex = navigationShell.currentIndex;
     final currentTab =
         currentBranchIndex >= 0 && currentBranchIndex < tabs.length
-        ? tabs[currentBranchIndex]
-        : tabs.first;
+            ? tabs[currentBranchIndex]
+            : tabs.first;
     final currentVisibleIndex = visibleTabs.indexOf(currentTab);
-    final tabBarCurrentIndex = currentVisibleIndex < 0
-        ? 0
-        : currentVisibleIndex;
+    final tabBarCurrentIndex =
+        currentVisibleIndex < 0 ? 0 : currentVisibleIndex;
 
     return AppMobileShell(
       body: navigationShell,
