@@ -36,6 +36,8 @@ pub(crate) use stages::{
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const ZIP318_DUST_FLOOR_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
 pub(crate) const ZIP318_DENOM_CAP_ZATOSHI: u64 = 100 * ZATOSHIS_PER_ZEC;
+pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
+pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
@@ -159,6 +161,100 @@ fn largest_zip318_power_of_ten_denomination_at_or_below(value_zatoshi: u64) -> O
     best
 }
 
+pub(crate) fn zip318_anchor_boundary_at_or_before(height: u32) -> Option<u32> {
+    let boundary = height - (height % ZIP318_ANCHOR_BUCKET_MODULUS);
+    (boundary > 0).then_some(boundary)
+}
+
+fn zip318_anchor_boundary_age(latest_boundary: u32, anchor_boundary: u32) -> Option<u32> {
+    if anchor_boundary >= latest_boundary {
+        return None;
+    }
+    let delta = latest_boundary.checked_sub(anchor_boundary)?;
+    if delta % ZIP318_ANCHOR_BUCKET_MODULUS != 0 {
+        return None;
+    }
+    let age = delta / ZIP318_ANCHOR_BUCKET_MODULUS;
+    (1..=ZIP318_ANCHOR_AGE_CAP).contains(&age).then_some(age)
+}
+
+pub(crate) fn zip318_anchor_candidate_boundaries(
+    observed_anchor_height: u32,
+    note_mined_height: u32,
+    nu6_3_activation_height: u32,
+) -> Vec<u32> {
+    let Some(latest_boundary) = zip318_anchor_boundary_at_or_before(observed_anchor_height) else {
+        return Vec::new();
+    };
+    let lower_bound = note_mined_height.max(nu6_3_activation_height.saturating_add(1));
+    let mut candidates = Vec::new();
+    for age in 1..=ZIP318_ANCHOR_AGE_CAP {
+        let Some(distance) = age.checked_mul(ZIP318_ANCHOR_BUCKET_MODULUS) else {
+            break;
+        };
+        let Some(boundary) = latest_boundary.checked_sub(distance) else {
+            break;
+        };
+        if boundary < lower_bound {
+            break;
+        }
+        candidates.push(boundary);
+    }
+    candidates
+}
+
+pub(crate) fn zip318_anchor_boundary_is_candidate(
+    anchor_boundary: u32,
+    observed_anchor_height: u32,
+    note_mined_height: u32,
+    nu6_3_activation_height: u32,
+) -> bool {
+    if anchor_boundary == 0 || anchor_boundary % ZIP318_ANCHOR_BUCKET_MODULUS != 0 {
+        return false;
+    }
+    if anchor_boundary < note_mined_height || anchor_boundary <= nu6_3_activation_height {
+        return false;
+    }
+    let Some(latest_boundary) = zip318_anchor_boundary_at_or_before(observed_anchor_height) else {
+        return false;
+    };
+    zip318_anchor_boundary_age(latest_boundary, anchor_boundary).is_some()
+}
+
+pub(crate) fn zip318_draw_anchor_boundary_for_note(
+    observed_anchor_height: u32,
+    note_mined_height: u32,
+    nu6_3_activation_height: u32,
+) -> Option<u32> {
+    let latest_boundary = zip318_anchor_boundary_at_or_before(observed_anchor_height)?;
+    let candidates = zip318_anchor_candidate_boundaries(
+        observed_anchor_height,
+        note_mined_height,
+        nu6_3_activation_height,
+    );
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let mut weighted = Vec::with_capacity(candidates.len());
+    let mut total_weight = 0u32;
+    for boundary in candidates {
+        let age = zip318_anchor_boundary_age(latest_boundary, boundary)?;
+        let weight = 1u32 << (ZIP318_ANCHOR_AGE_CAP - age);
+        total_weight = total_weight.checked_add(weight)?;
+        weighted.push((boundary, weight));
+    }
+
+    let mut draw = OsRng.gen_range(0..total_weight);
+    for (boundary, weight) in weighted {
+        if draw < weight {
+            return Some(boundary);
+        }
+        draw -= weight;
+    }
+    None
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PreparedOrchardNoteRef {
     pub txid_hex: String,
@@ -179,6 +275,7 @@ pub(crate) struct PendingMigrationTxInsert {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
     pub target_height: u32,
+    pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -196,6 +293,7 @@ pub(crate) struct SignedMigrationPcztInsert {
     /// re-proofed base at finalization time.
     pub sigs: Vec<pczt::roles::signer::SpendAuthSignature>,
     pub target_height: u32,
+    pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -209,6 +307,7 @@ pub(crate) struct SignedMigrationPczt {
     /// [`SignedMigrationPcztInsert::sigs`]).
     pub sigs: Vec<pczt::roles::signer::SpendAuthSignature>,
     pub target_height: u32,
+    pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -627,10 +726,10 @@ fn insert_pending_txs_with_tx(
                 &format!(
                     "INSERT INTO {PENDING_TXS_TABLE}
                  (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
-                  value_zatoshi, fee_zatoshi, selected_note_txid,
+                  anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
                   status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'scheduled', ?12)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'scheduled', ?13)"
                 ),
                 params![
                     run_id,
@@ -638,6 +737,7 @@ fn insert_pending_txs_with_tx(
                     encrypted_raw_tx,
                     pending.target_height,
                     pending.expiry_height,
+                    pending.anchor_boundary_height,
                     pending.value_zatoshi,
                     pending.fee_zatoshi,
                     pending.selected_note.txid_hex,
@@ -701,9 +801,9 @@ fn insert_signed_child_pczts_with_tx(
                 "INSERT OR REPLACE INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
                   encrypted_compact_sigs, target_height, expiry_height,
-                  value_zatoshi, fee_zatoshi, selected_note_json,
+                  anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_json,
                   metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
             ),
             params![
                 run_id,
@@ -713,6 +813,7 @@ fn insert_signed_child_pczts_with_tx(
                 encrypted_compact_sigs,
                 child.target_height,
                 child.expiry_height,
+                child.anchor_boundary_height,
                 child.value_zatoshi,
                 child.fee_zatoshi,
                 selected_note_json,
@@ -736,7 +837,8 @@ pub(crate) fn signed_child_pczts_for_run(
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT encrypted_base_pczt, encrypted_compact_sigs,
-                    target_height, expiry_height, value_zatoshi, fee_zatoshi,
+                    target_height, expiry_height, anchor_boundary_height,
+                    value_zatoshi, fee_zatoshi,
                     selected_note_json, metadata_json
              FROM {SIGNED_CHILD_PCZTS_TABLE}
              WHERE run_id = ?1
@@ -750,10 +852,11 @@ pub(crate) fn signed_child_pczts_for_run(
                 row.get::<_, String>(1)?,
                 row.get::<_, u32>(2)?,
                 row.get::<_, u32>(3)?,
-                row.get::<_, u64>(4)?,
+                row.get::<_, Option<u32>>(4)?,
                 row.get::<_, u64>(5)?,
-                row.get::<_, String>(6)?,
+                row.get::<_, u64>(6)?,
                 row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
             ))
         })
         .map_err(|e| format!("Query signed migration PCZTs: {e}"))?;
@@ -765,6 +868,7 @@ pub(crate) fn signed_child_pczts_for_run(
             encrypted_compact_sigs,
             target_height,
             expiry_height,
+            anchor_boundary_height,
             value_zatoshi,
             fee_zatoshi,
             selected_note_json,
@@ -790,6 +894,7 @@ pub(crate) fn signed_child_pczts_for_run(
             base_pczt: base_pczt.to_vec(),
             sigs,
             target_height,
+            anchor_boundary_height,
             expiry_height,
             value_zatoshi,
             fee_zatoshi,
@@ -2144,6 +2249,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             txid_hex TEXT PRIMARY KEY,
             encrypted_raw_tx TEXT NOT NULL,
             target_height INTEGER NOT NULL,
+            anchor_boundary_height INTEGER,
             expiry_height INTEGER NOT NULL,
             value_zatoshi INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
@@ -2164,6 +2270,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             encrypted_base_pczt TEXT NOT NULL,
             encrypted_compact_sigs TEXT NOT NULL,
             target_height INTEGER NOT NULL,
+            anchor_boundary_height INTEGER,
             expiry_height INTEGER NOT NULL,
             value_zatoshi INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
@@ -2177,7 +2284,30 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "
     ))
     .map_err(|e| format!("Initialize migration schema: {e}"))?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "anchor_boundary_height", "INTEGER")?;
+    add_column_if_missing(
+        conn,
+        SIGNED_CHILD_PCZTS_TABLE,
+        "anchor_boundary_height",
+        "INTEGER",
+    )?;
     stages::ensure_schema(conn)
+}
+
+fn add_column_if_missing(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), String> {
+    if !table_column_exists(conn, table, column)? {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )
+        .map_err(|e| format!("Add migration column {table}.{column}: {e}"))?;
+    }
+    Ok(())
 }
 
 fn table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, String> {
@@ -2411,6 +2541,43 @@ mod tests {
         assert!(!is_zip318_canonical_denomination(
             ZIP318_DENOM_CAP_ZATOSHI + ZATOSHIS_PER_ZEC
         ));
+    }
+
+    #[test]
+    fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
+        assert_eq!(zip318_anchor_boundary_at_or_before(143), None);
+        assert_eq!(zip318_anchor_boundary_at_or_before(144), Some(144));
+        assert_eq!(zip318_anchor_boundary_at_or_before(5700), Some(5616));
+
+        assert_eq!(
+            zip318_anchor_candidate_boundaries(5700, 5000, 5000),
+            vec![5472, 5328, 5184, 5040]
+        );
+        assert_eq!(
+            zip318_anchor_candidate_boundaries(5700, 5600, 5000),
+            Vec::<u32>::new()
+        );
+        assert_eq!(
+            zip318_anchor_candidate_boundaries(5900, 5600, 5000),
+            vec![5616]
+        );
+
+        assert!(zip318_anchor_boundary_is_candidate(5472, 5700, 5000, 5000));
+        assert!(!zip318_anchor_boundary_is_candidate(5616, 5700, 5000, 5000));
+        assert!(!zip318_anchor_boundary_is_candidate(4896, 5700, 1, 5000));
+        assert!(!zip318_anchor_boundary_is_candidate(5500, 5700, 1, 5000));
+    }
+
+    #[test]
+    fn anchor_bucket_draw_stays_within_candidate_set() {
+        let candidates = zip318_anchor_candidate_boundaries(5700, 5000, 5000);
+        assert!(!candidates.is_empty());
+
+        for _ in 0..32 {
+            let boundary = zip318_draw_anchor_boundary_for_note(5700, 5000, 5000).unwrap();
+            assert!(candidates.contains(&boundary));
+        }
+        assert_eq!(zip318_draw_anchor_boundary_for_note(5700, 5600, 5000), None);
     }
 
     #[test]
