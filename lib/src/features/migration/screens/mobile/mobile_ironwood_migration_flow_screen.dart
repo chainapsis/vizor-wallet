@@ -1097,7 +1097,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                                     alignment: Alignment.centerLeft,
                                     child: Text(
                                       'Current batch',
-                                      style: AppTypography.labelMedium.copyWith(
+                                      style: AppTypography.labelLarge.copyWith(
                                         color: context.colors.text.accent,
                                       ),
                                     ),
@@ -1118,6 +1118,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                           child: _StatusTextRow(
                             label: timingLabel,
                             value: arrivalLabel,
+                            largeValue: true,
                           ),
                         ),
                       ],
@@ -1413,33 +1414,22 @@ class _MigrationProgressHero extends StatelessWidget {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _MigrationArcPainter(
-                trackColor: colors.border.subtle,
-                progressColor: const Color(0xFF00A460),
-                progress: progress,
-                rectTop: 8,
-                horizontalInset: 8,
-                rectHeight: 195,
-                trackWidth: 8,
-                progressWidth: 8,
-              ),
-            ),
-          ),
           Positioned(
-            left: -3,
-            top: 86,
-            child: Transform.rotate(
-              angle: -0.84,
-              alignment: Alignment.bottomLeft,
-              child: Text(
-                '${(progress * 100).round()}% DONE',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.text.secondary,
-                  fontSize: 12,
-                  height: 1,
-                  letterSpacing: 0,
+            left: 4,
+            right: 4,
+            top: 4,
+            height: 106,
+            child: Semantics(
+              label: '${(progress * 100).round()}% done',
+              child: CustomPaint(
+                painter: _MigrationStatusArcPainter(
+                  trackColor: colors.background.raised,
+                  progressColor: const Color(0xFF00A460),
+                  progress: progress,
+                  labelStyle: AppTypography.labelMedium.copyWith(
+                    color: colors.text.muted,
+                    height: 1,
+                  ),
                 ),
               ),
             ),
@@ -1515,6 +1505,7 @@ class _StatusTextRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.emphasizeLabel = false,
+    this.largeValue = false,
   });
 
   final String label;
@@ -1522,6 +1513,7 @@ class _StatusTextRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool emphasizeLabel;
+  final bool largeValue;
 
   @override
   Widget build(BuildContext context) {
@@ -1556,7 +1548,10 @@ class _StatusTextRow extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
+                  style: (largeValue
+                          ? AppTypography.labelLarge
+                          : AppTypography.labelMedium)
+                      .copyWith(
                     color: colors.text.accent,
                   ),
                 ),
@@ -1595,7 +1590,7 @@ class _CurrentBatchRow extends StatelessWidget {
             batch.amount,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
             ),
           ),
@@ -1604,7 +1599,7 @@ class _CurrentBatchRow extends StatelessWidget {
           batch.status,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
+          style: AppTypography.labelLarge.copyWith(
             color: colors.text.accent,
           ),
         ),
@@ -1618,13 +1613,16 @@ class _MigrationCanLeaveMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      'You can leave this screen.\nBut keep Vizor open & running.',
-      textAlign: TextAlign.center,
-      style: AppTypography.bodySmall.copyWith(
-        color: context.colors.text.secondary,
-        height: 20 / 14,
-      ),
+    final style = AppTypography.labelMedium.copyWith(
+      color: context.colors.text.secondary,
+      height: 16 / 14,
+    );
+    return Column(
+      children: [
+        Text('You can leave this screen.', style: style),
+        const SizedBox(height: AppSpacing.xs),
+        Text('But keep Vizor open & running.', style: style),
+      ],
     );
   }
 }
@@ -1640,8 +1638,8 @@ class _MobileStatusBackHomeButton extends StatelessWidget {
       height: 50,
       child: Center(
         child: AppButton(
-          height: 44,
-          minWidth: 100,
+          height: 50,
+          minWidth: 134,
           onPressed: onPressed,
           child: const Text('Back home'),
         ),
@@ -2123,44 +2121,155 @@ class _PreparingParticlesPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
+class _MigrationStatusArcPainter extends CustomPainter {
+  const _MigrationStatusArcPainter({
+    required this.trackColor,
+    required this.progressColor,
+    required this.progress,
+    required this.labelStyle,
+  });
+
+  final Color trackColor;
+  final Color progressColor;
+  final double progress;
+  final TextStyle labelStyle;
+
+  static const _sourceWidth = 352.999;
+  static const _sourceHeight = 106.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / _sourceWidth, size.height / _sourceHeight);
+
+    canvas.drawPath(
+      _trackOutline(),
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.fill,
+    );
+
+    final arc = _arcCenterline();
+    final metric = arc.computeMetrics().first;
+    final progressLength =
+        metric.length * progress.clamp(0.0, 1.0).toDouble();
+    if (progressLength > 0) {
+      canvas.drawPath(
+        metric.extractPath(0, progressLength),
+        Paint()
+          ..color = progressColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8.72
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    _paintProgressLabel(
+      canvas,
+      '${(progress * 100).round()}% DONE',
+      _labelPath(),
+    );
+    canvas.restore();
+  }
+
+  Path _trackOutline() {
+    return Path()
+      ..moveTo(2.16207, 105.415)
+      ..cubicTo(0.0848519, 104.211, -0.6307, 101.541, 0.612172, 99.4816)
+      ..cubicTo(18.5429, 69.7681, 43.6661, 45.0558, 73.6743, 27.6616)
+      ..cubicTo(104.937, 9.54017, 140.4, -0.000008, 176.5, 0)
+      ..cubicTo(212.599, 0.000008, 248.062, 9.5402, 279.325, 27.6617)
+      ..cubicTo(309.333, 45.0559, 334.456, 69.7682, 352.387, 99.4816)
+      ..cubicTo(353.63, 101.541, 352.914, 104.211, 350.837, 105.415)
+      ..cubicTo(348.76, 106.619, 346.108, 105.901, 344.863, 103.843)
+      ..cubicTo(327.696, 75.4546, 303.67, 51.8427, 274.982, 35.2139)
+      ..cubicTo(245.039, 17.8578, 211.074, 8.72055, 176.5, 8.72054)
+      ..cubicTo(141.925, 8.72053, 107.96, 17.8578, 78.0173, 35.2139)
+      ..cubicTo(49.3296, 51.8426, 25.3032, 75.4545, 8.13617, 103.843)
+      ..cubicTo(6.89139, 105.901, 4.23928, 106.619, 2.16207, 105.415)
+      ..close();
+  }
+
+  Path _arcCenterline() {
+    return Path()
+      ..moveTo(4.374, 101.662)
+      ..cubicTo(21.923, 72.612, 46.498, 48.449, 75.846, 31.438)
+      ..cubicTo(106.448, 13.699, 141.163, 4.36, 176.5, 4.36)
+      ..cubicTo(211.837, 4.36, 246.551, 13.699, 277.154, 31.438)
+      ..cubicTo(306.502, 48.449, 331.076, 72.612, 348.625, 101.662);
+  }
+
+  Path _labelPath() {
+    return Path()
+      ..moveTo(-6, 100)
+      ..cubicTo(12.9517, 67.4679, 40.2101, 40.453, 73.0355, 21.6706)
+      ..cubicTo(105.861, 2.88815, 143.097, -7, 181, -7)
+      ..cubicTo(218.903, -7, 256.139, 2.88812, 288.964, 21.6705)
+      ..cubicTo(321.79, 40.4529, 349.048, 67.4678, 368, 100);
+  }
+
+  void _paintProgressLabel(Canvas canvas, String label, Path path) {
+    final metric = path.computeMetrics().first;
+    var offset = 2.0;
+    for (final character in label.split('')) {
+      final painter = TextPainter(
+        text: TextSpan(text: character, style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final advance = character == ' ' ? 4.0 : painter.width;
+      final characterCenter = offset + advance / 2;
+      final tangent = metric.getTangentForOffset(characterCenter);
+      if (tangent == null) break;
+
+      if (character != ' ') {
+        canvas.save();
+        canvas.translate(tangent.position.dx, tangent.position.dy);
+        canvas.rotate(math.atan2(tangent.vector.dy, tangent.vector.dx));
+        painter.paint(canvas, Offset(-painter.width / 2, -painter.height + 1));
+        canvas.restore();
+      }
+      offset += advance;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationStatusArcPainter oldDelegate) =>
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.progressColor != progressColor ||
+      oldDelegate.progress != progress ||
+      oldDelegate.labelStyle != labelStyle;
+}
+
 class _MigrationArcPainter extends CustomPainter {
   const _MigrationArcPainter({
     required this.trackColor,
     required this.progressColor,
     required this.progress,
     required this.rectTop,
-    this.horizontalInset = 10,
-    this.rectHeight = 250,
-    this.trackWidth = 4,
-    this.progressWidth = 6,
   });
 
   final Color trackColor;
   final Color progressColor;
   final double progress;
   final double rectTop;
-  final double horizontalInset;
-  final double rectHeight;
-  final double trackWidth;
-  final double progressWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(
-      horizontalInset,
+      10,
       rectTop,
-      size.width - horizontalInset * 2,
-      rectHeight,
+      size.width - 20,
+      250,
     );
     final trackPaint = Paint()
       ..color = trackColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = trackWidth
+      ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
     final progressPaint = Paint()
       ..color = progressColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = progressWidth
+      ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(rect, math.pi, math.pi, false, trackPaint);
     canvas.drawArc(
@@ -2177,11 +2286,7 @@ class _MigrationArcPainter extends CustomPainter {
       oldDelegate.trackColor != trackColor ||
       oldDelegate.progressColor != progressColor ||
       oldDelegate.progress != progress ||
-      oldDelegate.rectTop != rectTop ||
-      oldDelegate.horizontalInset != horizontalInset ||
-      oldDelegate.rectHeight != rectHeight ||
-      oldDelegate.trackWidth != trackWidth ||
-      oldDelegate.progressWidth != progressWidth;
+      oldDelegate.rectTop != rectTop;
 }
 
 class _MobileMigrationStepScaffold extends StatelessWidget {

@@ -458,7 +458,7 @@ void main() {
     );
     expect(remainingAmount.textSpan?.toPlainText(), '142.24 ZEC');
     expect(find.text('Left to transfer'), findsOneWidget);
-    expect(find.text('10% DONE'), findsOneWidget);
+    expect(find.bySemanticsLabel('10% done'), findsOneWidget);
     expect(find.text('12 planned batches'), findsOneWidget);
     expect(find.text('Current batch'), findsOneWidget);
     expect(find.text('Not started'), findsOneWidget);
@@ -466,9 +466,9 @@ void main() {
     expect(find.text('Estimated arrival time'), findsOneWidget);
     expect(find.text('Up to 2 days'), findsOneWidget);
     expect(find.text('Wallet 1').hitTestable(), findsOneWidget);
+    expect(find.text('You can leave this screen.').hitTestable(), findsOneWidget);
     expect(
-      find.text('You can leave this screen.\nBut keep Vizor open & running.')
-          .hitTestable(),
+      find.text('But keep Vizor open & running.').hitTestable(),
       findsOneWidget,
     );
     expect(find.text('Back home').hitTestable(), findsOneWidget);
@@ -770,7 +770,7 @@ void main() {
 
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('3 planned batches'), findsOneWidget);
-    expect(find.text('33% DONE'), findsOneWidget);
+    expect(find.bySemanticsLabel('33% done'), findsOneWidget);
     final remainingAmount = tester.widget<Text>(
       find.byKey(const ValueKey('mobile_ironwood_remaining_amount')),
     );
