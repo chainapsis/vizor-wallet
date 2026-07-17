@@ -495,6 +495,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
 
     ref.onDispose(() {
+      ++_syncGen;
+      ++_progressEventVersion;
+      ++_balanceReadVersion;
+      _isSyncing = false;
       _syncStartDeferred = false;
       _deferredSyncLatestTipHeight = null;
       rust_sync.cancelFullSync();
@@ -787,7 +791,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           );
           _syncSub = stream.listen(
             (event) {
-              if (gen != _syncGen) return;
+              if (!ref.mounted || gen != _syncGen) return;
               final progress = SyncProgressEvent(
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
@@ -811,7 +815,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               );
             },
             onDone: () async {
-              if (gen != _syncGen) {
+              if (!ref.mounted || gen != _syncGen) {
                 log('Sync: ignoring stale stream end');
                 return;
               }
@@ -848,7 +852,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               }
             },
             onError: (e) {
-              if (gen != _syncGen) return;
+              if (!ref.mounted || gen != _syncGen) return;
               log('Sync: stream error: $e');
               _isSyncing = false;
               _stopDisplayProgressTimer();
@@ -1513,6 +1517,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     _displayProgressTimer = Timer.periodic(_displayBlockDuration, (timer) {
+      if (!ref.mounted) {
+        timer.cancel();
+        return;
+      }
       final current = state.value;
       if (current == null ||
           _bgDelegate.isActive ||
@@ -1540,7 +1548,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Progress Handling ========================
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
-    if (_requiresUnlock) {
+    if (!ref.mounted || _requiresUnlock) {
       return;
     }
     final progressEventVersion = ++_progressEventVersion;
@@ -1554,6 +1562,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     final prev = state.value;
     final dbPath = await _getDbPath();
+    if (!ref.mounted) return;
     final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
     if (accountUuid == null) {
@@ -1612,6 +1621,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
       }
+      if (!ref.mounted) return;
       try {
         recentTxs = await rust_sync.getTransactionHistory(
           dbPath: dbPath,
@@ -1623,6 +1633,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
       }
+      if (!ref.mounted) return;
       final shieldStatus = await _getShieldTransparentStatus(
         dbPath: dbPath,
         network: network,
@@ -1637,7 +1648,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
-    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+    if (!ref.mounted || epoch != _sensitiveStateEpoch || _requiresUnlock) {
       log(
         'SyncNotifier: discarding sync progress update after lock transition',
       );
@@ -2244,6 +2255,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _cachedDbPath = await _walletDbPathResolver();
     return _cachedDbPath!;
   }
+
+  @visibleForTesting
+  Future<void> handleSyncProgressForTesting(SyncProgressEvent event) =>
+      _onSyncProgress(event);
 
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;

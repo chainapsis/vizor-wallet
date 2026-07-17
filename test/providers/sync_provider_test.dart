@@ -1,5 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/services/background_sync_delegate.dart';
 
 void main() {
   test(
@@ -21,4 +26,50 @@ void main() {
       expect(resolveCount, 2);
     },
   );
+
+  test('in-flight progress exits quietly after notifier disposal', () async {
+    final resolverStarted = Completer<void>();
+    final dbPath = Completer<String>();
+    late _LifecycleTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(
+          () => notifier = _LifecycleTestSyncNotifier(() async {
+            resolverStarted.complete();
+            return dbPath.future;
+          }),
+        ),
+      ],
+    );
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    final handling = notifier.handleSyncProgressForTesting(
+      const SyncProgressEvent(
+        scannedHeight: 10,
+        chainTipHeight: 20,
+        percentage: 0.5,
+        displayTargetPercentage: 0.5,
+        displayTargetBlocks: 0,
+        isSyncing: true,
+        isComplete: false,
+        hasNewTx: false,
+      ),
+    );
+    await resolverStarted.future;
+
+    container.dispose();
+    dbPath.complete('wallet.db');
+
+    await expectLater(handling, completes);
+  });
+}
+
+class _LifecycleTestSyncNotifier extends SyncNotifier {
+  _LifecycleTestSyncNotifier(Future<String> Function() walletDbPathResolver)
+    : super(walletDbPathResolver: walletDbPathResolver);
+
+  @override
+  Future<SyncState> build() async => SyncState();
 }
