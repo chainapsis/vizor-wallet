@@ -34,6 +34,10 @@ pub(crate) use stages::{
 };
 
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
+// Testnet faucets provide much smaller balances than production wallets. Keep
+// migration batching exercisable there without changing mainnet or regtest.
+const TESTNET_DENOMINATION_UNIT_ZATOSHI: u64 = 100_000;
+const TESTNET_MAX_DENOMINATION_UNITS: u64 = 100;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
@@ -73,12 +77,57 @@ pub(crate) struct DenominationPlan {
     pub total_migratable_zatoshi: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct DenominationConfig {
+    unit_zatoshi: u64,
+    max_units: Option<u64>,
+}
+
+impl DenominationConfig {
+    const STANDARD: Self = Self {
+        unit_zatoshi: ZATOSHIS_PER_ZEC,
+        max_units: None,
+    };
+
+    const TESTNET_SMALL: Self = Self {
+        unit_zatoshi: TESTNET_DENOMINATION_UNIT_ZATOSHI,
+        max_units: Some(TESTNET_MAX_DENOMINATION_UNITS),
+    };
+}
+
+pub(super) fn denomination_config(network: WalletNetwork) -> DenominationConfig {
+    match network {
+        WalletNetwork::Test => DenominationConfig::TESTNET_SMALL,
+        WalletNetwork::Main | WalletNetwork::Regtest => DenominationConfig::STANDARD,
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn plan_denominations(
     total_input_zatoshi: u64,
     split_fee_zatoshi: u64,
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
 ) -> Result<DenominationPlan, String> {
+    plan_denominations_with_config(
+        total_input_zatoshi,
+        split_fee_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        DenominationConfig::STANDARD,
+    )
+}
+
+pub(super) fn plan_denominations_with_config(
+    total_input_zatoshi: u64,
+    split_fee_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+    config: DenominationConfig,
+) -> Result<DenominationPlan, String> {
+    if config.unit_zatoshi == 0 {
+        return Err("Denomination unit must be positive".to_string());
+    }
     if total_input_zatoshi <= split_fee_zatoshi {
         return Ok(DenominationPlan {
             migration_outputs: Vec::new(),
@@ -94,21 +143,24 @@ pub(crate) fn plan_denominations(
         .checked_sub(split_fee_zatoshi)
         .ok_or("Denomination split fee underflow")?;
 
-    let whole_zec = available / ZATOSHIS_PER_ZEC;
-    let mut remainder = available % ZATOSHIS_PER_ZEC;
+    let whole_units = available / config.unit_zatoshi;
+    let mut remainder = available % config.unit_zatoshi;
     let mut outputs = Vec::new();
 
     let mut denom = 1u64;
-    while denom <= whole_zec / 10 {
+    while denom <= whole_units / 10 {
         denom = denom.checked_mul(10).ok_or("Denomination overflow")?;
     }
+    if let Some(max_units) = config.max_units {
+        denom = denom.min(max_units);
+    }
 
-    let mut remaining_whole = whole_zec;
+    let mut remaining_whole = whole_units;
     while denom > 0 {
         while remaining_whole >= denom {
             outputs.push(
                 denom
-                    .checked_mul(ZATOSHIS_PER_ZEC)
+                    .checked_mul(config.unit_zatoshi)
                     .ok_or("Denomination zatoshi overflow")?,
             );
             remaining_whole -= denom;
@@ -285,7 +337,8 @@ pub(crate) fn migration_status(
         return status_for_run(&conn, run);
     }
 
-    let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    let orchard_migratable =
+        orchard_balance_can_create_migration_output(orchard_spendable, network)?;
     let phase = if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
     } else if orchard_migratable {
@@ -377,15 +430,19 @@ pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<
     Ok(progress.total_count > 0 && progress.completed_count == progress.total_count)
 }
 
-fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
+fn orchard_balance_can_create_migration_output(
+    orchard_spendable: u64,
+    network: WalletNetwork,
+) -> Result<bool, String> {
     if orchard_spendable == 0 {
         return Ok(false);
     }
-    let plan = plan_denominations(
+    let plan = plan_denominations_with_config(
         orchard_spendable,
         0,
         MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        denomination_config(network),
     )?;
     Ok(!plan.migration_outputs.is_empty())
 }
@@ -2353,6 +2410,35 @@ mod tests {
                 99_990_000,
             ]
         );
+    }
+
+    #[test]
+    fn testnet_planner_uses_small_capped_denominations() {
+        assert_eq!(
+            denomination_config(WalletNetwork::Main),
+            DenominationConfig::STANDARD
+        );
+        assert_eq!(
+            denomination_config(WalletNetwork::Regtest),
+            DenominationConfig::STANDARD
+        );
+        assert_eq!(
+            denomination_config(WalletNetwork::Test),
+            DenominationConfig::TESTNET_SMALL
+        );
+
+        let plan = plan_denominations_with_config(
+            11_180_000,
+            80_000,
+            15_000,
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+            denomination_config(WalletNetwork::Test),
+        )
+        .unwrap();
+
+        assert_eq!(plan.migration_outputs, vec![10_000_000, 1_000_000, 100_000]);
+        assert_eq!(plan.orchard_change, None);
+        assert_eq!(plan.total_migratable_zatoshi, 11_100_000);
     }
 
     #[test]

@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use super::DenominationPlan;
+use crate::wallet::network::WalletNetwork;
+
+use super::{DenominationConfig, DenominationPlan};
 
 pub(crate) const DENOMINATION_SPLIT_ACTIONS: usize = 16;
 
@@ -61,6 +63,25 @@ pub(crate) fn plan_padded_denominations(
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
     max_stages: usize,
+    network: WalletNetwork,
+) -> Result<Option<PaddedDenominationPlan>, String> {
+    plan_padded_denominations_with_config(
+        input_values,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        max_stages,
+        super::denomination_config(network),
+    )
+}
+
+fn plan_padded_denominations_with_config(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+    max_stages: usize,
+    denomination_config: DenominationConfig,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
     if input_values.is_empty() {
         return Ok(None);
@@ -87,11 +108,12 @@ pub(crate) fn plan_padded_denominations(
                     .map_err(|_| "Denomination stage count overflow".to_string())?,
             )
             .ok_or("Denomination split fee overflow")?;
-        let denominations = super::plan_denominations(
+        let denominations = super::plan_denominations_with_config(
             total_input,
             total_fee,
             migration_fee_zatoshi,
             minimum_output_zatoshi,
+            denomination_config,
         )?;
         if denominations.migration_outputs.is_empty() {
             return Ok(None);
@@ -1094,7 +1116,15 @@ mod tests {
     #[test]
     fn padded_planning_requires_exact_fee_invariants() {
         assert_eq!(
-            plan_padded_denominations(&[1_000_000], FEE, 15_000, 2, 64).unwrap_err(),
+            plan_padded_denominations(
+                &[1_000_000],
+                FEE,
+                15_000,
+                2,
+                64,
+                WalletNetwork::Main,
+            )
+            .unwrap_err(),
             "Padded denomination stages require a 1-zatoshi minimum output to preserve the exact ZIP 317 fee"
         );
 
@@ -1102,6 +1132,68 @@ mod tests {
         assert_eq!(
             plan_exact_stage_count(&[FEE], &outputs, 1, FEE).unwrap_err(),
             "Padded denomination terminal values must be positive"
+        );
+    }
+
+    #[test]
+    fn testnet_padded_planning_uses_small_denominations() {
+        let plan =
+            plan_padded_denominations(&[11_180_000], FEE, 15_000, 1, 64, WalletNetwork::Test)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(
+            plan.denominations.migration_outputs,
+            vec![10_000_000, 1_000_000, 100_000]
+        );
+        assert_eq!(plan.stages.len(), 1);
+        assert_plan_balances(
+            &[11_180_000],
+            &terminal_outputs(&plan.denominations),
+            &plan.stages,
+        );
+    }
+
+    #[test]
+    fn testnet_point_nine_zec_balance_fits_reusable_migration_batch() {
+        let input_values = [90_000_000];
+        let plan =
+            plan_padded_denominations(&input_values, FEE, 15_000, 1, 64, WalletNetwork::Test)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(plan.stages.len(), 2);
+        assert_eq!(plan.denominations.split_fee_zatoshi, 2 * FEE);
+        assert_eq!(plan.denominations.migration_outputs.len(), 26);
+        assert_eq!(
+            plan.denominations
+                .migration_outputs
+                .iter()
+                .filter(|value| **value == 10_000_000)
+                .count(),
+            8
+        );
+        assert_eq!(
+            plan.denominations
+                .migration_outputs
+                .iter()
+                .filter(|value| **value == 1_000_000)
+                .count(),
+            9
+        );
+        assert_eq!(
+            plan.denominations
+                .migration_outputs
+                .iter()
+                .filter(|value| **value == 100_000)
+                .count(),
+            8
+        );
+        assert_eq!(plan.denominations.migration_outputs.last(), Some(&40_000));
+        assert_plan_balances(
+            &input_values,
+            &terminal_outputs(&plan.denominations),
+            &plan.stages,
         );
     }
 

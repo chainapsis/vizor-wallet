@@ -3014,6 +3014,7 @@ fn create_padded_orchard_denomination_pczts(
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
         super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
+        network,
     )?
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
 
@@ -3317,6 +3318,7 @@ pub(crate) fn get_orchard_migration_private_plan(
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
         super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
+        network,
     )?;
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
