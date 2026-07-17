@@ -828,6 +828,43 @@ void main() {
     },
   );
 
+  testWidgets('private status checks pending migration expiry on timer', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var continueCount = 0;
+    final service = _migrationServiceForContinue(
+      onContinue: ({required accountUuid}) async {
+        continueCount += 1;
+        expect(accountUuid, 'account-1');
+        return _migrationResult();
+      },
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          activeRunId: 'run-1',
+          broadcastedTxCount: 1,
+          totalCount: 1,
+        ),
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(continueCount, 0);
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+
+    expect(continueCount, 1);
+  });
+
   testWidgets(
     'private status cancels auto advance when pending split stages clear',
     (tester) async {

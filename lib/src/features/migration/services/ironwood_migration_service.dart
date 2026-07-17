@@ -30,6 +30,8 @@ typedef IronwoodMigrationPasswordGetter = String Function();
 typedef IronwoodMigrationMnemonicBytesGetter =
     Future<List<int>?> Function(String accountUuid);
 typedef IronwoodMigrationPlatformCheck = bool Function();
+typedef IronwoodMigrationHardwareAccountCheck =
+    bool Function(String accountUuid);
 typedef IronwoodMigrationSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -111,6 +113,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
+    IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
@@ -127,6 +130,7 @@ class IronwoodMigrationService {
        getMnemonicBytesForAccount =
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
        isMacOS = isMacOS ?? _defaultIsMacOS,
+       isHardwareAccount = isHardwareAccount ?? _defaultIsHardwareAccount,
        startSoftwareMigration =
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
        startMacosSoftwareMigration =
@@ -161,6 +165,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
+  final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
@@ -269,7 +274,7 @@ class IronwoodMigrationService {
       accountUuid: accountUuid,
     );
 
-    return broadcastDueMigration(
+    final broadcastResult = await broadcastDueMigration(
       dbPath: dbPath,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: network,
@@ -277,6 +282,41 @@ class IronwoodMigrationService {
       password: password,
       saltBase64: saltBase64,
     );
+    if (isHardwareAccount(accountUuid) ||
+        broadcastResult.status != 'ready_to_migrate') {
+      return broadcastResult;
+    }
+
+    if (isMacOS()) {
+      return startMacosSoftwareMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: network,
+        accountUuid: accountUuid,
+        password: password,
+        saltBase64: saltBase64,
+        approvedSchedule: const [],
+      );
+    }
+
+    final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+    if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+      throw Exception('Mnemonic not found for the migration account.');
+    }
+    try {
+      return startSoftwareMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: network,
+        accountUuid: accountUuid,
+        mnemonicBytes: mnemonicBytes,
+        password: password,
+        saltBase64: saltBase64,
+        approvedSchedule: const [],
+      );
+    } finally {
+      mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+    }
   }
 
   Future<rust_sync.KeystoneMigrationSigningRequest>
@@ -386,6 +426,13 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     getMnemonicBytesForAccount: (accountUuid) => ref
         .read(accountProvider.notifier)
         .getMnemonicBytesForAccount(accountUuid),
+    isHardwareAccount: (accountUuid) {
+      final state = ref.read(accountProvider).value;
+      for (final account in state?.accounts ?? const <AccountInfo>[]) {
+        if (account.uuid == accountUuid) return account.isHardware;
+      }
+      return false;
+    },
   );
 });
 
@@ -402,3 +449,4 @@ Future<List<int>?> _missingMnemonicBytesForAccount(String accountUuid) {
 }
 
 bool _defaultIsMacOS() => Platform.isMacOS;
+bool _defaultIsHardwareAccount(String _) => false;

@@ -287,6 +287,56 @@ impl Zip317FeeRule for ConservativeZip317FeeRule {
     }
 }
 
+fn canonical_migration_fee_zatoshi(
+    network: WalletNetwork,
+    target_height: u32,
+) -> Result<u64, String> {
+    ConservativeZip317FeeRule
+        .fee_required(
+            &network,
+            BlockHeight::from_u32(target_height),
+            std::iter::empty::<TransparentInputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
+        )
+        .map(u64::from)
+        .map_err(|e| format!("Calculate canonical migration fee: {e}"))
+}
+
+fn pending_migration_policy_rebuild_message(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<Option<String>, String> {
+    let canonical_fee = canonical_migration_fee_zatoshi(
+        network,
+        chain_tip_height
+            .checked_add(1)
+            .ok_or("Migration target height overflow")?,
+    )?;
+    let stale_fee_count =
+        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, canonical_fee)?;
+    if stale_fee_count > 0 {
+        return Ok(Some(format!(
+            "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
+        )));
+    }
+
+    let externally_spent =
+        super::migration::scheduled_inputs_spent_by_mined_transactions(db_path, run_id)?;
+    if !externally_spent.is_empty() {
+        return Ok(Some(format!(
+            "{} scheduled migration input(s) were spent outside this run. Review and approve a revised schedule for the remaining Orchard balance.",
+            externally_spent.len()
+        )));
+    }
+    Ok(None)
+}
+
 pub fn propose_send(
     db_path: &str,
     network: WalletNetwork,
@@ -748,7 +798,50 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                 return Ok(result);
             }
             StagedDenominationAdvance::Ready => {
-                drop(seed);
+                let chain_tip_height =
+                    u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                        .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+                if let Some(message) = pending_migration_policy_rebuild_message(
+                    db_path,
+                    network,
+                    &run.run_id,
+                    chain_tip_height,
+                )? {
+                    drop(seed);
+                    super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+                    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+                    let result = migration_result_from_pending_totals(
+                        totals,
+                        super::migration::PHASE_FAILED_TERMINAL,
+                        Some(message),
+                        run.target_values_zatoshi.len() as u32,
+                        run.target_values_zatoshi.iter().sum(),
+                    );
+                    drop(migration_guard);
+                    return Ok(result);
+                }
+                super::migration::mark_expired_pending_parts_for_resign(
+                    db_path,
+                    &run.run_id,
+                    chain_tip_height,
+                )?;
+                let recoveries =
+                    super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
+                if recoveries.is_empty() {
+                    drop(seed);
+                } else {
+                    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+                    rebuild_expired_software_migration_parts(
+                        db_path,
+                        network,
+                        account_uuid,
+                        &run.run_id,
+                        recoveries,
+                        &usk,
+                        pending_password.as_slice(),
+                        pending_salt_base64,
+                    )?;
+                }
                 if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
                     let finalized = finalize_presigned_migration_children(
                         db_path,
@@ -1438,12 +1531,35 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let run = super::migration::active_migration_run(db_path, account_uuid, network)?
         .ok_or("No active migration run")?;
-    let prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(message) =
+        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
+    {
+        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        return Err(message);
+    }
+    super::migration::mark_expired_pending_parts_for_resign(
+        db_path,
+        &run.run_id,
+        chain_tip_height,
+    )?;
+    let recoveries = super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
+    let all_prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
+    let prepared_notes = if recoveries.is_empty() {
+        all_prepared_notes
+    } else {
+        recoveries
+            .iter()
+            .map(|recovery| recovery.selected_note.clone())
+            .collect()
+    };
     if prepared_notes.is_empty() {
         return Err("Migration run has no prepared denomination notes".to_string());
     }
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    if pending_totals.total_count > 0 {
+    if recoveries.is_empty() && pending_totals.total_count > 0 {
         return Err("Migration transactions are already signed and scheduled".to_string());
     }
     if !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
@@ -1470,6 +1586,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 note_ref,
                 (index + 1) as u32,
                 &mut anchor_cohort_counts,
+                !recoveries.is_empty(),
             )
         }) {
             Ok(pczt) => pczt,
@@ -1489,6 +1606,16 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     .to_string(),
             );
         };
+        if let Some(recovery) = recoveries.get(index) {
+            if pczt.migrated_zatoshi != recovery.value_zatoshi {
+                return Err("Expired migration denomination changed during rebuild".to_string());
+            }
+            if pczt.fee_zatoshi != recovery.fee_zatoshi {
+                return Err(
+                    "Canonical migration fee changed while rebuilding an expired part".to_string(),
+                );
+            }
+        }
         created.push(pczt);
     }
 
@@ -1516,6 +1643,10 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
             run_id: run.run_id,
             fallback_total_count: run.target_values_zatoshi.len() as u32,
             fallback_migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+            recovery_old_txids: recoveries
+                .iter()
+                .map(|recovery| recovery.old_txid_hex.clone())
+                .collect(),
             state: KeystoneMigrationRequestState::Proofing,
             proof_error: None,
             messages: created,
@@ -1587,6 +1718,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
             run_id: stored.run_id.clone(),
             fallback_total_count: stored.fallback_total_count,
             fallback_migrated_zatoshi: stored.fallback_migrated_zatoshi,
+            recovery_old_txids: stored.recovery_old_txids.clone(),
             messages: stored.messages.clone(),
         }
     };
@@ -1603,11 +1735,22 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
         .iter()
         .map(|message| message.selected_note.clone())
         .collect::<Vec<_>>();
-    if current_prepared != request_prepared {
+    let prepared_notes_unchanged = if stored.recovery_old_txids.is_empty() {
+        current_prepared == request_prepared
+    } else {
+        request_prepared.iter().all(|requested| {
+            current_prepared
+                .iter()
+                .any(|current| same_prepared_note_without_nullifier(current, requested))
+        })
+    };
+    if !prepared_notes_unchanged {
         reset_migration_request_after_failed_completion(request_id);
         return Err("Prepared migration notes changed before completion".to_string());
     }
-    if super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count > 0 {
+    if stored.recovery_old_txids.is_empty()
+        && super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count > 0
+    {
         reset_migration_request_after_failed_completion(request_id);
         return Err("Migration transactions are already signed and scheduled".to_string());
     }
@@ -1644,13 +1787,40 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
             });
         }
 
-        super::migration::insert_pending_txs(
-            db_path,
-            &stored.run_id,
-            pending_inserts,
-            pending_password,
-            pending_salt_base64,
-        )?;
+        if stored.recovery_old_txids.is_empty() {
+            super::migration::insert_pending_txs(
+                db_path,
+                &stored.run_id,
+                pending_inserts,
+                pending_password,
+                pending_salt_base64,
+            )?;
+        } else {
+            if stored.recovery_old_txids.len() != pending_inserts.len() {
+                return Err("Expired migration recovery batch changed size".to_string());
+            }
+            let replacements = stored
+                .recovery_old_txids
+                .iter()
+                .cloned()
+                .zip(pending_inserts)
+                .map(|(old_txid_hex, replacement)| {
+                    super::migration::PendingMigrationTxReplacement {
+                        old_txid_hex,
+                        replacement,
+                    }
+                })
+                .collect();
+            super::migration::replace_resigned_pending_parts(
+                db_path,
+                &stored.run_id,
+                network,
+                replacements,
+                Vec::new(),
+                pending_password,
+                pending_salt_base64,
+            )?;
+        }
         super::migration::pending_totals_for_run(db_path, &stored.run_id)
     })();
     if completion_result.is_err() {
@@ -2110,6 +2280,7 @@ struct StoredMigrationPcztBatch {
     run_id: String,
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
+    recovery_old_txids: Vec<String>,
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     messages: Vec<CreatedMigrationPczt>,
@@ -2119,6 +2290,7 @@ struct StoredMigrationBatchCompletion {
     run_id: String,
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
+    recovery_old_txids: Vec<String>,
     messages: Vec<CreatedMigrationPczt>,
 }
 
@@ -3595,6 +3767,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
     anchor_cohort_counts: &mut BTreeMap<u32, u32>,
+    allow_replacing_local_spend: bool,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
@@ -3621,22 +3794,54 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before migrating denominations")?;
 
-    let txid = parse_txid_hex(&note_ref.txid_hex)?;
-    let selected = db
-        .get_spendable_note(
-            &txid,
-            ShieldedProtocol::Orchard,
-            note_ref.output_index,
-            target_height,
+    let orchard_selected = if allow_replacing_local_spend {
+        let available_notes =
+            select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        let Some(selected) = available_notes.iter().find(|selected| {
+            format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
+                && selected.output_index() as u32 == note_ref.output_index
+        }) else {
+            return Ok(None);
+        };
+        ReceivedNote::from_parts(
+            *selected.internal_note_id(),
+            *selected.txid(),
+            selected.output_index(),
+            *selected.note(),
+            selected.spending_key_scope(),
+            selected.note_commitment_tree_position(),
+            selected.mined_height(),
+            selected.max_shielding_input_height(),
         )
-        .map_err(|e| format!("Failed to revalidate prepared note: {e}"))?;
-    let Some(selected) = selected else {
-        return Ok(None);
+    } else {
+        let txid = parse_txid_hex(&note_ref.txid_hex)?;
+        let selected = db
+            .get_spendable_note(
+                &txid,
+                ShieldedProtocol::Orchard,
+                note_ref.output_index,
+                target_height,
+            )
+            .map_err(|e| format!("Failed to revalidate prepared note: {e}"))?;
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let orchard_note = match selected.note() {
+            Note::Orchard { note, .. } => *note,
+            Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
+        };
+        ReceivedNote::from_parts(
+            *selected.internal_note_id(),
+            *selected.txid(),
+            selected.output_index(),
+            orchard_note,
+            selected.spending_key_scope(),
+            selected.note_commitment_tree_position(),
+            selected.mined_height(),
+            selected.max_shielding_input_height(),
+        )
     };
-    let orchard_note = match selected.note() {
-        Note::Orchard { note, .. } => *note,
-        Note::Sapling(_) => return Err("Prepared note revalidated as Sapling".to_string()),
-    };
+    let orchard_note = *orchard_selected.note();
     if orchard_note.version() != orchard::note::NoteVersion::V2 {
         return Err("Prepared note revalidated as non-V2 Orchard".to_string());
     }
@@ -3651,7 +3856,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let target_height_u32: u32 = target_height.into();
     let anchor_height_u32 = u32::from(anchor_height);
     let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
-    let mined_height = selected
+    let mined_height = orchard_selected
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let Some(anchor_boundary_height) =
@@ -3669,16 +3874,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .entry(anchor_boundary_height)
         .or_default() += 1;
 
-    let orchard_selected = ReceivedNote::from_parts(
-        *selected.internal_note_id(),
-        *selected.txid(),
-        selected.output_index(),
-        orchard_note,
-        selected.spending_key_scope(),
-        selected.note_commitment_tree_position(),
-        selected.mined_height(),
-        selected.max_shielding_input_height(),
-    );
     let (orchard_anchor, orchard_inputs) = orchard_witnesses(
         &mut db,
         BlockHeight::from(anchor_boundary_height),
@@ -4799,6 +4994,111 @@ fn orchard_anchor_and_witness_for_prepared_note(
     Ok(Some((anchor_boundary_height, orchard_anchor, witness)))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn rebuild_expired_software_migration_parts(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    recoveries: Vec<super::migration::PendingMigrationPartRecovery>,
+    usk: &UnifiedSpendingKey,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<(), String> {
+    let retained_children = super::migration::signed_child_pczts_for_run(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
+    let mut replacements = Vec::with_capacity(recoveries.len());
+    let mut replacement_children = Vec::with_capacity(recoveries.len());
+
+    for (index, recovery) in recoveries.into_iter().enumerate() {
+        let created = create_orchard_to_ironwood_pczt_from_note(
+            db_path,
+            network,
+            account_uuid,
+            &recovery.selected_note,
+            (index + 1) as u32,
+            &mut anchor_cohort_counts,
+            true,
+        )?
+        .ok_or("Expired migration funding note is not spendable at a canonical anchor")?;
+        if created.migrated_zatoshi != recovery.value_zatoshi {
+            return Err("Expired migration denomination changed during rebuild".to_string());
+        }
+        if created.fee_zatoshi != recovery.fee_zatoshi {
+            return Err(
+                "Canonical migration fee changed while rebuilding an expired part".to_string(),
+            );
+        }
+
+        let signed_pczt = sign_orchard_migration_pczt_with_usk(
+            &created.base_pczt,
+            &created.orchard_spend_action_indices,
+            usk,
+        )?;
+        let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(
+            &created.base_pczt,
+            &signed_pczt,
+        )?;
+        super::pczt::preflight_orchard_spend_auth_signatures(&created.base_pczt, &sigs)?;
+        let proofed = super::pczt::add_proofs_to_pczt(&created.base_pczt, None, None)?;
+        let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+        let retained = retained_children
+            .iter()
+            .find(|child| {
+                same_prepared_note_without_nullifier(&child.selected_note, &recovery.selected_note)
+            })
+            .ok_or("Retained migration signature record is missing for expired part")?;
+        let metadata = super::migration::PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: account_uuid.to_string(),
+            selected_note: recovery.selected_note.clone(),
+        };
+
+        replacements.push(super::migration::PendingMigrationTxReplacement {
+            old_txid_hex: recovery.old_txid_hex,
+            replacement: super::migration::PendingMigrationTxInsert {
+                txid_hex: extracted.txid.to_string(),
+                raw_tx: extracted.raw_tx,
+                target_height: created.target_height,
+                anchor_boundary_height: created.anchor_boundary_height,
+                expiry_height: created.expiry_height,
+                value_zatoshi: created.migrated_zatoshi,
+                fee_zatoshi: created.fee_zatoshi,
+                selected_note: recovery.selected_note.clone(),
+                metadata: metadata.clone(),
+            },
+        });
+        replacement_children.push(super::migration::SignedMigrationPcztInsert {
+            message_id: retained.message_id.clone(),
+            child_index: retained.child_index,
+            base_pczt: created.base_pczt,
+            sigs,
+            target_height: created.target_height,
+            anchor_boundary_height: created.anchor_boundary_height,
+            expiry_height: created.expiry_height,
+            value_zatoshi: created.migrated_zatoshi,
+            fee_zatoshi: created.fee_zatoshi,
+            selected_note: recovery.selected_note,
+            metadata,
+        });
+    }
+
+    super::migration::replace_resigned_pending_parts(
+        db_path,
+        run_id,
+        network,
+        replacements,
+        replacement_children,
+        pending_password,
+        pending_salt_base64,
+    )
+}
+
 fn finalize_presigned_migration_children(
     db_path: &str,
     network: WalletNetwork,
@@ -5116,16 +5416,29 @@ async fn broadcast_due_scheduled_migration_txs(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    let expired_count =
-        super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
-    if expired_count > 0 {
-        let message = format!(
-            "{expired_count} migration transaction(s) expired before confirmation. Review and approve a fresh schedule for the remaining Orchard balance."
-        );
+    if let Some(message) =
+        pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
+    {
         super::migration::retire_run_for_rebuild(db_path, run_id, &message)?;
         return Ok(migration_result_from_pending_totals(
             totals_before,
             super::migration::PHASE_FAILED_TERMINAL,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+
+    let expired_count =
+        super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
+    if expired_count > 0 {
+        let message = format!(
+            "{expired_count} migration transaction(s) expired before confirmation. Re-sign the affected denomination(s) with fresh anchors and expiry heights."
+        );
+        super::migration::mark_expired_pending_parts_for_resign(db_path, run_id, chain_tip_height)?;
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_READY_TO_MIGRATE,
             Some(message),
             fallback_total_count,
             fallback_migrated_zatoshi,
@@ -5930,14 +6243,15 @@ mod tests {
     #[test]
     fn send_proposals_use_v6_after_nu6_3() {
         let network = WalletNetwork::Regtest;
+        crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
         let v2_only = SelectedOrchardNoteVersions {
             has_v2: true,
             has_v3: false,
         };
 
         // Pass-1 ceiling: no explicit version before activation, V6 after.
-        let before = proposed_tx_version_for_send(network, TargetHeight::from(0));
-        let after = proposed_tx_version_for_send(network, TargetHeight::from(1));
+        let before = proposed_tx_version_for_send(network, TargetHeight::from(1));
+        let after = proposed_tx_version_for_send(network, TargetHeight::from(2));
         assert_eq!(before, None);
         assert_eq!(after, Some(TxVersion::V6));
 
@@ -6343,6 +6657,7 @@ mod tests {
 
     #[test]
     fn keystone_transparent_shielding_pczt_targets_ironwood() {
+        crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_str().unwrap();
@@ -6669,6 +6984,7 @@ mod tests {
     /// output), so all of them carry the wallet `fvk` on the wire and are signable
     /// with the returned spending key.
     fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
+        crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
         let network = WalletNetwork::Regtest;
         let target_height = 120;
         let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
@@ -6731,6 +7047,7 @@ mod tests {
 
     #[test]
     fn padded_denomination_split_builds_exactly_sixteen_actions() {
+        crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
         let network = WalletNetwork::Regtest;
         let target_height = 120;
         let usk =

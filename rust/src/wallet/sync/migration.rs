@@ -386,6 +386,19 @@ pub(crate) struct PendingMigrationTxInsert {
     pub metadata: PendingMigrationTxMetadata,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingMigrationPartRecovery {
+    pub old_txid_hex: String,
+    pub value_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub selected_note: PreparedOrchardNoteRef,
+}
+
+pub(crate) struct PendingMigrationTxReplacement {
+    pub old_txid_hex: String,
+    pub replacement: PendingMigrationTxInsert,
+}
+
 pub(crate) struct SignedMigrationPcztInsert {
     pub message_id: String,
     pub child_index: u32,
@@ -405,6 +418,8 @@ pub(crate) struct SignedMigrationPcztInsert {
 }
 
 pub(crate) struct SignedMigrationPczt {
+    pub message_id: String,
+    pub child_index: u32,
     pub base_pczt: Vec<u8>,
     /// Decoded compact spend-authorization signatures for this child (see
     /// [`SignedMigrationPcztInsert::sigs`]).
@@ -1023,9 +1038,9 @@ pub(crate) fn signed_child_pczts_for_run(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT encrypted_base_pczt, encrypted_compact_sigs,
-                    target_height, expiry_height, anchor_boundary_height,
-                    value_zatoshi, fee_zatoshi,
+            "SELECT message_id, child_index, encrypted_base_pczt,
+                    encrypted_compact_sigs, target_height, expiry_height,
+                    anchor_boundary_height, value_zatoshi, fee_zatoshi,
                     selected_note_json, metadata_json
              FROM {SIGNED_CHILD_PCZTS_TABLE}
              WHERE run_id = ?1
@@ -1036,14 +1051,16 @@ pub(crate) fn signed_child_pczts_for_run(
         .query_map(params![run_id], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, u32>(2)?,
-                row.get::<_, u32>(3)?,
-                row.get::<_, Option<u32>>(4)?,
-                row.get::<_, u64>(5)?,
-                row.get::<_, u64>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, String>(8)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, u32>(4)?,
+                row.get::<_, u32>(5)?,
+                row.get::<_, Option<u32>>(6)?,
+                row.get::<_, u64>(7)?,
+                row.get::<_, u64>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, String>(10)?,
             ))
         })
         .map_err(|e| format!("Query signed migration PCZTs: {e}"))?;
@@ -1051,6 +1068,8 @@ pub(crate) fn signed_child_pczts_for_run(
     let mut signed = Vec::new();
     for row in rows {
         let (
+            message_id,
+            child_index,
             encrypted_base_pczt,
             encrypted_compact_sigs,
             target_height,
@@ -1078,6 +1097,8 @@ pub(crate) fn signed_child_pczts_for_run(
             .map_err(|e| format!("Decode signed migration PCZT metadata: {e}"))?;
 
         signed.push(SignedMigrationPczt {
+            message_id,
+            child_index,
             base_pczt: base_pczt.to_vec(),
             sigs,
             target_height,
@@ -1149,6 +1170,7 @@ pub(crate) fn pending_anchor_cohort_counts(
             "SELECT anchor_boundary_height, COUNT(*)
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND anchor_boundary_height IS NOT NULL
+               AND status != 'needs_resign'
              GROUP BY anchor_boundary_height"
         ))
         .map_err(|e| format!("Prepare migration anchor cohort query: {e}"))?;
@@ -1479,6 +1501,326 @@ pub(crate) fn expired_unconfirmed_pending_count(
         |row| row.get::<_, u32>(0),
     )
     .map_err(|e| format!("Count expired migration transactions: {e}"))
+}
+
+pub(crate) fn mark_expired_pending_parts_for_resign(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin expired migration recovery: {e}"))?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET status = 'needs_resign'
+                 WHERE run_id = ?1
+                   AND status IN ('scheduled', 'broadcasted')
+                   AND expiry_height > 0
+                   AND expiry_height <= ?2"
+            ),
+            params![run_id, chain_tip_height],
+        )
+        .map_err(|e| format!("Mark expired migration parts for re-signing: {e}"))?;
+    if updated > 0 {
+        let now = now_ms()?;
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4"
+            ),
+            params![
+                PHASE_READY_TO_MIGRATE,
+                now,
+                "Expired migration parts must be re-signed with fresh anchors and expiry heights.",
+                run_id,
+            ],
+        )
+        .map_err(|e| format!("Mark migration run ready for expiry recovery: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit expired migration recovery: {e}"))?;
+    u32::try_from(updated).map_err(|_| "Expired migration part count exceeds u32".to_string())
+}
+
+pub(crate) fn pending_parts_needing_resign(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<PendingMigrationPartRecovery>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, value_zatoshi, fee_zatoshi, metadata_json
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'needs_resign'
+             ORDER BY scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration re-sign query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u64>(1)?,
+                row.get::<_, u64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration parts needing re-sign: {e}"))?;
+    let mut recoveries = Vec::new();
+    for row in rows {
+        let (old_txid_hex, value_zatoshi, fee_zatoshi, metadata_json) =
+            row.map_err(|e| format!("Read migration part needing re-sign: {e}"))?;
+        let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
+            .map_err(|e| format!("Decode migration recovery metadata: {e}"))?;
+        recoveries.push(PendingMigrationPartRecovery {
+            old_txid_hex,
+            value_zatoshi,
+            fee_zatoshi,
+            selected_note: metadata.selected_note,
+        });
+    }
+    Ok(recoveries)
+}
+
+pub(crate) fn replace_resigned_pending_parts(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    mut replacements: Vec<PendingMigrationTxReplacement>,
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    if replacements.is_empty() {
+        return Ok(());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let schedule = planned_transfer_schedule(
+        replacements
+            .iter()
+            .map(|replacement| replacement.replacement.value_zatoshi),
+        network,
+        &mut OsRng,
+    );
+    let construction_height = replacements
+        .iter()
+        .map(|replacement| replacement.replacement.target_height.saturating_sub(1))
+        .max()
+        .ok_or("Migration recovery has no transactions")?;
+    let scheduled_start_ms = now_ms()?;
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration part replacement: {e}"))?;
+
+    let mut scheduled_replacements = Vec::with_capacity(replacements.len());
+    for schedule_entry in schedule {
+        let replacement_index = replacements
+            .iter()
+            .position(|replacement| {
+                replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+            })
+            .ok_or("Replacement migration schedule does not match its denominations")?;
+        scheduled_replacements.push((replacements.swap_remove(replacement_index), schedule_entry));
+    }
+
+    for (replacement, schedule_entry) in scheduled_replacements {
+        let original = tx
+            .query_row(
+                &format!(
+                    "SELECT value_zatoshi, selected_note_txid,
+                            selected_note_output_index
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND txid_hex = ?2
+                       AND status = 'needs_resign'"
+                ),
+                params![run_id, replacement.old_txid_hex],
+                |row| {
+                    Ok((
+                        row.get::<_, u64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u32>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read expired migration part: {e}"))?
+            .ok_or("Expired migration part disappeared before replacement")?;
+        if original.0 != replacement.replacement.value_zatoshi {
+            return Err("Expired migration denomination changed during recovery".to_string());
+        }
+        if !original
+            .1
+            .eq_ignore_ascii_case(&replacement.replacement.selected_note.txid_hex)
+            || original.2 != replacement.replacement.selected_note.output_index
+        {
+            return Err("Expired migration funding note changed during recovery".to_string());
+        }
+
+        let pending = replacement.replacement;
+        let encrypted_raw_tx = secret_payload::encrypt_payload(
+            Zeroizing::new(pending.raw_tx),
+            password,
+            salt.as_slice(),
+        )?;
+        let metadata_json = serde_json::to_string(&pending.metadata)
+            .map_err(|e| format!("Encode replacement migration metadata: {e}"))?;
+        let scheduled_at_ms = scheduled_start_ms
+            .checked_add(i64::from(schedule_entry.block_offset).saturating_mul(1000))
+            .ok_or("Replacement migration time overflow")?;
+        let scheduled_height = construction_height
+            .checked_add(schedule_entry.block_offset)
+            .ok_or("Replacement migration height overflow")?;
+
+        tx.execute(
+            &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = ?1 AND txid_hex = ?2"),
+            params![run_id, replacement.old_txid_hex],
+        )
+        .map_err(|e| format!("Delete expired migration part: {e}"))?;
+        tx.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                  anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                         ?12, ?13, 'scheduled', ?14)"
+            ),
+            params![
+                run_id,
+                pending.txid_hex,
+                encrypted_raw_tx,
+                pending.target_height,
+                pending.expiry_height,
+                pending.anchor_boundary_height,
+                pending.value_zatoshi,
+                pending.fee_zatoshi,
+                pending.selected_note.txid_hex,
+                pending.selected_note.output_index,
+                pending.selected_note.value_zatoshi,
+                scheduled_at_ms,
+                scheduled_height,
+                metadata_json,
+            ],
+        )
+        .map_err(|e| format!("Insert replacement migration part: {e}"))?;
+    }
+
+    insert_signed_child_pczts_with_tx(&tx, run_id, signed_children, password, salt_base64)?;
+    let now = now_ms()?;
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+             WHERE run_id = ?3"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+    )
+    .map_err(|e| format!("Mark recovered migration scheduled: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration part replacement: {e}"))
+}
+
+pub(crate) fn noncanonical_unconfirmed_fee_count(
+    db_path: &str,
+    run_id: &str,
+    canonical_fee_zatoshi: u64,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*)
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1
+               AND status IN ('scheduled', 'broadcasted', 'needs_resign')
+               AND fee_zatoshi != ?2"
+        ),
+        params![run_id, canonical_fee_zatoshi],
+        |row| row.get::<_, u32>(0),
+    )
+    .map_err(|e| format!("Count migration transactions with stale fees: {e}"))
+}
+
+pub(crate) fn scheduled_inputs_spent_by_mined_transactions(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<PreparedOrchardNoteRef>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    if !table_exists(&conn, "transactions")?
+        || !table_exists(&conn, "orchard_received_notes")?
+        || !table_exists(&conn, "orchard_received_note_spends")?
+    {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT selected_note_txid, selected_note_output_index,
+                    selected_note_value, metadata_json
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1
+               AND status IN ('scheduled', 'broadcasted', 'needs_resign')"
+        ))
+        .map_err(|e| format!("Prepare scheduled migration input query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query scheduled migration inputs: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read scheduled migration inputs: {e}"))?;
+    drop(stmt);
+
+    let mut spent = Vec::new();
+    for (txid_hex, output_index, value_zatoshi, metadata_json) in rows {
+        let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
+            .map_err(|e| format!("Decode scheduled migration input metadata: {e}"))?;
+        let mut mined_spend_exists = false;
+        for txid_blob in txid_blob_variants(&txid_hex)? {
+            mined_spend_exists = conn
+                .query_row(
+                    "SELECT EXISTS(
+                         SELECT 1
+                         FROM orchard_received_notes note
+                         INNER JOIN transactions source_tx
+                             ON source_tx.id_tx = note.transaction_id
+                         INNER JOIN orchard_received_note_spends spend
+                             ON spend.orchard_received_note_id = note.id
+                         INNER JOIN transactions spend_tx
+                             ON spend_tx.id_tx = spend.transaction_id
+                         WHERE source_tx.txid = ?1
+                           AND note.action_index = ?2
+                           AND note.value = ?3
+                           AND spend_tx.mined_height IS NOT NULL
+                     )",
+                    params![txid_blob, output_index, value_zatoshi],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|e| format!("Check scheduled migration input spend: {e}"))?;
+            if mined_spend_exists {
+                break;
+            }
+        }
+        if mined_spend_exists {
+            spent.push(metadata.selected_note);
+        }
+    }
+    Ok(spent)
 }
 
 pub(crate) fn retire_run_for_rebuild(
@@ -3266,12 +3608,24 @@ mod tests {
     }
 
     #[test]
-    fn expired_pending_transaction_retires_run_and_releases_note_locks() {
+    fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
         let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
         ensure_schema(&conn).unwrap();
+        let selected_note = PreparedOrchardNoteRef {
+            txid_hex: "11".repeat(32),
+            output_index: 0,
+            value_zatoshi: 110,
+            note_version: 2,
+            nullifier_hex: None,
+        };
+        let metadata = PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note: selected_note.clone(),
+        };
         conn.execute(
             &format!(
                 "INSERT INTO {RUNS_TABLE}
@@ -3289,7 +3643,7 @@ mod tests {
                   nullifier_hex, lock_state)
                  VALUES ('expired-run', ?1, 0, 110, 2, NULL, 'locked')"
             ),
-            params!["11".repeat(32)],
+            params![selected_note.txid_hex],
         )
         .unwrap();
         conn.execute(
@@ -3300,9 +3654,13 @@ mod tests {
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
                   scheduled_height, status, metadata_json)
                  VALUES ('expired-run', ?1, 'encrypted', 90, 100, 100, 10, ?2,
-                         0, 110, 1, 95, 'scheduled', '{{}}')"
+                         0, 110, 1, 95, 'scheduled', ?3)"
             ),
-            params!["22".repeat(32), "11".repeat(32)],
+            params![
+                "22".repeat(32),
+                selected_note.txid_hex,
+                serde_json::to_string(&metadata).unwrap()
+            ],
         )
         .unwrap();
         drop(conn);
@@ -3316,15 +3674,193 @@ mod tests {
             1
         );
 
-        retire_run_for_rebuild(&db_path, "expired-run", "expired").unwrap();
+        assert_eq!(
+            mark_expired_pending_parts_for_resign(&db_path, "expired-run", 100).unwrap(),
+            1
+        );
+        let recovery = pending_parts_needing_resign(&db_path, "expired-run").unwrap();
+        assert_eq!(recovery.len(), 1);
+        assert_eq!(recovery[0].value_zatoshi, 100);
+        assert_eq!(recovery[0].fee_zatoshi, 10);
+        assert_eq!(recovery[0].selected_note, selected_note);
         assert!(
             active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
                 .unwrap()
-                .is_none()
+                .is_some()
         );
-        assert!(locked_migration_note_refs(&db_path, "account-1")
+        assert_eq!(
+            locked_migration_note_refs(&db_path, "account-1")
+                .unwrap()
+                .len(),
+            1
+        );
+
+        replace_resigned_pending_parts(
+            &db_path,
+            "expired-run",
+            WalletNetwork::Regtest,
+            vec![PendingMigrationTxReplacement {
+                old_txid_hex: "22".repeat(32),
+                replacement: PendingMigrationTxInsert {
+                    txid_hex: "33".repeat(32),
+                    raw_tx: vec![1, 2, 3],
+                    target_height: 101,
+                    anchor_boundary_height: Some(90),
+                    expiry_height: 200,
+                    value_zatoshi: 100,
+                    fee_zatoshi: 10,
+                    selected_note: selected_note.clone(),
+                    metadata,
+                },
+            }],
+            Vec::new(),
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+
+        assert!(pending_parts_needing_resign(&db_path, "expired-run")
             .unwrap()
             .is_empty());
+        let totals = pending_totals_for_run(&db_path, "expired-run").unwrap();
+        assert_eq!(totals.txids, vec!["33".repeat(32)]);
+        assert_eq!(totals.value_zatoshi, 100);
+        assert_eq!(totals.fee_zatoshi, 10);
+        assert_eq!(
+            due_pending_txs(
+                &db_path,
+                "expired-run",
+                200,
+                TEST_PASSWORD,
+                TEST_SALT_BASE64,
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(
+            active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+                .unwrap()
+                .unwrap()
+                .phase,
+            PHASE_BROADCAST_SCHEDULED
+        );
+        assert_eq!(
+            locked_migration_note_refs(&db_path, "account-1")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY,
+                 txid BLOB NOT NULL,
+                 mined_height INTEGER
+             );
+             CREATE TABLE orchard_received_notes (
+                 id INTEGER PRIMARY KEY,
+                 transaction_id INTEGER NOT NULL,
+                 action_index INTEGER NOT NULL,
+                 value INTEGER NOT NULL
+             );
+             CREATE TABLE orchard_received_note_spends (
+                 orchard_received_note_id INTEGER NOT NULL,
+                 transaction_id INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+
+        let selected_txid = "31".repeat(32);
+        let selected_note = PreparedOrchardNoteRef {
+            txid_hex: selected_txid.clone(),
+            output_index: 2,
+            value_zatoshi: 115_000,
+            note_version: 2,
+            nullifier_hex: Some("41".repeat(32)),
+        };
+        let metadata = serde_json::to_string(&PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note: selected_note.clone(),
+        })
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json)
+                 VALUES ('run-1', ?1, 'encrypted', 90, 200, 100000, 15000, ?2,
+                         2, 115000, 1, 100, 'scheduled', ?3)"
+            ),
+            params!["51".repeat(32), selected_txid, metadata],
+        )
+        .unwrap();
+
+        assert_eq!(
+            noncanonical_unconfirmed_fee_count(&db_path, "run-1", 15_000).unwrap(),
+            0
+        );
+        assert_eq!(
+            noncanonical_unconfirmed_fee_count(&db_path, "run-1", 20_000).unwrap(),
+            1
+        );
+        assert!(
+            scheduled_inputs_spent_by_mined_transactions(&db_path, "run-1")
+                .unwrap()
+                .is_empty()
+        );
+
+        let source_txid = txid_blob_variants(&selected_note.txid_hex)
+            .unwrap()
+            .remove(0);
+        conn.execute(
+            "INSERT INTO transactions (id_tx, txid, mined_height) VALUES (1, ?1, 80)",
+            params![source_txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_received_notes
+             (id, transaction_id, action_index, value) VALUES (1, 1, 2, 115000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions (id_tx, txid, mined_height) VALUES (2, ?1, NULL)",
+            params![vec![0x61u8; 32]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_received_note_spends
+             (orchard_received_note_id, transaction_id) VALUES (1, 2)",
+            [],
+        )
+        .unwrap();
+        assert!(
+            scheduled_inputs_spent_by_mined_transactions(&db_path, "run-1")
+                .unwrap()
+                .is_empty()
+        );
+
+        conn.execute(
+            "UPDATE transactions SET mined_height = 99 WHERE id_tx = 2",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            scheduled_inputs_spent_by_mined_transactions(&db_path, "run-1").unwrap(),
+            vec![selected_note]
+        );
     }
 
     #[test]

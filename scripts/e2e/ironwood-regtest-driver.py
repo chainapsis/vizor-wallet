@@ -150,6 +150,32 @@ class DriverHandler(BaseHTTPRequestHandler):
                 self.respond(200, {"ok": True})
                 return
 
+            if self.path == "/node/restart":
+                run_command(
+                    self.repo_root,
+                    [
+                        "docker",
+                        "compose",
+                        "-f",
+                        "docker-compose.zcash-ironwood-regtest.yml",
+                        "up",
+                        "-d",
+                        "--force-recreate",
+                        "zcashd",
+                        "lightwalletd",
+                    ],
+                    timeout=300,
+                    env=self.ironwood_env(),
+                )
+                output = run_command(
+                    self.repo_root,
+                    ["scripts/ironwood-regtest/status.sh"],
+                    timeout=240,
+                    env=self.ironwood_env(),
+                )
+                self.respond(200, {"ok": True, "status": json.loads(output)})
+                return
+
             self.respond(404, {"error": "not found"})
         except Exception as exc:
             self.respond(500, {"error": str(exc)})

@@ -1,22 +1,39 @@
+#[cfg(test)]
+use std::cell::Cell;
+#[cfg(not(test))]
 use std::sync::atomic::{AtomicU32, Ordering};
 use zcash_protocol::consensus::{BlockHeight, Network, NetworkType, NetworkUpgrade, Parameters};
 
 // Keep ordinary regtest builds Orchard-only unless an Ironwood E2E explicitly
 // configures a controlled activation height.
 const DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = u32::MAX;
+#[cfg(not(test))]
 static REGTEST_NU6_3_ACTIVATION_HEIGHT: AtomicU32 =
     AtomicU32::new(DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT);
+
+#[cfg(test)]
+thread_local! {
+    static REGTEST_NU6_3_ACTIVATION_HEIGHT: Cell<u32> =
+        const { Cell::new(DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT) };
+}
 
 pub fn configure_regtest_nu6_3_activation_height(height: u32) -> Result<(), String> {
     if height < 2 {
         return Err("Regtest NU6.3 activation height must be at least 2".to_string());
     }
+    #[cfg(not(test))]
     REGTEST_NU6_3_ACTIVATION_HEIGHT.store(height, Ordering::SeqCst);
+    #[cfg(test)]
+    REGTEST_NU6_3_ACTIVATION_HEIGHT.set(height);
     Ok(())
 }
 
 fn regtest_nu6_3_activation_height() -> BlockHeight {
-    BlockHeight::from_u32(REGTEST_NU6_3_ACTIVATION_HEIGHT.load(Ordering::SeqCst))
+    #[cfg(not(test))]
+    let height = REGTEST_NU6_3_ACTIVATION_HEIGHT.load(Ordering::SeqCst);
+    #[cfg(test)]
+    let height = REGTEST_NU6_3_ACTIVATION_HEIGHT.get();
+    BlockHeight::from_u32(height)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

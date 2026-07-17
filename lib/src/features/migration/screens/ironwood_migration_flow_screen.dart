@@ -1687,6 +1687,7 @@ class _IronwoodMigrationPrivateStatusContentState
       _refreshMigrationState();
     } catch (e) {
       if (!mounted) return;
+      log('Migration continuation failed: $e');
       if (showErrors) {
         setState(() {
           _advanceError = _privateMigrationContinueErrorMessage(e);
@@ -2037,7 +2038,9 @@ bool _shouldAutoAdvanceStatus(rust_sync.MigrationStatus status) {
   return (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
           status.pendingSplitStageCount > 0) ||
       status.phase == kIronwoodMigrationReadyToMigratePhase ||
-      status.phase == kIronwoodMigrationBroadcastScheduledPhase;
+      status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
+      status.phase == kIronwoodMigrationBroadcastingPhase ||
+      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
 }
 
 bool _isTransferProgressStatus(rust_sync.MigrationStatus status) {

@@ -228,7 +228,7 @@ void main() {
     },
   );
 
-  test('continueSoftwarePrivateMigration reuses pending tx salt', () async {
+  test('hardware continuation reuses pending tx salt for broadcast', () async {
     final seenSalts = <String>[];
     String? seenPassword;
     final service = IronwoodMigrationService(
@@ -248,6 +248,7 @@ void main() {
         lightwalletdUrl: 'https://lwd.example:443',
       ),
       getSessionPassword: () => 'test-password',
+      isHardwareAccount: (_) => true,
       broadcastDueMigration:
           ({
             required dbPath,
@@ -269,6 +270,61 @@ void main() {
     expect(seenPassword, 'test-password');
     expect(seenSalts, hasLength(2));
     expect(seenSalts[1], seenSalts[0]);
+  });
+
+  test('software continuation re-enters the macOS signing path', () async {
+    List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
+    String? seenSalt;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => const RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://lwd.example:443',
+      ),
+      getSessionPassword: () => 'test-password',
+      isHardwareAccount: (_) => false,
+      isMacOS: () => true,
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            return Future.value(_migrationResult(status: 'ready_to_migrate'));
+          },
+      startMacosSoftwareMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+            required approvedSchedule,
+          }) {
+            seenSchedule = approvedSchedule;
+            seenSalt = saltBase64;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+
+    expect(seenSchedule, isEmpty);
+    expect(seenSalt, isNotEmpty);
   });
 
   test(
@@ -578,10 +634,12 @@ rust_sync.MigrationStatus _migrationStatus() {
   );
 }
 
-rust_sync.IronwoodMigrationResult _migrationResult() {
+rust_sync.IronwoodMigrationResult _migrationResult({
+  String status = 'broadcasted',
+}) {
   return rust_sync.IronwoodMigrationResult(
     txids: 'txid',
-    status: 'broadcasted',
+    status: status,
     broadcastedCount: 1,
     totalCount: 1,
     feeZatoshi: BigInt.from(10_000),
