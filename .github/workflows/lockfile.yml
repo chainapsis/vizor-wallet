@@ -11,3 +11,14 @@ jobs:
             echo "ERROR: Cargo.lock must be committed for reproducible builds"
             exit 1
           fi
+
+  no-inline-git-dependencies:
+    name: No inline git dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Cargo manifests
+        run: python3 .github/scripts/check_no_git_dependencies.py
