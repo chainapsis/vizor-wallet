@@ -39,6 +39,10 @@ pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOS
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const REGTEST_ANCHOR_BUCKET_MODULUS: u32 = 1;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
+/// Provisional per-wallet contribution limit for a single anchor cohort.
+/// ZIP 318 leaves this value open; four fills the current 64-part run across
+/// the 16 candidate boundaries without weakening the cap.
+pub(crate) const ZIP318_MAX_PARTS_PER_ANCHOR_COHORT: u32 = 4;
 pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
@@ -293,6 +297,22 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note(
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> Option<u32> {
+    zip318_draw_anchor_boundary_for_note_with_cohorts(
+        network,
+        observed_anchor_height,
+        note_mined_height,
+        nu6_3_activation_height,
+        &BTreeMap::new(),
+    )
+}
+
+pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts(
+    network: WalletNetwork,
+    observed_anchor_height: u32,
+    note_mined_height: u32,
+    nu6_3_activation_height: u32,
+    cohort_counts: &BTreeMap<u32, u32>,
+) -> Option<u32> {
     let latest_boundary = zip318_anchor_boundary_at_or_before(network, observed_anchor_height)?;
     let candidates = zip318_anchor_candidate_boundaries(
         network,
@@ -307,10 +327,19 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note(
     let mut weighted = Vec::with_capacity(candidates.len());
     let mut total_weight = 0u32;
     for boundary in candidates {
+        if cohort_counts.get(&boundary).copied().unwrap_or_default()
+            >= ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+        {
+            continue;
+        }
         let age = zip318_anchor_boundary_age(network, latest_boundary, boundary)?;
         let weight = 1u32 << (ZIP318_ANCHOR_AGE_CAP - age);
         total_weight = total_weight.checked_add(weight)?;
         weighted.push((boundary, weight));
+    }
+
+    if total_weight == 0 {
+        return None;
     }
 
     let mut draw = OsRng.gen_range(0..total_weight);
@@ -1107,6 +1136,29 @@ pub(crate) fn pending_migration_note_outpoints(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     pending_migration_note_outpoints_with_conn(&conn, run_id)
+}
+
+pub(crate) fn pending_anchor_cohort_counts(
+    db_path: &str,
+    run_id: &str,
+) -> Result<BTreeMap<u32, u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT anchor_boundary_height, COUNT(*)
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND anchor_boundary_height IS NOT NULL
+             GROUP BY anchor_boundary_height"
+        ))
+        .map_err(|e| format!("Prepare migration anchor cohort query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
+        })
+        .map_err(|e| format!("Query migration anchor cohorts: {e}"))?;
+    rows.collect::<Result<BTreeMap<_, _>, _>>()
+        .map_err(|e| format!("Read migration anchor cohorts: {e}"))
 }
 
 fn pending_migration_note_outpoints_with_conn(
@@ -3011,6 +3063,42 @@ mod tests {
         assert_eq!(
             zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 501, 501, 500),
             vec![501]
+        );
+    }
+
+    #[test]
+    fn anchor_bucket_draw_skips_full_wallet_cohorts() {
+        let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
+        let available = *candidates.last().unwrap();
+        let mut cohort_counts = candidates
+            .iter()
+            .map(|boundary| (*boundary, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT))
+            .collect::<BTreeMap<_, _>>();
+        cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT - 1);
+
+        for _ in 0..16 {
+            assert_eq!(
+                zip318_draw_anchor_boundary_for_note_with_cohorts(
+                    WalletNetwork::Test,
+                    5700,
+                    5000,
+                    5000,
+                    &cohort_counts,
+                ),
+                Some(available)
+            );
+        }
+
+        cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT);
+        assert_eq!(
+            zip318_draw_anchor_boundary_for_note_with_cohorts(
+                WalletNetwork::Test,
+                5700,
+                5000,
+                5000,
+                &cohort_counts,
+            ),
+            None
         );
     }
 

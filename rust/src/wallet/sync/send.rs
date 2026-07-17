@@ -1459,6 +1459,8 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     }
 
     let mut created = Vec::with_capacity(prepared_notes.len());
+    let mut anchor_cohort_counts =
+        super::migration::pending_anchor_cohort_counts(db_path, &run.run_id)?;
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let pczt = match with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
             create_orchard_to_ironwood_pczt_from_note(
@@ -1467,6 +1469,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 account_uuid,
                 note_ref,
                 (index + 1) as u32,
+                &mut anchor_cohort_counts,
             )
         }) {
             Ok(pczt) => pczt,
@@ -3591,6 +3594,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
+    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
@@ -3650,14 +3654,20 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let mined_height = selected
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
-    let Some(anchor_boundary_height) = super::migration::zip318_draw_anchor_boundary_for_note(
-        network,
-        anchor_height_u32,
-        u32::from(mined_height),
-        nu6_3_activation_height,
-    ) else {
+    let Some(anchor_boundary_height) =
+        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts(
+            network,
+            anchor_height_u32,
+            u32::from(mined_height),
+            nu6_3_activation_height,
+            anchor_cohort_counts,
+        )
+    else {
         return Ok(None);
     };
+    *anchor_cohort_counts
+        .entry(anchor_boundary_height)
+        .or_default() += 1;
 
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
@@ -4695,6 +4705,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     preferred_anchor_boundary_height: Option<u32>,
+    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
 ) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
@@ -4738,25 +4749,34 @@ fn orchard_anchor_and_witness_for_prepared_note(
     let mined_height = u32::from(mined_height);
     let anchor_boundary_height = preferred_anchor_boundary_height
         .filter(|boundary| {
-            super::migration::zip318_anchor_boundary_is_candidate(
-                network,
-                *boundary,
-                anchor_height_u32,
-                mined_height,
-                nu6_3_activation_height,
-            )
+            anchor_cohort_counts
+                .get(boundary)
+                .copied()
+                .unwrap_or_default()
+                < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+                && super::migration::zip318_anchor_boundary_is_candidate(
+                    network,
+                    *boundary,
+                    anchor_height_u32,
+                    mined_height,
+                    nu6_3_activation_height,
+                )
         })
         .or_else(|| {
-            super::migration::zip318_draw_anchor_boundary_for_note(
+            super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts(
                 network,
                 anchor_height_u32,
                 mined_height,
                 nu6_3_activation_height,
+                anchor_cohort_counts,
             )
         });
     let Some(anchor_boundary_height) = anchor_boundary_height else {
         return Ok(None);
     };
+    *anchor_cohort_counts
+        .entry(anchor_boundary_height)
+        .or_default() += 1;
 
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
@@ -4806,6 +4826,7 @@ fn finalize_presigned_migration_children(
 
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
+    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut pending_inserts = Vec::with_capacity(signed_children.len());
     for child in signed_children {
         if already_pending.contains(&(
@@ -4825,6 +4846,7 @@ fn finalize_presigned_migration_children(
                 account_uuid,
                 current_note,
                 child.anchor_boundary_height,
+                &mut anchor_cohort_counts,
             ) {
                 Ok(result) => result,
                 Err(e) if is_orchard_witness_not_ready_error(&e) => {
