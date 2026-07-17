@@ -243,6 +243,9 @@ mod pir_tests {
                         )),
                         "/root" => Ok(transport_response(
                             serde_json::to_vec(&pir_types::RootInfo {
+                                zcash_network: pir_types::ZcashNetwork::Test,
+                                nullifier_pool: pir_types::NULLIFIER_POOL.to_owned(),
+                                dataset_version: pir_types::DATASET_VERSION,
                                 root29: hex::encode([0u8; 32]),
                                 root25: hex::encode([0u8; 32]),
                                 num_ranges: 1,

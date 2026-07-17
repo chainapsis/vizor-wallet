@@ -7,10 +7,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 # Unreleased
 
 ## Changed
-- Aligned the Ironwood crate line on `voting-circuits 0.9.0-rc.2` and a pinned
-  librustzcash revision containing Ironwood historical note selection. Wallet
-  integrations resolve one shielded/PCZT stack, vote tree storage APIs use
-  `shardtree 0.7`, and the wallet crates require Rust 1.88 or newer.
+- Aligned the Ironwood crate line on `voting-circuits 0.9.0-rc.2`,
+  `pir-client 0.4.0-rc.2`, `pir-types 0.3.0-rc.2`, and a pinned librustzcash
+  revision containing Ironwood historical note selection. Wallet integrations
+  resolve one shielded/PCZT stack, vote tree storage APIs use `shardtree 0.7`,
+  and the wallet crates require Rust 1.88 or newer.
 - Updated snapshot selection and governance PCZT construction to use only
   Ironwood/V3 notes. Pre-NU6.3 Orchard/V2 voting is no longer supported on this
   branch.
