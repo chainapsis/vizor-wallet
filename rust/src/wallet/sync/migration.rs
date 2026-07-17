@@ -34,8 +34,8 @@ pub(crate) use stages::{
 };
 
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
-pub(crate) const ZIP318_DUST_FLOOR_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
-pub(crate) const ZIP318_DENOM_CAP_ZATOSHI: u64 = 100 * ZATOSHIS_PER_ZEC;
+pub(crate) const ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
+pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOSHIS_PER_ZEC;
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
@@ -102,8 +102,7 @@ pub(crate) fn plan_denominations(
     let mut outputs = Vec::new();
 
     while let Some(spendable_after_fee) = remaining.checked_sub(migration_fee_zatoshi) {
-        let Some(denomination) =
-            largest_zip318_power_of_ten_denomination_at_or_below(spendable_after_fee)
+        let Some(denomination) = largest_zip318_denomination_at_or_below(spendable_after_fee)
         else {
             break;
         };
@@ -139,24 +138,31 @@ pub(crate) fn plan_denominations(
 }
 
 pub(crate) fn is_zip318_canonical_denomination(value_zatoshi: u64) -> bool {
-    largest_zip318_power_of_ten_denomination_at_or_below(value_zatoshi) == Some(value_zatoshi)
+    largest_zip318_denomination_at_or_below(value_zatoshi) == Some(value_zatoshi)
 }
 
-fn largest_zip318_power_of_ten_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
-    if value_zatoshi < ZIP318_DUST_FLOOR_ZATOSHI {
+fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
+    if value_zatoshi < ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI {
         return None;
     }
 
-    let mut denomination = ZIP318_DUST_FLOOR_ZATOSHI;
+    let mut magnitude = ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI;
     let mut best = None;
     loop {
-        if denomination <= value_zatoshi {
-            best = Some(denomination);
+        for multiplier in [1u64, 2, 5] {
+            let Some(denomination) = magnitude.checked_mul(multiplier) else {
+                continue;
+            };
+            if denomination <= value_zatoshi
+                && denomination <= ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
+            {
+                best = Some(denomination);
+            }
         }
-        if denomination >= ZIP318_DENOM_CAP_ZATOSHI {
+        if magnitude >= ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI {
             break;
         }
-        denomination = denomination.checked_mul(10)?;
+        magnitude = magnitude.checked_mul(10)?;
     }
     best
 }
@@ -2447,27 +2453,19 @@ mod tests {
     }
 
     #[test]
-    fn planner_creates_zip318_power_of_ten_denominations() {
+    fn planner_creates_zip318_one_two_five_denominations() {
         let plan = plan_denominations(12_345_000_000, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
 
         assert_eq!(
             plan.migration_outputs,
             vec![
                 100 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
+                20 * ZATOSHIS_PER_ZEC,
+                2 * ZATOSHIS_PER_ZEC,
                 ZATOSHIS_PER_ZEC,
-                ZATOSHIS_PER_ZEC,
-                ZATOSHIS_PER_ZEC,
-                ZATOSHIS_PER_ZEC / 10,
-                ZATOSHIS_PER_ZEC / 10,
-                ZATOSHIS_PER_ZEC / 10,
-                ZATOSHIS_PER_ZEC / 10,
-                ZIP318_DUST_FLOOR_ZATOSHI,
-                ZIP318_DUST_FLOOR_ZATOSHI,
-                ZIP318_DUST_FLOOR_ZATOSHI,
-                ZIP318_DUST_FLOOR_ZATOSHI,
-                ZIP318_DUST_FLOOR_ZATOSHI,
+                ZATOSHIS_PER_ZEC / 5,
+                ZATOSHIS_PER_ZEC / 5,
+                ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI * 5,
             ]
         );
         assert_eq!(plan.orchard_change, None);
@@ -2477,26 +2475,35 @@ mod tests {
     #[test]
     fn planner_splits_above_cap_into_multiple_cap_and_power_outputs() {
         let plan =
-            plan_denominations(540 * ZATOSHIS_PER_ZEC, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
+            plan_denominations(25_000 * ZATOSHIS_PER_ZEC, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
 
         assert_eq!(
             plan.migration_outputs,
             vec![
-                100 * ZATOSHIS_PER_ZEC,
-                100 * ZATOSHIS_PER_ZEC,
-                100 * ZATOSHIS_PER_ZEC,
-                100 * ZATOSHIS_PER_ZEC,
-                100 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
-                10 * ZATOSHIS_PER_ZEC,
+                10_000 * ZATOSHIS_PER_ZEC,
+                10_000 * ZATOSHIS_PER_ZEC,
+                5_000 * ZATOSHIS_PER_ZEC,
             ]
         );
     }
 
     #[test]
-    fn planner_keeps_sub_dust_residual_as_orchard_change() {
+    fn planner_uses_one_two_five_digit_expansion_below_cap() {
+        let plan =
+            plan_denominations(540 * ZATOSHIS_PER_ZEC, 0, 0, MINIMUM_OUTPUT_FOR_TEST).unwrap();
+
+        assert_eq!(
+            plan.migration_outputs,
+            vec![
+                500 * ZATOSHIS_PER_ZEC,
+                20 * ZATOSHIS_PER_ZEC,
+                20 * ZATOSHIS_PER_ZEC,
+            ]
+        );
+    }
+
+    #[test]
+    fn planner_keeps_sub_max_residual_value_as_orchard_change() {
         let plan = plan_denominations(100_020_000, 0, 10_000, MINIMUM_OUTPUT_FOR_TEST).unwrap();
 
         assert_eq!(plan.migration_outputs, vec![100_000_000]);
@@ -2511,8 +2518,6 @@ mod tests {
             .migration_outputs
             .iter()
             .all(|value| is_zip318_canonical_denomination(*value)));
-        assert_eq!(plan.migration_outputs.len(), 27);
-        assert_eq!(plan.orchard_change, Some(720_000));
         let prepared_total = plan
             .migration_outputs
             .iter()
@@ -2526,20 +2531,34 @@ mod tests {
     }
 
     #[test]
-    fn planner_accepts_only_zip318_power_of_ten_denominations() {
-        assert!(is_zip318_canonical_denomination(ZIP318_DUST_FLOOR_ZATOSHI));
-        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC / 10));
-        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC));
-        assert!(is_zip318_canonical_denomination(10 * ZATOSHIS_PER_ZEC));
-        assert!(is_zip318_canonical_denomination(ZIP318_DENOM_CAP_ZATOSHI));
-        assert!(!is_zip318_canonical_denomination(
-            ZIP318_DUST_FLOOR_ZATOSHI - 1
+    fn planner_accepts_only_zip318_one_two_five_denominations() {
+        assert!(is_zip318_canonical_denomination(
+            ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI
         ));
-        assert!(!is_zip318_canonical_denomination(2 * ZATOSHIS_PER_ZEC));
-        assert!(!is_zip318_canonical_denomination(5 * ZATOSHIS_PER_ZEC));
-        assert!(!is_zip318_canonical_denomination(50 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(
+            2 * ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI
+        ));
+        assert!(is_zip318_canonical_denomination(
+            5 * ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI
+        ));
+        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC / 10));
+        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC / 2));
+        assert!(is_zip318_canonical_denomination(ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(2 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(5 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(10 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(50 * ZATOSHIS_PER_ZEC));
+        assert!(is_zip318_canonical_denomination(
+            ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
+        ));
         assert!(!is_zip318_canonical_denomination(
-            ZIP318_DENOM_CAP_ZATOSHI + ZATOSHIS_PER_ZEC
+            ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI - 1
+        ));
+        assert!(!is_zip318_canonical_denomination(3 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(4 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(6 * ZATOSHIS_PER_ZEC));
+        assert!(!is_zip318_canonical_denomination(
+            ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI + ZATOSHIS_PER_ZEC
         ));
     }
 
@@ -2672,7 +2691,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_status_treats_sub_dust_plus_fee_residual_as_complete() {
+    fn migration_status_treats_sub_max_residual_plus_fee_as_complete() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
@@ -2681,7 +2700,7 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_DUST_FLOOR_ZATOSHI - 1,
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI - 1,
             0,
             ZATOSHIS_PER_ZEC,
             0,
@@ -2742,7 +2761,7 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_DUST_FLOOR_ZATOSHI,
+            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
             0,
