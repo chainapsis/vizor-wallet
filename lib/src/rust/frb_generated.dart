@@ -193,6 +193,7 @@ abstract class RustLibApi extends BaseApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   });
 
   Future<IronwoodMigrationResult>
@@ -1609,6 +1610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1625,6 +1627,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1647,6 +1653,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           signedMessages,
           password,
           saltBase64,
+          approvedSchedule,
         ],
         apiImpl: this,
       ),
@@ -1666,6 +1673,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "signedMessages",
           "password",
           "saltBase64",
+          "approvedSchedule",
         ],
       );
 

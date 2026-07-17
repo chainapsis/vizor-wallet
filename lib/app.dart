@@ -87,6 +87,7 @@ import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
+import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 
@@ -753,7 +754,14 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(
     path: '/migration/private/keystone/denominations/sign',
-    builder: (_, _) => const IronwoodMigrationKeystoneDenominationSignScreen(),
+    redirect: (_, state) =>
+        state.extra is List<rust_sync.MigrationScheduledTransfer>
+        ? null
+        : '/migration/private/review',
+    builder: (_, state) => IronwoodMigrationKeystoneDenominationSignScreen(
+      approvedSchedule:
+          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+    ),
   ),
   GoRoute(
     path: '/migration/private/keystone/batch/sign',

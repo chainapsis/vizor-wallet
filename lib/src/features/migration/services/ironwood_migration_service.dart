@@ -76,6 +76,7 @@ typedef IronwoodMigrationKeystoneDenominationCompleter =
       required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
       required String password,
       required String saltBase64,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationKeystoneBatchPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
@@ -296,6 +297,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required String requestId,
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -315,6 +317,7 @@ class IronwoodMigrationService {
       signedMessages: signedMessages,
       password: password,
       saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
     );
   }
 

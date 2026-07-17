@@ -274,12 +274,18 @@ void _invalidateIronwoodMigrationStatusState(
 }
 
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
-  const IronwoodMigrationKeystoneDenominationSignScreen({super.key});
+  const IronwoodMigrationKeystoneDenominationSignScreen({
+    this.approvedSchedule = const [],
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
 
   @override
   Widget build(BuildContext context) {
-    return const _IronwoodMigrationKeystonePrivateSignScreen(
+    return _IronwoodMigrationKeystonePrivateSignScreen(
       step: _KeystonePrivateSignStep.denominations,
+      approvedSchedule: approvedSchedule,
     );
   }
 }
@@ -291,15 +297,20 @@ class IronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _IronwoodMigrationKeystonePrivateSignScreen(
       step: _KeystonePrivateSignStep.batch,
+      approvedSchedule: [],
     );
   }
 }
 
 class _IronwoodMigrationKeystonePrivateSignScreen
     extends ConsumerStatefulWidget {
-  const _IronwoodMigrationKeystonePrivateSignScreen({required this.step});
+  const _IronwoodMigrationKeystonePrivateSignScreen({
+    required this.step,
+    required this.approvedSchedule,
+  });
 
   final _KeystonePrivateSignStep step;
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
 
   @override
   ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> createState() =>
@@ -365,6 +376,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     required String accountUuid,
     required String requestId,
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) {
     return switch (this) {
       _KeystonePrivateSignStep.denominations =>
@@ -372,6 +384,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
           accountUuid: accountUuid,
           requestId: requestId,
           signedMessages: signedMessages,
+          approvedSchedule: approvedSchedule,
         ),
       _KeystonePrivateSignStep.batch =>
         service.completeKeystoneBatchPrivateMigration(
@@ -642,6 +655,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         accountUuid: accountUuid,
         requestId: request.requestId,
         signedMessages: signedMessages,
+        approvedSchedule: widget.approvedSchedule,
       );
       if (!mounted) return;
       _stopProofPolling();
@@ -2186,7 +2200,10 @@ class _IronwoodMigrationPrivateReviewContentState
         accountUuid: accountUuid,
       );
       if (accountState.activeAccount?.isHardware ?? false) {
-        context.go('/migration/private/keystone/denominations/sign');
+        context.go(
+          '/migration/private/keystone/denominations/sign',
+          extra: plan.scheduledTransfers,
+        );
         return;
       }
       softwareStartAttempted = true;

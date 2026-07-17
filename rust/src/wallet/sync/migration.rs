@@ -119,19 +119,15 @@ pub(crate) fn plan_denominations(
         .ok_or("Denomination split fee underflow")?;
     let mut outputs = Vec::new();
 
-    while let Some(spendable_after_fee) = remaining.checked_sub(migration_fee_zatoshi) {
+    while outputs.len() < MIGRATION_MAX_PREPARED_NOTES_PER_RUN {
+        let Some(spendable_after_fee) = remaining.checked_sub(migration_fee_zatoshi) else {
+            break;
+        };
         let Some(denomination) = largest_zip318_denomination_at_or_below(spendable_after_fee)
         else {
             break;
         };
         outputs.push(denomination);
-        if outputs.len() > MIGRATION_MAX_PREPARED_NOTES_PER_RUN {
-            return Err(format!(
-                "Migration plan would create {} prepared notes, above the {} note limit",
-                outputs.len(),
-                MIGRATION_MAX_PREPARED_NOTES_PER_RUN
-            ));
-        }
         remaining = remaining
             .checked_sub(denomination)
             .and_then(|value| value.checked_sub(migration_fee_zatoshi))
@@ -1409,6 +1405,61 @@ pub(crate) fn next_scheduled_height(db_path: &str, run_id: &str) -> Result<Optio
         |row| row.get::<_, Option<u32>>(0),
     )
     .map_err(|e| format!("Read next migration schedule: {e}"))
+}
+
+pub(crate) fn expired_unconfirmed_pending_count(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*)
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1
+               AND status IN ('scheduled', 'broadcasted')
+               AND expiry_height > 0
+               AND expiry_height <= ?2"
+        ),
+        params![run_id, chain_tip_height],
+        |row| row.get::<_, u32>(0),
+    )
+    .map_err(|e| format!("Count expired migration transactions: {e}"))
+}
+
+pub(crate) fn retire_run_for_rebuild(
+    db_path: &str,
+    run_id: &str,
+    message: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let now = now_ms()?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration rebuild transition: {e}"))?;
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+             WHERE run_id = ?4"
+        ),
+        params![PHASE_FAILED_TERMINAL, now, message, run_id],
+    )
+    .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+    tx.execute(
+        &format!(
+            "UPDATE {PREPARED_NOTES_TABLE}
+             SET lock_state = 'unlocked'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Release expired migration note locks: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration rebuild transition: {e}"))
 }
 
 pub(crate) fn reschedule_overdue_pending_txs(
@@ -2964,10 +3015,27 @@ mod tests {
     }
 
     #[test]
-    fn planner_rejects_more_than_max_prepared_outputs() {
-        let err = plan_denominations(1_999_999_950_000_000, 0, 10_000, 1).unwrap_err();
+    fn planner_chunks_more_than_max_prepared_outputs_into_follow_up_run() {
+        let input = 1_999_999_950_000_000;
+        let migration_fee = 10_000;
+        let plan = plan_denominations(input, 0, migration_fee, 1).unwrap();
 
-        assert!(err.contains("above the 64 note limit"));
+        assert_eq!(
+            plan.migration_outputs.len(),
+            MIGRATION_MAX_PREPARED_NOTES_PER_RUN
+        );
+        assert!(plan
+            .migration_outputs
+            .iter()
+            .all(|value| is_zip318_canonical_denomination(*value)));
+        let orchard_change = plan.orchard_change.unwrap();
+        assert!(orchard_balance_can_create_migration_output(orchard_change).unwrap());
+        assert_eq!(
+            plan.total_migratable_zatoshi
+                + migration_fee * MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u64
+                + orchard_change,
+            input
+        );
     }
 
     #[test]
@@ -3107,6 +3175,68 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(remaining.len(), 2);
         assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
+    }
+
+    #[test]
+    fn expired_pending_transaction_retires_run_and_releases_note_locks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('expired-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]')"
+            ),
+            params![db_path, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES ('expired-run', ?1, 0, 110, 2, NULL, 'locked')"
+            ),
+            params!["11".repeat(32)],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json)
+                 VALUES ('expired-run', ?1, 'encrypted', 90, 100, 100, 10, ?2,
+                         0, 110, 1, 95, 'scheduled', '{{}}')"
+            ),
+            params!["22".repeat(32), "11".repeat(32)],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(
+            expired_unconfirmed_pending_count(&db_path, "expired-run", 99).unwrap(),
+            0
+        );
+        assert_eq!(
+            expired_unconfirmed_pending_count(&db_path, "expired-run", 100).unwrap(),
+            1
+        );
+
+        retire_run_for_rebuild(&db_path, "expired-run", "expired").unwrap();
+        assert!(
+            active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+                .unwrap()
+                .is_none()
+        );
+        assert!(locked_migration_note_refs(&db_path, "account-1")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

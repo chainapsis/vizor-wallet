@@ -375,6 +375,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required List<KeystoneSignedMigrationMessage> signedMessages,
   required String password,
   required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
 }) =>
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
@@ -385,6 +386,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       signedMessages: signedMessages,
       password: password,
       saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
     );
 
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({

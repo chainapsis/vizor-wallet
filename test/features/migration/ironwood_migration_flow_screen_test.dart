@@ -387,7 +387,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(softwareStarted, isFalse);
-      expect(find.text('keystone-denomination-sign-route'), findsOneWidget);
+      expect(
+        find.text('keystone-denomination-sign-route:1:144'),
+        findsOneWidget,
+      );
     },
   );
 
@@ -510,6 +513,24 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     }
+  });
+
+  testWidgets('private status restarts planning after an invalid run retires', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(phase: kIronwoodMigrationReadyPhase),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('intro-route'), findsOneWidget);
   });
 
   testWidgets(
@@ -1342,7 +1363,14 @@ Widget _migrationOptionsHarness({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, _) => const Text('keystone-denomination-sign-route'),
+        builder: (_, state) {
+          final schedule =
+              state.extra! as List<rust_sync.MigrationScheduledTransfer>;
+          return Text(
+            'keystone-denomination-sign-route:${schedule.length}:'
+            '${schedule.first.blockOffset}',
+          );
+        },
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',

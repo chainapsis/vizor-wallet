@@ -319,6 +319,7 @@ void main() {
     () async {
       final seenSalts = <String>[];
       final seenMessages = <List<rust_sync.KeystoneSignedMigrationMessage>>[];
+      final seenSchedules = <List<rust_sync.MigrationScheduledTransfer>>[];
       String? seenRequestId;
       String? seenPassword;
       final service = IronwoodMigrationService(
@@ -348,30 +349,41 @@ void main() {
               required signedMessages,
               required password,
               required saltBase64,
+              required approvedSchedule,
             }) {
               seenRequestId = requestId;
               seenPassword = password;
               seenSalts.add(saltBase64);
               seenMessages.add(signedMessages);
+              seenSchedules.add(approvedSchedule);
               return Future.value(_migrationResult());
             },
       );
       final signedMessages = [_signedMigrationMessage()];
+      final approvedSchedule = [
+        rust_sync.MigrationScheduledTransfer(
+          valueZatoshi: BigInt.from(10_000_000),
+          blockOffset: 144,
+        ),
+      ];
 
       await service.completeKeystoneDenominationPrivateMigration(
         accountUuid: 'account-1',
         requestId: 'request-1',
         signedMessages: signedMessages,
+        approvedSchedule: approvedSchedule,
       );
       await service.completeKeystoneDenominationPrivateMigration(
         accountUuid: 'account-1',
         requestId: 'request-1',
         signedMessages: signedMessages,
+        approvedSchedule: approvedSchedule,
       );
 
       expect(seenRequestId, 'request-1');
       expect(seenPassword, 'test-password');
       expect(seenMessages, [signedMessages, signedMessages]);
+      expect(seenSchedules, [approvedSchedule, approvedSchedule]);
       expect(seenSalts, hasLength(2));
       expect(seenSalts[1], seenSalts[0]);
     },

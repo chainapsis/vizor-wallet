@@ -1007,6 +1007,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
     pending_password: &[u8],
     pending_salt_base64: &str,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
@@ -1073,6 +1074,14 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
     }
     let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
+    if let Err(e) = super::migration::validate_schedule(
+        &approved_schedule,
+        &stored.plan.migration_outputs,
+        network,
+    ) {
+        reset_denomination_request_after_failed_completion(request_id);
+        return Err(e);
+    }
 
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
@@ -1096,6 +1105,21 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             return Err(e);
         }
     };
+    if let Err(e) = super::migration::set_run_approved_schedule(
+        db_path,
+        &run_id,
+        network,
+        &approved_schedule,
+        &stored.plan.migration_outputs,
+    ) {
+        let _ = super::migration::retire_run_for_rebuild(
+            db_path,
+            &run_id,
+            "The approved Keystone migration schedule could not be saved.",
+        );
+        reset_denomination_request_after_failed_completion(request_id);
+        return Err(e);
+    }
     if let Ok(mut store) = keystone_denomination_requests().lock() {
         store.remove(request_id);
     }
@@ -5070,6 +5094,21 @@ async fn broadcast_due_scheduled_migration_txs(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    let expired_count =
+        super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
+    if expired_count > 0 {
+        let message = format!(
+            "{expired_count} migration transaction(s) expired before confirmation. Review and approve a fresh schedule for the remaining Orchard balance."
+        );
+        super::migration::retire_run_for_rebuild(db_path, run_id, &message)?;
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_FAILED_TERMINAL,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
     let due = super::migration::due_pending_txs(
         db_path,
         run_id,
@@ -5121,6 +5160,21 @@ async fn broadcast_due_scheduled_migration_txs(
                 "Migration broadcast failed for {}. Error: {e}",
                 pending.txid_hex
             );
+            if migration_broadcast_failure_requires_rebuild(&e) {
+                let rebuild_message = format!(
+                    "Migration transaction {} was rejected by the network. Review and approve a fresh schedule for the remaining Orchard balance. Error: {e}",
+                    pending.txid_hex
+                );
+                super::migration::retire_run_for_rebuild(db_path, run_id, &rebuild_message)?;
+                let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                return Ok(migration_result_from_pending_totals(
+                    totals,
+                    super::migration::PHASE_FAILED_TERMINAL,
+                    Some(rebuild_message),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ));
+            }
             super::migration::mark_run_phase(
                 db_path,
                 run_id,
@@ -5176,6 +5230,10 @@ async fn broadcast_due_scheduled_migration_txs(
         fallback_total_count,
         fallback_migrated_zatoshi,
     ))
+}
+
+fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
+    error.starts_with("Broadcast rejected:")
 }
 
 fn decrypt_and_store_migration_tx(
@@ -5835,6 +5893,16 @@ mod tests {
         assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
         assert_eq!(result.fee_zatoshi, 10_000);
         assert_eq!(result.shielded_zatoshi, 90_000);
+    }
+
+    #[test]
+    fn migration_rebuilds_only_after_explicit_server_rejection() {
+        assert!(migration_broadcast_failure_requires_rebuild(
+            "Broadcast rejected: bad-txns-inputs-spent (code 18)"
+        ));
+        assert!(!migration_broadcast_failure_requires_rebuild(
+            "SendTransaction gRPC failed: connection unavailable"
+        ));
     }
 
     #[test]
