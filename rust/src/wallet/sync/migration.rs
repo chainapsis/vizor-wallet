@@ -38,6 +38,7 @@ pub(crate) const ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100
 pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOSHIS_PER_ZEC;
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
+pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 pub(crate) const MIGRATION_BROADCAST_WINDOW_SECS: u64 = 180;
 pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
@@ -139,6 +140,19 @@ pub(crate) fn plan_denominations(
 
 pub(crate) fn is_zip318_canonical_denomination(value_zatoshi: u64) -> bool {
     largest_zip318_denomination_at_or_below(value_zatoshi) == Some(value_zatoshi)
+}
+
+pub(crate) fn zip318_canonical_migration_expiry_height(
+    construction_height: u32,
+) -> Result<u32, String> {
+    let boundary = construction_height - (construction_height % ZIP318_EXPIRY_MODULUS);
+    let window = ZIP318_EXPIRY_MODULUS
+        .checked_mul(2)
+        .ok_or_else(|| "ZIP 318 expiry window overflow".to_string())?;
+
+    boundary
+        .checked_add(window)
+        .ok_or_else(|| "ZIP 318 canonical expiry height overflow".to_string())
 }
 
 fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
@@ -2500,6 +2514,24 @@ mod tests {
                 20 * ZATOSHIS_PER_ZEC,
             ]
         );
+    }
+
+    #[test]
+    fn canonical_migration_expiry_uses_zip318_window_boundaries() {
+        assert_eq!(ZIP318_EXPIRY_MODULUS, 34_560);
+        assert_eq!(
+            zip318_canonical_migration_expiry_height(3_428_143).unwrap(),
+            3_490_560
+        );
+        assert_eq!(
+            zip318_canonical_migration_expiry_height(3_455_999).unwrap(),
+            3_490_560
+        );
+        assert_eq!(
+            zip318_canonical_migration_expiry_height(3_456_000).unwrap(),
+            3_525_120
+        );
+        assert_eq!(zip318_canonical_migration_expiry_height(0).unwrap(), 69_120);
     }
 
     #[test]

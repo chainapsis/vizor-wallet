@@ -3383,8 +3383,12 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
     network: P,
     target_height: BlockHeight,
     orchard_anchor: orchard::Anchor,
-) -> Builder<P, ()> {
-    Builder::new(
+) -> Result<Builder<P, ()>, String> {
+    let target_height_u32: u32 = target_height.into();
+    let expiry_height =
+        super::migration::zip318_canonical_migration_expiry_height(target_height_u32)?;
+
+    Ok(Builder::new(
         network,
         target_height,
         BuildConfig::Standard {
@@ -3395,7 +3399,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
             ironwood_bundle_type: orchard::builder::BundleType::UNPADDED,
         },
     )
-    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT))
+    .with_expiry_height(BlockHeight::from(expiry_height)))
 }
 
 fn create_orchard_to_ironwood_pczt_from_predicted_note(
@@ -3440,7 +3444,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor);
+            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor)?;
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -3630,7 +3634,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor);
+            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor)?;
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder

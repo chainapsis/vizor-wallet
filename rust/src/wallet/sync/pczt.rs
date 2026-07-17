@@ -1372,7 +1372,8 @@ mod tests {
                 Nu6_3Network,
                 10_000_000.into(),
                 anchor,
-            );
+            )
+            .unwrap();
             builder
                 .add_orchard_spend::<zip317::FeeRule>(orchard_fvk.clone(), note, merkle_path)
                 .unwrap();
@@ -1393,6 +1394,13 @@ mod tests {
             } = builder
                 .build_for_pczt(OsRng, &zip317::FeeRule::standard())
                 .unwrap();
+            assert_eq!(
+                u32::from(pczt_parts.expiry_height),
+                crate::wallet::sync::migration::zip318_canonical_migration_expiry_height(
+                    10_000_000
+                )
+                .unwrap()
+            );
 
             let base = Creator::build_from_parts(pczt_parts).unwrap();
             let base = IoFinalizer::new(base).finalize_io().unwrap();
