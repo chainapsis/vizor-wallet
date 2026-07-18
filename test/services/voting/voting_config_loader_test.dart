@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/rust/api/voting_config.dart'
     as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
@@ -13,9 +14,9 @@ import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'fake_voting_http.dart';
 
 void main() {
-  test('default static config source points at the prod pinned config', () {
+  test('production static config source is pinned', () {
     final source = parseStaticVotingConfigSource(
-      kDefaultStaticVotingConfigSource,
+      kProductionStaticVotingConfigSource,
     );
 
     expect(
@@ -27,7 +28,33 @@ void main() {
       source.sha256Hex,
       'c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d',
     );
-    expect(source.raw, kDefaultStaticVotingConfigSource);
+    expect(source.raw, kProductionStaticVotingConfigSource);
+  });
+
+  test('stage static config source is pinned', () {
+    final source = parseStaticVotingConfigSource(
+      kStageStaticVotingConfigSource,
+    );
+
+    expect(
+      source.uri.toString(),
+      'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
+      '491e55306aa5c539a0314d30a8b2c51946b88b73/stage/static-voting-config.json',
+    );
+    expect(
+      source.sha256Hex,
+      '80890a6de9acc7293c3e2fabf870bb3e5755dbe0e69de4a59feb8f696134d4dc',
+    );
+    expect(source.raw, kStageStaticVotingConfigSource);
+  });
+
+  test('default static config follows the launch network', () {
+    expect(
+      kDefaultStaticVotingConfigSource,
+      kZcashDefaultNetworkRaw == 'test'
+          ? kStageStaticVotingConfigSource
+          : kProductionStaticVotingConfigSource,
+    );
   });
 
   test('parses static config source and strips sha256 checksum', () {
