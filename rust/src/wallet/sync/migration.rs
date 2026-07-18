@@ -1765,7 +1765,7 @@ pub(crate) fn scheduled_inputs_spent_by_mined_transactions(
 
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT selected_note_txid, selected_note_output_index,
+            "SELECT txid_hex, selected_note_txid, selected_note_output_index,
                     selected_note_value, metadata_json
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
@@ -1776,9 +1776,10 @@ pub(crate) fn scheduled_inputs_spent_by_mined_transactions(
         .query_map(params![run_id], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, u32>(1)?,
-                row.get::<_, u64>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| format!("Query scheduled migration inputs: {e}"))?
@@ -1787,31 +1788,38 @@ pub(crate) fn scheduled_inputs_spent_by_mined_transactions(
     drop(stmt);
 
     let mut spent = Vec::new();
-    for (txid_hex, output_index, value_zatoshi, metadata_json) in rows {
+    for (expected_spend_txid, txid_hex, output_index, value_zatoshi, metadata_json) in rows {
         let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
             .map_err(|e| format!("Decode scheduled migration input metadata: {e}"))?;
+        let expected_spend_txids = txid_blob_variants(&expected_spend_txid)?;
         let mut mined_spend_exists = false;
         for txid_blob in txid_blob_variants(&txid_hex)? {
-            mined_spend_exists = conn
-                .query_row(
-                    "SELECT EXISTS(
-                         SELECT 1
-                         FROM orchard_received_notes note
-                         INNER JOIN transactions source_tx
-                             ON source_tx.id_tx = note.transaction_id
-                         INNER JOIN orchard_received_note_spends spend
-                             ON spend.orchard_received_note_id = note.id
-                         INNER JOIN transactions spend_tx
-                             ON spend_tx.id_tx = spend.transaction_id
-                         WHERE source_tx.txid = ?1
-                           AND note.action_index = ?2
-                           AND note.value = ?3
-                           AND spend_tx.mined_height IS NOT NULL
-                     )",
-                    params![txid_blob, output_index, value_zatoshi],
-                    |row| row.get::<_, bool>(0),
+            let mut spend_stmt = conn
+                .prepare_cached(
+                    "SELECT spend_tx.txid
+                     FROM orchard_received_notes note
+                     INNER JOIN transactions source_tx
+                         ON source_tx.id_tx = note.transaction_id
+                     INNER JOIN orchard_received_note_spends spend
+                         ON spend.orchard_received_note_id = note.id
+                     INNER JOIN transactions spend_tx
+                         ON spend_tx.id_tx = spend.transaction_id
+                     WHERE source_tx.txid = ?1
+                       AND note.action_index = ?2
+                       AND note.value = ?3
+                       AND spend_tx.mined_height IS NOT NULL",
                 )
-                .map_err(|e| format!("Check scheduled migration input spend: {e}"))?;
+                .map_err(|e| format!("Prepare scheduled migration input spend query: {e}"))?;
+            let mined_spend_txids = spend_stmt
+                .query_map(params![txid_blob, output_index, value_zatoshi], |row| {
+                    row.get::<_, Vec<u8>>(0)
+                })
+                .map_err(|e| format!("Check scheduled migration input spend: {e}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Read scheduled migration input spend: {e}"))?;
+            mined_spend_exists = mined_spend_txids
+                .iter()
+                .any(|spend_txid| !expected_spend_txids.contains(spend_txid));
             if mined_spend_exists {
                 break;
             }
@@ -3855,6 +3863,22 @@ mod tests {
         conn.execute(
             "UPDATE transactions SET mined_height = 99 WHERE id_tx = 2",
             [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE transactions SET txid = ?1 WHERE id_tx = 2",
+            params![txid_blob_variants(&"51".repeat(32)).unwrap().remove(0)],
+        )
+        .unwrap();
+        assert!(
+            scheduled_inputs_spent_by_mined_transactions(&db_path, "run-1")
+                .unwrap()
+                .is_empty()
+        );
+
+        conn.execute(
+            "UPDATE transactions SET txid = ?1 WHERE id_tx = 2",
+            params![vec![0x61u8; 32]],
         )
         .unwrap();
         assert_eq!(
