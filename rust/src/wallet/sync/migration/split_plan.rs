@@ -1110,6 +1110,57 @@ mod tests {
     }
 
     #[test]
+    fn zip318_minimum_balance_pays_both_fees_and_creates_one_output() {
+        let minimum_input = FEE + 15_000 + 1_000_000;
+
+        assert!(
+            plan_padded_denominations(&[minimum_input - 1], FEE, 15_000, 1, 64)
+                .unwrap()
+                .is_none()
+        );
+
+        let plan = plan_padded_denominations(&[minimum_input], FEE, 15_000, 1, 64)
+            .unwrap()
+            .expect("minimum ZIP 318 balance should be plannable");
+        assert_eq!(plan.stages.len(), 1);
+        assert_eq!(plan.denominations.migration_outputs, vec![1_000_000]);
+        assert_eq!(plan.denominations.orchard_change, None);
+        assert_eq!(plan.denominations.total_migratable_zatoshi, 1_000_000);
+        assert_plan_balances(
+            &[minimum_input],
+            &terminal_outputs(&plan.denominations).unwrap(),
+            &plan.stages,
+        );
+    }
+
+    #[test]
+    fn five_hundred_notes_fit_but_larger_sets_exceed_the_stage_limit() {
+        let inputs = vec![1_000_000; 500];
+        let plan = plan_padded_denominations(&inputs, FEE, 15_000, 1, 64)
+            .unwrap()
+            .expect("500 existing notes should fit within 64 split stages");
+
+        assert_eq!(plan.stages.len(), 37);
+        assert_eq!(plan.denominations.migration_outputs.len(), 7);
+        assert_eq!(plan.denominations.orchard_change, Some(935_000));
+        assert_plan_balances(
+            &inputs,
+            &terminal_outputs(&plan.denominations).unwrap(),
+            &plan.stages,
+        );
+
+        for input_count in [900, 2_500] {
+            let error =
+                plan_padded_denominations(&vec![1_000_000; input_count], FEE, 15_000, 1, 64)
+                    .expect_err("larger note set should exceed the split-stage limit");
+            assert_eq!(
+                error, "Denomination split needs more than 64 padded transactions",
+                "unexpected failure for {input_count} existing notes"
+            );
+        }
+    }
+
+    #[test]
     fn one_input_and_thirty_outputs_need_three_padded_stages() {
         let outputs = terminals(30, 1_000_000);
         let inputs = [30_000_000 + 3 * FEE];

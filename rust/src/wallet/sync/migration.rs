@@ -55,6 +55,9 @@ pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 // 3 logical actions (a 2-action padded Orchard bundle and a 1-action
 // unpadded Ironwood bundle).
 const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
+// Every migration needs at least one 16-action padded Orchard transaction
+// before its first Ironwood output can be created.
+const DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 80_000;
 
 static FAST_TESTNET_MIGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -772,7 +775,7 @@ fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result
     }
     let plan = plan_denominations(
         orchard_spendable,
-        0,
+        DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI,
         MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
     )?;
@@ -5032,7 +5035,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_status_treats_sub_max_residual_plus_fee_as_complete() {
+    fn migration_status_treats_sub_minimum_plan_value_as_complete() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_string_lossy().to_string();
@@ -5041,7 +5044,10 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI - 1,
+            DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI
+                + MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI
+                + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI
+                - 1,
             0,
             ZATOSHIS_PER_ZEC,
             0,
@@ -5102,7 +5108,9 @@ mod tests {
             &db_path,
             WalletNetwork::Test,
             "account-1",
-            MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI,
+            DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI
+                + MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI
+                + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI,
             0,
             ZATOSHIS_PER_ZEC,
             0,
@@ -5110,6 +5118,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.phase, PHASE_READY_TO_PREPARE);
+    }
+
+    #[test]
+    fn migration_status_requires_the_first_split_and_migration_fees() {
+        let minimum_input = DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI
+            + MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI
+            + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI;
+
+        for orchard_spendable in [0, minimum_input - 1] {
+            assert!(!orchard_balance_can_create_migration_output(orchard_spendable).unwrap());
+        }
+        assert!(orchard_balance_can_create_migration_output(minimum_input).unwrap());
     }
 
     #[test]
