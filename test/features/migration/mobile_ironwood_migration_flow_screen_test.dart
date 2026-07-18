@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_shimmer_text.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -185,7 +186,15 @@ Widget _app({
   return ProviderScope(
     child: AppTheme(
       data: theme,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: true),
+          child: child!,
+        ),
+      ),
     ),
   );
 }
@@ -263,7 +272,15 @@ Widget _productionApp({
     ],
     child: AppTheme(
       data: AppThemeData.light,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: true),
+          child: child!,
+        ),
+      ),
     ),
   );
 }
@@ -422,9 +439,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.byType(IronwoodMigrationShimmerText), findsOneWidget);
     expect(find.text('142.24 ZEC'), findsOneWidget);
-    expect(find.text('Split transactions'), findsOneWidget);
-    expect(find.text('Waiting for confirmation ...'), findsOneWidget);
+    expect(find.text('Transaction splits submitted'), findsOneWidget);
+    expect(find.text('Waiting for confirmation...'), findsOneWidget);
     expect(find.text('Migration schedule'), findsOneWidget);
     expect(find.text('Back home'), findsOneWidget);
   });
@@ -435,12 +453,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.text('142.24 ZEC'), findsOneWidget);
+    final remainingAmount = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_ironwood_remaining_amount')),
+    );
+    expect(remainingAmount.textSpan?.toPlainText(), '142.24 ZEC');
+    expect(find.text('Left to transfer'), findsOneWidget);
+    expect(find.text('10% DONE'), findsOneWidget);
     expect(find.text('12 planned batches'), findsOneWidget);
     expect(find.text('Current batch'), findsOneWidget);
     expect(find.text('Not started'), findsOneWidget);
     expect(find.text('Amount pending'), findsOneWidget);
+    expect(find.text('Estimated arrival time'), findsOneWidget);
     expect(find.text('Up to 2 days'), findsOneWidget);
+    expect(find.text('Wallet 1').hitTestable(), findsOneWidget);
+    expect(
+      find.text('You can leave this screen.\nBut keep Vizor open & running.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(find.text('Back home').hitTestable(), findsOneWidget);
 
     await tester.tap(find.text('View'));
     await tester.pumpAndSettle();
@@ -457,6 +488,23 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.text('12 batches'), findsNothing);
+  });
+
+  testWidgets('keeps migration status actions reachable on compact screens', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.preparing));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(
+      find.text('Back home'),
+      220,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Back home'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('renders passcode while migration keeps running', (tester) async {
@@ -702,9 +750,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparing...'), findsOneWidget);
-    expect(find.text('Waiting for confirmation ...'), findsOneWidget);
+    expect(find.text('Waiting for confirmation...'), findsOneWidget);
     expect(find.text('Split 2 of 3, 2 of 10 confirmations'), findsOneWidget);
-    expect(find.text('1/3'), findsOneWidget);
+    expect(find.text('Transaction splits submitted'), findsOneWidget);
   });
 
   testWidgets('maps live migration progress into the Migrating screen', (
@@ -723,8 +771,13 @@ void main() {
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('3 planned batches'), findsOneWidget);
     expect(find.text('33% DONE'), findsOneWidget);
+    final remainingAmount = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_ironwood_remaining_amount')),
+    );
+    expect(remainingAmount.textSpan?.toPlainText(), '8.24 ZEC');
     expect(find.text('4.12 ZEC'), findsOneWidget);
-    expect(find.text('Confirming'), findsOneWidget);
+    expect(find.text('Migration status'), findsOneWidget);
+    expect(find.text('Confirming...'), findsOneWidget);
 
     await tester.tap(find.text('View'));
     await tester.pumpAndSettle();

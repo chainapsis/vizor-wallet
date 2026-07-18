@@ -317,6 +317,21 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Ironwood migration',
               children: [
                 WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Preparing',
+                      builder:
+                          buildIronwoodMigrationPrivateStatusWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migrating',
+                      builder:
+                          buildIronwoodMigrationPrivateStatusMigratingUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
