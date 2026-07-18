@@ -129,17 +129,17 @@ const _accountState = AccountState(
 );
 
 AppBootstrapState _bootstrap() => AppBootstrapState(
-  initialLocation: '/home',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
+      initialLocation: '/home',
+      initialAccountState: _accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 Widget _app(
   SyncState syncState, {
@@ -228,16 +228,17 @@ SyncState _syncedState({
   BigInt? ironwoodBalance,
   BigInt? transparentBalance,
   bool canShieldTransparentBalance = false,
-}) => SyncState(
-  accountUuid: 'account-1',
-  hasAccountScopedData: true,
-  percentage: 1.0,
-  displayPercentage: 1.0,
-  orchardBalance: orchardBalance ?? BigInt.zero,
-  ironwoodBalance: ironwoodBalance ?? BigInt.zero,
-  transparentBalance: transparentBalance ?? BigInt.zero,
-  canShieldTransparentBalance: canShieldTransparentBalance,
-);
+}) =>
+    SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      percentage: 1.0,
+      displayPercentage: 1.0,
+      orchardBalance: orchardBalance ?? BigInt.zero,
+      ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+      transparentBalance: transparentBalance ?? BigInt.zero,
+      canShieldTransparentBalance: canShieldTransparentBalance,
+    );
 
 rust_sync.TransactionInfo _tx(int index) {
   final seconds = BigInt.from(1800000000 + index);
@@ -398,6 +399,16 @@ void main() {
     await tester.pump();
 
     expect(find.text('Migration required'), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_home_ironwood_migration_required_pill'),
+            ),
+          )
+          .height,
+      40,
+    );
     expect(find.text(r'$1,200.12'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_background')),

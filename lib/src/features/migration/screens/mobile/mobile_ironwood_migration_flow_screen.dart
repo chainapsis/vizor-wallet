@@ -50,6 +50,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
+    this.previewStatus,
     this.previewShowBatchModal = false,
     super.key,
   });
@@ -57,6 +58,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final MobileIronwoodMigrationStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.MigrationStatus? previewStatus;
   final bool previewShowBatchModal;
 
   @override
@@ -69,7 +71,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
         previewShowBatchModal: previewShowBatchModal,
-        status: null,
+        status: previewStatus,
       );
     }
 
@@ -79,16 +81,18 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
-          data: (data) => data == null
-              ? const _MobileMigrationRedirectHome()
-              : _MobileIronwoodMigrationContent(
-                  step: step,
-                  data: data,
-                  previewMode: false,
-                  previewPrivatePlan: previewPrivatePlan,
-                  previewShowBatchModal: previewShowBatchModal,
-                  status: null,
-                ),
+          data:
+              (data) =>
+                  data == null
+                      ? const _MobileMigrationRedirectHome()
+                      : _MobileIronwoodMigrationContent(
+                        step: step,
+                        data: data,
+                        previewMode: false,
+                        previewPrivatePlan: previewPrivatePlan,
+                        previewShowBatchModal: previewShowBatchModal,
+                        status: null,
+                      ),
         );
   }
 }
@@ -133,7 +137,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       ),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         data: data,
-        plan: plan,
       ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
@@ -190,19 +193,21 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
-          data: (data) => data == null
-              ? const _MobileMigrationRedirectHome()
-              : _MobileMigrationLiveStatus(
-                  data: data,
-                  status: status,
-                  isHardware:
-                      ref
-                          .watch(accountProvider)
-                          .value
-                          ?.activeAccount
-                          ?.isHardware ??
-                      false,
-                ),
+          data:
+              (data) =>
+                  data == null
+                      ? const _MobileMigrationRedirectHome()
+                      : _MobileMigrationLiveStatus(
+                        data: data,
+                        status: status,
+                        isHardware:
+                            ref
+                                .watch(accountProvider)
+                                .value
+                                ?.activeAccount
+                                ?.isHardware ??
+                            false,
+                      ),
         );
       },
     );
@@ -263,9 +268,8 @@ class _MobileMigrationIntro extends StatelessWidget {
               offset: const Offset(0, 20),
               child: MobileTopNav.back(
                 title: 'Zcash Network Update',
-                titleStyle: AppTypography.bodyLarge.copyWith(
+                titleStyle: AppTypography.headlineSmall.copyWith(
                   color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
                 ),
                 onBack: () => context.go('/home'),
               ),
@@ -295,7 +299,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                         BlendMode.srcIn,
                       ),
                     ),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: AppSpacing.md),
                     Text(
                       'Ironwood is the latest Zcash shielded pool. It’s '
                       'the first formally verified pool with cutting edge '
@@ -303,19 +307,17 @@ class _MobileMigrationIntro extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
-                        height: 24 / 16,
                       ),
                     ),
-                    const SizedBox(height: 27),
+                    const SizedBox(height: AppSpacing.md),
                     Text(
                       'There will be a one-time mandatory upgrade from '
                       'the legacy (orchard) shielded pool. You need to '
                       'transition your ${data.amountText} ZEC from the old '
                       'Orchard pool into the new Ironwood pool.',
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                        height: 25 / 16,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.muted,
                       ),
                     ),
                   ],
@@ -335,11 +337,11 @@ class _MobileMigrationIntro extends StatelessWidget {
                   AppButton(
                     variant: AppButtonVariant.ghost,
                     expand: true,
-                    height: 44,
+                    height: 50,
                     onPressed: () => _openIronwoodReleaseNotes(),
                     child: const Text('Official release note'),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.s),
                   _MobileMigrationPrimaryButton(
                     key: const ValueKey(
                       'mobile_ironwood_intro_continue_button',
@@ -373,7 +375,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/intro'),
       topGap: 31,
-      childGap: 30,
+      childGap: 32,
       title: 'How Migration Works',
       bottom: _MobileMigrationPrimaryButton(
         key: const ValueKey('mobile_ironwood_steps_continue_button'),
@@ -390,10 +392,9 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 }
 
 class _MobileMigrationOptions extends StatelessWidget {
-  const _MobileMigrationOptions({required this.data, required this.plan});
+  const _MobileMigrationOptions({required this.data});
 
   final IronwoodMigrationFlowData data;
-  final rust_sync.OrchardMigrationPrivatePlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -414,12 +415,12 @@ class _MobileMigrationOptions extends StatelessWidget {
         children: [
           _MobileMigrationOptionCard(
             title: 'Private',
-            body: plan == null
-                ? 'Prepares separate migration transactions and spreads their '
-                      'sends when the plan allows it.'
-                : privateMigrationMethodDescription(plan!),
+            body:
+                'Sends independent parts over time windows. Slower, harder '
+                'to track.',
             selected: true,
             icon: _MigrationChoiceIcon.private,
+            recommended: true,
           ),
           const SizedBox(height: AppSpacing.sm),
           const _MobileMigrationOptionCard(
@@ -432,14 +433,13 @@ class _MobileMigrationOptions extends StatelessWidget {
             icon: _MigrationChoiceIcon.immediate,
             enabled: false,
           ),
-          const SizedBox(height: 25),
+          const SizedBox(height: AppSpacing.md),
           Text(
             'Speed vs. correlation exposure. No anchors, cohorts, PCZTs, '
             'or action counts here.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-              height: 24 / 16,
+              color: colors.text.primary,
             ),
           ),
         ],
@@ -534,9 +534,10 @@ class _MobileMigrationPrivateReviewState
   @override
   Widget build(BuildContext context) {
     final preview = widget.previewPlan;
-    final planAsync = preview != null
-        ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
-        : ref.watch(ironwoodMigrationPrivatePlanProvider);
+    final planAsync =
+        preview != null
+            ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
+            : ref.watch(ironwoodMigrationPrivatePlanProvider);
     final plan = planAsync.asData?.value;
     final keystonePlanSupported =
         !widget.isHardware ||
@@ -548,7 +549,7 @@ class _MobileMigrationPrivateReviewState
       onBack: () => context.go('/migration/options'),
       icon: const AppIcon(
         AppIcons.shieldKeyhole,
-        size: 28,
+        size: 32,
         color: Color(0xFF00A460),
       ),
       title: 'Review Migration Plan',
@@ -579,32 +580,37 @@ class _MobileMigrationPrivateReviewState
           ],
           _MobileMigrationPrimaryButton(
             key: const ValueKey('mobile_ironwood_authorize_start_button'),
-            label: _isStarting
-                ? 'Preparing...'
-                : widget.isHardware
-                ? 'Continue with Keystone'
-                : 'Continue',
-            onPressed: canStart
-                ? preview != null
-                      ? () {}
-                      : () => _startMigration(plan)
-                : null,
+            label:
+                _isStarting
+                    ? 'Preparing...'
+                    : widget.isHardware
+                    ? 'Continue with Keystone'
+                    : 'Continue',
+            onPressed:
+                canStart
+                    ? preview != null
+                        ? () {}
+                        : () => _startMigration(plan)
+                    : null,
           ),
         ],
       ),
       child: planAsync.when(
         skipLoadingOnReload: true,
-        loading: () => const SizedBox(
-          height: 240,
-          child: Center(child: CircularProgressIndicator()),
-        ),
+        loading:
+            () => const SizedBox(
+              height: 240,
+              child: Center(child: CircularProgressIndicator()),
+            ),
         error: (_, _) => const _MobileMigrationUnavailable(),
-        data: (plan) => plan == null
-            ? const _MobileMigrationUnavailable()
-            : _MobilePrivatePlan(
-                plan: plan,
-                arrivalLabel: _migrationArrivalLabel(plan),
-              ),
+        data:
+            (plan) =>
+                plan == null
+                    ? const _MobileMigrationUnavailable()
+                    : _MobilePrivatePlan(
+                      plan: plan,
+                      arrivalLabel: _migrationArrivalLabel(plan),
+                    ),
       ),
     );
   }
@@ -652,13 +658,11 @@ class _MobileMigrationFastReview extends StatelessWidget {
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
       topGap: 40,
-      iconTitleGap: 26,
-      icon: SizedBox(
-        width: 28,
-        height: 28,
-        child: CustomPaint(
-          painter: _ImmediateMigrationIconPainter(colors.icon.disabled),
-        ),
+      iconTitleGap: 22,
+      icon: AppIcon(
+        AppIcons.migrationFast,
+        size: 32,
+        color: colors.icon.disabled,
       ),
       title: 'Review Migration Plan',
       amount: '${data.amountText} ZEC',
@@ -696,76 +700,85 @@ class _MobileMigrationFastReview extends StatelessWidget {
                 const SizedBox(height: AppSpacing.s),
                 const _ReviewRow(
                   label: 'Orchard remains',
-                  value: 'Calculated before send',
+                  value: '<0.001 ZEC',
                   showInfo: true,
                 ),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.background.homeCard,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.md,
+          SizedBox(
+            key: const ValueKey('mobile_ironwood_fast_privacy_card'),
+            height: 172,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.homeCard,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: colors.border.inverseOpacity,
+                  width: 1.5,
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppIcon(
-                    AppIcons.shieldKeyholeOutline,
-                    size: 24,
-                    color: colors.text.homeCard,
-                  ),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Privacy trade-off',
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: colors.text.homeCard,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text.rich(
-                          TextSpan(
-                            style: AppTypography.bodySmall.copyWith(
-                              color: colors.text.homeCard,
-                              height: 21 / 14,
-                              letterSpacing: -0.21,
-                            ),
-                            children: [
-                              TextSpan(
-                                text:
-                                    'Crosses in one visible step — your '
-                                    '${data.amountText} ZEC and timing are ',
-                              ),
-                              TextSpan(
-                                text: 'easier to associate with your wallet',
-                                style: TextStyle(
-                                  color: colors.text.destructive,
-                                ),
-                              ),
-                              const TextSpan(text: '. '),
-                              const TextSpan(
-                                text:
-                                    'Consider choosing a Private Migration '
-                                    'option.',
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppIcon(
+                      AppIcons.transparentBalance,
+                      key: const ValueKey('mobile_ironwood_fast_privacy_icon'),
+                      size: 20,
+                      color: colors.text.homeCard,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Privacy trade-off',
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.homeCard,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text.rich(
+                            TextSpan(
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.homeCard,
+                                letterSpacing: 0,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text:
+                                      'Crosses in one visible step — your '
+                                      '${data.amountText} ZEC and timing are ',
+                                ),
+                                TextSpan(
+                                  text: 'easier to associate with your wallet',
+                                  style: TextStyle(
+                                    color: const Color(0xFFC06ECE),
+                                  ),
+                                ),
+                                const TextSpan(text: '. '),
+                                const TextSpan(
+                                  text:
+                                      'Consider choosing a Private Migration '
+                                      'option.',
+                                  style: TextStyle(fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -872,9 +885,10 @@ class _MobileMigrationPreparing extends StatelessWidget {
                           showConnector: true,
                         ),
                         _PreparingStatusRow(
-                          state: confirmationsReady
-                              ? _PreparingStatusState.complete
-                              : _PreparingStatusState.waiting,
+                          state:
+                              confirmationsReady
+                                  ? _PreparingStatusState.complete
+                                  : _PreparingStatusState.waiting,
                           label: 'Waiting for confirmation...',
                           showConnector: true,
                         ),
@@ -915,9 +929,10 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final batchCount = _mobilePlannedBatchCount(status);
-    final transactionLabel = batchCount == 1
-        ? '1 migration transaction'
-        : '$batchCount migration transactions';
+    final transactionLabel =
+        batchCount == 1
+            ? '1 migration transaction'
+            : '$batchCount migration transactions';
     return _MobileMigrationStatusScaffold(
       key: const ValueKey('mobile_ironwood_keystone_ready'),
       data: data,
@@ -999,8 +1014,9 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                     'mobile_ironwood_keystone_batch_sign_button',
                   ),
                   expand: true,
-                  onPressed: () =>
-                      context.go('/migration/private/keystone/batch/sign'),
+                  onPressed:
+                      () =>
+                          context.go('/migration/private/keystone/batch/sign'),
                   child: const Text('Continue'),
                 ),
                 const SizedBox(height: AppSpacing.xs),

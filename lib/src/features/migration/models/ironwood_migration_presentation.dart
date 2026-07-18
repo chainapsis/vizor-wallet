@@ -21,20 +21,22 @@ String migrationPlanPreparationDescription({
     'migration batch',
     'migration batches',
   );
-  return 'Vizor will prepare your $amountText ZEC in $splitTransactions, '
-      'then migrate it in $migrationBatches.';
+  return 'Your $amountText ZEC balance is prepared in $splitTransactions, '
+      'then moved in $migrationBatches. Common-sized parts make each '
+      'transfer less distinctive.';
 }
 
 String privateMigrationMethodDescription(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
   if (plan.plannedBatchCount <= 1) {
-    return 'Uses one migration transaction after preparation. No timing '
+    return 'Sends one migration part after preparation. No timing '
         'separation is added.';
   }
-  return 'Spreads ${migrationBatchesLabel(plan.plannedBatchCount)} over '
-      '${migrationPlanCompletionLabel(plan)} '
-      'instead of sending them all at once.';
+  return 'Sends '
+      '${_counted(plan.plannedBatchCount, 'independent part', 'independent parts')} '
+      'over ${migrationPlanCompletionLabel(plan)}. Slower, harder to '
+      'associate.';
 }
 
 String migrationPlanCompletionLabel(
@@ -55,6 +57,7 @@ String migrationBlockOffsetLabel(int blocks) =>
 String migrationScheduledBroadcastLabel(
   rust_sync.MigrationScheduledBroadcast broadcast, {
   DateTime? now,
+  bool approximate = false,
 }) {
   if (broadcast.status == 'confirmed') return 'Confirmed';
   if (broadcast.status == 'broadcasted') return 'Submitted';
@@ -67,9 +70,10 @@ String migrationScheduledBroadcastLabel(
   if (remaining <= Duration.zero) return 'Due now';
 
   final minutes = (remaining.inSeconds + 59) ~/ 60;
-  if (minutes < 60) return 'in $minutes min';
+  final prefix = approximate ? '~' : '';
+  if (minutes < 60) return '${prefix}in $minutes min';
   final hours = (minutes + 59) ~/ 60;
-  return 'in $hours ${_pluralized(hours, 'hr', 'hrs')}';
+  return '${prefix}in $hours ${_pluralized(hours, 'hr', 'hrs')}';
 }
 
 String migrationDispatchTimingLabel(
@@ -90,13 +94,33 @@ String migrationDispatchTimingLabel(
     return migrationBlockOffsetLabel(status.scheduleMeanDelayBlocks);
   }
 
-  return _shortMigrationDateTime(
+  return _migrationDateTime(
     DateTime.fromMillisecondsSinceEpoch(latest.scheduledAtMs).toLocal(),
   );
 }
 
-String _shortMigrationDateTime(DateTime dateTime) {
-  const months = [
+String migrationCompletionTimingLabel(
+  rust_sync.MigrationStatus status, {
+  bool abbreviateMonth = true,
+}) {
+  rust_sync.MigrationScheduledBroadcast? latest;
+  for (final broadcast in status.scheduledBroadcasts) {
+    if (latest == null || broadcast.scheduledAtMs > latest.scheduledAtMs) {
+      latest = broadcast;
+    }
+  }
+  if (latest == null) {
+    return migrationBlockOffsetLabel(status.scheduleMeanDelayBlocks);
+  }
+
+  return _migrationDateTime(
+    DateTime.fromMillisecondsSinceEpoch(latest.scheduledAtMs).toLocal(),
+    abbreviateMonth: abbreviateMonth,
+  );
+}
+
+String _migrationDateTime(DateTime dateTime, {bool abbreviateMonth = true}) {
+  const shortMonths = [
     'Jan',
     'Feb',
     'Mar',
@@ -110,9 +134,27 @@ String _shortMigrationDateTime(DateTime dateTime) {
     'Nov',
     'Dec',
   ];
+  const longMonths = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
   final hour = dateTime.hour.toString().padLeft(2, '0');
   final minute = dateTime.minute.toString().padLeft(2, '0');
-  return '${months[dateTime.month - 1]} ${dateTime.day}, $hour:$minute';
+  final month =
+      abbreviateMonth
+          ? shortMonths[dateTime.month - 1]
+          : longMonths[dateTime.month - 1];
+  return '$month ${dateTime.day}, $hour:$minute';
 }
 
 String migrationPreparationProgressLabel(rust_sync.MigrationStatus status) {

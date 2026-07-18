@@ -61,10 +61,9 @@ class MobileHomeScreen extends ConsumerWidget {
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final ironwoodMigrationCta =
         ref.watch(ironwoodHomeMigrationCtaProvider).value ??
-        const IronwoodHomeMigrationCtaState.hidden();
+            const IronwoodHomeMigrationCtaState.hidden();
 
-    final isImporting =
-        activeAccountUuid != null &&
+    final isImporting = activeAccountUuid != null &&
         !sync.hasAccountScopedData &&
         sync.failure == null;
 
@@ -368,8 +367,7 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             children: [
               _SyncKeepAwakePromptBullet(
                 iconName: AppIcons.lock,
-                text:
-                    'The app locks after 1 minute of inactivity. Syncing '
+                text: 'The app locks after 1 minute of inactivity. Syncing '
                     'continues behind the lock.',
                 textStyle: bodyStyle,
               ),
@@ -503,11 +501,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
 
   Future<void> _openPay() async {
-    final accountUuid = ref
-        .read(accountProvider)
-        .value
-        ?.activeAccountUuid
-        ?.trim();
+    final accountUuid =
+        ref.read(accountProvider).value?.activeAccountUuid?.trim();
     if (accountUuid == null || accountUuid.isEmpty) return;
 
     final router = GoRouter.of(context);
@@ -593,8 +588,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final sync = widget.sync;
     final activeAccountUuid = widget.activeAccountUuid;
     final privacyModeEnabled = widget.privacyModeEnabled;
-    final shieldedBalance =
-        sync.saplingBalance +
+    final shieldedBalance = sync.saplingBalance +
         sync.orchardBalance +
         sync.ironwoodBalance +
         sync.saplingPendingBalance +
@@ -611,20 +605,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
     final shieldedFiatBalanceText =
         privacyModeEnabled && fiatBalanceText != null
-        ? fixedPrivacyMask()
-        : fiatBalanceText;
+            ? fixedPrivacyMask()
+            : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
-    final payIntroductionClicked = ref
-        .watch(payIntroductionBadgeClickedProvider)
-        .value;
+    final payIntroductionClicked =
+        ref.watch(payIntroductionBadgeClickedProvider).value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
-              const <SwapActivityRowItem>[];
+            const <SwapActivityRowItem>[];
     final entries = <ActivityEntry>[
       for (final tx in sync.recentTransactions)
         ActivityEntry(
@@ -943,10 +936,10 @@ class _BalanceCard extends StatelessWidget {
     final priceChangeColor = roundedPriceChangePct == null
         ? null
         : roundedPriceChangePct > 0
-        ? colors.text.positiveStrong
-        : roundedPriceChangePct < 0
-        ? colors.text.destructive
-        : cardText;
+            ? colors.text.positiveStrong
+            : roundedPriceChangePct < 0
+                ? colors.text.destructive
+                : cardText;
     final showIronwoodMigrationState = ironwoodMigrationCta.visible;
 
     return Container(
@@ -1104,7 +1097,7 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const contentColor = Color(0xFFEAFEEF);
+    final contentColor = context.colors.text.homeCard;
     return Semantics(
       button: true,
       label: 'Migration required',
@@ -1113,8 +1106,8 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
         onTap: onTap,
         child: Container(
           key: const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
           decoration: const ShapeDecoration(
             color: Color(0xFF00A460),
             shape: StadiumBorder(),
@@ -1122,25 +1115,17 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const AppIcon(
-                AppIcons.shieldKeyhole,
-                size: 20,
-                color: contentColor,
-              ),
+              AppIcon(AppIcons.shieldKeyhole, size: 20, color: contentColor),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 'Migration required',
                 style: AppTypography.labelLarge.copyWith(
                   color: contentColor,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
               const SizedBox(width: AppSpacing.xxs),
-              const AppIcon(
-                AppIcons.chevronForward,
-                size: 20,
-                color: contentColor,
-              ),
+              AppIcon(AppIcons.chevronForward, size: 20, color: contentColor),
             ],
           ),
         ),

@@ -872,6 +872,7 @@ Widget buildMobileIronwoodMigrationPreparingUseCase(BuildContext context) {
 Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.migrating,
+    previewStatus: _previewMobileMigrationStatus(),
   );
 }
 
@@ -879,6 +880,7 @@ Widget buildMobileIronwoodMigrationMigratingModalUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.migrating,
     showBatchModal: true,
+    previewStatus: _previewMobileMigrationStatus(),
   );
 }
 
@@ -917,21 +919,23 @@ Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({required bool batch}) {
     ],
     signingBatchLimit: 50,
   );
-  final screen = batch
-      ? MobileIronwoodMigrationKeystoneBatchSignScreen(
-          previewRequest: request,
-          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-BATCH'],
-        )
-      : MobileIronwoodMigrationKeystoneDenominationSignScreen(
-          previewRequest: request,
-          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-SPLIT'],
-        );
+  final screen =
+      batch
+          ? MobileIronwoodMigrationKeystoneBatchSignScreen(
+            previewRequest: request,
+            previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-BATCH'],
+          )
+          : MobileIronwoodMigrationKeystoneDenominationSignScreen(
+            previewRequest: request,
+            previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-SPLIT'],
+          );
   return ProviderScope(child: _MobilePreviewFrame(child: screen));
 }
 
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
   bool showBatchModal = false,
+  rust_sync.MigrationStatus? previewStatus,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
@@ -939,9 +943,8 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.options ||
     MobileIronwoodMigrationStep.privateReview ||
     MobileIronwoodMigrationStep.fastReview ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing => BigInt.from(
-      14_224_000_000,
-    ),
+    MobileIronwoodMigrationStep
+        .passcodeWhileSyncing => BigInt.from(14_224_000_000),
     MobileIronwoodMigrationStep.preparing => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.migrating => BigInt.from(13_112_000_000),
   };
@@ -960,6 +963,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
           accountName: accountName,
         ),
         previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+        previewStatus: previewStatus,
         previewShowBatchModal: showBatchModal,
       ),
     ),
@@ -1216,26 +1220,29 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
       routes: [
         GoRoute(
           path: '/import',
-          builder: (_, _) => MobileImportScreen(
-            initialPreviewError: widget.initialPasteError,
-            initialPreviewErrorDuration: _previewErrorToastDuration,
-          ),
+          builder:
+              (_, _) => MobileImportScreen(
+                initialPreviewError: widget.initialPasteError,
+                initialPreviewErrorDuration: _previewErrorToastDuration,
+              ),
         ),
         GoRoute(
           path: '/import/manual',
-          builder: (_, _) => const MobileImportManualScreen(
-            wordListOverride: _previewManualWordList,
-          ),
+          builder:
+              (_, _) => const MobileImportManualScreen(
+                wordListOverride: _previewManualWordList,
+              ),
         ),
         GoRoute(
           path: '/import/review',
           builder: (_, state) {
             final extra = state.extra;
-            final args = extra is ImportSecretPassphraseArgs
-                ? extra
-                : ImportSecretPassphraseArgs(
-                    mnemonic: widget.initialReviewMnemonic,
-                  );
+            final args =
+                extra is ImportSecretPassphraseArgs
+                    ? extra
+                    : ImportSecretPassphraseArgs(
+                      mnemonic: widget.initialReviewMnemonic,
+                    );
             return MobileImportReviewScreen(
               args: args,
               screenshotStream: const Stream.empty(),
@@ -1245,8 +1252,9 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
         ),
         GoRoute(
           path: '/import/birthday',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/import/birthday'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );
@@ -1303,16 +1311,17 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => AccountsScreen(
-            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
-            initialModalAccountUuid: widget.initialModalAccountUuid,
-            initialModal: widget.initialModal,
-          ),
+          builder:
+              (_, _) => AccountsScreen(
+                initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+                initialModalAccountUuid: widget.initialModalAccountUuid,
+                initialModal: widget.initialModal,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/home',
@@ -1348,14 +1357,16 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
         ),
         GoRoute(
           path: '/migration/intro',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/migration/intro'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/migration/intro'),
         ),
         GoRoute(
           path: '/migration/private/status',
-          builder: (_, _) => const _PreviewRoutePlaceholder(
-            label: '/migration/private/status',
-          ),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(
+                label: '/migration/private/status',
+              ),
         ),
       ],
     );
@@ -1450,9 +1461,10 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(
           path: '/settings/link-mobile',
-          builder: (_, _) => const WalletLinkDesktopScreen(
-            previewState: WalletLinkState.initial(),
-          ),
+          builder:
+              (_, _) => const WalletLinkDesktopScreen(
+                previewState: WalletLinkState.initial(),
+              ),
         ),
         for (final path in const [
           '/settings/secret-passphrase',
@@ -1584,15 +1596,16 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
       routes: [
         GoRoute(
           path: '/accounts',
-          builder: (_, _) => MobileAccountsScreen(
-            initialSheetAccountUuid: widget.initialSheetAccountUuid,
-            initialSheet: widget.initialSheet,
-          ),
+          builder:
+              (_, _) => MobileAccountsScreen(
+                initialSheetAccountUuid: widget.initialSheetAccountUuid,
+                initialSheet: widget.initialSheet,
+              ),
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
         GoRoute(
           path: '/send',
@@ -1638,14 +1651,17 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
       routes: [
         GoRoute(
           path: '/home',
-          builder: (_, _) => AppMobileShell(
-            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
-            tabBar: AppMobileTabBar(
-              items: _mobileHomeTabItems,
-              currentIndex: 0,
-              onSelect: (_) {},
-            ),
-          ),
+          builder:
+              (_, _) => AppMobileShell(
+                body: _MobileHomeBody(
+                  openAccountsSheet: widget.openAccountsSheet,
+                ),
+                tabBar: AppMobileTabBar(
+                  items: _mobileHomeTabItems,
+                  currentIndex: 0,
+                  onSelect: (_) {},
+                ),
+              ),
         ),
         GoRoute(
           path: '/send',
@@ -1665,9 +1681,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
+          builder:
+              (_, state) => _PreviewRoutePlaceholder(
+                label: '/activity/tx/${state.pathParameters['txid']}',
+              ),
         ),
         GoRoute(
           path: '/settings',
@@ -1679,8 +1696,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/add-account'),
         ),
       ],
     );
@@ -1753,9 +1770,10 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
+          builder:
+              (_, state) => _PreviewRoutePlaceholder(
+                label: '/activity/tx/${state.pathParameters['txid']}',
+              ),
         ),
         GoRoute(
           path: '/settings',
@@ -1763,13 +1781,14 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
         ),
         GoRoute(
           path: '/settings/endpoint',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/settings/endpoint'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/settings/endpoint'),
         ),
         GoRoute(
           path: '/migration',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/migration'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/migration'),
         ),
       ],
     );
@@ -1850,42 +1869,47 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
         GoRoute(path: '/migration', redirect: (_, _) => '/migration/intro'),
         GoRoute(
           path: '/migration/intro',
-          builder: (_, _) => IronwoodMigrationFlowScreen(
-            step: IronwoodMigrationFlowStep.intro,
-            previewData: widget.initialStep == IronwoodMigrationFlowStep.intro
-                ? widget.data
-                : _ironwoodMigrationFlowData(
-                    zatoshi: BigInt.from(14_223_000_000),
-                  ),
-            onOpenReleaseNotesOverride: () {},
-          ),
+          builder:
+              (_, _) => IronwoodMigrationFlowScreen(
+                step: IronwoodMigrationFlowStep.intro,
+                previewData:
+                    widget.initialStep == IronwoodMigrationFlowStep.intro
+                        ? widget.data
+                        : _ironwoodMigrationFlowData(
+                          zatoshi: BigInt.from(14_223_000_000),
+                        ),
+                onOpenReleaseNotesOverride: () {},
+              ),
         ),
         GoRoute(
           path: '/migration/how-it-works',
-          builder: (_, _) => IronwoodMigrationFlowScreen(
-            step: IronwoodMigrationFlowStep.howItWorks,
-            previewData:
-                widget.initialStep == IronwoodMigrationFlowStep.howItWorks
-                ? widget.data
-                : _ironwoodMigrationFlowData(
-                    zatoshi: BigInt.from(14_232_000_000),
-                  ),
-            previewPrivatePlan: _previewPrivateMigrationPlan(),
-            onOpenReleaseNotesOverride: () {},
-          ),
+          builder:
+              (_, _) => IronwoodMigrationFlowScreen(
+                step: IronwoodMigrationFlowStep.howItWorks,
+                previewData:
+                    widget.initialStep == IronwoodMigrationFlowStep.howItWorks
+                        ? widget.data
+                        : _ironwoodMigrationFlowData(
+                          zatoshi: BigInt.from(14_232_000_000),
+                        ),
+                previewPrivatePlan: _previewPrivateMigrationPlan(),
+                onOpenReleaseNotesOverride: () {},
+              ),
         ),
         GoRoute(
           path: '/migration/options',
-          builder: (_, _) => IronwoodMigrationFlowScreen(
-            step: IronwoodMigrationFlowStep.options,
-            previewData: widget.initialStep == IronwoodMigrationFlowStep.options
-                ? widget.data
-                : _ironwoodMigrationFlowData(
-                    zatoshi: BigInt.from(14_224_000_000),
-                  ),
-            previewPrivatePlan: _previewPrivateMigrationPlan(),
-            onOpenReleaseNotesOverride: () {},
-          ),
+          builder:
+              (_, _) => IronwoodMigrationFlowScreen(
+                step: IronwoodMigrationFlowStep.options,
+                previewData:
+                    widget.initialStep == IronwoodMigrationFlowStep.options
+                        ? widget.data
+                        : _ironwoodMigrationFlowData(
+                          zatoshi: BigInt.from(14_224_000_000),
+                        ),
+                previewPrivatePlan: _previewPrivateMigrationPlan(),
+                onOpenReleaseNotesOverride: () {},
+              ),
         ),
         GoRoute(
           path: '/migration/review',
@@ -1907,10 +1931,11 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
         ),
         GoRoute(
           path: '/migration/private/status',
-          builder: (_, _) => IronwoodMigrationPrivateStatusScreen(
-            previewStatus:
-                widget.previewStatus ?? _previewPrivateMigrationStatus(),
-          ),
+          builder:
+              (_, _) => IronwoodMigrationPrivateStatusScreen(
+                previewStatus:
+                    widget.previewStatus ?? _previewPrivateMigrationStatus(),
+              ),
         ),
         GoRoute(
           path: '/home',
@@ -1963,8 +1988,9 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
         // satisfy the router.
         GoRoute(
           path: '/onboarding/intro',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
+          builder:
+              (_, _) =>
+                  const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
           path: '/import',
@@ -2016,8 +2042,8 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
         ),
         GoRoute(
           path: '/lost-password',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/lost-password'),
+          builder:
+              (_, _) => const _PreviewRoutePlaceholder(label: '/lost-password'),
         ),
       ],
     );
@@ -2530,7 +2556,7 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     targetValuesZatoshi: frb.Uint64List.fromList([]),
     totalInputZatoshi: BigInt.from(14_224_000_000),
     totalMigratableZatoshi: BigInt.from(14_209_500_000),
-    orchardChangeZatoshi: BigInt.from(100_000),
+    orchardChangeZatoshi: BigInt.from(90_000),
     denominationSplitFeeZatoshi: BigInt.from(100_000),
     migrationFeeZatoshi: BigInt.from(14_400_000),
     estimatedTotalFeeZatoshi: BigInt.from(14_500_000),
@@ -2545,6 +2571,56 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
         rust_sync.MigrationScheduledTransfer(
           valueZatoshi: BigInt.from(1_000_000_000),
           blockOffset: (i + 1) * 144,
+        ),
+    ],
+  );
+}
+
+rust_sync.MigrationStatus _previewMobileMigrationStatus() {
+  final now = DateTime.now();
+  const dispatchHours = [4, 12, 24, 24, 24, 30, 36, 42, 48, 54, 60, 66];
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingConfirmationsPhase,
+    activeRunId: 'preview-mobile-run',
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      412_000_000,
+      412_000_000,
+      412_000_000,
+      412_000_000,
+      412_000_000,
+      412_000_000,
+      2_000_000_000,
+      2_000_000_000,
+      2_000_000_000,
+      2_000_000_000,
+      2_000_000_000,
+      1_876_000_000,
+    ]),
+    preparedNoteCount: 12,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 9,
+    broadcastedTxCount: 3,
+    confirmedTxCount: 3,
+    totalCount: 12,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: [
+      for (var i = 0; i < dispatchHours.length; i++)
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'preview-mobile-tx-$i',
+          valueZatoshi: BigInt.from(412_000_000),
+          scheduledAtMs:
+              now.add(Duration(hours: dispatchHours[i])).millisecondsSinceEpoch,
+          scheduledHeight: 3_000_000 + (i + 1) * 144,
+          status: 'scheduled',
         ),
     ],
   );

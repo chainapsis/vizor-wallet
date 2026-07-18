@@ -68,6 +68,10 @@ abstract final class AppIcons {
   static const logOut = 'log_out';
   static const monitor = 'monitor';
   static const moneyBag = 'money_bag';
+  static const migrationFast = 'migration_fast';
+  static const migrationSign = 'migration_sign';
+  static const migrationSplit = 'migration_split';
+  static const migrationTimer = 'migration_timer';
   static const night = 'night';
   static const options = 'options';
   static const paid = 'paid';

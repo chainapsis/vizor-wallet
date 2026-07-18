@@ -38,9 +38,7 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
                 size: AppProfilePictureSize.navLarge,
               ),
             ),
-            Expanded(
-              child: Padding(padding: contentPadding, child: child),
-            ),
+            Expanded(child: Padding(padding: contentPadding, child: child)),
           ],
         ),
       ),
@@ -221,12 +219,16 @@ class _StatusTextRow extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: emphasizeLabel
-                          ? FontWeight.w600
-                          : FontWeight.w500,
-                    ),
+                    style: (emphasizeLabel || largeValue
+                            ? AppTypography.labelLarge
+                            : AppTypography.labelMedium)
+                        .copyWith(
+                          color: colors.text.accent,
+                          fontWeight:
+                              emphasizeLabel
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                        ),
                   ),
                 ),
               ),
@@ -236,11 +238,10 @@ class _StatusTextRow extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      (largeValue
-                              ? AppTypography.labelLarge
-                              : AppTypography.labelMedium)
-                          .copyWith(color: colors.text.accent),
+                  style: (largeValue
+                          ? AppTypography.labelLarge
+                          : AppTypography.labelMedium)
+                      .copyWith(color: colors.text.accent),
                 ),
               ),
               if (trailing != null) ...[
@@ -350,6 +351,20 @@ double _mobileMigrationProgress(
   if (status == null) return previewPlan == null ? 0 : 0.1;
   final total = _mobilePlannedBatchCount(status, previewPlan: previewPlan);
   if (total <= 0) return 0;
+  final values = status.targetValuesZatoshi;
+  if (values.length == total && values.isNotEmpty) {
+    final totalValue = values.fold<BigInt>(
+      BigInt.zero,
+      (sum, value) => sum + value,
+    );
+    if (totalValue > BigInt.zero) {
+      final completed = math.min(values.length, status.confirmedTxCount);
+      final migratedValue = values
+          .take(completed)
+          .fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+      return (migratedValue.toDouble() / totalValue.toDouble()).clamp(0, 1);
+    }
+  }
   return (status.confirmedTxCount / total).clamp(0, 1);
 }
 
@@ -400,18 +415,20 @@ _MobileCurrentBatch _mobileCurrentBatch(
     final values = previewPlan?.targetValuesZatoshi;
     return _MobileCurrentBatch(
       number: values?.isNotEmpty ?? false ? 1 : 0,
-      amount: values?.isNotEmpty ?? false
-          ? '${ZecAmount.fromZatoshi(values!.first).balance.amountText} ZEC'
-          : 'Amount pending',
+      amount:
+          values?.isNotEmpty ?? false
+              ? '${ZecAmount.fromZatoshi(values!.first).balance.amountText} ZEC'
+              : 'Amount pending',
       status: 'Not started',
     );
   }
   final count = _mobilePlannedBatchCount(status, previewPlan: previewPlan);
   final number = math.min(count, math.max(1, status.confirmedTxCount + 1));
   final values = status.targetValuesZatoshi;
-  final amount = number <= values.length
-      ? '${ZecAmount.fromZatoshi(values[number - 1]).balance.amountText} ZEC'
-      : 'Amount pending';
+  final amount =
+      number <= values.length
+          ? '${ZecAmount.fromZatoshi(values[number - 1]).balance.amountText} ZEC'
+          : 'Amount pending';
   final label = switch (status.phase) {
     kIronwoodMigrationReadyToMigratePhase => 'Preparing...',
     kIronwoodMigrationBroadcastScheduledPhase => 'Scheduled',
@@ -430,14 +447,37 @@ String _mobileStatusArrivalLabel(
         ? 'Schedule pending'
         : migrationPlanCompletionLabel(previewPlan);
   }
-  return migrationDispatchTimingLabel(status);
+  if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
+      !_mobileHasScheduledBroadcast(status)) {
+    return migrationDispatchTimingLabel(status);
+  }
+  return migrationCompletionTimingLabel(status, abbreviateMonth: false);
+}
+
+bool _mobileHasScheduledBroadcast(rust_sync.MigrationStatus status) {
+  return status.scheduledBroadcasts.any(
+    (broadcast) => broadcast.status == 'scheduled',
+  );
 }
 
 String _mobileStatusTimingLabel(rust_sync.MigrationStatus? status) {
-  if (status?.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
+  if (status?.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
+      !_mobileHasScheduledBroadcast(status!)) {
     return 'Migration status';
   }
   return 'Estimated arrival time';
+}
+
+String _mobileModalArrivalLabel(
+  rust_sync.MigrationStatus? status, {
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+}) {
+  if (status == null) {
+    return previewPlan == null
+        ? 'Schedule pending'
+        : migrationPlanCompletionLabel(previewPlan);
+  }
+  return migrationCompletionTimingLabel(status);
 }
 
 class _MigrationBatchModal extends StatefulWidget {
@@ -474,7 +514,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
     final targetValues =
         widget.status?.targetValuesZatoshi ??
         widget.previewPlan?.targetValuesZatoshi;
-    final arrivalLabel = _mobileStatusArrivalLabel(
+    final arrivalLabel = _mobileModalArrivalLabel(
       widget.status,
       previewPlan: widget.previewPlan,
     );
@@ -493,8 +533,9 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
             height: 480,
             width: double.infinity,
             child: DecoratedBox(
+              key: const ValueKey('mobile_ironwood_batch_modal_card'),
               decoration: BoxDecoration(
-                color: colors.background.base,
+                color: colors.background.ground,
                 borderRadius: BorderRadius.circular(AppRadii.large),
                 boxShadow: const [
                   BoxShadow(
@@ -505,109 +546,161 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
-                  AppSpacing.base + AppSpacing.xs,
-                  AppSpacing.sm,
-                  AppSpacing.md,
+                padding: const EdgeInsets.only(
+                  left: AppSpacing.sm,
+                  top: AppSpacing.base,
+                  right: AppSpacing.sm,
                 ),
                 child: Column(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          migrationBatchesLabel(batchCount),
-                          style: AppTypography.bodyLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w500,
-                          ),
+                    SizedBox(
+                      key: const ValueKey('mobile_ironwood_batch_modal_header'),
+                      height: 46,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.s,
                         ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          'Schedule: $arrivalLabel',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    Expanded(
-                      child: RawScrollbar(
-                        key: const ValueKey('migration_batch_scrollbar'),
-                        controller: _scrollController,
-                        thumbVisibility: true,
-                        interactive: true,
-                        radius: const Radius.circular(AppRadii.full),
-                        thickness: 4,
-                        mainAxisMargin: 20,
-                        padding: EdgeInsets.zero,
-                        crossAxisMargin: AppSpacing.xs,
-                        thumbColor: colors.background.overlay,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: AppSpacing.md),
-                          child: ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(
-                              context,
-                            ).copyWith(scrollbars: false),
-                            child: ListView.separated(
-                              controller: _scrollController,
-                              physics: const ClampingScrollPhysics(),
-                              padding: EdgeInsets.zero,
-                              itemCount: batchCount,
-                              separatorBuilder: (_, _) => Divider(
-                                height: 1,
-                                thickness: 1,
-                                color: colors.border.subtle,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                migrationBatchesLabel(batchCount),
+                                style: AppTypography.bodyLarge.copyWith(
+                                  color: colors.text.accent,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
-                              itemBuilder: (context, index) {
-                                final number = '${index + 1}'.padLeft(2, '0');
-                                final dispatchLabel = _mobileBatchDispatchLabel(
-                                  status: widget.status,
-                                  index: index,
-                                );
-                                return SizedBox(
-                                  height: 53,
-                                  child: Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 30,
-                                        child: Text(
-                                          number,
-                                          style: AppTypography.codeMedium
-                                              .copyWith(
-                                                color: colors.text.muted,
-                                              ),
-                                        ),
-                                      ),
-                                      const _ZecBatchBadge(),
-                                      const SizedBox(width: AppSpacing.xxs),
-                                      Expanded(
-                                        child: Text(
-                                          targetValues != null &&
-                                                  index < targetValues.length
-                                              ? '${ZecAmount.fromZatoshi(targetValues[index]).balance.amountText} ZEC'
-                                              : 'Amount pending',
-                                          style: AppTypography.labelLarge
-                                              .copyWith(
-                                                color: colors.text.accent,
-                                              ),
-                                        ),
-                                      ),
-                                      Text(
-                                        dispatchLabel,
-                                        style: AppTypography.labelLarge
-                                            .copyWith(
-                                              color: colors.text.accent,
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Text(
+                              'ETA: $arrivalLabel',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    SizedBox(
+                      height: 320,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.xs,
+                        ),
+                        child: RawScrollbar(
+                          key: const ValueKey('migration_batch_scrollbar'),
+                          controller: _scrollController,
+                          thumbVisibility: true,
+                          interactive: true,
+                          radius: const Radius.circular(AppRadii.full),
+                          thickness: 6,
+                          mainAxisMargin: AppSpacing.xs,
+                          padding: EdgeInsets.zero,
+                          crossAxisMargin: 6,
+                          thumbColor: colors.background.overlay,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 22),
+                            child: ScrollConfiguration(
+                              behavior: ScrollConfiguration.of(
+                                context,
+                              ).copyWith(scrollbars: false),
+                              child: ListView.separated(
+                                controller: _scrollController,
+                                physics: const ClampingScrollPhysics(),
+                                padding: EdgeInsets.zero,
+                                itemCount: batchCount,
+                                separatorBuilder:
+                                    (_, _) =>
+                                        const SizedBox(height: AppSpacing.s),
+                                itemBuilder: (context, index) {
+                                  final number = '${index + 1}'.padLeft(2, '0');
+                                  final dispatchLabel =
+                                      _mobileBatchDispatchLabel(
+                                        status: widget.status,
+                                        index: index,
+                                      );
+                                  return SizedBox(
+                                    height: 39,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          width: 28,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 5,
                                             ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
+                                            child: Text(
+                                              number,
+                                              style: AppTypography.codeMedium
+                                                  .copyWith(
+                                                    color: colors.text.muted,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            children: [
+                                              SizedBox(
+                                                height: 30,
+                                                child: Row(
+                                                  children: [
+                                                    const _ZecBatchBadge(),
+                                                    const SizedBox(
+                                                      width: AppSpacing.xxs,
+                                                    ),
+                                                    Expanded(
+                                                      child: Text(
+                                                        targetValues != null &&
+                                                                index <
+                                                                    targetValues
+                                                                        .length
+                                                            ? '${ZecAmount.fromZatoshi(targetValues[index]).balance.amountText} ZEC'
+                                                            : 'Amount pending',
+                                                        style: AppTypography
+                                                            .labelMedium
+                                                            .copyWith(
+                                                              color:
+                                                                  colors
+                                                                      .text
+                                                                      .accent,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      dispatchLabel,
+                                                      style: AppTypography
+                                                          .labelMedium
+                                                          .copyWith(
+                                                            color:
+                                                                colors
+                                                                    .text
+                                                                    .accent,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Divider(
+                                                height: 1,
+                                                thickness: 1,
+                                                color: colors.border.subtle,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),
@@ -615,18 +708,26 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     SizedBox(
-                      width: double.infinity,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.background.ground,
-                          borderRadius: BorderRadius.circular(AppRadii.full),
-                        ),
-                        child: AppButton(
-                          variant: AppButtonVariant.ghost,
-                          expand: true,
-                          height: 44,
-                          onPressed: widget.onClose,
-                          child: const Text('Close'),
+                      height: 66,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colors.background.base,
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.full,
+                              ),
+                            ),
+                            child: AppButton(
+                              variant: AppButtonVariant.ghost,
+                              expand: true,
+                              height: 44,
+                              onPressed: widget.onClose,
+                              child: const Text('Close'),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -647,7 +748,10 @@ String _mobileBatchDispatchLabel({
 }) {
   if (status == null) return 'Pending';
   if (index >= status.scheduledBroadcasts.length) return 'Pending';
-  return migrationScheduledBroadcastLabel(status.scheduledBroadcasts[index]);
+  return migrationScheduledBroadcastLabel(
+    status.scheduledBroadcasts[index],
+    approximate: true,
+  );
 }
 
 class _ZecBatchBadge extends StatelessWidget {

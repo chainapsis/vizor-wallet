@@ -59,7 +59,6 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
-                          height: 24 / 16,
                         ),
                       ),
                     ],
@@ -94,7 +93,7 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
     required this.child,
     required this.bottom,
     this.topGap = 29,
-    this.iconTitleGap = 36,
+    this.iconTitleGap = 32,
   });
 
   final VoidCallback onBack;
@@ -212,65 +211,93 @@ class _MobilePoolMigrationHero extends StatelessWidget {
               left: 16,
               right: 16,
               top: 16,
-              child: Row(
+              child: Stack(
                 children: [
-                  AppProfilePicture(
-                    profilePictureId: data.profilePictureId,
-                    size: AppProfilePictureSize.navLarge,
-                  ),
-                  Expanded(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          height: 3,
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFB8B8B8), Color(0xFF00A460)],
-                            ),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        DecoratedBox(
-                          decoration: const ShapeDecoration(
-                            color: Color(0xFF00A460),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(6),
+                  Row(
+                    children: [
+                      AppProfilePicture(
+                        profilePictureId: data.profilePictureId,
+                        size: AppProfilePictureSize.navLarge,
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFB8B8B8),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
                               ),
                             ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.xs,
-                              vertical: 6,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const AppIcon(
-                                  AppIcons.shieldKeyhole,
-                                  size: 20,
-                                  color: Color(0xFFEAFEEF),
-                                ),
-                                const SizedBox(width: AppSpacing.xxs),
-                                Text(
-                                  'Migration',
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: const Color(0xFFEAFEEF),
+                            DecoratedBox(
+                              decoration: const ShapeDecoration(
+                                color: Color(0xFF00A460),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(AppRadii.xSmall),
                                   ),
                                 ),
-                              ],
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.xs,
+                                  vertical: AppSpacing.xxs,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const AppIcon(
+                                      AppIcons.shieldKeyhole,
+                                      size: 20,
+                                      color: Color(0xFFFFFFFF),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xxs),
+                                    Text(
+                                      'Migration',
+                                      style: AppTypography.bodyMediumStrong
+                                          .copyWith(
+                                            color: const Color(0xFFFFFFFF),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                            Expanded(
+                              child: Container(
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00A460),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                      AppProfilePicture(
+                        profilePictureId: data.profilePictureId,
+                        size: AppProfilePictureSize.navLarge,
+                      ),
+                    ],
+                  ),
+                  const Positioned(
+                    left: 32,
+                    top: 12,
+                    child: _MigrationConnectionDot(
+                      key: ValueKey('mobile_ironwood_legacy_connection_dot'),
+                      color: Color(0xFFB8B8B8),
                     ),
                   ),
-                  AppProfilePicture(
-                    profilePictureId: data.profilePictureId,
-                    size: AppProfilePictureSize.navLarge,
+                  const Positioned(
+                    right: 32,
+                    top: 12,
+                    child: _MigrationConnectionDot(
+                      key: ValueKey('mobile_ironwood_target_connection_dot'),
+                      color: Color(0xFF00A460),
+                    ),
                   ),
                 ],
               ),
@@ -289,12 +316,12 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                         Text(
                           '(Legacy)',
                           style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.secondary,
+                            color: colors.text.muted,
                           ),
                         ),
                         Text(
                           'Orchard Pool',
-                          style: AppTypography.bodyMediumStrong.copyWith(
+                          style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
                         ),
@@ -314,7 +341,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       children: [
                         Text(
                           'Ironwood Pool',
-                          style: AppTypography.bodyMediumStrong.copyWith(
+                          style: AppTypography.labelLarge.copyWith(
                             color: const Color(0xFF00A460),
                           ),
                         ),
@@ -338,6 +365,25 @@ class _MobilePoolMigrationHero extends StatelessWidget {
   }
 }
 
+class _MigrationConnectionDot extends StatelessWidget {
+  const _MigrationConnectionDot({required this.color, super.key});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFFFFFFF), width: 3),
+      ),
+    );
+  }
+}
+
 class _MobileMigrationProcessCard extends StatelessWidget {
   const _MobileMigrationProcessCard({
     required this.amount,
@@ -352,38 +398,46 @@ class _MobileMigrationProcessCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _MobileReviewCard(
-      padding: const EdgeInsets.fromLTRB(20, 29, 16, 42),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.base,
+      ),
       borderRadius: 32,
+      showShadow: false,
       child: Column(
         children: [
           _ProcessRow(
             icon: _ProcessIcon.split,
             title: 'Split funds',
-            body: plan == null
-                ? 'Vizor will calculate the split transactions and migration '
-                      'batches from your current Orchard notes.'
-                : migrationPlanPreparationDescription(
-                    plan: plan!,
-                    amountText: amount,
-                  ),
+            body:
+                plan == null
+                    ? 'Vizor will calculate the split transactions and migration '
+                        'batches from your current Orchard notes.'
+                    : migrationPlanPreparationDescription(
+                      plan: plan!,
+                      amountText: amount,
+                    ),
+            showDivider: true,
           ),
-          const Divider(height: 33),
+          const SizedBox(height: AppSpacing.md),
           const _ProcessRow(
             icon: _ProcessIcon.schedule,
             title: 'Schedule',
             body:
                 'Transactions dispatch at irregular intervals instead of all '
                 'at once.',
+            showDivider: true,
           ),
-          const Divider(height: 33),
+          const SizedBox(height: AppSpacing.md),
           _ProcessRow(
             icon: _ProcessIcon.sign,
             title: isHardware ? 'Sign with Keystone twice' : 'Sign once',
-            body: isHardware
-                ? 'First approve the split transactions. After they confirm, '
-                      'return to approve the Ironwood migration transactions.'
-                : 'You grant permission at the start, and Vizor executes the '
-                      'remaining steps.',
+            body:
+                isHardware
+                    ? 'First approve the split transactions. After they confirm, '
+                        'return to approve the Ironwood migration transactions.'
+                    : 'You grant permission at the start, and Vizor executes the '
+                        'remaining steps.',
           ),
         ],
       ),
@@ -398,24 +452,35 @@ class _ProcessRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.body,
+    this.showDivider = false,
   });
 
   final _ProcessIcon icon;
   final String title;
   final String body;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final iconName = switch (icon) {
+      _ProcessIcon.split => AppIcons.migrationSplit,
+      _ProcessIcon.schedule => AppIcons.migrationTimer,
+      _ProcessIcon.sign => AppIcons.migrationSign,
+    };
+    final iconKey = switch (icon) {
+      _ProcessIcon.split => 'mobile_ironwood_process_split_icon',
+      _ProcessIcon.schedule => 'mobile_ironwood_process_schedule_icon',
+      _ProcessIcon.sign => 'mobile_ironwood_process_sign_icon',
+    };
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 24,
-          height: 24,
-          child: CustomPaint(
-            painter: _ProcessIconPainter(icon, const Color(0xFF00A460)),
-          ),
+        AppIcon(
+          iconName,
+          key: ValueKey(iconKey),
+          size: 24,
+          color: const Color(0xFF00A460),
         ),
         const SizedBox(width: AppSpacing.s),
         Expanded(
@@ -424,8 +489,9 @@ class _ProcessRow extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: AppTypography.bodyMediumStrong.copyWith(
+                style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -436,49 +502,17 @@ class _ProcessRow extends StatelessWidget {
                   height: 25 / 16,
                 ),
               ),
+              if (showDivider)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                  child: Container(height: 1, color: colors.border.regular),
+                ),
             ],
           ),
         ),
       ],
     );
   }
-}
-
-class _ProcessIconPainter extends CustomPainter {
-  const _ProcessIconPainter(this.kind, this.color);
-
-  final _ProcessIcon kind;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.8
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    switch (kind) {
-      case _ProcessIcon.split:
-        canvas.drawLine(const Offset(5, 5), const Offset(5, 11), paint);
-        canvas.drawLine(const Offset(5, 11), const Offset(12, 11), paint);
-        canvas.drawLine(const Offset(12, 11), const Offset(12, 16), paint);
-        canvas.drawLine(const Offset(12, 11), const Offset(16, 7), paint);
-      case _ProcessIcon.schedule:
-        canvas.drawCircle(const Offset(10, 10), 6.5, paint);
-        canvas.drawLine(const Offset(10, 10), const Offset(10, 6), paint);
-        canvas.drawLine(const Offset(10, 10), const Offset(13, 12), paint);
-      case _ProcessIcon.sign:
-        canvas.drawLine(const Offset(4, 15), const Offset(16, 15), paint);
-        canvas.drawLine(const Offset(5, 12), const Offset(8, 6), paint);
-        canvas.drawLine(const Offset(8, 6), const Offset(12, 12), paint);
-        canvas.drawLine(const Offset(12, 12), const Offset(15, 5), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ProcessIconPainter oldDelegate) =>
-      oldDelegate.kind != kind || oldDelegate.color != color;
 }
 
 enum _MigrationChoiceIcon { private, immediate }
@@ -490,6 +524,7 @@ class _MobileMigrationOptionCard extends StatelessWidget {
     required this.selected,
     required this.icon,
     this.enabled = true,
+    this.recommended = false,
     super.key,
   });
 
@@ -498,121 +533,135 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   final bool selected;
   final _MigrationChoiceIcon icon;
   final bool enabled;
+  final bool recommended;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Opacity(
-      opacity: enabled ? 1 : 0.96,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(24),
-          border: selected
-              ? Border.all(color: const Color(0xFF00A460), width: 2)
-              : null,
-          boxShadow: appSurfaceShadow(colors),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        border:
+            selected
+                ? Border.all(color: const Color(0xFF00A460), width: 2)
+                : null,
+        boxShadow: appSurfaceShadow(colors),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s,
+          AppSpacing.sm,
+          AppSpacing.sm,
+          AppSpacing.sm,
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 16, 18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: icon == _MigrationChoiceIcon.private
-                    ? AppIcon(
-                        AppIcons.shieldKeyhole,
-                        color: colors.icon.regular,
-                      )
-                    : CustomPaint(
-                        painter: _ImmediateMigrationIconPainter(
-                          colors.icon.disabled,
-                        ),
-                      ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Center(
+                child: Opacity(
+                  opacity: enabled ? 1 : 0.5,
+                  child: AppIcon(
+                    icon == _MigrationChoiceIcon.private
+                        ? AppIcons.shieldKeyhole
+                        : AppIcons.migrationFast,
+                    key: ValueKey(
+                      icon == _MigrationChoiceIcon.private
+                          ? 'mobile_ironwood_private_icon'
+                          : 'mobile_ironwood_immediate_icon',
+                    ),
+                    size: 20,
+                    color: colors.icon.accent,
+                  ),
+                ),
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.xxs,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (recommended) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          DecoratedBox(
+                            key: const ValueKey(
+                              'mobile_ironwood_recommended_badge',
+                            ),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00A460),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(AppRadii.xSmall),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.xxs),
+                              child: Text(
+                                'Recommended',
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: const Color(0xFFFFFFFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       body,
-                      style: AppTypography.bodyMedium.copyWith(
+                      style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.secondary,
-                        height: 25 / 16,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected
-                      ? colors.background.inverse
-                      : colors.background.overlay,
-                ),
-                child: selected
-                    ? AppIcon(
+            ),
+            Container(
+              key: ValueKey(
+                selected
+                    ? 'mobile_ironwood_selected_radio'
+                    : 'mobile_ironwood_unselected_radio',
+              ),
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color:
+                    selected
+                        ? colors.background.inverse
+                        : colors.background.neutralSubtleOpacity,
+              ),
+              child:
+                  selected
+                      ? AppIcon(
                         AppIcons.check,
                         size: 16,
                         color: colors.text.inverse,
                       )
-                    : null,
-              ),
-            ],
-          ),
+                      : null,
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _ImmediateMigrationIconPainter extends CustomPainter {
-  const _ImmediateMigrationIconPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(size.width * 0.56, 0)
-      ..lineTo(size.width * 0.18, size.height * 0.54)
-      ..lineTo(size.width * 0.48, size.height * 0.54)
-      ..lineTo(size.width * 0.37, size.height)
-      ..lineTo(size.width * 0.84, size.height * 0.39)
-      ..lineTo(size.width * 0.57, size.height * 0.39)
-      ..close();
-    canvas.drawPath(path, paint);
-    canvas.drawLine(
-      Offset.zero,
-      Offset(size.width * 0.22, 0),
-      Paint()
-        ..color = color
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ImmediateMigrationIconPainter oldDelegate) =>
-      oldDelegate.color != color;
 }
 
 class _MobilePrivatePlan extends StatelessWidget {
@@ -625,6 +674,10 @@ class _MobilePrivatePlan extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final orchardRemainder = plan.orchardChangeZatoshi ?? BigInt.zero;
+    final migrationFeePerBatch =
+        plan.plannedBatchCount > 0
+            ? plan.migrationFeeZatoshi ~/ BigInt.from(plan.plannedBatchCount)
+            : plan.migrationFeeZatoshi;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -633,11 +686,12 @@ class _MobilePrivatePlan extends StatelessWidget {
             children: [
               _ReviewRow(
                 label: plannedMigrationBatchesLabel(plan.plannedBatchCount),
-                value: 'View  ›',
+                value: 'View',
                 strongLabel: true,
+                trailing: const AppIcon(AppIcons.chevronForward, size: 16),
               ),
               const SizedBox(height: AppSpacing.s),
-              _ReviewRow(label: 'Dispatch window', value: arrivalLabel),
+              _ReviewRow(label: '~ Arrival time', value: arrivalLabel),
             ],
           ),
         ),
@@ -647,13 +701,12 @@ class _MobilePrivatePlan extends StatelessWidget {
             children: [
               _ReviewRow(
                 label: 'Fees (estimate)',
-                value:
-                    'Total, ~${_compactZec(plan.estimatedTotalFeeZatoshi)} ZEC',
+                value: 'Per batch, ~${_compactZec(migrationFeePerBatch)} ZEC',
               ),
               const SizedBox(height: AppSpacing.s),
               _ReviewRow(
                 label: 'Orchard remains',
-                value: '${_compactZec(orchardRemainder)} ZEC',
+                value: _orchardRemainderLabel(orchardRemainder),
                 showInfo: true,
               ),
             ],
@@ -668,9 +721,9 @@ class _MobilePrivatePlan extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Transactions are scheduled across the shown window instead of all '
-          'at once. Amounts and timing remain visible, so this is not a '
-          'privacy guarantee.',
+          'Separate windows reduce correlation — the total crossing amount '
+          'stays publicly visible. Sending is best effort, not a delivery '
+          'time.',
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.accent,
             height: 25 / 16,
@@ -681,16 +734,25 @@ class _MobilePrivatePlan extends StatelessWidget {
   }
 }
 
+String _orchardRemainderLabel(BigInt zatoshi) {
+  if (zatoshi > BigInt.zero && zatoshi < BigInt.from(100000)) {
+    return '<0.001 ZEC';
+  }
+  return '${_compactZec(zatoshi)} ZEC';
+}
+
 class _MobileReviewCard extends StatelessWidget {
   const _MobileReviewCard({
     required this.child,
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
     this.borderRadius = 24,
+    this.showShadow = true,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double borderRadius;
+  final bool showShadow;
 
   @override
   Widget build(BuildContext context) {
@@ -699,7 +761,7 @@ class _MobileReviewCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(borderRadius),
-        boxShadow: appSurfaceShadow(colors),
+        boxShadow: showShadow ? appSurfaceShadow(colors) : null,
       ),
       child: Padding(padding: padding, child: child),
     );
@@ -712,12 +774,14 @@ class _ReviewRow extends StatelessWidget {
     required this.value,
     this.strongLabel = false,
     this.showInfo = false,
+    this.trailing,
   });
 
   final String label;
   final String value;
   final bool strongLabel;
   final bool showInfo;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -726,15 +790,12 @@ class _ReviewRow extends StatelessWidget {
       children: [
         Text(
           label,
-          style:
-              (strongLabel
-                      ? AppTypography.bodyMediumStrong
-                      : AppTypography.bodyMedium)
-                  .copyWith(
-                    color: strongLabel
-                        ? colors.text.accent
-                        : colors.text.secondary,
-                  ),
+          style: (strongLabel
+                  ? AppTypography.bodyMediumStrong
+                  : AppTypography.bodyMedium)
+              .copyWith(
+                color: strongLabel ? colors.text.accent : colors.text.secondary,
+              ),
         ),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
@@ -753,7 +814,11 @@ class _ReviewRow extends StatelessWidget {
               ),
               if (showInfo) ...[
                 const SizedBox(width: AppSpacing.xxs),
-                AppIcon(AppIcons.help, size: 14, color: colors.icon.regular),
+                AppIcon(AppIcons.help, size: 16, color: colors.icon.regular),
+              ],
+              if (trailing != null) ...[
+                const SizedBox(width: AppSpacing.xxs),
+                trailing!,
               ],
             ],
           ),

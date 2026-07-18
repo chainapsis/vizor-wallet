@@ -43,8 +43,9 @@ void main() {
         migrationScheduledBroadcastLabel(
           _broadcast('scheduled', now.add(const Duration(hours: 2))),
           now: now,
+          approximate: true,
         ),
-        'in 2 hrs',
+        '~in 2 hrs',
       );
       expect(
         migrationScheduledBroadcastLabel(
@@ -71,6 +72,11 @@ void main() {
 
     expect(migrationDispatchTimingLabel(confirming, now: now), 'Confirming');
     expect(migrationDispatchTimingLabel(scheduled, now: now), 'Jul 17, 12:03');
+    expect(
+      migrationCompletionTimingLabel(scheduled, abbreviateMonth: false),
+      'July 17, 12:03',
+    );
+    expect(migrationCompletionTimingLabel(confirming), 'Jul 17, 12:00');
   });
 }
 

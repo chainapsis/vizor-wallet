@@ -36,7 +36,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
             left: 0,
             top: 0,
             right: 0,
-            height: 208,
+            height: 204,
             child: Image(
               image: AssetImage(
                 'assets/illustrations/ironwood_migration_modal_background.png',
@@ -45,7 +45,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
             ),
           ),
           const Positioned(
-            top: 27,
+            top: 32,
             left: 0,
             right: 0,
             height: 152,
@@ -61,7 +61,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 214,
+            top: 216,
             left: AppSpacing.sm,
             right: AppSpacing.sm,
             child: Column(
@@ -76,15 +76,14 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                     BlendMode.srcIn,
                   ),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   'Ironwood is the latest Zcash shielded pool.\n'
                   "It’s the first formally verified pool with\n"
                   'cutting edge cryptography.',
                   textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.primary,
-                    height: 24 / 16,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
               ],
