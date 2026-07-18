@@ -40,7 +40,9 @@ void main() {
       Future<void> shot(String name) async {
         // Let animations/toasts settle so frames are representative.
         await settle(tester, const Duration(milliseconds: 700));
-        await postDriver('/screenshot', {'name': name}, baseUrl: _screenshotDriverUrl);
+        await postDriver('/screenshot', {
+          'name': name,
+        }, baseUrl: _screenshotDriverUrl);
         logE2e('shot $name');
       }
 
@@ -57,10 +59,7 @@ void main() {
       await shot('01_welcome');
 
       // ── Method selection ───────────────────────────────────────────
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_welcome_get_started'),
-      );
+      await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
       await pumpUntil(
         tester,
         () => tester.any(find.byKey(const ValueKey('mobile_welcome_import'))),
@@ -71,10 +70,7 @@ void main() {
       // ── Import flow (funded wallet) ────────────────────────────────
       await tapWidget(tester, const ValueKey('mobile_welcome_import'));
       await shot('02_import_entry');
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_import_enter_manually'),
-      );
+      await tapWidget(tester, const ValueKey('mobile_import_enter_manually'));
       await pumpUntil(
         tester,
         () => tester.any(find.text('Next word')),
@@ -157,9 +153,8 @@ void main() {
       await enterPasscode(tester, mobileE2ePasscode);
       await pumpUntil(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('mobile_biometrics_not_now')),
-        ),
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_biometrics_not_now'))),
         description: 'biometrics screen',
         timeout: const Duration(seconds: 90),
       );
@@ -219,7 +214,10 @@ void main() {
         timeout: const Duration(minutes: 1),
       );
       await shot('15_receive_shielded');
-      await tapWidget(tester, const ValueKey('receive_address_type_tab_transparent'));
+      await tapWidget(
+        tester,
+        const ValueKey('receive_address_type_tab_transparent'),
+      );
       await shot('16_receive_transparent');
       // Info sheets per pool.
       final help = find.bySemanticsLabel('About this address type');
@@ -288,8 +286,7 @@ void main() {
       await tapWidget(tester, const ValueKey('mobile_send_memo_row'));
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_send_memo_field'))),
+        () => tester.any(find.byKey(const ValueKey('mobile_send_memo_field'))),
         description: 'memo sheet',
       );
       await shot('24_send_memo_sheet');
@@ -315,16 +312,18 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_send_status_sending'))),
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_send_status_sending')),
+        ),
         description: 'send status to start',
         timeout: const Duration(minutes: 1),
       );
       await shot('25c_send_sending');
       await pumpUntil(
         tester,
-        () => tester
-            .any(find.byKey(const ValueKey('mobile_send_status_succeeded'))),
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_send_status_succeeded')),
+        ),
         description: 'send status to succeed',
         timeout: const Duration(minutes: 4),
       );
@@ -410,7 +409,9 @@ void main() {
       await enterPasscode(tester, mobileE2ePasscode);
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Update Passcode')),
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_change_passcode_create')),
+        ),
         description: 'change passcode new',
       );
       await shot('30_change_passcode_new');
@@ -472,9 +473,8 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('mobile_address_book_save')),
-        ),
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_address_book_save'))),
         description: 'add contact sheet',
       );
       await tester.enterText(
@@ -513,14 +513,10 @@ void main() {
       await openHomeTab(tester);
       await openAddAccountFlow(tester);
       await shot('31_welcome_add_account');
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_welcome_get_started'),
-      );
+      await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_welcome_keystone'))),
+        () => tester.any(find.byKey(const ValueKey('mobile_welcome_keystone'))),
         description: 'method selection (add account)',
       );
       await tapWidget(tester, const ValueKey('mobile_welcome_keystone'));
@@ -535,15 +531,13 @@ void main() {
       await tapBack(tester);
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
+        () => tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
         description: 'back on method selection',
       );
       await tapWidget(tester, const ValueKey('mobile_welcome_create'));
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('mobile_intro_continue'))),
+        () => tester.any(find.byKey(const ValueKey('mobile_intro_continue'))),
         description: 'intro screen',
       );
       await shot('32_intro');
@@ -591,7 +585,6 @@ void main() {
     timeout: const Timeout(Duration(minutes: 20)),
   );
 }
-
 
 /// Dismisses any open sheets/pushed screens until the home balance
 /// card is visible again.

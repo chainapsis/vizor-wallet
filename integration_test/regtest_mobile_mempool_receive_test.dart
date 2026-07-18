@@ -64,14 +64,14 @@ void main() {
       await expectActivityRow(
         tester,
         const ValueKey('mobile_activity_row_0'),
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
       await openHomeTab(tester);
       await expectActivityRow(
         tester,
         const ValueKey('mobile_home_activity_row_0'),
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
 
@@ -85,7 +85,7 @@ void main() {
       expectNoActivityRow(
         tester,
         rowKeyPrefix: 'mobile_home_activity',
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
       await openActivityTab(tester);

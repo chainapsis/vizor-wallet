@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import subprocess
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -39,6 +40,8 @@ def run_command(
 class DriverHandler(BaseHTTPRequestHandler):
     repo_root: Path
     activation_height: str
+    wallet_snapshot: Optional[Dict[str, str]] = None
+    wallet_snapshot_lock = threading.Lock()
 
     @classmethod
     def ironwood_env(cls) -> Dict[str, str]:
@@ -67,6 +70,14 @@ class DriverHandler(BaseHTTPRequestHandler):
                 )
                 txids = json.loads(output)
                 self.respond(200, {"size": len(txids), "txids": txids})
+                return
+            if self.path == "/wallet-snapshot":
+                with self.wallet_snapshot_lock:
+                    snapshot = type(self).wallet_snapshot
+                if snapshot is None:
+                    self.respond(404, {"error": "wallet snapshot not found"})
+                    return
+                self.respond(200, {"files": snapshot})
                 return
             self.respond(404, {"error": "not found"})
         except Exception as exc:
@@ -174,6 +185,24 @@ class DriverHandler(BaseHTTPRequestHandler):
                     env=self.ironwood_env(),
                 )
                 self.respond(200, {"ok": True, "status": json.loads(output)})
+                return
+
+            if self.path == "/wallet-snapshot":
+                files = payload.get("files")
+                if not isinstance(files, dict) or not files:
+                    raise ValueError("wallet snapshot files must be a non-empty object")
+                snapshot: Dict[str, str] = {}
+                for name, contents in files.items():
+                    if name not in {"db", "wal", "shm"}:
+                        raise ValueError(f"unsupported wallet snapshot file: {name}")
+                    if not isinstance(contents, str) or not contents:
+                        raise ValueError(f"wallet snapshot file {name} is empty")
+                    snapshot[name] = contents
+                if "db" not in snapshot:
+                    raise ValueError("wallet snapshot must include the database")
+                with self.wallet_snapshot_lock:
+                    type(self).wallet_snapshot = snapshot
+                self.respond(200, {"ok": True, "files": sorted(snapshot)})
                 return
 
             self.respond(404, {"error": "not found"})

@@ -6,6 +6,7 @@ MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manu
 ACTIVATION_HEIGHT="${IRONWOOD_ACTIVATION_HEIGHT:-500}"
 LIGHTWALLETD_URL="${E2E_LIGHTWALLETD_URL:-http://127.0.0.1:19067}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
+VIZOR_FORM_FACTOR="${VIZOR_FORM_FACTOR:-desktop}"
 DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
@@ -163,11 +164,35 @@ for _ in range(100):
 raise SystemExit("Timed out waiting for Ironwood E2E driver")
 PY
 
-echo "running Flutter macOS Ironwood migration integration test: $TEST_FILE"
+echo "running Flutter Ironwood migration integration test: $TEST_FILE"
+form_factor_args=()
+if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
+  form_factor_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+fi
+scenario_define_args=(
+  --dart-define=ZCASH_E2E_ORCHARD_FUNDING_NOTE_COUNT="$FUNDING_NOTE_COUNT"
+)
+if [[ -n "${E2E_ORCHARD_FUNDING_ZATOSHI:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI="$E2E_ORCHARD_FUNDING_ZATOSHI"
+  )
+fi
+if [[ -n "${E2E_EXPECTED_SPLIT_STAGE_COUNT:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_EXPECTED_SPLIT_STAGE_COUNT="$E2E_EXPECTED_SPLIT_STAGE_COUNT"
+  )
+fi
+if [[ -n "${E2E_EXPECTED_MIGRATION_BATCH_COUNT:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_EXPECTED_MIGRATION_BATCH_COUNT="$E2E_EXPECTED_MIGRATION_BATCH_COUNT"
+  )
+fi
 set +e
 fvm flutter test \
   "$TEST_FILE" \
   -d "$FLUTTER_DEVICE" \
+  "${form_factor_args[@]}" \
+  "${scenario_define_args[@]}" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \

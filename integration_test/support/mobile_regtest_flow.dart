@@ -11,15 +11,21 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 const mobileE2ePasscode = '111111';
+const mobileIronwoodE2eMnemonic =
+    'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
+    'roast miracle ethics found child scare curve congress renew salute pig '
+    'better used';
 
 /// 'TAZ' on regtest; activity amounts and the balance card follow it.
 final mobileE2eTicker = kZcashDefaultCurrencyTicker;
@@ -95,7 +101,12 @@ Future<void> tapAppButton(
   Key key, {
   Duration timeout = const Duration(seconds: 20),
 }) async {
-  final finder = find.byKey(key);
+  final keyed = find.byKey(key);
+  final finder = find.descendant(
+    of: keyed,
+    matching: find.byType(AppButton),
+    matchRoot: true,
+  );
   await pumpUntil(
     tester,
     () =>
@@ -104,9 +115,18 @@ Future<void> tapAppButton(
     description: '$key button to be enabled',
     timeout: timeout,
   );
-  await tester.ensureVisible(finder);
-  await tester.pump(const Duration(milliseconds: 50));
-  await tester.tap(finder);
+  await tester.ensureVisible(keyed);
+  await tester.pump(const Duration(milliseconds: 100));
+  final hitTestable = finder.hitTestable();
+  await pumpUntil(
+    tester,
+    () =>
+        tester.any(hitTestable) &&
+        tester.widget<AppButton>(finder).onPressed != null,
+    description: '$key button to be tappable',
+    timeout: timeout,
+  );
+  await tester.tap(hitTestable);
   await tester.pump(const Duration(milliseconds: 250));
   logE2e('tapped $key');
 }
@@ -228,9 +248,19 @@ Future<void> cleanupE2eWalletState() async {
   final dbName = await getWalletDbName();
 
   logE2e('cleaning regtest wallet state');
-  await _stopRustWorkForCleanup();
+  await stopRustWorkForCleanup();
 
   await storage.deleteAll();
+
+  final preferences = await SharedPreferences.getInstance();
+  await preferences.remove(ironwoodActiveSeenStorageKey(mobileE2eNetwork));
+  for (final key in preferences.getKeys()) {
+    if (key.startsWith(
+      'zcash_ironwood_migration_announcement_seen_${mobileE2eNetwork}_',
+    )) {
+      await preferences.remove(key);
+    }
+  }
 
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
@@ -241,7 +271,7 @@ Future<void> cleanupE2eWalletState() async {
   }
 }
 
-Future<void> _stopRustWorkForCleanup() async {
+Future<void> stopRustWorkForCleanup() async {
   rust_sync.setSyncMode(mode: 0);
   rust_sync.cancelFullSync();
   rust_sync.stopMempoolObserver();
@@ -259,6 +289,56 @@ Future<void> _stopRustWorkForCleanup() async {
   }
 }
 
+Future<void> snapshotWalletDbToDriver() async {
+  await stopRustWorkForCleanup();
+  final supportDir = await getWalletSupportDirectory();
+  final dbName = await getWalletDbName();
+  final snapshot = <String, Object?>{};
+  for (final entry in {
+    'db': dbName,
+    'wal': '$dbName-wal',
+    'shm': '$dbName-shm',
+  }.entries) {
+    final file = File(
+      '${supportDir.path}${Platform.pathSeparator}${entry.value}',
+    );
+    if (file.existsSync()) {
+      snapshot[entry.key] = base64Encode(await file.readAsBytes());
+    }
+  }
+  if (!snapshot.containsKey('db')) {
+    fail('Wallet database was missing before the process-restart snapshot.');
+  }
+  await postDriver('/wallet-snapshot', {'files': snapshot});
+  logE2e('saved wallet DB snapshot for process restart');
+}
+
+Future<void> restoreWalletDbFromDriver() async {
+  await stopRustWorkForCleanup();
+  final response = await getDriver('/wallet-snapshot');
+  final encodedFiles = response['files'];
+  if (encodedFiles is! Map) {
+    fail('E2E driver returned an invalid wallet DB snapshot.');
+  }
+
+  final supportDir = await getWalletSupportDirectory();
+  final dbName = await getWalletDbName();
+  final names = {'db': dbName, 'wal': '$dbName-wal', 'shm': '$dbName-shm'};
+  for (final name in names.values) {
+    final file = File('${supportDir.path}${Platform.pathSeparator}$name');
+    if (file.existsSync()) file.deleteSync();
+  }
+  for (final entry in encodedFiles.entries) {
+    final name = names[entry.key];
+    if (name == null || entry.value is! String) {
+      fail('E2E driver returned an unsupported wallet DB snapshot file.');
+    }
+    final file = File('${supportDir.path}${Platform.pathSeparator}$name');
+    await file.writeAsBytes(base64Decode(entry.value as String), flush: true);
+  }
+  logE2e('restored wallet DB snapshot after test-runner reinstall');
+}
+
 // ── Mobile flow primitives ───────────────────────────────────────────
 
 /// Welcome → create flow → passcode ×2 → biometrics → home.
@@ -267,14 +347,8 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
   await tapWidget(tester, const ValueKey('mobile_welcome_create'));
   await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_address_types_continue'),
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_things_to_know_continue'),
-  );
+  await tapAppButton(tester, const ValueKey('mobile_address_types_continue'));
+  await tapAppButton(tester, const ValueKey('mobile_things_to_know_continue'));
   await tapAppButton(
     tester,
     const ValueKey('mobile_secret_passphrase_primary'),
@@ -309,10 +383,7 @@ Future<void> importWalletViaPaste(
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
   await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
   // Block height is a real text field on the system keyboard.
-  await tapWidget(
-    tester,
-    const ValueKey('mobile_import_birthday_mode_height'),
-  );
+  await tapWidget(tester, const ValueKey('mobile_import_birthday_mode_height'));
   await tester.enterText(
     find.byKey(const ValueKey('mobile_import_birthday_height')),
     '$birthdayHeight',
@@ -339,11 +410,79 @@ Future<void> importWalletViaPaste(
 Future<void> waitForHome(WidgetTester tester) async {
   await pumpUntil(
     tester,
-    () => tester.any(
-      find.byKey(const ValueKey('mobile_home_shielded_balance')),
-    ),
+    () =>
+        tester.any(find.byKey(const ValueKey('mobile_home_shielded_balance'))),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
+  );
+}
+
+Future<void> openMobilePrivateMigrationReview(WidgetTester tester) async {
+  final announcementSheet = find.byKey(
+    const ValueKey('mobile_ironwood_announcement_sheet'),
+  );
+  final announcementStart = find.byKey(
+    const ValueKey('mobile_ironwood_start_migration_button'),
+  );
+  final homeCta = find.byKey(
+    const ValueKey('mobile_home_ironwood_migration_required_pill'),
+  );
+  final intro = find.byKey(
+    const ValueKey('mobile_ironwood_intro_continue_button'),
+  );
+  final deadline = DateTime.now().add(const Duration(minutes: 5));
+  var lastTap = DateTime.fromMillisecondsSinceEpoch(0);
+  while (tester.any(announcementSheet) || !tester.any(intro.hitTestable())) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Timed out entering the mobile Ironwood migration flow.');
+    }
+    if (DateTime.now().difference(lastTap) > const Duration(seconds: 1)) {
+      final tappableAnnouncementStart = announcementStart.hitTestable();
+      final tappableHomeCta = homeCta.hitTestable();
+      if (tester.any(tappableAnnouncementStart)) {
+        lastTap = DateTime.now();
+        await tester.tap(tappableAnnouncementStart);
+      } else if (!tester.any(announcementSheet) &&
+          tester.any(tappableHomeCta)) {
+        lastTap = DateTime.now();
+        await tester.tap(tappableHomeCta);
+      }
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  logE2e('entered mobile Ironwood migration flow');
+
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_intro_continue_button'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_steps_continue_button'),
+    timeout: const Duration(minutes: 2),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_options_continue_button'),
+    timeout: const Duration(minutes: 2),
+  );
+  await pumpUntil(
+    tester,
+    () {
+      final keyed = find.byKey(
+        const ValueKey('mobile_ironwood_authorize_start_button'),
+      );
+      final button = find.descendant(
+        of: keyed,
+        matching: find.byType(AppButton),
+        matchRoot: true,
+      );
+      return tester.any(button) &&
+          tester.widget<AppButton>(button).onPressed != null;
+    },
+    description: 'mobile private migration review plan',
+    timeout: const Duration(minutes: 3),
   );
 }
 
@@ -444,11 +583,7 @@ Future<String> copyShieldedAddress(WidgetTester tester) async {
 /// Taps the top-nav back chevron (semantics label 'Back').
 Future<void> tapBack(WidgetTester tester) async {
   final finder = find.bySemanticsLabel('Back');
-  await pumpUntil(
-    tester,
-    () => tester.any(finder),
-    description: 'back button',
-  );
+  await pumpUntil(tester, () => tester.any(finder), description: 'back button');
   await tester.tap(finder.first);
   await tester.pump(const Duration(milliseconds: 350));
   logE2e('tapped back');
@@ -463,11 +598,7 @@ Future<void> sendViaWizard(
 }) async {
   logE2e('sending $amountDigits via wizard');
   await tapWidget(tester, const ValueKey('mobile_home_send'));
-  await enterText(
-    tester,
-    const ValueKey('mobile_send_address_field'),
-    address,
-  );
+  await enterText(tester, const ValueKey('mobile_send_address_field'), address);
   await tapAppButton(
     tester,
     const ValueKey('mobile_send_continue'),
@@ -490,13 +621,13 @@ Future<void> sendViaWizard(
   );
   await pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('mobile_send_status_succeeded'))),
+    () =>
+        tester.any(find.byKey(const ValueKey('mobile_send_status_succeeded'))),
     description: 'send status to succeed',
     timeout: const Duration(minutes: 4),
   );
   logE2e('send succeeded');
-  await tester.tap(find.bySemanticsLabel('Back').first);
-  await tester.pump(const Duration(milliseconds: 250));
+  await tapAppButton(tester, const ValueKey('mobile_send_status_button'));
   await waitForHome(tester);
 }
 
@@ -505,7 +636,7 @@ Future<void> openActivityTab(WidgetTester tester) async {
   await tapUntilVisible(
     tester,
     trigger: find.bySemanticsLabel('Activity'),
-    outcome: find.byKey(const ValueKey('mobile_activity_row_0')),
+    outcome: _mobileActivityTransactionRows(),
     description: 'activity rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -531,23 +662,33 @@ Future<void> expectActivityRow(
   final deadline = DateTime.now().add(const Duration(minutes: 2));
   var polls = 0;
   while (DateTime.now().isBefore(deadline)) {
-    final texts = textSetIn(tester, find.byKey(key));
-    if (texts.contains(title) &&
-        texts.contains(amount) &&
-        (status == null || texts.contains(status))) {
-      logE2e('activity row matched: $title $amount ${status ?? ''}');
-      return;
+    for (final row in _activityRowFinders(tester, key)) {
+      final texts = textSetIn(tester, row);
+      if (texts.contains(title) &&
+          texts.contains(amount) &&
+          (status == null || texts.contains(status))) {
+        logE2e('activity row matched: $title $amount ${status ?? ''}');
+        return;
+      }
     }
     await tester.pump(const Duration(milliseconds: 100));
     await Future<void>.delayed(const Duration(milliseconds: 100));
     polls++;
     if (polls % 50 == 0) {
-      logE2e('waiting for $key row: $title $amount; seeing $texts');
+      final observed = _activityRowFinders(
+        tester,
+        key,
+      ).map((row) => textSetIn(tester, row)).toList();
+      logE2e('waiting for $key row: $title $amount; seeing $observed');
     }
   }
+  final observed = _activityRowFinders(
+    tester,
+    key,
+  ).map((row) => textSetIn(tester, row)).toList();
   fail(
     'Timed out waiting for $key activity row to show $title $amount '
-    '${status ?? ''}. Observed texts: ${textSetIn(tester, find.byKey(key))}',
+    '${status ?? ''}. Observed texts: $observed',
   );
 }
 
@@ -558,17 +699,46 @@ void expectNoActivityRow(
   required String amount,
   String? status,
 }) {
-  for (var i = 0; i < 10; i++) {
-    final key = ValueKey('${rowKeyPrefix}_row_$i');
-    final texts = textSetIn(tester, find.byKey(key));
+  final rows = rowKeyPrefix == 'mobile_activity'
+      ? _findersFor(_mobileActivityRows())
+      : [
+          for (var i = 0; i < 10; i++)
+            find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
+        ];
+  for (final row in rows) {
+    final texts = textSetIn(tester, row);
     if (texts.contains(title) &&
         texts.contains(amount) &&
         (status == null || texts.contains(status))) {
-      fail('Unexpected stale activity row $key: $title $amount $status');
+      fail('Unexpected stale activity row: $title $amount $status');
     }
   }
   logE2e('no stale activity row matched: $title $amount ${status ?? ''}');
 }
+
+List<Finder> _activityRowFinders(WidgetTester tester, Key key) {
+  if (key is ValueKey<String> && key.value.startsWith('mobile_activity_row_')) {
+    return _findersFor(_mobileActivityRows());
+  }
+  return [find.byKey(key)];
+}
+
+List<Finder> _findersFor(Finder finder) => [
+  for (var index = 0; index < finder.evaluate().length; index++)
+    finder.at(index),
+];
+
+Finder _mobileActivityRows() => find.byWidgetPredicate((widget) {
+  final key = widget.key;
+  return key is ValueKey<String> &&
+      (key.value.startsWith('tx:') ||
+          key.value.startsWith('mobile_activity_row_'));
+});
+
+Finder _mobileActivityTransactionRows() => find.byWidgetPredicate((widget) {
+  final key = widget.key;
+  return key is ValueKey<String> && key.value.startsWith('tx:');
+});
 
 // ── Account/state inspection and chain control ──────────────────────
 
@@ -596,6 +766,115 @@ Future<String> accountUuidAtOrder(int order) async {
     fail('Expected account order $order, got ${accounts.length} accounts.');
   }
   return accounts[order].uuid;
+}
+
+Future<rust_sync.MigrationStatus> mobileRegtestMigrationStatus(
+  String accountUuid,
+) async {
+  return rust_sync.getOrchardMigrationStatus(
+    dbPath: await getWalletDbPath(),
+    network: mobileE2eNetwork,
+    accountUuid: accountUuid,
+  );
+}
+
+Future<rust_sync.MigrationStatus> waitForMobileRegtestMigrationStatus(
+  WidgetTester tester,
+  String accountUuid,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  Object? lastError;
+  rust_sync.MigrationStatus? lastStatus;
+  var polls = 0;
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      lastStatus = await mobileRegtestMigrationStatus(accountUuid);
+      lastError = null;
+      if (condition(lastStatus)) return lastStatus;
+    } catch (error) {
+      lastError = error;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    polls++;
+    if (polls % 20 == 0) logE2e('still waiting for $description');
+  }
+
+  final statusDetail = lastStatus == null
+      ? ''
+      : ' Last phase: ${lastStatus.phase}, run: ${lastStatus.activeRunId}, '
+            'submitted: ${lastStatus.broadcastedTxCount + lastStatus.confirmedTxCount}/'
+            '${lastStatus.totalCount}.';
+  final errorDetail = lastError == null ? '' : ' Last error: $lastError';
+  fail('Timed out waiting for $description.$statusDetail$errorDetail');
+}
+
+Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
+  WidgetTester tester,
+  String accountUuid, {
+  int? submittedTarget,
+  Duration timeout = const Duration(minutes: 6),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final status = await mobileRegtestMigrationStatus(accountUuid);
+    final submitted = status.broadcastedTxCount + status.confirmedTxCount;
+    final target = submittedTarget ?? status.totalCount;
+    if (target > 0 && submitted >= target) return status;
+
+    final scheduled =
+        status.scheduledBroadcasts
+            .where((entry) => entry.status == 'scheduled')
+            .toList()
+          ..sort(
+            (left, right) =>
+                left.scheduledHeight.compareTo(right.scheduledHeight),
+          );
+    if (scheduled.isEmpty) {
+      await tester.pump(const Duration(milliseconds: 250));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      continue;
+    }
+
+    final chain = await getDriver('/status');
+    final currentHeight = (chain['zcashdHeight'] as num).toInt();
+    final nextHeight = scheduled.first.scheduledHeight;
+    if (nextHeight > currentHeight) {
+      final blocks = nextHeight - currentHeight;
+      logE2e(
+        'mining $blocks block(s) to migration broadcast height $nextHeight',
+      );
+      await postDriver('/mine', {'blocks': blocks});
+    }
+
+    await waitForMobileRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (next) => next.broadcastedTxCount + next.confirmedTxCount > submitted,
+      description: 'migration transaction at block $nextHeight',
+      timeout: const Duration(minutes: 2),
+    );
+  }
+  fail('Timed out advancing the mobile regtest migration schedule.');
+}
+
+Future<Map<String, Object?>> waitForMobileRegtestMempoolSize(
+  WidgetTester tester,
+  int expected, {
+  Duration timeout = const Duration(minutes: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  Map<String, Object?>? last;
+  while (DateTime.now().isBefore(deadline)) {
+    last = await getDriver('/mempool');
+    if (last['size'] == expected) return last;
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail('Timed out waiting for mempool size $expected. Last: $last');
 }
 
 Future<void> waitForHistoryEntry(
@@ -703,7 +982,9 @@ Future<T> zcashdRpc<T>(String method, [List<Object?> params = const []]) async {
     final response = await request.close();
     final body = await utf8.decoder.bind(response).join();
     if (response.statusCode != HttpStatus.ok) {
-      throw StateError('zcashd RPC $method failed: HTTP ${response.statusCode}');
+      throw StateError(
+        'zcashd RPC $method failed: HTTP ${response.statusCode}',
+      );
     }
 
     final decoded = jsonDecode(body) as Map<String, Object?>;
@@ -743,8 +1024,33 @@ Future<Map<String, Object?>> postDriver(
     final response = await request.close().timeout(timeout);
     final body = await utf8.decoder.bind(response).join().timeout(timeout);
     if (response.statusCode != HttpStatus.ok) {
-      throw StateError('E2E driver $path failed: HTTP '
-          '${response.statusCode}\n$body');
+      throw StateError(
+        'E2E driver $path failed: HTTP '
+        '${response.statusCode}\n$body',
+      );
+    }
+    return jsonDecode(body) as Map<String, Object?>;
+  } finally {
+    client.close(force: true);
+  }
+}
+
+Future<Map<String, Object?>> getDriver(
+  String path, {
+  Duration timeout = const Duration(minutes: 2),
+  String? baseUrl,
+}) async {
+  final client = HttpClient();
+  try {
+    final request = await client
+        .getUrl(Uri.parse('${baseUrl ?? mobileE2eDriverUrl}$path'))
+        .timeout(timeout);
+    final response = await request.close().timeout(timeout);
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    if (response.statusCode != HttpStatus.ok) {
+      throw StateError(
+        'E2E driver $path failed: HTTP ${response.statusCode}\n$body',
+      );
     }
     return jsonDecode(body) as Map<String, Object?>;
   } finally {
