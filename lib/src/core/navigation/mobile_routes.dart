@@ -158,9 +158,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final extra = state.extra;
         final child = switch (extra) {
           KeystoneBroadcastArgs() => MobileSendStatusScreen(
-              args: extra.reviewArgs,
-              keystone: extra,
-            ),
+            args: extra.reviewArgs,
+            keystone: extra,
+          ),
           SendReviewArgs() => MobileSendStatusScreen(args: extra),
           _ => const MobileSendScreen(useRouteSteps: true),
         };
@@ -207,7 +207,8 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         return CupertinoPage(
           key: state.pageKey,
           child: MobilePayScreen(
-            preservePreparedComposer: args is PayComposerNavigationArgs &&
+            preservePreparedComposer:
+                args is PayComposerNavigationArgs &&
                 args.preservePreparedComposer,
           ),
         );
@@ -244,7 +245,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             ),
             autoSignZecDeposit:
                 state.uri.queryParameters[swapActivitySignQueryKey] ==
-                    swapActivitySignZecDepositValue,
+                swapActivitySignZecDepositValue,
           ),
         );
       },
@@ -253,9 +254,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/send/keystone-sign',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: MobileKeystoneSignScreen(
-          args: state.extra! as SendReviewArgs,
-        ),
+        child: MobileKeystoneSignScreen(args: state.extra! as SendReviewArgs),
       ),
     ),
     GoRoute(
@@ -267,10 +266,8 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/receive',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileReceiveScreen(),
-      ),
+      pageBuilder: (context, state) =>
+          CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
     ),
     GoRoute(
       path: '/migration',
@@ -360,10 +357,8 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/about',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileAboutScreen(),
-      ),
+      pageBuilder: (context, state) =>
+          CupertinoPage(key: state.pageKey, child: const MobileAboutScreen()),
     ),
   ];
 }
@@ -421,11 +416,12 @@ class _MobileTabShell extends ConsumerWidget {
     final currentBranchIndex = navigationShell.currentIndex;
     final currentTab =
         currentBranchIndex >= 0 && currentBranchIndex < tabs.length
-            ? tabs[currentBranchIndex]
-            : tabs.first;
+        ? tabs[currentBranchIndex]
+        : tabs.first;
     final currentVisibleIndex = visibleTabs.indexOf(currentTab);
-    final tabBarCurrentIndex =
-        currentVisibleIndex < 0 ? 0 : currentVisibleIndex;
+    final tabBarCurrentIndex = currentVisibleIndex < 0
+        ? 0
+        : currentVisibleIndex;
 
     return AppMobileShell(
       body: navigationShell,

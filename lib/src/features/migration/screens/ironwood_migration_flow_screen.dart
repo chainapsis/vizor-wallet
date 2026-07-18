@@ -499,41 +499,41 @@ enum _KeystonePrivateSignStep { denominations, batch }
 
 extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get logName => switch (this) {
-        _KeystonePrivateSignStep.denominations => 'denominations',
-        _KeystonePrivateSignStep.batch => 'batch',
-      };
+    _KeystonePrivateSignStep.denominations => 'denominations',
+    _KeystonePrivateSignStep.batch => 'batch',
+  };
 
   String get toolbarLabel => switch (this) {
-        _KeystonePrivateSignStep.denominations => 'Review migration',
-        _KeystonePrivateSignStep.batch => 'Migration status',
-      };
+    _KeystonePrivateSignStep.denominations => 'Review migration',
+    _KeystonePrivateSignStep.batch => 'Migration status',
+  };
 
   String get previousRoute => switch (this) {
-        _KeystonePrivateSignStep.denominations => '/migration/private/review',
-        _KeystonePrivateSignStep.batch => '/migration/private/status',
-      };
+    _KeystonePrivateSignStep.denominations => '/migration/private/review',
+    _KeystonePrivateSignStep.batch => '/migration/private/status',
+  };
 
   String get previousButtonLabel => switch (this) {
-        _KeystonePrivateSignStep.denominations => 'Back to review',
-        _KeystonePrivateSignStep.batch => 'Back to status',
-      };
+    _KeystonePrivateSignStep.denominations => 'Back to review',
+    _KeystonePrivateSignStep.batch => 'Back to status',
+  };
 
   String get qrTitle => switch (this) {
-        _KeystonePrivateSignStep.denominations => 'Sign private split',
-        _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
-      };
+    _KeystonePrivateSignStep.denominations => 'Sign private split',
+    _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
+  };
 
   String get qrBody => switch (this) {
-        _KeystonePrivateSignStep.denominations =>
-          'Scan this QR code with Keystone to sign the private split transactions.',
-        _KeystonePrivateSignStep.batch =>
-          'Scan this QR code with Keystone to sign the Ironwood migration batch.',
-      };
+    _KeystonePrivateSignStep.denominations =>
+      'Scan this QR code with Keystone to sign the private split transactions.',
+    _KeystonePrivateSignStep.batch =>
+      'Scan this QR code with Keystone to sign the Ironwood migration batch.',
+  };
 
   String get messageUnit => switch (this) {
-        _KeystonePrivateSignStep.denominations => 'split transaction',
-        _KeystonePrivateSignStep.batch => 'migration transaction',
-      };
+    _KeystonePrivateSignStep.denominations => 'split transaction',
+    _KeystonePrivateSignStep.batch => 'migration transaction',
+  };
 
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
@@ -947,17 +947,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         width: 520,
         child: switch (_stage) {
           _KeystoneDenominationSignStage.preparing => const SizedBox(
-              height: 560,
-              child: Center(child: CircularProgressIndicator()),
-            ),
+            height: 560,
+            child: Center(child: CircularProgressIndicator()),
+          ),
           _KeystoneDenominationSignStage.showQr => _buildQrContent(context),
           _KeystoneDenominationSignStage.scanning ||
           _KeystoneDenominationSignStage.waitingForProofs ||
-          _KeystoneDenominationSignStage.completing =>
-            _buildScannerContent(context),
+          _KeystoneDenominationSignStage.completing => _buildScannerContent(
+            context,
+          ),
           _KeystoneDenominationSignStage.failed => _buildFailureContent(
-              context,
-            ),
+            context,
+          ),
         },
       ),
     );
@@ -986,8 +987,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               Expanded(
                 child: switch (_stage) {
                   _KeystoneDenominationSignStage.preparing => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: CircularProgressIndicator(),
+                  ),
                   _KeystoneDenominationSignStage.showQr =>
                     _buildMobileQrContent(context),
                   _KeystoneDenominationSignStage.scanning ||
@@ -1069,7 +1070,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 request == null
                     ? 'Preparing migration request'
                     : '${request.messages.length} ${widget.step.messageUnit}'
-                        '${request.messages.length == 1 ? '' : 's'} to sign',
+                          '${request.messages.length == 1 ? '' : 's'} to sign',
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
@@ -1150,8 +1151,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               completing
                   ? 'Applying the Keystone signature.'
                   : waitingForProofs
-                      ? 'Signature captured. Waiting for local proofs.'
-                      : 'Scan the signed migration QR shown on Keystone.',
+                  ? 'Signature captured. Waiting for local proofs.'
+                  : 'Scan the signed migration QR shown on Keystone.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -1283,7 +1284,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             request == null
                 ? 'Preparing migration request'
                 : '${request.messages.length} ${widget.step.messageUnit}'
-                    '${request.messages.length == 1 ? '' : 's'} to sign',
+                      '${request.messages.length == 1 ? '' : 's'} to sign',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -1357,8 +1358,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               completing
                   ? 'Applying the Keystone signature to your migration plan.'
                   : waitingForProofs
-                      ? 'Signature captured. Vizor will continue when local proofs are ready.'
-                      : 'Show the signed migration QR on Keystone and scan it here.',
+                  ? 'Signature captured. Vizor will continue when local proofs are ready.'
+                  : 'Show the signed migration QR on Keystone and scan it here.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1456,7 +1457,9 @@ Widget _keystoneDenominationToolbar({
   required String label,
   required VoidCallback onBack,
 }) {
-  return AppPaneToolbar(leading: AppBackLink(label: label, onTap: onBack));
+  return AppPaneToolbar(
+    leading: AppBackLink(label: label, onTap: onBack),
+  );
 }
 
 List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
@@ -1472,7 +1475,8 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
     for (final message in request.messages)
       rust_sync.KeystoneSignedMigrationMessage(
         id: message.id,
-        sigs: signedById[message.id] ??
+        sigs:
+            signedById[message.id] ??
             (throw StateError(
               'Keystone signature for ${message.id} is missing.',
             )),
@@ -1625,12 +1629,10 @@ class _IronwoodMigrationShell extends StatelessWidget {
         child: CircularProgressIndicator(),
       ),
       IronwoodMigrationFlowStep.intro => _IronwoodMigrationIntroContent(
-          data: data,
-          onOpenReleaseNotes: () => _openReleaseNotes(
-            context,
-            override: onOpenReleaseNotesOverride,
-          ),
-        ),
+        data: data,
+        onOpenReleaseNotes: () =>
+            _openReleaseNotes(context, override: onOpenReleaseNotesOverride),
+      ),
       IronwoodMigrationFlowStep.howItWorks =>
         _IronwoodMigrationHowItWorksContent(data: data),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
@@ -1720,8 +1722,9 @@ class _IronwoodMigrationFrame extends StatelessWidget {
     return AppDesktopBackdropShell(
       background: ColoredBox(color: context.colors.background.window),
       sidebar: AppMainSidebar(
-        disabledRoutePaths:
-            disableSidebarActions ? const {'/swap', '/voting'} : const {},
+        disabledRoutePaths: disableSidebarActions
+            ? const {'/swap', '/voting'}
+            : const {},
       ),
       pane: AppPaneScrollScaffold(
         toolbar: toolbar,
@@ -2081,8 +2084,7 @@ class _IronwoodMigrationPrivateStatusContentState
         : switch (action) {
             _StatusAction.needsInput || _StatusAction.retry => action.label,
             _StatusAction.backHome ||
-            _StatusAction.none =>
-              presentation.buttonLabel,
+            _StatusAction.none => presentation.buttonLabel,
           };
     final coordinatorError = widget.accountUuid == null
         ? null
@@ -2177,7 +2179,8 @@ class _IronwoodMigrationPrivateStatusContentState
                     _ReviewMetricRow(
                       icon: AppIcons.swapArrows,
                       label: 'Split progress',
-                      value: '${status.denominationSplitCompletedCount}/'
+                      value:
+                          '${status.denominationSplitCompletedCount}/'
                           '${status.denominationSplitTotalCount}',
                     ),
                     const SizedBox(height: 16),
@@ -2368,9 +2371,9 @@ extension _StatusActionLabels on _StatusAction {
   };
 
   String get busyLabel => switch (this) {
-        _StatusAction.retry => 'Retrying...',
-        _ => 'Continuing...',
-      };
+    _StatusAction.retry => 'Retrying...',
+    _ => 'Continuing...',
+  };
 }
 
 _StatusAction _statusAction(
@@ -2397,67 +2400,72 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
         buttonLabel: '',
       ),
     kIronwoodMigrationReadyToMigratePhase => const _StatusPresentation(
-        title: 'Ready to Migrate',
-        body: 'The private split is ready. The next step will prepare the '
-            'Ironwood migration batch.',
-        footer: 'Continue migration to prepare and broadcast the Ironwood '
-            'transaction when it is due.',
-        buttonLabel: 'Continue migration',
-      ),
+      title: 'Ready to Migrate',
+      body:
+          'The private split is ready. The next step will prepare the '
+          'Ironwood migration batch.',
+      footer:
+          'Continue migration to prepare and broadcast the Ironwood '
+          'transaction when it is due.',
+      buttonLabel: 'Continue migration',
+    ),
     kIronwoodMigrationBroadcastScheduledPhase => const _StatusPresentation(
-        title: 'Broadcast Scheduled',
-        body: 'Your migration transaction is prepared and waiting for its '
-            'scheduled broadcast window.',
-        footer:
-            'When Vizor is open, scheduled broadcasts will be advanced by the '
-            'migration worker.',
-        buttonLabel: 'Continue migration',
-      ),
+      title: 'Broadcast Scheduled',
+      body:
+          'Your migration transaction is prepared and waiting for its '
+          'scheduled broadcast window.',
+      footer:
+          'When Vizor is open, scheduled broadcasts will be advanced by the '
+          'migration worker.',
+      buttonLabel: 'Continue migration',
+    ),
     kIronwoodMigrationBroadcastingPhase => const _StatusPresentation(
-        title: 'Migrating...',
-        body:
-            'Vizor is broadcasting the prepared Ironwood migration transaction.',
-        footer: 'You can leave this screen.\nBut keep Vizor open & running.',
-        buttonLabel: 'Broadcasting',
-      ),
+      title: 'Migrating...',
+      body:
+          'Vizor is broadcasting the prepared Ironwood migration transaction.',
+      footer: 'You can leave this screen.\nBut keep Vizor open & running.',
+      buttonLabel: 'Broadcasting',
+    ),
     kIronwoodMigrationWaitingConfirmationsPhase => const _StatusPresentation(
-        title: 'Migrating...',
-        body: 'The migration transaction was broadcast. Vizor is waiting for '
-            'network confirmations.',
-        footer: 'You can leave this screen.\nBut keep Vizor open & running.',
-        buttonLabel: 'Waiting for confirmations',
-      ),
+      title: 'Migrating...',
+      body:
+          'The migration transaction was broadcast. Vizor is waiting for '
+          'network confirmations.',
+      footer: 'You can leave this screen.\nBut keep Vizor open & running.',
+      buttonLabel: 'Waiting for confirmations',
+    ),
     kIronwoodMigrationCompletePhase => const _StatusPresentation(
-        title: 'Migration Complete',
-        body: 'Your funds have moved into the Ironwood pool.',
-        footer: 'You can return home and continue using Vizor.',
-        buttonLabel: 'Back home',
-      ),
+      title: 'Migration Complete',
+      body: 'Your funds have moved into the Ironwood pool.',
+      footer: 'You can return home and continue using Vizor.',
+      buttonLabel: 'Back home',
+    ),
     kIronwoodMigrationPausedPhase => const _StatusPresentation(
-        title: 'Migration Paused',
-        body: 'The private migration is paused before the next action.',
-        footer:
-            'No new transaction will be prepared until migration execution is '
-            'resumed.',
-        buttonLabel: 'Paused',
-      ),
+      title: 'Migration Paused',
+      body: 'The private migration is paused before the next action.',
+      footer:
+          'No new transaction will be prepared until migration execution is '
+          'resumed.',
+      buttonLabel: 'Paused',
+    ),
     kIronwoodMigrationFailedRecoverablePhase => const _StatusPresentation(
-        title: 'Migration Needs Attention',
-        body: 'Vizor hit a recoverable migration error before completing the '
-            'Ironwood transition.',
-        footer:
-            'No funds are lost. Retry migration after checking that Vizor is '
-            'synced and online.',
-        buttonLabel: 'Retry migration',
-      ),
+      title: 'Migration Needs Attention',
+      body:
+          'Vizor hit a recoverable migration error before completing the '
+          'Ironwood transition.',
+      footer:
+          'No funds are lost. Retry migration after checking that Vizor is '
+          'synced and online.',
+      buttonLabel: 'Retry migration',
+    ),
     _ => const _StatusPresentation(
-        title: 'Migration Status',
-        body: 'Vizor is tracking the current Ironwood migration state.',
-        footer:
-            'This state is visible for diagnostics while the migration flow is '
-            'being connected.',
-        buttonLabel: 'Migration in progress',
-      ),
+      title: 'Migration Status',
+      body: 'Vizor is tracking the current Ironwood migration state.',
+      footer:
+          'This state is visible for diagnostics while the migration flow is '
+          'being connected.',
+      buttonLabel: 'Migration in progress',
+    ),
   };
 }
 
@@ -2640,9 +2648,7 @@ class _IronwoodMigrationPrivateReviewContentState
         ? const AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.loading()
         : previewPlan == null
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
-        : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(
-            previewPlan,
-          );
+        : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
     if (planAsync.isLoading) return const _MigrationAnalyzingContent();
     return FutureBuilder<void>(
@@ -6103,8 +6109,8 @@ class _MigrationPreparationStepsCard extends StatelessWidget {
                   state: scheduleReady
                       ? _MigrationPreparationStepState.complete
                       : confirmationComplete
-                          ? _MigrationPreparationStepState.active
-                          : _MigrationPreparationStepState.pending,
+                      ? _MigrationPreparationStepState.active
+                      : _MigrationPreparationStepState.pending,
                   stepNumber: 3,
                   label: 'Migration schedule',
                 ),
@@ -6210,10 +6216,10 @@ class _MigrationPreparationStepBadge extends StatelessWidget {
         child: Center(
           child: switch (state) {
             _MigrationPreparationStepState.complete => AppIcon(
-                AppIcons.check,
-                size: 14,
-                color: foregroundColor,
-              ),
+              AppIcons.check,
+              size: 14,
+              color: foregroundColor,
+            ),
             _MigrationPreparationStepState.active => AppIcon(
               AppIcons.loader,
               size: 15,
@@ -6221,10 +6227,9 @@ class _MigrationPreparationStepBadge extends StatelessWidget {
               animated: animateLoader,
             ),
             _MigrationPreparationStepState.pending => Text(
-                '${stepNumber ?? ''}',
-                style:
-                    AppTypography.labelMedium.copyWith(color: foregroundColor),
-              ),
+              '${stepNumber ?? ''}',
+              style: AppTypography.labelMedium.copyWith(color: foregroundColor),
+            ),
           },
         ),
       ),
@@ -6301,8 +6306,9 @@ double _transferProgress(rust_sync.MigrationStatus status) {
 
   if (status.totalCount > 0) {
     final transferredCount = _transferCompletedCountForPhase(status);
-    final progress =
-        (transferredCount / status.totalCount).clamp(0, 1).toDouble();
+    final progress = (transferredCount / status.totalCount)
+        .clamp(0, 1)
+        .toDouble();
     if (_isWaitingForTrustedMigrationComplete(status)) {
       return math.min(progress, 0.99);
     }
@@ -7179,12 +7185,15 @@ class _OptionIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        selected ? context.colors.text.accent : context.colors.icon.disabled;
+    final color = selected
+        ? context.colors.text.accent
+        : context.colors.icon.disabled;
     return SizedBox(
       width: 16,
       height: 16,
-      child: CustomPaint(painter: _OptionIconPainter(mode: mode, color: color)),
+      child: CustomPaint(
+        painter: _OptionIconPainter(mode: mode, color: color),
+      ),
     );
   }
 }

@@ -32,33 +32,25 @@ String privateMigrationMethodDescription(
     return 'Uses one migration transaction after preparation. No timing '
         'separation is added.';
   }
-  return 'Spreads ${migrationBatchesLabel(plan.plannedBatchCount)} across a '
-      'window of up to ${migrationDurationLabel(plan.broadcastWindowSeconds)} '
+  return 'Spreads ${migrationBatchesLabel(plan.plannedBatchCount)} over '
+      '${migrationPlanCompletionLabel(plan)} '
       'instead of sending them all at once.';
 }
 
-String migrationDispatchWindowLabel(BigInt seconds) =>
-    'Up to ${migrationDurationLabel(seconds)}';
-
-String migrationDurationLabel(BigInt seconds) {
-  const minute = 60;
-  const hour = minute * 60;
-  const day = hour * 24;
-
-  if (seconds >= BigInt.from(day)) {
-    final days = (seconds + BigInt.from(day - 1)) ~/ BigInt.from(day);
-    return '$days ${_pluralized(days.toInt(), 'day', 'days')}';
+String migrationPlanCompletionLabel(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) {
+  var finalBlockOffset = 0;
+  for (final transfer in plan.scheduledTransfers) {
+    if (transfer.blockOffset > finalBlockOffset) {
+      finalBlockOffset = transfer.blockOffset;
+    }
   }
-  if (seconds >= BigInt.from(hour)) {
-    final hours = (seconds + BigInt.from(hour - 1)) ~/ BigInt.from(hour);
-    return '$hours ${_pluralized(hours.toInt(), 'hr', 'hr')}';
-  }
-  if (seconds >= BigInt.from(minute)) {
-    final minutes = (seconds + BigInt.from(minute - 1)) ~/ BigInt.from(minute);
-    return '$minutes min';
-  }
-  return '<1 min';
+  return migrationBlockOffsetLabel(finalBlockOffset);
 }
+
+String migrationBlockOffsetLabel(int blocks) =>
+    blocks > 0 ? '~$blocks blocks' : 'Schedule pending';
 
 String migrationScheduledBroadcastLabel(
   rust_sync.MigrationScheduledBroadcast broadcast, {
@@ -95,7 +87,7 @@ String migrationDispatchTimingLabel(
     }
   }
   if (latest == null) {
-    return migrationDispatchWindowLabel(status.broadcastWindowSeconds);
+    return migrationBlockOffsetLabel(status.scheduleMeanDelayBlocks);
   }
 
   return _shortMigrationDateTime(

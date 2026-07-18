@@ -428,7 +428,7 @@ String _mobileStatusArrivalLabel(
   if (status == null) {
     return previewPlan == null
         ? 'Schedule pending'
-        : migrationDispatchWindowLabel(previewPlan.broadcastWindowSeconds);
+        : migrationPlanCompletionLabel(previewPlan);
   }
   return migrationDispatchTimingLabel(status);
 }

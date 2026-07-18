@@ -902,9 +902,7 @@ Widget buildMobileIronwoodMigrationKeystoneBatchSignUseCase(
   return _buildMobileIronwoodMigrationKeystoneSignUseCase(batch: true);
 }
 
-Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({
-  required bool batch,
-}) {
+Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({required bool batch}) {
   final request = rust_sync.KeystoneMigrationSigningRequest(
     requestId: batch ? 'preview-batch-request' : 'preview-split-request',
     messages: [
@@ -941,18 +939,16 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.options ||
     MobileIronwoodMigrationStep.privateReview ||
     MobileIronwoodMigrationStep.fastReview ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing =>
-      BigInt.from(
-        14_224_000_000,
-      ),
+    MobileIronwoodMigrationStep.passcodeWhileSyncing => BigInt.from(
+      14_224_000_000,
+    ),
     MobileIronwoodMigrationStep.preparing => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.migrating => BigInt.from(13_112_000_000),
   };
   final accountName = switch (step) {
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing =>
-      'Account1',
+    MobileIronwoodMigrationStep.passcodeWhileSyncing => 'Account1',
     _ => 'Username',
   };
   return ProviderScope(
@@ -1870,10 +1866,10 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             step: IronwoodMigrationFlowStep.howItWorks,
             previewData:
                 widget.initialStep == IronwoodMigrationFlowStep.howItWorks
-                    ? widget.data
-                    : _ironwoodMigrationFlowData(
-                        zatoshi: BigInt.from(14_232_000_000),
-                      ),
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_232_000_000),
+                  ),
             previewPrivatePlan: _previewPrivateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
           ),
@@ -2541,8 +2537,16 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     plannedBatchCount: 12,
     denominationSplitStageCount: 2,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(14_400),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
+    scheduledTransfers: [
+      for (var i = 0; i < 12; i++)
+        rust_sync.MigrationScheduledTransfer(
+          valueZatoshi: BigInt.from(1_000_000_000),
+          blockOffset: (i + 1) * 144,
+        ),
+    ],
   );
 }
 

@@ -73,7 +73,9 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       );
     }
 
-    return ref.watch(ironwoodMigrationFlowDataProvider).when(
+    return ref
+        .watch(ironwoodMigrationFlowDataProvider)
+        .when(
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
@@ -110,26 +112,29 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isHardware = !previewMode &&
+    final isHardware =
+        !previewMode &&
         (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
-    final shouldLoadPlan = !previewMode &&
+    final shouldLoadPlan =
+        !previewMode &&
         (step == MobileIronwoodMigrationStep.howItWorks ||
             step == MobileIronwoodMigrationStep.options);
-    final plan = previewPrivatePlan ??
+    final plan =
+        previewPrivatePlan ??
         (shouldLoadPlan
             ? ref.watch(ironwoodMigrationPrivatePlanProvider).asData?.value
             : null);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks => _MobileMigrationHowItWorks(
-          data: data,
-          plan: plan,
-          isHardware: isHardware,
-        ),
+        data: data,
+        plan: plan,
+        isHardware: isHardware,
+      ),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-          data: data,
-          plan: plan,
-        ),
+        data: data,
+        plan: plan,
+      ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
@@ -137,19 +142,19 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
           isHardware: isHardware,
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
-          data: data,
-          previewMode: previewMode,
-        ),
+        data: data,
+        previewMode: previewMode,
+      ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
-          data: data,
-          status: status,
-        ),
+        data: data,
+        status: status,
+      ),
       MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
-          data: data,
-          status: status,
-          previewPlan: previewPrivatePlan,
-          initialShowBatchModal: previewShowBatchModal,
-        ),
+        data: data,
+        status: status,
+        previewPlan: previewPrivatePlan,
+        initialShowBatchModal: previewShowBatchModal,
+      ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
         const MobileMigrationPasscodeView(progress: 0.1),
     };
@@ -190,7 +195,8 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
               : _MobileMigrationLiveStatus(
                   data: data,
                   status: status,
-                  isHardware: ref
+                  isHardware:
+                      ref
                           .watch(accountProvider)
                           .value
                           ?.activeAccount
@@ -410,7 +416,7 @@ class _MobileMigrationOptions extends StatelessWidget {
             title: 'Private',
             body: plan == null
                 ? 'Prepares separate migration transactions and spreads their '
-                    'sends when the plan allows it.'
+                      'sends when the plan allows it.'
                 : privateMigrationMethodDescription(plan!),
             selected: true,
             icon: _MigrationChoiceIcon.private,
@@ -419,7 +425,8 @@ class _MobileMigrationOptions extends StatelessWidget {
           const _MobileMigrationOptionCard(
             key: ValueKey('mobile_ironwood_immediate_unavailable'),
             title: 'Immediate',
-            body: 'Sends now in one step. Amount and timing are easier to '
+            body:
+                'Sends now in one step. Amount and timing are easier to '
                 'associate.',
             selected: false,
             icon: _MigrationChoiceIcon.immediate,
@@ -531,7 +538,8 @@ class _MobileMigrationPrivateReviewState
         ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
         : ref.watch(ironwoodMigrationPrivatePlanProvider);
     final plan = planAsync.asData?.value;
-    final keystonePlanSupported = !widget.isHardware ||
+    final keystonePlanSupported =
+        !widget.isHardware ||
         plan == null ||
         _keystoneTwoRoundPlanSupported(plan);
     final canStart = plan != null && !_isStarting && keystonePlanSupported;
@@ -574,12 +582,12 @@ class _MobileMigrationPrivateReviewState
             label: _isStarting
                 ? 'Preparing...'
                 : widget.isHardware
-                    ? 'Continue with Keystone'
-                    : 'Continue',
+                ? 'Continue with Keystone'
+                : 'Continue',
             onPressed: canStart
                 ? preview != null
-                    ? () {}
-                    : () => _startMigration(plan)
+                      ? () {}
+                      : () => _startMigration(plan)
                 : null,
           ),
         ],
@@ -734,7 +742,8 @@ class _MobileMigrationFastReview extends StatelessWidget {
                             ),
                             children: [
                               TextSpan(
-                                text: 'Crosses in one visible step — your '
+                                text:
+                                    'Crosses in one visible step — your '
                                     '${data.amountText} ZEC and timing are ',
                               ),
                               TextSpan(
@@ -745,7 +754,8 @@ class _MobileMigrationFastReview extends StatelessWidget {
                               ),
                               const TextSpan(text: '. '),
                               const TextSpan(
-                                text: 'Consider choosing a Private Migration '
+                                text:
+                                    'Consider choosing a Private Migration '
                                     'option.',
                                 style: TextStyle(fontWeight: FontWeight.w500),
                               ),
@@ -774,7 +784,8 @@ class _MobileMigrationPreparing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final confirmationsReady = status != null &&
+    final confirmationsReady =
+        status != null &&
         status!.denominationConfirmationTarget > 0 &&
         status!.denominationConfirmationCount >=
             status!.denominationConfirmationTarget;
@@ -994,7 +1005,8 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 _MobileStatusBackHomeButton(
-                    onPressed: () => context.go('/home')),
+                  onPressed: () => context.go('/home'),
+                ),
               ],
             ),
           ),
@@ -1079,16 +1091,16 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                         SizedBox(
                           height: 32,
                           child: _StatusTextRow(
-                            label:
-                                plannedMigrationBatchesLabel(plannedBatchCount),
+                            label: plannedMigrationBatchesLabel(
+                              plannedBatchCount,
+                            ),
                             value: 'View',
                             emphasizeLabel: true,
                             trailing: const AppIcon(
                               AppIcons.chevronForward,
                               size: 20,
                             ),
-                            onTap: () =>
-                                setState(() => _showBatchModal = true),
+                            onTap: () => setState(() => _showBatchModal = true),
                           ),
                         ),
                         const Divider(height: 1, thickness: 1),
@@ -1100,8 +1112,9 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                               SizedBox(
                                 height: 25,
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.only(left: AppSpacing.xxs),
+                                  padding: const EdgeInsets.only(
+                                    left: AppSpacing.xxs,
+                                  ),
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
@@ -1138,8 +1151,9 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                 const _MigrationCanLeaveMessage(),
                 const SizedBox(height: AppSpacing.base),
                 _MobileStatusBackHomeButton(
-                  key:
-                      const ValueKey('mobile_ironwood_status_back_home_button'),
+                  key: const ValueKey(
+                    'mobile_ironwood_status_back_home_button',
+                  ),
                   onPressed: () => context.go('/home'),
                 ),
               ],
@@ -1158,8 +1172,6 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
     );
   }
 }
-
-
 
 class _MobileMigrationUnavailable extends StatelessWidget {
   const _MobileMigrationUnavailable();
@@ -1252,7 +1264,7 @@ String _compactZec(BigInt zatoshi) {
 }
 
 String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
-  return migrationDispatchWindowLabel(plan.broadcastWindowSeconds);
+  return migrationPlanCompletionLabel(plan);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {

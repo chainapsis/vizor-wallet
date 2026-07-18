@@ -80,7 +80,9 @@ rust_sync.MigrationScheduledBroadcast _broadcast(
 ) {
   return rust_sync.MigrationScheduledBroadcast(
     txidHex: status,
+    valueZatoshi: BigInt.from(10_000_000),
     scheduledAtMs: scheduledAt.millisecondsSinceEpoch,
+    scheduledHeight: 1_000,
     status: status,
   );
 }
@@ -105,7 +107,8 @@ rust_sync.MigrationStatus _status({
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
-    broadcastWindowSeconds: BigInt.from(180),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: broadcasts,
   );

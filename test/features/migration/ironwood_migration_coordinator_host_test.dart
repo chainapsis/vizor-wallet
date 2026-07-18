@@ -29,20 +29,29 @@ void main() {
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'confirmed',
-          scheduledAtMs:
-              now.subtract(const Duration(minutes: 5)).millisecondsSinceEpoch,
+          valueZatoshi: BigInt.one,
+          scheduledAtMs: now
+              .subtract(const Duration(minutes: 5))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 1,
           status: 'confirmed',
         ),
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'next',
-          scheduledAtMs:
-              now.add(const Duration(seconds: 17)).millisecondsSinceEpoch,
+          valueZatoshi: BigInt.one,
+          scheduledAtMs: now
+              .add(const Duration(seconds: 17))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 2,
           status: 'scheduled',
         ),
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'later',
-          scheduledAtMs:
-              now.add(const Duration(seconds: 48)).millisecondsSinceEpoch,
+          valueZatoshi: BigInt.one,
+          scheduledAtMs: now
+              .add(const Duration(seconds: 48))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 3,
           status: 'scheduled',
         ),
       ],
@@ -61,8 +70,11 @@ void main() {
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'due',
-          scheduledAtMs:
-              now.subtract(const Duration(seconds: 1)).millisecondsSinceEpoch,
+          valueZatoshi: BigInt.one,
+          scheduledAtMs: now
+              .subtract(const Duration(seconds: 1))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 1,
           status: 'scheduled',
         ),
       ],
@@ -89,8 +101,8 @@ void main() {
             phase: phase,
             pendingSplitStageCount:
                 phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
-                    ? 1
-                    : 0,
+                ? 1
+                : 0,
           ),
           migrationService: _migrationService(
             onContinue: (_) async {
@@ -167,8 +179,8 @@ void main() {
             phase: phase,
             pendingSplitStageCount:
                 phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
-                    ? 1
-                    : 0,
+                ? 1
+                : 0,
           ),
           migrationService: _migrationService(
             onContinue: (_) async {
@@ -221,16 +233,14 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(unlocked: unlocked, hardware: hardware),
       ),
-      ironwoodMigrationRouteCtaProvider.overrideWith(
-        (ref) async {
-          onStatusRead?.call();
-          return IronwoodHomeMigrationCtaState.resume(
-            network: 'main',
-            accountUuid: _accountUuid,
-            status: status,
-          );
-        },
-      ),
+      ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
+        onStatusRead?.call();
+        return IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: _accountUuid,
+          status: status,
+        );
+      }),
       ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: const MaterialApp(
@@ -270,30 +280,31 @@ AppBootstrapState _bootstrap({required bool unlocked, required bool hardware}) {
 IronwoodMigrationService _migrationService({
   required Future<rust_sync.IronwoodMigrationResult> Function(
     String accountUuid,
-  ) onContinue,
+  )
+  onContinue,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus: (
-            {required dbPath, required network, required accountUuid}) async =>
-        _status(phase: kIronwoodMigrationReadyToMigratePhase),
-    getPrivatePlan: (
-            {required dbPath, required network, required accountUuid}) async =>
-        null,
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _status(phase: kIronwoodMigrationReadyToMigratePhase),
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            null,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
-    broadcastDueMigration: ({
-      required dbPath,
-      required lightwalletdUrl,
-      required network,
-      required accountUuid,
-      required password,
-      required saltBase64,
-    }) =>
-        onContinue(accountUuid),
+    broadcastDueMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) => onContinue(accountUuid),
   );
 }
 
@@ -319,7 +330,8 @@ rust_sync.MigrationStatus _status({
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 0,
-    broadcastWindowSeconds: BigInt.zero,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: scheduledBroadcasts,
   );

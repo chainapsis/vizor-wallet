@@ -46,21 +46,28 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   int plannedBatchCount = 12,
   int denominationSplitStageCount = 1,
   int signingBatchLimit = 12,
-}) =>
-    rust_sync.OrchardMigrationPrivatePlan(
-      targetValuesZatoshi: frb.Uint64List.fromList([]),
-      totalInputZatoshi: BigInt.from(14_224_000_000),
-      totalMigratableZatoshi: BigInt.from(14_223_900_000),
-      orchardChangeZatoshi: BigInt.from(90_000),
-      denominationSplitFeeZatoshi: BigInt.from(20_000),
-      migrationFeeZatoshi: BigInt.from(14_400_000),
-      estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
-      plannedBatchCount: plannedBatchCount,
-      denominationSplitStageCount: denominationSplitStageCount,
-      signingBatchLimit: signingBatchLimit,
-      broadcastWindowSeconds: BigInt.from(172_800),
-      maxPreparedNotesPerRun: 12,
-    );
+}) => rust_sync.OrchardMigrationPrivatePlan(
+  targetValuesZatoshi: frb.Uint64List.fromList([]),
+  totalInputZatoshi: BigInt.from(14_224_000_000),
+  totalMigratableZatoshi: BigInt.from(14_223_900_000),
+  orchardChangeZatoshi: BigInt.from(90_000),
+  denominationSplitFeeZatoshi: BigInt.from(20_000),
+  migrationFeeZatoshi: BigInt.from(14_400_000),
+  estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
+  plannedBatchCount: plannedBatchCount,
+  denominationSplitStageCount: denominationSplitStageCount,
+  signingBatchLimit: signingBatchLimit,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  maxPreparedNotesPerRun: 12,
+  scheduledTransfers: [
+    for (var i = 0; i < plannedBatchCount; i++)
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(100_000_000),
+        blockOffset: (i + 1) * 144,
+      ),
+  ],
+);
 
 rust_sync.OrchardMigrationPrivatePlan get _plan => _planWith();
 
@@ -89,36 +96,37 @@ rust_sync.MigrationStatus _status({
     pendingSplitStageCount: 2,
     canAbandon: false,
     signingBatchLimit: 12,
-    broadcastWindowSeconds: BigInt.from(172_800),
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 12,
     scheduledBroadcasts: const [],
   );
 }
 
 AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
-      initialLocation: '/migration/private/review',
-      initialAccountState: AccountState(
-        accounts: [
-          AccountInfo(
-            uuid: 'account-1',
-            name: 'Wallet 1',
-            order: 0,
-            profilePictureId: kDefaultProfilePictureId,
-            isHardware: hardware,
-          ),
-        ],
-        activeAccountUuid: 'account-1',
-        activeAddress: 'u1testaddress',
+  initialLocation: '/migration/private/review',
+  initialAccountState: AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Wallet 1',
+        order: 0,
+        profilePictureId: kDefaultProfilePictureId,
+        isHardware: hardware,
       ),
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.system,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1testaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 Widget _app({
   required MobileIronwoodMigrationStep step,
@@ -189,9 +197,7 @@ Widget _app({
       child: MaterialApp.router(
         routerConfig: router,
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(disableAnimations: true),
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
           child: child!,
         ),
       ),
@@ -275,9 +281,7 @@ Widget _productionApp({
       child: MaterialApp.router(
         routerConfig: router,
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(disableAnimations: true),
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
           child: child!,
         ),
       ),
@@ -286,43 +290,49 @@ Widget _productionApp({
 }
 
 IronwoodMigrationService _migrationService({
+  Future<rust_sync.IronwoodMigrationResult> Function(
+    String accountUuid,
+    List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  )?
+  onStart,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
-      onStart,
-  Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
-      onContinue,
+  onContinue,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus: (
-            {required dbPath, required network, required accountUuid}) async =>
-        _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
-    getPrivatePlan: (
-            {required dbPath, required network, required accountUuid}) async =>
-        _plan,
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _plan,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
-    startSoftwareMigration: ({
-      required dbPath,
-      required lightwalletdUrl,
-      required network,
-      required accountUuid,
-      required mnemonicBytes,
-      required password,
-      required saltBase64,
-    }) =>
-        onStart?.call(accountUuid) ?? Future.value(_migrationResult()),
-    broadcastDueMigration: ({
-      required dbPath,
-      required lightwalletdUrl,
-      required network,
-      required accountUuid,
-      required password,
-      required saltBase64,
-    }) =>
-        onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
+    startSoftwareMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) =>
+            onStart?.call(accountUuid, approvedSchedule) ??
+            Future.value(_migrationResult()),
+    broadcastDueMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
   );
 }
 
@@ -411,7 +421,7 @@ void main() {
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('142.24 ZEC'), findsOneWidget);
     expect(find.text('12 planned batches'), findsOneWidget);
-    expect(find.text('Up to 2 days'), findsOneWidget);
+    expect(find.text('~1728 blocks'), findsOneWidget);
     expect(find.text('Total, ~0.1442 ZEC'), findsOneWidget);
     expect(find.text('0.0009 ZEC'), findsOneWidget);
     expect(find.text('Privacy'), findsOneWidget);
@@ -464,9 +474,12 @@ void main() {
     expect(find.text('Not started'), findsOneWidget);
     expect(find.text('Amount pending'), findsOneWidget);
     expect(find.text('Estimated arrival time'), findsOneWidget);
-    expect(find.text('Up to 2 days'), findsOneWidget);
+    expect(find.text('~1728 blocks'), findsOneWidget);
     expect(find.text('Wallet 1').hitTestable(), findsOneWidget);
-    expect(find.text('You can leave this screen.').hitTestable(), findsOneWidget);
+    expect(
+      find.text('You can leave this screen.').hitTestable(),
+      findsOneWidget,
+    );
     expect(
       find.text('But keep Vizor open & running.').hitTestable(),
       findsOneWidget,
@@ -477,7 +490,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('12 batches'), findsOneWidget);
-    expect(find.text('Schedule: Up to 2 days'), findsOneWidget);
+    expect(find.text('Schedule: ~1728 blocks'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('migration_batch_scrollbar')),
@@ -526,13 +539,15 @@ void main() {
   ) async {
     _useMobileViewport(tester);
     String? startedAccountUuid;
+    List<rust_sync.MigrationScheduledTransfer>? startedSchedule;
     var started = false;
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
-          onStart: (accountUuid) async {
+          onStart: (accountUuid, approvedSchedule) async {
             startedAccountUuid = accountUuid;
+            startedSchedule = approvedSchedule;
             started = true;
             return _migrationResult();
           },
@@ -559,6 +574,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(startedAccountUuid, 'account-1');
+    expect(startedSchedule, _plan.scheduledTransfers);
     expect(find.text('Preparing...'), findsOneWidget);
   });
 
@@ -571,7 +587,7 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
-          onStart: (_) async {
+          onStart: (_, _) async {
             softwareStartCount += 1;
             return _migrationResult();
           },
@@ -720,7 +736,7 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
-          onStart: (_) async => _migrationResult(),
+          onStart: (_, _) async => _migrationResult(),
         ),
         startedStatus: _status(
           phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
