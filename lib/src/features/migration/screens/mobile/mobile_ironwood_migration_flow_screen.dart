@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/network_config.dart';
+import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -16,10 +17,12 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../models/ironwood_migration_presentation.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../ironwood_migration_flow_screen.dart';
@@ -44,7 +47,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
-    this.previewArrivalLabel,
     this.previewShowBatchModal = false,
     super.key,
   });
@@ -52,7 +54,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final MobileIronwoodMigrationStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
-  final String? previewArrivalLabel;
   final bool previewShowBatchModal;
 
   @override
@@ -64,7 +65,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         data: preview,
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
-        previewArrivalLabel: previewArrivalLabel,
         previewShowBatchModal: previewShowBatchModal,
         status: null,
       );
@@ -83,7 +83,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
                   data: data,
                   previewMode: false,
                   previewPrivatePlan: previewPrivatePlan,
-                  previewArrivalLabel: previewArrivalLabel,
                   previewShowBatchModal: previewShowBatchModal,
                   status: null,
                 ),
@@ -91,13 +90,12 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   }
 }
 
-class _MobileIronwoodMigrationContent extends StatelessWidget {
+class _MobileIronwoodMigrationContent extends ConsumerWidget {
   const _MobileIronwoodMigrationContent({
     required this.step,
     required this.data,
     required this.previewMode,
     required this.previewPrivatePlan,
-    required this.previewArrivalLabel,
     required this.previewShowBatchModal,
     this.status,
   });
@@ -106,25 +104,34 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
   final IronwoodMigrationFlowData data;
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
-  final String? previewArrivalLabel;
   final bool previewShowBatchModal;
   final rust_sync.MigrationStatus? status;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shouldLoadPlan =
+        !previewMode &&
+        (step == MobileIronwoodMigrationStep.howItWorks ||
+            step == MobileIronwoodMigrationStep.options);
+    final plan =
+        previewPrivatePlan ??
+        (shouldLoadPlan
+            ? ref.watch(ironwoodMigrationPrivatePlanProvider).asData?.value
+            : null);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks => _MobileMigrationHowItWorks(
         data: data,
+        plan: plan,
       ),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         data: data,
+        plan: plan,
       ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
           previewPlan: previewPrivatePlan,
-          previewArrivalLabel: previewArrivalLabel,
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
@@ -137,6 +144,7 @@ class _MobileIronwoodMigrationContent extends StatelessWidget {
       MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
         data: data,
         status: status,
+        previewPlan: previewPrivatePlan,
         initialShowBatchModal: previewShowBatchModal,
       ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
@@ -205,6 +213,7 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
     return _MobileMigrationMigrating(
       data: data,
       status: status,
+      previewPlan: null,
       initialShowBatchModal: false,
     );
   }
@@ -320,9 +329,10 @@ class _MobileMigrationIntro extends StatelessWidget {
 }
 
 class _MobileMigrationHowItWorks extends StatelessWidget {
-  const _MobileMigrationHowItWorks({required this.data});
+  const _MobileMigrationHowItWorks({required this.data, required this.plan});
 
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationPrivatePlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -335,15 +345,16 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
         label: 'Continue',
         onPressed: () => context.go('/migration/options'),
       ),
-      child: _MobileMigrationProcessCard(amount: data.amountText),
+      child: _MobileMigrationProcessCard(amount: data.amountText, plan: plan),
     );
   }
 }
 
 class _MobileMigrationOptions extends StatelessWidget {
-  const _MobileMigrationOptions({required this.data});
+  const _MobileMigrationOptions({required this.data, required this.plan});
 
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationPrivatePlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -361,13 +372,13 @@ class _MobileMigrationOptions extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const _MobileMigrationOptionCard(
+          _MobileMigrationOptionCard(
             title: 'Private',
-            body:
-                'Sends independent parts over time windows. Slower, harder '
-                'to track.',
+            body: plan == null
+                ? 'Prepares separate migration transactions and spreads their '
+                      'sends when the plan allows it.'
+                : privateMigrationMethodDescription(plan!),
             selected: true,
-            recommended: true,
             icon: _MigrationChoiceIcon.private,
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -378,7 +389,6 @@ class _MobileMigrationOptions extends StatelessWidget {
                 'Sends now in one step. Amount and timing are easier to '
                 'associate.',
             selected: false,
-            recommended: false,
             icon: _MigrationChoiceIcon.immediate,
             enabled: false,
           ),
@@ -402,12 +412,10 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
   const _MobileMigrationPrivateReview({
     required this.data,
     required this.previewPlan,
-    required this.previewArrivalLabel,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
-  final String? previewArrivalLabel;
 
   @override
   ConsumerState<_MobileMigrationPrivateReview> createState() =>
@@ -528,8 +536,7 @@ class _MobileMigrationPrivateReviewState
             ? const _MobileMigrationUnavailable()
             : _MobilePrivatePlan(
                 plan: plan,
-                arrivalLabel:
-                    widget.previewArrivalLabel ?? _migrationArrivalLabel(plan),
+                arrivalLabel: _migrationArrivalLabel(plan),
               ),
       ),
     );
@@ -613,7 +620,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                 const SizedBox(height: AppSpacing.s),
                 const _ReviewRow(
                   label: 'Orchard remains',
-                  value: '<0.001 ZEC',
+                  value: 'Calculated before send',
                   showInfo: true,
                 ),
               ],
@@ -701,8 +708,12 @@ class _MobileMigrationPreparing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final splitSubmitted =
-        status == null || status!.denominationSplitTotalCount > 0;
+    final splitTotal = status?.denominationSplitTotalCount ?? 0;
+    final splitCompleted = math.min(
+      status?.denominationSplitCompletedCount ?? 0,
+      splitTotal,
+    );
+    final splitComplete = splitTotal > 0 && splitCompleted >= splitTotal;
     final confirmationsReady =
         status != null &&
         status!.denominationConfirmationTarget > 0 &&
@@ -746,7 +757,9 @@ class _MobileMigrationPreparing extends StatelessWidget {
                 Positioned(
                   bottom: 28,
                   child: Text(
-                    'This will take around 10-20m',
+                    status == null
+                        ? 'Preparing split transactions'
+                        : migrationPreparationProgressLabel(status!),
                     style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.secondary,
                       fontWeight: FontWeight.w500,
@@ -764,19 +777,29 @@ class _MobileMigrationPreparing extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _PreparingStatusRow(
-                    state: splitSubmitted
+                    state: splitComplete
                         ? _PreparingStatusState.complete
                         : _PreparingStatusState.waiting,
-                    label: 'Transaction splits submitted',
+                    label: 'Split transactions',
+                    trailing: splitTotal > 0
+                        ? '$splitCompleted/$splitTotal'
+                        : 'Preparing',
                   ),
                   _PreparingStatusRow(
                     state: confirmationsReady
                         ? _PreparingStatusState.complete
                         : _PreparingStatusState.waiting,
                     label: 'Waiting for confirmation ...',
+                    trailing:
+                        status != null &&
+                            status!.denominationConfirmationTarget > 0
+                        ? '${math.min(status!.denominationConfirmationCount, status!.denominationConfirmationTarget)}/${status!.denominationConfirmationTarget}'
+                        : null,
                   ),
-                  const _PreparingStatusRow(
-                    state: _PreparingStatusState.pending,
+                  _PreparingStatusRow(
+                    state: status?.scheduledBroadcasts.isNotEmpty ?? false
+                        ? _PreparingStatusState.complete
+                        : _PreparingStatusState.pending,
                     label: 'Migration schedule',
                   ),
                 ],
@@ -797,11 +820,13 @@ class _MobileMigrationMigrating extends StatefulWidget {
   const _MobileMigrationMigrating({
     required this.data,
     required this.initialShowBatchModal,
+    required this.previewPlan,
     this.status,
   });
 
   final IronwoodMigrationFlowData data;
   final bool initialShowBatchModal;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -815,10 +840,22 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
   @override
   Widget build(BuildContext context) {
     final status = widget.status;
-    final plannedBatchCount = _mobilePlannedBatchCount(status);
-    final progress = _mobileMigrationProgress(status);
-    final currentBatch = _mobileCurrentBatch(status);
-    final arrivalLabel = _mobileStatusArrivalLabel(status);
+    final plannedBatchCount = _mobilePlannedBatchCount(
+      status,
+      previewPlan: widget.previewPlan,
+    );
+    final progress = _mobileMigrationProgress(
+      status,
+      previewPlan: widget.previewPlan,
+    );
+    final currentBatch = _mobileCurrentBatch(
+      status,
+      previewPlan: widget.previewPlan,
+    );
+    final arrivalLabel = _mobileStatusArrivalLabel(
+      status,
+      previewPlan: widget.previewPlan,
+    );
     return Stack(
       children: [
         _MobileMigrationStatusScaffold(
@@ -838,7 +875,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _StatusTextRow(
-                        label: '$plannedBatchCount planned batches',
+                        label: plannedMigrationBatchesLabel(plannedBatchCount),
                         value: 'View',
                         trailing: const AppIcon(
                           AppIcons.chevronForward,
@@ -857,7 +894,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
                       ),
                       const Divider(height: 1, thickness: 1),
                       _StatusTextRow(
-                        label: 'Estimated arrival time',
+                        label: 'Dispatch timing',
                         value: arrivalLabel,
                       ),
                     ],
@@ -875,6 +912,7 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
           Positioned.fill(
             child: _MigrationBatchModal(
               status: status,
+              previewPlan: widget.previewPlan,
               onClose: () => setState(() => _showBatchModal = false),
             ),
           ),
@@ -942,7 +980,7 @@ class _MobileMigrationPasscodeState extends State<_MobileMigrationPasscode> {
   }
 }
 
-class _MobileMigrationStatusScaffold extends StatelessWidget {
+class _MobileMigrationStatusScaffold extends ConsumerWidget {
   const _MobileMigrationStatusScaffold({
     required this.data,
     required this.child,
@@ -952,8 +990,10 @@ class _MobileMigrationStatusScaffold extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final sync = ref.watch(syncProvider).value ?? SyncState();
+    final syncLabel = SyncStatusLabel.from(sync).label;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
@@ -961,7 +1001,7 @@ class _MobileMigrationStatusScaffold extends StatelessWidget {
           children: [
             MobileTopNav.account(
               accountName: data.accountName,
-              syncLabel: 'Vizor is synced',
+              syncLabel: syncLabel,
               avatar: AppProfilePicture(
                 profilePictureId: data.profilePictureId,
                 size: AppProfilePictureSize.navLarge,
@@ -1016,10 +1056,15 @@ class _MobileStatusCard extends StatelessWidget {
 enum _PreparingStatusState { complete, waiting, pending }
 
 class _PreparingStatusRow extends StatelessWidget {
-  const _PreparingStatusRow({required this.state, required this.label});
+  const _PreparingStatusRow({
+    required this.state,
+    required this.label,
+    this.trailing,
+  });
 
   final _PreparingStatusState state;
   final String label;
+  final String? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1085,6 +1130,15 @@ class _PreparingStatusRow extends StatelessWidget {
             style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
         ),
+        if (trailing != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            trailing!,
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1159,7 +1213,7 @@ class _MigrationProgressHero extends StatelessWidget {
           Positioned(
             bottom: 28,
             child: Text(
-              'Left to transfer',
+              'Migration total',
               style: AppTypography.bodyLarge.copyWith(
                 color: colors.text.secondary,
                 fontWeight: FontWeight.w500,
@@ -1295,8 +1349,11 @@ class _MobileStatusBackHomeButton extends StatelessWidget {
   }
 }
 
-int _mobilePlannedBatchCount(rust_sync.MigrationStatus? status) {
-  if (status == null) return 12;
+int _mobilePlannedBatchCount(
+  rust_sync.MigrationStatus? status, {
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+}) {
+  if (status == null) return previewPlan?.plannedBatchCount ?? 0;
   if (status.totalCount > 0) return status.totalCount;
   if (status.targetValuesZatoshi.isNotEmpty) {
     return status.targetValuesZatoshi.length;
@@ -1304,10 +1361,13 @@ int _mobilePlannedBatchCount(rust_sync.MigrationStatus? status) {
   return math.max(1, status.preparedNoteCount);
 }
 
-double _mobileMigrationProgress(rust_sync.MigrationStatus? status) {
-  if (status == null) return 0.1;
-  final total = _mobilePlannedBatchCount(status);
-  if (total <= 0) return 0.1;
+double _mobileMigrationProgress(
+  rust_sync.MigrationStatus? status, {
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+}) {
+  if (status == null) return 0;
+  final total = _mobilePlannedBatchCount(status, previewPlan: previewPlan);
+  if (total <= 0) return 0;
   return (status.confirmedTxCount / total).clamp(0, 1);
 }
 
@@ -1323,20 +1383,26 @@ class _MobileCurrentBatch {
   final String status;
 }
 
-_MobileCurrentBatch _mobileCurrentBatch(rust_sync.MigrationStatus? status) {
+_MobileCurrentBatch _mobileCurrentBatch(
+  rust_sync.MigrationStatus? status, {
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+}) {
   if (status == null) {
-    return const _MobileCurrentBatch(
-      number: 4,
-      amount: '4.12 ZEC',
-      status: 'Confirming...',
+    final values = previewPlan?.targetValuesZatoshi;
+    return _MobileCurrentBatch(
+      number: values?.isNotEmpty ?? false ? 1 : 0,
+      amount: values?.isNotEmpty ?? false
+          ? '${ZecAmount.fromZatoshi(values!.first).balance.amountText} ZEC'
+          : 'Amount pending',
+      status: 'Not started',
     );
   }
-  final count = _mobilePlannedBatchCount(status);
+  final count = _mobilePlannedBatchCount(status, previewPlan: previewPlan);
   final number = math.min(count, math.max(1, status.confirmedTxCount + 1));
   final values = status.targetValuesZatoshi;
   final amount = number <= values.length
       ? '${ZecAmount.fromZatoshi(values[number - 1]).balance.amountText} ZEC'
-      : '${ZecAmount.fromZatoshi(BigInt.zero).balance.amountText} ZEC';
+      : 'Amount pending';
   final label = switch (status.phase) {
     kIronwoodMigrationReadyToMigratePhase => 'Preparing...',
     kIronwoodMigrationBroadcastScheduledPhase => 'Scheduled',
@@ -1346,41 +1412,27 @@ _MobileCurrentBatch _mobileCurrentBatch(rust_sync.MigrationStatus? status) {
   return _MobileCurrentBatch(number: number, amount: amount, status: label);
 }
 
-String _mobileStatusArrivalLabel(rust_sync.MigrationStatus? status) {
-  if (status == null) return 'July 18, 12:00';
-  final broadcasts = status.scheduledBroadcasts;
-  if (broadcasts.isEmpty) return 'Schedule pending';
-  var latestMs = broadcasts.first.scheduledAtMs;
-  for (final broadcast in broadcasts.skip(1)) {
-    latestMs = math.max(latestMs, broadcast.scheduledAtMs);
+String _mobileStatusArrivalLabel(
+  rust_sync.MigrationStatus? status, {
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+}) {
+  if (status == null) {
+    return previewPlan == null
+        ? 'Schedule pending'
+        : migrationDispatchWindowLabel(previewPlan.broadcastWindowSeconds);
   }
-  return _shortDateTime(DateTime.fromMillisecondsSinceEpoch(latestMs));
-}
-
-String _shortDateTime(DateTime dateTime) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  return '${months[dateTime.month - 1]} ${dateTime.day}, '
-      '${dateTime.hour}:$minute';
+  return migrationDispatchTimingLabel(status);
 }
 
 class _MigrationBatchModal extends StatefulWidget {
-  const _MigrationBatchModal({required this.onClose, this.status});
+  const _MigrationBatchModal({
+    required this.onClose,
+    required this.previewPlan,
+    this.status,
+  });
 
   final VoidCallback onClose;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -1399,12 +1451,17 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final batchCount = _mobilePlannedBatchCount(widget.status);
-    final targetValues = widget.status?.targetValuesZatoshi;
-    final arrivalLabel = _mobileStatusArrivalLabel(widget.status);
-    final modalArrivalLabel = arrivalLabel == 'Schedule pending'
-        ? 'pending'
-        : arrivalLabel.replaceFirst('July', 'Jul');
+    final batchCount = _mobilePlannedBatchCount(
+      widget.status,
+      previewPlan: widget.previewPlan,
+    );
+    final targetValues =
+        widget.status?.targetValuesZatoshi ??
+        widget.previewPlan?.targetValuesZatoshi;
+    final arrivalLabel = _mobileStatusArrivalLabel(
+      widget.status,
+      previewPlan: widget.previewPlan,
+    );
     return ColoredBox(
       color: colors.background.neutralScrim,
       child: Align(
@@ -1440,19 +1497,21 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                 ),
                 child: Column(
                   children: [
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '$batchCount batches',
-                            style: AppTypography.bodyLarge.copyWith(
-                              color: colors.text.accent,
-                              fontWeight: FontWeight.w500,
-                            ),
+                        Text(
+                          migrationBatchesLabel(batchCount),
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
+                        const SizedBox(height: AppSpacing.xs),
                         Text(
-                          'ETA: $modalArrivalLabel',
+                          'Schedule: $arrivalLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -1490,7 +1549,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                               ),
                               itemBuilder: (context, index) {
                                 final number = '${index + 1}'.padLeft(2, '0');
-                                final eta = _mobileBatchEta(
+                                final dispatchLabel = _mobileBatchDispatchLabel(
                                   status: widget.status,
                                   index: index,
                                 );
@@ -1515,7 +1574,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                                           targetValues != null &&
                                                   index < targetValues.length
                                               ? '${ZecAmount.fromZatoshi(targetValues[index]).balance.amountText} ZEC'
-                                              : '4.12 ZEC',
+                                              : 'Amount pending',
                                           style: AppTypography.labelLarge
                                               .copyWith(
                                                 color: colors.text.accent,
@@ -1523,7 +1582,7 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
                                         ),
                                       ),
                                       Text(
-                                        eta,
+                                        dispatchLabel,
                                         style: AppTypography.labelLarge
                                             .copyWith(
                                               color: colors.text.accent,
@@ -1566,26 +1625,13 @@ class _MigrationBatchModalState extends State<_MigrationBatchModal> {
   }
 }
 
-String _mobileBatchEta({
+String _mobileBatchDispatchLabel({
   required rust_sync.MigrationStatus? status,
   required int index,
 }) {
-  if (status == null) {
-    return switch (index) {
-      0 => '~in 4 hrs',
-      1 => '~in 12 hrs',
-      2 || 3 || 4 => '~in 24 hrs',
-      _ => '~in 30 hrs',
-    };
-  }
+  if (status == null) return 'Pending';
   if (index >= status.scheduledBroadcasts.length) return 'Pending';
-  final scheduledAt = DateTime.fromMillisecondsSinceEpoch(
-    status.scheduledBroadcasts[index].scheduledAtMs,
-  );
-  final remaining = scheduledAt.difference(DateTime.now());
-  if (remaining <= Duration.zero) return 'Due now';
-  final hours = math.max(1, remaining.inMinutes / 60).ceil();
-  return '~in $hours hrs';
+  return migrationScheduledBroadcastLabel(status.scheduledBroadcasts[index]);
 }
 
 class _ZecBatchBadge extends StatelessWidget {
@@ -2101,9 +2147,10 @@ class _MobilePoolMigrationHero extends StatelessWidget {
 }
 
 class _MobileMigrationProcessCard extends StatelessWidget {
-  const _MobileMigrationProcessCard({required this.amount});
+  const _MobileMigrationProcessCard({required this.amount, required this.plan});
 
   final String amount;
+  final rust_sync.OrchardMigrationPrivatePlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -2115,11 +2162,13 @@ class _MobileMigrationProcessCard extends StatelessWidget {
           _ProcessRow(
             icon: _ProcessIcon.split,
             title: 'Split funds',
-            body:
-                'Your $amount ZEC balance is divided into several smaller '
-                'common notes (10/1/0.1 ZEC). Splitting the balance into '
-                'smaller batches mixes your transactions with other users '
-                'maximizing privacy.',
+            body: plan == null
+                ? 'Vizor will calculate the split transactions and migration '
+                      'batches from your current Orchard notes.'
+                : migrationPlanPreparationDescription(
+                    plan: plan!,
+                    amountText: amount,
+                  ),
           ),
           const Divider(height: 33),
           const _ProcessRow(
@@ -2240,7 +2289,6 @@ class _MobileMigrationOptionCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.selected,
-    required this.recommended,
     required this.icon,
     this.enabled = true,
     super.key,
@@ -2249,7 +2297,6 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   final String title;
   final String body;
   final bool selected;
-  final bool recommended;
   final _MigrationChoiceIcon icon;
   final bool enabled;
 
@@ -2291,37 +2338,12 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: AppTypography.bodyLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (recommended) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF00C77B),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
-                              ),
-                              child: Text(
-                                'Recommended',
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: const Color(0xFFFFFFFF),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      title,
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
@@ -2403,9 +2425,6 @@ class _MobilePrivatePlan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final perBatchFee = plan.plannedBatchCount <= 0
-        ? plan.migrationFeeZatoshi
-        : plan.migrationFeeZatoshi ~/ BigInt.from(plan.plannedBatchCount);
     final orchardRemainder = plan.orchardChangeZatoshi ?? BigInt.zero;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2414,12 +2433,12 @@ class _MobilePrivatePlan extends StatelessWidget {
           child: Column(
             children: [
               _ReviewRow(
-                label: '${plan.plannedBatchCount} planned batches',
+                label: plannedMigrationBatchesLabel(plan.plannedBatchCount),
                 value: 'View  ›',
                 strongLabel: true,
               ),
               const SizedBox(height: AppSpacing.s),
-              _ReviewRow(label: '~ Arrival time', value: arrivalLabel),
+              _ReviewRow(label: 'Dispatch window', value: arrivalLabel),
             ],
           ),
         ),
@@ -2429,12 +2448,13 @@ class _MobilePrivatePlan extends StatelessWidget {
             children: [
               _ReviewRow(
                 label: 'Fees (estimate)',
-                value: 'Per batch, ~${_compactZec(perBatchFee)} ZEC',
+                value:
+                    'Total, ~${_compactZec(plan.estimatedTotalFeeZatoshi)} ZEC',
               ),
               const SizedBox(height: AppSpacing.s),
               _ReviewRow(
                 label: 'Orchard remains',
-                value: '<${_compactZec(orchardRemainder)} ZEC',
+                value: '${_compactZec(orchardRemainder)} ZEC',
                 showInfo: true,
               ),
             ],
@@ -2449,9 +2469,9 @@ class _MobilePrivatePlan extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Separate windows reduce correlation — the total crossing amount '
-          'stays publicly visible. Sending is best effort, not a delivery '
-          'time.',
+          'Transactions are scheduled across the shown window instead of all '
+          'at once. Amounts and timing remain visible, so this is not a '
+          'privacy guarantee.',
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.accent,
             height: 25 / 16,
@@ -2635,28 +2655,7 @@ String _compactZec(BigInt zatoshi) {
 }
 
 String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
-  final batches = math.max(1, plan.plannedBatchCount);
-  final seconds = plan.broadcastWindowSeconds * BigInt.from(batches - 1);
-  final duration = Duration(seconds: seconds.toInt());
-  final arrival = DateTime.now().add(duration);
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final minute = arrival.minute.toString().padLeft(2, '0');
-  final days = math.max(1, duration.inHours / 24).ceil();
-  return '${months[arrival.month - 1]} ${arrival.day}, '
-      '${arrival.hour}:$minute (~$days days)';
+  return migrationDispatchWindowLabel(plan.broadcastWindowSeconds);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {

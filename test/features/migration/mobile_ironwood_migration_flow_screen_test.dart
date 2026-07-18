@@ -110,7 +110,6 @@ Widget _app({
       step: value,
       previewData: _data,
       previewPrivatePlan: _plan,
-      previewArrivalLabel: 'July 18, 12:00 (~2days)',
     );
   }
 
@@ -320,6 +319,8 @@ void main() {
 
     expect(find.text('How Migration Works'), findsOneWidget);
     expect(find.text('Split funds'), findsOneWidget);
+    expect(find.textContaining('1 split transaction'), findsOneWidget);
+    expect(find.textContaining('12 migration batches'), findsOneWidget);
     expect(find.text('Schedule'), findsOneWidget);
     expect(find.text('Sign once'), findsOneWidget);
   });
@@ -332,7 +333,7 @@ void main() {
 
     expect(find.text('Choose How to Migrate\nyour 142.24 ZEC'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
-    expect(find.text('Recommended'), findsOneWidget);
+    expect(find.text('Recommended'), findsNothing);
     expect(find.text('Immediate'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_immediate_unavailable')),
@@ -353,7 +354,9 @@ void main() {
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('142.24 ZEC'), findsOneWidget);
     expect(find.text('12 planned batches'), findsOneWidget);
-    expect(find.text('July 18, 12:00 (~2days)'), findsOneWidget);
+    expect(find.text('Up to 2 days'), findsOneWidget);
+    expect(find.text('Total, ~0.1442 ZEC'), findsOneWidget);
+    expect(find.text('0.0009 ZEC'), findsOneWidget);
     expect(find.text('Privacy'), findsOneWidget);
   });
 
@@ -380,7 +383,7 @@ void main() {
 
     expect(find.text('Preparing...'), findsOneWidget);
     expect(find.text('142.24 ZEC'), findsOneWidget);
-    expect(find.text('Transaction splits submitted'), findsOneWidget);
+    expect(find.text('Split transactions'), findsOneWidget);
     expect(find.text('Waiting for confirmation ...'), findsOneWidget);
     expect(find.text('Migration schedule'), findsOneWidget);
     expect(find.text('Back home'), findsOneWidget);
@@ -395,14 +398,15 @@ void main() {
     expect(find.text('142.24 ZEC'), findsOneWidget);
     expect(find.text('12 planned batches'), findsOneWidget);
     expect(find.text('Current batch'), findsOneWidget);
-    expect(find.text('Confirming...'), findsOneWidget);
-    expect(find.text('July 18, 12:00'), findsOneWidget);
+    expect(find.text('Not started'), findsOneWidget);
+    expect(find.text('Amount pending'), findsOneWidget);
+    expect(find.text('Up to 2 days'), findsOneWidget);
 
     await tester.tap(find.text('View'));
     await tester.pumpAndSettle();
 
     expect(find.text('12 batches'), findsOneWidget);
-    expect(find.text('ETA: Jul 18, 12:00'), findsOneWidget);
+    expect(find.text('Schedule: Up to 2 days'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('migration_batch_scrollbar')),
@@ -509,6 +513,8 @@ void main() {
 
     expect(find.text('Preparing...'), findsOneWidget);
     expect(find.text('Waiting for confirmation ...'), findsOneWidget);
+    expect(find.text('Split 2 of 3, 2 of 10 confirmations'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
   });
 
   testWidgets('maps live migration progress into the Migrating screen', (
@@ -528,7 +534,7 @@ void main() {
     expect(find.text('3 planned batches'), findsOneWidget);
     expect(find.text('33% DONE'), findsOneWidget);
     expect(find.text('4.12 ZEC'), findsOneWidget);
-    expect(find.text('Schedule pending'), findsOneWidget);
+    expect(find.text('Confirming'), findsOneWidget);
 
     await tester.tap(find.text('View'));
     await tester.pumpAndSettle();

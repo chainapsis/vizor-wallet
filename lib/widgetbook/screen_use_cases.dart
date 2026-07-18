@@ -920,7 +920,6 @@ Widget _buildMobileIronwoodMigrationUseCase({
           accountName: accountName,
         ),
         previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
-        previewArrivalLabel: 'July 18, 12:00 (~2days)',
         previewShowBatchModal: showBatchModal,
       ),
     ),
@@ -1831,6 +1830,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 : _ironwoodMigrationFlowData(
                     zatoshi: BigInt.from(14_232_000_000),
                   ),
+            previewPrivatePlan: _previewPrivateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
           ),
         ),
@@ -1843,6 +1843,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 : _ironwoodMigrationFlowData(
                     zatoshi: BigInt.from(14_224_000_000),
                   ),
+            previewPrivatePlan: _previewPrivateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
           ),
         ),
