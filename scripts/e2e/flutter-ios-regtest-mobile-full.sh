@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+INCLUDE_500_NOTE_MIGRATION="${E2E_INCLUDE_500_NOTE_MIGRATION:-0}"
 
 source "$ROOT_DIR/scripts/e2e/lib-mobile.sh"
 
@@ -19,6 +20,14 @@ require_cmd docker
 require_cmd fvm
 require_cmd python3
 require_cmd xcrun
+
+case "$INCLUDE_500_NOTE_MIGRATION" in
+  0 | 1) ;;
+  *)
+    echo "E2E_INCLUDE_500_NOTE_MIGRATION must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
 
 cd "$ROOT_DIR"
 
@@ -64,6 +73,14 @@ run_test "12/13 resume an Ironwood migration after process restart" \
 
 run_test "13/13 resume an Ironwood migration after network recovery" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-network-recovery.sh"
+
+if [[ "$INCLUDE_500_NOTE_MIGRATION" == "1" ]]; then
+  run_test "optional: migrate 500 Orchard notes to Ironwood" \
+    "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-500-notes.sh"
+else
+  echo
+  echo "skipping optional 500-note migration; set E2E_INCLUDE_500_NOTE_MIGRATION=1 to run it"
+fi
 
 echo
 echo "all iOS mobile regtest E2E tests passed"
