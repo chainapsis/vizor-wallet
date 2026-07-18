@@ -72,35 +72,23 @@ url = "2.5.8"
 # Zcash core
 [dependencies.zcash_primitives]
 version = "0.29.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_address]
 version = "0.13.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_keys]
 version = "0.15.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 version = "0.10.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.transparent]
 package = "zcash_transparent"
 version = "0.9.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.zcash_client_backend]
 version = "0.24.0-rc.1"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = [
     "orchard",
     "transparent-inputs",
@@ -112,15 +100,11 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 version = "0.22.0-rc.1"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting"
-rev = "e82d525c5bcfb447921a4e8fa060ea609b7d25db"
-package = "zcash_voting"
+version = "1.0.0"
 
 # Must match the Orchard release used by the pinned librustzcash and
 # zcash_voting revisions to avoid type conflicts.
@@ -130,13 +114,9 @@ version = "0.15.0"
 # Proofs
 [dependencies.zcash_proofs]
 version = "0.29.0-pre.0"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 
 [dependencies.pczt]
 version = "0.8.0-rc.1"
-git = "https://github.com/zcash/librustzcash"
-rev = "a277ecbff5c653522fdafb7cc822f5c1f3e7f3e5"
 features = [
     "orchard",
     "io-finalizer",
@@ -169,19 +149,30 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
-git = "https://github.com/valargroup/zcash_voting"
-rev = "e82d525c5bcfb447921a4e8fa060ea609b7d25db"
-package = "vote-commitment-tree"
+version = "0.3.2"
 
 [patch.crates-io]
-# vote-commitment-tree still needs the retained-checkpoint API from the
-# unreleased shardtree 0.6 line. librustzcash uses released shardtree 0.7, so
-# both versions intentionally remain in the graph.
-shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "decefc469dbf1e686b20b7e7dcaa7cb4f122125b" }
+# Keep the voting crates on the revision tested by this application.
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "b0b0233641ec53088d46d4f6e6f8f343431bf7a5" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting", rev = "b0b0233641ec53088d46d4f6e6f8f343431bf7a5" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "b0b0233641ec53088d46d4f6e6f8f343431bf7a5" }
+
+# Keep the librustzcash family on one revision.
+pczt = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_client_sqlite = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "93b5cce0522429358353f8892b14a38a72591745" }
+
+# Keep the direct tree dependency aligned with the patched graph.
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "decefc469dbf1e686b20b7e7dcaa7cb4f122125b" }
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)', 'cfg(zcash_unstable, values("nu6.3"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default

@@ -2970,15 +2970,6 @@ fn signed_denomination_stage_inserts(
         .collect()
 }
 
-/// Captures dummy spend action indices before the IO finalizer consumes `dummy_sk`.
-fn dummy_spend_action_indices(bundle: Option<&orchard::pczt::Bundle>) -> Vec<usize> {
-    bundle
-        .into_iter()
-        .flat_map(|bundle| bundle.actions().iter().enumerate())
-        .filter_map(|(index, action)| action.spend().dummy_sk().is_some().then_some(index))
-        .collect()
-}
-
 fn pczt_from_build_result(
     build_result: zcash_primitives::transaction::builder::PcztResult<WalletNetwork>,
     network: WalletNetwork,
@@ -3012,10 +3003,6 @@ fn pczt_from_build_result(
         .iter()
         .copied()
         .collect::<HashSet<_>>();
-    let orchard_dummy_spend_action_indices =
-        dummy_spend_action_indices(build_result.pczt_parts.orchard.as_ref());
-    let ironwood_dummy_spend_action_indices =
-        dummy_spend_action_indices(build_result.pczt_parts.ironwood.as_ref());
     let created = Creator::build_from_parts(build_result.pczt_parts).ok_or("Build PCZT failed")?;
     let io_finalized = IoFinalizer::new(created)
         .finalize_io()
@@ -3053,11 +3040,7 @@ fn pczt_from_build_result(
     let bytes = pczt
         .serialize()
         .map_err(|e| format!("Serialize built PCZT: {e:?}"))?;
-    let redacted_bytes = super::pczt::redact_pczt_for_batch_signer(
-        &bytes,
-        &orchard_dummy_spend_action_indices,
-        &ironwood_dummy_spend_action_indices,
-    )?;
+    let redacted_bytes = super::pczt::redact_pczt_for_batch_signer(&bytes)?;
 
     Ok(BuiltPczt {
         bytes,
@@ -7264,53 +7247,35 @@ mod tests {
     }
 
     #[test]
-    fn batch_signer_redaction_clears_spend_fvks_and_signatures() {
+    fn batch_signer_redaction_compacts_and_preserves_signable_spends() {
         use pczt::roles::redactor::Redactor;
         use pczt::roles::signer::Signer;
 
-        let (built_pczt, sk) = built_v6_split_pczt();
-
-        // Give the request-time PCZT spend_auth_sigs to strip. Migration children
-        // carry IO-finalizer dummy signatures at request time; this split fixture's
-        // actions are all wallet-controlled instead, so sign them with the wallet
-        // spending key.
-        let request_bytes = {
-            let parsed = pczt::Pczt::parse(&built_pczt.bytes).unwrap();
-            let action_count = parsed.orchard().actions().len();
-            let mut signer = Signer::new(parsed).unwrap();
-            let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
-            for index in 0..action_count {
-                signer.sign_orchard(index, &ask).unwrap();
-            }
-            signer.finish().serialize().unwrap()
-        };
+        let (built_pczt, _) = built_v6_split_pczt();
+        let request_bytes = built_pczt.bytes.clone();
         let request = pczt::Pczt::parse(&request_bytes).unwrap();
-        assert!(
-            request
-                .orchard()
-                .actions()
-                .iter()
-                .any(|action| action.spend().spend_auth_sig().is_some()),
-            "fixture must carry a spend_auth_sig for the sig-clearing to be meaningful",
-        );
+        let mut has_unsigned_zero_value_spend = false;
+        pczt::roles::verifier::Verifier::new(request.clone())
+            .with_orchard::<Infallible, _>(|bundle| {
+                has_unsigned_zero_value_spend = bundle.actions().iter().any(|action| {
+                    action
+                        .spend()
+                        .value()
+                        .as_ref()
+                        .is_some_and(|value| value.inner() == 0)
+                        && action.spend().spend_auth_sig().is_none()
+                });
+                Ok(())
+            })
+            .unwrap();
+        assert!(has_unsigned_zero_value_spend);
 
         let standard = crate::wallet::sync::pczt::redact_pczt_for_signer(&request_bytes).unwrap();
         let batch =
-            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes, &[], &[])
-                .unwrap();
+            crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&request_bytes).unwrap();
         assert_eq!(batch, built_pczt.redacted_bytes);
 
-        // The batch redaction must not send any request-time spend_auth_sig (only
-        // wallet-side signatures exist before the device signs).
         let batch_parsed = pczt::Pczt::parse(&batch).unwrap();
-        assert!(
-            batch_parsed
-                .orchard()
-                .actions()
-                .iter()
-                .all(|action| action.spend().spend_auth_sig().is_none()),
-            "batch redaction must clear every spend_auth_sig",
-        );
         for index in 0..batch_parsed.orchard().actions().len() {
             let without_alpha = Redactor::new(batch_parsed.clone())
                 .redact_orchard_with(|mut r| {
