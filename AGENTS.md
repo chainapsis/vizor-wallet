@@ -8,6 +8,11 @@ fvm flutter run
 fvm flutter test      # mobile-tagged tests auto-skip (dart_test.yaml)
 fvm flutter analyze
 
+# Unless the task explicitly requires a visible window, run macOS E2E with the
+# app window hidden. The scripts do this by default; opt out only when the
+# window is needed for debugging or visual verification.
+VIZOR_E2E_HIDDEN_WINDOW=false scripts/e2e/flutter-macos-regtest-import-sync.sh
+
 # Mobile form factor: mobile-targeted runs and tests pass the token
 # define. Details in the "Design Token Form Factor" section below.
 fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile

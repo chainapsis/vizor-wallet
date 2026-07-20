@@ -93,7 +93,8 @@ fvm flutter test \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
   --dart-define=ZCASH_E2E_UNIFIED_ADDRESS="$unified_address" \
-  --dart-define=ZCASH_E2E_FAUCET_ZADDR="$faucet_zaddr"
+  --dart-define=ZCASH_E2E_FAUCET_ZADDR="$faucet_zaddr" \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 status="$?"
 set -e
 

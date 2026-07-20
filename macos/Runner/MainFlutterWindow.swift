@@ -97,6 +97,19 @@ final class WindowAppearanceChannel {
       }
       setBrightness(brightness)
       result(nil)
+    case "showInactive":
+      guard let window else {
+        result(
+          FlutterError(
+            code: "missing_window",
+            message: "The main window is unavailable.",
+            details: nil
+          )
+        )
+        return
+      }
+      window.orderFrontRegardless()
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }

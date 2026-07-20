@@ -52,7 +52,8 @@ run_flutter_phase() {
     --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
     --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
     --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
-    --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+    --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
+    --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 }
 
 cd "$ROOT_DIR"
