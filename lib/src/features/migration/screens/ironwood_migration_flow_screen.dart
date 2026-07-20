@@ -1410,7 +1410,6 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = data.amountText;
 
     return SizedBox(
       width: 420,
@@ -1433,32 +1432,35 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
             left: 12,
             top: 81.5,
             width: 396,
-            height: 386,
-            child: _ProcessCard(
-              steps: [
-                _ProcessStepData(
-                  icon: _ProcessIconKind.split,
-                  title: 'Split funds',
-                  body:
-                      'Your $amount ZEC balance is divided into several '
-                      'canonical notes from 0.01 to 10,000 ZEC. Splitting the '
-                      'balance into smaller batches mixes your transactions '
-                      'with other users maximizing privacy.',
+            child: const Column(
+              children: [
+                _ProcessCard(
+                  steps: [
+                    _ProcessStepData(
+                      number: 1,
+                      title: 'Choose how you migrate',
+                      body:
+                          'Compare a privacy-optimized schedule with a faster '
+                          'migration.',
+                    ),
+                    _ProcessStepData(
+                      number: 2,
+                      title: 'Prepare your balance',
+                      body:
+                          'Vizor reorganizes your balance into common-sized '
+                          'parts before migration begins.',
+                    ),
+                    _ProcessStepData(
+                      number: 3,
+                      title: 'Move to Ironwood',
+                      body:
+                          'Privacy-optimized migrations send parts at staggered '
+                          'times to reduce linkability.',
+                    ),
+                  ],
                 ),
-                const _ProcessStepData(
-                  icon: _ProcessIconKind.schedule,
-                  title: 'Schedule',
-                  body:
-                      'Transactions dispatch at irregular intervals instead '
-                      'of all at once.',
-                ),
-                const _ProcessStepData(
-                  icon: _ProcessIconKind.sign,
-                  title: 'Sign Once',
-                  body:
-                      'You grant permission at the start, and the Vizor '
-                      'executes the remaining steps.',
-                ),
+                SizedBox(height: 12),
+                _SpendAsFundsArriveCard(),
               ],
             ),
           ),
@@ -1466,14 +1468,20 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
             left: 95,
             top: 540,
             width: 230,
-            child: _FlowButtons(
-              primaryKey: const ValueKey(
+            child: AppButton(
+              key: const ValueKey(
                 'ironwood_migration_how_it_works_continue_button',
               ),
-              primaryLabel: 'Continue',
-              onPrimary: () => context.go('/migration/options'),
-              secondaryLabel: 'Go Back',
-              onSecondary: () => context.go('/migration/intro'),
+              onPressed: () => context.go('/migration/options'),
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              child: const Text(
+                'Continue',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ],
@@ -4387,25 +4395,16 @@ class _ProcessCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadii.large),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 32, 16, 32),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             for (var index = 0; index < steps.length; index++) ...[
               _ProcessStep(step: steps[index]),
-              if (index != steps.length - 1) ...[
-                const SizedBox(height: 17),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: context.colors.border.subtle,
-                  indent: 36,
-                  endIndent: 12,
-                ),
-                const SizedBox(height: 17),
-              ],
+              if (index != steps.length - 1) const SizedBox(height: 16),
             ],
           ],
         ),
@@ -4416,12 +4415,12 @@ class _ProcessCard extends StatelessWidget {
 
 class _ProcessStepData {
   const _ProcessStepData({
-    required this.icon,
+    required this.number,
     required this.title,
     required this.body,
   });
 
-  final _ProcessIconKind icon;
+  final int number;
   final String title;
   final String body;
 }
@@ -4437,29 +4436,21 @@ class _ProcessStep extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 20,
-          height: 20,
-          child: CustomPaint(
-            painter: _ProcessIconPainter(step.icon, GreenPrimitives.p500Light),
-          ),
-        ),
-        const SizedBox(width: 16),
+        _ProcessStepNumber(number: step.number),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 step.title,
-                style: AppTypography.bodyMediumStrong.copyWith(
+                style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 8),
               Text(
                 step.body,
-                maxLines: step.icon == _ProcessIconKind.split ? 4 : 2,
-                overflow: TextOverflow.ellipsis,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -4472,64 +4463,85 @@ class _ProcessStep extends StatelessWidget {
   }
 }
 
-enum _ProcessIconKind { split, schedule, sign }
+class _ProcessStepNumber extends StatelessWidget {
+  const _ProcessStepNumber({required this.number});
 
-class _ProcessIconPainter extends CustomPainter {
-  const _ProcessIconPainter(this.kind, this.color);
-
-  final _ProcessIconKind kind;
-  final Color color;
+  final int number;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.8
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    switch (kind) {
-      case _ProcessIconKind.split:
-        canvas.drawLine(const Offset(5, 5), const Offset(5, 11), paint);
-        canvas.drawLine(const Offset(5, 11), const Offset(12, 11), paint);
-        canvas.drawLine(const Offset(12, 11), const Offset(12, 16), paint);
-        canvas.drawLine(const Offset(12, 11), const Offset(16, 7), paint);
-        _arrow(canvas, const Offset(12, 16), math.pi / 2, paint);
-        _arrow(canvas, const Offset(16, 7), -math.pi / 4, paint);
-      case _ProcessIconKind.schedule:
-        canvas.drawCircle(const Offset(10, 10), 6.5, paint);
-        canvas.drawLine(const Offset(10, 10), const Offset(10, 6), paint);
-        canvas.drawLine(const Offset(10, 10), const Offset(13, 12), paint);
-        canvas.drawLine(const Offset(6, 2), const Offset(4, 4), paint);
-        canvas.drawLine(const Offset(14, 2), const Offset(16, 4), paint);
-      case _ProcessIconKind.sign:
-        canvas.drawLine(const Offset(4, 15), const Offset(16, 15), paint);
-        canvas.drawLine(const Offset(5, 12), const Offset(8, 6), paint);
-        canvas.drawLine(const Offset(8, 6), const Offset(12, 12), paint);
-        canvas.drawLine(const Offset(12, 12), const Offset(15, 5), paint);
-        canvas.drawCircle(const Offset(8, 6), 1.5, paint);
-    }
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: colors.background.base,
+          shape: const CircleBorder(),
+        ),
+        child: Center(
+          child: Text(
+            '$number',
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
   }
+}
 
-  void _arrow(Canvas canvas, Offset tip, double angle, Paint paint) {
-    const length = 3.5;
-    final a = angle + math.pi * 0.75;
-    final b = angle - math.pi * 0.75;
-    canvas.drawLine(
-      tip,
-      tip + Offset(math.cos(a), math.sin(a)) * length,
-      paint,
-    );
-    canvas.drawLine(
-      tip,
-      tip + Offset(math.cos(b), math.sin(b)) * length,
-      paint,
-    );
-  }
+class _SpendAsFundsArriveCard extends StatelessWidget {
+  const _SpendAsFundsArriveCard();
 
   @override
-  bool shouldRepaint(covariant _ProcessIconPainter oldDelegate) {
-    return oldDelegate.kind != kind || oldDelegate.color != color;
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.homeCard,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: AppIcon(
+                AppIcons.wallet,
+                size: 20,
+                color: GreenPrimitives.p400Light,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DefaultTextStyle.merge(
+                style: TextStyle(color: colors.text.homeCard),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Spend as funds arrive',
+                      style: AppTypography.labelMedium,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Each confirmed Ironwood amount is available to '
+                      'spend while the rest continues.',
+                      style: AppTypography.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
