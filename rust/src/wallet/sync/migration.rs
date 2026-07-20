@@ -581,6 +581,7 @@ pub(crate) struct ScheduledMigrationBroadcast {
     pub txid_hex: String,
     pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: u32,
     pub status: String,
 }
@@ -601,6 +602,7 @@ pub(crate) struct MigrationPartStatus {
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -1194,8 +1196,8 @@ fn insert_pending_txs_with_tx(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'scheduled', ?15)"
+                  schedule_start_height, scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'scheduled', ?16)"
                 ),
                 params![
                     run_id,
@@ -1211,6 +1213,7 @@ fn insert_pending_txs_with_tx(
                     pending.selected_note.output_index,
                     pending.selected_note.value_zatoshi,
                     scheduled_at_ms,
+                    construction_height,
                     scheduled_height,
                     metadata_json,
                 ],
@@ -1960,9 +1963,9 @@ pub(crate) fn replace_resigned_pending_parts(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
+                  schedule_start_height, scheduled_height, status, metadata_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, 'scheduled', ?15)"
+                         ?13, ?14, ?15, 'scheduled', ?16)"
             ),
             params![
                 run_id,
@@ -1978,6 +1981,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 pending.selected_note.output_index,
                 pending.selected_note.value_zatoshi,
                 scheduled_at_ms,
+                construction_height,
                 scheduled_height,
                 metadata_json,
             ],
@@ -2181,10 +2185,11 @@ pub(crate) fn reschedule_overdue_pending_txs(
             .ok_or("Migration rescheduled height overflow")?;
         tx.execute(
             &format!(
-                "UPDATE {PENDING_TXS_TABLE} SET scheduled_height = ?1
-                 WHERE run_id = ?2 AND txid_hex = ?3 AND status = 'scheduled'"
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET scheduled_height = ?1, schedule_start_height = ?2
+                 WHERE run_id = ?3 AND txid_hex = ?4 AND status = 'scheduled'"
             ),
-            params![scheduled_height, run_id, txid],
+            params![scheduled_height, chain_tip_height, run_id, txid],
         )
         .map_err(|e| format!("Reschedule overdue migration transaction: {e}"))?;
     }
@@ -2306,7 +2311,8 @@ fn scheduled_broadcasts_for_run(
     }
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, value_zatoshi, scheduled_at_ms, scheduled_height, status
+            "SELECT txid_hex, value_zatoshi, scheduled_at_ms,
+                    schedule_start_height, scheduled_height, status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -2318,8 +2324,9 @@ fn scheduled_broadcasts_for_run(
                 txid_hex: row.get(0)?,
                 value_zatoshi: row.get(1)?,
                 scheduled_at_ms: row.get(2)?,
-                scheduled_height: row.get(3)?,
-                status: row.get(4)?,
+                schedule_start_height: row.get(3)?,
+                scheduled_height: row.get(4)?,
+                status: row.get(5)?,
             })
         })
         .map_err(|e| format!("Query migration schedule: {e}"))?;
@@ -2484,6 +2491,7 @@ fn migration_parts_for_run(
             value_zatoshi: *value_zatoshi,
             state: MigrationPartState::Preparing,
             txid_hex: None,
+            schedule_start_height: None,
             scheduled_height: None,
             confirmation_count: 0,
             confirmation_target,
@@ -2493,6 +2501,7 @@ fn migration_parts_for_run(
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi,
+                    COALESCE(schedule_start_height, target_height - 1),
                     scheduled_height, status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
@@ -2507,7 +2516,8 @@ fn migration_parts_for_run(
                 row.get::<_, u64>(2)?,
                 row.get::<_, u64>(3)?,
                 row.get::<_, u32>(4)?,
-                row.get::<_, String>(5)?,
+                row.get::<_, u32>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })
         .map_err(|e| format!("Query migration part statuses: {e}"))?
@@ -2515,7 +2525,16 @@ fn migration_parts_for_run(
         .map_err(|e| format!("Read migration part statuses: {e}"))?;
 
     let mut assigned = BTreeSet::new();
-    for (stored_index, txid_hex, value_zatoshi, fee_zatoshi, scheduled_height, raw_status) in rows {
+    for (
+        stored_index,
+        txid_hex,
+        value_zatoshi,
+        fee_zatoshi,
+        schedule_start_height,
+        scheduled_height,
+        raw_status,
+    ) in rows
+    {
         let denomination_value = value_zatoshi.saturating_add(fee_zatoshi);
         let part_index = stored_index
             .filter(|index| (*index as usize) < parts.len() && !assigned.contains(index))
@@ -2567,6 +2586,7 @@ fn migration_parts_for_run(
                 .unwrap_or(denomination_value),
             state,
             txid_hex: Some(txid_hex),
+            schedule_start_height: Some(schedule_start_height),
             scheduled_height: Some(scheduled_height),
             confirmation_count,
             confirmation_target,
@@ -2664,6 +2684,7 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                     &format!(
                         "UPDATE {PENDING_TXS_TABLE}
                          SET status = 'scheduled', scheduled_at_ms = ?1,
+                             schedule_start_height = target_height,
                              scheduled_height = target_height
                          WHERE run_id = ?2 AND txid_hex = ?3"
                     ),
@@ -3526,6 +3547,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             selected_note_output_index INTEGER NOT NULL,
             selected_note_value INTEGER NOT NULL,
             scheduled_at_ms INTEGER NOT NULL,
+            schedule_start_height INTEGER,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             metadata_json TEXT NOT NULL
@@ -3568,6 +3590,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "TEXT NOT NULL DEFAULT 'standard'",
     )?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     backfill_pending_part_indices(conn)?;
     conn.execute(
         &format!(
@@ -3587,6 +3610,18 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| format!("Backfill migration scheduled heights: {e}"))?;
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = CASE
+                 WHEN target_height > 0 THEN target_height - 1
+                 ELSE 0
+             END
+             WHERE schedule_start_height IS NULL"
+        ),
+        [],
+    )
+    .map_err(|e| format!("Backfill migration schedule start heights: {e}"))?;
     conn.execute(
         &format!(
             "CREATE INDEX IF NOT EXISTS idx_vizor_migration_pending_height_due

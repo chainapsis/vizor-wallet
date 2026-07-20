@@ -173,16 +173,12 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
 }
 
 Future<void> startPrivateMigrationFromReview(WidgetTester tester) async {
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_accept_split_button'),
-  );
   await pumpUntil(
     tester,
     () => tester.any(
       find.byKey(const ValueKey('ironwood_migration_authorize_start_button')),
     ),
-    description: 'shuffled migration review',
+    description: 'migration review start button',
   );
   await tapAppButton(
     tester,
@@ -357,13 +353,16 @@ Future<void> stopRustWorkForCleanup() async {
 
 Future<void> tapAppButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
-  await pumpUntil(
-    tester,
-    () =>
-        tester.any(finder) &&
-        tester.widget<AppButton>(finder).onPressed != null,
-    description: '$key button to be enabled',
-  );
+  await pumpUntil(tester, () {
+    final elements = finder.evaluate();
+    if (elements.isEmpty) return false;
+    final buttons = [
+      for (final element in elements)
+        if (element.widget case final AppButton button) button,
+    ];
+    if (buttons.isEmpty) return true;
+    return buttons.any((button) => button.onPressed != null);
+  }, description: '$key button to be enabled');
   await tester.ensureVisible(finder);
   await tester.pump(const Duration(milliseconds: 50));
   await tester.tap(finder, pointer: _takeE2ePointer());

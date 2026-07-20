@@ -381,7 +381,7 @@ void main() {
     },
   );
 
-  testWidgets('home Ironwood migration CTA opens intro directly', (
+  testWidgets('home Ironwood migration CTA opens prepare gate and intro', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -397,6 +397,12 @@ void main() {
           accountName: 'Account 1',
           profilePictureId: 'pfp-03',
         ),
+        migrationStatusGetter:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(
+                _migrationStatus(kIronwoodMigrationReadyPhase),
+              );
+            },
         failIfMigrationResolverLoads: true,
         syncState: SyncState(
           accountUuid: 'account-1',
@@ -412,7 +418,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilPresent(tester, find.text('Zcash Network Upgrade'));
 
     expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
     expect(find.text('Zcash Network Upgrade'), findsOneWidget);
@@ -1148,6 +1154,7 @@ Widget _appHarness(
   ProviderListenable<IronwoodMigrationAnnouncementState>?
   ironwoodMigrationAnnouncementStateListenable,
   IronwoodMigrationFlowData? ironwoodMigrationFlowData,
+  OrchardMigrationStatusGetter? migrationStatusGetter,
   bool failIfMigrationResolverLoads = false,
 }) {
   return ProviderScope(
@@ -1204,6 +1211,35 @@ Widget _appHarness(
         ironwoodMigrationFlowDataProvider.overrideWith((ref) {
           return ironwoodMigrationFlowData;
         }),
+      if (migrationStatusGetter != null)
+        walletDbPathGetterProvider.overrideWithValue(
+          () async => '/tmp/wallet.db',
+        ),
+      if (migrationStatusGetter != null)
+        orchardMigrationStatusGetterProvider.overrideWithValue(
+          migrationStatusGetter,
+        ),
+      if (migrationStatusGetter != null)
+        ironwoodMigrationInputsProvider.overrideWithValue(
+          IronwoodMigrationInputs(
+            ironwoodActiveAtTip: true,
+            network: 'main',
+            accountUuid: 'account-1',
+            accountName: 'Account 1',
+            profilePictureId: 'pfp-03',
+            hasAccountScopedData: true,
+            isSyncing: false,
+            isBackgroundMode: false,
+            isSyncComplete: true,
+            hasSyncFailure: false,
+            orchardBalance: syncState?.orchardBalance ?? BigInt.zero,
+            orchardPendingBalance:
+                syncState?.orchardPendingBalance ?? BigInt.zero,
+            ironwoodBalance: syncState?.ironwoodBalance ?? BigInt.zero,
+            ironwoodPendingBalance:
+                syncState?.ironwoodPendingBalance ?? BigInt.zero,
+          ),
+        ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         final listenable = ironwoodMigrationAnnouncementStateListenable;
         if (listenable != null) {

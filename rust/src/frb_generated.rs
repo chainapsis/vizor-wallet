@@ -7269,6 +7269,7 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
         let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
         let mut var_state = <crate::api::sync::MigrationPartState>::sse_decode(deserializer);
         let mut var_txidHex = <Option<String>>::sse_decode(deserializer);
+        let mut var_scheduleStartHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_scheduledHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_confirmationCount = <u32>::sse_decode(deserializer);
         let mut var_confirmationTarget = <u32>::sse_decode(deserializer);
@@ -7277,6 +7278,7 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
             value_zatoshi: var_valueZatoshi,
             state: var_state,
             txid_hex: var_txidHex,
+            schedule_start_height: var_scheduleStartHeight,
             scheduled_height: var_scheduledHeight,
             confirmation_count: var_confirmationCount,
             confirmation_target: var_confirmationTarget,
@@ -7290,12 +7292,14 @@ impl SseDecode for crate::api::sync::MigrationScheduledBroadcast {
         let mut var_txidHex = <String>::sse_decode(deserializer);
         let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
         let mut var_scheduledAtMs = <i64>::sse_decode(deserializer);
+        let mut var_scheduleStartHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_scheduledHeight = <u32>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         return crate::api::sync::MigrationScheduledBroadcast {
             txid_hex: var_txidHex,
             value_zatoshi: var_valueZatoshi,
             scheduled_at_ms: var_scheduledAtMs,
+            schedule_start_height: var_scheduleStartHeight,
             scheduled_height: var_scheduledHeight,
             status: var_status,
         };
@@ -9586,6 +9590,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPartStatus {
             self.value_zatoshi.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
             self.txid_hex.into_into_dart().into_dart(),
+            self.schedule_start_height.into_into_dart().into_dart(),
             self.scheduled_height.into_into_dart().into_dart(),
             self.confirmation_count.into_into_dart().into_dart(),
             self.confirmation_target.into_into_dart().into_dart(),
@@ -9611,6 +9616,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationScheduledBroad
             self.txid_hex.into_into_dart().into_dart(),
             self.value_zatoshi.into_into_dart().into_dart(),
             self.scheduled_at_ms.into_into_dart().into_dart(),
+            self.schedule_start_height.into_into_dart().into_dart(),
             self.scheduled_height.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
         ]
@@ -11886,6 +11892,7 @@ impl SseEncode for crate::api::sync::MigrationPartStatus {
         <u64>::sse_encode(self.value_zatoshi, serializer);
         <crate::api::sync::MigrationPartState>::sse_encode(self.state, serializer);
         <Option<String>>::sse_encode(self.txid_hex, serializer);
+        <Option<u32>>::sse_encode(self.schedule_start_height, serializer);
         <Option<u32>>::sse_encode(self.scheduled_height, serializer);
         <u32>::sse_encode(self.confirmation_count, serializer);
         <u32>::sse_encode(self.confirmation_target, serializer);
@@ -11898,6 +11905,7 @@ impl SseEncode for crate::api::sync::MigrationScheduledBroadcast {
         <String>::sse_encode(self.txid_hex, serializer);
         <u64>::sse_encode(self.value_zatoshi, serializer);
         <i64>::sse_encode(self.scheduled_at_ms, serializer);
+        <Option<u32>>::sse_encode(self.schedule_start_height, serializer);
         <u32>::sse_encode(self.scheduled_height, serializer);
         <String>::sse_encode(self.status, serializer);
     }

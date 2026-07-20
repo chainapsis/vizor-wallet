@@ -231,7 +231,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ) async {
     try {
       _clearVisibleIronwoodAnnouncement(announcement);
-      context.go('/migration/intro');
+      context.go('/migration/prepare');
       await _markIronwoodAnnouncementSeen(announcement);
     } catch (e) {
       log('HomeScreen: migration route is not available yet: $e');
@@ -418,7 +418,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 String? _ironwoodMigrationTargetForCta(IronwoodHomeMigrationCtaState cta) {
   return switch (cta.mode) {
-    IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+    IronwoodHomeMigrationCtaMode.start => '/migration/prepare',
     IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
     IronwoodHomeMigrationCtaMode.hidden => null,
   };

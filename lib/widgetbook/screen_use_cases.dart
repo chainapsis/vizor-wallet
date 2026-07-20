@@ -756,7 +756,7 @@ Widget buildIronwoodMigrationShuffleReviewUseCase(BuildContext context) {
     initialLocation: '/migration/private/review',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
-    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.shuffle,
+    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.review,
   );
 }
 
@@ -923,7 +923,7 @@ Widget _buildIronwoodMigrationUseCase({
   required IronwoodMigrationFlowData data,
   rust_sync.MigrationStatus? previewStatus,
   IronwoodMigrationReviewPreviewStage reviewPreviewStage =
-      IronwoodMigrationReviewPreviewStage.split,
+      IronwoodMigrationReviewPreviewStage.review,
   bool isHardware = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
@@ -1599,7 +1599,7 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     required this.initialStep,
     required this.data,
     this.previewStatus,
-    this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.split,
+    this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
   });
 
   final String initialLocation;

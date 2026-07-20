@@ -30,7 +30,9 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
@@ -41,13 +43,16 @@ import '../providers/ironwood_migration_announcement_provider.dart';
 import '../providers/ironwood_migration_coordinator_provider.dart';
 import '../services/ironwood_migration_service.dart';
 
-enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
+enum IronwoodMigrationFlowStep { prepare, intro, howItWorks, options, review }
 
-enum IronwoodMigrationReviewPreviewStage { split, shuffle, analyzing }
+enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
+const _prepareBroadcastCommitProgress = 0.30;
+const _scheduledBlockProgressCap = 0.70;
+const _broadcastCommitProgressCap = 0.92;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
@@ -123,6 +128,15 @@ BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
   return total;
 }
 
+bool _routeShouldResumeMigration(rust_sync.MigrationStatus status) {
+  return status.activeRunId != null ||
+      kIronwoodMigrationContinuePhases.contains(status.phase);
+}
+
+bool _routeShouldStartMigration(String phase) {
+  return kIronwoodMigrationStartPhases.contains(phase);
+}
+
 IronwoodMigrationFlowData _fallbackMigrationFlowData() {
   return IronwoodMigrationFlowData(
     amountZatoshi: BigInt.zero,
@@ -136,7 +150,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
-    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.split,
+    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
     super.key,
   });
@@ -177,8 +191,91 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
         : routeCta;
     final target = cta?.mode == IronwoodHomeMigrationCtaMode.resume
         ? '/migration/private/status'
-        : '/migration/intro';
+        : '/migration/prepare';
     return _RedirectTo(target);
+  }
+}
+
+class IronwoodMigrationPrepareScreen extends ConsumerStatefulWidget {
+  const IronwoodMigrationPrepareScreen({super.key});
+
+  @override
+  ConsumerState<IronwoodMigrationPrepareScreen> createState() =>
+      _IronwoodMigrationPrepareScreenState();
+}
+
+class _IronwoodMigrationPrepareScreenState
+    extends ConsumerState<IronwoodMigrationPrepareScreen> {
+  bool _redirectScheduled = false;
+
+  void _go(String location, {String? toast}) {
+    if (_redirectScheduled) return;
+    _redirectScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (toast != null) {
+        showAppToast(context, toast, iconName: AppIcons.warning);
+      }
+      context.go(location);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inputs = ref.watch(ironwoodMigrationInputsProvider);
+    final request = inputs.statusRequest;
+    if (!inputs.ironwoodActiveAtTip || request == null) {
+      _go('/home', toast: 'Migration is not available for this account.');
+      return const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.prepare,
+      );
+    }
+
+    if (!inputs.hasAccountScopedData ||
+        inputs.isSyncing ||
+        inputs.isBackgroundMode) {
+      _redirectScheduled = false;
+      return const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.prepare,
+      );
+    }
+
+    if (inputs.hasSyncFailure) {
+      _go(
+        '/home',
+        toast: 'Sync could not finish. Try again once Vizor is synced.',
+      );
+      return const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.prepare,
+      );
+    }
+
+    final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
+    return statusAsync.when(
+      skipLoadingOnReload: true,
+      loading: () => const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.prepare,
+      ),
+      error: (_, _) {
+        _go('/home', toast: "Couldn't verify migration status.");
+        return const _IronwoodMigrationLoadingShell(
+          step: IronwoodMigrationFlowStep.prepare,
+        );
+      },
+      data: (status) {
+        if (_routeShouldResumeMigration(status)) {
+          _go('/migration/private/status');
+        } else if (inputs.hasOrchardFunds &&
+            _routeShouldStartMigration(status.phase)) {
+          _go('/migration/intro');
+        } else {
+          _go('/home', toast: 'Migration is not needed for this account.');
+        }
+        return const _IronwoodMigrationLoadingShell(
+          step: IronwoodMigrationFlowStep.prepare,
+        );
+      },
+    );
   }
 }
 
@@ -246,21 +343,10 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
               child: const Center(child: CircularProgressIndicator()),
             );
           }
-          if (!inputs.hasAccountScopedData ||
-              inputs.hasSyncFailure ||
-              !inputs.hasOrchardFunds) {
-            return const _RedirectTo(
-              '/migration/intro',
-              placeholder: _IronwoodMigrationLoadingShell(
-                step: IronwoodMigrationFlowStep.intro,
-              ),
-            );
-          }
-          return const _RedirectTo(
-            '/migration/intro',
-            placeholder: _IronwoodMigrationLoadingShell(
-              step: IronwoodMigrationFlowStep.intro,
-            ),
+          return _IronwoodMigrationFrame(
+            toolbar: _privateStatusToolbar(context),
+            disableSidebarActions: true,
+            child: const _IronwoodMigrationPrivateStatusErrorContent(),
           );
         }
         return _IronwoodMigrationFrame(
@@ -1118,13 +1204,9 @@ String _keystoneMigrationSigningErrorMessage(Object error) {
 }
 
 class _RedirectTo extends StatefulWidget {
-  const _RedirectTo(
-    this.location, {
-    this.placeholder = const SizedBox.shrink(),
-  });
+  const _RedirectTo(this.location);
 
   final String location;
-  final Widget placeholder;
 
   @override
   State<_RedirectTo> createState() => _RedirectToState();
@@ -1140,7 +1222,7 @@ class _RedirectToState extends State<_RedirectTo> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.placeholder;
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _IronwoodMigrationLoadingShell extends StatelessWidget {
@@ -1163,7 +1245,7 @@ class _IronwoodMigrationShell extends StatelessWidget {
     required this.step,
     required this.data,
     this.previewPrivatePlan,
-    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.split,
+    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
   });
 
@@ -1176,6 +1258,9 @@ class _IronwoodMigrationShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = switch (step) {
+      IronwoodMigrationFlowStep.prepare => const Center(
+        child: CircularProgressIndicator(),
+      ),
       IronwoodMigrationFlowStep.intro => _IronwoodMigrationIntroContent(
         data: data,
         onOpenReleaseNotes: () =>
@@ -1197,10 +1282,6 @@ class _IronwoodMigrationShell extends StatelessWidget {
           forceAnalyzing:
               previewReviewStage ==
               IronwoodMigrationReviewPreviewStage.analyzing,
-          initialStage:
-              previewReviewStage == IronwoodMigrationReviewPreviewStage.shuffle
-              ? _PrivateReviewStage.shuffle
-              : _PrivateReviewStage.split,
         ),
     };
 
@@ -1228,6 +1309,7 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
   return AppPaneToolbar(
     leading: AppBackLink(
       label: switch (step) {
+        IronwoodMigrationFlowStep.prepare => 'Home',
         IronwoodMigrationFlowStep.intro => 'Home',
         IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
         IronwoodMigrationFlowStep.options => 'How Migration Works',
@@ -1235,6 +1317,8 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
       },
       onTap: () {
         switch (step) {
+          case IronwoodMigrationFlowStep.prepare:
+            context.go('/home');
           case IronwoodMigrationFlowStep.intro:
             context.go('/home');
           case IronwoodMigrationFlowStep.howItWorks:
@@ -1614,6 +1698,8 @@ class _IronwoodMigrationPrivateStatusContentState
     final status = widget.status;
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
+    final syncState = ref.watch(syncProvider).asData?.value;
+    final currentHeight = _currentMigrationHeight(syncState);
     final accountState = ref.watch(accountProvider).value;
     final isHardware =
         accountState?.accounts
@@ -1658,6 +1744,7 @@ class _IronwoodMigrationPrivateStatusContentState
         status: status,
         action: action,
         isAdvancing: isAdvancing,
+        currentHeight: currentHeight,
         onAction: actionCallback,
       );
     }
@@ -2053,13 +2140,11 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerStatefulWidget {
   const _IronwoodMigrationPrivateReviewContent({
     required this.data,
     this.previewPlan,
-    this.initialStage = _PrivateReviewStage.split,
     this.forceAnalyzing = false,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
-  final _PrivateReviewStage initialStage;
   final bool forceAnalyzing;
 
   @override
@@ -2071,13 +2156,11 @@ class _IronwoodMigrationPrivateReviewContentState
     extends ConsumerState<_IronwoodMigrationPrivateReviewContent> {
   bool _isStarting = false;
   String? _startError;
-  late _PrivateReviewStage _stage;
   late final Future<void> _minimumAnalyzingDelay;
 
   @override
   void initState() {
     super.initState();
-    _stage = widget.initialStage;
     _minimumAnalyzingDelay = widget.forceAnalyzing
         ? Future<void>.value()
         : _createMinimumAnalyzingDelay();
@@ -2220,23 +2303,14 @@ class _IronwoodMigrationPrivateReviewContentState
 
         return _MigrationReviewContent(
           plan: plan,
-          stage: _stage,
           isStarting: _isStarting,
           error: _startError,
-          onContinue: () {
-            if (_stage == _PrivateReviewStage.split) {
-              setState(() => _stage = _PrivateReviewStage.shuffle);
-            } else {
-              unawaited(_startMigration(plan));
-            }
-          },
+          onContinue: () => unawaited(_startMigration(plan)),
         );
       },
     );
   }
 }
-
-enum _PrivateReviewStage { split, shuffle }
 
 class _MigrationAnalyzingContent extends StatefulWidget {
   const _MigrationAnalyzingContent();
@@ -2522,26 +2596,19 @@ class _MigrationAnalyzingShimmerText extends StatelessWidget {
 class _MigrationReviewContent extends StatelessWidget {
   const _MigrationReviewContent({
     required this.plan,
-    required this.stage,
     required this.isStarting,
     required this.onContinue,
     this.error,
   });
 
   final rust_sync.OrchardMigrationPrivatePlan plan;
-  final _PrivateReviewStage stage;
   final bool isStarting;
   final VoidCallback onContinue;
   final String? error;
 
   @override
   Widget build(BuildContext context) {
-    final values = stage == _PrivateReviewStage.split
-        ? [for (final value in plan.targetValuesZatoshi) value]
-        : [
-            for (final transfer in plan.scheduledTransfers)
-              transfer.valueZatoshi,
-          ];
+    final values = [for (final value in plan.targetValuesZatoshi) value];
     final rows = values.isEmpty
         ? <BigInt>[plan.totalMigratableZatoshi]
         : values;
@@ -2558,15 +2625,11 @@ class _MigrationReviewContent extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  stage == _PrivateReviewStage.split
-                      ? 'Review migration plan'
-                      : 'Review shuffle',
+                  'Review migration plan',
                   style: AppTypography.headlineSmall.copyWith(
                     color: context.colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _MigrationStepHeader(stage: stage),
               ],
             ),
           ),
@@ -2575,17 +2638,11 @@ class _MigrationReviewContent extends StatelessWidget {
             top: 160,
             width: 396,
             height: 378,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 650),
-              switchInCurve: const Cubic(0.77, 0, 0.175, 1),
-              switchOutCurve: const Cubic(0.77, 0, 0.175, 1),
-              child: _MigrationBatchOverview(
-                key: ValueKey(stage),
-                values: rows,
-                totalZatoshi: plan.totalMigratableZatoshi,
-                feeZatoshi: plan.estimatedTotalFeeZatoshi,
-                completionLabel: _estimatedMigrationArrivalLabel(plan),
-              ),
+            child: _MigrationBatchOverview(
+              values: rows,
+              totalZatoshi: plan.totalMigratableZatoshi,
+              feeZatoshi: plan.estimatedTotalFeeZatoshi,
+              completionLabel: _estimatedMigrationArrivalLabel(plan),
             ),
           ),
           if (error != null)
@@ -2609,26 +2666,18 @@ class _MigrationReviewContent extends StatelessWidget {
             width: 230,
             child: Center(
               child: AppButton(
-                key: ValueKey(
-                  stage == _PrivateReviewStage.split
-                      ? 'ironwood_migration_accept_split_button'
-                      : 'ironwood_migration_authorize_start_button',
+                key: const ValueKey(
+                  'ironwood_migration_authorize_start_button',
                 ),
                 onPressed: isStarting ? null : onContinue,
                 height: 36,
-                minWidth: stage == _PrivateReviewStage.split ? 96 : 130,
+                minWidth: 130,
                 expand: false,
                 child: SizedBox(
-                  width: stage == _PrivateReviewStage.split ? 64 : 98,
+                  width: 98,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text(
-                      isStarting
-                          ? 'Starting...'
-                          : stage == _PrivateReviewStage.split
-                          ? 'Next'
-                          : 'Start migration',
-                    ),
+                    child: Text(isStarting ? 'Starting...' : 'Start migration'),
                   ),
                 ),
               ),
@@ -2640,114 +2689,14 @@ class _MigrationReviewContent extends StatelessWidget {
   }
 }
 
-class _MigrationStepHeader extends StatelessWidget {
-  const _MigrationStepHeader({required this.stage, this.migrating = false});
-
-  final _PrivateReviewStage stage;
-  final bool migrating;
-
-  @override
-  Widget build(BuildContext context) {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _MigrationStep(
-            label: 'Split',
-            complete: stage != _PrivateReviewStage.split,
-          ),
-          const _MigrationStepDivider(),
-          _MigrationStep(
-            label: 'Shuffle',
-            active: stage == _PrivateReviewStage.shuffle && !migrating,
-            complete: migrating,
-          ),
-          const _MigrationStepDivider(),
-          _MigrationStep(label: 'Migrate', active: migrating),
-        ],
-      ),
-    );
-  }
-}
-
-class _MigrationStep extends StatelessWidget {
-  const _MigrationStep({
-    required this.label,
-    this.active = false,
-    this.complete = false,
-  });
-
-  final String label;
-  final bool active;
-  final bool complete;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final foreground = active || complete
-        ? colors.text.accent
-        : colors.text.secondary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 20,
-          height: 20,
-          decoration: ShapeDecoration(
-            color: active || complete
-                ? colors.background.inverse
-                : colors.background.raised,
-            shape: const OvalBorder(),
-          ),
-          alignment: Alignment.center,
-          child: complete
-              ? const AppIcon(AppIcons.check, size: 12, color: Colors.white)
-              : Text(
-                  label == 'Split'
-                      ? '1'
-                      : label == 'Shuffle'
-                      ? '2'
-                      : '3',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: active ? colors.icon.inverse : colors.text.secondary,
-                  ),
-                ),
-        ),
-        const SizedBox(width: 7),
-        Text(
-          label,
-          style: AppTypography.labelLarge.copyWith(color: foreground),
-        ),
-      ],
-    );
-  }
-}
-
-class _MigrationStepDivider extends StatelessWidget {
-  const _MigrationStepDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: AppIcon(
-        AppIcons.chevronForward,
-        size: 14,
-        color: context.colors.icon.disabled,
-      ),
-    );
-  }
-}
-
 class _MigrationBatchOverview extends StatelessWidget {
   const _MigrationBatchOverview({
-    super.key,
     required this.values,
     required this.totalZatoshi,
     required this.feeZatoshi,
     required this.completionLabel,
     this.statuses = const [],
+    this.progresses = const [],
     this.feeLabel,
   });
 
@@ -2756,6 +2705,7 @@ class _MigrationBatchOverview extends StatelessWidget {
   final BigInt feeZatoshi;
   final String completionLabel;
   final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
   final String? feeLabel;
 
   @override
@@ -2775,8 +2725,8 @@ class _MigrationBatchOverview extends StatelessWidget {
                   children: [
                     TextSpan(
                       text: values.length == 1
-                          ? '  1 batch'
-                          : '  ${values.length} batches',
+                          ? '  1 note'
+                          : '  ${values.length} notes',
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -2808,17 +2758,16 @@ class _MigrationBatchOverview extends StatelessWidget {
                   if (i > 0) const SizedBox(width: 2),
                   Expanded(
                     flex: _migrationSegmentFlex(values[i], totalZatoshi),
-                    child: SizedBox.expand(
-                      child: ColoredBox(
-                        color:
-                            i < statuses.length &&
-                                statuses[i] == _MigrationBatchStatus.needsInput
-                            ? const Color(0xFFB83AD9)
-                            : i < statuses.length &&
-                                  _isPendingMigrationBatchStatus(statuses[i])
-                            ? const Color(0xFFBDE9D1)
-                            : GreenPrimitives.p500Light,
-                      ),
+                    child: _MigrationProgressSegment(
+                      index: i,
+                      status: i < statuses.length
+                          ? statuses[i]
+                          : _MigrationBatchStatus.complete,
+                      progress: i < progresses.length
+                          ? progresses[i].clamp(0, 1).toDouble()
+                          : statuses.isEmpty
+                          ? 1
+                          : 0,
                     ),
                   ),
                 ],
@@ -2851,6 +2800,65 @@ class _MigrationBatchOverview extends StatelessWidget {
           value: feeLabel ?? '~${_formatZecAmountCompact(feeZatoshi)} ZEC',
         ),
       ],
+    );
+  }
+}
+
+class _MigrationProgressSegment extends StatelessWidget {
+  const _MigrationProgressSegment({
+    required this.index,
+    required this.status,
+    required this.progress,
+  });
+
+  final int index;
+  final _MigrationBatchStatus status;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final trackColor = status == _MigrationBatchStatus.needsInput
+        ? const Color(0xFFF3D8FA)
+        : const Color(0xFFE1F4EA);
+    final fillColor = status == _MigrationBatchStatus.needsInput
+        ? const Color(0xFFB83AD9)
+        : GreenPrimitives.p500Light;
+    final effectiveProgress = status == _MigrationBatchStatus.complete
+        ? 1.0
+        : progress.clamp(0, 1).toDouble();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(3),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(
+            key: ValueKey('ironwood_migration_segment_track_$index'),
+            color: trackColor,
+          ),
+          TweenAnimationBuilder<double>(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            tween: Tween<double>(end: effectiveProgress),
+            builder: (context, widthFactor, child) {
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: widthFactor.clamp(0, 1).toDouble(),
+                  heightFactor: 1,
+                  child: child,
+                ),
+              );
+            },
+            child: ColoredBox(
+              key: ValueKey('ironwood_migration_segment_fill_$index'),
+              color: fillColor,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2904,7 +2912,7 @@ class _MigrationBatchRow extends StatelessWidget {
         child: Row(
           children: [
             Text(
-              'Part ${index + 1}',
+              'Note ${index + 1}',
               style: AppTypography.bodyMedium.copyWith(
                 color: _isPendingMigrationBatchStatus(status)
                     ? colors.text.secondary
@@ -2991,12 +2999,14 @@ class _MigrationStatusContent extends StatelessWidget {
     required this.status,
     required this.action,
     required this.isAdvancing,
+    required this.currentHeight,
     required this.onAction,
   });
 
   final rust_sync.MigrationStatus status;
   final _StatusAction action;
   final bool isAdvancing;
+  final int currentHeight;
   final VoidCallback? onAction;
 
   @override
@@ -3019,6 +3029,13 @@ class _MigrationStatusContent extends StatelessWidget {
         statuses[inputIndex] = _MigrationBatchStatus.needsInput;
       }
     }
+    final progresses = _migrationBatchProgresses(
+      status: status,
+      parts: parts,
+      statuses: statuses,
+      currentHeight: currentHeight,
+      isAdvancing: isAdvancing,
+    );
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
     final buttonLabel = switch (action) {
       _StatusAction.needsInput => 'Sign with Keystone',
@@ -3046,19 +3063,14 @@ class _MigrationStatusContent extends StatelessWidget {
                     color: context.colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 20),
-                const _MigrationStepHeader(
-                  stage: _PrivateReviewStage.shuffle,
-                  migrating: true,
-                ),
               ],
             ),
           ),
           Positioned(
             left: 12,
-            top: 160,
+            top: 124,
             width: 396,
-            height: 378,
+            height: 414,
             child: _MigrationBatchOverview(
               values: values,
               totalZatoshi: total,
@@ -3067,9 +3079,10 @@ class _MigrationStatusContent extends StatelessWidget {
               completionLabel:
                   status.phase ==
                       kIronwoodMigrationWaitingDenomConfirmationsPhase
-                  ? 'Preparing batches'
+                  ? 'Preparing notes'
                   : 'In progress',
               statuses: statuses,
+              progresses: progresses,
             ),
           ),
           Positioned(
@@ -3142,6 +3155,196 @@ List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
       else
         _MigrationBatchStatus.preparing,
   ];
+}
+
+int _currentMigrationHeight(SyncState? syncState) {
+  if (syncState == null) return 0;
+  final scannedHeight = syncState.scannedHeight;
+  final chainTipHeight = syncState.chainTipHeight;
+  if (scannedHeight > 0 && chainTipHeight > 0) {
+    return math.min(scannedHeight, chainTipHeight);
+  }
+  return math.max(scannedHeight, chainTipHeight);
+}
+
+List<double> _migrationBatchProgresses({
+  required rust_sync.MigrationStatus status,
+  required List<rust_sync.MigrationPartStatus> parts,
+  required List<_MigrationBatchStatus> statuses,
+  required int currentHeight,
+  required bool isAdvancing,
+}) {
+  if (statuses.isEmpty) return const [];
+
+  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+    final progress = _prepareMigrationProgress(
+      status,
+      isAdvancing: isAdvancing,
+    );
+    return List<double>.filled(statuses.length, progress);
+  }
+
+  if (parts.isNotEmpty) {
+    return [
+      for (var i = 0; i < parts.length; i++)
+        _migrationPartStatusProgress(
+          part: parts[i],
+          visualStatus: i < statuses.length
+              ? statuses[i]
+              : _migrationBatchStatus(parts[i].state),
+          currentHeight: currentHeight,
+          isAdvancing: isAdvancing,
+        ),
+    ];
+  }
+
+  return [
+    for (var i = 0; i < statuses.length; i++)
+      _legacyMigrationBatchProgress(
+        status: status,
+        visualStatus: statuses[i],
+        index: i,
+        currentHeight: currentHeight,
+        isAdvancing: isAdvancing,
+      ),
+  ];
+}
+
+double _prepareMigrationProgress(
+  rust_sync.MigrationStatus status, {
+  required bool isAdvancing,
+}) {
+  final totalStages = status.denominationSplitTotalCount;
+  final stageProgress = totalStages > 0
+      ? (status.denominationSplitCompletedCount / totalStages).clamp(0, 1)
+      : 0.0;
+
+  if (status.pendingSplitStageCount > 0) {
+    return math.max(stageProgress.toDouble(), isAdvancing ? 0.18 : 0.12);
+  }
+
+  final confirmationTarget = status.denominationConfirmationTarget;
+  if (confirmationTarget > 0) {
+    final confirmationProgress =
+        (status.denominationConfirmationCount / confirmationTarget).clamp(0, 1);
+    final combined =
+        _prepareBroadcastCommitProgress +
+        (1 - _prepareBroadcastCommitProgress) * confirmationProgress;
+    return math.max(stageProgress.toDouble(), combined);
+  }
+
+  return math.max(stageProgress.toDouble(), isAdvancing ? 0.24 : 0.16);
+}
+
+double _migrationPartStatusProgress({
+  required rust_sync.MigrationPartStatus part,
+  required _MigrationBatchStatus visualStatus,
+  required int currentHeight,
+  required bool isAdvancing,
+}) {
+  if (visualStatus == _MigrationBatchStatus.needsInput) {
+    return math.max(
+      _scheduledBlockProgress(
+        startHeight: part.scheduleStartHeight,
+        targetHeight: part.scheduledHeight,
+        currentHeight: currentHeight,
+      ),
+      _scheduledBlockProgressCap,
+    );
+  }
+
+  return switch (part.state) {
+    rust_sync.MigrationPartState.preparing => 0.12,
+    rust_sync.MigrationPartState.scheduled => _scheduledBlockProgress(
+      startHeight: part.scheduleStartHeight,
+      targetHeight: part.scheduledHeight,
+      currentHeight: currentHeight,
+    ),
+    rust_sync.MigrationPartState.migrating =>
+      isAdvancing ? _broadcastCommitProgressCap : _scheduledBlockProgressCap,
+    rust_sync.MigrationPartState.confirming => _confirmationProgress(
+      confirmationCount: part.confirmationCount,
+      confirmationTarget: part.confirmationTarget,
+    ),
+    rust_sync.MigrationPartState.completed => 1,
+    rust_sync.MigrationPartState.needsInput => _scheduledBlockProgressCap,
+  };
+}
+
+double _legacyMigrationBatchProgress({
+  required rust_sync.MigrationStatus status,
+  required _MigrationBatchStatus visualStatus,
+  required int index,
+  required int currentHeight,
+  required bool isAdvancing,
+}) {
+  return switch (visualStatus) {
+    _MigrationBatchStatus.none => 1,
+    _MigrationBatchStatus.preparing => isAdvancing ? 0.18 : 0.12,
+    _MigrationBatchStatus.scheduled => _legacyScheduledProgress(
+      status,
+      index,
+      currentHeight: currentHeight,
+    ),
+    _MigrationBatchStatus.migrating =>
+      isAdvancing ? _broadcastCommitProgressCap : _scheduledBlockProgressCap,
+    _MigrationBatchStatus.confirming =>
+      status.totalCount > 0
+          ? _confirmationProgress(
+              confirmationCount: status.confirmedTxCount,
+              confirmationTarget: status.totalCount,
+            )
+          : _broadcastCommitProgressCap,
+    _MigrationBatchStatus.complete => 1,
+    _MigrationBatchStatus.needsInput => _scheduledBlockProgressCap,
+  };
+}
+
+double _legacyScheduledProgress(
+  rust_sync.MigrationStatus status,
+  int index, {
+  required int currentHeight,
+}) {
+  final scheduled = [...status.scheduledBroadcasts]
+    ..sort((a, b) => a.scheduledHeight.compareTo(b.scheduledHeight));
+  if (index >= scheduled.length) return 0;
+  final broadcast = scheduled[index];
+  return _scheduledBlockProgress(
+    startHeight: broadcast.scheduleStartHeight,
+    targetHeight: broadcast.scheduledHeight,
+    currentHeight: currentHeight,
+  );
+}
+
+double _scheduledBlockProgress({
+  required int? startHeight,
+  required int? targetHeight,
+  required int currentHeight,
+}) {
+  if (targetHeight == null || currentHeight <= 0) return 0;
+  final effectiveStart = startHeight ?? math.max(0, targetHeight - 1);
+  if (targetHeight <= effectiveStart) {
+    return currentHeight >= targetHeight ? _scheduledBlockProgressCap : 0;
+  }
+  final elapsed = (currentHeight - effectiveStart).clamp(
+    0,
+    targetHeight - effectiveStart,
+  );
+  return _scheduledBlockProgressCap *
+      (elapsed / (targetHeight - effectiveStart));
+}
+
+double _confirmationProgress({
+  required int confirmationCount,
+  required int confirmationTarget,
+}) {
+  if (confirmationTarget <= 0) return _broadcastCommitProgressCap;
+  final confirmationRatio = (confirmationCount / confirmationTarget).clamp(
+    0,
+    1,
+  );
+  return _broadcastCommitProgressCap +
+      (1 - _broadcastCommitProgressCap) * confirmationRatio;
 }
 
 String _privateMigrationStartErrorMessage(Object error) {

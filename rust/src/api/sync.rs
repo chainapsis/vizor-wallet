@@ -688,6 +688,7 @@ pub struct MigrationScheduledBroadcast {
     pub txid_hex: String,
     pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: u32,
     pub status: String,
 }
@@ -711,6 +712,7 @@ pub struct MigrationPartStatus {
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -1048,6 +1050,7 @@ pub fn get_orchard_migration_status(
                     txid_hex: broadcast.txid_hex,
                     value_zatoshi: broadcast.value_zatoshi,
                     scheduled_at_ms: broadcast.scheduled_at_ms,
+                    schedule_start_height: broadcast.schedule_start_height,
                     scheduled_height: broadcast.scheduled_height,
                     status: broadcast.status,
                 })
@@ -1071,6 +1074,7 @@ pub fn get_orchard_migration_status(
                         }
                     },
                     txid_hex: part.txid_hex,
+                    schedule_start_height: part.schedule_start_height,
                     scheduled_height: part.scheduled_height,
                     confirmation_count: part.confirmation_count,
                     confirmation_target: part.confirmation_target,
