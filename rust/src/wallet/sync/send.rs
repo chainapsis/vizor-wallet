@@ -357,6 +357,9 @@ pub fn propose_send(
     let proposed_tx_version = proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
+    let spend_policy = ordinary_send_spend_policy(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
     let pass1_proposal = propose_send_with_reserved_notes(
         &db,
         network,
@@ -364,6 +367,7 @@ pub fn propose_send(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        &spend_policy,
         proposed_tx_version,
         false,
     )?;
@@ -377,6 +381,7 @@ pub fn propose_send(
                 request,
                 &BTreeSet::new(),
                 &migration_locks,
+                &spend_policy,
                 tx_version,
                 false,
             )
@@ -436,6 +441,9 @@ pub fn estimate_fee(
         proposed_tx_version_for_wallet_db(&db, network, "estimating a send fee")?;
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
+    let spend_policy = ordinary_send_spend_policy(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
     let pass1_proposal = propose_send_with_reserved_notes(
         &db,
         network,
@@ -443,6 +451,7 @@ pub fn estimate_fee(
         request,
         &BTreeSet::new(),
         &migration_locks,
+        &spend_policy,
         proposed_tx_version,
         false,
     )?;
@@ -458,6 +467,7 @@ pub fn estimate_fee(
                 request,
                 &BTreeSet::new(),
                 &migration_locks,
+                &spend_policy,
                 tx_version,
                 false,
             )
@@ -484,7 +494,17 @@ pub(crate) fn estimate_send_max(
     // librustzcash's max-spend proposal path no longer takes a proposed tx
     // version: the version (and its fee shape) is decided when the PCZT is
     // created, so the quote stays aligned with what `propose_send` can build.
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    let spend_pools = ordinary_send_spend_pools(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
+    let proposal = build_send_max_proposal(
+        &mut db,
+        network,
+        account_id,
+        to_address,
+        memo_str,
+        &spend_pools,
+    )?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -4224,6 +4244,7 @@ fn propose_send_with_reserved_notes(
     request: TransactionRequest,
     reserved: &BTreeSet<ReceivedNoteId>,
     migration_locks: &BTreeSet<(String, u32)>,
+    spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
     unpadded_orchard_pool_bundles: bool,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
@@ -4255,10 +4276,26 @@ fn propose_send_with_reserved_notes(
             &change_strategy,
             // Reserved-note sends never fall back to transparent UTXOs
             // (the default policy permits shielded pools only).
-            &SpendPolicy::default(),
+            spend_policy,
             proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))
+}
+
+fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedProtocol> {
+    if migration_active {
+        vec![ShieldedProtocol::Ironwood]
+    } else {
+        vec![
+            ShieldedProtocol::Sapling,
+            ShieldedProtocol::Orchard,
+            ShieldedProtocol::Ironwood,
+        ]
+    }
+}
+
+fn ordinary_send_spend_policy(migration_active: bool) -> SpendPolicy {
+    SpendPolicy::shielded_pools(ordinary_send_spend_pools(migration_active))
 }
 
 fn proposal_selected_note_refs(
@@ -4529,6 +4566,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
+    spend_pools: &[ShieldedProtocol],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -4550,7 +4588,13 @@ fn build_send_max_proposal(
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
-            db, network, account_id, to, memo_bytes, fee_rule,
+            db,
+            network,
+            account_id,
+            to,
+            memo_bytes,
+            fee_rule,
+            spend_pools,
         );
     }
 
@@ -4558,11 +4602,7 @@ fn build_send_max_proposal(
         db,
         &network,
         account_id,
-        // Ironwood / NU6.3 notes are selected through the Orchard protocol path as
-        // v3 note rows; librustzcash does not expose a separate Ironwood
-        // ShieldedProtocol selector. This is why balance prechecks can treat
-        // spendable Ironwood value as available to ordinary sends.
-        &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+        spend_pools,
         &fee_rule,
         to,
         memo_bytes,
@@ -4612,6 +4652,7 @@ fn build_transparent_recipient_send_max_proposal(
     to: zcash_address::ZcashAddress,
     memo_bytes: Option<MemoBytes>,
     fee_rule: WalletFeeRule,
+    spend_pools: &[ShieldedProtocol],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -4623,7 +4664,7 @@ fn build_transparent_recipient_send_max_proposal(
         .select_spendable_notes(
             account_id,
             TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
-            &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+            spend_pools,
             target_height,
             confirmations_policy,
             &[],
@@ -4655,12 +4696,13 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         .map_err(|e| format!("Max input calculation failed: {e}"))?;
     let sapling_input_count = spendable_notes.sapling().len();
     let orchard_input_count = spendable_notes.orchard().len();
+    let ironwood_input_count = spendable_notes.ironwood().len();
 
     let sapling_output_count = sapling_crypto::builder::BundleType::DEFAULT
         .num_outputs(sapling_input_count, 0)
         .map_err(|e| format!("Max Sapling bundle size failed: {e:?}"))?;
-    // Legacy/V5 Orchard send path, so count actions under the post-NU6.2 bundle
-    // version's default flags (matches librustzcash's `transactional_action_count`).
+    // Count the two Orchard-family pools independently because V6 carries
+    // legacy Orchard and Ironwood in separate bundles.
     let orchard_action_count = ::orchard::builder::BundleType::DEFAULT
         .num_actions(
             ::orchard::bundle::BundleVersion::orchard_v2().default_flags(),
@@ -4668,6 +4710,13 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             0,
         )
         .map_err(|e| format!("Max Orchard bundle size failed: {e:?}"))?;
+    let ironwood_action_count = ::orchard::builder::BundleType::DEFAULT
+        .num_actions(
+            ::orchard::bundle::BundleVersion::ironwood_v3().default_flags(),
+            ironwood_input_count,
+            0,
+        )
+        .map_err(|e| format!("Max Ironwood bundle size failed: {e:?}"))?;
 
     let fee = fee_rule
         .fee_required(
@@ -4678,8 +4727,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
-            // Legacy/V5 path: no Ironwood bundle.
-            0,
+            ironwood_action_count,
         )
         .map_err(|e| format!("Max fee calculation failed: {e}"))?;
 
@@ -6250,6 +6298,28 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn active_migration_restricts_ordinary_sends_to_ironwood() {
+        let policy = ordinary_send_spend_policy(true);
+
+        assert!(!policy.permits_shielded(ShieldedProtocol::Sapling));
+        assert!(!policy.permits_shielded(ShieldedProtocol::Orchard));
+        assert!(policy.permits_shielded(ShieldedProtocol::Ironwood));
+        assert_eq!(
+            ordinary_send_spend_pools(true),
+            vec![ShieldedProtocol::Ironwood]
+        );
+    }
+
+    #[test]
+    fn ordinary_send_policy_keeps_all_shielded_pools_without_migration() {
+        let policy = ordinary_send_spend_policy(false);
+
+        assert!(policy.permits_shielded(ShieldedProtocol::Sapling));
+        assert!(policy.permits_shielded(ShieldedProtocol::Orchard));
+        assert!(policy.permits_shielded(ShieldedProtocol::Ironwood));
+    }
+
     fn migration_test_stage(
         input_txid_hex: &str,
         output_txid_hex: &str,
@@ -7263,6 +7333,56 @@ mod tests {
         assert_eq!(estimate.amount_zatoshi + estimate.fee_zatoshi, input_value);
         assert!(estimate.fee_zatoshi > 0);
         assert!(estimate.needs_sapling_params);
+    }
+
+    #[test]
+    fn transparent_recipient_send_max_supports_ironwood_only_inputs() {
+        let network = WalletNetwork::Regtest;
+        let input_value = 100_000u64;
+        let spending_key = orchard::keys::SpendingKey::from_bytes([17; 32]).unwrap();
+        let fvk = orchard::keys::FullViewingKey::from(&spending_key);
+        let recipient = fvk.address_at(0u32, orchard::keys::Scope::External);
+        let rho = orchard::note::Rho::from_bytes(&[3; 32]).unwrap();
+        let rseed = (0u8..=255)
+            .find_map(|byte| orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option())
+            .unwrap();
+        let note = orchard::Note::from_parts(
+            recipient,
+            orchard::value::NoteValue::from_raw(input_value),
+            rho,
+            rseed,
+            orchard::note::NoteVersion::V3,
+        )
+        .unwrap();
+        let received_note = ReceivedNote::from_parts(
+            1u32,
+            TxId::from_bytes([5u8; 32]),
+            0,
+            note,
+            zip32::Scope::External,
+            Position::from(0u64),
+            Some(BlockHeight::from_u32(20)),
+            None,
+        );
+        let transparent_recipient = Address::Transparent(taddr(9)).to_zcash_address(&network);
+
+        let proposal = build_transparent_recipient_send_max_proposal_from_notes(
+            network,
+            TargetHeight::from(BlockHeight::from_u32(1_000)),
+            BlockHeight::from_u32(900),
+            transparent_recipient,
+            None,
+            ReceivedNotes::new(vec![], vec![], vec![received_note]),
+            ConservativeZip317FeeRule,
+        )
+        .expect("transparent-recipient send-max should build from Ironwood notes");
+
+        let step = proposal.steps().iter().next().unwrap();
+        assert_eq!(step.payment_pools().get(&0), Some(&PoolType::TRANSPARENT));
+        assert_eq!(step.shielded_inputs().unwrap().notes().len(), 1);
+        let estimate = summarize_send_max_proposal(&proposal).unwrap();
+        assert_eq!(estimate.amount_zatoshi + estimate.fee_zatoshi, input_value);
+        assert!(!estimate.needs_sapling_params);
     }
 
     #[test]

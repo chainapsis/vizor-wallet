@@ -82,13 +82,20 @@ void main() {
       await tester.pump();
 
       expect(find.text('Migrating...'), findsOneWidget);
-      expect(find.text('0/6'), findsOneWidget);
       expect(find.text('Needs input'), findsNothing);
-      expect(find.text('6/6'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('sidebar_orchard_home_row')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('sidebar_migration_progress_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Ironwood'), findsOneWidget);
     },
   );
 
-  testWidgets('sidebar counts only trusted completed migration parts', (
+  testWidgets('sidebar keeps migration home rows while parts complete', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -102,8 +109,15 @@ void main() {
     await tester.pump();
 
     expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.text('1/3'), findsOneWidget);
-    expect(find.text('2/3'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_orchard_balance')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('sidebar_ironwood_balance')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('/3'), findsNothing);
   });
 
   testWidgets('sidebar requests input only for Keystone migration', (
@@ -121,8 +135,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('Needs input'), findsOneWidget);
-    expect(find.text('0/6'), findsOneWidget);
-    expect(find.text('6/6'), findsNothing);
+    expect(find.text('Migrating...'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_migration_progress_button')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (

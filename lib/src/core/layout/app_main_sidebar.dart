@@ -401,24 +401,31 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       ),
                     ),
                     SizedBox(height: headerNavGap),
-                    AppSidebarItem(
-                      key: const ValueKey('sidebar_home_button'),
-                      label: isImporting ? 'Importing...' : 'Home',
-                      iconName: isImporting ? AppIcons.loader : AppIcons.home,
-                      iconAnimated: !isImporting,
-                      active: _homeShouldBeActive,
-                      onTap: isImporting ? null : () => _navigateTo('/home'),
-                    ),
-                    if (migrationStatus?.activeRunId != null) ...[
-                      const SizedBox(height: AppSpacing.xxs),
-                      _SidebarMigrationProgress(
+                    if (migrationStatus?.activeRunId != null)
+                      _SidebarMigrationHomeSection(
                         status: migrationStatus!,
                         isHardware: activeAccount?.isHardware ?? false,
-                        orchardBalance: accountSync.orchardBalance,
-                        ironwoodBalance: accountSync.ironwoodBalance,
-                        onTap: () => _navigateTo('/migration/private/status'),
+                        orchardBalance:
+                            accountSync.orchardBalance +
+                            accountSync.orchardPendingBalance,
+                        ironwoodBalance:
+                            accountSync.ironwoodBalance +
+                            accountSync.ironwoodPendingBalance,
+                        privacyModeEnabled: privacyModeEnabled,
+                        active: _homeShouldBeActive,
+                        onHome: () => _navigateTo('/home'),
+                        onMigration: () =>
+                            _navigateTo('/migration/private/status'),
+                      )
+                    else
+                      AppSidebarItem(
+                        key: const ValueKey('sidebar_home_button'),
+                        label: isImporting ? 'Importing...' : 'Home',
+                        iconName: isImporting ? AppIcons.loader : AppIcons.home,
+                        iconAnimated: !isImporting,
+                        active: _homeShouldBeActive,
+                        onTap: isImporting ? null : () => _navigateTo('/home'),
                       ),
-                    ],
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
@@ -488,111 +495,138 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 }
 
-class _SidebarMigrationProgress extends StatelessWidget {
-  const _SidebarMigrationProgress({
+class _SidebarMigrationHomeSection extends StatelessWidget {
+  const _SidebarMigrationHomeSection({
     required this.status,
     required this.isHardware,
     required this.orchardBalance,
     required this.ironwoodBalance,
-    required this.onTap,
+    required this.privacyModeEnabled,
+    required this.active,
+    required this.onHome,
+    required this.onMigration,
   });
 
   final rust_sync.MigrationStatus status;
   final bool isHardware;
   final BigInt orchardBalance;
   final BigInt ironwoodBalance;
-  final VoidCallback onTap;
+  final bool privacyModeEnabled;
+  final bool active;
+  final VoidCallback onHome;
+  final VoidCallback onMigration;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final needsInput = isHardware && status.phase == 'ready_to_migrate';
-    final total = status.parts.isNotEmpty
-        ? status.parts.length
-        : status.totalCount;
-    final complete = status.parts.isNotEmpty
-        ? status.parts
-              .where(
-                (part) => part.state == rust_sync.MigrationPartState.completed,
-              )
-              .length
-        : status.confirmedTxCount;
-    return AppTappable(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-        child: Column(
-          children: [
-            _SidebarPoolRow(
-              label: 'Orchard',
-              value:
-                  '${ZecAmount.fromZatoshi(orchardBalance).balance.amountText} ZEC',
-            ),
-            const SizedBox(height: 8),
-            Row(
+    final orchardLabel = hideAmountIfPrivacyMode(
+      '${ZecAmount.fromZatoshi(orchardBalance).balance.amountText} ZEC',
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final ironwoodLabel = hideAmountIfPrivacyMode(
+      '${ZecAmount.fromZatoshi(ironwoodBalance).balance.amountText} ZEC',
+      privacyModeEnabled: privacyModeEnabled,
+    );
+
+    return SizedBox(
+      height: 120,
+      child: Column(
+        children: [
+          AppSidebarItem(
+            key: const ValueKey('sidebar_orchard_home_row'),
+            label: 'Home',
+            iconName: AppIcons.home,
+            onTap: onHome,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                AppIcon(
-                  needsInput ? AppIcons.warning : AppIcons.loader,
-                  size: 14,
-                  color: needsInput ? colors.icon.warning : colors.icon.regular,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    needsInput ? 'Needs input' : 'Migrating...',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: needsInput
-                          ? colors.text.warning
-                          : colors.text.secondary,
-                    ),
-                  ),
-                ),
                 Text(
-                  '$complete/${total == 0 ? status.preparedNoteCount : total}',
+                  orchardLabel,
+                  key: const ValueKey('sidebar_orchard_balance'),
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
+                    color: colors.text.secondary.withValues(alpha: 0.5),
                   ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(
+                  AppIcons.lock,
+                  size: 16,
+                  color: colors.icon.regular.withValues(alpha: 0.5),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            _SidebarPoolRow(
-              label: 'Ironwood',
-              value:
-                  '${ZecAmount.fromZatoshi(ironwoodBalance).balance.amountText} ZEC',
+          ),
+          AppSidebarItem(
+            key: const ValueKey('sidebar_migration_progress_button'),
+            label: needsInput ? 'Needs input' : 'Migrating...',
+            leading: const _SidebarMigrationGlow(),
+            leadingGap: AppSpacing.sm,
+            inactiveOpacity: 0.64,
+            onTap: onMigration,
+            trailing: AppIcon(
+              needsInput ? AppIcons.warning : AppIcons.loader,
+              size: 20,
+              color: needsInput ? colors.icon.warning : colors.icon.regular,
             ),
-          ],
-        ),
+          ),
+          AppSidebarItem(
+            key: const ValueKey('sidebar_home_button'),
+            label: 'Ironwood',
+            iconName: AppIcons.home,
+            active: active,
+            onTap: onHome,
+            trailing: Text(
+              ironwoodLabel,
+              key: const ValueKey('sidebar_ironwood_balance'),
+              style: AppTypography.labelLarge.copyWith(
+                color: active
+                    ? colors.navPanel.activeLabel.withValues(alpha: 0.8)
+                    : colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _SidebarPoolRow extends StatelessWidget {
-  const _SidebarPoolRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
+class _SidebarMigrationGlow extends StatelessWidget {
+  const _SidebarMigrationGlow();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: AppTypography.labelLarge.copyWith(
-              color: context.colors.text.accent,
+    final success = context.colors.icon.success;
+    return SizedBox(
+      width: 20,
+      height: 40,
+      child: Center(
+        child: Container(
+          width: 8,
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.full),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                success.withValues(alpha: 0),
+                success.withValues(alpha: 0.36),
+                success.withValues(alpha: 0),
+              ],
+              stops: const [0, 0.5, 1],
             ),
+            boxShadow: [
+              BoxShadow(
+                color: success.withValues(alpha: 0.18),
+                blurRadius: 10,
+                spreadRadius: 4,
+              ),
+            ],
           ),
         ),
-        Text(
-          value,
-          style: AppTypography.labelSmall.copyWith(
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

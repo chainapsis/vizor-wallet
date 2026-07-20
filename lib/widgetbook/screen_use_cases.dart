@@ -639,14 +639,51 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
   return _buildDesktopHomeUseCase(
     accountState: _accountsDesignState,
     syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(99999900000),
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+      orchardBalance: BigInt.from(14_323_000_000),
+      transparentBalance: BigInt.from(1_412_000_000),
+      canShieldTransparentBalance: true,
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
     ),
     migrationCta: IronwoodHomeMigrationCtaState.start(
       network: 'main',
       accountUuid: _accountsDesignState.activeAccountUuid!,
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
+    zecUsdPrice: 1200.12 / 143.23,
+  );
+}
+
+Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
+  BuildContext context,
+) {
+  final status = _previewMigrationStatus(
+    kIronwoodMigrationBroadcastScheduledPhase,
+    activeRunId: 'preview-run',
+    parts: [
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        valueZatoshi: BigInt.from(10_000_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ],
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(10_221_000_000),
+      ironwoodBalance: BigInt.from(4_011_000_000),
+      transparentBalance: BigInt.from(1_412_000_000),
+      canShieldTransparentBalance: true,
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.resume(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: status,
+    ),
+    zecUsdPrice: 1200.12 / 40.11,
   );
 }
 
@@ -836,6 +873,7 @@ Widget _buildDesktopHomeUseCase({
   required IronwoodHomeMigrationCtaState migrationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  double zecUsdPrice = 1.20012,
 }) {
   return ProviderScope(
     overrides: [
@@ -849,10 +887,12 @@ Widget _buildDesktopHomeUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
-        const _PreviewZecMarketDataSource(
-          ZecMarketData(usdPrice: 1.20012, change24hPct: 13.12),
+        _PreviewZecMarketDataSource(
+          ZecMarketData(usdPrice: zecUsdPrice, change24hPct: 13.12),
         ),
       ),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
+      zecPriceChange24hPctProvider.overrideWithValue(13.12),
       swapFeatureEnabledProvider.overrideWithValue(false),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
@@ -860,6 +900,14 @@ Widget _buildDesktopHomeUseCase({
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _PreviewMigrationCoordinator(
+          accountUuid: accountState.activeAccountUuid,
+          status: migrationCta.status?.activeRunId == null
+              ? null
+              : migrationCta.status,
+        ),
+      ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
@@ -1506,7 +1554,10 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
   }
 }
 
@@ -2093,17 +2144,28 @@ AppBootstrapState _homeBootstrap(AccountState accountState) {
 SyncState _homeSyncedState({
   String? accountUuid,
   BigInt? orchardBalance,
+  BigInt? ironwoodBalance,
+  BigInt? transparentBalance,
+  bool canShieldTransparentBalance = false,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
 }) {
   final resolvedOrchardBalance = orchardBalance ?? BigInt.zero;
+  final resolvedIronwoodBalance = ironwoodBalance ?? BigInt.zero;
+  final resolvedTransparentBalance = transparentBalance ?? BigInt.zero;
   return SyncState(
     accountUuid: accountUuid ?? _accountsDesignState.activeAccountUuid,
     hasAccountScopedData: true,
     percentage: 1,
     displayPercentage: 1,
     orchardBalance: resolvedOrchardBalance,
-    spendableBalance: resolvedOrchardBalance,
-    totalBalance: resolvedOrchardBalance,
+    ironwoodBalance: resolvedIronwoodBalance,
+    transparentBalance: resolvedTransparentBalance,
+    canShieldTransparentBalance: canShieldTransparentBalance,
+    spendableBalance: resolvedOrchardBalance + resolvedIronwoodBalance,
+    totalBalance:
+        resolvedOrchardBalance +
+        resolvedIronwoodBalance +
+        resolvedTransparentBalance,
     recentTransactions: recentTransactions,
   );
 }
@@ -2125,9 +2187,14 @@ rust_sync.TransactionInfo _homeTx(int index) {
   );
 }
 
-rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
+rust_sync.MigrationStatus _previewMigrationStatus(
+  String phase, {
+  String? activeRunId,
+  List<rust_sync.MigrationPartStatus> parts = const [],
+}) {
   return rust_sync.MigrationStatus(
     phase: phase,
+    activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List(0),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
@@ -2146,7 +2213,7 @@ rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: parts,
   );
 }
 
