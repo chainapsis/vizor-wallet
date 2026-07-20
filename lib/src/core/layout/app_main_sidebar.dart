@@ -535,58 +535,82 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
 
     return SizedBox(
       height: 120,
-      child: Column(
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          AppSidebarItem(
-            key: const ValueKey('sidebar_orchard_home_row'),
-            label: 'Home',
-            iconName: AppIcons.home,
-            onTap: onHome,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  orchardLabel,
-                  key: const ValueKey('sidebar_orchard_balance'),
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary.withValues(alpha: 0.5),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: AppSidebarItem(
+              key: ValueKey('sidebar_orchard_home_row'),
+              label: 'Home',
+              iconName: AppIcons.home,
+              onTap: onHome,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    orchardLabel,
+                    key: ValueKey('sidebar_orchard_balance'),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary.withValues(alpha: 0.5),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(
-                  AppIcons.lock,
-                  size: 16,
-                  color: colors.icon.regular.withValues(alpha: 0.5),
-                ),
-              ],
+                  SizedBox(width: AppSpacing.xxs),
+                  AppIcon(
+                    AppIcons.lock,
+                    size: 16,
+                    color: colors.icon.regular.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
             ),
           ),
-          AppSidebarItem(
-            key: const ValueKey('sidebar_migration_progress_button'),
-            label: needsInput ? 'Needs input' : 'Migrating...',
-            leading: const _SidebarMigrationGlow(),
-            leadingGap: AppSpacing.sm,
-            inactiveOpacity: 0.64,
-            onTap: onMigration,
-            trailing: AppIcon(
-              needsInput ? AppIcons.warning : AppIcons.loader,
-              size: 20,
-              color: needsInput ? colors.icon.warning : colors.icon.regular,
+          Positioned(
+            left: _SidebarMigrationGlow.left,
+            top: _SidebarMigrationGlow.top,
+            child: _SidebarMigrationGlow(),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 40,
+            child: AppSidebarItem(
+              key: ValueKey('sidebar_migration_progress_button'),
+              label: needsInput ? 'Needs input' : 'Migrating...',
+              leading: SizedBox(
+                width: _SidebarMigrationGlow.visualWidth,
+                height: _SidebarMigrationGlow.visualHeight,
+              ),
+              leadingGap: AppSpacing.sm,
+              inactiveOpacity: 0.64,
+              onTap: onMigration,
+              trailing: AppIcon(
+                needsInput ? AppIcons.warning : AppIcons.loader,
+                size: 20,
+                color: needsInput ? colors.icon.warning : colors.icon.regular,
+              ),
             ),
           ),
-          AppSidebarItem(
-            key: const ValueKey('sidebar_home_button'),
-            label: 'Ironwood',
-            iconName: AppIcons.home,
-            active: active,
-            onTap: onHome,
-            trailing: Text(
-              ironwoodLabel,
-              key: const ValueKey('sidebar_ironwood_balance'),
-              style: AppTypography.labelLarge.copyWith(
-                color: active
-                    ? colors.navPanel.activeLabel.withValues(alpha: 0.8)
-                    : colors.text.secondary,
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 80,
+            child: AppSidebarItem(
+              key: ValueKey('sidebar_home_button'),
+              label: 'Ironwood',
+              iconName: AppIcons.home,
+              active: active,
+              onTap: onHome,
+              trailing: Text(
+                ironwoodLabel,
+                key: ValueKey('sidebar_ironwood_balance'),
+                style: AppTypography.labelLarge.copyWith(
+                  color: active
+                      ? colors.navPanel.activeLabel.withValues(alpha: 0.8)
+                      : colors.text.secondary,
+                ),
               ),
             ),
           ),
@@ -596,38 +620,195 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
   }
 }
 
-class _SidebarMigrationGlow extends StatelessWidget {
+class _SidebarMigrationGlow extends StatefulWidget {
   const _SidebarMigrationGlow();
+
+  static const visualWidth = 20.0;
+  static const visualHeight = 32.0;
+  static const left = 14.0;
+  static const top = 6.0;
+  static const _outerWidth = 24.0;
+  static const _outerHeight = 108.0;
+  static const _innerWidth = 14.0;
+  static const _innerHeight = 92.0;
+  static const _radius = 13.0;
+  static const _midAlpha = 0.15;
+  static const _glowColor = Color(0xFF00A460);
+  static const _flowBandHeight = 34.0;
+  static const _flowPeriod = Duration(milliseconds: 1800);
+
+  @override
+  State<_SidebarMigrationGlow> createState() => _SidebarMigrationGlowState();
+}
+
+class _SidebarMigrationGlowState extends State<_SidebarMigrationGlow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _SidebarMigrationGlow._flowPeriod,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final success = context.colors.icon.success;
+    final animate = !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+    if (animate && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!animate && _controller.isAnimating) {
+      _controller.stop();
+    }
+
     return SizedBox(
-      width: 20,
-      height: 40,
-      child: Center(
-        child: Container(
-          width: 8,
-          height: 40,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.full),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                success.withValues(alpha: 0),
-                success.withValues(alpha: 0.36),
-                success.withValues(alpha: 0),
-              ],
-              stops: const [0, 0.5, 1],
+      width: _SidebarMigrationGlow._outerWidth,
+      height: _SidebarMigrationGlow._outerHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          const _SidebarMigrationGlowPill(
+            width: _SidebarMigrationGlow._outerWidth,
+            height: _SidebarMigrationGlow._outerHeight,
+          ),
+          const _SidebarMigrationGlowPill(
+            width: _SidebarMigrationGlow._innerWidth,
+            height: _SidebarMigrationGlow._innerHeight,
+          ),
+          if (animate)
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                return _SidebarMigrationFlowHighlight(t: _controller.value);
+              },
             ),
-            boxShadow: [
-              BoxShadow(
-                color: success.withValues(alpha: 0.18),
-                blurRadius: 10,
-                spreadRadius: 4,
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarMigrationFlowHighlight extends StatelessWidget {
+  const _SidebarMigrationFlowHighlight({required this.t});
+
+  final double t;
+
+  @override
+  Widget build(BuildContext context) {
+    final bandHeight = _SidebarMigrationGlow._flowBandHeight;
+    final travel = _SidebarMigrationGlow._outerHeight + (bandHeight * 2);
+    final y = -bandHeight + (travel * t);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_SidebarMigrationGlow._radius),
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0x00FFFFFF),
+            Color(0xFFFFFFFF),
+            Color(0xFFFFFFFF),
+            Color(0x00FFFFFF),
+          ],
+          stops: [0, 0.22, 0.78, 1],
+        ).createShader(bounds),
+        child: SizedBox(
+          width: _SidebarMigrationGlow._outerWidth,
+          height: _SidebarMigrationGlow._outerHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              Positioned(
+                top: y,
+                child: const _SidebarMigrationFlowBand(
+                  width: _SidebarMigrationGlow._outerWidth,
+                  height: _SidebarMigrationGlow._flowBandHeight,
+                  alpha: 0.13,
+                ),
+              ),
+              Positioned(
+                top: y + 5,
+                child: const _SidebarMigrationFlowBand(
+                  width: _SidebarMigrationGlow._innerWidth,
+                  height: _SidebarMigrationGlow._flowBandHeight,
+                  alpha: 0.26,
+                ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarMigrationFlowBand extends StatelessWidget {
+  const _SidebarMigrationFlowBand({
+    required this.width,
+    required this.height,
+    required this.alpha,
+  });
+
+  final double width;
+  final double height;
+  final double alpha;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(_SidebarMigrationGlow._radius),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _SidebarMigrationGlow._glowColor.withValues(alpha: 0),
+              _SidebarMigrationGlow._glowColor.withValues(alpha: alpha),
+              _SidebarMigrationGlow._glowColor.withValues(alpha: alpha * 0.72),
+              _SidebarMigrationGlow._glowColor.withValues(alpha: 0),
+            ],
+            stops: const [0, 0.42, 0.62, 1],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarMigrationGlowPill extends StatelessWidget {
+  const _SidebarMigrationGlowPill({required this.width, required this.height});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(_SidebarMigrationGlow._radius),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _SidebarMigrationGlow._glowColor.withValues(alpha: 0),
+              _SidebarMigrationGlow._glowColor.withValues(
+                alpha: _SidebarMigrationGlow._midAlpha,
+              ),
+              _SidebarMigrationGlow._glowColor.withValues(alpha: 0),
+            ],
+            stops: const [0, 0.5, 1],
           ),
         ),
       ),
