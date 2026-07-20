@@ -24,6 +24,7 @@ import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
+import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
@@ -486,6 +487,27 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     showAppToast(context, message, iconName: AppIcons.warning);
   }
 
+  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+      ),
+    );
+  }
+
+  String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
+    if (transaction == null) return null;
+    final amount = transaction.displayAmount;
+    if (amount == BigInt.zero) return null;
+    return ZecAmount.fromZatoshi(amount).signedActivity.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = widget.sync;
@@ -521,28 +543,26 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
               const <SwapActivityRowItem>[];
+    final absorption = sync.recentTransactions.isEmpty
+        ? SwapActivityLegAbsorption.empty
+        : matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: sync.recentTransactions,
+          );
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
     final entries = <ActivityEntry>[
       for (final tx in sync.recentTransactions)
-        ActivityEntry(
-          timestamp: transactionActivityTimestamp(tx),
-          row: buildTransactionActivityRow(
-            context: context,
-            transaction: tx,
-            privacyModeEnabled: privacyModeEnabled,
-            dateOnlyTimestamp: true,
-            onTap: () => context.push(
-              Uri(
-                path: '/activity/tx/${tx.txidHex}',
-                queryParameters: {'kind': tx.txKind},
-              ).toString(),
-              extra: MobileTransactionStatusArgs(
-                txidHex: tx.txidHex,
-                txKind: tx.txKind,
-                initialTransaction: tx,
-              ),
+        if (!absorption.absorbs(tx))
+          ActivityEntry(
+            timestamp: transactionActivityTimestamp(tx),
+            row: buildTransactionActivityRow(
+              context: context,
+              transaction: tx,
+              privacyModeEnabled: privacyModeEnabled,
+              dateOnlyTimestamp: true,
+              onTap: () => _openTransactionStatus(tx),
             ),
           ),
-        ),
       for (final item in swapItems)
         ActivityEntry(
           timestamp: item.activityTimestamp,
@@ -557,6 +577,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 returnTarget: SwapActivityReturnTarget.home,
               ).toString(),
             ),
+            receivedAmountText: _absorbedReceiveAmountText(
+              swapReceiveTxByIntent[item.intentId],
+            ),
+            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+              null => null,
+              final tx => () => _openTransactionStatus(tx),
+            },
           ),
         ),
     ]..sort(compareActivityEntries);
