@@ -150,7 +150,7 @@ void main() {
     },
   );
 
-  test('home CTA shows continue for an active migration run', () async {
+  test('home CTA resumes an active run while syncing', () async {
     final container = _container(
       ironwoodActiveAtTip: true,
       migrationPhase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
@@ -158,8 +158,8 @@ void main() {
       syncState: SyncState(
         accountUuid: _accountUuid,
         hasAccountScopedData: true,
-        isSyncComplete: true,
-        scannedHeight: 3_500_000,
+        isSyncing: true,
+        scannedHeight: 3_499_900,
         chainTipHeight: 3_500_000,
       ),
     );
@@ -313,6 +313,44 @@ void main() {
     },
   );
 
+  test(
+    'completed migration does not become required during a balance rescan',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationReadyPhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncing: true,
+          scannedHeight: 3_499_900,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(1_000_000),
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(2_000_000),
+          totalBalance: BigInt.from(2_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.unavailable);
+      expect(state.locksNavigation, isFalse);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
   test('route CTA resumes active run before requiring sync data', () async {
     final migrationStatusCalls = <String>[];
     final container = _container(
@@ -352,7 +390,7 @@ void main() {
     expect(migrationStatusCalls, isEmpty);
   });
 
-  test('home CTA ignores sync progress-only updates', () async {
+  test('home CTA stays hidden across sync progress-only updates', () async {
     final migrationStatusCalls = <String>[];
     final syncState = _syncingReadyState();
     final container = _container(
@@ -366,7 +404,7 @@ void main() {
     final initial = await container.read(
       ironwoodHomeMigrationCtaProvider.future,
     );
-    expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(initial.mode, IronwoodHomeMigrationCtaMode.hidden);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
 
     final syncNotifier =
@@ -387,11 +425,11 @@ void main() {
     final afterProgressTick = await container.read(
       ironwoodHomeMigrationCtaProvider.future,
     );
-    expect(afterProgressTick.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(afterProgressTick.mode, IronwoodHomeMigrationCtaMode.hidden);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
 
-  test('migration flow data ignores sync progress-only updates', () async {
+  test('migration flow stays unavailable during sync', () async {
     final migrationStatusCalls = <String>[];
     final syncState = _syncingReadyState();
     final container = _container(
@@ -414,7 +452,7 @@ void main() {
     final initial = await container.read(
       ironwoodMigrationFlowDataProvider.future,
     );
-    expect(initial?.amountZatoshi, syncState.orchardBalance);
+    expect(initial, isNull);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
     flowEvents.clear();
 
@@ -436,7 +474,7 @@ void main() {
     final afterProgressTick = await container.read(
       ironwoodMigrationFlowDataProvider.future,
     );
-    expect(afterProgressTick?.amountZatoshi, syncState.orchardBalance);
+    expect(afterProgressTick, isNull);
     expect(flowEvents, isEmpty);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });

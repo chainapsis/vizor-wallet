@@ -648,6 +648,10 @@ final ironwoodMigrationRouteCtaProvider =
         );
       }
 
+      if (inputs.isSyncing || inputs.isBackgroundMode) {
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
+
       if (inputs.hasAccountScopedData &&
           !inputs.hasSyncFailure &&
           inputs.hasOrchardFunds &&
@@ -703,6 +707,9 @@ IronwoodPostMigrationState _postMigrationStateForStatusLookupFailure(
   IronwoodMigrationInputs inputs,
   String accountUuid,
 ) {
+  if (inputs.isSyncing || inputs.isBackgroundMode) {
+    return const IronwoodPostMigrationState.unavailable();
+  }
   if (inputs.hasOrchardFunds) {
     return IronwoodPostMigrationState.required(
       network: inputs.network,
@@ -735,6 +742,12 @@ IronwoodPostMigrationState _postMigrationStateForStatus({
       accountUuid: accountUuid,
       status: status,
     );
+  }
+
+  // A rewind/rescan can temporarily make already-spent Orchard notes look
+  // spendable. Only derive a new migration requirement from settled balances.
+  if (inputs.isSyncing || inputs.isBackgroundMode) {
+    return const IronwoodPostMigrationState.unavailable();
   }
 
   if (inputs.hasOrchardFunds && _shouldStartIronwoodMigration(status.phase)) {
