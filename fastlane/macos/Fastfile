@@ -47,6 +47,9 @@ MACOS_RELEASE_FLAVOR_CONFIGS = {
     sparkle_public_key_env: "SPARKLE_PUBLIC_ED_KEY_TESTNET",
     sparkle_private_key_env: "SPARKLE_PRIVATE_ED_KEY_TESTNET",
     zcash_default_network: "test",
+    dart_defines: {
+      "ZCASH_FAST_TESTNET_MIGRATION" => "true"
+    },
     volume_name: "Install Vizor Testnet Wallet"
   },
   "ironwood-masquerade" => {

@@ -193,6 +193,11 @@ build_flavor() {
       --dart-define="VIZOR_COINGECKO_PRICE_BASE_URL=${VIZOR_COINGECKO_PRICE_BASE_URL:-https://api.coingecko.com/api/v3}"
       --dart-define="VIZOR_WALLET_LINK_BACKEND_URL=${VIZOR_WALLET_LINK_BACKEND_URL:-https://functions.vizor.cash}"
     )
+    if [[ "$flavor" == "testnet" ]]; then
+      flutter_args+=(
+        --dart-define="ZCASH_FAST_TESTNET_MIGRATION=true"
+      )
+    fi
     if [[ -n "${VIZOR_RELEASE_VERSION:-}" ]]; then
       release_build_name="${VIZOR_RELEASE_BUILD_NAME:-$VIZOR_RELEASE_VERSION}"
       flutter_args+=(

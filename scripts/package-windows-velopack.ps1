@@ -360,6 +360,9 @@ $flutterBuildArgs = @(
   "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=$CoinGeckoPriceBaseUrl",
   "--dart-define=VIZOR_WALLET_LINK_BACKEND_URL=$WalletLinkBackendUrl"
 )
+if ($Network -eq "testnet") {
+  $flutterBuildArgs += "--dart-define=ZCASH_FAST_TESTNET_MIGRATION=true"
+}
 
 $cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"
 if (Test-Path $cmakeCache) {
