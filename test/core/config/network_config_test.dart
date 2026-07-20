@@ -6,6 +6,10 @@ void main() {
     expect(kZcashRegtestIronwoodActivationHeight, 0xFFFFFFFF);
   });
 
+  test('fast Testnet migration is opt-in by default', () {
+    expect(kZcashFastTestnetMigration, isFalse);
+  });
+
   group('normalizeZcashNetworkName', () {
     test('accepts supported network names', () {
       expect(normalizeZcashNetworkName('main'), 'main');

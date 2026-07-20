@@ -15,3 +15,10 @@ Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
     RustLib.instance.api.crateApiSimpleConfigureRegtestIronwoodActivationHeight(
       height: height,
     );
+
+/// Enables Regtest-speed migration timing on Testnet only. Mainnet and
+/// Regtest consensus behavior are unaffected.
+Future<void> configureFastTestnetMigration({required bool enabled}) => RustLib
+    .instance
+    .api
+    .crateApiSimpleConfigureFastTestnetMigration(enabled: enabled);

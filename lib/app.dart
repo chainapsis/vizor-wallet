@@ -98,6 +98,9 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  await rust_simple.configureFastTestnetMigration(
+    enabled: kZcashFastTestnetMigration,
+  );
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
       kZcashRegtestIronwoodActivationHeight > 1) {
     await rust_simple.configureRegtestIronwoodActivationHeight(

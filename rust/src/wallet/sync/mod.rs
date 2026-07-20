@@ -38,7 +38,9 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
-pub(crate) use migration::{migration_status, MigrationScheduleEntry};
+pub(crate) use migration::{
+    configure_fast_testnet_migration, migration_status, MigrationScheduleEntry,
+};
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,

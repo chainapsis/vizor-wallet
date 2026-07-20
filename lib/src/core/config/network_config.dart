@@ -88,6 +88,12 @@ const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
   defaultValue: 0xFFFFFFFF,
 );
 
+const kZcashFastTestnetMigrationEnvKey = 'ZCASH_FAST_TESTNET_MIGRATION';
+const kZcashFastTestnetMigration = bool.fromEnvironment(
+  kZcashFastTestnetMigrationEnvKey,
+  defaultValue: false,
+);
+
 /// Opt-in test build for Adam's private Ironwood chain that presents itself as
 /// mainnet so normal-mode Keystone devices can use mainnet 133'/u1 derivation.
 const kZcashIronwoodMasqueradeEnvKey = 'ZCASH_IRONWOOD_MASQUERADE';

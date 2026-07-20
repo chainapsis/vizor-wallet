@@ -1577,6 +1577,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let mut created = Vec::with_capacity(prepared_notes.len());
     let mut anchor_cohort_counts =
         super::migration::pending_anchor_cohort_counts(db_path, &run.run_id)?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let pczt = match with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
             create_orchard_to_ironwood_pczt_from_note(
@@ -1585,6 +1586,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 account_uuid,
                 note_ref,
                 (index + 1) as u32,
+                timing_policy,
                 &mut anchor_cohort_counts,
                 !recoveries.is_empty(),
             )
@@ -3750,6 +3752,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
+    timing_policy: super::migration::MigrationTimingPolicy,
     anchor_cohort_counts: &mut BTreeMap<u32, u32>,
     allow_replacing_local_spend: bool,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
@@ -3844,8 +3847,9 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let Some(anchor_boundary_height) =
-        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts(
+        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
             network,
+            timing_policy,
             anchor_height_u32,
             u32::from(mined_height),
             nu6_3_activation_height,
@@ -4928,6 +4932,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     preferred_anchor_boundary_height: Option<u32>,
+    timing_policy: super::migration::MigrationTimingPolicy,
     anchor_cohort_counts: &mut BTreeMap<u32, u32>,
 ) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
     if note_ref.note_version != 2 {
@@ -4977,8 +4982,9 @@ fn orchard_anchor_and_witness_for_prepared_note(
                 .copied()
                 .unwrap_or_default()
                 < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
-                && super::migration::zip318_anchor_boundary_is_candidate(
+                && super::migration::zip318_anchor_boundary_is_candidate_with_policy(
                     network,
+                    timing_policy,
                     *boundary,
                     anchor_height_u32,
                     mined_height,
@@ -4986,8 +4992,9 @@ fn orchard_anchor_and_witness_for_prepared_note(
                 )
         })
         .or_else(|| {
-            super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts(
+            super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
                 network,
+                timing_policy,
                 anchor_height_u32,
                 mined_height,
                 nu6_3_activation_height,
@@ -5040,6 +5047,7 @@ fn rebuild_expired_software_migration_parts(
         pending_password,
         pending_salt_base64,
     )?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut replacements = Vec::with_capacity(recoveries.len());
     let mut replacement_children = Vec::with_capacity(recoveries.len());
@@ -5051,6 +5059,7 @@ fn rebuild_expired_software_migration_parts(
             account_uuid,
             &recovery.selected_note,
             (index + 1) as u32,
+            timing_policy,
             &mut anchor_cohort_counts,
             true,
         )?
@@ -5154,6 +5163,7 @@ fn finalize_presigned_migration_children(
     }
 
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut pending_inserts = Vec::with_capacity(signed_children.len());
@@ -5176,6 +5186,7 @@ fn finalize_presigned_migration_children(
                 account_uuid,
                 current_note,
                 child.anchor_boundary_height,
+                timing_policy,
                 &mut anchor_cohort_counts,
             ) {
                 Ok(result) => result,

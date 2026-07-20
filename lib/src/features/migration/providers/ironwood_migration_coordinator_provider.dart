@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -14,7 +15,9 @@ import 'ironwood_migration_announcement_provider.dart';
 
 const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
-  seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
+  seconds:
+      String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest' ||
+          kZcashFastTestnetMigration
       ? 1
       : 30,
 );
