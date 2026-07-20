@@ -154,6 +154,12 @@ correct differences from the design.
   from Figma, correct the Flutter code and repeat the widget capture until no
   actionable visual difference remains. Do not use Widgetbook chrome as
   comparison evidence.
+- For desktop typography, font weight can render differently across Figma,
+  macOS, Windows, and Linux because platform font rasterization differs. Treat
+  the weight as matching when Flutter's configured `fontWeight` value matches
+  Figma's weight setting; do not choose a different weight solely to force
+  pixel-level visual parity. Continue to verify font family, size, line height,
+  letter spacing, wrapping, and positioning normally.
 - If the required state is not registered, add a reusable deterministic
   capture scenario before falling back to a running platform app. Temporary
   production routes, bootstrap overrides, or provider changes are a last
