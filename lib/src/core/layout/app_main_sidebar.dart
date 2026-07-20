@@ -15,7 +15,9 @@ import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/zec_amount.dart';
@@ -343,6 +345,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final ironwoodMigrationNavigationLocked =
         ref.watch(ironwoodPostMigrationStateProvider).value?.locksNavigation ??
         false;
+    final migrationCoordinator = ref.watch(
+      ironwoodMigrationCoordinatorProvider,
+    );
+    final migrationStatus = activeAccountUuid == null
+        ? null
+        : migrationCoordinator.statuses[activeAccountUuid];
 
     return AppDesktopSidebarSurface(
       glass: true,
@@ -401,6 +409,15 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _homeShouldBeActive,
                       onTap: isImporting ? null : () => _navigateTo('/home'),
                     ),
+                    if (migrationStatus?.activeRunId != null) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      _SidebarMigrationProgress(
+                        status: migrationStatus!,
+                        orchardBalance: accountSync.orchardBalance,
+                        ironwoodBalance: accountSync.ironwoodBalance,
+                        onTap: () => _navigateTo('/migration/private/status'),
+                      ),
+                    ],
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
@@ -466,6 +483,107 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
           );
         },
       ),
+    );
+  }
+}
+
+class _SidebarMigrationProgress extends StatelessWidget {
+  const _SidebarMigrationProgress({
+    required this.status,
+    required this.orchardBalance,
+    required this.ironwoodBalance,
+    required this.onTap,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final BigInt orchardBalance;
+  final BigInt ironwoodBalance;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final needsInput = status.phase == 'ready_to_migrate';
+    final total = status.totalCount;
+    final complete = needsInput && status.signedChildPcztCount > 0
+        ? status.signedChildPcztCount
+        : status.confirmedTxCount;
+    return AppTappable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+        child: Column(
+          children: [
+            _SidebarPoolRow(
+              label: 'Orchard',
+              value:
+                  '${ZecAmount.fromZatoshi(orchardBalance).balance.amountText} ZEC',
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                AppIcon(
+                  needsInput ? AppIcons.warning : AppIcons.loader,
+                  size: 14,
+                  color: needsInput ? colors.icon.warning : colors.icon.regular,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    needsInput ? 'Needs input' : 'Migrating...',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: needsInput
+                          ? colors.text.warning
+                          : colors.text.secondary,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$complete/${total == 0 ? status.preparedNoteCount : total}',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _SidebarPoolRow(
+              label: 'Ironwood',
+              value:
+                  '${ZecAmount.fromZatoshi(ironwoodBalance).balance.amountText} ZEC',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarPoolRow extends StatelessWidget {
+  const _SidebarPoolRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.accent,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: AppTypography.labelSmall.copyWith(
+            color: context.colors.text.secondary,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -91,6 +91,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationPrivateReviewUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-analyzing',
+    description: 'Ironwood migration balance analysis loader',
+    builder: buildIronwoodMigrationAnalyzingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-shuffle-review',
+    description: 'Ironwood private migration shuffled review screen',
+    builder: buildIronwoodMigrationShuffleReviewUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-private-status-waiting',
     description: 'Ironwood private migration waiting status screen',
     builder: buildIronwoodMigrationPrivateStatusWaitingUseCase,
@@ -99,6 +109,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-private-status-migrating',
     description: 'Ironwood private migration transfer status screen',
     builder: buildIronwoodMigrationPrivateStatusMigratingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-private-status-needs-input',
+    description: 'Ironwood Keystone migration status requiring a signature',
+    builder: buildIronwoodMigrationPrivateStatusNeedsInputUseCase,
   ),
 ];
 

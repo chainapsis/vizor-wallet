@@ -74,10 +74,7 @@ void main() {
 
       e2eLog('stopping lightwalletd before migration authorization');
       await ironwoodDriverPost(_driverUrl, '/lightwalletd/stop');
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_authorize_start_button'),
-      );
+      await startPrivateMigrationFromReview(tester);
       await pumpUntil(
         tester,
         () => tester.any(

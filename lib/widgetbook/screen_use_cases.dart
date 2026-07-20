@@ -29,6 +29,7 @@ import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
@@ -704,6 +705,24 @@ Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationAnalyzingUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/review',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.analyzing,
+  );
+}
+
+Widget buildIronwoodMigrationShuffleReviewUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/review',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.shuffle,
+  );
+}
+
 Widget buildIronwoodMigrationPrivateStatusWaitingUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/status',
@@ -721,6 +740,18 @@ Widget buildIronwoodMigrationPrivateStatusMigratingUseCase(
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
     previewStatus: _previewPrivateMigrationTransferStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationPrivateStatusNeedsInputUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
+    previewStatus: _previewPrivateMigrationNeedsInputStatus(),
+    isHardware: true,
   );
 }
 
@@ -842,8 +873,11 @@ Widget _buildIronwoodMigrationUseCase({
   required IronwoodMigrationFlowStep step,
   required IronwoodMigrationFlowData data,
   rust_sync.MigrationStatus? previewStatus,
+  IronwoodMigrationReviewPreviewStage reviewPreviewStage =
+      IronwoodMigrationReviewPreviewStage.split,
+  bool isHardware = false,
 }) {
-  final accountState = _ironwoodMigrationAccountState();
+  final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
@@ -866,12 +900,19 @@ Widget _buildIronwoodMigrationUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _PreviewMigrationCoordinator(
+          accountUuid: accountState.activeAccountUuid,
+          status: previewStatus,
+        ),
+      ),
     ],
     child: _IronwoodMigrationHarness(
       initialLocation: initialLocation,
       initialStep: step,
       data: data,
       previewStatus: previewStatus,
+      reviewPreviewStage: reviewPreviewStage,
     ),
   );
 }
@@ -1503,12 +1544,14 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     required this.initialStep,
     required this.data,
     this.previewStatus,
+    this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.split,
   });
 
   final String initialLocation;
   final IronwoodMigrationFlowStep initialStep;
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus? previewStatus;
+  final IronwoodMigrationReviewPreviewStage reviewPreviewStage;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -1576,6 +1619,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                     zatoshi: BigInt.from(14_224_000_000),
                   ),
             previewPrivatePlan: _previewPrivateMigrationPlan(),
+            previewReviewStage: widget.reviewPreviewStage,
             onOpenReleaseNotesOverride: () {},
           ),
         ),
@@ -1951,12 +1995,19 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
-AccountState _ironwoodMigrationAccountState() {
+AccountState _ironwoodMigrationAccountState({bool isHardware = false}) {
   return AccountState(
     accounts: [
       for (final account in _accountsDesignState.accounts)
         account.uuid == _accountsDesignState.activeAccountUuid
-            ? account.copyWith(name: 'Username')
+            ? AccountInfo(
+                uuid: account.uuid,
+                name: 'Username',
+                order: account.order,
+                isHardware: isHardware,
+                isSeedAnchor: account.isSeedAnchor,
+                profilePictureId: account.profilePictureId,
+              )
             : account,
     ],
     activeAccountUuid: _accountsDesignState.activeAccountUuid,
@@ -2111,28 +2162,20 @@ IronwoodMigrationFlowData _ironwoodMigrationFlowData({
 rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
   return rust_sync.OrchardMigrationPrivatePlan(
     targetValuesZatoshi: frb.Uint64List.fromList([
+      8_000_000_000,
+      4_000_000_000,
       1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      100_000_000,
-      100_000_000,
+      500_000_000,
+      500_000_000,
+      220_000_000,
     ]),
     totalInputZatoshi: BigInt.from(14_224_000_000),
-    totalMigratableZatoshi: BigInt.from(14_200_000_000),
+    totalMigratableZatoshi: BigInt.from(14_220_000_000),
     orchardChangeZatoshi: BigInt.from(100_000),
     denominationSplitFeeZatoshi: BigInt.from(600_000),
     migrationFeeZatoshi: BigInt.from(600_000),
     estimatedTotalFeeZatoshi: BigInt.from(1_200_000),
-    plannedBatchCount: 12,
+    plannedBatchCount: 6,
     denominationSplitStageCount: 2,
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
@@ -2140,8 +2183,28 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
-        valueZatoshi: BigInt.from(1_000_000_000),
+        valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 144,
+      ),
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(500_000_000),
+        blockOffset: 288,
+      ),
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(8_000_000_000),
+        blockOffset: 432,
+      ),
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(220_000_000),
+        blockOffset: 576,
+      ),
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(500_000_000),
+        blockOffset: 720,
+      ),
+      rust_sync.MigrationScheduledTransfer(
+        valueZatoshi: BigInt.from(1_000_000_000),
+        blockOffset: 864,
       ),
     ],
   );
@@ -2151,7 +2214,14 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
   return rust_sync.MigrationStatus(
     phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     activeRunId: 'preview-run',
-    targetValuesZatoshi: frb.Uint64List.fromList([14_223_000_000]),
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      8_000_000_000,
+      4_000_000_000,
+      1_000_000_000,
+      500_000_000,
+      500_000_000,
+      220_000_000,
+    ]),
     preparedNoteCount: 6,
     denominationConfirmationCount: 2,
     denominationConfirmationTarget: 3,
@@ -2160,7 +2230,7 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     pendingTxCount: 0,
     broadcastedTxCount: 0,
     confirmedTxCount: 0,
-    totalCount: 12,
+    totalCount: 6,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
@@ -2177,30 +2247,22 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
     phase: kIronwoodMigrationWaitingConfirmationsPhase,
     activeRunId: 'preview-run',
     targetValuesZatoshi: frb.Uint64List.fromList([
+      8_000_000_000,
+      4_000_000_000,
       1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      412_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_000_000_000,
-      1_811_000_000,
+      500_000_000,
+      500_000_000,
+      220_000_000,
     ]),
-    preparedNoteCount: 14,
+    preparedNoteCount: 6,
     denominationConfirmationCount: 3,
     denominationConfirmationTarget: 3,
     denominationSplitCompletedCount: 1,
     denominationSplitTotalCount: 1,
-    pendingTxCount: 6,
-    broadcastedTxCount: 5,
-    confirmedTxCount: 3,
-    totalCount: 11,
+    pendingTxCount: 3,
+    broadcastedTxCount: 3,
+    confirmedTxCount: 2,
+    totalCount: 6,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
@@ -2217,6 +2279,38 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         status: 'scheduled',
       ),
     ],
+  );
+}
+
+rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationReadyToMigratePhase,
+    activeRunId: 'preview-run',
+    targetValuesZatoshi: frb.Uint64List.fromList([
+      8_000_000_000,
+      4_000_000_000,
+      1_000_000_000,
+      500_000_000,
+      500_000_000,
+      220_000_000,
+    ]),
+    preparedNoteCount: 6,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 4,
+    broadcastedTxCount: 1,
+    confirmedTxCount: 1,
+    totalCount: 6,
+    signedChildPcztCount: 2,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: const [],
   );
 }
 
@@ -2282,6 +2376,24 @@ class _PreviewAccountNotifier extends AccountNotifier {
   @override
   Future<void> resetWallet() async {
     state = const AsyncData(AccountState());
+  }
+}
+
+class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
+  _PreviewMigrationCoordinator({required this.accountUuid, this.status});
+
+  final String? accountUuid;
+  final rust_sync.MigrationStatus? status;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    final uuid = accountUuid;
+    final previewStatus = status;
+    return IronwoodMigrationCoordinatorState(
+      statuses: uuid == null || previewStatus == null
+          ? const {}
+          : {uuid: previewStatus},
+    );
   }
 }
 

@@ -104,15 +104,15 @@ void main() {
 
       await openPrivateMigrationReview(tester);
       expect(
-        find.text('${migrationPlan.plannedBatchCount} Planned batches'),
+        find.textContaining(
+          '${migrationPlan.plannedBatchCount} batches',
+          findRichText: true,
+        ),
         findsOneWidget,
       );
-      expect(find.text('Total, ~0.0029 ZEC'), findsOneWidget);
+      expect(find.text('~0.0029 ZEC'), findsOneWidget);
 
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_authorize_start_button'),
-      );
+      await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,

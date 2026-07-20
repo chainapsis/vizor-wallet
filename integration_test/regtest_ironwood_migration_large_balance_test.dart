@@ -84,16 +84,15 @@ void main() {
 
       await openPrivateMigrationReview(tester);
       expect(
-        find.text('${migrationPlan.plannedBatchCount} Planned batches'),
+        find.textContaining(
+          '${migrationPlan.plannedBatchCount} batches',
+          findRichText: true,
+        ),
         findsOneWidget,
       );
-      expect(find.text('Total, ~0.0026 ZEC'), findsOneWidget);
-      expect(find.text('~0.0076 ZEC'), findsOneWidget);
+      expect(find.text('~0.0026 ZEC'), findsOneWidget);
 
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_authorize_start_button'),
-      );
+      await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
@@ -309,38 +308,30 @@ Future<void> _expectIntermediateProgressUi(
       ),
       description: 'large-balance scheduled broadcast progress UI',
     );
-    expect(find.text('Broadcast Scheduled'), findsOneWidget);
+    expect(find.text('Migration in progress'), findsOneWidget);
     expect(
-      find.text(
-        '${status.denominationSplitCompletedCount}/'
-        '${status.denominationSplitTotalCount}',
+      find.textContaining(
+        '${plan.plannedBatchCount} batches',
+        findRichText: true,
       ),
       findsOneWidget,
     );
-    expect(find.text('${status.pendingTxCount}'), findsOneWidget);
-    expect(find.text('${status.broadcastedTxCount}'), findsOneWidget);
-    expect(
-      find.text('${status.confirmedTxCount}/${status.totalCount}'),
-      findsOneWidget,
-    );
+    expect(find.text('Scheduled'), findsWidgets);
     return;
   }
 
   await pumpUntil(
     tester,
-    () => tester.any(find.text('${plan.plannedBatchCount} Planned batches')),
+    () => tester.any(
+      find.textContaining(
+        '${plan.plannedBatchCount} batches',
+        findRichText: true,
+      ),
+    ),
     description: 'large-balance transfer progress UI',
   );
-  final percentages = tester
-      .widgetList<Text>(find.byType(Text))
-      .map((text) => text.data)
-      .whereType<String>()
-      .where((text) => RegExp(r'^\d+%$').hasMatch(text))
-      .map((text) => int.parse(text.substring(0, text.length - 1)))
-      .toList();
-  expect(percentages, hasLength(1));
-  expect(percentages.single, inInclusiveRange(1, 99));
-  expect(find.textContaining('Left to transfer:'), findsOneWidget);
+  expect(find.text('Migration in progress'), findsOneWidget);
+  expect(find.text('Completed'), findsWidgets);
 }
 
 Future<Map<String, Object?>> _waitForMempool(

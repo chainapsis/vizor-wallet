@@ -74,10 +74,7 @@ void main() {
       );
       expect(plan, isNotNull);
       await openPrivateMigrationReview(tester);
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_authorize_start_button'),
-      );
+      await startPrivateMigrationFromReview(tester);
 
       final started = await waitForDesktopRegtestMigrationStatus(
         tester,

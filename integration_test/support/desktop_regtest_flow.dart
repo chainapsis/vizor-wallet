@@ -172,6 +172,24 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
   );
 }
 
+Future<void> startPrivateMigrationFromReview(WidgetTester tester) async {
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_accept_split_button'),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_authorize_start_button')),
+    ),
+    description: 'shuffled migration review',
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_authorize_start_button'),
+  );
+}
+
 Future<String> firstDesktopRegtestAccountUuid() async {
   final accounts = await rust_wallet.listAccounts(
     dbPath: await getWalletDbPath(),
@@ -288,27 +306,6 @@ Future<rust_sync.MigrationStatus> prepareDesktopRegtestMigrationSchedule(
     description: 'migration denomination readiness',
     timeout: timeout,
   );
-  await pumpUntil(
-    tester,
-    () => tester.any(
-      find.byKey(const ValueKey('ironwood_migration_status_ready_to_migrate')),
-    ),
-    description: 'migration ready status UI',
-    timeout: timeout,
-  );
-  final action = find.byKey(
-    const ValueKey('ironwood_migration_status_action_button'),
-  );
-  if (tester.any(action) &&
-      tester.widget<AppButton>(action).onPressed != null) {
-    await tapAppButton(
-      tester,
-      const ValueKey('ironwood_migration_status_action_button'),
-    );
-  } else {
-    e2eLog('migration schedule is already advancing automatically');
-  }
-
   return waitForDesktopRegtestMigrationStatus(
     tester,
     accountUuid,

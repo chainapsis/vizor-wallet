@@ -37,16 +37,13 @@ import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../providers/ironwood_migration_announcement_provider.dart';
+import '../providers/ironwood_migration_coordinator_provider.dart';
 import '../services/ironwood_migration_service.dart';
 
 enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 
-const _privateStatusRefreshInterval = Duration(seconds: 5);
-const _privateStatusAutoAdvanceInterval = Duration(
-  seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
-      ? 1
-      : 30,
-);
+enum IronwoodMigrationReviewPreviewStage { split, shuffle, analyzing }
+
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
@@ -125,6 +122,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
+    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.split,
     this.onOpenReleaseNotesOverride,
     super.key,
   });
@@ -132,6 +130,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
@@ -142,6 +141,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
         step: step,
         data: preview,
         previewPrivatePlan: previewPrivatePlan,
+        previewReviewStage: previewReviewStage,
         onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
       );
     }
@@ -157,6 +157,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
           step: step,
           data: data,
           previewPrivatePlan: previewPrivatePlan,
+          previewReviewStage: previewReviewStage,
           onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
         );
       },
@@ -206,10 +207,17 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = previewStatus;
     if (preview != null) {
+      final previewAccountUuid = ref
+          .watch(accountProvider)
+          .value
+          ?.activeAccountUuid;
       return _IronwoodMigrationFrame(
         toolbar: _privateStatusToolbar(context),
         disableSidebarActions: true,
-        child: _IronwoodMigrationPrivateStatusContent(status: preview),
+        child: _IronwoodMigrationPrivateStatusContent(
+          status: preview,
+          accountUuid: previewAccountUuid,
+        ),
       );
     }
 
@@ -220,6 +228,7 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
     }
 
     final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
+    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     return statusAsync.when(
       skipLoadingOnReload: true,
       loading: () => _IronwoodMigrationFrame(
@@ -233,8 +242,22 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         child: const _IronwoodMigrationPrivateStatusErrorContent(),
       ),
       data: (status) {
-        if (status.activeRunId == null &&
-            kIronwoodMigrationStartPhases.contains(status.phase)) {
+        final coordinatedStatus = coordinator.statuses[request.accountUuid];
+        final effectiveStatus =
+            status.activeRunId == null &&
+                kIronwoodMigrationStartPhases.contains(status.phase) &&
+                coordinatedStatus?.activeRunId != null
+            ? coordinatedStatus!
+            : status;
+        if (effectiveStatus.activeRunId == null &&
+            kIronwoodMigrationStartPhases.contains(effectiveStatus.phase)) {
+          if (coordinator.advancingAccounts.contains(request.accountUuid)) {
+            return _IronwoodMigrationFrame(
+              toolbar: _privateStatusToolbar(context),
+              disableSidebarActions: true,
+              child: const Center(child: CircularProgressIndicator()),
+            );
+          }
           if (!inputs.hasAccountScopedData ||
               inputs.hasSyncFailure ||
               !inputs.hasOrchardFunds) {
@@ -251,7 +274,7 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           toolbar: _privateStatusToolbar(context),
           disableSidebarActions: true,
           child: _IronwoodMigrationPrivateStatusContent(
-            status: status,
+            status: effectiveStatus,
             accountUuid: request.accountUuid,
           ),
         );
@@ -1159,12 +1182,14 @@ class _IronwoodMigrationShell extends StatelessWidget {
     required this.step,
     required this.data,
     this.previewPrivatePlan,
+    this.previewReviewStage = IronwoodMigrationReviewPreviewStage.split,
     this.onOpenReleaseNotesOverride,
   });
 
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
@@ -1183,7 +1208,18 @@ class _IronwoodMigrationShell extends StatelessWidget {
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
           data: data,
-          previewPlan: previewPrivatePlan,
+          previewPlan:
+              previewReviewStage ==
+                  IronwoodMigrationReviewPreviewStage.analyzing
+              ? null
+              : previewPrivatePlan,
+          forceAnalyzing:
+              previewReviewStage ==
+              IronwoodMigrationReviewPreviewStage.analyzing,
+          initialStage:
+              previewReviewStage == IronwoodMigrationReviewPreviewStage.shuffle
+              ? _PrivateReviewStage.shuffle
+              : _PrivateReviewStage.split,
         ),
     };
 
@@ -1457,8 +1493,6 @@ class _IronwoodMigrationOptionsContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = widget.data.amountText;
-
     return SizedBox(
       width: 420,
       height: 656,
@@ -1466,26 +1500,26 @@ class _IronwoodMigrationOptionsContentState
         children: [
           Positioned(
             left: 49,
-            top: 32,
+            top: 68,
             width: 322,
             child: Column(
               children: [
                 Text(
-                  'Chose How to Migrate\nyour $amount ZEC',
+                  'Choose how to migrate',
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 16),
                 SizedBox(
-                  width: 298,
+                  width: 322,
                   child: Text(
-                    'Whichever option you choose, your funds will be '
-                    'safely deposited into the Ironwood pool.',
+                    'Choose more privacy over time or a faster migration. '
+                    'You can review the details before anything moves.',
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
                     ),
                   ),
                 ),
@@ -1494,7 +1528,7 @@ class _IronwoodMigrationOptionsContentState
           ),
           Positioned(
             left: 12,
-            top: 180.5,
+            top: 193,
             width: 396,
             child: Column(
               children: [
@@ -1502,11 +1536,9 @@ class _IronwoodMigrationOptionsContentState
                   key: const ValueKey('ironwood_migration_private_option'),
                   mode: _MigrationMode.private,
                   selected: _selected == _MigrationMode.private,
-                  title: 'Private Migration',
+                  title: 'Privacy optimized',
                   badge: 'Recommended',
-                  body:
-                      'Sends independent parts over time windows.\n'
-                      'Slower, harder to correlate.',
+                  body: 'Sends independent parts over different time windows.',
                   onTap: () =>
                       setState(() => _selected = _MigrationMode.private),
                 ),
@@ -1515,27 +1547,23 @@ class _IronwoodMigrationOptionsContentState
                   key: const ValueKey('ironwood_migration_fast_option'),
                   mode: _MigrationMode.fast,
                   selected: _selected == _MigrationMode.fast,
-                  title: 'Fast Migration',
-                  body:
-                      'Sends now in one step. Amount and\n'
-                      'timing are easier to associate.',
+                  title: 'Faster but less private',
+                  body: 'Coming soon. Moves funds sooner with less separation.',
                   onTap: () => setState(() => _selected = _MigrationMode.fast),
                 ),
+                const SizedBox(height: 12),
+                _MigrationOptionCard(
+                  key: const ValueKey('ironwood_migration_custom_option'),
+                  mode: _MigrationMode.custom,
+                  selected: _selected == _MigrationMode.custom,
+                  title: 'Customize',
+                  badge: 'Advanced',
+                  body:
+                      'Coming soon. Choose how funds are split and scheduled.',
+                  onTap: () =>
+                      setState(() => _selected = _MigrationMode.custom),
+                ),
               ],
-            ),
-          ),
-          Positioned(
-            left: 51,
-            top: 457,
-            width: 318,
-            child: Text(
-              'Plain-language comparison: speed vs. correlation\n'
-              'exposure. No anchors, cohorts, PCZTs, or action counts\n'
-              'here.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
-              ),
             ),
           ),
           Positioned(
@@ -1577,150 +1605,26 @@ class _IronwoodMigrationPrivateStatusContent extends ConsumerStatefulWidget {
 
 class _IronwoodMigrationPrivateStatusContentState
     extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
-  AppLifecycleListener? _lifecycleListener;
-  Timer? _statusPollTimer;
-  Timer? _autoAdvanceTimer;
-  bool _isAdvancing = false;
-  String? _advanceError;
-
-  @override
-  void initState() {
-    super.initState();
-    _lifecycleListener = AppLifecycleListener(onResume: _pollMigrationStatus);
-    _syncStatusPollTimers();
-  }
-
-  @override
-  void didUpdateWidget(_IronwoodMigrationPrivateStatusContent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.status.phase != widget.status.phase ||
-        oldWidget.status.pendingSplitStageCount !=
-            widget.status.pendingSplitStageCount ||
-        oldWidget.accountUuid != widget.accountUuid ||
-        oldWidget.status.activeRunId != widget.status.activeRunId) {
-      _advanceError = null;
-      _statusPollTimer?.cancel();
-      _statusPollTimer = null;
-      _autoAdvanceTimer?.cancel();
-      _autoAdvanceTimer = null;
-    }
-    _syncStatusPollTimers();
-  }
-
-  @override
-  void dispose() {
-    _statusPollTimer?.cancel();
-    _autoAdvanceTimer?.cancel();
-    _lifecycleListener?.dispose();
-    super.dispose();
-  }
-
-  void _syncStatusPollTimers() {
-    final shouldRun =
-        widget.accountUuid != null &&
-        widget.status.activeRunId != null &&
-        !{
-          kIronwoodMigrationCompletePhase,
-          kIronwoodMigrationFailedTerminalPhase,
-          kIronwoodMigrationAbandonedPhase,
-        }.contains(widget.status.phase);
-    if (!shouldRun) {
-      _statusPollTimer?.cancel();
-      _statusPollTimer = null;
-      _autoAdvanceTimer?.cancel();
-      _autoAdvanceTimer = null;
-      return;
-    }
-    _statusPollTimer ??= Timer.periodic(
-      _privateStatusRefreshInterval,
-      (_) => _refreshMigrationState(),
-    );
-    if (_shouldAutoAdvanceStatus(widget.status)) {
-      _autoAdvanceTimer ??= Timer.periodic(_privateStatusAutoAdvanceInterval, (
-        _,
-      ) {
-        if (widget.status.activeRunId == null ||
-            !_shouldAutoAdvanceStatus(widget.status)) {
-          _syncStatusPollTimers();
-          return;
-        }
-        unawaited(_advanceMigration(showErrors: false));
-      });
-    } else {
-      _autoAdvanceTimer?.cancel();
-      _autoAdvanceTimer = null;
-    }
-  }
-
-  Future<void> _pollMigrationStatus() async {
-    if (!mounted) return;
-    _refreshMigrationState();
-    if (_shouldAutoAdvanceStatus(widget.status)) {
-      await _advanceMigration(showErrors: false);
-    }
-  }
-
-  Future<void> _advanceMigration({required bool showErrors}) async {
-    if (_isAdvancing) return;
-
+  Future<void> _handleAction(_StatusAction action) async {
     final accountUuid = widget.accountUuid;
     if (accountUuid == null) return;
-
-    if (await _shouldOpenKeystoneBatchSigner(accountUuid)) {
-      if (!mounted) return;
-      if (showErrors) {
-        context.go('/migration/private/keystone/batch/sign');
-      }
+    if (action == _StatusAction.needsInput) {
+      context.go('/migration/private/keystone/batch/sign');
       return;
     }
-
-    setState(() {
-      _isAdvancing = true;
-      if (showErrors) _advanceError = null;
-    });
-
     try {
       await ref
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
-      if (!mounted) return;
-      _refreshMigrationState();
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .retry(accountUuid);
     } catch (e) {
-      if (!mounted) return;
       log('Migration continuation failed: $e');
-      if (showErrors) {
-        setState(() {
-          _advanceError = _privateMigrationContinueErrorMessage(e);
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isAdvancing = false;
-        });
-      }
     }
-  }
-
-  Future<bool> _shouldOpenKeystoneBatchSigner(String accountUuid) async {
-    if (widget.status.phase != kIronwoodMigrationReadyToMigratePhase) {
-      return false;
-    }
-    final accountState = await ref.read(accountProvider.future);
-    return accountState.activeAccountUuid == accountUuid &&
-        (accountState.activeAccount?.isHardware ?? false);
-  }
-
-  void _refreshMigrationState() {
-    final accountUuid = widget.accountUuid;
     _invalidateIronwoodMigrationStatusState(
       ref,
-      statusRequest: accountUuid == null
-          ? null
-          : IronwoodMigrationStatusRequest(
-              network: ref.read(ironwoodMigrationInputsProvider).network,
-              accountUuid: accountUuid,
-            ),
+      statusRequest: IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      ),
     );
   }
 
@@ -1730,38 +1634,51 @@ class _IronwoodMigrationPrivateStatusContentState
     final status = widget.status;
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
-    final action = _statusAction(status);
+    final accountState = ref.watch(accountProvider).value;
+    final isHardware =
+        accountState?.accounts
+            .where((account) => account.uuid == widget.accountUuid)
+            .any((account) => account.isHardware) ??
+        false;
+    final action = _statusAction(status, isHardware: isHardware);
     final canUseAction = widget.accountUuid != null;
-    final actionLabel = _isAdvancing
+    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
+    final isAdvancing =
+        widget.accountUuid != null &&
+        coordinator.advancingAccounts.contains(widget.accountUuid);
+    final actionLabel = isAdvancing
         ? action.busyLabel
         : switch (action) {
-            _StatusAction.advance || _StatusAction.retry => action.label,
+            _StatusAction.needsInput || _StatusAction.retry => action.label,
             _StatusAction.backHome ||
             _StatusAction.none => presentation.buttonLabel,
           };
-    final footerText = _advanceError ?? presentation.footer;
+    final coordinatorError = widget.accountUuid == null
+        ? null
+        : coordinator.errors[widget.accountUuid!];
+    final footerText = coordinatorError == null
+        ? presentation.footer
+        : _privateMigrationContinueErrorMessage(coordinatorError);
     final actionCallback = switch (action) {
-      _StatusAction.advance || _StatusAction.retry =>
-        canUseAction
-            ? () => unawaited(_advanceMigration(showErrors: true))
-            : null,
+      _StatusAction.needsInput || _StatusAction.retry =>
+        canUseAction ? () => unawaited(_handleAction(action)) : null,
       _StatusAction.backHome => () => context.go('/home'),
       _StatusAction.none => null,
     };
 
-    if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      return _PrivateDenominationWaitingStatusContent(
+    if (status.activeRunId != null &&
+        {
+          kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          kIronwoodMigrationReadyToMigratePhase,
+          kIronwoodMigrationBroadcastScheduledPhase,
+          kIronwoodMigrationBroadcastingPhase,
+          kIronwoodMigrationWaitingConfirmationsPhase,
+        }.contains(status.phase)) {
+      return _MigrationStatusContent(
         status: status,
-        presentation: presentation,
-        footerText: footerText,
-      );
-    }
-
-    if (_isTransferProgressStatus(status)) {
-      return _PrivateMigrationTransferStatusContent(
-        status: status,
-        presentation: presentation,
-        footerText: footerText,
+        action: action,
+        isAdvancing: isAdvancing,
+        onAction: actionCallback,
       );
     }
 
@@ -1887,7 +1804,7 @@ class _IronwoodMigrationPrivateStatusContentState
             width: 230,
             child: AppButton(
               key: const ValueKey('ironwood_migration_status_action_button'),
-              onPressed: _isAdvancing ? null : actionCallback,
+              onPressed: isAdvancing ? null : actionCallback,
               height: 44,
               minWidth: 230,
               expand: true,
@@ -2007,11 +1924,11 @@ class _StatusPresentation {
   final String buttonLabel;
 }
 
-enum _StatusAction { none, advance, retry, backHome }
+enum _StatusAction { none, needsInput, retry, backHome }
 
 extension _StatusActionLabels on _StatusAction {
   String get label => switch (this) {
-    _StatusAction.advance => 'Continue migration',
+    _StatusAction.needsInput => 'Sign with Keystone',
     _StatusAction.retry => 'Retry migration',
     _StatusAction.backHome => 'Back home',
     _StatusAction.none => '',
@@ -2023,29 +1940,18 @@ extension _StatusActionLabels on _StatusAction {
   };
 }
 
-_StatusAction _statusAction(rust_sync.MigrationStatus status) {
+_StatusAction _statusAction(
+  rust_sync.MigrationStatus status, {
+  required bool isHardware,
+}) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
-    kIronwoodMigrationReadyToMigratePhase ||
-    kIronwoodMigrationBroadcastScheduledPhase => _StatusAction.advance,
+    kIronwoodMigrationReadyToMigratePhase =>
+      isHardware ? _StatusAction.needsInput : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
     kIronwoodMigrationCompletePhase => _StatusAction.backHome,
     _ => _StatusAction.none,
   };
-}
-
-bool _shouldAutoAdvanceStatus(rust_sync.MigrationStatus status) {
-  return (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-          status.pendingSplitStageCount > 0) ||
-      status.phase == kIronwoodMigrationReadyToMigratePhase ||
-      status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
-      status.phase == kIronwoodMigrationBroadcastingPhase ||
-      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
-}
-
-bool _isTransferProgressStatus(rust_sync.MigrationStatus status) {
-  return status.phase == kIronwoodMigrationBroadcastingPhase ||
-      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
 }
 
 _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
@@ -2164,10 +2070,14 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerStatefulWidget {
   const _IronwoodMigrationPrivateReviewContent({
     required this.data,
     this.previewPlan,
+    this.initialStage = _PrivateReviewStage.split,
+    this.forceAnalyzing = false,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
+  final _PrivateReviewStage initialStage;
+  final bool forceAnalyzing;
 
   @override
   ConsumerState<_IronwoodMigrationPrivateReviewContent> createState() =>
@@ -2178,6 +2088,13 @@ class _IronwoodMigrationPrivateReviewContentState
     extends ConsumerState<_IronwoodMigrationPrivateReviewContent> {
   bool _isStarting = false;
   String? _startError;
+  late _PrivateReviewStage _stage;
+
+  @override
+  void initState() {
+    super.initState();
+    _stage = widget.initialStage;
+  }
 
   Future<void> _startMigration(
     rust_sync.OrchardMigrationPrivatePlan plan,
@@ -2211,8 +2128,8 @@ class _IronwoodMigrationPrivateReviewContentState
       }
       softwareStartAttempted = true;
       await ref
-          .read(ironwoodMigrationServiceProvider)
-          .startSoftwarePrivateMigration(
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .startSoftwareMigration(
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
           );
@@ -2279,34 +2196,121 @@ class _IronwoodMigrationPrivateReviewContentState
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final amount = widget.data.amountText;
     final previewPlan = widget.previewPlan;
-    final planAsync = previewPlan == null
+    final planAsync = widget.forceAnalyzing
+        ? const AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.loading()
+        : previewPlan == null
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
+    if (planAsync.isLoading) return const _MigrationAnalyzingContent();
+    if (planAsync.hasError || plan == null) {
+      return const SizedBox(
+        width: 420,
+        height: 656,
+        child: Center(
+          child: _PrivateReviewUnavailable(
+            title: "Couldn't analyze this balance",
+            body: 'Wait for sync to finish, then try again.',
+          ),
+        ),
+      );
+    }
 
-    final content = planAsync.when(
-      skipLoadingOnReload: true,
-      loading: () => const _PrivateReviewLoading(),
-      error: (_, _) => const _PrivateReviewUnavailable(
-        title: "Couldn't load migration review",
-        body:
-            'Try again after sync finishes. No transaction has been '
-            'prepared or broadcast.',
-      ),
-      data: (loadedPlan) => loadedPlan == null
-          ? const _PrivateReviewUnavailable(
-              title: 'Private migration is not ready yet',
-              body:
-                  'Wait for sync to complete or for Orchard funds to '
-                  'become spendable, then try again.',
-            )
-          : _PrivateReviewPlan(plan: loadedPlan),
+    return _MigrationReviewContent(
+      plan: plan,
+      stage: _stage,
+      isStarting: _isStarting,
+      error: _startError,
+      onContinue: () {
+        if (_stage == _PrivateReviewStage.split) {
+          setState(() => _stage = _PrivateReviewStage.shuffle);
+        } else {
+          unawaited(_startMigration(plan));
+        }
+      },
     );
-    final canStart = plan != null && !_isStarting;
+  }
+}
 
+enum _PrivateReviewStage { split, shuffle }
+
+class _MigrationAnalyzingContent extends StatelessWidget {
+  const _MigrationAnalyzingContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      key: const ValueKey('ironwood_migration_analyzing_screen'),
+      width: 420,
+      height: 656,
+      child: Column(
+        children: [
+          const SizedBox(height: 194),
+          SizedBox(
+            width: 170,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 12,
+                backgroundColor: colors.background.raised,
+                color: colors.background.inverse,
+              ),
+            ),
+          ),
+          const SizedBox(height: 72),
+          Text(
+            'Analyzing your balance...',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 330,
+            child: Text(
+              'Vizor is finding a good balance of privacy, safety, and speed '
+              'for your migration.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationReviewContent extends StatelessWidget {
+  const _MigrationReviewContent({
+    required this.plan,
+    required this.stage,
+    required this.isStarting,
+    required this.onContinue,
+    this.error,
+  });
+
+  final rust_sync.OrchardMigrationPrivatePlan plan;
+  final _PrivateReviewStage stage;
+  final bool isStarting;
+  final VoidCallback onContinue;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = stage == _PrivateReviewStage.split
+        ? [for (final value in plan.targetValuesZatoshi) value]
+        : [
+            for (final transfer in plan.scheduledTransfers)
+              transfer.valueZatoshi,
+          ];
+    final rows = values.isEmpty
+        ? <BigInt>[plan.totalMigratableZatoshi]
+        : values;
     return SizedBox(
       key: const ValueKey('ironwood_migration_review_screen'),
       width: 420,
@@ -2314,63 +2318,538 @@ class _IronwoodMigrationPrivateReviewContentState
       child: Stack(
         children: [
           Positioned(
-            left: 29,
-            top: 32,
-            width: 362,
+            top: 46,
+            left: 12,
+            width: 396,
             child: Column(
               children: [
-                const AppIcon(AppIcons.shieldKeyhole, size: 18),
-                const SizedBox(height: 16),
                 Text(
-                  'Review Migration Plan',
-                  textAlign: TextAlign.center,
+                  stage == _PrivateReviewStage.split
+                      ? 'Review migration plan'
+                      : 'Review shuffle',
                   style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
+                    color: context.colors.text.accent,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '$amount ZEC',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
+                const SizedBox(height: 20),
+                _MigrationStepHeader(stage: stage),
               ],
             ),
           ),
-          Positioned(left: 12, top: 174, width: 396, child: content),
-          if (_startError != null)
+          Positioned(
+            left: 12,
+            top: 160,
+            width: 396,
+            height: 378,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 650),
+              switchInCurve: const Cubic(0.77, 0, 0.175, 1),
+              switchOutCurve: const Cubic(0.77, 0, 0.175, 1),
+              child: _MigrationBatchOverview(
+                key: ValueKey(stage),
+                values: rows,
+                totalZatoshi: plan.totalMigratableZatoshi,
+                feeZatoshi: plan.estimatedTotalFeeZatoshi,
+                completionLabel: _estimatedMigrationArrivalLabel(plan),
+              ),
+            ),
+          ),
+          if (error != null)
             Positioned(
-              left: 51,
-              top: 528,
-              width: 318,
+              left: 45,
+              top: 545,
+              width: 330,
               child: Text(
-                _startError!,
+                error!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
+                  color: context.colors.text.warning,
                 ),
               ),
             ),
           Positioned(
             left: 95,
-            top: 582,
+            top: 596,
             width: 230,
-            child: AppButton(
-              key: const ValueKey('ironwood_migration_authorize_start_button'),
-              onPressed: canStart ? () => _startMigration(plan) : null,
-              height: 44,
-              minWidth: 230,
-              expand: true,
-              constrainContent: true,
-              trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-              child: Text(
-                _isStarting ? 'Preparing...' : 'Authorize & Start',
+            child: Center(
+              child: AppButton(
+                key: ValueKey(
+                  stage == _PrivateReviewStage.split
+                      ? 'ironwood_migration_accept_split_button'
+                      : 'ironwood_migration_authorize_start_button',
+                ),
+                onPressed: isStarting ? null : onContinue,
+                height: 36,
+                minWidth: stage == _PrivateReviewStage.split ? 96 : 130,
+                expand: false,
+                child: SizedBox(
+                  width: stage == _PrivateReviewStage.split ? 64 : 98,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      isStarting
+                          ? 'Starting...'
+                          : stage == _PrivateReviewStage.split
+                          ? 'Next'
+                          : 'Start migration',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationStepHeader extends StatelessWidget {
+  const _MigrationStepHeader({required this.stage, this.migrating = false});
+
+  final _PrivateReviewStage stage;
+  final bool migrating;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MigrationStep(
+            label: 'Split',
+            complete: stage != _PrivateReviewStage.split,
+          ),
+          const _MigrationStepDivider(),
+          _MigrationStep(
+            label: 'Shuffle',
+            active: stage == _PrivateReviewStage.shuffle && !migrating,
+            complete: migrating,
+          ),
+          const _MigrationStepDivider(),
+          _MigrationStep(label: 'Migrate', active: migrating),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationStep extends StatelessWidget {
+  const _MigrationStep({
+    required this.label,
+    this.active = false,
+    this.complete = false,
+  });
+
+  final String label;
+  final bool active;
+  final bool complete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final foreground = active || complete
+        ? colors.text.accent
+        : colors.text.secondary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: ShapeDecoration(
+            color: active || complete
+                ? colors.background.inverse
+                : colors.background.raised,
+            shape: const OvalBorder(),
+          ),
+          alignment: Alignment.center,
+          child: complete
+              ? const AppIcon(AppIcons.check, size: 12, color: Colors.white)
+              : Text(
+                  label == 'Split'
+                      ? '1'
+                      : label == 'Shuffle'
+                      ? '2'
+                      : '3',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: active ? colors.icon.inverse : colors.text.secondary,
+                  ),
+                ),
+        ),
+        const SizedBox(width: 7),
+        Text(
+          label,
+          style: AppTypography.labelLarge.copyWith(color: foreground),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationStepDivider extends StatelessWidget {
+  const _MigrationStepDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: AppIcon(
+        AppIcons.chevronForward,
+        size: 14,
+        color: context.colors.icon.disabled,
+      ),
+    );
+  }
+}
+
+class _MigrationBatchOverview extends StatelessWidget {
+  const _MigrationBatchOverview({
+    super.key,
+    required this.values,
+    required this.totalZatoshi,
+    required this.feeZatoshi,
+    required this.completionLabel,
+    this.statuses = const [],
+    this.feeLabel,
+  });
+
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final BigInt feeZatoshi;
+  final String completionLabel;
+  final List<_MigrationBatchStatus> statuses;
+  final String? feeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'Migration',
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: values.length == 1
+                          ? '  1 batch'
+                          : '  ${values.length} batches',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${_formatMigrationTotal(totalZatoshi)} ZEC',
+              maxLines: 1,
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 13),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            height: 14,
+            child: Row(
+              children: [
+                for (var i = 0; i < values.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 2),
+                  Expanded(
+                    flex: _migrationSegmentFlex(values[i], totalZatoshi),
+                    child: SizedBox.expand(
+                      child: ColoredBox(
+                        color:
+                            i < statuses.length &&
+                                statuses[i] == _MigrationBatchStatus.needsInput
+                            ? const Color(0xFFB83AD9)
+                            : i < statuses.length &&
+                                  statuses[i] == _MigrationBatchStatus.scheduled
+                            ? const Color(0xFFBDE9D1)
+                            : GreenPrimitives.p500Light,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            itemCount: values.length,
+            itemBuilder: (context, index) => _MigrationBatchRow(
+              key: ValueKey('ironwood_migration_batch_$index'),
+              index: index,
+              value: values[index],
+              totalZatoshi: totalZatoshi,
+              status: index < statuses.length
+                  ? statuses[index]
+                  : _MigrationBatchStatus.none,
+            ),
+          ),
+        ),
+        Divider(height: 1, color: colors.border.subtle),
+        const SizedBox(height: 12),
+        _ReviewTextRow(label: 'Est. completion', value: completionLabel),
+        const SizedBox(height: 10),
+        _ReviewTextRow(
+          label: 'Fees (estimate)',
+          value: feeLabel ?? '~${_formatZecAmountCompact(feeZatoshi)} ZEC',
+        ),
+      ],
+    );
+  }
+}
+
+enum _MigrationBatchStatus { none, scheduled, migrating, complete, needsInput }
+
+class _MigrationBatchRow extends StatelessWidget {
+  const _MigrationBatchRow({
+    super.key,
+    required this.index,
+    required this.value,
+    required this.totalZatoshi,
+    required this.status,
+  });
+
+  final int index;
+  final BigInt value;
+  final BigInt totalZatoshi;
+  final _MigrationBatchStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final statusLabel = switch (status) {
+      _MigrationBatchStatus.none => null,
+      _MigrationBatchStatus.scheduled => 'Scheduled',
+      _MigrationBatchStatus.migrating => 'Migrating...',
+      _MigrationBatchStatus.complete => 'Completed',
+      _MigrationBatchStatus.needsInput => 'Needs input',
+    };
+    return SizedBox(
+      height: 40,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: colors.border.subtle)),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'Part ${index + 1}',
+              style: AppTypography.bodyMedium.copyWith(
+                color: status == _MigrationBatchStatus.scheduled
+                    ? colors.text.secondary
+                    : colors.text.accent,
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              width: statusLabel == null ? 150 : 108,
+              child: Text(
+                '${_formatZecAmountCompact(value)} ZEC '
+                '${_migrationPercentage(value, totalZatoshi)}',
+                textAlign: TextAlign.right,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: status == _MigrationBatchStatus.scheduled
+                      ? colors.text.secondary
+                      : colors.text.accent,
+                ),
+              ),
+            ),
+            if (statusLabel != null)
+              SizedBox(
+                width: 120,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (status == _MigrationBatchStatus.complete) ...[
+                      const AppIcon(AppIcons.checkCircle, size: 14),
+                      const SizedBox(width: 5),
+                    ],
+                    Flexible(
+                      child: Text(
+                        statusLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: status == _MigrationBatchStatus.needsInput
+                              ? const Color(0xFFB83AD9)
+                              : status == _MigrationBatchStatus.scheduled
+                              ? colors.text.secondary
+                              : colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    if (status == _MigrationBatchStatus.needsInput) ...[
+                      const SizedBox(width: 4),
+                      const AppIcon(AppIcons.chevronForward, size: 14),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+int _migrationSegmentFlex(BigInt value, BigInt total) {
+  if (total <= BigInt.zero) return 1;
+  final flex = ((value * BigInt.from(1000)) ~/ total).toInt();
+  return flex.clamp(1, 1000);
+}
+
+String _migrationPercentage(BigInt value, BigInt total) {
+  if (total <= BigInt.zero) return '';
+  final tenths = ((value * BigInt.from(1000)) ~/ total).toInt();
+  final whole = tenths ~/ 10;
+  final decimal = tenths % 10;
+  return decimal == 0 ? '$whole%' : '$whole.$decimal%';
+}
+
+String _formatMigrationTotal(BigInt zatoshi) {
+  final whole = zatoshi ~/ BigInt.from(100000000);
+  final hundredths =
+      (zatoshi.remainder(BigInt.from(100000000)) ~/ BigInt.from(1000000))
+          .toString()
+          .padLeft(2, '0');
+  return '$whole.$hundredths';
+}
+
+class _MigrationStatusContent extends StatelessWidget {
+  const _MigrationStatusContent({
+    required this.status,
+    required this.action,
+    required this.isAdvancing,
+    required this.onAction,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final _StatusAction action;
+  final bool isAdvancing;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    var values = [for (final value in status.targetValuesZatoshi) value];
+    if (values.isEmpty) values = [BigInt.zero];
+    final statuses = <_MigrationBatchStatus>[];
+    for (var i = 0; i < values.length; i++) {
+      if (i < status.confirmedTxCount) {
+        statuses.add(_MigrationBatchStatus.complete);
+      } else if (action == _StatusAction.needsInput &&
+          i == status.confirmedTxCount) {
+        statuses.add(_MigrationBatchStatus.needsInput);
+      } else if (i < status.broadcastedTxCount) {
+        statuses.add(_MigrationBatchStatus.migrating);
+      } else {
+        statuses.add(_MigrationBatchStatus.scheduled);
+      }
+    }
+    final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final buttonLabel = switch (action) {
+      _StatusAction.needsInput => 'Sign with Keystone',
+      _StatusAction.retry => 'Retry migration',
+      _ => 'Go home',
+    };
+    final actionRequiresContinuation =
+        action == _StatusAction.needsInput || action == _StatusAction.retry;
+
+    return SizedBox(
+      key: ValueKey('ironwood_migration_status_${status.phase}'),
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 46,
+            left: 12,
+            width: 396,
+            child: Column(
+              children: [
+                Text(
+                  'Migration in progress',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: context.colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const _MigrationStepHeader(
+                  stage: _PrivateReviewStage.shuffle,
+                  migrating: true,
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 160,
+            width: 396,
+            height: 378,
+            child: _MigrationBatchOverview(
+              values: values,
+              totalZatoshi: total,
+              feeZatoshi: BigInt.zero,
+              feeLabel: 'Shown before each send',
+              completionLabel:
+                  status.phase ==
+                      kIronwoodMigrationWaitingDenomConfirmationsPhase
+                  ? 'Preparing batches'
+                  : 'In progress',
+              statuses: statuses,
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: Center(
+              child: AppButton(
+                key: const ValueKey('ironwood_migration_status_action_button'),
+                onPressed: isAdvancing && actionRequiresContinuation
+                    ? null
+                    : actionRequiresContinuation
+                    ? onAction
+                    : () => context.go('/home'),
+                variant: actionRequiresContinuation
+                    ? AppButtonVariant.primary
+                    : AppButtonVariant.secondary,
+                height: 36,
+                minWidth: action == _StatusAction.needsInput ? 150 : 96,
+                expand: false,
+                child: SizedBox(
+                  width: action == _StatusAction.needsInput
+                      ? 118
+                      : action == _StatusAction.retry
+                      ? 92
+                      : 64,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(isAdvancing ? 'Updating...' : buttonLabel),
+                  ),
+                ),
               ),
             ),
           ),
@@ -2413,6 +2892,8 @@ String _privateMigrationContinueErrorMessage(Object error) {
   return "Couldn't continue migration. Try again.";
 }
 
+// Kept for the unavailable-state fallback used by older deep links.
+// ignore: unused_element
 class _PrivateReviewLoading extends StatelessWidget {
   const _PrivateReviewLoading();
 
@@ -2477,6 +2958,7 @@ class _PrivateReviewUnavailable extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PrivateReviewPlan extends StatelessWidget {
   const _PrivateReviewPlan({required this.plan});
 
@@ -2741,6 +3223,7 @@ class _ReviewTextRow extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PrivateDenominationWaitingStatusContent extends StatelessWidget {
   const _PrivateDenominationWaitingStatusContent({
     required this.status,
@@ -2836,6 +3319,7 @@ class _PrivateDenominationWaitingStatusContent extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PrivateMigrationTransferStatusContent extends StatelessWidget {
   const _PrivateMigrationTransferStatusContent({
     required this.status,
@@ -4065,7 +4549,7 @@ class _ProcessIconPainter extends CustomPainter {
   }
 }
 
-enum _MigrationMode { private, fast }
+enum _MigrationMode { private, fast, custom }
 
 class _MigrationOptionCard extends StatelessWidget {
   const _MigrationOptionCard({
@@ -4094,7 +4578,7 @@ class _MigrationOptionCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          height: 118,
+          height: 104,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colors.background.ground,
@@ -4112,7 +4596,7 @@ class _MigrationOptionCard extends StatelessWidget {
             child: Stack(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 16, 14),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -4143,7 +4627,7 @@ class _MigrationOptionCard extends StatelessWidget {
                                 ],
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 8),
                             Flexible(
                               child: Text(
                                 body,
@@ -4257,7 +4741,9 @@ class _RecommendedBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: GreenPrimitives.p500Light,
+        color: label == 'Advanced'
+            ? CrimsonPrimitives.p300Light
+            : GreenPrimitives.p500Light,
         shape: const StadiumBorder(),
       ),
       child: Padding(

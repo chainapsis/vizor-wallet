@@ -8,7 +8,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
-import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -76,10 +75,7 @@ void main() {
       );
       await dismissIronwoodAnnouncement(tester);
       await openPrivateMigrationReview(tester);
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_authorize_start_button'),
-      );
+      await startPrivateMigrationFromReview(tester);
       final accountUuid = await firstDesktopRegtestAccountUuid();
       await waitForDesktopRegtestMigrationStatus(
         tester,
@@ -129,9 +125,6 @@ void main() {
         description: 'migration denomination readiness',
         timeout: const Duration(minutes: 10),
       );
-      await container
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
       final scheduled = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,

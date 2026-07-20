@@ -163,13 +163,18 @@ void main() {
         ironwoodMigrationPrivatePlanProvider.future,
       );
       expect(approvedPlan, isNotNull);
-      await tapAppWidget(
+      await tapAppButton(
         tester,
-        const ValueKey('ironwood_migration_schedule_view'),
+        const ValueKey('ironwood_migration_accept_split_button'),
       );
-      expect(
-        find.byKey(const ValueKey('ironwood_migration_schedule_list')),
-        findsOneWidget,
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(
+            const ValueKey('ironwood_migration_authorize_start_button'),
+          ),
+        ),
+        description: 'shuffled migration review',
       );
       final displayedSchedule = <rust_sync.MigrationScheduledTransfer>[];
       for (
@@ -177,9 +182,7 @@ void main() {
         index < approvedPlan!.scheduledTransfers.length;
         index++
       ) {
-        final row = find.byKey(
-          ValueKey('ironwood_migration_schedule_batch_$index'),
-        );
+        final row = find.byKey(ValueKey('ironwood_migration_batch_$index'));
         final texts = tester
             .widgetList<Text>(
               find.descendant(of: row, matching: find.byType(Text)),
@@ -187,12 +190,13 @@ void main() {
             .map((text) => text.data)
             .whereType<String>()
             .toList();
-        displayedSchedule.add(_parseDisplayedScheduleTransfer(texts.last));
+        displayedSchedule.add(
+          rust_sync.MigrationScheduledTransfer(
+            valueZatoshi: _parseDisplayedMigrationValue(texts.last),
+            blockOffset: approvedPlan.scheduledTransfers[index].blockOffset,
+          ),
+        );
       }
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_schedule_close'),
-      );
       await tapAppButton(
         tester,
         const ValueKey('ironwood_migration_authorize_start_button'),
@@ -241,33 +245,23 @@ void main() {
       );
       final resumed = await _migrationStatus(accountUuid);
       expect(resumed.activeRunId, started.activeRunId);
+      await tapAppButton(
+        tester,
+        const ValueKey('ironwood_migration_status_action_button'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+        ),
+        description: 'home while migration continues',
+      );
 
       e2eLog('confirming denomination split');
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
         payload: const {'blocks': 12},
-      );
-
-      await waitForDesktopRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) => status.phase == kIronwoodMigrationReadyToMigratePhase,
-        description: 'migration denomination readiness',
-        timeout: const Duration(minutes: 5),
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey('ironwood_migration_status_ready_to_migrate'),
-          ),
-        ),
-        description: 'migration ready status UI',
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_status_action_button'),
       );
 
       final scheduled = await waitForDesktopRegtestMigrationStatus(
@@ -311,16 +305,13 @@ void main() {
         '/mine',
         payload: const {'blocks': 10},
       );
-      await pumpUntil(
+      final complete = await waitForDesktopRegtestMigrationStatus(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_status_complete')),
-        ),
+        accountUuid,
+        (status) => status.phase == kIronwoodMigrationCompletePhase,
         description: 'completed migration status',
         timeout: const Duration(minutes: 5),
       );
-
-      final complete = await _migrationStatus(accountUuid);
       expect(complete.phase, 'complete');
       expect(complete.confirmedTxCount, complete.totalCount);
 
@@ -337,15 +328,17 @@ void main() {
         approvedPlan.orchardChangeZatoshi ?? BigInt.zero,
       );
 
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_status_action_button'),
-      );
       await pumpUntil(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
-        ),
+        () =>
+            tester.any(
+              find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+            ) &&
+            !tester.any(
+              find.byKey(
+                const ValueKey('home_desktop_ironwood_migration_cta_button'),
+              ),
+            ),
         description: 'home after completed migration',
       );
       expect(
@@ -359,22 +352,14 @@ void main() {
   );
 }
 
-rust_sync.MigrationScheduledTransfer _parseDisplayedScheduleTransfer(
-  String value,
-) {
-  final match = RegExp(
-    r'^(\d+)(?:\.(\d+))? ZEC\s+·\s+\+(\d+) blocks$',
-  ).firstMatch(value);
+BigInt _parseDisplayedMigrationValue(String value) {
+  final match = RegExp(r'^(\d+)(?:\.(\d+))? ZEC\b').firstMatch(value);
   if (match == null) {
-    throw StateError('Unexpected migration schedule row: $value');
+    throw StateError('Unexpected migration batch row: $value');
   }
   final fractional = (match.group(2) ?? '').padRight(8, '0');
-  return rust_sync.MigrationScheduledTransfer(
-    valueZatoshi:
-        BigInt.parse(match.group(1)!) * BigInt.from(100000000) +
-        BigInt.parse(fractional.isEmpty ? '0' : fractional),
-    blockOffset: int.parse(match.group(3)!),
-  );
+  return BigInt.parse(match.group(1)!) * BigInt.from(100000000) +
+      BigInt.parse(fractional.isEmpty ? '0' : fractional);
 }
 
 Future<String> _firstAccountUuid() async {
