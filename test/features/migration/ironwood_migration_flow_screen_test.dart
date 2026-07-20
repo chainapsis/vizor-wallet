@@ -94,6 +94,55 @@ void main() {
     expect(find.text('Next'), findsOneWidget);
   });
 
+  testWidgets('private review keeps analyzing visible for minimum duration', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        analyzingMinimumDuration: const Duration(seconds: 6),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Analyzing your balance...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Finding private batches...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Preparing your migration plan...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1199));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsNothing,
+    );
+    expect(find.text('Review migration plan'), findsOneWidget);
+  });
+
   testWidgets('private review shows plan without preparing a transaction', (
     tester,
   ) async {
@@ -1121,6 +1170,7 @@ Widget _migrationOptionsHarness({
   OrchardMigrationStatusGetter? statusGetter,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
+  Duration analyzingMinimumDuration = Duration.zero,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -1198,6 +1248,9 @@ Widget _migrationOptionsHarness({
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodMigrationAnalyzingMinimumDurationProvider.overrideWithValue(
+        analyzingMinimumDuration,
+      ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _ScreenTestMigrationCoordinator(
           migrationService,

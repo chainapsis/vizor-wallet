@@ -45,6 +45,7 @@ enum IronwoodMigrationFlowStep { intro, howItWorks, options, review }
 enum IronwoodMigrationReviewPreviewStage { split, shuffle, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
+const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
@@ -54,6 +55,10 @@ const _ironwoodMigrationIntroBannerLightAsset =
     'assets/illustrations/ironwood_migration_intro_banner_light.png';
 const _ironwoodMigrationIntroBannerDarkAsset =
     'assets/illustrations/ironwood_migration_intro_banner_dark.png';
+
+final ironwoodMigrationAnalyzingMinimumDurationProvider = Provider<Duration>(
+  (_) => _defaultMigrationAnalyzingMinimumDuration,
+);
 
 class IronwoodMigrationFlowData {
   const IronwoodMigrationFlowData({
@@ -2095,11 +2100,23 @@ class _IronwoodMigrationPrivateReviewContentState
   bool _isStarting = false;
   String? _startError;
   late _PrivateReviewStage _stage;
+  late final Future<void> _minimumAnalyzingDelay;
 
   @override
   void initState() {
     super.initState();
     _stage = widget.initialStage;
+    _minimumAnalyzingDelay = widget.forceAnalyzing
+        ? Future<void>.value()
+        : _createMinimumAnalyzingDelay();
+  }
+
+  Future<void> _createMinimumAnalyzingDelay() {
+    final duration = ref.read(
+      ironwoodMigrationAnalyzingMinimumDurationProvider,
+    );
+    if (duration <= Duration.zero) return Future<void>.value();
+    return Future<void>.delayed(duration);
   }
 
   Future<void> _startMigration(
@@ -2210,30 +2227,38 @@ class _IronwoodMigrationPrivateReviewContentState
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
     if (planAsync.isLoading) return const _MigrationAnalyzingContent();
-    if (planAsync.hasError || plan == null) {
-      return const SizedBox(
-        width: 420,
-        height: 656,
-        child: Center(
-          child: _PrivateReviewUnavailable(
-            title: "Couldn't analyze this balance",
-            body: 'Wait for sync to finish, then try again.',
-          ),
-        ),
-      );
-    }
-
-    return _MigrationReviewContent(
-      plan: plan,
-      stage: _stage,
-      isStarting: _isStarting,
-      error: _startError,
-      onContinue: () {
-        if (_stage == _PrivateReviewStage.split) {
-          setState(() => _stage = _PrivateReviewStage.shuffle);
-        } else {
-          unawaited(_startMigration(plan));
+    return FutureBuilder<void>(
+      future: _minimumAnalyzingDelay,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _MigrationAnalyzingContent();
         }
+        if (planAsync.hasError || plan == null) {
+          return const SizedBox(
+            width: 420,
+            height: 656,
+            child: Center(
+              child: _PrivateReviewUnavailable(
+                title: "Couldn't analyze this balance",
+                body: 'Wait for sync to finish, then try again.',
+              ),
+            ),
+          );
+        }
+
+        return _MigrationReviewContent(
+          plan: plan,
+          stage: _stage,
+          isStarting: _isStarting,
+          error: _startError,
+          onContinue: () {
+            if (_stage == _PrivateReviewStage.split) {
+              setState(() => _stage = _PrivateReviewStage.shuffle);
+            } else {
+              unawaited(_startMigration(plan));
+            }
+          },
+        );
       },
     );
   }
@@ -2241,51 +2266,257 @@ class _IronwoodMigrationPrivateReviewContentState
 
 enum _PrivateReviewStage { split, shuffle }
 
-class _MigrationAnalyzingContent extends StatelessWidget {
+class _MigrationAnalyzingContent extends StatefulWidget {
   const _MigrationAnalyzingContent();
+
+  @override
+  State<_MigrationAnalyzingContent> createState() =>
+      _MigrationAnalyzingContentState();
+}
+
+class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
+    with SingleTickerProviderStateMixin {
+  static const _messages = [
+    'Analyzing your balance...',
+    'Finding private batches...',
+    'Preparing your migration plan...',
+  ];
+  static const _messageInterval = Duration(seconds: 2);
+  static const _switchDuration = Duration(milliseconds: 320);
+
+  late final AnimationController _shimmer = AnimationController(
+    vsync: this,
+    duration: _MigrationAnalyzingMotion.period,
+  );
+  Timer? _messageTimer;
+  var _messageIndex = 0;
+
+  bool get _shouldAnimate =>
+      !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer.value = 0.5;
+    _messageTimer = Timer.periodic(_messageInterval, (_) {
+      setState(() {
+        _messageIndex = (_messageIndex + 1) % _messages.length;
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    if (_shouldAnimate) {
+      if (!_shimmer.isAnimating) _shimmer.repeat();
+    } else {
+      _shimmer
+        ..stop()
+        ..value = 0.5;
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageTimer?.cancel();
+    _shimmer.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final title = _messages[_messageIndex];
     return SizedBox(
       key: const ValueKey('ironwood_migration_analyzing_screen'),
       width: 420,
       height: 656,
       child: Column(
         children: [
-          const SizedBox(height: 194),
-          SizedBox(
-            width: 170,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                minHeight: 12,
-                backgroundColor: colors.background.raised,
-                color: colors.background.inverse,
-              ),
-            ),
-          ),
+          const SizedBox(height: 178),
+          const _MigrationAnalyzingProgressBar(),
           const SizedBox(height: 72),
-          Text(
-            'Analyzing your balance...',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.text.accent,
-            ),
+          AnimatedBuilder(
+            animation: _shimmer,
+            builder: (context, _) {
+              return AnimatedSwitcher(
+                duration: _shouldAnimate ? _switchDuration : Duration.zero,
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) =>
+                    FadeTransition(opacity: animation, child: child),
+                child: _MigrationAnalyzingShimmerText(
+                  key: ValueKey(title),
+                  label: title,
+                  baseColor: colors.text.muted,
+                  highlightColor: colors.text.accent,
+                  progress: _shimmer.value,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 16),
           SizedBox(
-            width: 330,
+            width: 298,
             child: Text(
-              'Vizor is finding a good balance of privacy, safety, and speed '
-              'for your migration.',
+              'Vizor is working hard to find a perfect balance of safety, '
+              'privacy, and speed for your migration',
               textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.primary,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MigrationAnalyzingProgressBar extends StatefulWidget {
+  const _MigrationAnalyzingProgressBar();
+
+  @override
+  State<_MigrationAnalyzingProgressBar> createState() =>
+      _MigrationAnalyzingProgressBarState();
+}
+
+class _MigrationAnalyzingProgressBarState
+    extends State<_MigrationAnalyzingProgressBar>
+    with SingleTickerProviderStateMixin {
+  static const _barWidth = 196.0;
+  static const _segmentWidth = 72.0;
+  static const _initialProgress = _segmentWidth / (_barWidth + _segmentWidth);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+
+  bool get _shouldAnimate =>
+      !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.value = _initialProgress;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_shouldAnimate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      _controller
+        ..stop()
+        ..value = _initialProgress;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: _barWidth,
+      height: 12,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: colors.background.overlay),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final progress = _shouldAnimate
+                  ? _controller.value
+                  : _initialProgress;
+              final left =
+                  -_segmentWidth + progress * (_barWidth + _segmentWidth);
+              return Stack(
+                children: [
+                  Positioned(
+                    left: left,
+                    top: 0,
+                    bottom: 0,
+                    width: _segmentWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.background.inverse,
+                        borderRadius: BorderRadius.circular(AppRadii.full),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+abstract final class _MigrationAnalyzingMotion {
+  static const period = Duration(milliseconds: 1400);
+  static const _bandHalf = 0.18;
+}
+
+class _MigrationAnalyzingShimmerText extends StatelessWidget {
+  const _MigrationAnalyzingShimmerText({
+    required this.label,
+    required this.baseColor,
+    required this.highlightColor,
+    required this.progress,
+    super.key,
+  });
+
+  final String label;
+  final Color baseColor;
+  final Color highlightColor;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) {
+        final shift = (progress * 2 - 1) * bounds.width;
+        final rect = Rect.fromLTWH(
+          bounds.left + shift,
+          bounds.top,
+          bounds.width,
+          bounds.height,
+        );
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [baseColor, highlightColor, highlightColor, baseColor],
+          stops: const [
+            0.5 - _MigrationAnalyzingMotion._bandHalf,
+            0.5 - _MigrationAnalyzingMotion._bandHalf / 4,
+            0.5 + _MigrationAnalyzingMotion._bandHalf / 4,
+            0.5 + _MigrationAnalyzingMotion._bandHalf,
+          ],
+          tileMode: TileMode.clamp,
+        ).createShader(rect);
+      },
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: AppTypography.headlineSmall.copyWith(
+          color: const Color(0xFFFFFFFF),
+        ),
       ),
     );
   }

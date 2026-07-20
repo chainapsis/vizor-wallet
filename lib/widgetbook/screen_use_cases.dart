@@ -949,6 +949,9 @@ Widget _buildIronwoodMigrationUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodMigrationAnalyzingMinimumDurationProvider.overrideWithValue(
+        Duration.zero,
+      ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _PreviewMigrationCoordinator(
           accountUuid: accountState.activeAccountUuid,
