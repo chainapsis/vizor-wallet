@@ -875,6 +875,9 @@ Widget _sidebarHarness(
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        ironwoodHomeMigrationCtaState,
+      ),
       ironwoodPostMigrationStateProvider.overrideWith((ref) async {
         return ironwoodPostMigrationState;
       }),

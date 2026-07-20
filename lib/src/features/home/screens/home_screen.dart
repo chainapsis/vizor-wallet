@@ -276,9 +276,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !hasActivitySyncData &&
         sync.failure == null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
-    final ironwoodHomeMigrationCta =
-        ref.watch(ironwoodHomeMigrationCtaProvider).value ??
-        const IronwoodHomeMigrationCtaState.hidden();
+    final ironwoodHomeMigrationCta = ref.watch(
+      ironwoodHomeMigrationPresentationProvider,
+    );
     final isMigrationRequired =
         ironwoodHomeMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final isMigrationInProgress =

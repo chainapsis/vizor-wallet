@@ -429,6 +429,175 @@ void main() {
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
 
+  test(
+    'home presentation keeps a confirmed required state while sync runs',
+    () async {
+      final container = _container(ironwoodActiveAtTip: true);
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      final initial = container.read(ironwoodHomeMigrationPresentationProvider);
+      expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(_syncingReadyState());
+      await container.pump();
+
+      final fresh = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final presentation = container.read(
+        ironwoodHomeMigrationPresentationProvider,
+      );
+      expect(fresh.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(presentation.mode, IronwoodHomeMigrationCtaMode.start);
+      expect(presentation.accountUuid, _accountUuid);
+      expect(presentation.network, 'main');
+    },
+  );
+
+  test(
+    'home presentation keeps a confirmed required state until sync completes',
+    () async {
+      var phase = kIronwoodMigrationReadyPhase;
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        getMigrationStatus:
+            ({required dbPath, required network, required accountUuid}) async {
+              return _migrationStatus(phase);
+            },
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      final initial = container.read(ironwoodHomeMigrationPresentationProvider);
+      expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+
+      phase = kIronwoodMigrationNoOrchardFundsPhase;
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: false,
+          percentage: 0.99,
+          displayPercentage: 0.99,
+          scannedHeight: 3_499_990,
+          chainTipHeight: 3_500_000,
+          totalBalance: BigInt.zero,
+          phase: 'scan',
+        ),
+      );
+      await container.pump();
+      await container.read(ironwoodPostMigrationStateProvider.future);
+
+      final duringIncompleteSync = container.read(
+        ironwoodHomeMigrationPresentationProvider,
+      );
+      expect(duringIncompleteSync.mode, IronwoodHomeMigrationCtaMode.start);
+
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          totalBalance: BigInt.zero,
+        ),
+      );
+      await container.pump();
+      await container.read(ironwoodPostMigrationStateProvider.future);
+
+      final afterCompletedSync = container.read(
+        ironwoodHomeMigrationPresentationProvider,
+      );
+      expect(afterCompletedSync.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
+    'home presentation clears cached state after settled completion',
+    () async {
+      var phase = kIronwoodMigrationReadyPhase;
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        getMigrationStatus:
+            ({required dbPath, required network, required accountUuid}) async {
+              return _migrationStatus(phase);
+            },
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      final initial = container.read(ironwoodHomeMigrationPresentationProvider);
+      expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+
+      phase = kIronwoodMigrationCompletePhase;
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      await container.pump();
+      await container.read(ironwoodPostMigrationStateProvider.future);
+
+      final presentation = container.read(
+        ironwoodHomeMigrationPresentationProvider,
+      );
+      expect(presentation.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test('home presentation cache is scoped to account and network', () async {
+    const secondAccountUuid = '550e8400-e29b-41d4-a716-446655440001';
+    var inputs = _migrationInputs(accountUuid: _accountUuid);
+    var postState = IronwoodPostMigrationState.required(
+      network: 'main',
+      accountUuid: _accountUuid,
+      status: _migrationStatus(kIronwoodMigrationReadyPhase),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        ironwoodMigrationInputsProvider.overrideWith((ref) => inputs),
+        ironwoodPostMigrationStateProvider.overrideWith((ref) async {
+          return postState;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(ironwoodPostMigrationStateProvider.future);
+    final initial = container.read(ironwoodHomeMigrationPresentationProvider);
+    expect(initial.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(initial.accountUuid, _accountUuid);
+
+    inputs = _migrationInputs(accountUuid: secondAccountUuid, isSyncing: true);
+    postState = const IronwoodPostMigrationState.unavailable();
+    container.invalidate(ironwoodMigrationInputsProvider);
+    container.invalidate(ironwoodPostMigrationStateProvider);
+    await container.pump();
+
+    final changedAccount = container.read(
+      ironwoodHomeMigrationPresentationProvider,
+    );
+    expect(changedAccount.mode, IronwoodHomeMigrationCtaMode.hidden);
+  });
+
   test('migration flow stays unavailable during sync', () async {
     final migrationStatusCalls = <String>[];
     final syncState = _syncingReadyState();
@@ -651,6 +820,28 @@ SyncState _syncingReadyState() {
     spendableBalance: BigInt.from(1_000_000),
     totalBalance: BigInt.from(1_000_000),
     phase: 'scan',
+  );
+}
+
+IronwoodMigrationInputs _migrationInputs({
+  required String accountUuid,
+  bool isSyncing = false,
+}) {
+  return IronwoodMigrationInputs(
+    ironwoodActiveAtTip: true,
+    network: 'main',
+    accountUuid: accountUuid,
+    accountName: 'Account 1',
+    profilePictureId: '1',
+    hasAccountScopedData: true,
+    isSyncing: isSyncing,
+    isBackgroundMode: false,
+    isSyncComplete: !isSyncing,
+    hasSyncFailure: false,
+    orchardBalance: BigInt.from(1_000_000),
+    orchardPendingBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
   );
 }
 

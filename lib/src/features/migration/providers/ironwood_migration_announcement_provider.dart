@@ -100,6 +100,7 @@ class IronwoodMigrationInputs {
     required this.hasAccountScopedData,
     required this.isSyncing,
     required this.isBackgroundMode,
+    required this.isSyncComplete,
     required this.hasSyncFailure,
     required this.orchardBalance,
     required this.orchardPendingBalance,
@@ -115,6 +116,7 @@ class IronwoodMigrationInputs {
   final bool hasAccountScopedData;
   final bool isSyncing;
   final bool isBackgroundMode;
+  final bool isSyncComplete;
   final bool hasSyncFailure;
   final BigInt orchardBalance;
   final BigInt orchardPendingBalance;
@@ -146,6 +148,7 @@ class IronwoodMigrationInputs {
             other.hasAccountScopedData == hasAccountScopedData &&
             other.isSyncing == isSyncing &&
             other.isBackgroundMode == isBackgroundMode &&
+            other.isSyncComplete == isSyncComplete &&
             other.hasSyncFailure == hasSyncFailure &&
             other.orchardBalance == orchardBalance &&
             other.orchardPendingBalance == orchardPendingBalance &&
@@ -163,6 +166,7 @@ class IronwoodMigrationInputs {
     hasAccountScopedData,
     isSyncing,
     isBackgroundMode,
+    isSyncComplete,
     hasSyncFailure,
     orchardBalance,
     orchardPendingBalance,
@@ -200,6 +204,7 @@ class _IronwoodMigrationSyncInputs {
     required this.hasAccountScopedData,
     required this.isSyncing,
     required this.isBackgroundMode,
+    required this.isSyncComplete,
     required this.hasSyncFailure,
     required this.orchardBalance,
     required this.orchardPendingBalance,
@@ -210,6 +215,7 @@ class _IronwoodMigrationSyncInputs {
   final bool hasAccountScopedData;
   final bool isSyncing;
   final bool isBackgroundMode;
+  final bool isSyncComplete;
   final bool hasSyncFailure;
   final BigInt orchardBalance;
   final BigInt orchardPendingBalance;
@@ -223,6 +229,7 @@ class _IronwoodMigrationSyncInputs {
             other.hasAccountScopedData == hasAccountScopedData &&
             other.isSyncing == isSyncing &&
             other.isBackgroundMode == isBackgroundMode &&
+            other.isSyncComplete == isSyncComplete &&
             other.hasSyncFailure == hasSyncFailure &&
             other.orchardBalance == orchardBalance &&
             other.orchardPendingBalance == orchardPendingBalance &&
@@ -235,6 +242,7 @@ class _IronwoodMigrationSyncInputs {
     hasAccountScopedData,
     isSyncing,
     isBackgroundMode,
+    isSyncComplete,
     hasSyncFailure,
     orchardBalance,
     orchardPendingBalance,
@@ -456,6 +464,7 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
         hasAccountScopedData: scoped.hasAccountScopedData,
         isSyncing: scoped.isSyncing,
         isBackgroundMode: scoped.isBackgroundMode,
+        isSyncComplete: scoped.isSyncComplete,
         hasSyncFailure: scoped.failure != null || scoped.error != null,
         orchardBalance: scoped.orchardBalance,
         orchardPendingBalance: scoped.orchardPendingBalance,
@@ -482,6 +491,7 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
     hasAccountScopedData: sync.hasAccountScopedData,
     isSyncing: sync.isSyncing,
     isBackgroundMode: sync.isBackgroundMode,
+    isSyncComplete: sync.isSyncComplete,
     hasSyncFailure: sync.hasSyncFailure,
     orchardBalance: sync.orchardBalance,
     orchardPendingBalance: sync.orchardPendingBalance,
@@ -504,6 +514,7 @@ final ironwoodMigrationStatusProvider =
             hasAccountScopedData: scoped.hasAccountScopedData,
             isSyncing: scoped.isSyncing,
             isBackgroundMode: scoped.isBackgroundMode,
+            isSyncComplete: scoped.isSyncComplete,
             hasSyncFailure: scoped.failure != null || scoped.error != null,
             orchardBalance: scoped.orchardBalance,
             orchardPendingBalance: scoped.orchardPendingBalance,
@@ -583,32 +594,48 @@ final ironwoodHomeMigrationCtaProvider =
         ref,
         inputs,
       );
-      final network = postMigrationState.network;
-      final accountUuid = postMigrationState.accountUuid;
-      if (network == null || accountUuid == null) {
-        return const IronwoodHomeMigrationCtaState.hidden();
+      return _homeMigrationCtaForPostMigrationState(postMigrationState);
+    });
+
+final _ironwoodHomeMigrationPresentationCacheProvider =
+    Provider<_IronwoodHomeMigrationPresentationCache>(
+      (_) => _IronwoodHomeMigrationPresentationCache(),
+    );
+
+/// Stable Home/sidebar presentation state.
+///
+/// The fresh CTA intentionally hides new migration requirements while sync is
+/// running, because a rescan can temporarily make spent Orchard notes appear
+/// spendable. The Home UI should not flicker back to the normal balance card
+/// after a requirement or active run has already been confirmed, so this
+/// provider keeps the last visible CTA for the same network/account until a
+/// completed, account-scoped sync state says migration is no longer needed.
+final ironwoodHomeMigrationPresentationProvider =
+    Provider<IronwoodHomeMigrationCtaState>((ref) {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      final postMigrationAsync = ref.watch(ironwoodPostMigrationStateProvider);
+      final postMigrationState = postMigrationAsync.value;
+      final current = postMigrationState == null
+          ? const IronwoodHomeMigrationCtaState.hidden()
+          : _homeMigrationCtaForPostMigrationState(postMigrationState);
+      final cache = ref.watch(_ironwoodHomeMigrationPresentationCacheProvider);
+
+      if (current.visible && _ctaMatchesInputs(current, inputs)) {
+        cache.lastVisible = current;
+        return current;
       }
 
-      if (postMigrationState.mode == IronwoodPostMigrationMode.inProgress) {
-        final status = postMigrationState.status;
-        if (status == null) {
-          return const IronwoodHomeMigrationCtaState.hidden();
-        }
-        return IronwoodHomeMigrationCtaState.resume(
-          network: network,
-          accountUuid: accountUuid,
-          status: status,
-        );
+      final cached = cache.lastVisible;
+      if (cached != null &&
+          _ctaMatchesInputs(cached, inputs) &&
+          _shouldPreserveHomeMigrationPresentation(
+            inputs,
+            postMigrationState,
+          )) {
+        return cached;
       }
 
-      if (postMigrationState.mode == IronwoodPostMigrationMode.required) {
-        return IronwoodHomeMigrationCtaState.start(
-          network: network,
-          accountUuid: accountUuid,
-          status: postMigrationState.status,
-        );
-      }
-
+      cache.lastVisible = null;
       return const IronwoodHomeMigrationCtaState.hidden();
     });
 
@@ -665,6 +692,66 @@ final ironwoodMigrationRouteCtaProvider =
 
       return const IronwoodHomeMigrationCtaState.hidden();
     });
+
+class _IronwoodHomeMigrationPresentationCache {
+  IronwoodHomeMigrationCtaState? lastVisible;
+}
+
+IronwoodHomeMigrationCtaState _homeMigrationCtaForPostMigrationState(
+  IronwoodPostMigrationState postMigrationState,
+) {
+  final network = postMigrationState.network;
+  final accountUuid = postMigrationState.accountUuid;
+  if (network == null || accountUuid == null) {
+    return const IronwoodHomeMigrationCtaState.hidden();
+  }
+
+  if (postMigrationState.mode == IronwoodPostMigrationMode.inProgress) {
+    final status = postMigrationState.status;
+    if (status == null) {
+      return const IronwoodHomeMigrationCtaState.hidden();
+    }
+    return IronwoodHomeMigrationCtaState.resume(
+      network: network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
+  if (postMigrationState.mode == IronwoodPostMigrationMode.required) {
+    return IronwoodHomeMigrationCtaState.start(
+      network: network,
+      accountUuid: accountUuid,
+      status: postMigrationState.status,
+    );
+  }
+
+  return const IronwoodHomeMigrationCtaState.hidden();
+}
+
+bool _ctaMatchesInputs(
+  IronwoodHomeMigrationCtaState cta,
+  IronwoodMigrationInputs inputs,
+) {
+  return cta.network == inputs.network && cta.accountUuid == inputs.accountUuid;
+}
+
+bool _shouldPreserveHomeMigrationPresentation(
+  IronwoodMigrationInputs inputs,
+  IronwoodPostMigrationState? postMigrationState,
+) {
+  if (!inputs.ironwoodActiveAtTip || inputs.accountUuid == null) {
+    return false;
+  }
+
+  return postMigrationState == null ||
+      inputs.isSyncing ||
+      inputs.isBackgroundMode ||
+      inputs.hasSyncFailure ||
+      !inputs.hasAccountScopedData ||
+      !inputs.isSyncComplete ||
+      postMigrationState.mode == IronwoodPostMigrationMode.unavailable;
+}
 
 Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
   Ref ref,

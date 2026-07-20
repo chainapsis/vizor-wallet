@@ -302,6 +302,9 @@ Widget _appHarness(
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) {
         return ironwoodHomeMigrationCtaState;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        ironwoodHomeMigrationCtaState,
+      ),
       ironwoodMigrationRouteCtaProvider.overrideWith((ref) {
         return ironwoodHomeMigrationCtaState;
       }),

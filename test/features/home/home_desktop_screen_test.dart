@@ -1185,6 +1185,9 @@ Widget _appHarness(
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        ironwoodHomeMigrationCtaState,
+      ),
       if (migrationCoordinatorStatus != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(
           () => _FakeMigrationCoordinator(migrationCoordinatorStatus),

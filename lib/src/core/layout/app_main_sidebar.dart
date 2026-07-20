@@ -342,9 +342,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final ironwoodHomeMigrationPresentation = ref.watch(
+      ironwoodHomeMigrationPresentationProvider,
+    );
     final ironwoodMigrationNavigationLocked =
-        ref.watch(ironwoodPostMigrationStateProvider).value?.locksNavigation ??
-        false;
+        ironwoodHomeMigrationPresentation.visible ||
+        (ref.watch(ironwoodPostMigrationStateProvider).value?.locksNavigation ??
+            false);
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );
