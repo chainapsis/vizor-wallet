@@ -2748,31 +2748,30 @@ class _MigrationBatchOverview extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 13),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: SizedBox(
-            height: 14,
-            child: Row(
-              children: [
-                for (var i = 0; i < values.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 2),
-                  Expanded(
-                    flex: _migrationSegmentFlex(values[i], totalZatoshi),
-                    child: _MigrationProgressSegment(
+        SizedBox(
+          height: 12,
+          child: Row(
+            children: [
+              for (var i = 0; i < values.length; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                Expanded(
+                  flex: _migrationSegmentFlex(values[i], totalZatoshi),
+                  child: _MigrationProgressSegment(
+                    index: i,
+                    status: i < statuses.length
+                        ? statuses[i]
+                        : _MigrationBatchStatus.none,
+                    progress: _migrationSegmentProgress(
+                      values: values,
+                      totalZatoshi: totalZatoshi,
+                      statuses: statuses,
+                      progresses: progresses,
                       index: i,
-                      status: i < statuses.length
-                          ? statuses[i]
-                          : _MigrationBatchStatus.complete,
-                      progress: i < progresses.length
-                          ? progresses[i].clamp(0, 1).toDouble()
-                          : statuses.isEmpty
-                          ? 1
-                          : 0,
                     ),
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -2817,50 +2816,312 @@ class _MigrationProgressSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trackColor = status == _MigrationBatchStatus.needsInput
-        ? const Color(0xFFF3D8FA)
-        : const Color(0xFFE1F4EA);
-    final fillColor = status == _MigrationBatchStatus.needsInput
-        ? const Color(0xFFB83AD9)
-        : GreenPrimitives.p500Light;
     final effectiveProgress = status == _MigrationBatchStatus.complete
         ? 1.0
         : progress.clamp(0, 1).toDouble();
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(3),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(
-            key: ValueKey('ironwood_migration_segment_track_$index'),
-            color: trackColor,
-          ),
-          TweenAnimationBuilder<double>(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : const Duration(milliseconds: 450),
-            curve: Curves.easeOutCubic,
-            tween: Tween<double>(end: effectiveProgress),
-            builder: (context, widthFactor, child) {
-              return Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: widthFactor.clamp(0, 1).toDouble(),
-                  heightFactor: 1,
-                  child: child,
-                ),
-              );
-            },
-            child: ColoredBox(
-              key: ValueKey('ironwood_migration_segment_fill_$index'),
-              color: fillColor,
+    return TweenAnimationBuilder<double>(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+      tween: Tween<double>(end: effectiveProgress),
+      builder: (context, animatedProgress, child) {
+        final visibleProgress = _migrationSegmentVisibleProgress(
+          status,
+          animatedProgress,
+        );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            CustomPaint(
+              painter: _MigrationProgressSegmentPainter(
+                status: status,
+                progress: animatedProgress,
+                isDark: context.appTheme == AppThemeData.dark,
+              ),
             ),
-          ),
-        ],
-      ),
+            SizedBox.expand(
+              key: ValueKey('ironwood_migration_segment_track_$index'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: visibleProgress.clamp(0, 1).toDouble(),
+                heightFactor: 1,
+                child: SizedBox.expand(
+                  key: ValueKey('ironwood_migration_segment_fill_$index'),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
+}
+
+class _MigrationProgressSegmentPainter extends CustomPainter {
+  const _MigrationProgressSegmentPainter({
+    required this.status,
+    required this.progress,
+    required this.isDark,
+  });
+
+  static const _green = GreenPrimitives.p500Light;
+  static const _greenStripe = Color(0xFF008752);
+  static const _greenSoftFill = Color(0x400DC87D);
+  static const _purple = Color(0xFFB83AD9);
+  static const _purpleStripe = Color(0xFF8F25AB);
+  static const _strokeWidth = 1.5;
+
+  final _MigrationBatchStatus status;
+  final double progress;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final outlineRect = Offset.zero & size;
+    final borderRect = outlineRect.deflate(_strokeWidth / 2);
+    final radius = Radius.circular(size.height / 2);
+    final outline = RRect.fromRectAndRadius(outlineRect, radius);
+    final border = RRect.fromRectAndRadius(borderRect, radius);
+    final clipPath = Path()..addRRect(outline);
+    final borderPath = Path()..addRRect(border);
+
+    switch (status) {
+      case _MigrationBatchStatus.complete:
+        _drawFilledPill(canvas, outline, _green);
+        break;
+      case _MigrationBatchStatus.none:
+        _drawDashedBorder(canvas, borderPath, _green);
+        break;
+      case _MigrationBatchStatus.preparing:
+        _drawProgressFill(
+          canvas,
+          clipPath,
+          outlineRect,
+          progress,
+          fillColor: _green,
+        );
+        _drawDashedBorder(canvas, borderPath, _green);
+        break;
+      case _MigrationBatchStatus.scheduled:
+        _drawProgressFill(
+          canvas,
+          clipPath,
+          outlineRect,
+          progress,
+          fillColor: _greenSoftFill,
+          stripeColor: _scheduledStripeColor,
+        );
+        _drawDashedBorder(canvas, borderPath, _green);
+        break;
+      case _MigrationBatchStatus.migrating:
+      case _MigrationBatchStatus.confirming:
+        final solidProgress = math.min(
+          progress.clamp(0, 1).toDouble(),
+          _scheduledBlockProgressCap,
+        );
+        _drawProgressFill(
+          canvas,
+          clipPath,
+          outlineRect,
+          solidProgress,
+          fillColor: _green,
+        );
+        if (progress > _scheduledBlockProgressCap) {
+          _drawProgressFill(
+            canvas,
+            clipPath,
+            outlineRect,
+            progress,
+            startProgress: _scheduledBlockProgressCap,
+            fillColor: _activeStripeFillColor,
+            stripeColor: _activeStripeColor,
+          );
+        }
+        break;
+      case _MigrationBatchStatus.needsInput:
+        final solidProgress = math.min(
+          math.max(progress, 0.18).clamp(0, 1).toDouble(),
+          0.18,
+        );
+        _drawProgressFill(
+          canvas,
+          clipPath,
+          outlineRect,
+          solidProgress,
+          fillColor: _purple,
+        );
+        if (progress > 0.18) {
+          _drawProgressFill(
+            canvas,
+            clipPath,
+            outlineRect,
+            math.max(progress, 0.18),
+            startProgress: 0.18,
+            fillColor: _purple.withValues(alpha: 0.22),
+            stripeColor: _purpleStripe.withValues(alpha: 0.44),
+          );
+        }
+        break;
+    }
+  }
+
+  void _drawFilledPill(Canvas canvas, RRect rrect, Color color) {
+    canvas.drawRRect(rrect, Paint()..color = color);
+  }
+
+  Color get _activeStripeFillColor =>
+      isDark ? const Color(0x590DC87D) : _greenSoftFill;
+
+  Color get _activeStripeColor => isDark
+      ? _green.withValues(alpha: 0.42)
+      : _greenStripe.withValues(alpha: 0.48);
+
+  Color get _scheduledStripeColor => isDark
+      ? _green.withValues(alpha: 0.34)
+      : _greenStripe.withValues(alpha: 0.28);
+
+  void _drawProgressFill(
+    Canvas canvas,
+    Path clipPath,
+    Rect rect,
+    double progress, {
+    double startProgress = 0,
+    required Color fillColor,
+    Color? stripeColor,
+  }) {
+    final clampedStart = startProgress.clamp(0, 1).toDouble();
+    final clampedProgress = progress.clamp(0, 1).toDouble();
+    if (clampedProgress <= clampedStart) return;
+
+    final fillRect = Rect.fromLTWH(
+      rect.left + rect.width * clampedStart,
+      rect.top,
+      rect.width * (clampedProgress - clampedStart),
+      rect.height,
+    );
+
+    canvas.save();
+    canvas.clipPath(clipPath);
+    canvas.drawRect(fillRect, Paint()..color = fillColor);
+    if (stripeColor != null) {
+      _drawDiagonalStripes(canvas, fillRect, stripeColor);
+    }
+    canvas.restore();
+  }
+
+  void _drawDiagonalStripes(Canvas canvas, Rect rect, Color color) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    const spacing = 4.0;
+    final diagonal = rect.height * 1.45;
+    for (
+      var x = rect.left - diagonal;
+      x < rect.right + diagonal;
+      x += spacing
+    ) {
+      canvas.drawLine(
+        Offset(x, rect.bottom),
+        Offset(x + diagonal, rect.top),
+        paint,
+      );
+    }
+  }
+
+  void _drawDashedBorder(Canvas canvas, Path path, Color color) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = _strokeWidth
+      ..style = PaintingStyle.stroke;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      const dash = 3.5;
+      const gap = 2.5;
+      while (distance < metric.length) {
+        final next = math.min(distance + dash, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance = next + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationProgressSegmentPainter oldDelegate) {
+    return oldDelegate.status != status ||
+        oldDelegate.progress != progress ||
+        oldDelegate.isDark != isDark;
+  }
+}
+
+double _migrationSegmentProgress({
+  required List<BigInt> values,
+  required BigInt totalZatoshi,
+  required List<_MigrationBatchStatus> statuses,
+  required List<double> progresses,
+  required int index,
+}) {
+  if (index >= values.length) return 0;
+  if (statuses.isEmpty) return 0;
+  if (index >= statuses.length) return 0;
+
+  final status = statuses[index];
+  if (status == _MigrationBatchStatus.complete) return 1;
+
+  final rawProgress = index < progresses.length
+      ? progresses[index].clamp(0, 1).toDouble()
+      : 0.0;
+
+  final hasSharedPreparingProgress =
+      rawProgress > 0 &&
+      statuses.every((status) => status == _MigrationBatchStatus.preparing) &&
+      progresses.isNotEmpty;
+  if (!hasSharedPreparingProgress) return rawProgress;
+
+  return _distributedMigrationSegmentProgress(
+    values: values,
+    totalZatoshi: totalZatoshi,
+    progress: rawProgress,
+    index: index,
+  );
+}
+
+double _distributedMigrationSegmentProgress({
+  required List<BigInt> values,
+  required BigInt totalZatoshi,
+  required double progress,
+  required int index,
+}) {
+  if (totalZatoshi <= BigInt.zero) return progress;
+  var before = BigInt.zero;
+  for (var i = 0; i < index; i++) {
+    before += values[i];
+  }
+  final current = values[index];
+  if (current <= BigInt.zero) return 0;
+
+  final start = before / totalZatoshi;
+  final end = (before + current) / totalZatoshi;
+  if (end <= start) return progress;
+  return ((progress - start) / (end - start)).clamp(0, 1).toDouble();
+}
+
+double _migrationSegmentVisibleProgress(
+  _MigrationBatchStatus status,
+  double progress,
+) {
+  return switch (status) {
+    _MigrationBatchStatus.none => 0,
+    _MigrationBatchStatus.complete => 1,
+    _MigrationBatchStatus.needsInput => math.max(progress, 0.18),
+    _ => progress,
+  };
 }
 
 enum _MigrationBatchStatus {
