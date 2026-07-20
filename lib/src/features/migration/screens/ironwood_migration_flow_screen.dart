@@ -50,6 +50,10 @@ const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
     'Update Keystone firmware to sign Ironwood migrations, then try again.';
+const _ironwoodMigrationIntroBannerLightAsset =
+    'assets/illustrations/ironwood_migration_intro_banner_light.png';
+const _ironwoodMigrationIntroBannerDarkAsset =
+    'assets/illustrations/ironwood_migration_intro_banner_dark.png';
 
 class IronwoodMigrationFlowData {
   const IronwoodMigrationFlowData({
@@ -1315,6 +1319,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final amount = data.amountText;
+    final isDark = colors.background.window == AppColors.dark.background.window;
 
     return SizedBox(
       width: 420,
@@ -1335,7 +1340,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const _DarkBadge(label: 'Zcash Network Update'),
+                const _DarkBadge(label: 'Zcash Network Upgrade'),
                 const SizedBox(height: 24),
                 SvgPicture.asset(
                   'assets/illustrations/ironwood_wordmark.svg',
@@ -1350,9 +1355,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
                 SizedBox(
                   width: 352,
                   child: Text(
-                    'Ironwood is the latest Zcash shielded pool. '
-                    "It's the first formally verified pool with cutting "
-                    'edge cryptography.',
+                    'A new shielded pool for Zcash.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.accent,
@@ -1363,13 +1366,13 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
                 SizedBox(
                   width: 328,
                   child: Text(
-                    'There will be a one-time mandatory upgrade from '
-                    'the legacy (orchard) shielded pool. You need to '
-                    'transition your $amount ZEC from the old Orchard pool '
-                    'into the new Ironwood pool.',
+                    'Your $amount ZEC is currently in Orchard.\n'
+                    'To keep using these funds for shielded payments, '
+                    'you will need to move them to Ironwood. You will '
+                    'review the migration plan before any funds move.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
+                      color: isDark ? colors.text.muted : colors.text.primary,
                     ),
                   ),
                 ),
@@ -1384,10 +1387,13 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
               primaryKey: const ValueKey(
                 'ironwood_migration_intro_continue_button',
               ),
-              primaryLabel: 'How the Migration works',
+              primaryLabel: 'Next',
               onPrimary: () => context.go('/migration/how-it-works'),
-              secondaryLabel: 'Official Release Note',
+              secondaryLabel: 'Official Announcement',
               onSecondary: onOpenReleaseNotes,
+              secondaryLeading: const AppIcon(AppIcons.link, size: 16),
+              secondaryFirst: true,
+              spacing: 12,
             ),
           ),
         ],
@@ -4193,6 +4199,9 @@ class _FlowButtons extends StatelessWidget {
     required this.onPrimary,
     required this.secondaryLabel,
     required this.onSecondary,
+    this.secondaryLeading,
+    this.secondaryFirst = false,
+    this.spacing = 20,
   });
 
   final Key? primaryKey;
@@ -4200,41 +4209,39 @@ class _FlowButtons extends StatelessWidget {
   final VoidCallback onPrimary;
   final String secondaryLabel;
   final VoidCallback onSecondary;
+  final Widget? secondaryLeading;
+  final bool secondaryFirst;
+  final double spacing;
 
   @override
   Widget build(BuildContext context) {
+    final primaryButton = AppButton(
+      key: primaryKey,
+      onPressed: onPrimary,
+      height: 44,
+      minWidth: 230,
+      expand: true,
+      constrainContent: true,
+      trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+      child: Text(primaryLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+    final secondaryButton = AppButton(
+      onPressed: onSecondary,
+      variant: AppButtonVariant.ghost,
+      height: 36,
+      minWidth: 230,
+      expand: true,
+      constrainContent: true,
+      leading: secondaryLeading,
+      child: Text(secondaryLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+    final children = secondaryFirst
+        ? [secondaryButton, SizedBox(height: spacing), primaryButton]
+        : [primaryButton, SizedBox(height: spacing), secondaryButton];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppButton(
-          key: primaryKey,
-          onPressed: onPrimary,
-          height: 44,
-          minWidth: 230,
-          expand: true,
-          constrainContent: true,
-          trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-          child: Text(
-            primaryLabel,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(height: 20),
-        AppButton(
-          onPressed: onSecondary,
-          variant: AppButtonVariant.ghost,
-          height: 36,
-          minWidth: 230,
-          expand: true,
-          constrainContent: true,
-          child: Text(
-            secondaryLabel,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+      children: children,
     );
   }
 }
@@ -4249,10 +4256,12 @@ class _DarkBadge extends StatelessWidget {
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: context.colors.background.inverse,
-        shape: const StadiumBorder(),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Text(
           label,
           style: AppTypography.labelSmall.copyWith(
@@ -4273,13 +4282,25 @@ class _PoolMigrationHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    final isDark = colors.background.window == AppColors.dark.background.window;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(AppRadii.xLarge),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          const CustomPaint(painter: _PoolMigrationHeroPainter()),
+          ColoredBox(
+            color: colors.background.ground,
+            child: Image.asset(
+              isDark
+                  ? _ironwoodMigrationIntroBannerDarkAsset
+                  : _ironwoodMigrationIntroBannerLightAsset,
+              key: ValueKey(
+                'ironwood_migration_intro_banner_${isDark ? 'dark' : 'light'}',
+              ),
+              fit: BoxFit.cover,
+            ),
+          ),
           Positioned(
             left: 24,
             top: 24,
@@ -4289,7 +4310,7 @@ class _PoolMigrationHero extends StatelessWidget {
             ),
           ),
           Positioned(
-            right: 27,
+            right: 24,
             top: 24,
             child: AppProfilePicture(
               profilePictureId: data.profilePictureId,
@@ -4328,41 +4349,7 @@ class _PoolMigrationHero extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 159,
-            top: 95,
-            width: 100,
-            height: 30,
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                color: GreenPrimitives.p500Light,
-                shape: const StadiumBorder(),
-              ),
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const AppIcon(
-                        AppIcons.shieldKeyhole,
-                        size: 16,
-                        color: Color(0xFFEAFEEF),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Migration',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: const Color(0xFFEAFEEF),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 32,
+            right: 20,
             top: 136,
             width: 116,
             child: Column(
@@ -4371,7 +4358,7 @@ class _PoolMigrationHero extends StatelessWidget {
                 Text(
                   'Ironwood Pool',
                   style: AppTypography.bodyMediumStrong.copyWith(
-                    color: GreenPrimitives.p500Light,
+                    color: colors.text.positiveStrong,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -4387,108 +4374,6 @@ class _PoolMigrationHero extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _PoolMigrationHeroPainter extends CustomPainter {
-  const _PoolMigrationHeroPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final basePaint = Paint()..color = Colors.white;
-    canvas.drawRect(rect, basePaint);
-
-    final greenSoft = Paint()..color = const Color(0xFFE3FBEE);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.91, size.height * 0.50),
-        width: 168,
-        height: 270,
-      ),
-      greenSoft,
-    );
-    final greenSofter = Paint()..color = const Color(0xFFF0FFF6);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.99, size.height * 0.50),
-        width: 154,
-        height: 270,
-      ),
-      greenSofter,
-    );
-
-    final dashedPath = Path()
-      ..moveTo(size.width * 0.25, -16)
-      ..cubicTo(
-        size.width * 0.42,
-        size.height * 0.20,
-        size.width * 0.42,
-        size.height * 0.79,
-        size.width * 0.25,
-        size.height + 16,
-      );
-    _drawDashedPath(
-      canvas,
-      dashedPath,
-      Paint()
-        ..color = const Color(0xFFB8B8B8)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.4,
-      dashLength: 2.4,
-      gapLength: 4.2,
-    );
-
-    final linePaint = Paint()
-      ..color = const Color(0xFF9A9A9A)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(size.width * 0.355, size.height * 0.50),
-      Offset(size.width * 0.655, size.height * 0.50),
-      linePaint,
-    );
-
-    canvas.drawCircle(
-      Offset(size.width * 0.355, size.height * 0.50),
-      7,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.355, size.height * 0.50),
-      5,
-      Paint()..color = const Color(0xFFB8B8B8),
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.655, size.height * 0.50),
-      7,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.655, size.height * 0.50),
-      5,
-      Paint()..color = GreenPrimitives.p500Light,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _PoolMigrationHeroPainter oldDelegate) => false;
-}
-
-void _drawDashedPath(
-  Canvas canvas,
-  Path path,
-  Paint paint, {
-  required double dashLength,
-  required double gapLength,
-}) {
-  for (final metric in path.computeMetrics()) {
-    var distance = 0.0;
-    while (distance < metric.length) {
-      final next = math.min(distance + dashLength, metric.length);
-      canvas.drawPath(metric.extractPath(distance, next), paint);
-      distance = next + gapLength;
-    }
   }
 }
 

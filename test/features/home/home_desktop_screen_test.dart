@@ -415,7 +415,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
-    expect(find.text('Zcash Network Update'), findsOneWidget);
+    expect(find.text('Zcash Network Upgrade'), findsOneWidget);
   });
 
   testWidgets('home keeps Ironwood announcement visible during sync changes', (
