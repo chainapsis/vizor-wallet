@@ -598,7 +598,7 @@ void main() {
     expect(changedAccount.mode, IronwoodHomeMigrationCtaMode.hidden);
   });
 
-  test('migration flow stays unavailable during sync', () async {
+  test('migration flow data stays available during sync', () async {
     final migrationStatusCalls = <String>[];
     final syncState = _syncingReadyState();
     final container = _container(
@@ -609,20 +609,18 @@ void main() {
     addTearDown(container.dispose);
 
     await _settleCoreProviders(container);
-    final flowEvents = <AsyncValue<IronwoodMigrationFlowData?>>[];
-    final subscription = container
-        .listen<AsyncValue<IronwoodMigrationFlowData?>>(
-          ironwoodMigrationFlowDataProvider,
-          (_, next) => flowEvents.add(next),
-          fireImmediately: true,
-        );
+    final flowEvents = <IronwoodMigrationFlowData?>[];
+    final subscription = container.listen<IronwoodMigrationFlowData?>(
+      ironwoodMigrationFlowDataProvider,
+      (_, next) => flowEvents.add(next),
+      fireImmediately: true,
+    );
     addTearDown(subscription.close);
 
-    final initial = await container.read(
-      ironwoodMigrationFlowDataProvider.future,
-    );
-    expect(initial, isNull);
-    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+    final initial = container.read(ironwoodMigrationFlowDataProvider);
+    expect(initial?.amountZatoshi, BigInt.from(1_000_000));
+    expect(initial?.accountName, 'Account 1');
+    expect(migrationStatusCalls, isEmpty);
     flowEvents.clear();
 
     final syncNotifier =
@@ -640,10 +638,8 @@ void main() {
     );
     await container.pump();
 
-    final afterProgressTick = await container.read(
-      ironwoodMigrationFlowDataProvider.future,
-    );
-    expect(afterProgressTick, isNull);
+    final afterProgressTick = container.read(ironwoodMigrationFlowDataProvider);
+    expect(afterProgressTick?.amountZatoshi, BigInt.from(1_000_000));
     expect(flowEvents, isEmpty);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });

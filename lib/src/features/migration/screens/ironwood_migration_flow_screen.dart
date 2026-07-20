@@ -23,6 +23,7 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -76,20 +77,12 @@ class IronwoodMigrationFlowData {
 }
 
 final ironwoodMigrationFlowDataProvider =
-    FutureProvider.autoDispose<IronwoodMigrationFlowData?>((ref) async {
+    Provider.autoDispose<IronwoodMigrationFlowData?>((ref) {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
       if (inputs.accountUuid == null) return null;
 
-      rust_sync.MigrationStatus? status;
-      try {
-        final cta = await ref.watch(ironwoodHomeMigrationCtaProvider.future);
-        status = cta.status;
-      } catch (_) {
-        // Once the user is already inside the migration flow, transient sync
-        // failures should not evict them back to Home. The actual migration
-        // actions still validate status before doing work.
-      }
-
+      final cta = ref.watch(ironwoodHomeMigrationPresentationProvider);
+      final status = cta.accountUuid == inputs.accountUuid ? cta.status : null;
       final targetTotal = _sumTargetValues(status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
@@ -130,6 +123,14 @@ BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
   return total;
 }
 
+IronwoodMigrationFlowData _fallbackMigrationFlowData() {
+  return IronwoodMigrationFlowData(
+    amountZatoshi: BigInt.zero,
+    accountName: 'Username',
+    profilePictureId: kDefaultProfilePictureId,
+  );
+}
+
 class IronwoodMigrationFlowScreen extends ConsumerWidget {
   const IronwoodMigrationFlowScreen({
     required this.step,
@@ -148,32 +149,16 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewData;
-    if (preview != null) {
-      return _IronwoodMigrationShell(
-        step: step,
-        data: preview,
-        previewPrivatePlan: previewPrivatePlan,
-        previewReviewStage: previewReviewStage,
-        onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
-      );
-    }
-
-    final dataAsync = ref.watch(ironwoodMigrationFlowDataProvider);
-    return dataAsync.when(
-      skipLoadingOnReload: true,
-      loading: () => _IronwoodMigrationLoadingShell(step: step),
-      error: (_, _) => _IronwoodMigrationLoadingShell(step: step),
-      data: (data) {
-        if (data == null) return _IronwoodMigrationLoadingShell(step: step);
-        return _IronwoodMigrationShell(
-          step: step,
-          data: data,
-          previewPrivatePlan: previewPrivatePlan,
-          previewReviewStage: previewReviewStage,
-          onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
-        );
-      },
+    final data =
+        previewData ??
+        ref.watch(ironwoodMigrationFlowDataProvider) ??
+        _fallbackMigrationFlowData();
+    return _IronwoodMigrationShell(
+      step: step,
+      data: data,
+      previewPrivatePlan: previewPrivatePlan,
+      previewReviewStage: previewReviewStage,
+      onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
     );
   }
 }
@@ -183,31 +168,17 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
-    return ctaAsync.when(
-      skipLoadingOnReload: true,
-      loading: () => const _IronwoodMigrationLoadingShell(
-        step: IronwoodMigrationFlowStep.intro,
-      ),
-      error: (_, _) => _IronwoodMigrationFrame(
-        toolbar: _privateStatusToolbar(context),
-        disableSidebarActions: true,
-        child: const _IronwoodMigrationPrivateStatusErrorContent(),
-      ),
-      data: (cta) {
-        final target = switch (cta.mode) {
-          IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
-          IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-          IronwoodHomeMigrationCtaMode.hidden => '/migration/intro',
-        };
-        return _RedirectTo(
-          target,
-          placeholder: const _IronwoodMigrationLoadingShell(
-            step: IronwoodMigrationFlowStep.intro,
-          ),
-        );
-      },
+    final presentationCta = ref.watch(
+      ironwoodHomeMigrationPresentationProvider,
     );
+    final routeCta = ref.watch(ironwoodMigrationRouteCtaProvider).asData?.value;
+    final cta = presentationCta.mode == IronwoodHomeMigrationCtaMode.resume
+        ? presentationCta
+        : routeCta;
+    final target = cta?.mode == IronwoodHomeMigrationCtaMode.resume
+        ? '/migration/private/status'
+        : '/migration/intro';
+    return _RedirectTo(target);
   }
 }
 

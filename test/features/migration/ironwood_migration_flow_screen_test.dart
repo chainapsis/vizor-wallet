@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -981,13 +983,32 @@ void main() {
     expect(find.text('home-route'), findsNothing);
   });
 
+  testWidgets('migration entry does not wait for route CTA loading', (
+    tester,
+  ) async {
+    final pendingCta = Completer<IronwoodHomeMigrationCtaState>();
+
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: const IronwoodHomeMigrationCtaState.hidden(),
+        routeCtaFuture: pendingCta.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('intro-route'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('home-route'), findsNothing);
+  });
+
   testWidgets(
     'migration flow does not redirect home when data is unavailable',
     (tester) async {
       await tester.pumpWidget(_migrationFlowDataHarness(flowData: null));
       await tester.pump();
 
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Zcash Network Upgrade'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(find.text('home-route'), findsNothing);
     },
   );
@@ -1019,7 +1040,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           ironwoodMigrationFlowDataProvider.overrideWith(
-            (ref) async => IronwoodMigrationFlowData(
+            (ref) => IronwoodMigrationFlowData(
               amountZatoshi: BigInt.from(10_000_000),
               accountName: 'Account 1',
               profilePictureId: kDefaultProfilePictureId,
@@ -1388,7 +1409,7 @@ Widget _migrationFlowDataHarness({
 
   return ProviderScope(
     overrides: [
-      ironwoodMigrationFlowDataProvider.overrideWith((ref) async => flowData),
+      ironwoodMigrationFlowDataProvider.overrideWith((ref) => flowData),
       appBootstrapProvider.overrideWithValue(
         _bootstrapFor(activeAccountIsHardware: false),
       ),
@@ -1410,6 +1431,7 @@ Widget _migrationFlowDataHarness({
 Widget _migrationEntryHarness({
   required IronwoodHomeMigrationCtaState ctaState,
   String initialLocation = '/migration',
+  Future<IronwoodHomeMigrationCtaState>? routeCtaFuture,
   Object? routeError,
   bool realStatusRoute = false,
   rust_sync.MigrationStatus? routeStatus,
@@ -1449,7 +1471,10 @@ Widget _migrationEntryHarness({
 
   return ProviderScope(
     overrides: [
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(ctaState),
       ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
+        final future = routeCtaFuture;
+        if (future != null) return future;
         final error = routeError;
         if (error != null) throw error;
         return ctaState;
