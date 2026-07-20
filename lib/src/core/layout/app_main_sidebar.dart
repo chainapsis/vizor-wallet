@@ -413,6 +413,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       const SizedBox(height: AppSpacing.xxs),
                       _SidebarMigrationProgress(
                         status: migrationStatus!,
+                        isHardware: activeAccount?.isHardware ?? false,
                         orchardBalance: accountSync.orchardBalance,
                         ironwoodBalance: accountSync.ironwoodBalance,
                         onTap: () => _navigateTo('/migration/private/status'),
@@ -490,12 +491,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 class _SidebarMigrationProgress extends StatelessWidget {
   const _SidebarMigrationProgress({
     required this.status,
+    required this.isHardware,
     required this.orchardBalance,
     required this.ironwoodBalance,
     required this.onTap,
   });
 
   final rust_sync.MigrationStatus status;
+  final bool isHardware;
   final BigInt orchardBalance;
   final BigInt ironwoodBalance;
   final VoidCallback onTap;
@@ -503,11 +506,9 @@ class _SidebarMigrationProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final needsInput = status.phase == 'ready_to_migrate';
+    final needsInput = isHardware && status.phase == 'ready_to_migrate';
     final total = status.totalCount;
-    final complete = needsInput && status.signedChildPcztCount > 0
-        ? status.signedChildPcztCount
-        : status.confirmedTxCount;
+    final complete = status.confirmedTxCount;
     return AppTappable(
       onTap: onTap,
       child: Padding(

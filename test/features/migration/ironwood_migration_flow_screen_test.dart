@@ -419,6 +419,8 @@ void main() {
 
     expect(find.text('Migration in progress'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
+    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('Scheduled'), findsNothing);
     expect(find.text('Preparing batches'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });

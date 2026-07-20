@@ -2581,7 +2581,7 @@ class _MigrationBatchOverview extends StatelessWidget {
                                 statuses[i] == _MigrationBatchStatus.needsInput
                             ? const Color(0xFFB83AD9)
                             : i < statuses.length &&
-                                  statuses[i] == _MigrationBatchStatus.scheduled
+                                  _isPendingMigrationBatchStatus(statuses[i])
                             ? const Color(0xFFBDE9D1)
                             : GreenPrimitives.p500Light,
                       ),
@@ -2621,7 +2621,18 @@ class _MigrationBatchOverview extends StatelessWidget {
   }
 }
 
-enum _MigrationBatchStatus { none, scheduled, migrating, complete, needsInput }
+enum _MigrationBatchStatus {
+  none,
+  preparing,
+  scheduled,
+  migrating,
+  complete,
+  needsInput,
+}
+
+bool _isPendingMigrationBatchStatus(_MigrationBatchStatus status) =>
+    status == _MigrationBatchStatus.preparing ||
+    status == _MigrationBatchStatus.scheduled;
 
 class _MigrationBatchRow extends StatelessWidget {
   const _MigrationBatchRow({
@@ -2642,6 +2653,7 @@ class _MigrationBatchRow extends StatelessWidget {
     final colors = context.colors;
     final statusLabel = switch (status) {
       _MigrationBatchStatus.none => null,
+      _MigrationBatchStatus.preparing => 'Preparing',
       _MigrationBatchStatus.scheduled => 'Scheduled',
       _MigrationBatchStatus.migrating => 'Migrating...',
       _MigrationBatchStatus.complete => 'Completed',
@@ -2658,7 +2670,7 @@ class _MigrationBatchRow extends StatelessWidget {
             Text(
               'Part ${index + 1}',
               style: AppTypography.bodyMedium.copyWith(
-                color: status == _MigrationBatchStatus.scheduled
+                color: _isPendingMigrationBatchStatus(status)
                     ? colors.text.secondary
                     : colors.text.accent,
               ),
@@ -2671,7 +2683,7 @@ class _MigrationBatchRow extends StatelessWidget {
                 '${_migrationPercentage(value, totalZatoshi)}',
                 textAlign: TextAlign.right,
                 style: AppTypography.bodyMedium.copyWith(
-                  color: status == _MigrationBatchStatus.scheduled
+                  color: _isPendingMigrationBatchStatus(status)
                       ? colors.text.secondary
                       : colors.text.accent,
                 ),
@@ -2695,7 +2707,7 @@ class _MigrationBatchRow extends StatelessWidget {
                         style: AppTypography.bodyMedium.copyWith(
                           color: status == _MigrationBatchStatus.needsInput
                               ? const Color(0xFFB83AD9)
-                              : status == _MigrationBatchStatus.scheduled
+                              : _isPendingMigrationBatchStatus(status)
                               ? colors.text.secondary
                               : colors.text.accent,
                         ),
@@ -2756,6 +2768,11 @@ class _MigrationStatusContent extends StatelessWidget {
     var values = [for (final value in status.targetValuesZatoshi) value];
     if (values.isEmpty) values = [BigInt.zero];
     final statuses = <_MigrationBatchStatus>[];
+    final hasBroadcastSchedule =
+        status.scheduledBroadcasts.isNotEmpty ||
+        status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
+        status.phase == kIronwoodMigrationBroadcastingPhase ||
+        status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
     for (var i = 0; i < values.length; i++) {
       if (i < status.confirmedTxCount) {
         statuses.add(_MigrationBatchStatus.complete);
@@ -2765,7 +2782,11 @@ class _MigrationStatusContent extends StatelessWidget {
       } else if (i < status.broadcastedTxCount) {
         statuses.add(_MigrationBatchStatus.migrating);
       } else {
-        statuses.add(_MigrationBatchStatus.scheduled);
+        statuses.add(
+          hasBroadcastSchedule
+              ? _MigrationBatchStatus.scheduled
+              : _MigrationBatchStatus.preparing,
+        );
       }
     }
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);

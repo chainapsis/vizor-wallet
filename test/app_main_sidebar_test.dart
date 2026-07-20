@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -10,9 +12,11 @@ import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   const failureLabels = {
@@ -62,6 +66,45 @@ void main() {
     expect(find.text('Receive'), findsNothing);
     expect(find.text('Address book'), findsNothing);
     expect(find.text('About Vizor'), findsNothing);
+  });
+
+  testWidgets(
+    'sidebar keeps software migration automatic while children await anchors',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+            statuses: {'account-1': _readyMigrationStatus},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Migrating...'), findsOneWidget);
+      expect(find.text('0/6'), findsOneWidget);
+      expect(find.text('Needs input'), findsNothing);
+      expect(find.text('6/6'), findsNothing);
+    },
+  );
+
+  testWidgets('sidebar requests input only for Keystone migration', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('0/6'), findsOneWidget);
+    expect(find.text('6/6'), findsNothing);
   });
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
@@ -706,6 +749,8 @@ Widget _sidebarHarness(
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodPostMigrationState ironwoodPostMigrationState =
       const IronwoodPostMigrationState.unavailable(),
+  IronwoodMigrationCoordinatorState migrationCoordinatorState =
+      const IronwoodMigrationCoordinatorState(),
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -798,6 +843,9 @@ Widget _sidebarHarness(
       ironwoodPostMigrationStateProvider.overrideWith((ref) async {
         return ironwoodPostMigrationState;
       }),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _FakeMigrationCoordinator(migrationCoordinatorState),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -825,6 +873,50 @@ const _singleAccountState = AccountState(
   ],
   activeAccountUuid: 'account-1',
   activeAddress: 'u1accountsaddress',
+);
+
+const _hardwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Keystone Vault',
+      order: 0,
+      isHardware: true,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+final _readyMigrationStatus = rust_sync.MigrationStatus(
+  phase: 'ready_to_migrate',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([
+    1000000000,
+    200000000,
+    50000000,
+    20000000,
+    10000000,
+    2000000,
+  ]),
+  preparedNoteCount: 6,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 0,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 0,
+  totalCount: 6,
+  signedChildPcztCount: 6,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  maxPreparedNotesPerRun: 64,
+  scheduledBroadcasts: const [],
 );
 
 const _multiAccountState = AccountState(
@@ -921,4 +1013,13 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
+  _FakeMigrationCoordinator(this.initialState);
+
+  final IronwoodMigrationCoordinatorState initialState;
+
+  @override
+  IronwoodMigrationCoordinatorState build() => initialState;
 }
