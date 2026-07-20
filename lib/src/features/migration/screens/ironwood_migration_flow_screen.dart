@@ -77,19 +77,23 @@ class IronwoodMigrationFlowData {
 
 final ironwoodMigrationFlowDataProvider =
     FutureProvider.autoDispose<IronwoodMigrationFlowData?>((ref) async {
-      final cta = await ref.watch(ironwoodHomeMigrationCtaProvider.future);
-      if (!cta.visible) return null;
-
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (inputs.accountUuid == null || !inputs.hasAccountScopedData) {
-        return null;
+      if (inputs.accountUuid == null) return null;
+
+      rust_sync.MigrationStatus? status;
+      try {
+        final cta = await ref.watch(ironwoodHomeMigrationCtaProvider.future);
+        status = cta.status;
+      } catch (_) {
+        // Once the user is already inside the migration flow, transient sync
+        // failures should not evict them back to Home. The actual migration
+        // actions still validate status before doing work.
       }
 
-      final targetTotal = _sumTargetValues(cta.status);
+      final targetTotal = _sumTargetValues(status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
           : inputs.orchardBalance + inputs.orchardPendingBalance;
-      if (amount <= BigInt.zero) return null;
 
       return IronwoodMigrationFlowData(
         amountZatoshi: amount,
@@ -159,9 +163,9 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     return dataAsync.when(
       skipLoadingOnReload: true,
       loading: () => _IronwoodMigrationLoadingShell(step: step),
-      error: (_, _) => const _RedirectHome(),
+      error: (_, _) => _IronwoodMigrationLoadingShell(step: step),
       data: (data) {
-        if (data == null) return const _RedirectHome();
+        if (data == null) return _IronwoodMigrationLoadingShell(step: step);
         return _IronwoodMigrationShell(
           step: step,
           data: data,
@@ -194,7 +198,7 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
         final target = switch (cta.mode) {
           IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
           IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-          IronwoodHomeMigrationCtaMode.hidden => '/home',
+          IronwoodHomeMigrationCtaMode.hidden => '/migration/intro',
         };
         return _RedirectTo(
           target,
@@ -233,7 +237,11 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
     final inputs = ref.watch(ironwoodMigrationInputsProvider);
     final request = inputs.statusRequest;
     if (!inputs.ironwoodActiveAtTip || request == null) {
-      return const _RedirectHome();
+      return _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: const _IronwoodMigrationPrivateStatusErrorContent(),
+      );
     }
 
     final statusAsync = ref.watch(ironwoodMigrationStatusProvider(request));
@@ -270,7 +278,12 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           if (!inputs.hasAccountScopedData ||
               inputs.hasSyncFailure ||
               !inputs.hasOrchardFunds) {
-            return const _RedirectHome();
+            return const _RedirectTo(
+              '/migration/intro',
+              placeholder: _IronwoodMigrationLoadingShell(
+                step: IronwoodMigrationFlowStep.intro,
+              ),
+            );
           }
           return const _RedirectTo(
             '/migration/intro',
@@ -1131,18 +1144,6 @@ String _keystoneMigrationSigningErrorMessage(Object error) {
     return 'Keystone signature could not be applied.';
   }
   return 'Keystone signing could not be prepared. Try again.';
-}
-
-class _RedirectHome extends StatefulWidget {
-  const _RedirectHome();
-
-  @override
-  State<_RedirectHome> createState() => _RedirectHomeState();
-}
-
-class _RedirectHomeState extends State<_RedirectHome> {
-  @override
-  Widget build(BuildContext context) => const _RedirectTo('/home');
 }
 
 class _RedirectTo extends StatefulWidget {

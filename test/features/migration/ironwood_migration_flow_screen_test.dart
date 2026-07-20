@@ -967,7 +967,9 @@ void main() {
     }
   });
 
-  testWidgets('migration entry routes hidden state home', (tester) async {
+  testWidgets('migration entry keeps hidden state in migration flow', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _migrationEntryHarness(
         ctaState: const IronwoodHomeMigrationCtaState.hidden(),
@@ -975,8 +977,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('home-route'), findsOneWidget);
+    expect(find.text('intro-route'), findsOneWidget);
+    expect(find.text('home-route'), findsNothing);
   });
+
+  testWidgets(
+    'migration flow does not redirect home when data is unavailable',
+    (tester) async {
+      await tester.pumpWidget(_migrationFlowDataHarness(flowData: null));
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('home-route'), findsNothing);
+    },
+  );
 
   testWidgets('private status fails closed when status lookup fails', (
     tester,
@@ -1353,6 +1367,43 @@ Widget _privateStatusHarness({
     activeAccountIsHardware: activeAccountIsHardware,
     coordinatorAdvancing: coordinatorAdvancing,
     coordinatorStatus: coordinatorStatus,
+  );
+}
+
+Widget _migrationFlowDataHarness({
+  required IronwoodMigrationFlowData? flowData,
+}) {
+  final router = GoRouter(
+    initialLocation: '/migration/intro',
+    routes: [
+      GoRoute(
+        path: '/migration/intro',
+        builder: (_, _) => const IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.intro,
+        ),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      ironwoodMigrationFlowDataProvider.overrideWith((ref) async => flowData),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapFor(activeAccountIsHardware: false),
+      ),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      swapFeatureEnabledProvider.overrideWithValue(true),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
   );
 }
 
