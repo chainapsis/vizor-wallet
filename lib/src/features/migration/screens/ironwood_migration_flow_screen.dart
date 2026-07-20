@@ -1519,7 +1519,7 @@ class _IronwoodMigrationOptionsContentState
             child: Column(
               children: [
                 Text(
-                  'Choose how to migrate',
+                  'Choose How to Migrate',
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -1529,8 +1529,9 @@ class _IronwoodMigrationOptionsContentState
                 SizedBox(
                   width: 322,
                   child: Text(
-                    'Choose more privacy over time or a faster migration. '
-                    'You can review the details before anything moves.',
+                    'Choose between more privacy over time or a faster '
+                    'migration. You can review the details before anything '
+                    'moves.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -1564,18 +1565,6 @@ class _IronwoodMigrationOptionsContentState
                   title: 'Faster but less private',
                   body: 'Coming soon. Moves funds sooner with less separation.',
                   onTap: () => setState(() => _selected = _MigrationMode.fast),
-                ),
-                const SizedBox(height: 12),
-                _MigrationOptionCard(
-                  key: const ValueKey('ironwood_migration_custom_option'),
-                  mode: _MigrationMode.custom,
-                  selected: _selected == _MigrationMode.custom,
-                  title: 'Customize',
-                  badge: 'Advanced',
-                  body:
-                      'Coming soon. Choose how funds are split and scheduled.',
-                  onTap: () =>
-                      setState(() => _selected = _MigrationMode.custom),
                 ),
               ],
             ),
@@ -4545,7 +4534,7 @@ class _SpendAsFundsArriveCard extends StatelessWidget {
   }
 }
 
-enum _MigrationMode { private, fast, custom }
+enum _MigrationMode { private, fast }
 
 class _MigrationOptionCard extends StatelessWidget {
   const _MigrationOptionCard({
@@ -4737,9 +4726,7 @@ class _RecommendedBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: label == 'Advanced'
-            ? CrimsonPrimitives.p300Light
-            : GreenPrimitives.p500Light,
+        color: GreenPrimitives.p500Light,
         shape: const StadiumBorder(),
       ),
       child: Padding(
@@ -4770,11 +4757,11 @@ class _SelectionMark extends StatelessWidget {
       height: 20,
       decoration: ShapeDecoration(color: fill, shape: const OvalBorder()),
       child: selected
-          ? const Center(
+          ? Center(
               child: AppIcon(
                 AppIcons.check,
                 size: 12,
-                color: Color(0xFFFFFFFF),
+                color: context.colors.icon.inverse,
               ),
             )
           : null,

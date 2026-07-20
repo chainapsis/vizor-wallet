@@ -58,6 +58,8 @@ void main() {
     final fastTitle = find.text('Faster but less private');
     expect(privateTitle, findsOneWidget);
     expect(fastTitle, findsOneWidget);
+    expect(find.text('Customize'), findsNothing);
+    expect(find.text('Customise'), findsNothing);
 
     final privateTitleInitialTopLeft = tester.getTopLeft(privateTitle);
     final fastTitleInitialTopLeft = tester.getTopLeft(fastTitle);
