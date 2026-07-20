@@ -108,6 +108,7 @@ void main() {
       _migrationOptionsHarness(
         initialLocation: '/migration/private/review',
         analyzingMinimumDuration: const Duration(seconds: 6),
+        disableAnimations: false,
       ),
     );
 
@@ -118,24 +119,30 @@ void main() {
     expect(find.text('Analyzing your balance...'), findsOneWidget);
     expect(find.text('Review migration plan'), findsNothing);
 
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 1919));
+    expect(find.text('Analyzing your balance...'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 10));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Finding private batches...'), findsOneWidget);
     expect(find.text('Review migration plan'), findsNothing);
 
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 1590));
+    expect(find.text('Finding private batches...'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 10));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Preparing your migration plan...'), findsOneWidget);
     expect(find.text('Review migration plan'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 1199));
+    await tester.pump(const Duration(milliseconds: 1590));
     expect(
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsOneWidget,
     );
     expect(find.text('Review migration plan'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 81));
     await tester.pump();
 
     expect(
@@ -1206,6 +1213,7 @@ Widget _migrationOptionsHarness({
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
   Duration analyzingMinimumDuration = Duration.zero,
+  bool disableAnimations = true,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -1323,9 +1331,10 @@ Widget _migrationOptionsHarness({
     child: MaterialApp.router(
       routerConfig: router,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
+        data: MediaQuery.of(context).copyWith(
+          disableAnimations: disableAnimations,
+          textScaler: TextScaler.noScaling,
+        ),
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
     ),

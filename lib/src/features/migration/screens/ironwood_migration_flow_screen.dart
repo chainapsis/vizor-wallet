@@ -2253,15 +2253,15 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
     'Finding private batches...',
     'Preparing your migration plan...',
   ];
-  static const _messageInterval = Duration(seconds: 2);
   static const _switchDuration = Duration(milliseconds: 320);
 
   late final AnimationController _shimmer = AnimationController(
     vsync: this,
     duration: _MigrationAnalyzingMotion.period,
   );
-  Timer? _messageTimer;
+  Timer? _reducedMotionMessageTimer;
   var _messageIndex = 0;
+  var _advancedMessageThisCycle = false;
 
   bool get _shouldAnimate =>
       !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
@@ -2269,12 +2269,7 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
   @override
   void initState() {
     super.initState();
-    _shimmer.value = 0.5;
-    _messageTimer = Timer.periodic(_messageInterval, (_) {
-      setState(() {
-        _messageIndex = (_messageIndex + 1) % _messages.length;
-      });
-    });
+    _shimmer.addListener(_handleShimmerTick);
   }
 
   @override
@@ -2285,17 +2280,45 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
 
   void _syncAnimation() {
     if (_shouldAnimate) {
+      _reducedMotionMessageTimer?.cancel();
+      _reducedMotionMessageTimer = null;
       if (!_shimmer.isAnimating) _shimmer.repeat();
     } else {
       _shimmer
         ..stop()
-        ..value = 0.5;
+        ..value = 0;
+      _reducedMotionMessageTimer ??= Timer.periodic(
+        _MigrationAnalyzingMotion.period,
+        (_) => _advanceMessage(),
+      );
     }
+  }
+
+  void _handleShimmerTick() {
+    if (!mounted || !_shouldAnimate) return;
+    final progress = _shimmer.value;
+    if (progress < _MigrationAnalyzingMotion.cycleResetProgress) {
+      _advancedMessageThisCycle = false;
+      return;
+    }
+    if (!_advancedMessageThisCycle &&
+        progress >= _MigrationAnalyzingMotion.messageAdvanceProgress) {
+      _advancedMessageThisCycle = true;
+      _advanceMessage();
+    }
+  }
+
+  void _advanceMessage() {
+    if (!mounted) return;
+    setState(() {
+      _messageIndex = (_messageIndex + 1) % _messages.length;
+    });
   }
 
   @override
   void dispose() {
-    _messageTimer?.cancel();
+    _reducedMotionMessageTimer?.cancel();
+    _shimmer.removeListener(_handleShimmerTick);
     _shimmer.dispose();
     super.dispose();
   }
@@ -2440,7 +2463,9 @@ class _MigrationAnalyzingProgressBarState
 }
 
 abstract final class _MigrationAnalyzingMotion {
-  static const period = Duration(milliseconds: 1400);
+  static const period = Duration(seconds: 2);
+  static const messageAdvanceProgress = 0.96;
+  static const cycleResetProgress = 0.2;
   static const _bandHalf = 0.18;
 }
 
