@@ -900,6 +900,7 @@ Widget _buildDesktopHomeUseCase({
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _PreviewMigrationCoordinator(
           accountUuid: accountState.activeAccountUuid,

@@ -52,12 +52,16 @@ import '../widgets/pay_floating_badge.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
-const _ironwoodMigrationHomeCardBackgroundAsset =
-    'assets/illustrations/ironwood_migration_home_banner_background.png';
+const _ironwoodMigrationIllustrationAsset =
+    'assets/illustrations/ironwood_migration_illustration.png';
+const _ironwoodMigrationCtaBackgroundColor = Color(0xFF1B1F1F);
+const _ironwoodMigrationCtaBorderColor = Color(0x12FFFFFF);
 const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
+
+final homeMigrationCtaPulseMotionEnabledProvider = Provider<bool>((_) => true);
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -596,6 +600,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
               BigInt.zero
         : widget.sync.totalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final animateMigrationCta = ref.watch(
+      homeMigrationCtaPulseMotionEnabledProvider,
+    );
 
     return _HomeDesktopPane(
       isImporting: isImporting,
@@ -621,6 +628,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onPay: swapFeatureEnabled ? _openPay : null,
       onActivity: () => context.push('/activity'),
       ironwoodMigrationCta: widget.ironwoodMigrationCta,
+      animateMigrationCta: animateMigrationCta,
       onIronwoodMigrationCta: widget.onIronwoodMigrationCta,
     );
   }
@@ -1110,6 +1118,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.onPay,
     required this.onActivity,
     required this.ironwoodMigrationCta,
+    required this.animateMigrationCta,
     required this.onIronwoodMigrationCta,
   });
 
@@ -1136,6 +1145,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final VoidCallback? onPay;
   final VoidCallback onActivity;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final bool animateMigrationCta;
   final VoidCallback onIronwoodMigrationCta;
 
   static const _referencePaneHeight = 704.0;
@@ -1188,6 +1198,7 @@ class _HomeDesktopPane extends StatelessWidget {
                       onReceive: onReceive,
                       onPay: onPay,
                       ironwoodMigrationCta: ironwoodMigrationCta,
+                      animateMigrationCta: animateMigrationCta,
                       onIronwoodMigrationCta: onIronwoodMigrationCta,
                     ),
                   ),
@@ -1391,6 +1402,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
     required this.onReceive,
     required this.onPay,
     required this.ironwoodMigrationCta,
+    required this.animateMigrationCta,
     required this.onIronwoodMigrationCta,
   });
 
@@ -1410,6 +1422,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final VoidCallback onReceive;
   final VoidCallback? onPay;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final bool animateMigrationCta;
   final VoidCallback onIronwoodMigrationCta;
 
   @override
@@ -1680,7 +1693,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
               label: migrationRequired
                   ? 'Migrate to Ironwood'
                   : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',
-              inProgress: migrationInProgress,
+              animateIndicator: widget.animateMigrationCta,
               onTap: widget.onIronwoodMigrationCta,
             ),
           ] else if (!widget.hasBalance)
@@ -1739,15 +1752,144 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
   }
 }
 
+class _HomeMigrationPulseIndicator extends StatefulWidget {
+  const _HomeMigrationPulseIndicator({
+    required this.animate,
+    required this.accentColor,
+  });
+
+  final bool animate;
+  final Color accentColor;
+
+  @override
+  State<_HomeMigrationPulseIndicator> createState() =>
+      _HomeMigrationPulseIndicatorState();
+}
+
+class _HomeMigrationPulseIndicatorState
+    extends State<_HomeMigrationPulseIndicator>
+    with SingleTickerProviderStateMixin {
+  static const _dotSize = 8.0;
+  static const _period = Duration(milliseconds: 1600);
+
+  AnimationController? _controller;
+
+  AnimationController get _activeController {
+    return _controller ??= AnimationController(vsync: this, duration: _period);
+  }
+
+  bool get _shouldAnimate {
+    if (!widget.animate) return false;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return false;
+    return TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeMigrationPulseIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate ||
+        oldWidget.accentColor != widget.accentColor) {
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    if (_shouldAnimate) {
+      final controller = _activeController;
+      if (!controller.isAnimating) {
+        controller.repeat();
+      }
+      return;
+    }
+
+    final controller = _controller;
+    if (controller != null) {
+      controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = _controller ?? const AlwaysStoppedAnimation<double>(0.0);
+    return SizedBox.square(
+      dimension: _dotSize,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final t = animation.value;
+          final pulse = Curves.easeOutCubic.transform(t);
+          final glow = (math.sin((t * math.pi * 2) - (math.pi / 2)) + 1) / 2;
+          final haloScale = 1.15 + (pulse * 1.35);
+          final haloOpacity = widget.animate
+              ? (0.34 * (1 - pulse)).clamp(0.0, 0.34).toDouble()
+              : 0.30;
+          final dotScale = widget.animate ? 0.94 + (glow * 0.14) : 1.0;
+          final dotShadowAlpha = widget.animate ? 0.26 + (glow * 0.22) : 0.45;
+
+          return Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(
+                scale: haloScale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.accentColor.withValues(alpha: haloOpacity),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox.square(dimension: _dotSize),
+                ),
+              ),
+              Transform.scale(
+                scale: dotScale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.accentColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: widget.accentColor.withValues(
+                          alpha: dotShadowAlpha,
+                        ),
+                        blurRadius: 6 + (glow * 3),
+                        spreadRadius: 1 + (glow * 1.5),
+                      ),
+                    ],
+                  ),
+                  child: const SizedBox.square(dimension: _dotSize),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _HomeDesktopMigrationCtaButton extends StatelessWidget {
   const _HomeDesktopMigrationCtaButton({
     required this.label,
-    required this.inProgress,
+    required this.animateIndicator,
     required this.onTap,
   });
 
   final String label;
-  final bool inProgress;
+  final bool animateIndicator;
   final VoidCallback onTap;
 
   @override
@@ -1768,10 +1910,14 @@ class _HomeDesktopMigrationCtaButton extends StatelessWidget {
               duration: const Duration(milliseconds: 120),
               curve: Curves.easeOut,
               decoration: BoxDecoration(
-                color: colors.background.homeCard,
+                color: _ironwoodMigrationCtaBackgroundColor,
+                borderRadius: BorderRadius.circular(AppRadii.medium),
+              ),
+              foregroundDecoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadii.medium),
                 border: Border.all(
-                  color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
+                  color: _ironwoodMigrationCtaBorderColor,
+                  strokeAlign: BorderSide.strokeAlignInside,
                   width: 1.5,
                 ),
               ),
@@ -1790,7 +1936,7 @@ class _HomeDesktopMigrationCtaButton extends StatelessWidget {
                     child: Opacity(
                       opacity: hovered ? 0.82 : 1,
                       child: Image.asset(
-                        _ironwoodMigrationHomeCardBackgroundAsset,
+                        _ironwoodMigrationIllustrationAsset,
                         key: const ValueKey(
                           'home_desktop_ironwood_migration_background',
                         ),
@@ -1805,30 +1951,10 @@ class _HomeDesktopMigrationCtaButton extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        if (inProgress)
-                          AppIcon(
-                            AppIcons.loader,
-                            size: 20,
-                            color: colors.text.homeCard,
-                          )
-                        else
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: colors.text.positiveStrong,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: colors.text.positiveStrong.withValues(
-                                    alpha: 0.45,
-                                  ),
-                                  blurRadius: 10,
-                                  spreadRadius: 6,
-                                ),
-                              ],
-                            ),
-                          ),
+                        _HomeMigrationPulseIndicator(
+                          animate: animateIndicator,
+                          accentColor: colors.text.positiveStrong,
+                        ),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Text(
