@@ -39,7 +39,7 @@ mod transactions;
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
 pub(crate) use migration::{
-    configure_fast_testnet_migration, migration_status, MigrationScheduleEntry,
+    configure_fast_testnet_migration, migration_status, MigrationPartState, MigrationScheduleEntry,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{

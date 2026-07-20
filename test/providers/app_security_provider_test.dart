@@ -90,5 +90,6 @@ rust_sync.MigrationStatus _migrationStatus({required String phase}) {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }

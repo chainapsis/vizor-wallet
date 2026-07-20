@@ -1077,6 +1077,58 @@ class KeystoneSignedMigrationMessage {
           sigs == other.sigs;
 }
 
+enum MigrationPartState {
+  preparing,
+  scheduled,
+  migrating,
+  confirming,
+  completed,
+  needsInput,
+}
+
+class MigrationPartStatus {
+  final int partIndex;
+  final BigInt valueZatoshi;
+  final MigrationPartState state;
+  final String? txidHex;
+  final int? scheduledHeight;
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  const MigrationPartStatus({
+    required this.partIndex,
+    required this.valueZatoshi,
+    required this.state,
+    this.txidHex,
+    this.scheduledHeight,
+    required this.confirmationCount,
+    required this.confirmationTarget,
+  });
+
+  @override
+  int get hashCode =>
+      partIndex.hashCode ^
+      valueZatoshi.hashCode ^
+      state.hashCode ^
+      txidHex.hashCode ^
+      scheduledHeight.hashCode ^
+      confirmationCount.hashCode ^
+      confirmationTarget.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPartStatus &&
+          runtimeType == other.runtimeType &&
+          partIndex == other.partIndex &&
+          valueZatoshi == other.valueZatoshi &&
+          state == other.state &&
+          txidHex == other.txidHex &&
+          scheduledHeight == other.scheduledHeight &&
+          confirmationCount == other.confirmationCount &&
+          confirmationTarget == other.confirmationTarget;
+}
+
 class MigrationScheduledBroadcast {
   final String txidHex;
   final BigInt valueZatoshi;
@@ -1163,6 +1215,7 @@ class MigrationStatus {
   final int scheduleMaxDelayBlocks;
   final int maxPreparedNotesPerRun;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
+  final List<MigrationPartStatus> parts;
 
   const MigrationStatus({
     required this.phase,
@@ -1186,6 +1239,7 @@ class MigrationStatus {
     required this.scheduleMaxDelayBlocks,
     required this.maxPreparedNotesPerRun,
     required this.scheduledBroadcasts,
+    required this.parts,
   });
 
   @override
@@ -1210,7 +1264,8 @@ class MigrationStatus {
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       maxPreparedNotesPerRun.hashCode ^
-      scheduledBroadcasts.hashCode;
+      scheduledBroadcasts.hashCode ^
+      parts.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1240,7 +1295,8 @@ class MigrationStatus {
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
-          scheduledBroadcasts == other.scheduledBroadcasts;
+          scheduledBroadcasts == other.scheduledBroadcasts &&
+          parts == other.parts;
 }
 
 class OrchardMigrationPrivatePlan {

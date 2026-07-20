@@ -585,36 +585,52 @@ void main() {
     expect(find.text('intro-route'), findsOneWidget);
   });
 
-  testWidgets(
-    'private transfer status uses confirmed progress while confirming',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(1440, 900);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('private transfer status uses authoritative per-part states', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(
-        _privateStatusHarness(
-          status: _migrationStatus(
-            phase: kIronwoodMigrationWaitingConfirmationsPhase,
-            activeRunId: 'run-1',
-            targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
-            broadcastedTxCount: 2,
-            confirmedTxCount: 1,
-            totalCount: 3,
-          ),
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 2,
+          confirmedTxCount: 1,
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.completed,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.scheduled,
+            ),
+          ],
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Completed'), findsOneWidget);
-      expect(find.text('Migrating...'), findsOneWidget);
-      expect(find.text('Scheduled'), findsOneWidget);
-      expect(find.text('In progress'), findsOneWidget);
-    },
-  );
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Scheduled'), findsOneWidget);
+    expect(find.text('In progress'), findsOneWidget);
+  });
 
-  testWidgets('private transfer status waits for trusted completion', (
+  testWidgets('private transfer status distinguishes mined from completed', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -631,12 +647,33 @@ void main() {
           broadcastedTxCount: 3,
           confirmedTxCount: 3,
           totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.confirming,
+              confirmationCount: 1,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.confirming,
+              confirmationCount: 2,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.completed,
+              confirmationCount: 3,
+            ),
+          ],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Completed'), findsNWidgets(3));
+    expect(find.text('Confirming...'), findsNWidgets(2));
+    expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Scheduled'), findsNothing);
     expect(find.text('In progress'), findsOneWidget);
   });
@@ -1564,6 +1601,7 @@ rust_sync.MigrationStatus _migrationStatus({
   int totalCount = 0,
   int pendingSplitStageCount = 0,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
+  List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -1586,8 +1624,23 @@ rust_sync.MigrationStatus _migrationStatus({
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: scheduledBroadcasts,
+    parts: parts,
   );
 }
+
+rust_sync.MigrationPartStatus _migrationPart(
+  int partIndex,
+  int valueZatoshi,
+  rust_sync.MigrationPartState state, {
+  int confirmationCount = 0,
+  int confirmationTarget = 3,
+}) => rust_sync.MigrationPartStatus(
+  partIndex: partIndex,
+  valueZatoshi: BigInt.from(valueZatoshi),
+  state: state,
+  confirmationCount: confirmationCount,
+  confirmationTarget: confirmationTarget,
+);
 
 rust_sync.MigrationStatus _status() {
   return rust_sync.MigrationStatus(
@@ -1611,6 +1664,7 @@ rust_sync.MigrationStatus _status() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }
 

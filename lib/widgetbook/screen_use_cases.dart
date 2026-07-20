@@ -2146,6 +2146,7 @@ rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }
 
@@ -2239,6 +2240,7 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }
 
@@ -2279,6 +2281,7 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         status: 'scheduled',
       ),
     ],
+    parts: const [],
   );
 }
 
@@ -2311,6 +2314,7 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }
 

@@ -503,6 +503,7 @@ pub(crate) struct MigrationScheduleEntry {
 }
 
 pub(crate) struct PendingMigrationTxInsert {
+    pub part_index: u32,
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
     pub target_height: u32,
@@ -516,6 +517,7 @@ pub(crate) struct PendingMigrationTxInsert {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingMigrationPartRecovery {
+    pub part_index: u32,
     pub old_txid_hex: String,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -583,6 +585,27 @@ pub(crate) struct ScheduledMigrationBroadcast {
     pub status: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPartState {
+    Preparing,
+    Scheduled,
+    Migrating,
+    Confirming,
+    Completed,
+    NeedsInput,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationPartStatus {
+    pub part_index: u32,
+    pub value_zatoshi: u64,
+    pub state: MigrationPartState,
+    pub txid_hex: Option<String>,
+    pub scheduled_height: Option<u32>,
+    pub confirmation_count: u32,
+    pub confirmation_target: u32,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct MigrationStatus {
     pub phase: String,
@@ -609,6 +632,7 @@ pub(crate) struct MigrationStatus {
     pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
+    pub parts: Vec<MigrationPartStatus>,
 }
 
 pub(crate) fn migration_status(
@@ -679,6 +703,7 @@ pub(crate) fn migration_status(
         .1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts: Vec::new(),
+        parts: Vec::new(),
     })
 }
 
@@ -1166,15 +1191,16 @@ fn insert_pending_txs_with_tx(
             .execute(
                 &format!(
                     "INSERT INTO {PENDING_TXS_TABLE}
-                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
                   scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'scheduled', ?14)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'scheduled', ?15)"
                 ),
                 params![
                     run_id,
                     pending.txid_hex,
+                    pending.part_index,
                     encrypted_raw_tx,
                     pending.target_height,
                     pending.expiry_height,
@@ -1796,7 +1822,7 @@ pub(crate) fn pending_parts_needing_resign(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, value_zatoshi, fee_zatoshi, metadata_json
+            "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi, metadata_json
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'needs_resign'
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -1805,20 +1831,22 @@ pub(crate) fn pending_parts_needing_resign(
     let rows = stmt
         .query_map(params![run_id], |row| {
             Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, u64>(1)?,
+                row.get::<_, u32>(0)?,
+                row.get::<_, String>(1)?,
                 row.get::<_, u64>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| format!("Query migration parts needing re-sign: {e}"))?;
     let mut recoveries = Vec::new();
     for row in rows {
-        let (old_txid_hex, value_zatoshi, fee_zatoshi, metadata_json) =
+        let (part_index, old_txid_hex, value_zatoshi, fee_zatoshi, metadata_json) =
             row.map_err(|e| format!("Read migration part needing re-sign: {e}"))?;
         let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
             .map_err(|e| format!("Decode migration recovery metadata: {e}"))?;
         recoveries.push(PendingMigrationPartRecovery {
+            part_index,
             old_txid_hex,
             value_zatoshi,
             fee_zatoshi,
@@ -1929,16 +1957,17 @@ pub(crate) fn replace_resigned_pending_parts(
         tx.execute(
             &format!(
                 "INSERT INTO {PENDING_TXS_TABLE}
-                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
                   scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                         ?12, ?13, 'scheduled', ?14)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14, 'scheduled', ?15)"
             ),
             params![
                 run_id,
                 pending.txid_hex,
+                pending.part_index,
                 encrypted_raw_tx,
                 pending.target_height,
                 pending.expiry_height,
@@ -2406,6 +2435,13 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
             | PHASE_FAILED_RECOVERABLE
             | PHASE_PAUSED
     ) && pending_tx_count == 0;
+    let parts = migration_parts_for_run(
+        conn,
+        &run.run_id,
+        &run.target_values_zatoshi,
+        &phase,
+        denomination_confirmation_target,
+    )?;
 
     Ok(MigrationStatus {
         phase,
@@ -2429,7 +2465,120 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_broadcasts,
+        parts,
     })
+}
+
+fn migration_parts_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    target_values: &[u64],
+    phase: &str,
+    confirmation_target: u32,
+) -> Result<Vec<MigrationPartStatus>, String> {
+    let mut parts = target_values
+        .iter()
+        .enumerate()
+        .map(|(part_index, value_zatoshi)| MigrationPartStatus {
+            part_index: part_index as u32,
+            value_zatoshi: *value_zatoshi,
+            state: MigrationPartState::Preparing,
+            txid_hex: None,
+            scheduled_height: None,
+            confirmation_count: 0,
+            confirmation_target,
+        })
+        .collect::<Vec<_>>();
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi,
+                    scheduled_height, status
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration part status query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, Option<u32>>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u64>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, u32>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration part statuses: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration part statuses: {e}"))?;
+
+    let mut assigned = BTreeSet::new();
+    for (stored_index, txid_hex, value_zatoshi, fee_zatoshi, scheduled_height, raw_status) in rows {
+        let denomination_value = value_zatoshi.saturating_add(fee_zatoshi);
+        let part_index = stored_index
+            .filter(|index| (*index as usize) < parts.len() && !assigned.contains(index))
+            .or_else(|| {
+                parts
+                    .iter()
+                    .find(|part| {
+                        (part.value_zatoshi == denomination_value
+                            || part.value_zatoshi == value_zatoshi)
+                            && !assigned.contains(&part.part_index)
+                    })
+                    .map(|part| part.part_index)
+            })
+            .or_else(|| {
+                parts
+                    .iter()
+                    .find(|part| !assigned.contains(&part.part_index))
+                    .map(|part| part.part_index)
+            })
+            .unwrap_or(parts.len() as u32);
+        assigned.insert(part_index);
+
+        let (state, confirmation_count) = match raw_status.as_str() {
+            "scheduled" => (MigrationPartState::Scheduled, 0),
+            "broadcasted" => (MigrationPartState::Migrating, 0),
+            "confirmed" => {
+                let confirmation_count = match local_denomination_chain_identity(conn, &txid_hex)? {
+                    Some(identity) => {
+                        synced_orchard_confirmation_count(conn, identity.mined_height)?
+                    }
+                    None => 0,
+                };
+                let state = if phase == PHASE_COMPLETE || confirmation_count >= confirmation_target
+                {
+                    MigrationPartState::Completed
+                } else {
+                    MigrationPartState::Confirming
+                };
+                (state, confirmation_count)
+            }
+            "needs_resign" => (MigrationPartState::NeedsInput, 0),
+            _ => (MigrationPartState::Preparing, 0),
+        };
+        let part = MigrationPartStatus {
+            part_index,
+            value_zatoshi: parts
+                .get(part_index as usize)
+                .map(|part| part.value_zatoshi)
+                .unwrap_or(denomination_value),
+            state,
+            txid_hex: Some(txid_hex),
+            scheduled_height: Some(scheduled_height),
+            confirmation_count,
+            confirmation_target,
+        };
+        if let Some(slot) = parts.get_mut(part_index as usize) {
+            *slot = part;
+        } else {
+            parts.push(part);
+        }
+    }
+    parts.sort_by_key(|part| part.part_index);
+    Ok(parts)
 }
 
 fn active_run(
@@ -3222,6 +3371,117 @@ fn validate_schedule_with_policy(
     Ok(())
 }
 
+fn backfill_pending_part_indices(conn: &rusqlite::Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT run_id, txid_hex, value_zatoshi, fee_zatoshi,
+                    lower(selected_note_txid), selected_note_output_index
+             FROM {PENDING_TXS_TABLE}
+             WHERE part_index IS NULL
+             ORDER BY run_id ASC, scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration part index backfill: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u64>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, u32>(5)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration part index backfill: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration part index backfill: {e}"))?;
+    drop(stmt);
+
+    for (run_id, txid_hex, value_zatoshi, fee_zatoshi, selected_txid, selected_output_index) in rows
+    {
+        let used = {
+            let mut used_stmt = conn
+                .prepare_cached(&format!(
+                    "SELECT part_index FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND part_index IS NOT NULL"
+                ))
+                .map_err(|e| format!("Prepare used migration part indices: {e}"))?;
+            let used = used_stmt
+                .query_map(params![run_id], |row| row.get::<_, u32>(0))
+                .map_err(|e| format!("Query used migration part indices: {e}"))?
+                .collect::<Result<BTreeSet<_>, _>>()
+                .map_err(|e| format!("Read used migration part indices: {e}"))?;
+            used
+        };
+
+        let mut part_index = None;
+        let mut child_stmt = conn
+            .prepare_cached(&format!(
+                "SELECT child_index, selected_note_json
+                 FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1
+                 ORDER BY child_index ASC"
+            ))
+            .map_err(|e| format!("Prepare signed migration part backfill: {e}"))?;
+        let children = child_stmt
+            .query_map(params![run_id], |row| {
+                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Query signed migration part backfill: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read signed migration part backfill: {e}"))?;
+        for (child_index, selected_note_json) in children {
+            let note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
+                .map_err(|e| format!("Decode signed migration part backfill note: {e}"))?;
+            if note.txid_hex.eq_ignore_ascii_case(&selected_txid)
+                && note.output_index == selected_output_index
+                && !used.contains(&child_index)
+            {
+                part_index = Some(child_index);
+                break;
+            }
+        }
+
+        if part_index.is_none() {
+            let target_values_json = conn
+                .query_row(
+                    &format!("SELECT target_values_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                    params![run_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|e| format!("Read migration targets for part backfill: {e}"))?;
+            if let Some(target_values_json) = target_values_json {
+                let target_values = serde_json::from_str::<Vec<u64>>(&target_values_json)
+                    .map_err(|e| format!("Decode migration targets for part backfill: {e}"))?;
+                part_index = target_values
+                    .iter()
+                    .enumerate()
+                    .find(|(index, value)| {
+                        (**value == value_zatoshi.saturating_add(fee_zatoshi)
+                            || **value == value_zatoshi)
+                            && !used.contains(&(*index as u32))
+                    })
+                    .map(|(index, _)| index as u32);
+            }
+        }
+
+        let part_index = part_index.unwrap_or_else(|| {
+            (0u32..)
+                .find(|candidate| !used.contains(candidate))
+                .expect("u32 migration part index space is exhausted")
+        });
+        conn.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE} SET part_index = ?1
+                 WHERE run_id = ?2 AND txid_hex = ?3 AND part_index IS NULL"
+            ),
+            params![part_index, run_id, txid_hex],
+        )
+        .map_err(|e| format!("Backfill migration part index: {e}"))?;
+    }
+    Ok(())
+}
+
 fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(&format!(
         "
@@ -3255,6 +3515,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS {PENDING_TXS_TABLE} (
             run_id TEXT NOT NULL,
             txid_hex TEXT PRIMARY KEY,
+            part_index INTEGER,
             encrypted_raw_tx TEXT NOT NULL,
             target_height INTEGER NOT NULL,
             anchor_boundary_height INTEGER,
@@ -3292,6 +3553,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "
     ))
     .map_err(|e| format!("Initialize migration schema: {e}"))?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "part_index", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "anchor_boundary_height", "INTEGER")?;
     add_column_if_missing(
         conn,
@@ -3306,6 +3568,16 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "TEXT NOT NULL DEFAULT 'standard'",
     )?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
+    backfill_pending_part_indices(conn)?;
+    conn.execute(
+        &format!(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vizor_migration_pending_part
+             ON {PENDING_TXS_TABLE}(run_id, part_index)
+             WHERE part_index IS NOT NULL"
+        ),
+        [],
+    )
+    .map_err(|e| format!("Create migration pending part index: {e}"))?;
     conn.execute(
         &format!(
             "UPDATE {PENDING_TXS_TABLE}
@@ -3983,6 +4255,7 @@ mod tests {
                     nullifier_hex: None,
                 };
                 PendingMigrationTxInsert {
+                    part_index: index as u32,
                     txid_hex,
                     raw_tx: vec![index as u8],
                     target_height: 501,
@@ -4107,6 +4380,7 @@ mod tests {
         );
         let recovery = pending_parts_needing_resign(&db_path, "expired-run").unwrap();
         assert_eq!(recovery.len(), 1);
+        assert_eq!(recovery[0].part_index, 0);
         assert_eq!(recovery[0].value_zatoshi, 100);
         assert_eq!(recovery[0].fee_zatoshi, 10);
         assert_eq!(recovery[0].selected_note, selected_note);
@@ -4129,6 +4403,7 @@ mod tests {
             vec![PendingMigrationTxReplacement {
                 old_txid_hex: "22".repeat(32),
                 replacement: PendingMigrationTxInsert {
+                    part_index: 0,
                     txid_hex: "33".repeat(32),
                     raw_tx: vec![1, 2, 3],
                     target_height: 101,
@@ -4153,6 +4428,18 @@ mod tests {
         assert_eq!(totals.txids, vec!["33".repeat(32)]);
         assert_eq!(totals.value_zatoshi, 100);
         assert_eq!(totals.fee_zatoshi, 10);
+        let replacement_part_index: u32 =
+            open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+                .unwrap()
+                .query_row(
+                    &format!(
+                        "SELECT part_index FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+        assert_eq!(replacement_part_index, 0);
         assert_eq!(
             due_pending_txs(
                 &db_path,
@@ -4922,6 +5209,10 @@ mod tests {
         let status = status_for_run(&conn, stale_run.clone()).unwrap();
         assert_eq!(status.phase, PHASE_WAITING_MIGRATION_CONFIRMATIONS);
         assert_eq!(status.confirmed_tx_count, 1);
+        assert_eq!(status.parts.len(), 1);
+        assert_eq!(status.parts[0].part_index, 0);
+        assert_eq!(status.parts[0].state, MigrationPartState::Confirming);
+        assert_eq!(status.parts[0].confirmation_count, 1);
         let lock_state: String = conn
             .query_row(
                 &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
@@ -4954,6 +5245,10 @@ mod tests {
         let status = status_for_run(&conn, stale_run).unwrap();
         assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
         assert_eq!(status.confirmed_tx_count, 0);
+        assert_eq!(status.parts.len(), 1);
+        assert_eq!(status.parts[0].part_index, 0);
+        assert_eq!(status.parts[0].state, MigrationPartState::Scheduled);
+        assert_eq!(status.parts[0].confirmation_count, 0);
         let lock_state: String = conn
             .query_row(
                 &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
@@ -4962,6 +5257,166 @@ mod tests {
             )
             .unwrap();
         assert_eq!(lock_state, "locked");
+    }
+
+    #[test]
+    fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (20)",
+            [],
+        )
+        .unwrap();
+
+        let txids = [
+            "10".repeat(32),
+            "20".repeat(32),
+            "30".repeat(32),
+            "40".repeat(32),
+        ];
+        for (part_index, (txid, status)) in txids
+            .iter()
+            .zip(["scheduled", "broadcasted", "confirmed", "confirmed"])
+            .enumerate()
+        {
+            conn.execute(
+                &format!(
+                    "INSERT INTO {PENDING_TXS_TABLE}
+                     (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                      expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                      selected_note_output_index, selected_note_value, scheduled_at_ms,
+                      scheduled_height, status, metadata_json)
+                     VALUES ('run-parts', ?1, ?2, 'raw', 1, 100, 100, 1, ?3,
+                             0, 101, 1, ?4, ?5, '{{}}')"
+                ),
+                params![
+                    txid,
+                    part_index as u32,
+                    "aa".repeat(32),
+                    part_index + 1,
+                    status
+                ],
+            )
+            .unwrap();
+        }
+        for (txid, mined_height) in [(&txids[2], 20u32), (&txids[3], 18u32)] {
+            let mut txid_blob = hex::decode(txid).unwrap();
+            txid_blob.reverse();
+            conn.execute(
+                "INSERT INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+                params![txid_blob, mined_height],
+            )
+            .unwrap();
+        }
+
+        let parts = migration_parts_for_run(
+            &conn,
+            "run-parts",
+            &[100, 100, 100, 100],
+            PHASE_WAITING_MIGRATION_CONFIRMATIONS,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0].state, MigrationPartState::Scheduled);
+        assert_eq!(parts[1].state, MigrationPartState::Migrating);
+        assert_eq!(parts[2].state, MigrationPartState::Confirming);
+        assert_eq!(parts[2].confirmation_count, 1);
+        assert_eq!(parts[3].state, MigrationPartState::Completed);
+        assert_eq!(parts[3].confirmation_count, 3);
+        assert_eq!(
+            parts.iter().map(|part| part.part_index).collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn legacy_pending_parts_backfill_from_signed_child_identity() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('legacy-run', 'account-1', 'test', 'db', ?1, 1, 1,
+                         '[100,100]')"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+
+        for (part_index, note_txid) in [(0u32, "11".repeat(32)), (1u32, "22".repeat(32))] {
+            let selected_note = PreparedOrchardNoteRef {
+                txid_hex: note_txid.clone(),
+                output_index: 0,
+                value_zatoshi: 101,
+                note_version: 2,
+                nullifier_hex: None,
+            };
+            conn.execute(
+                &format!(
+                    "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                     (run_id, message_id, child_index, encrypted_base_pczt,
+                      encrypted_compact_sigs, target_height, expiry_height,
+                      value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                     VALUES ('legacy-run', ?1, ?2, 'base', 'sigs', 1, 100,
+                             100, 1, ?3, '{{}}')"
+                ),
+                params![
+                    format!("message-{part_index}"),
+                    part_index,
+                    serde_json::to_string(&selected_note).unwrap()
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                &format!(
+                    "INSERT INTO {PENDING_TXS_TABLE}
+                     (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                      value_zatoshi, fee_zatoshi, selected_note_txid,
+                      selected_note_output_index, selected_note_value, scheduled_at_ms,
+                      scheduled_height, status, metadata_json)
+                     VALUES ('legacy-run', ?1, 'raw', 1, 100, 100, 1, ?2,
+                             0, 101, 1, ?3, 'scheduled', '{{}}')"
+                ),
+                params![
+                    format!("{:064x}", part_index + 50),
+                    note_txid,
+                    20 - part_index
+                ],
+            )
+            .unwrap();
+        }
+
+        backfill_pending_part_indices(&conn).unwrap();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT lower(selected_note_txid), part_index
+                 FROM {PENDING_TXS_TABLE} WHERE run_id = 'legacy-run'"
+            ))
+            .unwrap();
+        let assigned = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .unwrap();
+        assert_eq!(assigned[&"11".repeat(32)], 0);
+        assert_eq!(assigned[&"22".repeat(32)], 1);
     }
 
     #[test]

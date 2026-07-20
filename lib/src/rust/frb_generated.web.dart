@@ -315,6 +315,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<MigrationPartStatus> dco_decode_list_migration_part_status(dynamic raw);
+
+  @protected
   List<MigrationScheduledBroadcast>
   dco_decode_list_migration_scheduled_broadcast(dynamic raw);
 
@@ -414,6 +417,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ZcashBatchSignedMessage> dco_decode_list_zcash_batch_signed_message(
     dynamic raw,
   );
+
+  @protected
+  MigrationPartState dco_decode_migration_part_state(dynamic raw);
+
+  @protected
+  MigrationPartStatus dco_decode_migration_part_status(dynamic raw);
 
   @protected
   MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
@@ -1013,6 +1022,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MigrationPartStatus> sse_decode_list_migration_part_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<MigrationScheduledBroadcast>
   sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer);
 
@@ -1130,6 +1144,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ZcashBatchSignedMessage> sse_decode_list_zcash_batch_signed_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPartState sse_decode_migration_part_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPartStatus sse_decode_migration_part_status(
     SseDeserializer deserializer,
   );
 
@@ -1861,6 +1885,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_migration_part_status(
+    List<MigrationPartStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_migration_scheduled_broadcast(
     List<MigrationScheduledBroadcast> self,
     SseSerializer serializer,
@@ -2016,6 +2046,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_zcash_batch_signed_message(
     List<ZcashBatchSignedMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_part_state(
+    MigrationPartState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_part_status(
+    MigrationPartStatus self,
     SseSerializer serializer,
   );
 

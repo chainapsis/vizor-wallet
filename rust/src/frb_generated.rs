@@ -6906,6 +6906,20 @@ impl SseDecode for Vec<Vec<u8>> {
     }
 }
 
+impl SseDecode for Vec<crate::api::sync::MigrationPartStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::sync::MigrationPartStatus>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::sync::MigrationScheduledBroadcast> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7232,6 +7246,44 @@ impl SseDecode for Vec<crate::wallet::keystone::ZcashBatchSignedMessage> {
     }
 }
 
+impl SseDecode for crate::api::sync::MigrationPartState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::MigrationPartState::Preparing,
+            1 => crate::api::sync::MigrationPartState::Scheduled,
+            2 => crate::api::sync::MigrationPartState::Migrating,
+            3 => crate::api::sync::MigrationPartState::Confirming,
+            4 => crate::api::sync::MigrationPartState::Completed,
+            5 => crate::api::sync::MigrationPartState::NeedsInput,
+            _ => unreachable!("Invalid variant for MigrationPartState: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::MigrationPartStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_partIndex = <u32>::sse_decode(deserializer);
+        let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_state = <crate::api::sync::MigrationPartState>::sse_decode(deserializer);
+        let mut var_txidHex = <Option<String>>::sse_decode(deserializer);
+        let mut var_scheduledHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_confirmationCount = <u32>::sse_decode(deserializer);
+        let mut var_confirmationTarget = <u32>::sse_decode(deserializer);
+        return crate::api::sync::MigrationPartStatus {
+            part_index: var_partIndex,
+            value_zatoshi: var_valueZatoshi,
+            state: var_state,
+            txid_hex: var_txidHex,
+            scheduled_height: var_scheduledHeight,
+            confirmation_count: var_confirmationCount,
+            confirmation_target: var_confirmationTarget,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::MigrationScheduledBroadcast {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7287,6 +7339,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_maxPreparedNotesPerRun = <u32>::sse_decode(deserializer);
         let mut var_scheduledBroadcasts =
             <Vec<crate::api::sync::MigrationScheduledBroadcast>>::sse_decode(deserializer);
+        let mut var_parts = <Vec<crate::api::sync::MigrationPartStatus>>::sse_decode(deserializer);
         return crate::api::sync::MigrationStatus {
             phase: var_phase,
             active_run_id: var_activeRunId,
@@ -7309,6 +7362,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             max_prepared_notes_per_run: var_maxPreparedNotesPerRun,
             scheduled_broadcasts: var_scheduledBroadcasts,
+            parts: var_parts,
         };
     }
 }
@@ -9500,6 +9554,57 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::delegate::Keysto
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPartState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Preparing => 0.into_dart(),
+            Self::Scheduled => 1.into_dart(),
+            Self::Migrating => 2.into_dart(),
+            Self::Confirming => 3.into_dart(),
+            Self::Completed => 4.into_dart(),
+            Self::NeedsInput => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::MigrationPartState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationPartState>
+    for crate::api::sync::MigrationPartState
+{
+    fn into_into_dart(self) -> crate::api::sync::MigrationPartState {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPartStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.part_index.into_into_dart().into_dart(),
+            self.value_zatoshi.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.txid_hex.into_into_dart().into_dart(),
+            self.scheduled_height.into_into_dart().into_dart(),
+            self.confirmation_count.into_into_dart().into_dart(),
+            self.confirmation_target.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::MigrationPartStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationPartStatus>
+    for crate::api::sync::MigrationPartStatus
+{
+    fn into_into_dart(self) -> crate::api::sync::MigrationPartStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationScheduledBroadcast {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -9577,6 +9682,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
             self.schedule_max_delay_blocks.into_into_dart().into_dart(),
             self.max_prepared_notes_per_run.into_into_dart().into_dart(),
             self.scheduled_broadcasts.into_into_dart().into_dart(),
+            self.parts.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -11493,6 +11599,16 @@ impl SseEncode for Vec<Vec<u8>> {
     }
 }
 
+impl SseEncode for Vec<crate::api::sync::MigrationPartStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::MigrationPartStatus>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::sync::MigrationScheduledBroadcast> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -11743,6 +11859,39 @@ impl SseEncode for Vec<crate::wallet::keystone::ZcashBatchSignedMessage> {
     }
 }
 
+impl SseEncode for crate::api::sync::MigrationPartState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::MigrationPartState::Preparing => 0,
+                crate::api::sync::MigrationPartState::Scheduled => 1,
+                crate::api::sync::MigrationPartState::Migrating => 2,
+                crate::api::sync::MigrationPartState::Confirming => 3,
+                crate::api::sync::MigrationPartState::Completed => 4,
+                crate::api::sync::MigrationPartState::NeedsInput => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::sync::MigrationPartStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.part_index, serializer);
+        <u64>::sse_encode(self.value_zatoshi, serializer);
+        <crate::api::sync::MigrationPartState>::sse_encode(self.state, serializer);
+        <Option<String>>::sse_encode(self.txid_hex, serializer);
+        <Option<u32>>::sse_encode(self.scheduled_height, serializer);
+        <u32>::sse_encode(self.confirmation_count, serializer);
+        <u32>::sse_encode(self.confirmation_target, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::MigrationScheduledBroadcast {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -11789,6 +11938,7 @@ impl SseEncode for crate::api::sync::MigrationStatus {
             self.scheduled_broadcasts,
             serializer,
         );
+        <Vec<crate::api::sync::MigrationPartStatus>>::sse_encode(self.parts, serializer);
     }
 }
 

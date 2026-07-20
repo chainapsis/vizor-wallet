@@ -697,6 +697,25 @@ pub struct MigrationScheduledTransfer {
     pub block_offset: u32,
 }
 
+pub enum MigrationPartState {
+    Preparing,
+    Scheduled,
+    Migrating,
+    Confirming,
+    Completed,
+    NeedsInput,
+}
+
+pub struct MigrationPartStatus {
+    pub part_index: u32,
+    pub value_zatoshi: u64,
+    pub state: MigrationPartState,
+    pub txid_hex: Option<String>,
+    pub scheduled_height: Option<u32>,
+    pub confirmation_count: u32,
+    pub confirmation_target: u32,
+}
+
 pub struct MigrationStatus {
     pub phase: String,
     pub active_run_id: Option<String>,
@@ -724,6 +743,7 @@ pub struct MigrationStatus {
     pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
+    pub parts: Vec<MigrationPartStatus>,
 }
 
 pub struct OrchardMigrationPrivatePlan {
@@ -1030,6 +1050,30 @@ pub fn get_orchard_migration_status(
                     scheduled_at_ms: broadcast.scheduled_at_ms,
                     scheduled_height: broadcast.scheduled_height,
                     status: broadcast.status,
+                })
+                .collect(),
+            parts: status
+                .parts
+                .into_iter()
+                .map(|part| MigrationPartStatus {
+                    part_index: part.part_index,
+                    value_zatoshi: part.value_zatoshi,
+                    state: match part.state {
+                        wallet_sync::MigrationPartState::Preparing => MigrationPartState::Preparing,
+                        wallet_sync::MigrationPartState::Scheduled => MigrationPartState::Scheduled,
+                        wallet_sync::MigrationPartState::Migrating => MigrationPartState::Migrating,
+                        wallet_sync::MigrationPartState::Confirming => {
+                            MigrationPartState::Confirming
+                        }
+                        wallet_sync::MigrationPartState::Completed => MigrationPartState::Completed,
+                        wallet_sync::MigrationPartState::NeedsInput => {
+                            MigrationPartState::NeedsInput
+                        }
+                    },
+                    txid_hex: part.txid_hex,
+                    scheduled_height: part.scheduled_height,
+                    confirmation_count: part.confirmation_count,
+                    confirmation_target: part.confirmation_target,
                 })
                 .collect(),
         })

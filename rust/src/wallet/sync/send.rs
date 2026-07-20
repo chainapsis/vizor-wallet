@@ -1445,8 +1445,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         let signed_children = stored
             .child_messages
             .iter()
-            .enumerate()
-            .map(|(index, child)| {
+            .map(|child| {
                 let mut selected_note = child.selected_note.clone();
                 selected_note.nullifier_hex = None;
                 let sigs = signed_by_id
@@ -1456,7 +1455,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                 super::pczt::preflight_orchard_spend_auth_signatures(&child.base_pczt, &sigs)?;
                 Ok(super::migration::SignedMigrationPcztInsert {
                     message_id: child.id.clone(),
-                    child_index: index as u32,
+                    child_index: child.part_index,
                     base_pczt: child.base_pczt.clone(),
                     sigs,
                     target_height: child.target_height,
@@ -1585,7 +1584,10 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 network,
                 account_uuid,
                 note_ref,
-                (index + 1) as u32,
+                recoveries
+                    .get(index)
+                    .map(|recovery| recovery.part_index + 1)
+                    .unwrap_or((index + 1) as u32),
                 timing_policy,
                 &mut anchor_cohort_counts,
                 !recoveries.is_empty(),
@@ -1773,6 +1775,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                 None,
             )?;
             pending_inserts.push(super::migration::PendingMigrationTxInsert {
+                part_index: message.part_index,
                 txid_hex: extracted.txid.to_string(),
                 raw_tx: extracted.raw_tx,
                 target_height: message.target_height,
@@ -2141,8 +2144,7 @@ fn prepare_software_migration_run(
         .collect::<Result<Vec<_>, String>>()?;
     let signed_children = child_messages
         .iter()
-        .enumerate()
-        .map(|(index, child)| {
+        .map(|child| {
             let signed_pczt = sign_orchard_migration_pczt_with_usk(
                 &child.base_pczt,
                 &child.orchard_spend_action_indices,
@@ -2160,7 +2162,7 @@ fn prepare_software_migration_run(
             selected_note.nullifier_hex = None;
             Ok(super::migration::SignedMigrationPcztInsert {
                 message_id: child.id.clone(),
-                child_index: index as u32,
+                child_index: child.part_index,
                 base_pczt: child.base_pczt.clone(),
                 sigs,
                 target_height: child.target_height,
@@ -2264,6 +2266,7 @@ struct StoredDenominationCompletion {
 
 #[derive(Clone)]
 struct CreatedMigrationPczt {
+    part_index: u32,
     id: String,
     base_pczt: Vec<u8>,
     orchard_spend_action_indices: Vec<usize>,
@@ -3701,6 +3704,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let target_height_u32: u32 = target_height.into();
 
     Ok(Some(CreatedMigrationPczt {
+        part_index: migration_index.saturating_sub(1),
         id: format!("migration-{migration_index}"),
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
@@ -3931,6 +3935,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         0,
     )?;
     Ok(Some(CreatedMigrationPczt {
+        part_index: migration_index.saturating_sub(1),
         id: format!("migration-{migration_index}"),
         base_pczt: built_pczt.bytes,
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
@@ -5100,6 +5105,7 @@ fn rebuild_expired_software_migration_parts(
         replacements.push(super::migration::PendingMigrationTxReplacement {
             old_txid_hex: recovery.old_txid_hex,
             replacement: super::migration::PendingMigrationTxInsert {
+                part_index: recovery.part_index,
                 txid_hex: extracted.txid.to_string(),
                 raw_tx: extracted.raw_tx,
                 target_height: created.target_height,
@@ -5235,6 +5241,7 @@ fn finalize_presigned_migration_children(
             current_note.output_index,
         );
         pending_inserts.push(super::migration::PendingMigrationTxInsert {
+            part_index: child.child_index,
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,
             target_height: child.target_height,
@@ -6863,6 +6870,7 @@ mod tests {
             &db_path,
             &run_id,
             vec![migration::PendingMigrationTxInsert {
+                part_index: 0,
                 txid_hex: pending_txid.to_string(),
                 raw_tx: vec![5, 6, 7, 8],
                 target_height: 100,

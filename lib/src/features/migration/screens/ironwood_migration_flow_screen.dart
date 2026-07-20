@@ -2052,6 +2052,9 @@ double? _statusProgress(rust_sync.MigrationStatus status) {
     return 0.25;
   }
 
+  final partProgress = _migrationPartProgress(status);
+  if (partProgress != null) return partProgress;
+
   final total = status.totalCount;
   if (total > 0) {
     return (status.confirmedTxCount / total).clamp(0, 1);
@@ -2626,6 +2629,7 @@ enum _MigrationBatchStatus {
   preparing,
   scheduled,
   migrating,
+  confirming,
   complete,
   needsInput,
 }
@@ -2656,6 +2660,7 @@ class _MigrationBatchRow extends StatelessWidget {
       _MigrationBatchStatus.preparing => 'Preparing',
       _MigrationBatchStatus.scheduled => 'Scheduled',
       _MigrationBatchStatus.migrating => 'Migrating...',
+      _MigrationBatchStatus.confirming => 'Confirming...',
       _MigrationBatchStatus.complete => 'Completed',
       _MigrationBatchStatus.needsInput => 'Needs input',
     };
@@ -2765,28 +2770,22 @@ class _MigrationStatusContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var values = [for (final value in status.targetValuesZatoshi) value];
+    final parts = [...status.parts]
+      ..sort((a, b) => a.partIndex.compareTo(b.partIndex));
+    var values = parts.isNotEmpty
+        ? [for (final part in parts) part.valueZatoshi]
+        : [for (final value in status.targetValuesZatoshi) value];
     if (values.isEmpty) values = [BigInt.zero];
-    final statuses = <_MigrationBatchStatus>[];
-    final hasBroadcastSchedule =
-        status.scheduledBroadcasts.isNotEmpty ||
-        status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
-        status.phase == kIronwoodMigrationBroadcastingPhase ||
-        status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
-    for (var i = 0; i < values.length; i++) {
-      if (i < status.confirmedTxCount) {
-        statuses.add(_MigrationBatchStatus.complete);
-      } else if (action == _StatusAction.needsInput &&
-          i == status.confirmedTxCount) {
-        statuses.add(_MigrationBatchStatus.needsInput);
-      } else if (i < status.broadcastedTxCount) {
-        statuses.add(_MigrationBatchStatus.migrating);
-      } else {
-        statuses.add(
-          hasBroadcastSchedule
-              ? _MigrationBatchStatus.scheduled
-              : _MigrationBatchStatus.preparing,
-        );
+    final statuses = parts.isNotEmpty
+        ? [for (final part in parts) _migrationBatchStatus(part.state)]
+        : _legacyMigrationBatchStatuses(status, values.length);
+    if (action == _StatusAction.needsInput &&
+        !statuses.contains(_MigrationBatchStatus.needsInput)) {
+      final inputIndex = statuses.indexWhere(
+        (status) => status != _MigrationBatchStatus.complete,
+      );
+      if (inputIndex >= 0) {
+        statuses[inputIndex] = _MigrationBatchStatus.needsInput;
       }
     }
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
@@ -2878,6 +2877,40 @@ class _MigrationStatusContent extends StatelessWidget {
       ),
     );
   }
+}
+
+_MigrationBatchStatus _migrationBatchStatus(
+  rust_sync.MigrationPartState state,
+) => switch (state) {
+  rust_sync.MigrationPartState.preparing => _MigrationBatchStatus.preparing,
+  rust_sync.MigrationPartState.scheduled => _MigrationBatchStatus.scheduled,
+  rust_sync.MigrationPartState.migrating => _MigrationBatchStatus.migrating,
+  rust_sync.MigrationPartState.confirming => _MigrationBatchStatus.confirming,
+  rust_sync.MigrationPartState.completed => _MigrationBatchStatus.complete,
+  rust_sync.MigrationPartState.needsInput => _MigrationBatchStatus.needsInput,
+};
+
+List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
+  rust_sync.MigrationStatus status,
+  int count,
+) {
+  final hasBroadcastSchedule =
+      status.scheduledBroadcasts.isNotEmpty ||
+      status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
+      status.phase == kIronwoodMigrationBroadcastingPhase ||
+      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
+  final submittedCount = status.confirmedTxCount + status.broadcastedTxCount;
+  return [
+    for (var i = 0; i < count; i++)
+      if (i < status.confirmedTxCount)
+        _MigrationBatchStatus.confirming
+      else if (i < submittedCount)
+        _MigrationBatchStatus.migrating
+      else if (hasBroadcastSchedule)
+        _MigrationBatchStatus.scheduled
+      else
+        _MigrationBatchStatus.preparing,
+  ];
 }
 
 String _privateMigrationStartErrorMessage(Object error) {
@@ -3943,6 +3976,9 @@ String _formatZecAmountCompact(BigInt zatoshi) {
 }
 
 double _transferProgress(rust_sync.MigrationStatus status) {
+  final partProgress = _migrationPartProgress(status);
+  if (partProgress != null) return partProgress;
+
   if (status.totalCount > 0) {
     final transferredCount = _transferCompletedCountForPhase(status);
     final progress = (transferredCount / status.totalCount)
@@ -3966,12 +4002,32 @@ double _transferProgress(rust_sync.MigrationStatus status) {
 }
 
 bool _isWaitingForTrustedMigrationComplete(rust_sync.MigrationStatus status) {
+  if (status.parts.isNotEmpty) {
+    return status.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
+        status.parts.every(
+          (part) =>
+              part.state == rust_sync.MigrationPartState.confirming ||
+              part.state == rust_sync.MigrationPartState.completed,
+        ) &&
+        status.parts.any(
+          (part) => part.state == rust_sync.MigrationPartState.confirming,
+        );
+  }
   return status.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
       status.totalCount > 0 &&
       status.confirmedTxCount >= status.totalCount;
 }
 
 int _transferCompletedCountForPhase(rust_sync.MigrationStatus status) {
+  if (status.parts.isNotEmpty) {
+    return status.parts
+        .where(
+          (part) =>
+              part.state == rust_sync.MigrationPartState.confirming ||
+              part.state == rust_sync.MigrationPartState.completed,
+        )
+        .length;
+  }
   return switch (status.phase) {
     kIronwoodMigrationWaitingConfirmationsPhase => status.confirmedTxCount,
     kIronwoodMigrationBroadcastingPhase => status.broadcastedTxCount,
@@ -4023,6 +4079,7 @@ _TransferAmount _leftToTransferAmountFromProgress(
 }
 
 int _plannedTransferBatchCount(rust_sync.MigrationStatus status) {
+  if (status.parts.isNotEmpty) return status.parts.length;
   if (status.totalCount > 0) return status.totalCount;
 
   final progressedCount = status.broadcastedTxCount > status.confirmedTxCount
@@ -4039,12 +4096,33 @@ int _plannedTransferBatchCount(rust_sync.MigrationStatus status) {
 
 int _currentTransferBatchIndex(rust_sync.MigrationStatus status) {
   final planned = _plannedTransferBatchCount(status);
+  if (status.parts.isNotEmpty) {
+    final firstIncomplete = status.parts.indexWhere(
+      (part) => part.state != rust_sync.MigrationPartState.completed,
+    );
+    return firstIncomplete < 0 ? planned : firstIncomplete + 1;
+  }
   final completedOrSubmitted = switch (status.phase) {
     kIronwoodMigrationWaitingConfirmationsPhase => status.confirmedTxCount,
     kIronwoodMigrationBroadcastingPhase => status.broadcastedTxCount,
     _ => math.max(status.confirmedTxCount, status.broadcastedTxCount),
   };
   return math.min(planned, math.max(1, completedOrSubmitted + 1));
+}
+
+double? _migrationPartProgress(rust_sync.MigrationStatus status) {
+  if (status.parts.isEmpty) return null;
+  var progress = 0.0;
+  for (final part in status.parts) {
+    progress += switch (part.state) {
+      rust_sync.MigrationPartState.completed => 1,
+      rust_sync.MigrationPartState.confirming
+          when part.confirmationTarget > 0 =>
+        (part.confirmationCount / part.confirmationTarget).clamp(0, 1),
+      _ => 0,
+    };
+  }
+  return (progress / status.parts.length).clamp(0, 1);
 }
 
 class _TransferAmount {

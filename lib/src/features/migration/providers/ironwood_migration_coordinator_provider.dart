@@ -218,6 +218,11 @@ class IronwoodMigrationCoordinator
       status.broadcastedTxCount,
       status.confirmedTxCount,
       status.signedChildPcztCount,
+      for (final part in status.parts) ...[
+        part.partIndex,
+        part.state.name,
+        part.confirmationCount,
+      ],
     ].join(':');
   }
 

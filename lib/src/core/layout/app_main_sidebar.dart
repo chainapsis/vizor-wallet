@@ -507,8 +507,16 @@ class _SidebarMigrationProgress extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final needsInput = isHardware && status.phase == 'ready_to_migrate';
-    final total = status.totalCount;
-    final complete = status.confirmedTxCount;
+    final total = status.parts.isNotEmpty
+        ? status.parts.length
+        : status.totalCount;
+    final complete = status.parts.isNotEmpty
+        ? status.parts
+              .where(
+                (part) => part.state == rust_sync.MigrationPartState.completed,
+              )
+              .length
+        : status.confirmedTxCount;
     return AppTappable(
       onTap: onTap,
       child: Padding(

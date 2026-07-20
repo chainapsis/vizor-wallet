@@ -88,6 +88,24 @@ void main() {
     },
   );
 
+  testWidgets('sidebar counts only trusted completed migration parts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _mixedMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('1/3'), findsOneWidget);
+    expect(find.text('2/3'), findsNothing);
+  });
+
   testWidgets('sidebar requests input only for Keystone migration', (
     tester,
   ) async {
@@ -917,6 +935,61 @@ final _readyMigrationStatus = rust_sync.MigrationStatus(
   scheduleMaxDelayBlocks: 576,
   maxPreparedNotesPerRun: 64,
   scheduledBroadcasts: const [],
+  parts: const [],
+);
+
+final _mixedMigrationStatus = rust_sync.MigrationStatus(
+  phase: 'migrating',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([
+    1000000000,
+    200000000,
+    50000000,
+  ]),
+  preparedNoteCount: 3,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 1,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 2,
+  totalCount: 3,
+  signedChildPcztCount: 3,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  maxPreparedNotesPerRun: 64,
+  scheduledBroadcasts: const [],
+  parts: [
+    rust_sync.MigrationPartStatus(
+      partIndex: 0,
+      valueZatoshi: BigInt.from(1000000000),
+      state: rust_sync.MigrationPartState.confirming,
+      txidHex: 'part-0',
+      confirmationCount: 1,
+      confirmationTarget: 3,
+    ),
+    rust_sync.MigrationPartStatus(
+      partIndex: 1,
+      valueZatoshi: BigInt.from(200000000),
+      state: rust_sync.MigrationPartState.completed,
+      txidHex: 'part-1',
+      confirmationCount: 3,
+      confirmationTarget: 3,
+    ),
+    rust_sync.MigrationPartStatus(
+      partIndex: 2,
+      valueZatoshi: BigInt.from(50000000),
+      state: rust_sync.MigrationPartState.scheduled,
+      txidHex: 'part-2',
+      scheduledHeight: 600,
+      confirmationCount: 0,
+      confirmationTarget: 3,
+    ),
+  ],
 );
 
 const _multiAccountState = AccountState(

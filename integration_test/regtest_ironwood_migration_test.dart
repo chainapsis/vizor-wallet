@@ -271,6 +271,21 @@ void main() {
         description: 'persisted migration broadcast schedule',
         timeout: const Duration(minutes: 12),
       );
+      expect(scheduled.parts, isNotEmpty);
+      expect(
+        scheduled.parts.every(
+          (part) =>
+              part.state == rust_sync.MigrationPartState.scheduled ||
+              part.state == rust_sync.MigrationPartState.migrating,
+        ),
+        isTrue,
+      );
+      expect(
+        scheduled.parts.any(
+          (part) => part.state == rust_sync.MigrationPartState.completed,
+        ),
+        isFalse,
+      );
       final scheduleBase =
           scheduled.scheduledBroadcasts.first.scheduledHeight -
           displayedSchedule.first.blockOffset;
@@ -298,12 +313,43 @@ void main() {
       final broadcast = await _migrationStatus(accountUuid);
       expect(broadcast.broadcastedTxCount, greaterThan(0));
       expect(broadcast.totalCount, greaterThan(0));
+      expect(
+        broadcast.parts.any(
+          (part) => part.state == rust_sync.MigrationPartState.migrating,
+        ),
+        isTrue,
+      );
 
-      e2eLog('confirming Ironwood migration transaction');
+      e2eLog('mining the Ironwood migration transaction');
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
-        payload: const {'blocks': 10},
+        payload: const {'blocks': 1},
+      );
+      final confirming = await waitForDesktopRegtestMigrationStatus(
+        tester,
+        accountUuid,
+        (status) => status.parts.any(
+          (part) => part.state == rust_sync.MigrationPartState.confirming,
+        ),
+        description: 'mined migration waiting for trusted confirmations',
+        timeout: const Duration(minutes: 5),
+      );
+      expect(confirming.phase, isNot(kIronwoodMigrationCompletePhase));
+      expect(
+        confirming.parts.any(
+          (part) =>
+              part.state == rust_sync.MigrationPartState.confirming &&
+              part.confirmationCount < part.confirmationTarget,
+        ),
+        isTrue,
+      );
+
+      e2eLog('confirming the Ironwood migration transaction');
+      await ironwoodDriverPost(
+        _driverUrl,
+        '/mine',
+        payload: const {'blocks': 9},
       );
       final complete = await waitForDesktopRegtestMigrationStatus(
         tester,
@@ -314,6 +360,12 @@ void main() {
       );
       expect(complete.phase, 'complete');
       expect(complete.confirmedTxCount, complete.totalCount);
+      expect(
+        complete.parts.every(
+          (part) => part.state == rust_sync.MigrationPartState.completed,
+        ),
+        isTrue,
+      );
 
       final dbPath = await getWalletDbPath();
       final balance = await rust_sync.getBalance(
