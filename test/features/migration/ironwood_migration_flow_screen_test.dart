@@ -442,6 +442,8 @@ void main() {
       const ValueKey('ironwood_migration_status_action_button'),
     );
     expect(button, findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+    expect(find.text('Updating...'), findsNothing);
     expect(tester.widget<AppButton>(button).onPressed, isNotNull);
     await tester.tap(button);
     await tester.pumpAndSettle();

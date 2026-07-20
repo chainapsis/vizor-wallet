@@ -2868,7 +2868,7 @@ class _MigrationStatusContent extends StatelessWidget {
                       : 64,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text(isAdvancing ? 'Updating...' : buttonLabel),
+                    child: Text(buttonLabel),
                   ),
                 ),
               ),
