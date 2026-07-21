@@ -1412,6 +1412,10 @@ pub fn discard_keystone_migration_request(request_id: String) -> Result<(), Stri
     catch(|| wallet_sync::discard_keystone_migration_request(&request_id))
 }
 
+pub fn discard_all_keystone_migration_requests() -> Result<(), String> {
+    catch(wallet_sync::discard_all_keystone_migration_requests)
+}
+
 pub fn complete_orchard_migration_batch_pczt(
     db_path: String,
     network: String,

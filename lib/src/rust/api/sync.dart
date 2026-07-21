@@ -457,6 +457,9 @@ Future<void> discardKeystoneMigrationRequest({required String requestId}) =>
       requestId: requestId,
     );
 
+Future<void> discardAllKeystoneMigrationRequests() =>
+    RustLib.instance.api.crateApiSyncDiscardAllKeystoneMigrationRequests();
+
 Future<IronwoodMigrationResult> completeOrchardMigrationBatchPczt({
   required String dbPath,
   required String network,

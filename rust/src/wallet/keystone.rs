@@ -762,6 +762,21 @@ mod tests {
         test_pczt(expiry_height).serialize().unwrap()
     }
 
+    fn test_pczt_bytes_with_padding(expiry_height: u32, padding_len: usize) -> Vec<u8> {
+        use pczt::roles::updater::Updater;
+
+        Updater::new(test_pczt(expiry_height))
+            .update_global_with(|mut global| {
+                global.set_proprietary(
+                    format!("test-padding-{expiry_height}"),
+                    vec![expiry_height as u8; padding_len],
+                );
+            })
+            .finish()
+            .serialize()
+            .unwrap()
+    }
+
     fn decode_test_ur_parts(parts: &[String]) -> Vec<u8> {
         let first = parts[0].to_lowercase();
         let (kind, message) = ur::decode(&first).expect("UR should decode");
@@ -820,6 +835,43 @@ mod tests {
         assert_eq!(
             request.pczts()[1].clone().serialize().unwrap(),
             test_pczt_bytes(2)
+        );
+    }
+
+    #[test]
+    fn encodes_fifty_zcash_sign_batch_messages() {
+        let messages = (1..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
+            .map(|index| ZcashBatchMessageInput {
+                id: format!("tx-{index}"),
+                pczt_bytes: test_pczt_bytes(index as u32),
+            })
+            .collect::<Vec<_>>();
+
+        let parts = encode_zcash_sign_batch_ur_parts("request-50", &messages, 1_000_000)
+            .expect("50-message batch should encode");
+        let envelope = ZcashSignBatch::try_from(decode_test_ur_parts(&parts))
+            .expect("50-message zcash-sign-batch CBOR should decode");
+        let request =
+            BatchSignRequest::parse(envelope.get_data()).expect("Postcard request should decode");
+
+        assert_eq!(request.pczts().len(), ZCASH_SIGN_BATCH_MAX_MESSAGES);
+    }
+
+    #[test]
+    fn rejects_fifty_valid_pczts_above_firmware_byte_limit() {
+        let messages = (1..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
+            .map(|index| ZcashBatchMessageInput {
+                id: format!("tx-{index}"),
+                pczt_bytes: test_pczt_bytes_with_padding(index as u32, 11 * 1024),
+            })
+            .collect::<Vec<_>>();
+
+        let error = encode_zcash_sign_batch_ur_parts("request-large", &messages, 1_000_000)
+            .expect_err("oversized valid PCZT batch should fail before UR encoding");
+
+        assert_eq!(
+            error,
+            format!("Zcash batch PCZTs exceed {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes")
         );
     }
 

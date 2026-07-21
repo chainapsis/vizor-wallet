@@ -955,7 +955,6 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         fee_zatoshi,
         total_migratable_zatoshi,
     } = prepared;
-    super::migration::validate_schedule(&approved_schedule, &plan.migration_outputs, network)?;
     let prepared_count = u32::try_from(prepared_refs.len())
         .map_err(|_| "Migration output count exceeds u32".to_string())?;
     let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
@@ -966,15 +965,9 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         &prepared_refs,
         signed_children,
         denomination_stages,
+        Some(&approved_schedule),
         pending_password.as_slice(),
         pending_salt_base64,
-    )?;
-    super::migration::set_run_approved_schedule(
-        db_path,
-        &run_id,
-        network,
-        &approved_schedule,
-        &plan.migration_outputs,
     )?;
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
@@ -1302,15 +1295,6 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
     }
     let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
-    if let Err(e) = super::migration::validate_schedule(
-        &approved_schedule,
-        &stored.plan.migration_outputs,
-        network,
-    ) {
-        reset_denomination_request_after_failed_completion(request_id);
-        return Err(e);
-    }
-
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
             signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
@@ -1322,6 +1306,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             &prepared_refs,
             Vec::new(),
             denomination_stages,
+            Some(&approved_schedule),
             pending_password,
             pending_salt_base64,
         )
@@ -1333,21 +1318,6 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             return Err(e);
         }
     };
-    if let Err(e) = super::migration::set_run_approved_schedule(
-        db_path,
-        &run_id,
-        network,
-        &approved_schedule,
-        &stored.plan.migration_outputs,
-    ) {
-        let _ = super::migration::retire_run_for_rebuild(
-            db_path,
-            &run_id,
-            "The approved Keystone migration schedule could not be saved.",
-        );
-        reset_denomination_request_after_failed_completion(request_id);
-        return Err(e);
-    }
     if let Ok(mut store) = keystone_denomination_requests().lock() {
         store.remove(request_id);
     }
@@ -1616,6 +1586,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             &prepared_refs,
             signed_children,
             denomination_stages,
+            None,
             pending_password,
             pending_salt_base64,
         )
@@ -2591,6 +2562,12 @@ fn validate_keystone_migration_messages(
     if messages.is_empty() {
         return Err("Keystone migration request has no messages".to_string());
     }
+    if messages.len() > ZCASH_SIGN_BATCH_MAX_MESSAGES {
+        return Err(format!(
+            "Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs per round, but this round needs {}.",
+            messages.len()
+        ));
+    }
     let mut ids = HashSet::with_capacity(messages.len());
     let mut payloads = HashSet::with_capacity(messages.len());
     for message in messages {
@@ -2728,6 +2705,41 @@ pub(crate) fn discard_keystone_migration_request(request_id: &str) -> Result<(),
         return Ok(());
     }
     store.remove(request_id);
+    Ok(())
+}
+
+pub(crate) fn discard_keystone_migration_requests_for_account(
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    keystone_single_qr_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
+        .retain(|_, stored| stored.account_uuid != account_uuid || stored.network != network);
+    keystone_denomination_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?
+        .retain(|_, stored| stored.account_uuid != account_uuid || stored.network != network);
+    keystone_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone migration request store: {e}"))?
+        .retain(|_, stored| stored.account_uuid != account_uuid || stored.network != network);
+    Ok(())
+}
+
+pub(crate) fn discard_all_keystone_migration_requests() -> Result<(), String> {
+    keystone_single_qr_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
+        .clear();
+    keystone_denomination_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?
+        .clear();
+    keystone_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone migration request store: {e}"))?
+        .clear();
     Ok(())
 }
 
@@ -6442,6 +6454,105 @@ mod tests {
     const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
     #[test]
+    fn keystone_migration_signing_rejects_more_than_fifty_messages() {
+        let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
+            .map(|index| KeystoneMigrationMessage {
+                id: format!("message-{index}"),
+                redacted_pczt: vec![index as u8, 1],
+            })
+            .collect::<Vec<_>>();
+
+        let error = validate_keystone_migration_messages(&messages).unwrap_err();
+
+        assert!(error.contains("at most 50 PCZTs per round"));
+        assert!(error.contains("needs 51"));
+    }
+
+    #[test]
+    fn deleting_account_discards_only_its_keystone_migration_requests() {
+        const DELETED_ACCOUNT: &str = "keystone-delete-account";
+        const KEPT_ACCOUNT: &str = "keystone-kept-account";
+        let plan = migration::plan_denominations(1_000_000, 10_000, 15_000, 1).unwrap();
+
+        for (request_id, account_uuid) in [
+            ("delete-denomination-request", DELETED_ACCOUNT),
+            ("keep-denomination-request", KEPT_ACCOUNT),
+        ] {
+            keystone_denomination_requests().lock().unwrap().insert(
+                request_id.to_string(),
+                StoredDenominationPczt {
+                    account_uuid: account_uuid.to_string(),
+                    network: WalletNetwork::Test,
+                    state: KeystoneMigrationRequestState::ProofReady,
+                    proof_error: None,
+                    split_stages: vec![],
+                    total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                    plan: plan.clone(),
+                },
+            );
+        }
+        for (request_id, account_uuid) in [
+            ("delete-batch-request", DELETED_ACCOUNT),
+            ("keep-batch-request", KEPT_ACCOUNT),
+        ] {
+            keystone_migration_requests().lock().unwrap().insert(
+                request_id.to_string(),
+                StoredMigrationPcztBatch {
+                    account_uuid: account_uuid.to_string(),
+                    network: WalletNetwork::Test,
+                    run_id: format!("run-{request_id}"),
+                    fallback_total_count: 0,
+                    fallback_migrated_zatoshi: 0,
+                    recovery_old_txids: vec![],
+                    state: KeystoneMigrationRequestState::ProofReady,
+                    proof_error: None,
+                    messages: vec![],
+                },
+            );
+        }
+        for (request_id, account_uuid) in [
+            ("delete-single-request", DELETED_ACCOUNT),
+            ("keep-single-request", KEPT_ACCOUNT),
+        ] {
+            keystone_single_qr_migration_requests()
+                .lock()
+                .unwrap()
+                .insert(
+                    request_id.to_string(),
+                    StoredSingleQrMigrationPczt {
+                        account_uuid: account_uuid.to_string(),
+                        network: WalletNetwork::Test,
+                        state: KeystoneMigrationRequestState::ProofReady,
+                        proof_error: None,
+                        split_stages: vec![],
+                        total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                        plan: plan.clone(),
+                        child_messages: vec![],
+                    },
+                );
+        }
+
+        discard_keystone_migration_requests_for_account(DELETED_ACCOUNT, WalletNetwork::Test)
+            .unwrap();
+
+        for request_id in [
+            "delete-denomination-request",
+            "delete-batch-request",
+            "delete-single-request",
+        ] {
+            assert!(keystone_migration_proof_status(request_id).is_err());
+        }
+        for request_id in [
+            "keep-denomination-request",
+            "keep-batch-request",
+            "keep-single-request",
+        ] {
+            assert!(keystone_migration_proof_status(request_id).is_ok());
+            discard_keystone_migration_request(request_id).unwrap();
+        }
+    }
+
+    #[test]
     fn background_migration_policy_limits_each_broadcast_step() {
         let cancel = AtomicBool::new(false);
         let policy = MigrationBroadcastPolicy::background(&cancel);
@@ -7151,6 +7262,7 @@ mod tests {
                 denomination_input_txid,
                 selected_note_txid,
             )],
+            None,
             MIGRATION_TEST_PASSWORD,
             MIGRATION_TEST_SALT,
         )

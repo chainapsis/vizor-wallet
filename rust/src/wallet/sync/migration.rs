@@ -33,6 +33,7 @@ pub(crate) use stages::{
     DenominationStageOutputKind, DenominationStageOutputRef, DenominationStageStatus,
     DenominationStageStatusCounts, PendingRawDenominationStage,
 };
+use stages::{STAGES_TABLE, STAGE_INPUTS_TABLE, STAGE_OUTPUTS_TABLE};
 
 pub(crate) const ZATOSHIS_PER_ZEC: u64 = 100_000_000;
 pub(crate) const ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI: u64 = ZATOSHIS_PER_ZEC / 100;
@@ -124,6 +125,44 @@ const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
+
+pub(crate) fn delete_account_migration_rows_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    account_uuid: &str,
+) -> Result<(), String> {
+    if !table_exists(tx, RUNS_TABLE)? {
+        return Ok(());
+    }
+
+    for table in [
+        STAGE_INPUTS_TABLE,
+        STAGE_OUTPUTS_TABLE,
+        STAGES_TABLE,
+        PREPARED_NOTES_TABLE,
+        PENDING_TXS_TABLE,
+        SIGNED_CHILD_PCZTS_TABLE,
+    ] {
+        if table_exists(tx, table)? {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {table}
+                     WHERE run_id IN (
+                         SELECT run_id FROM {RUNS_TABLE} WHERE account_uuid = ?1
+                     )"
+                ),
+                params![account_uuid],
+            )
+            .map_err(|e| format!("Delete account migration rows from {table}: {e}"))?;
+        }
+    }
+
+    tx.execute(
+        &format!("DELETE FROM {RUNS_TABLE} WHERE account_uuid = ?1"),
+        params![account_uuid],
+    )
+    .map_err(|e| format!("Delete account migration runs: {e}"))?;
+    Ok(())
+}
 
 pub(crate) const PHASE_NO_ORCHARD_FUNDS: &str = "no_orchard_funds";
 pub(crate) const PHASE_WAITING_FOR_SPENDABLE_ORCHARD: &str = "waiting_for_spendable_orchard";
@@ -902,6 +941,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     prepared_notes: &[PreparedOrchardNoteRef],
     signed_children: Vec<SignedMigrationPcztInsert>,
     denomination_stages: Vec<DenominationStageInsert>,
+    approved_schedule: Option<&[MigrationScheduleEntry]>,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
@@ -919,6 +959,19 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
+    let schedule_json = match approved_schedule {
+        Some(schedule) => {
+            validate_schedule_with_policy(
+                schedule,
+                &plan.migration_outputs,
+                network,
+                timing_policy,
+            )?;
+            serde_json::to_string(schedule)
+                .map_err(|e| format!("Encode approved migration schedule: {e}"))?
+        }
+        None => "[]".to_string(),
+    };
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin staged migration run: {e}"))?;
@@ -926,8 +979,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, target_values_json, timing_policy)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)"
+              updated_at_ms, target_values_json, timing_policy, schedule_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9)"
         ),
         params![
             run_id,
@@ -938,6 +991,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             now,
             target_values_json,
             timing_policy.as_str(),
+            schedule_json,
         ],
     )
     .map_err(|e| format!("Create staged migration run: {e}"))?;
@@ -4027,6 +4081,118 @@ mod tests {
         }
     }
 
+    fn seed_account_migration_rows(
+        conn: &rusqlite::Connection,
+        run_id: &str,
+        account_uuid: &str,
+        suffix: &str,
+    ) {
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, ?2, 'regtest', 'wallet.db', ?3, 1, 1, '[100]')"
+            ),
+            params![run_id, account_uuid, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version)
+                 VALUES (?1, ?2, 0, 115000, 2)"
+            ),
+            params![run_id, format!("prepared-{suffix}")],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, 'ciphertext', 10, 100, 100000, 15000, ?3,
+                         0, 115000, 1, 20, 'scheduled', '{{}}')"
+            ),
+            params![
+                run_id,
+                format!("pending-{suffix}"),
+                format!("selected-{suffix}"),
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                 VALUES (?1, ?2, 0, 'base', 'sigs', 10, 100,
+                         100000, 15000, '{{}}', '{{}}')"
+            ),
+            params![run_id, format!("message-{suffix}")],
+        )
+        .unwrap();
+        let stage_txid = format!("{:02x}", suffix.as_bytes()[0]).repeat(32);
+        insert_test_stage(
+            conn,
+            run_id,
+            &stage_txid,
+            DenominationStageStatus::Pending,
+            None,
+        );
+    }
+
+    fn account_migration_tables() -> [&'static str; 7] {
+        [
+            RUNS_TABLE,
+            PREPARED_NOTES_TABLE,
+            PENDING_TXS_TABLE,
+            SIGNED_CHILD_PCZTS_TABLE,
+            STAGES_TABLE,
+            STAGE_INPUTS_TABLE,
+            STAGE_OUTPUTS_TABLE,
+        ]
+    }
+
+    #[test]
+    fn delete_account_migration_rows_removes_only_owned_runs_and_children() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        ensure_schema(&conn).unwrap();
+        seed_account_migration_rows(&conn, "deleted-run", "deleted-account", "deleted");
+        seed_account_migration_rows(&conn, "kept-run", "kept-account", "kept");
+
+        let tx = conn.transaction().unwrap();
+        delete_account_migration_rows_with_tx(&tx, "deleted-account").unwrap();
+        tx.commit().unwrap();
+
+        for table in account_migration_tables() {
+            assert_eq!(count_for_run(&conn, table, "deleted-run").unwrap(), 0);
+            assert_eq!(count_for_run(&conn, table, "kept-run").unwrap(), 1);
+        }
+    }
+
+    #[test]
+    fn delete_account_migration_rows_rolls_back_with_account_transaction() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        ensure_schema(&conn).unwrap();
+        seed_account_migration_rows(&conn, "deleted-run", "deleted-account", "deleted");
+        seed_account_migration_rows(&conn, "kept-run", "kept-account", "kept");
+
+        let tx = conn.transaction().unwrap();
+        delete_account_migration_rows_with_tx(&tx, "deleted-account").unwrap();
+        tx.rollback().unwrap();
+
+        for table in account_migration_tables() {
+            assert_eq!(count_for_run(&conn, table, "deleted-run").unwrap(), 1);
+            assert_eq!(count_for_run(&conn, table, "kept-run").unwrap(), 1);
+        }
+    }
+
     #[test]
     fn planner_noops_when_split_fee_consumes_balance() {
         let plan = plan_denominations(5_000, 10_000, 10_000, 1).unwrap();
@@ -5078,6 +5244,7 @@ mod tests {
             &[],
             Vec::new(),
             vec![pending_test_stage(&"11".repeat(32), vec![1, 2, 3, 4])],
+            None,
             TEST_PASSWORD,
             TEST_SALT_BASE64,
         )
@@ -5217,6 +5384,10 @@ mod tests {
             note_version: 2,
             nullifier_hex: None,
         }];
+        let approved_schedule = vec![MigrationScheduleEntry {
+            value_zatoshi: 100_000_000,
+            block_offset: 1,
+        }];
 
         let run_id = create_run_with_staged_denominations_and_signed_children(
             &db_path,
@@ -5226,6 +5397,7 @@ mod tests {
             &prepared_notes,
             Vec::new(),
             vec![pending_test_stage(&expected_txid, raw_tx.clone())],
+            Some(&approved_schedule),
             TEST_PASSWORD,
             TEST_SALT_BASE64,
         )
@@ -5240,6 +5412,17 @@ mod tests {
             )
             .unwrap();
         assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+        let schedule_json: String = conn
+            .query_row(
+                &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).unwrap(),
+            approved_schedule
+        );
         let lock_state: String = conn
             .query_row(
                 &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
@@ -5277,6 +5460,10 @@ mod tests {
             note_version: 2,
             nullifier_hex: None,
         }];
+        let approved_schedule = vec![MigrationScheduleEntry {
+            value_zatoshi: 100_000_000,
+            block_offset: 1,
+        }];
 
         let err = create_run_with_staged_denominations_and_signed_children(
             &db_path,
@@ -5286,6 +5473,7 @@ mod tests {
             &prepared_notes,
             Vec::new(),
             vec![pending_test_stage(&expected_txid, vec![1, 2, 3, 4])],
+            Some(&approved_schedule),
             TEST_PASSWORD,
             "not base64",
         )

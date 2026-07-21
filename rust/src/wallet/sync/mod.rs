@@ -44,7 +44,8 @@ pub(crate) use background_migration::{
     BackgroundMigrationInspection,
 };
 pub(crate) use migration::{
-    configure_fast_testnet_migration, migration_status, MigrationPartState, MigrationScheduleEntry,
+    configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
+    MigrationPartState, MigrationScheduleEntry,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
@@ -60,7 +61,8 @@ pub use send::{
 };
 pub(crate) use send::{
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
-    complete_orchard_migration_single_qr_pczt, discard_keystone_migration_request,
+    complete_orchard_migration_single_qr_pczt, discard_all_keystone_migration_requests,
+    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
     keystone_migration_proof_status, migrate_orchard_to_ironwood,
     prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
     prepare_orchard_migration_single_qr_pczt, KeystoneSignedMigrationMessage,

@@ -6,9 +6,9 @@ use zeroize::Zeroizing;
 
 use crate::wallet::{keystone, secret_payload};
 
-const STAGES_TABLE: &str = "vizor_migration_denomination_stages";
-const STAGE_INPUTS_TABLE: &str = "vizor_migration_denomination_stage_inputs";
-const STAGE_OUTPUTS_TABLE: &str = "vizor_migration_denomination_stage_outputs";
+pub(super) const STAGES_TABLE: &str = "vizor_migration_denomination_stages";
+pub(super) const STAGE_INPUTS_TABLE: &str = "vizor_migration_denomination_stage_inputs";
+pub(super) const STAGE_OUTPUTS_TABLE: &str = "vizor_migration_denomination_stage_outputs";
 const INSERT_SAVEPOINT: &str = "vizor_insert_denomination_stages";
 
 /// Persistence state for one signed denomination-split transaction.

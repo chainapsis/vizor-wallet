@@ -679,7 +679,16 @@ pub fn delete_account(
         // while the SQL expects `:to_address`. Keep this local copy aligned
         // with upstream except for that binding until the dependency is fixed.
         drop(db);
-        delete_account_rows(db_path, account_id)
+        delete_account_rows(db_path, account_id)?;
+        if let Err(error) = crate::wallet::sync::discard_keystone_migration_requests_for_account(
+            account_uuid,
+            network,
+        ) {
+            log::warn!(
+                "Failed to discard Keystone migration requests after deleting account: {error}"
+            );
+        }
+        Ok(())
     })
 }
 
@@ -697,6 +706,7 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         .transaction()
         .map_err(|e| format!("Failed to begin account delete transaction: {e}"))?;
     let account_uuid = account_id.expose_uuid();
+    let account_uuid_text = account_uuid.to_string();
     let account_uuid_bytes = account_uuid.as_bytes().as_slice();
 
     {
@@ -781,6 +791,8 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         named_params![":account_uuid": account_uuid_bytes],
     )
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
+
+    crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
 
     tx.execute(
         "DELETE FROM accounts WHERE uuid = :account_uuid",
