@@ -23,6 +23,7 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
+mod background_migration;
 mod broadcast;
 mod migration;
 mod pczt;
@@ -38,6 +39,7 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
+pub(crate) use background_migration::{run_background_migration_cycle, BackgroundMigrationAction};
 pub(crate) use migration::{
     configure_fast_testnet_migration, migration_status, MigrationPartState, MigrationScheduleEntry,
 };

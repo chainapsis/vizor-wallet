@@ -37,7 +37,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 use std::thread;
 use std::time::Instant;
 
@@ -99,6 +102,35 @@ use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
+
+#[derive(Clone, Copy)]
+struct MigrationBroadcastPolicy<'a> {
+    max_per_step: Option<usize>,
+    cancel: Option<&'a AtomicBool>,
+}
+
+impl MigrationBroadcastPolicy<'_> {
+    const FOREGROUND: Self = Self {
+        max_per_step: None,
+        cancel: None,
+    };
+
+    fn background(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
+        MigrationBroadcastPolicy {
+            max_per_step: Some(1),
+            cancel: Some(cancel),
+        }
+    }
+
+    fn is_cancelled(self) -> bool {
+        self.cancel
+            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+    }
+
+    fn limit(self, total: usize) -> usize {
+        self.max_per_step.unwrap_or(total).min(total)
+    }
+}
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
 /// handle the caller feeds back to [`execute_proposal`] or
@@ -809,6 +841,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             &run,
             pending_password.as_slice(),
             pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND,
         )
         .await?
         {
@@ -889,6 +922,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     pending_salt_base64,
                     run.target_values_zatoshi.len() as u32,
                     run.target_values_zatoshi.iter().sum(),
+                    MigrationBroadcastPolicy::FOREGROUND,
                 )
                 .await;
                 drop(migration_guard);
@@ -945,6 +979,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         &run_id,
         pending_password.as_slice(),
         pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
     )
     .await?
     else {
@@ -970,6 +1005,52 @@ pub async fn broadcast_due_orchard_migration_transactions(
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
 ) -> Result<IronwoodMigrationResult, String> {
+    broadcast_due_orchard_migration_transactions_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        None,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await
+}
+
+pub(crate) async fn broadcast_due_orchard_migration_transactions_for_run(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    cancel: &AtomicBool,
+) -> Result<IronwoodMigrationResult, String> {
+    broadcast_due_orchard_migration_transactions_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        Some(expected_run_id),
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::background(cancel),
+    )
+    .await
+}
+
+async fn broadcast_due_orchard_migration_transactions_inner(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: Option<&str>,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
         return Ok(IronwoodMigrationResult {
@@ -982,6 +1063,12 @@ pub async fn broadcast_due_orchard_migration_transactions(
             migrated_zatoshi: 0,
         });
     };
+    if expected_run_id.is_some_and(|expected| expected != run.run_id) {
+        return Err("Background migration run no longer matches the authorized run".to_string());
+    }
+    if policy.is_cancelled() {
+        return Ok(cancelled_migration_result(&run));
+    }
 
     match advance_staged_denomination_run(
         db_path,
@@ -991,6 +1078,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
         &run,
         pending_password.as_slice(),
         pending_salt_base64,
+        policy,
     )
     .await?
     {
@@ -1031,6 +1119,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
         pending_salt_base64,
         run.target_values_zatoshi.len() as u32,
         run.target_values_zatoshi.iter().sum(),
+        policy,
     )
     .await
 }
@@ -1244,6 +1333,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         &run_id,
         pending_password,
         pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
     )
     .await?
     else {
@@ -1522,6 +1612,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         &run_id,
         pending_password,
         pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
     )
     .await?
     else {
@@ -1907,6 +1998,18 @@ fn prepared_notes_not_spendable_result(
     }
 }
 
+fn cancelled_migration_result(run: &super::migration::ActiveRun) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: String::new(),
+        status: run.phase.clone(),
+        broadcasted_count: 0,
+        total_count: run.target_values_zatoshi.len() as u32,
+        message: Some("Background migration stopped before the next broadcast.".to_string()),
+        fee_zatoshi: 0,
+        migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+    }
+}
+
 enum StagedDenominationAdvance {
     Waiting(IronwoodMigrationResult),
     Ready,
@@ -1981,6 +2084,7 @@ async fn advance_staged_denomination_run(
     run: &super::migration::ActiveRun,
     pending_password: &[u8],
     pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<StagedDenominationAdvance, String> {
     let stages = reconcile_mined_denomination_stages(
         db_path,
@@ -2011,6 +2115,7 @@ async fn advance_staged_denomination_run(
         &run.run_id,
         pending_password,
         pending_salt_base64,
+        policy,
     )
     .await?
     {
@@ -2028,6 +2133,11 @@ async fn advance_staged_denomination_run(
         .iter()
         .any(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
     {
+        if policy.is_cancelled() {
+            return Ok(StagedDenominationAdvance::Waiting(
+                cancelled_migration_result(run),
+            ));
+        }
         if finalize_ready_denomination_stages(
             db_path,
             network,
@@ -2043,6 +2153,7 @@ async fn advance_staged_denomination_run(
                 &run.run_id,
                 pending_password,
                 pending_salt_base64,
+                policy,
             )
             .await?
             .ok_or("Finalized denomination stage was not pending broadcast")?;
@@ -5411,6 +5522,7 @@ async fn broadcast_pending_denomination_stages(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
     let pending = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5432,6 +5544,17 @@ async fn broadcast_pending_denomination_stages(
         .join(",");
     let total_count = u32::try_from(pending.len())
         .map_err(|_| "Pending denomination stage count exceeds u32".to_string())?;
+    if policy.is_cancelled() {
+        return Ok(Some(CreatedBroadcastResult {
+            txids,
+            status: CreatedBroadcastResult::PENDING_BROADCAST,
+            broadcasted_count: 0,
+            total_count,
+            message: Some(
+                "Background migration stopped before denomination broadcast.".to_string(),
+            ),
+        }));
+    }
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
         Err(e) => {
@@ -5446,7 +5569,10 @@ async fn broadcast_pending_denomination_stages(
     };
 
     let mut broadcasted_count = 0u32;
-    for stage in &pending {
+    for stage in pending.iter().take(policy.limit(pending.len())) {
+        if policy.is_cancelled() {
+            break;
+        }
         if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
             return Ok(Some(CreatedBroadcastResult {
                 txids,
@@ -5499,10 +5625,19 @@ async fn broadcast_pending_denomination_stages(
 
     Ok(Some(CreatedBroadcastResult {
         txids,
-        status: super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
+        status: if broadcasted_count == 0 {
+            CreatedBroadcastResult::PENDING_BROADCAST
+        } else {
+            super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS
+        },
         broadcasted_count,
         total_count,
-        message: Some(if total_count == 1 {
+        message: Some(if policy.is_cancelled() {
+            "Background migration stopped before the next denomination broadcast.".to_string()
+        } else if broadcasted_count < total_count && policy.max_per_step.is_some() {
+            "One denomination stage was submitted. Remaining stages will continue in later background runs."
+                .to_string()
+        } else if total_count == 1 {
             "Denomination split stage was created. Migration will continue after confirmation."
                 .to_string()
         } else {
@@ -5522,6 +5657,7 @@ async fn broadcast_due_scheduled_migration_txs(
     pending_salt_base64: &str,
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
+    policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<IronwoodMigrationResult, String> {
     let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
     if totals_before.total_count == 0 {
@@ -5586,6 +5722,15 @@ async fn broadcast_due_scheduled_migration_txs(
             fallback_migrated_zatoshi,
         ));
     }
+    if policy.is_cancelled() {
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_BROADCAST_SCHEDULED,
+            Some("Background migration stopped before the next broadcast.".to_string()),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
 
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
@@ -5610,7 +5755,16 @@ async fn broadcast_due_scheduled_migration_txs(
     };
 
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
-    for pending in due {
+    for pending in due.into_iter().take(policy.limit(usize::MAX)) {
+        if policy.is_cancelled() {
+            super::migration::mark_run_phase(
+                db_path,
+                run_id,
+                super::migration::PHASE_BROADCAST_SCHEDULED,
+                Some("Background migration stopped before the next broadcast."),
+            )?;
+            break;
+        }
         if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
             log::error!(
                 "migration: broadcast rejected for {}: {}",
@@ -6260,6 +6414,26 @@ mod tests {
     const MIGRATION_TEST_ACCOUNT: &str = "account-1";
     const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
     const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+
+    #[test]
+    fn background_migration_policy_limits_each_broadcast_step() {
+        let cancel = AtomicBool::new(false);
+        let policy = MigrationBroadcastPolicy::background(&cancel);
+
+        assert_eq!(policy.limit(0), 0);
+        assert_eq!(policy.limit(1), 1);
+        assert_eq!(policy.limit(500), 1);
+        assert!(!policy.is_cancelled());
+
+        cancel.store(true, Ordering::SeqCst);
+        assert!(policy.is_cancelled());
+    }
+
+    #[test]
+    fn foreground_migration_policy_keeps_existing_batch_behavior() {
+        assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
+        assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
+    }
 
     fn taddr(seed: u8) -> TransparentAddress {
         TransparentAddress::PublicKeyHash([seed; 20])

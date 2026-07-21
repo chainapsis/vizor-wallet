@@ -1213,6 +1213,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    allow_resubmit: bool,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
@@ -1252,6 +1253,7 @@ pub async fn run_sync_inner(
             cancel.clone(),
             running_mode,
             desired_mode,
+            allow_resubmit,
             &progress_fn,
         )
         .await
@@ -1308,6 +1310,7 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
     let default_batch_size = if running_mode == 2 {
@@ -1375,14 +1378,6 @@ async fn run_sync_impl(
 
     refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-        log::info!(
-            "[{}] sync: exiting after transparent UTXO refresh",
-            elapsed()
-        );
-        return Ok(());
-    }
-
     // 2.5. Resubmit any unmined, unexpired wallet txs now that we
     // know the current tip. Matches the first of the three
     // resubmit call sites in zcash-android-wallet-sdk's
@@ -1396,7 +1391,10 @@ async fn run_sync_impl(
     // slow connection, which is long enough for the user to hit
     // stop. Skip the whole pass in that case instead of sending
     // one more round of broadcasts after the UI asked us to quit.
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+    if !allow_resubmit {
+        log::info!("[{}] sync: startup resubmit disabled", elapsed());
+    } else if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+    {
         log::info!(
             "[{}] sync: cancel/mode observed before startup resubmit, skipping",
             elapsed(),
@@ -2056,16 +2054,18 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                let _ = crate::wallet::sync::resubmit_pending_transactions(
-                    db_data_path,
-                    &mut client,
-                    fresh_tip_height,
-                    || {
-                        cancel.load(Ordering::Relaxed)
-                            || desired_mode.load(Ordering::SeqCst) != running_mode
-                    },
-                )
-                .await;
+                if allow_resubmit {
+                    let _ = crate::wallet::sync::resubmit_pending_transactions(
+                        db_data_path,
+                        &mut client,
+                        fresh_tip_height,
+                        || {
+                            cancel.load(Ordering::Relaxed)
+                                || desired_mode.load(Ordering::SeqCst) != running_mode
+                        },
+                    )
+                    .await;
+                }
             }
             Err(e) => {
                 log::warn!(

@@ -2,10 +2,40 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::atomic::Ordering;
+use std::slice;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use zeroize::Zeroizing;
 
 use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
-use crate::wallet::{keys, sync_engine};
+use crate::wallet::{keys, sync, sync_engine};
+
+static BACKGROUND_MIGRATION_RUNNING: AtomicBool = AtomicBool::new(false);
+static BACKGROUND_MIGRATION_CANCEL: AtomicBool = AtomicBool::new(false);
+static BACKGROUND_MIGRATION_CANCEL_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+#[repr(C)]
+pub struct CBackgroundMigrationResult {
+    pub action: u8,
+    pub cancelled: bool,
+    pub scanned_height: u64,
+    pub chain_tip_height: u64,
+    pub next_scheduled_height: u64,
+    pub broadcasted_count: u32,
+}
+
+impl Default for CBackgroundMigrationResult {
+    fn default() -> Self {
+        Self {
+            action: sync::BackgroundMigrationAction::NeedsUserAction as u8,
+            cancelled: false,
+            scanned_height: 0,
+            chain_tip_height: 0,
+            next_scheduled_height: 0,
+            broadcasted_count: 0,
+        }
+    }
+}
 
 /// Progress data passed to the C callback.
 #[repr(C)]
@@ -63,6 +93,79 @@ pub extern "C" fn zcash_run_full_sync(
         return 4;
     }
 
+    let code = run_full_sync_after_acquire(
+        db_path,
+        lightwalletd_url,
+        network,
+        progress_callback,
+        true,
+        true,
+    );
+    SYNC_RUNNING.store(false, Ordering::SeqCst);
+    code
+}
+
+/// Run a migration-owned sync without racing foreground mode handoff.
+///
+/// Returns 5 when the owning BGTask was cancelled before sync acquisition.
+#[no_mangle]
+pub extern "C" fn zcash_run_full_sync_for_migration(
+    db_path: *const c_char,
+    lightwalletd_url: *const c_char,
+    network: *const c_char,
+    expected_cancel_epoch: u64,
+    progress_callback: SyncProgressCallback,
+) -> i32 {
+    if SYNC_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        log::warn!("ffi: migration sync could not acquire sync ownership");
+        return 3;
+    }
+
+    let previous_mode = DESIRED_SYNC_MODE.swap(2, Ordering::SeqCst);
+    SYNC_CANCEL.store(false, Ordering::SeqCst);
+    if BACKGROUND_MIGRATION_CANCEL_EPOCH.load(Ordering::SeqCst) != expected_cancel_epoch {
+        let _ = DESIRED_SYNC_MODE.compare_exchange(
+            2,
+            previous_mode,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        SYNC_RUNNING.store(false, Ordering::SeqCst);
+        return 5;
+    }
+
+    let code = run_full_sync_after_acquire(
+        db_path,
+        lightwalletd_url,
+        network,
+        progress_callback,
+        false,
+        false,
+    );
+    let interrupted = SYNC_CANCEL.load(Ordering::SeqCst)
+        || DESIRED_SYNC_MODE.load(Ordering::SeqCst) != 2
+        || BACKGROUND_MIGRATION_CANCEL_EPOCH.load(Ordering::SeqCst) != expected_cancel_epoch;
+    let _ =
+        DESIRED_SYNC_MODE.compare_exchange(2, previous_mode, Ordering::SeqCst, Ordering::SeqCst);
+    SYNC_RUNNING.store(false, Ordering::SeqCst);
+    if code == 0 && interrupted {
+        5
+    } else {
+        code
+    }
+}
+
+fn run_full_sync_after_acquire(
+    db_path: *const c_char,
+    lightwalletd_url: *const c_char,
+    network: *const c_char,
+    progress_callback: SyncProgressCallback,
+    reset_cancel: bool,
+    allow_resubmit: bool,
+) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let db_path = match unsafe { c_str_to_str(db_path) } {
             Some(s) => s,
@@ -95,7 +198,9 @@ pub extern "C" fn zcash_run_full_sync(
         };
 
         let cancel = SYNC_CANCEL.clone();
-        cancel.store(false, Ordering::Relaxed);
+        if reset_cancel {
+            cancel.store(false, Ordering::Relaxed);
+        }
 
         // current_thread runtime — inherits .utility QoS from iOS dispatch queue
         let rt = match tokio::runtime::Builder::new_current_thread()
@@ -117,6 +222,7 @@ pub extern "C" fn zcash_run_full_sync(
                 cancel,
                 2, // background mode
                 &DESIRED_SYNC_MODE,
+                allow_resubmit,
                 |progress| {
                     progress_callback(CSyncProgress {
                         scanned_height: progress.scanned_height,
@@ -141,8 +247,6 @@ pub extern "C" fn zcash_run_full_sync(
             }
         }
     });
-
-    SYNC_RUNNING.store(false, Ordering::SeqCst);
 
     match result {
         Ok(code) => code,
@@ -176,6 +280,146 @@ pub extern "C" fn zcash_get_sync_mode() -> u8 {
 #[no_mangle]
 pub extern "C" fn zcash_set_sync_mode(mode: u8) {
     DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
+}
+
+/// Advance only the already-authorized Ironwood migration run.
+///
+/// Returns 0 on success, 1 on validation/execution error, 2 on panic, and 3
+/// when another background migration cycle is already running.
+#[no_mangle]
+pub extern "C" fn zcash_run_background_migration_cycle(
+    db_path: *const c_char,
+    lightwalletd_url: *const c_char,
+    network: *const c_char,
+    account_uuid: *const c_char,
+    expected_run_id: *const c_char,
+    credential: *const u8,
+    credential_len: usize,
+    salt_base64: *const c_char,
+    expected_cancel_epoch: u64,
+    output: *mut CBackgroundMigrationResult,
+) -> i32 {
+    if BACKGROUND_MIGRATION_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return 3;
+    }
+    let result = std::panic::catch_unwind(|| {
+        let output = match unsafe { output.as_mut() } {
+            Some(output) => output,
+            None => {
+                log::error!("ffi: background migration output is null");
+                return 1;
+            }
+        };
+        *output = CBackgroundMigrationResult::default();
+        BACKGROUND_MIGRATION_CANCEL.store(false, Ordering::SeqCst);
+        if BACKGROUND_MIGRATION_CANCEL_EPOCH.load(Ordering::SeqCst) != expected_cancel_epoch {
+            output.cancelled = true;
+            return 0;
+        }
+
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
+            return 1;
+        };
+        let Some(network_name) = (unsafe { c_str_to_str(network) }) else {
+            return 1;
+        };
+        let Some(account_uuid) = (unsafe { c_str_to_str(account_uuid) }) else {
+            return 1;
+        };
+        let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
+            return 1;
+        };
+        let Some(salt_base64) = (unsafe { c_str_to_str(salt_base64) }) else {
+            return 1;
+        };
+        if credential.is_null() || credential_len != 64 {
+            log::error!("ffi: background migration credential must be 64 bytes");
+            return 1;
+        }
+        let credential = unsafe { slice::from_raw_parts(credential, credential_len) };
+        if !credential.iter().all(u8::is_ascii_hexdigit) {
+            log::error!("ffi: background migration credential is not hexadecimal");
+            return 1;
+        }
+        let credential = Zeroizing::new(credential.to_vec());
+        let network = match keys::parse_network(network_name) {
+            Ok(network) => network,
+            Err(error) => {
+                log::error!("ffi: parse background migration network: {error}");
+                return 1;
+            }
+        };
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("ffi: background migration runtime: {error}");
+                return 1;
+            }
+        };
+        let cycle = match runtime.block_on(sync::run_background_migration_cycle(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            expected_run_id,
+            credential,
+            salt_base64,
+            &BACKGROUND_MIGRATION_CANCEL,
+        )) {
+            Ok(cycle) => cycle,
+            Err(error) => {
+                log::error!("ffi: background migration cycle failed: {error}");
+                return 1;
+            }
+        };
+
+        output.action = cycle.inspection.action as u8;
+        output.cancelled = cycle.cancelled;
+        output.scanned_height = cycle.inspection.scanned_height;
+        output.chain_tip_height = cycle.inspection.chain_tip_height;
+        output.next_scheduled_height = cycle
+            .inspection
+            .next_scheduled_height
+            .map(u64::from)
+            .unwrap_or_default();
+        output.broadcasted_count = cycle.broadcasted_count;
+        0
+    });
+
+    BACKGROUND_MIGRATION_RUNNING.store(false, Ordering::SeqCst);
+    match result {
+        Ok(code) => code,
+        Err(_) => {
+            log::error!("ffi: panic during background migration cycle");
+            2
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_cancel_background_migration() {
+    BACKGROUND_MIGRATION_CANCEL_EPOCH.fetch_add(1, Ordering::SeqCst);
+    BACKGROUND_MIGRATION_CANCEL.store(true, Ordering::SeqCst);
+    SYNC_CANCEL.store(true, Ordering::SeqCst);
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_background_migration_cancellation_epoch() -> u64 {
+    BACKGROUND_MIGRATION_CANCEL_EPOCH.load(Ordering::SeqCst)
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_is_background_migration_running() -> bool {
+    BACKGROUND_MIGRATION_RUNNING.load(Ordering::SeqCst)
 }
 
 /// Check if a sync is currently running.

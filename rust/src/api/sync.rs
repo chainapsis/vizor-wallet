@@ -77,6 +77,7 @@ where
                 cancel,
                 mode,
                 &DESIRED_SYNC_MODE,
+                true,
                 |progress| on_progress(&progress),
             )
             .await
