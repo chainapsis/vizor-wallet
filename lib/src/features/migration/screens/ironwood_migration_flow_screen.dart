@@ -2747,23 +2747,11 @@ class _MigrationBatchOverview extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 13),
-        SizedBox(
-          height: 12,
-          child: Row(
-            children: [
-              for (var i = 0; i < values.length; i++) ...[
-                if (i > 0) const SizedBox(width: 4),
-                Expanded(
-                  flex: _migrationSegmentFlex(values[i], totalZatoshi),
-                  child: _MigrationProgressSegment(
-                    index: i,
-                    status: _MigrationBatchStatus.none,
-                    progress: 0,
-                  ),
-                ),
-              ],
-            ],
-          ),
+        _MigrationProgressSegmentRow(
+          values: values,
+          totalZatoshi: totalZatoshi,
+          statuses: const [],
+          progresses: const [],
         ),
         const SizedBox(height: 12),
         Expanded(
@@ -2859,6 +2847,68 @@ class _MigrationBatchFooterRow extends StatelessWidget {
       ),
     );
   }
+}
+
+const _migrationProgressSegmentGap = 4.0;
+const _migrationProgressSegmentPreferredMinWidth = 16.0;
+
+class _MigrationProgressSegmentRow extends StatelessWidget {
+  const _MigrationProgressSegmentRow({
+    required this.values,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.progresses,
+    this.progressKeys = const [],
+  });
+
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
+  final List<String> progressKeys;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 12,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final layout = _migrationSegmentRowLayout(
+            values: values,
+            totalZatoshi: totalZatoshi,
+            maxWidth: constraints.maxWidth,
+          );
+          return Row(
+            children: [
+              for (var i = 0; i < values.length; i++) ...[
+                if (i > 0) SizedBox(width: layout.gap),
+                SizedBox(
+                  width: i < layout.widths.length ? layout.widths[i] : 0,
+                  child: _MigrationProgressSegment(
+                    key: ValueKey(
+                      'ironwood_migration_segment_${i < progressKeys.length ? progressKeys[i] : i}',
+                    ),
+                    index: i,
+                    status: i < statuses.length
+                        ? statuses[i]
+                        : _MigrationBatchStatus.none,
+                    progress: i < progresses.length ? progresses[i] : 0,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MigrationSegmentRowLayout {
+  const _MigrationSegmentRowLayout({required this.gap, required this.widths});
+
+  final double gap;
+  final List<double> widths;
 }
 
 class _MigrationProgressSegment extends StatelessWidget {
@@ -3499,25 +3549,12 @@ class _MigrationStatusBatchChart extends StatelessWidget {
           top: 45,
           width: 396,
           height: 12,
-          child: Row(
-            children: [
-              for (var i = 0; i < values.length; i++) ...[
-                if (i > 0) const SizedBox(width: 4),
-                Expanded(
-                  flex: _migrationSegmentFlex(values[i], totalZatoshi),
-                  child: _MigrationProgressSegment(
-                    key: ValueKey(
-                      'ironwood_migration_segment_${i < progressKeys.length ? progressKeys[i] : i}',
-                    ),
-                    index: i,
-                    status: i < statuses.length
-                        ? statuses[i]
-                        : _MigrationBatchStatus.none,
-                    progress: i < progresses.length ? progresses[i] : 0,
-                  ),
-                ),
-              ],
-            ],
+          child: _MigrationProgressSegmentRow(
+            values: values,
+            totalZatoshi: totalZatoshi,
+            statuses: statuses,
+            progresses: progresses,
+            progressKeys: progressKeys,
           ),
         ),
       ],
@@ -3762,6 +3799,90 @@ int _migrationSegmentFlex(BigInt value, BigInt total) {
   if (total <= BigInt.zero) return 1;
   final flex = ((value * BigInt.from(1000)) ~/ total).toInt();
   return flex.clamp(1, 1000);
+}
+
+_MigrationSegmentRowLayout _migrationSegmentRowLayout({
+  required List<BigInt> values,
+  required BigInt totalZatoshi,
+  required double maxWidth,
+}) {
+  if (values.isEmpty || !maxWidth.isFinite || maxWidth <= 0) {
+    return const _MigrationSegmentRowLayout(gap: 0, widths: []);
+  }
+
+  final segmentCount = values.length;
+  if (segmentCount == 1) {
+    return _MigrationSegmentRowLayout(gap: 0, widths: [maxWidth]);
+  }
+
+  final availableForGaps = math.max(0.0, maxWidth - segmentCount);
+  final gap = math.min(
+    _migrationProgressSegmentGap,
+    availableForGaps / (segmentCount - 1),
+  );
+  final drawableWidth = math.max(0.0, maxWidth - gap * (segmentCount - 1));
+  if (drawableWidth <= 0) {
+    return _MigrationSegmentRowLayout(
+      gap: gap,
+      widths: List<double>.filled(segmentCount, 0),
+    );
+  }
+
+  final effectiveMinWidth = math.min(
+    _migrationProgressSegmentPreferredMinWidth,
+    drawableWidth / segmentCount,
+  );
+  final weights = [
+    for (final value in values)
+      math.max(1, _migrationSegmentFlex(value, totalZatoshi)).toDouble(),
+  ];
+  final widths = List<double>.filled(segmentCount, 0);
+  final locked = List<bool>.filled(segmentCount, false);
+
+  var remainingWidth = drawableWidth;
+  var remainingWeight = weights.fold<double>(0, (sum, weight) => sum + weight);
+  var changed = true;
+  while (changed && remainingWeight > 0 && remainingWidth > 0) {
+    changed = false;
+    for (var i = 0; i < segmentCount; i++) {
+      if (locked[i]) continue;
+      final share = remainingWidth * weights[i] / remainingWeight;
+      if (share < effectiveMinWidth) {
+        widths[i] = effectiveMinWidth;
+        locked[i] = true;
+        remainingWidth -= effectiveMinWidth;
+        remainingWeight -= weights[i];
+        changed = true;
+      }
+    }
+  }
+
+  final unlockedIndexes = [
+    for (var i = 0; i < segmentCount; i++)
+      if (!locked[i]) i,
+  ];
+  if (unlockedIndexes.isNotEmpty) {
+    if (remainingWeight <= 0) {
+      final equalWidth = remainingWidth / unlockedIndexes.length;
+      for (final index in unlockedIndexes) {
+        widths[index] = equalWidth;
+      }
+    } else {
+      for (final index in unlockedIndexes) {
+        widths[index] = remainingWidth * weights[index] / remainingWeight;
+      }
+    }
+  }
+
+  final widthSum = widths.fold<double>(0, (sum, width) => sum + width);
+  if (widthSum > drawableWidth && widthSum > 0) {
+    final scale = drawableWidth / widthSum;
+    for (var i = 0; i < widths.length; i++) {
+      widths[i] *= scale;
+    }
+  }
+
+  return _MigrationSegmentRowLayout(gap: gap, widths: widths);
 }
 
 String _migrationPercentage(BigInt value, BigInt total) {
@@ -4219,6 +4340,7 @@ class _MigrationPreparingStepsCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             _MigrationPreparingStepRow(
+              stepKey: 'split',
               state: splitComplete
                   ? _MigrationPreparationStepState.complete
                   : _MigrationPreparationStepState.active,
@@ -4228,11 +4350,13 @@ class _MigrationPreparingStepsCard extends StatelessWidget {
             ),
             const _MigrationPreparingStepConnector(),
             _MigrationPreparingStepRow(
+              stepKey: 'confirmations',
               state: confirmationsComplete
                   ? _MigrationPreparationStepState.complete
                   : splitComplete
                   ? _MigrationPreparationStepState.active
                   : _MigrationPreparationStepState.pending,
+              showPendingLoader: true,
               stepNumber: 2,
               label: remainingBlocks <= 0
                   ? 'Waiting for confirmation'
@@ -4249,21 +4373,30 @@ class _MigrationPreparingStepsCard extends StatelessWidget {
 
 class _MigrationPreparingStepRow extends StatelessWidget {
   const _MigrationPreparingStepRow({
+    required this.stepKey,
     required this.state,
     required this.label,
     this.stepNumber,
+    this.showPendingLoader = false,
   });
 
+  final String stepKey;
   final _MigrationPreparationStepState state;
   final String label;
   final int? stepNumber;
+  final bool showPendingLoader;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Row(
+      key: ValueKey('ironwood_migration_prepare_step_${stepKey}_${state.name}'),
       children: [
-        _MigrationPreparingStepBadge(state: state, stepNumber: stepNumber),
+        _MigrationPreparingStepBadge(
+          state: state,
+          stepNumber: stepNumber,
+          showPendingLoader: showPendingLoader,
+        ),
         const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Text(
@@ -4286,14 +4419,18 @@ class _MigrationPreparingStepBadge extends StatelessWidget {
   const _MigrationPreparingStepBadge({
     required this.state,
     required this.stepNumber,
+    this.showPendingLoader = false,
   });
 
   final _MigrationPreparationStepState state;
   final int? stepNumber;
+  final bool showPendingLoader;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final animateLoader =
+        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     final backgroundColor = switch (state) {
       _MigrationPreparationStepState.complete => GreenPrimitives.p500Light,
       _MigrationPreparationStepState.active => colors.background.inverse,
@@ -4324,12 +4461,22 @@ class _MigrationPreparingStepBadge extends StatelessWidget {
               AppIcons.loader,
               size: 15,
               color: foregroundColor,
-              animated: false,
+              animated: animateLoader,
             ),
-            _MigrationPreparationStepState.pending => Text(
-              '${stepNumber ?? ''}',
-              style: AppTypography.labelMedium.copyWith(color: foregroundColor),
-            ),
+            _MigrationPreparationStepState.pending =>
+              showPendingLoader
+                  ? AppIcon(
+                      AppIcons.loader,
+                      size: 15,
+                      color: foregroundColor,
+                      animated: animateLoader,
+                    )
+                  : Text(
+                      '${stepNumber ?? ''}',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: foregroundColor,
+                      ),
+                    ),
           },
         ),
       ),
@@ -4417,8 +4564,7 @@ class _MigrationPreparingInfo extends StatelessWidget {
 }
 
 bool _migrationPreparingSplitComplete(rust_sync.MigrationStatus status) {
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-      status.pendingSplitStageCount <= 0) {
+  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
     return true;
   }
 
@@ -5639,6 +5785,8 @@ class _MigrationPreparationStepBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final animateLoader =
+        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     final backgroundColor = switch (state) {
       _MigrationPreparationStepState.complete => GreenPrimitives.p500Light,
       _MigrationPreparationStepState.active => colors.background.inverse,
@@ -5669,7 +5817,7 @@ class _MigrationPreparationStepBadge extends StatelessWidget {
               AppIcons.loader,
               size: 15,
               color: foregroundColor,
-              animated: false,
+              animated: animateLoader,
             ),
             _MigrationPreparationStepState.pending => Text(
               '${stepNumber ?? ''}',

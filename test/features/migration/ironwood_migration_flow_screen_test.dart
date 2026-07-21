@@ -480,6 +480,18 @@ void main() {
     expect(find.text('Split notes into 1 migration part'), findsOneWidget);
     expect(find.text('Wait 1 block for confirmation'), findsOneWidget);
     expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
       find.text(
         'Migration will start automatically once note split is complete.',
       ),
@@ -490,6 +502,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Scheduled'), findsNothing);
+    expect(find.text('2'), findsNothing);
     expect(find.text('Currently Spendable Balance'), findsNothing);
     expect(find.text('You can leave this screen.'), findsNothing);
     expect(find.text('But keep Vizor open & running.'), findsNothing);
@@ -497,6 +510,58 @@ void main() {
     expect(find.text('Shown before each send'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });
+
+  testWidgets(
+    'private status treats denomination confirmation wait as split complete',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [
+              1_000_000_000,
+              200_000_000,
+              50_000_000,
+              20_000_000,
+              10_000_000,
+              2_000_000,
+            ],
+            pendingSplitStageCount: 6,
+            denominationConfirmationCount: 0,
+            denominationConfirmationTarget: 3,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 6,
+            totalCount: 6,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Split notes into 6 migration parts'), findsOneWidget);
+      expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('ironwood_migration_prepare_step_split_complete'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'ironwood_migration_prepare_step_confirmations_active',
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('private status keeps scheduled batches on the transfer UI', (
     tester,
@@ -543,7 +608,8 @@ void main() {
     await tester.pumpWidget(
       _privateStatusHarness(status: _status(), coordinatorAdvancing: true),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     final button = find.byKey(
       const ValueKey('ironwood_migration_status_action_button'),
@@ -652,7 +718,8 @@ void main() {
 
     for (final uiCase in cases) {
       await tester.pumpWidget(_privateStatusHarness(status: uiCase.status));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text(uiCase.title), findsOneWidget);
       if (uiCase.buttonLabel == null) {
@@ -938,6 +1005,65 @@ void main() {
         .width;
 
     expect(fillWidth, closeTo(trackWidth * 0.35, 1));
+  });
+
+  testWidgets('note progress keeps dust migration parts readable', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const values = [
+      1_000_000_000,
+      200_000_000,
+      50_000_000,
+      20_000_000,
+      10_000_000,
+      2_000_000,
+    ];
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: values,
+          totalCount: values.length,
+          parts: [
+            for (var i = 0; i < values.length; i++)
+              _migrationPart(
+                i,
+                values[i],
+                rust_sync.MigrationPartState.scheduled,
+                scheduleStartHeight: 700,
+                scheduledHeight: 800,
+              ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 700,
+          chainTipHeight: 1000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final firstTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
+        )
+        .width;
+    final dustTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_5')),
+        )
+        .width;
+
+    expect(dustTrackWidth, greaterThanOrEqualTo(16));
+    expect(firstTrackWidth, greaterThan(dustTrackWidth));
   });
 
   testWidgets(
@@ -2333,6 +2459,10 @@ rust_sync.MigrationStatus _migrationStatus({
   int confirmedTxCount = 0,
   int totalCount = 0,
   int pendingSplitStageCount = 0,
+  int denominationConfirmationCount = 0,
+  int denominationConfirmationTarget = 0,
+  int denominationSplitCompletedCount = 0,
+  int denominationSplitTotalCount = 0,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
   List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
@@ -2341,10 +2471,10 @@ rust_sync.MigrationStatus _migrationStatus({
     activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List.fromList(targetValuesZatoshi),
     preparedNoteCount: 0,
-    denominationConfirmationCount: 0,
-    denominationConfirmationTarget: 0,
-    denominationSplitCompletedCount: 0,
-    denominationSplitTotalCount: 0,
+    denominationConfirmationCount: denominationConfirmationCount,
+    denominationConfirmationTarget: denominationConfirmationTarget,
+    denominationSplitCompletedCount: denominationSplitCompletedCount,
+    denominationSplitTotalCount: denominationSplitTotalCount,
     pendingTxCount: pendingTxCount,
     broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: confirmedTxCount,
