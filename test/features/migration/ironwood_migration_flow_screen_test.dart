@@ -563,6 +563,73 @@ void main() {
     },
   );
 
+  testWidgets('private preparing status uses independent part progress', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 10_000_000],
+          pendingSplitStageCount: 1,
+          denominationConfirmationCount: 0,
+          denominationConfirmationTarget: 3,
+          denominationSplitCompletedCount: 1,
+          denominationSplitTotalCount: 2,
+          totalCount: 2,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.preparing,
+            ),
+            _migrationPart(
+              1,
+              10_000_000,
+              rust_sync.MigrationPartState.confirming,
+              confirmationCount: 2,
+              confirmationTarget: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final firstTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
+        )
+        .width;
+    final secondTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_1')),
+        )
+        .width;
+    final firstFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+    final secondFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_1')),
+        )
+        .width;
+
+    expect(firstTrackWidth, closeTo(secondTrackWidth, 1));
+    expect(secondFillWidth, greaterThan(firstFillWidth * 4));
+    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('Confirming...'), findsOneWidget);
+  });
+
   testWidgets('private status keeps scheduled batches on the transfer UI', (
     tester,
   ) async {

@@ -2497,6 +2497,22 @@ fn migration_parts_for_run(
     phase: &str,
     confirmation_target: u32,
 ) -> Result<Vec<MigrationPartStatus>, String> {
+    if matches!(
+        phase,
+        PHASE_WAITING_DENOM_CONFIRMATIONS | PHASE_READY_TO_MIGRATE
+    ) {
+        let denomination_parts = denomination_migration_parts_for_run(
+            conn,
+            run_id,
+            target_values,
+            phase,
+            confirmation_target,
+        )?;
+        if !denomination_parts.is_empty() {
+            return Ok(denomination_parts);
+        }
+    }
+
     let mut parts = target_values
         .iter()
         .enumerate()
@@ -2613,6 +2629,137 @@ fn migration_parts_for_run(
     }
     parts.sort_by_key(|part| part.part_index);
     Ok(parts)
+}
+
+fn denomination_migration_parts_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    target_values: &[u64],
+    phase: &str,
+    confirmation_target: u32,
+) -> Result<Vec<MigrationPartStatus>, String> {
+    let stages = denomination_stage_chain_records(conn, run_id)?;
+    if stages.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut parts = target_values
+        .iter()
+        .enumerate()
+        .map(|(part_index, value_zatoshi)| MigrationPartStatus {
+            part_index: part_index as u32,
+            value_zatoshi: *value_zatoshi,
+            state: MigrationPartState::Preparing,
+            txid_hex: None,
+            schedule_start_height: None,
+            scheduled_height: None,
+            confirmation_count: 0,
+            confirmation_target,
+        })
+        .collect::<Vec<_>>();
+    let mut assigned = BTreeSet::new();
+
+    for stage in stages {
+        let txid_hex = stage.expected_txid_hex.to_ascii_lowercase();
+        let (state, confirmation_count) =
+            denomination_stage_part_state(conn, &stage, phase, confirmation_target)?;
+        for output in stage
+            .outputs
+            .iter()
+            .filter(|output| output.kind == DenominationStageOutputKind::Migration)
+        {
+            let part_index = output
+                .part_index
+                .filter(|index| (*index as usize) < parts.len() && !assigned.contains(index))
+                .or_else(|| {
+                    parts
+                        .iter()
+                        .find(|part| {
+                            part.value_zatoshi == output.value_zatoshi
+                                && !assigned.contains(&part.part_index)
+                        })
+                        .map(|part| part.part_index)
+                })
+                .or_else(|| {
+                    parts
+                        .iter()
+                        .find(|part| !assigned.contains(&part.part_index))
+                        .map(|part| part.part_index)
+                })
+                .unwrap_or(parts.len() as u32);
+            assigned.insert(part_index);
+
+            let part = MigrationPartStatus {
+                part_index,
+                value_zatoshi: parts
+                    .get(part_index as usize)
+                    .map(|part| part.value_zatoshi)
+                    .unwrap_or(output.value_zatoshi),
+                state,
+                txid_hex: Some(txid_hex.clone()),
+                schedule_start_height: None,
+                scheduled_height: None,
+                confirmation_count,
+                confirmation_target,
+            };
+            if let Some(slot) = parts.get_mut(part_index as usize) {
+                *slot = part;
+            } else {
+                parts.push(part);
+            }
+        }
+    }
+
+    parts.sort_by_key(|part| part.part_index);
+    Ok(parts)
+}
+
+fn denomination_stage_part_state(
+    conn: &rusqlite::Connection,
+    stage: &DenominationStageChainRecord,
+    phase: &str,
+    confirmation_target: u32,
+) -> Result<(MigrationPartState, u32), String> {
+    match stage.status {
+        DenominationStageStatus::AwaitingInputs | DenominationStageStatus::Pending => {
+            Ok((MigrationPartState::Preparing, 0))
+        }
+        DenominationStageStatus::Broadcasted => {
+            let confirmation_count =
+                denomination_stage_confirmation_count(conn, &stage.expected_txid_hex)?;
+            let state = if confirmation_count == 0 {
+                MigrationPartState::Migrating
+            } else if confirmation_count >= confirmation_target {
+                MigrationPartState::Completed
+            } else {
+                MigrationPartState::Confirming
+            };
+            Ok((state, confirmation_count))
+        }
+        DenominationStageStatus::Confirmed => {
+            let confirmation_count = match stage.confirmed_mined_height {
+                Some(mined_height) => synced_orchard_confirmation_count(conn, mined_height)?,
+                None => denomination_stage_confirmation_count(conn, &stage.expected_txid_hex)?,
+            };
+            let state =
+                if phase == PHASE_READY_TO_MIGRATE || confirmation_count >= confirmation_target {
+                    MigrationPartState::Completed
+                } else {
+                    MigrationPartState::Confirming
+                };
+            Ok((state, confirmation_count))
+        }
+    }
+}
+
+fn denomination_stage_confirmation_count(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+) -> Result<u32, String> {
+    match local_denomination_chain_identity(conn, txid_hex)? {
+        Some(identity) => synced_orchard_confirmation_count(conn, identity.mined_height),
+        None => Ok(0),
+    }
 }
 
 fn active_run(
@@ -3812,8 +3959,25 @@ mod tests {
                 value_zatoshi: 100_000_000,
                 note_version: 2,
                 kind: DenominationStageOutputKind::Migration,
+                part_index: Some(0),
             }],
         }
+    }
+
+    fn pending_test_stage_for_part(
+        stage_index: u32,
+        expected_txid_hex: &str,
+        value_zatoshi: u64,
+        part_index: Option<u32>,
+    ) -> DenominationStageInsert {
+        let mut stage = pending_test_stage(expected_txid_hex, vec![1, 2, 3, 4]);
+        stage.stage_index = stage_index;
+        stage.inputs[0].txid_hex = format!("{:02x}", 0xa0 + stage_index as u8).repeat(32);
+        stage.inputs[0].output_index = stage_index;
+        stage.inputs[0].value_zatoshi = value_zatoshi.saturating_add(stage.fee_zatoshi);
+        stage.outputs[0].value_zatoshi = value_zatoshi;
+        stage.outputs[0].part_index = part_index;
+        stage
     }
 
     fn insert_test_stage(
@@ -5542,6 +5706,72 @@ mod tests {
             parts.iter().map(|part| part.part_index).collect::<Vec<_>>(),
             vec![0, 1, 2, 3]
         );
+    }
+
+    #[test]
+    fn denomination_parts_report_independent_split_stage_states() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (20)",
+            [],
+        )
+        .unwrap();
+
+        let run_id = "run-denomination-parts";
+        let confirming_txid = "11".repeat(32);
+        let preparing_txid = "22".repeat(32);
+        let tx = conn.unchecked_transaction().unwrap();
+        insert_denomination_stages_with_tx(
+            &tx,
+            run_id,
+            vec![
+                pending_test_stage_for_part(0, &confirming_txid, 20_000_000, Some(1)),
+                pending_test_stage_for_part(1, &preparing_txid, 10_000_000, Some(0)),
+            ],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        mark_denomination_stage_broadcasted(&conn, run_id, &confirming_txid).unwrap();
+
+        let mut confirming_blob = hex::decode(&confirming_txid).unwrap();
+        confirming_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 19)",
+            params![confirming_blob],
+        )
+        .unwrap();
+
+        let parts = migration_parts_for_run(
+            &conn,
+            run_id,
+            &[10_000_000, 20_000_000],
+            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].part_index, 0);
+        assert_eq!(parts[0].value_zatoshi, 10_000_000);
+        assert_eq!(parts[0].state, MigrationPartState::Preparing);
+        assert_eq!(parts[0].confirmation_count, 0);
+        assert_eq!(parts[1].part_index, 1);
+        assert_eq!(parts[1].value_zatoshi, 20_000_000);
+        assert_eq!(parts[1].state, MigrationPartState::Confirming);
+        assert_eq!(parts[1].confirmation_count, 2);
     }
 
     #[test]

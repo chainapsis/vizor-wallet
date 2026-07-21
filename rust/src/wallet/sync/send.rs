@@ -3401,6 +3401,15 @@ fn create_padded_orchard_denomination_pczts(
                 value_zatoshi: *value_zatoshi,
                 note_version: 2,
                 kind,
+                part_index: if terminal.kind == super::migration::SplitTerminalKind::Migration {
+                    Some(
+                        u32::try_from(terminal.logical_index).map_err(|_| {
+                            "Migration denomination part index exceeds u32".to_string()
+                        })?,
+                    )
+                } else {
+                    None
+                },
             });
             if terminal.kind == super::migration::SplitTerminalKind::Migration {
                 predicted_migration_notes.push((
@@ -3426,6 +3435,7 @@ fn create_padded_orchard_denomination_pczts(
                 value_zatoshi: *value_zatoshi,
                 note_version: 2,
                 kind: super::migration::DenominationStageOutputKind::Continuation,
+                part_index: None,
             });
             previous_continuation = Some(PredictedMigrationNote {
                 txid_hex: expected_txid_hex.clone(),
@@ -6346,6 +6356,7 @@ mod tests {
                 value_zatoshi: 100_000,
                 note_version: 2,
                 kind: migration::DenominationStageOutputKind::Migration,
+                part_index: Some(0),
             }],
         }
     }

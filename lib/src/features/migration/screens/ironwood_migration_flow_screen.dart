@@ -4659,6 +4659,26 @@ List<double> _migrationBatchProgresses({
   }
 
   if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+    final hasDenominationPartProgress =
+        parts.isNotEmpty &&
+        parts.any(
+          (part) => part.state != rust_sync.MigrationPartState.preparing,
+        );
+    if (hasDenominationPartProgress) {
+      return [
+        for (var i = 0; i < parts.length; i++)
+          _migrationPartStatusProgress(
+            part: parts[i],
+            visualStatus: i < statuses.length
+                ? statuses[i]
+                : _migrationBatchStatus(parts[i].state),
+            currentHeight: currentHeight,
+            isAdvancing: isAdvancing,
+            preparePhase: true,
+          ),
+      ];
+    }
+
     final progress = _prepareMigrationProgress(
       status,
       isAdvancing: isAdvancing,
@@ -4718,11 +4738,24 @@ double _prepareMigrationProgress(
   return math.max(stageProgress.toDouble(), isAdvancing ? 0.24 : 0.16);
 }
 
+double _prepareConfirmationProgress({
+  required int confirmationCount,
+  required int confirmationTarget,
+}) {
+  if (confirmationTarget <= 0) return _prepareBroadcastCommitProgress;
+  final confirmationProgress = (confirmationCount / confirmationTarget)
+      .clamp(0, 1)
+      .toDouble();
+  return _prepareBroadcastCommitProgress +
+      (1 - _prepareBroadcastCommitProgress) * confirmationProgress;
+}
+
 double _migrationPartStatusProgress({
   required rust_sync.MigrationPartStatus part,
   required _MigrationBatchStatus visualStatus,
   required int currentHeight,
   required bool isAdvancing,
+  bool preparePhase = false,
 }) {
   if (visualStatus == _MigrationBatchStatus.needsInput) {
     return math.max(
@@ -4743,11 +4776,21 @@ double _migrationPartStatusProgress({
       currentHeight: currentHeight,
     ),
     rust_sync.MigrationPartState.migrating =>
-      isAdvancing ? _broadcastCommitProgressCap : _scheduledBlockProgressCap,
-    rust_sync.MigrationPartState.confirming => _confirmationProgress(
-      confirmationCount: part.confirmationCount,
-      confirmationTarget: part.confirmationTarget,
-    ),
+      preparePhase
+          ? _prepareBroadcastCommitProgress
+          : isAdvancing
+          ? _broadcastCommitProgressCap
+          : _scheduledBlockProgressCap,
+    rust_sync.MigrationPartState.confirming =>
+      preparePhase
+          ? _prepareConfirmationProgress(
+              confirmationCount: part.confirmationCount,
+              confirmationTarget: part.confirmationTarget,
+            )
+          : _confirmationProgress(
+              confirmationCount: part.confirmationCount,
+              confirmationTarget: part.confirmationTarget,
+            ),
     rust_sync.MigrationPartState.completed => 1,
     rust_sync.MigrationPartState.needsInput => _scheduledBlockProgressCap,
   };
