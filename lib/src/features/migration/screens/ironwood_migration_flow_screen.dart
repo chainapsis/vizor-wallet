@@ -1735,13 +1735,15 @@ class _IronwoodMigrationPrivateStatusContentState
       _StatusAction.none => null,
     };
 
-    if (status.activeRunId != null &&
+    if ((status.activeRunId != null ||
+            status.phase == kIronwoodMigrationCompletePhase) &&
         {
           kIronwoodMigrationWaitingDenomConfirmationsPhase,
           kIronwoodMigrationReadyToMigratePhase,
           kIronwoodMigrationBroadcastScheduledPhase,
           kIronwoodMigrationBroadcastingPhase,
           kIronwoodMigrationWaitingConfirmationsPhase,
+          kIronwoodMigrationCompletePhase,
         }.contains(status.phase)) {
       return _MigrationStatusContent(
         status: status,
@@ -2861,6 +2863,7 @@ class _MigrationBatchFooterRow extends StatelessWidget {
 
 class _MigrationProgressSegment extends StatelessWidget {
   const _MigrationProgressSegment({
+    super.key,
     required this.index,
     required this.status,
     required this.progress,
@@ -2966,11 +2969,10 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
         _drawDashedBorder(canvas, borderPath, _green);
         break;
       case _MigrationBatchStatus.scheduled:
-        _drawProgressFill(
+        _drawStripedBackground(
           canvas,
           clipPath,
           outlineRect,
-          progress,
           fillColor: _greenSoftFill,
           stripeColor: _scheduledStripeColor,
         );
@@ -2978,6 +2980,13 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
         break;
       case _MigrationBatchStatus.migrating:
       case _MigrationBatchStatus.confirming:
+        _drawStripedBackground(
+          canvas,
+          clipPath,
+          outlineRect,
+          fillColor: _activeStripeFillColor,
+          stripeColor: _activeStripeColor,
+        );
         final solidProgress = math.min(
           progress.clamp(0, 1).toDouble(),
           _scheduledBlockProgressCap,
@@ -2989,19 +2998,15 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
           solidProgress,
           fillColor: _green,
         );
-        if (progress > _scheduledBlockProgressCap) {
-          _drawProgressFill(
-            canvas,
-            clipPath,
-            outlineRect,
-            progress,
-            startProgress: _scheduledBlockProgressCap,
-            fillColor: _activeStripeFillColor,
-            stripeColor: _activeStripeColor,
-          );
-        }
         break;
       case _MigrationBatchStatus.needsInput:
+        _drawStripedBackground(
+          canvas,
+          clipPath,
+          outlineRect,
+          fillColor: _purple.withValues(alpha: 0.22),
+          stripeColor: _purpleStripe.withValues(alpha: 0.44),
+        );
         final solidProgress = math.min(
           math.max(progress, 0.18).clamp(0, 1).toDouble(),
           0.18,
@@ -3013,17 +3018,6 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
           solidProgress,
           fillColor: _purple,
         );
-        if (progress > 0.18) {
-          _drawProgressFill(
-            canvas,
-            clipPath,
-            outlineRect,
-            math.max(progress, 0.18),
-            startProgress: 0.18,
-            fillColor: _purple.withValues(alpha: 0.22),
-            stripeColor: _purpleStripe.withValues(alpha: 0.44),
-          );
-        }
         break;
     }
   }
@@ -3042,6 +3036,20 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
   Color get _scheduledStripeColor => isDark
       ? _green.withValues(alpha: 0.34)
       : _greenStripe.withValues(alpha: 0.28);
+
+  void _drawStripedBackground(
+    Canvas canvas,
+    Path clipPath,
+    Rect rect, {
+    required Color fillColor,
+    required Color stripeColor,
+  }) {
+    canvas.save();
+    canvas.clipPath(clipPath);
+    canvas.drawRect(rect, Paint()..color = fillColor);
+    _drawDiagonalStripes(canvas, rect, stripeColor);
+    canvas.restore();
+  }
 
   void _drawProgressFill(
     Canvas canvas,
@@ -3065,11 +3073,31 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipPath(clipPath);
-    canvas.drawRect(fillRect, Paint()..color = fillColor);
+    final fillPath = _progressFillPath(rect, fillRect, clampedStart);
+    canvas.drawPath(fillPath, Paint()..color = fillColor);
     if (stripeColor != null) {
+      canvas.save();
+      canvas.clipPath(fillPath);
       _drawDiagonalStripes(canvas, fillRect, stripeColor);
+      canvas.restore();
     }
     canvas.restore();
+  }
+
+  Path _progressFillPath(Rect trackRect, Rect fillRect, double startProgress) {
+    final radius = trackRect.height / 2;
+    if (fillRect.width <= 0) return Path();
+
+    final leftRadius = startProgress <= 0 ? radius : 0.0;
+    return Path()..addRRect(
+      RRect.fromRectAndCorners(
+        fillRect,
+        topLeft: Radius.circular(leftRadius),
+        bottomLeft: Radius.circular(leftRadius),
+        topRight: Radius.circular(radius),
+        bottomRight: Radius.circular(radius),
+      ),
+    );
   }
 
   void _drawDiagonalStripes(Canvas canvas, Rect rect, Color color) {
@@ -3296,6 +3324,7 @@ class _MigrationStatusBatchPanel extends StatelessWidget {
     required this.totalZatoshi,
     required this.statuses,
     required this.progresses,
+    required this.progressKeys,
     required this.completionLabel,
     required this.spendableLabel,
   });
@@ -3305,6 +3334,7 @@ class _MigrationStatusBatchPanel extends StatelessWidget {
   final BigInt totalZatoshi;
   final List<_MigrationBatchStatus> statuses;
   final List<double> progresses;
+  final List<String> progressKeys;
   final String completionLabel;
   final String spendableLabel;
 
@@ -3326,6 +3356,7 @@ class _MigrationStatusBatchPanel extends StatelessWidget {
               totalZatoshi: totalZatoshi,
               statuses: statuses,
               progresses: progresses,
+              progressKeys: progressKeys,
             ),
           ),
           Positioned(
@@ -3359,6 +3390,7 @@ class _MigrationStatusBatchWrap extends StatelessWidget {
     required this.totalZatoshi,
     required this.statuses,
     required this.progresses,
+    required this.progressKeys,
   });
 
   final List<BigInt> values;
@@ -3366,6 +3398,7 @@ class _MigrationStatusBatchWrap extends StatelessWidget {
   final BigInt totalZatoshi;
   final List<_MigrationBatchStatus> statuses;
   final List<double> progresses;
+  final List<String> progressKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -3381,6 +3414,7 @@ class _MigrationStatusBatchWrap extends StatelessWidget {
             totalZatoshi: totalZatoshi,
             statuses: statuses,
             progresses: progresses,
+            progressKeys: progressKeys,
           ),
         ),
         Positioned(
@@ -3406,12 +3440,14 @@ class _MigrationStatusBatchChart extends StatelessWidget {
     required this.totalZatoshi,
     required this.statuses,
     required this.progresses,
+    required this.progressKeys,
   });
 
   final List<BigInt> values;
   final BigInt totalZatoshi;
   final List<_MigrationBatchStatus> statuses;
   final List<double> progresses;
+  final List<String> progressKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -3470,17 +3506,14 @@ class _MigrationStatusBatchChart extends StatelessWidget {
                 Expanded(
                   flex: _migrationSegmentFlex(values[i], totalZatoshi),
                   child: _MigrationProgressSegment(
+                    key: ValueKey(
+                      'ironwood_migration_segment_${i < progressKeys.length ? progressKeys[i] : i}',
+                    ),
                     index: i,
                     status: i < statuses.length
                         ? statuses[i]
                         : _MigrationBatchStatus.none,
-                    progress: _migrationSegmentProgress(
-                      values: values,
-                      totalZatoshi: totalZatoshi,
-                      statuses: statuses,
-                      progresses: progresses,
-                      index: i,
-                    ),
+                    progress: i < progresses.length ? progresses[i] : 0,
                   ),
                 ),
               ],
@@ -3761,7 +3794,7 @@ String _migrationSpendableBalanceLabel({
   return '${_formatZecAmountCompact(spendable)} ZEC';
 }
 
-class _MigrationStatusContent extends StatelessWidget {
+class _MigrationStatusContent extends StatefulWidget {
   const _MigrationStatusContent({
     required this.status,
     required this.action,
@@ -3777,7 +3810,78 @@ class _MigrationStatusContent extends StatelessWidget {
   final VoidCallback? onAction;
 
   @override
+  State<_MigrationStatusContent> createState() =>
+      _MigrationStatusContentState();
+}
+
+class _MigrationStatusContentState extends State<_MigrationStatusContent> {
+  String? _progressRunId;
+  int _maxSeenCurrentHeight = 0;
+  final Map<String, double> _maxSeenProgress = {};
+
+  void _syncProgressRun(String runId) {
+    if (_progressRunId == runId) return;
+    _progressRunId = runId;
+    _maxSeenCurrentHeight = 0;
+    _maxSeenProgress.clear();
+  }
+
+  int _displayCurrentHeight(int currentHeight) {
+    if (currentHeight > _maxSeenCurrentHeight) {
+      _maxSeenCurrentHeight = currentHeight;
+    }
+    if (_maxSeenCurrentHeight > 0) return _maxSeenCurrentHeight;
+    return currentHeight;
+  }
+
+  List<String> _progressKeys({
+    required String runId,
+    required List<rust_sync.MigrationPartStatus> parts,
+    required int count,
+  }) {
+    return [
+      for (var i = 0; i < count; i++)
+        '$runId:part:${parts.isNotEmpty && i < parts.length ? parts[i].partIndex : i}',
+    ];
+  }
+
+  List<double> _monotonicProgresses({
+    required List<String> keys,
+    required List<_MigrationBatchStatus> statuses,
+    required List<double> rawProgresses,
+  }) {
+    return [
+      for (var i = 0; i < keys.length; i++)
+        _monotonicProgress(
+          key: keys[i],
+          status: i < statuses.length
+              ? statuses[i]
+              : _MigrationBatchStatus.none,
+          rawProgress: i < rawProgresses.length ? rawProgresses[i] : 0.0,
+        ),
+    ];
+  }
+
+  double _monotonicProgress({
+    required String key,
+    required _MigrationBatchStatus status,
+    required double rawProgress,
+  }) {
+    final clampedProgress = status == _MigrationBatchStatus.complete
+        ? 1.0
+        : rawProgress.clamp(0, 1).toDouble();
+    final previous = _maxSeenProgress[key] ?? 0.0;
+    final next = math.max(previous, clampedProgress);
+    _maxSeenProgress[key] = next;
+    return next;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final status = widget.status;
+    final runId = status.activeRunId ?? 'inactive';
+    _syncProgressRun(runId);
+
     final parts = [...status.parts];
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
@@ -3786,10 +3890,15 @@ class _MigrationStatusContent extends StatelessWidget {
     final partNumbers = parts.isNotEmpty
         ? [for (final part in parts) part.partIndex + 1]
         : [for (var i = 0; i < values.length; i++) i + 1];
-    final statuses = parts.isNotEmpty
+    final statuses = status.phase == kIronwoodMigrationCompletePhase
+        ? List<_MigrationBatchStatus>.filled(
+            values.length,
+            _MigrationBatchStatus.complete,
+          )
+        : parts.isNotEmpty
         ? [for (final part in parts) _migrationBatchStatus(part.state)]
         : _legacyMigrationBatchStatuses(status, values.length);
-    if (action == _StatusAction.needsInput &&
+    if (widget.action == _StatusAction.needsInput &&
         !statuses.contains(_MigrationBatchStatus.needsInput)) {
       final inputIndex = statuses.indexWhere(
         (status) => status != _MigrationBatchStatus.complete,
@@ -3798,25 +3907,59 @@ class _MigrationStatusContent extends StatelessWidget {
         statuses[inputIndex] = _MigrationBatchStatus.needsInput;
       }
     }
-    final progresses = _migrationBatchProgresses(
+    final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final displayCurrentHeight = _displayCurrentHeight(widget.currentHeight);
+    final rawProgresses = _migrationBatchProgresses(
       status: status,
       parts: parts,
       statuses: statuses,
-      currentHeight: currentHeight,
-      isAdvancing: isAdvancing,
+      currentHeight: displayCurrentHeight,
+      isAdvancing: widget.isAdvancing,
     );
-    final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final rawSegmentProgresses = [
+      for (var i = 0; i < values.length; i++)
+        _migrationSegmentProgress(
+          values: values,
+          totalZatoshi: total,
+          statuses: statuses,
+          progresses: rawProgresses,
+          index: i,
+        ),
+    ];
+    final progressKeys = _progressKeys(
+      runId: runId,
+      parts: parts,
+      count: values.length,
+    );
+    final progresses = _monotonicProgresses(
+      keys: progressKeys,
+      statuses: statuses,
+      rawProgresses: rawSegmentProgresses,
+    );
+    if (_shouldShowPreparingStatusContent(status, statuses)) {
+      return _MigrationPreparingStatusContent(
+        key: ValueKey('ironwood_migration_preparing_${status.activeRunId}'),
+        status: status,
+        values: values,
+        totalZatoshi: total,
+        statuses: statuses,
+        progresses: progresses,
+        progressKeys: progressKeys,
+      );
+    }
+
     final spendableLabel = _migrationSpendableBalanceLabel(
       values: values,
       statuses: statuses,
     );
-    final buttonLabel = switch (action) {
+    final buttonLabel = switch (widget.action) {
       _StatusAction.needsInput => 'Sign with Keystone',
       _StatusAction.retry => 'Retry migration',
       _ => 'Go home',
     };
     final actionRequiresContinuation =
-        action == _StatusAction.needsInput || action == _StatusAction.retry;
+        widget.action == _StatusAction.needsInput ||
+        widget.action == _StatusAction.retry;
 
     return SizedBox(
       key: ValueKey('ironwood_migration_status_${status.phase}'),
@@ -3850,7 +3993,12 @@ class _MigrationStatusContent extends StatelessWidget {
               totalZatoshi: total,
               statuses: statuses,
               progresses: progresses,
-              completionLabel: _transferEstimatedArrival(status),
+              progressKeys: progressKeys,
+              completionLabel: _transferEstimatedCompletion(
+                status,
+                currentHeight: displayCurrentHeight,
+                needsInput: widget.action == _StatusAction.needsInput,
+              ),
               spendableLabel: spendableLabel,
             ),
           ),
@@ -3861,21 +4009,21 @@ class _MigrationStatusContent extends StatelessWidget {
             child: Center(
               child: AppButton(
                 key: const ValueKey('ironwood_migration_status_action_button'),
-                onPressed: isAdvancing && actionRequiresContinuation
+                onPressed: widget.isAdvancing && actionRequiresContinuation
                     ? null
                     : actionRequiresContinuation
-                    ? onAction
+                    ? widget.onAction
                     : () => context.go('/home'),
                 variant: actionRequiresContinuation
                     ? AppButtonVariant.primary
                     : AppButtonVariant.secondary,
                 height: 36,
-                minWidth: action == _StatusAction.needsInput ? 150 : 96,
+                minWidth: widget.action == _StatusAction.needsInput ? 150 : 96,
                 expand: false,
                 child: SizedBox(
-                  width: action == _StatusAction.needsInput
+                  width: widget.action == _StatusAction.needsInput
                       ? 118
-                      : action == _StatusAction.retry
+                      : widget.action == _StatusAction.retry
                       ? 92
                       : 64,
                   child: FittedBox(
@@ -3892,6 +4040,414 @@ class _MigrationStatusContent extends StatelessWidget {
   }
 }
 
+bool _shouldShowPreparingStatusContent(
+  rust_sync.MigrationStatus status,
+  List<_MigrationBatchStatus> statuses,
+) {
+  if (statuses.isEmpty) return false;
+  final hasLaterStatus = statuses.any(
+    (status) =>
+        status == _MigrationBatchStatus.scheduled ||
+        status == _MigrationBatchStatus.migrating ||
+        status == _MigrationBatchStatus.confirming ||
+        status == _MigrationBatchStatus.complete ||
+        status == _MigrationBatchStatus.needsInput,
+  );
+  if (hasLaterStatus) return false;
+  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+    return true;
+  }
+  return status.parts.any(
+    (part) => part.state == rust_sync.MigrationPartState.preparing,
+  );
+}
+
+class _MigrationPreparingStatusContent extends StatelessWidget {
+  const _MigrationPreparingStatusContent({
+    super.key,
+    required this.status,
+    required this.values,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.progresses,
+    required this.progressKeys,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
+  final List<String> progressKeys;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 61,
+            left: 12,
+            width: 396,
+            child: Column(
+              children: [
+                Text(
+                  'Migration in Progress',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _migrationPreparingDurationLabel(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 164,
+            width: 396,
+            height: 65,
+            child: _MigrationStatusBatchChart(
+              values: values,
+              totalZatoshi: totalZatoshi,
+              statuses: statuses,
+              progresses: progresses,
+              progressKeys: progressKeys,
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 264,
+            width: 396,
+            child: _MigrationPreparingStepsCard(
+              status: status,
+              partCount: values.length,
+            ),
+          ),
+          const Positioned(
+            left: 83,
+            top: 460,
+            width: 254,
+            child: _MigrationPreparingInfo(),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: Center(
+              child: AppButton(
+                key: const ValueKey('ironwood_migration_status_action_button'),
+                onPressed: () => context.go('/home'),
+                variant: AppButtonVariant.secondary,
+                height: 36,
+                minWidth: 96,
+                expand: false,
+                child: const SizedBox(
+                  width: 64,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Go home'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationPreparingStepsCard extends StatelessWidget {
+  const _MigrationPreparingStepsCard({
+    required this.status,
+    required this.partCount,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final int partCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final splitComplete = _migrationPreparingSplitComplete(status);
+    final confirmationsComplete = _migrationPreparingConfirmationsComplete(
+      status,
+    );
+    final remainingBlocks = _migrationPreparingRemainingConfirmationBlocks(
+      status,
+    );
+    final effectivePartCount = math.max(1, partCount);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.md,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Note split',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MigrationPreparingStepRow(
+              state: splitComplete
+                  ? _MigrationPreparationStepState.complete
+                  : _MigrationPreparationStepState.active,
+              label:
+                  'Split notes into $effectivePartCount migration '
+                  '${effectivePartCount == 1 ? 'part' : 'parts'}',
+            ),
+            const _MigrationPreparingStepConnector(),
+            _MigrationPreparingStepRow(
+              state: confirmationsComplete
+                  ? _MigrationPreparationStepState.complete
+                  : splitComplete
+                  ? _MigrationPreparationStepState.active
+                  : _MigrationPreparationStepState.pending,
+              stepNumber: 2,
+              label: remainingBlocks <= 0
+                  ? 'Waiting for confirmation'
+                  : 'Wait $remainingBlocks '
+                        '${remainingBlocks == 1 ? 'block' : 'blocks'} '
+                        'for confirmation',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationPreparingStepRow extends StatelessWidget {
+  const _MigrationPreparingStepRow({
+    required this.state,
+    required this.label,
+    this.stepNumber,
+  });
+
+  final _MigrationPreparationStepState state;
+  final String label;
+  final int? stepNumber;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        _MigrationPreparingStepBadge(state: state, stepNumber: stepNumber),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelLarge.copyWith(
+              color: state == _MigrationPreparationStepState.pending
+                  ? colors.text.secondary
+                  : colors.text.accent,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationPreparingStepBadge extends StatelessWidget {
+  const _MigrationPreparingStepBadge({
+    required this.state,
+    required this.stepNumber,
+  });
+
+  final _MigrationPreparationStepState state;
+  final int? stepNumber;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final backgroundColor = switch (state) {
+      _MigrationPreparationStepState.complete => GreenPrimitives.p500Light,
+      _MigrationPreparationStepState.active => colors.background.inverse,
+      _MigrationPreparationStepState.pending => colors.background.raised,
+    };
+    final foregroundColor = switch (state) {
+      _MigrationPreparationStepState.complete => Colors.white,
+      _MigrationPreparationStepState.active => colors.icon.inverse,
+      _MigrationPreparationStepState.pending => colors.text.secondary,
+    };
+
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: backgroundColor,
+          shape: const OvalBorder(),
+        ),
+        child: Center(
+          child: switch (state) {
+            _MigrationPreparationStepState.complete => AppIcon(
+              AppIcons.check,
+              size: 14,
+              color: foregroundColor,
+            ),
+            _MigrationPreparationStepState.active => AppIcon(
+              AppIcons.loader,
+              size: 15,
+              color: foregroundColor,
+              animated: false,
+            ),
+            _MigrationPreparationStepState.pending => Text(
+              '${stepNumber ?? ''}',
+              style: AppTypography.labelMedium.copyWith(color: foregroundColor),
+            ),
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationPreparingStepConnector extends StatelessWidget {
+  const _MigrationPreparingStepConnector();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 24,
+      height: 34,
+      child: CustomPaint(
+        painter: _MigrationPreparingStepConnectorPainter(
+          color: context.colors.border.regular,
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationPreparingStepConnectorPainter extends CustomPainter {
+  const _MigrationPreparingStepConnectorPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.65)
+      ..strokeWidth = 1
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    var y = 4.0;
+    const dash = 3.5;
+    const gap = 3.0;
+    final x = size.width / 2;
+    while (y < size.height - 4) {
+      final nextY = math.min(y + dash, size.height - 4);
+      canvas.drawLine(Offset(x, y), Offset(x, nextY), paint);
+      y = nextY + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant _MigrationPreparingStepConnectorPainter oldDelegate,
+  ) => oldDelegate.color != color;
+}
+
+class _MigrationPreparingInfo extends StatelessWidget {
+  const _MigrationPreparingInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        Text(
+          'Migration will start automatically once note split is complete.',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'You can leave this screen, but keep Vizor open & running.',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelLarge.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+bool _migrationPreparingSplitComplete(rust_sync.MigrationStatus status) {
+  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+      status.pendingSplitStageCount <= 0) {
+    return true;
+  }
+
+  final total = status.denominationSplitTotalCount;
+  if (total > 0) {
+    return status.denominationSplitCompletedCount >= total &&
+        status.pendingSplitStageCount <= 0;
+  }
+  return status.pendingSplitStageCount <= 0;
+}
+
+bool _migrationPreparingConfirmationsComplete(
+  rust_sync.MigrationStatus status,
+) {
+  final target = status.denominationConfirmationTarget;
+  return target > 0 && status.denominationConfirmationCount >= target;
+}
+
+int _migrationPreparingRemainingConfirmationBlocks(
+  rust_sync.MigrationStatus status,
+) {
+  final target = status.denominationConfirmationTarget > 0
+      ? status.denominationConfirmationTarget
+      : _migrationPrepareConfirmationBlocks;
+  return math.max(0, target - status.denominationConfirmationCount);
+}
+
+String _migrationPreparingDurationLabel() => 'This will take 10-20 min';
+
 _MigrationBatchStatus _migrationBatchStatus(
   rust_sync.MigrationPartState state,
 ) => switch (state) {
@@ -3907,6 +4463,13 @@ List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
   rust_sync.MigrationStatus status,
   int count,
 ) {
+  if (status.phase == kIronwoodMigrationCompletePhase) {
+    return List<_MigrationBatchStatus>.filled(
+      count,
+      _MigrationBatchStatus.complete,
+    );
+  }
+
   final hasBroadcastSchedule =
       status.scheduledBroadcasts.isNotEmpty ||
       status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
@@ -3944,6 +4507,10 @@ List<double> _migrationBatchProgresses({
   required bool isAdvancing,
 }) {
   if (statuses.isEmpty) return const [];
+
+  if (status.phase == kIronwoodMigrationCompletePhase) {
+    return List<double>.filled(statuses.length, 1);
+  }
 
   if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
     final progress = _prepareMigrationProgress(
@@ -5359,6 +5926,10 @@ String _currentTransferBatchStatus(rust_sync.MigrationStatus status) {
 }
 
 String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
+  if (status.phase == kIronwoodMigrationCompletePhase) {
+    return 'Completed';
+  }
+
   final nextScheduledBroadcast = _nextScheduledBroadcast(status);
   if (nextScheduledBroadcast != null) {
     return 'Block ${nextScheduledBroadcast.scheduledHeight}';
@@ -5369,6 +5940,159 @@ String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
   }
 
   return '~${status.scheduleMeanDelayBlocks} blocks';
+}
+
+String _transferEstimatedCompletion(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+  bool needsInput = false,
+}) {
+  if (status.phase == kIronwoodMigrationCompletePhase) {
+    return 'Completed';
+  }
+  if (needsInput || _migrationNeedsUserInput(status)) {
+    return 'After signing';
+  }
+
+  final remainingBlocks = _remainingMigrationCompletionBlocks(
+    status,
+    currentHeight: currentHeight,
+  );
+  if (remainingBlocks == null) {
+    return _formatMigrationBlockDurationEstimate(
+      _fallbackRemainingMigrationBlocks(status),
+    );
+  }
+  return _formatMigrationBlockDurationEstimate(math.max(1, remainingBlocks));
+}
+
+bool _migrationNeedsUserInput(rust_sync.MigrationStatus status) {
+  return status.parts.any(
+    (part) => part.state == rust_sync.MigrationPartState.needsInput,
+  );
+}
+
+int? _remainingMigrationCompletionBlocks(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+}) {
+  if (status.parts.isNotEmpty) {
+    var remainingBlocks = 0;
+    for (final part in status.parts) {
+      final partRemaining = _remainingMigrationPartCompletionBlocks(
+        part,
+        currentHeight: currentHeight,
+        fallbackDelayBlocks: status.scheduleMeanDelayBlocks,
+      );
+      if (partRemaining == null) return null;
+      remainingBlocks = math.max(remainingBlocks, partRemaining);
+    }
+    return remainingBlocks;
+  }
+
+  final scheduledBroadcasts = status.scheduledBroadcasts
+      .where((broadcast) => broadcast.status == 'scheduled')
+      .toList();
+  if (scheduledBroadcasts.isNotEmpty) {
+    final confirmationTarget = _legacyMigrationConfirmationTarget(status);
+    var remainingBlocks = 0;
+    for (final broadcast in scheduledBroadcasts) {
+      final scheduledBlocks = _remainingScheduledMigrationBlocks(
+        scheduledHeight: broadcast.scheduledHeight,
+        scheduleStartHeight: broadcast.scheduleStartHeight,
+        currentHeight: currentHeight,
+        fallbackDelayBlocks: status.scheduleMeanDelayBlocks,
+      );
+      remainingBlocks = math.max(
+        remainingBlocks,
+        scheduledBlocks + confirmationTarget,
+      );
+    }
+    return remainingBlocks;
+  }
+
+  if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
+    final target = _legacyMigrationConfirmationTarget(status);
+    final remainingConfirmations = math.max(
+      0,
+      target - status.confirmedTxCount,
+    );
+    return remainingConfirmations;
+  }
+
+  return null;
+}
+
+int? _remainingMigrationPartCompletionBlocks(
+  rust_sync.MigrationPartStatus part, {
+  required int currentHeight,
+  required int fallbackDelayBlocks,
+}) {
+  return switch (part.state) {
+    rust_sync.MigrationPartState.preparing =>
+      _migrationPrepareConfirmationBlocks,
+    rust_sync.MigrationPartState.scheduled =>
+      _remainingScheduledMigrationBlocks(
+            scheduledHeight: part.scheduledHeight,
+            scheduleStartHeight: part.scheduleStartHeight,
+            currentHeight: currentHeight,
+            fallbackDelayBlocks: fallbackDelayBlocks,
+          ) +
+          _migrationPartConfirmationTarget(part),
+    rust_sync.MigrationPartState.migrating => _migrationPartConfirmationTarget(
+      part,
+    ),
+    rust_sync.MigrationPartState.confirming => math.max(
+      0,
+      _migrationPartConfirmationTarget(part) - part.confirmationCount,
+    ),
+    rust_sync.MigrationPartState.completed => 0,
+    rust_sync.MigrationPartState.needsInput => null,
+  };
+}
+
+int _remainingScheduledMigrationBlocks({
+  required int? scheduledHeight,
+  required int? scheduleStartHeight,
+  required int currentHeight,
+  required int fallbackDelayBlocks,
+}) {
+  if (scheduledHeight == null) return math.max(1, fallbackDelayBlocks);
+  final fromHeight = currentHeight > 0 ? currentHeight : scheduleStartHeight;
+  if (fromHeight == null) return math.max(1, fallbackDelayBlocks);
+  return math.max(0, scheduledHeight - fromHeight);
+}
+
+int _migrationPartConfirmationTarget(rust_sync.MigrationPartStatus part) {
+  return math.max(1, part.confirmationTarget);
+}
+
+int _legacyMigrationConfirmationTarget(rust_sync.MigrationStatus status) {
+  if (status.parts.isNotEmpty) {
+    return status.parts.fold<int>(
+      1,
+      (maxTarget, part) =>
+          math.max(maxTarget, _migrationPartConfirmationTarget(part)),
+    );
+  }
+  if (status.totalCount > 0) return status.totalCount;
+  return _migrationPrepareConfirmationBlocks;
+}
+
+int _fallbackRemainingMigrationBlocks(rust_sync.MigrationStatus status) {
+  final totalCount = status.totalCount > 0
+      ? status.totalCount
+      : math.max(1, status.targetValuesZatoshi.length);
+  final completedCount = status.parts.isNotEmpty
+      ? status.parts
+            .where(
+              (part) => part.state == rust_sync.MigrationPartState.completed,
+            )
+            .length
+      : math.max(status.confirmedTxCount, status.broadcastedTxCount);
+  final remainingCount = math.max(1, totalCount - completedCount);
+  return math.max(1, status.scheduleMeanDelayBlocks) * remainingCount +
+      _migrationPrepareConfirmationBlocks;
 }
 
 rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(

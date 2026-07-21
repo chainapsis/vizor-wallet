@@ -476,17 +476,60 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Migration in Progress'), findsOneWidget);
-    expect(find.text('Part 1'), findsOneWidget);
-    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 1 migration part'), findsOneWidget);
+    expect(find.text('Wait 1 block for confirmation'), findsOneWidget);
+    expect(
+      find.text(
+        'Migration will start automatically once note split is complete.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('You can leave this screen, but keep Vizor open & running.'),
+      findsOneWidget,
+    );
     expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('~144 blocks'), findsOneWidget);
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
-    expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('You can leave this screen.'), findsOneWidget);
-    expect(find.text('But keep Vizor open & running.'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsNothing);
+    expect(find.text('You can leave this screen.'), findsNothing);
+    expect(find.text('But keep Vizor open & running.'), findsNothing);
     expect(find.text('shown before send'), findsNothing);
     expect(find.text('Shown before each send'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+  });
+
+  testWidgets('private status keeps scheduled batches on the transfer UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleStartHeight: 700,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Note split'), findsNothing);
+    expect(find.text('Scheduled'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 
   testWidgets('status can return home while background migration advances', (
@@ -601,8 +644,8 @@ void main() {
           phase: kIronwoodMigrationCompletePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration Complete',
-        buttonLabel: 'Back home',
+        title: 'Migration in Progress',
+        buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
     ];
@@ -648,6 +691,56 @@ void main() {
 
     expect(find.text('Migration status unavailable'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
+  });
+
+  testWidgets('private complete status uses all-completed transfer UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationCompletePhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 1,
+          confirmedTxCount: 1,
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.completed,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.scheduled,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Migration Complete'), findsNothing);
+    expect(find.text('Back home'), findsNothing);
+    expect(find.text('Migrating...'), findsNothing);
+    expect(find.text('Scheduled'), findsNothing);
+    expect(find.text('Completed'), findsAtLeastNWidgets(3));
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.6 ZEC'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });
 
   testWidgets('private transfer status uses authoritative per-part states', (
@@ -745,9 +838,10 @@ void main() {
     expect(find.text('Scheduled'), findsNothing);
     expect(find.text('Currently Spendable Balance'), findsOneWidget);
     expect(find.text('0.3 ZEC'), findsOneWidget);
+    expect(find.text('~3 mins'), findsOneWidget);
   });
 
-  testWidgets('private transfer ETA uses the next scheduled broadcast', (
+  testWidgets('private transfer ETA estimates total completion time', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -780,6 +874,12 @@ void main() {
             ),
           ],
         ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 897,
+          chainTipHeight: 1000,
+        ),
       ),
     );
     await tester.pump();
@@ -787,7 +887,7 @@ void main() {
 
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('Scheduled'), findsNWidgets(2));
-    expect(find.text('Block 900'), findsOneWidget);
+    expect(find.text('~8 mins'), findsOneWidget);
     expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 
@@ -838,6 +938,126 @@ void main() {
         .width;
 
     expect(fillWidth, closeTo(trackWidth * 0.35, 1));
+  });
+
+  testWidgets(
+    'scheduled note progress does not shrink when sync height drops',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+      await tester.pumpWidget(
+        _MutablePrivateStatusHarness(
+          key: harnessKey,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [10_000_000],
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduleStartHeight: 700,
+                scheduledHeight: 800,
+              ),
+            ],
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 750,
+            chainTipHeight: 1000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final firstFillWidth = tester
+          .getSize(
+            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+          )
+          .width;
+
+      harnessKey.currentState!.setSyncState(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 710,
+          chainTipHeight: 1000,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final secondFillWidth = tester
+          .getSize(
+            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+          )
+          .width;
+
+      expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
+    },
+  );
+
+  testWidgets('migrating note progress does not shrink when advancing stops', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+    await tester.pumpWidget(
+      _MutablePrivateStatusHarness(
+        key: harnessKey,
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+              scheduleStartHeight: 700,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 800,
+          chainTipHeight: 1000,
+        ),
+        coordinatorAdvancing: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final firstFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+
+    harnessKey.currentState!.setCoordinatorAdvancing(false);
+    await tester.pump();
+
+    final secondFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+
+    expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (
@@ -1514,6 +1734,141 @@ class _ScreenTestMigrationCoordinator extends IronwoodMigrationCoordinator {
   @override
   Future<void> retry(String accountUuid) async {
     await service?.continueSoftwarePrivateMigration(accountUuid: accountUuid);
+  }
+}
+
+class _MutableScreenTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  _MutableScreenTestMigrationCoordinator({required this.advancing});
+
+  final bool advancing;
+
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      IronwoodMigrationCoordinatorState(
+        advancingAccounts: advancing ? const {'account-1'} : const {},
+      );
+
+  void setAdvancing(bool advancing) {
+    state = state.copyWith(
+      advancingAccounts: advancing ? const {'account-1'} : const {},
+    );
+  }
+}
+
+class _MutableSyncNotifier extends SyncNotifier {
+  _MutableSyncNotifier(this.initialState);
+
+  final SyncState initialState;
+
+  @override
+  Future<SyncState> build() async => initialState;
+
+  void setSyncState(SyncState nextState) {
+    state = AsyncData(nextState);
+  }
+}
+
+class _MutablePrivateStatusHarness extends StatefulWidget {
+  const _MutablePrivateStatusHarness({
+    super.key,
+    required this.status,
+    required this.syncState,
+    this.coordinatorAdvancing = false,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final SyncState syncState;
+  final bool coordinatorAdvancing;
+
+  @override
+  State<_MutablePrivateStatusHarness> createState() =>
+      _MutablePrivateStatusHarnessState();
+}
+
+class _MutablePrivateStatusHarnessState
+    extends State<_MutablePrivateStatusHarness> {
+  final _scopeKey = GlobalKey();
+  late rust_sync.MigrationStatus _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = widget.status;
+  }
+
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(_scopeKey.currentContext!, listen: false);
+
+  void setStatus(rust_sync.MigrationStatus status) {
+    setState(() => _status = status);
+  }
+
+  void setSyncState(SyncState syncState) {
+    (_container.read(syncProvider.notifier) as _MutableSyncNotifier)
+        .setSyncState(syncState);
+  }
+
+  void setCoordinatorAdvancing(bool advancing) {
+    (_container.read(ironwoodMigrationCoordinatorProvider.notifier)
+            as _MutableScreenTestMigrationCoordinator)
+        .setAdvancing(advancing);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final router = GoRouter(
+      initialLocation: '/migration/private/status',
+      routes: [
+        GoRoute(
+          path: '/migration/private/status',
+          builder: (_, _) =>
+              IronwoodMigrationPrivateStatusScreen(previewStatus: _status),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+        GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
+        GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
+        GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+        GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => const Text('add account'),
+        ),
+        GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock')),
+      ],
+    );
+
+    return ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapFor(activeAccountIsHardware: false),
+        ),
+        syncProvider.overrideWith(() => _MutableSyncNotifier(widget.syncState)),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _MutableScreenTestMigrationCoordinator(
+            advancing: widget.coordinatorAdvancing,
+          ),
+        ),
+        swapFeatureEnabledProvider.overrideWithValue(true),
+        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+          const IronwoodHomeMigrationCtaState.hidden(),
+        ),
+      ],
+      child: Builder(
+        key: _scopeKey,
+        builder: (context) => MaterialApp.router(
+          routerConfig: router,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: true,
+              textScaler: TextScaler.noScaling,
+            ),
+            child: AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      ),
+    );
   }
 }
 
