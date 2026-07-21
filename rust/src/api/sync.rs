@@ -694,6 +694,7 @@ pub struct MigrationScheduledBroadcast {
 }
 
 pub struct MigrationScheduledTransfer {
+    pub part_index: u32,
     pub value_zatoshi: u64,
     pub block_offset: u32,
 }
@@ -771,6 +772,7 @@ fn to_wallet_migration_schedule(
     schedule
         .into_iter()
         .map(|entry| wallet_sync::MigrationScheduleEntry {
+            part_index: Some(entry.part_index),
             value_zatoshi: entry.value_zatoshi,
             block_offset: entry.block_offset,
         })
@@ -1111,6 +1113,7 @@ pub fn get_orchard_migration_private_plan(
                         .scheduled_transfers
                         .into_iter()
                         .map(|entry| MigrationScheduledTransfer {
+                            part_index: entry.part_index.unwrap_or(0),
                             value_zatoshi: entry.value_zatoshi,
                             block_offset: entry.block_offset,
                         })

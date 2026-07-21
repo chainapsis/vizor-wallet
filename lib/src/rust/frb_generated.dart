@@ -7992,11 +7992,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return MigrationScheduledTransfer(
-      valueZatoshi: dco_decode_u_64(arr[0]),
-      blockOffset: dco_decode_u_32(arr[1]),
+      partIndex: dco_decode_u_32(arr[0]),
+      valueZatoshi: dco_decode_u_64(arr[1]),
+      blockOffset: dco_decode_u_32(arr[2]),
     );
   }
 
@@ -10380,9 +10381,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_partIndex = sse_decode_u_32(deserializer);
     var var_valueZatoshi = sse_decode_u_64(deserializer);
     var var_blockOffset = sse_decode_u_32(deserializer);
     return MigrationScheduledTransfer(
+      partIndex: var_partIndex,
       valueZatoshi: var_valueZatoshi,
       blockOffset: var_blockOffset,
     );
@@ -12800,6 +12803,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.partIndex, serializer);
     sse_encode_u_64(self.valueZatoshi, serializer);
     sse_encode_u_32(self.blockOffset, serializer);
   }

@@ -53,6 +53,9 @@ const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _prepareBroadcastCommitProgress = 0.30;
 const _scheduledBlockProgressCap = 0.70;
 const _broadcastCommitProgressCap = 0.92;
+const _migrationEstimatedSecondsPerBlock = 75;
+const _migrationPrepareConfirmationBlocks = 3;
+const _migrationPrepareBroadcastBufferBlocks = 1;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
@@ -2695,18 +2698,12 @@ class _MigrationBatchOverview extends StatelessWidget {
     required this.totalZatoshi,
     required this.feeZatoshi,
     required this.completionLabel,
-    this.statuses = const [],
-    this.progresses = const [],
-    this.feeLabel,
   });
 
   final List<BigInt> values;
   final BigInt totalZatoshi;
   final BigInt feeZatoshi;
   final String completionLabel;
-  final List<_MigrationBatchStatus> statuses;
-  final List<double> progresses;
-  final String? feeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2758,16 +2755,8 @@ class _MigrationBatchOverview extends StatelessWidget {
                   flex: _migrationSegmentFlex(values[i], totalZatoshi),
                   child: _MigrationProgressSegment(
                     index: i,
-                    status: i < statuses.length
-                        ? statuses[i]
-                        : _MigrationBatchStatus.none,
-                    progress: _migrationSegmentProgress(
-                      values: values,
-                      totalZatoshi: totalZatoshi,
-                      statuses: statuses,
-                      progresses: progresses,
-                      index: i,
-                    ),
+                    status: _MigrationBatchStatus.none,
+                    progress: 0,
                   ),
                 ),
               ],
@@ -2784,21 +2773,88 @@ class _MigrationBatchOverview extends StatelessWidget {
               index: index,
               value: values[index],
               totalZatoshi: totalZatoshi,
-              status: index < statuses.length
-                  ? statuses[index]
-                  : _MigrationBatchStatus.none,
+              status: _MigrationBatchStatus.none,
             ),
           ),
         ),
-        Divider(height: 1, color: colors.border.subtle),
-        const SizedBox(height: 12),
-        _ReviewTextRow(label: 'Est. completion', value: completionLabel),
-        const SizedBox(height: 10),
-        _ReviewTextRow(
-          label: 'Fees (estimate)',
-          value: feeLabel ?? '~${_formatZecAmountCompact(feeZatoshi)} ZEC',
+        const SizedBox(height: 20),
+        _MigrationBatchFooter(
+          completionLabel: completionLabel,
+          secondLabel: 'Fees (estimate)',
+          secondValue: '~${_formatZecAmountCompact(feeZatoshi)} ZEC',
         ),
       ],
+    );
+  }
+}
+
+class _MigrationBatchFooter extends StatelessWidget {
+  const _MigrationBatchFooter({
+    required this.completionLabel,
+    required this.secondLabel,
+    required this.secondValue,
+  });
+
+  final String completionLabel;
+  final String secondLabel;
+  final String secondValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _MigrationBatchFooterRow(
+          label: 'Est. completion',
+          value: completionLabel,
+        ),
+        const SizedBox(height: 4),
+        _MigrationBatchFooterRow(label: secondLabel, value: secondValue),
+      ],
+    );
+  }
+}
+
+class _MigrationBatchFooterRow extends StatelessWidget {
+  const _MigrationBatchFooterRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = context.colors.text.primary;
+    return SizedBox(
+      height: 24,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(4),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                color: textColor,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppTypography.labelLarge.copyWith(color: textColor),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2896,6 +2952,7 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
         _drawFilledPill(canvas, outline, _green);
         break;
       case _MigrationBatchStatus.none:
+        _drawFilledPill(canvas, outline, _greenSoftFill);
         _drawDashedBorder(canvas, borderPath, _green);
         break;
       case _MigrationBatchStatus.preparing:
@@ -3173,7 +3230,7 @@ class _MigrationBatchRow extends StatelessWidget {
         child: Row(
           children: [
             Text(
-              'Note ${index + 1}',
+              'Part ${index + 1}',
               style: AppTypography.bodyMedium.copyWith(
                 color: _isPendingMigrationBatchStatus(status)
                     ? colors.text.secondary
@@ -3232,6 +3289,442 @@ class _MigrationBatchRow extends StatelessWidget {
   }
 }
 
+class _MigrationStatusBatchPanel extends StatelessWidget {
+  const _MigrationStatusBatchPanel({
+    required this.values,
+    required this.partNumbers,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.progresses,
+    required this.completionLabel,
+    required this.spendableLabel,
+  });
+
+  final List<BigInt> values;
+  final List<int> partNumbers;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
+  final String completionLabel;
+  final String spendableLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 396,
+      height: 540,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 57.5,
+            width: 396,
+            height: 329,
+            child: _MigrationStatusBatchWrap(
+              values: values,
+              partNumbers: partNumbers,
+              totalZatoshi: totalZatoshi,
+              statuses: statuses,
+              progresses: progresses,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 410.5,
+            width: 396,
+            height: 52,
+            child: _MigrationBatchFooter(
+              completionLabel: completionLabel,
+              secondLabel: 'Currently Spendable Balance',
+              secondValue: spendableLabel,
+            ),
+          ),
+          const Positioned(
+            left: 83,
+            top: 486.5,
+            width: 230,
+            height: 40,
+            child: _MigrationStatusInfo(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationStatusBatchWrap extends StatelessWidget {
+  const _MigrationStatusBatchWrap({
+    required this.values,
+    required this.partNumbers,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.progresses,
+  });
+
+  final List<BigInt> values;
+  final List<int> partNumbers;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned(
+          left: 0,
+          top: 12,
+          width: 396,
+          height: 65,
+          child: _MigrationStatusBatchChart(
+            values: values,
+            totalZatoshi: totalZatoshi,
+            statuses: statuses,
+            progresses: progresses,
+          ),
+        ),
+        Positioned(
+          left: 0,
+          top: 101,
+          width: 396,
+          height: 216,
+          child: _MigrationStatusBatchRows(
+            values: values,
+            partNumbers: partNumbers,
+            totalZatoshi: totalZatoshi,
+            statuses: statuses,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationStatusBatchChart extends StatelessWidget {
+  const _MigrationStatusBatchChart({
+    required this.values,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.progresses,
+  });
+
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<double> progresses;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Stack(
+      children: [
+        Positioned(
+          left: 0,
+          top: 8,
+          width: 396,
+          height: 29,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: 'Migration',
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: values.length == 1
+                            ? '  1 note'
+                            : '  ${values.length} notes',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_formatMigrationTotal(totalZatoshi)} ZEC',
+                maxLines: 1,
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          left: 0,
+          top: 45,
+          width: 396,
+          height: 12,
+          child: Row(
+            children: [
+              for (var i = 0; i < values.length; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                Expanded(
+                  flex: _migrationSegmentFlex(values[i], totalZatoshi),
+                  child: _MigrationProgressSegment(
+                    index: i,
+                    status: i < statuses.length
+                        ? statuses[i]
+                        : _MigrationBatchStatus.none,
+                    progress: _migrationSegmentProgress(
+                      values: values,
+                      totalZatoshi: totalZatoshi,
+                      statuses: statuses,
+                      progresses: progresses,
+                      index: i,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationStatusBatchRows extends StatelessWidget {
+  const _MigrationStatusBatchRows({
+    required this.values,
+    required this.partNumbers,
+    required this.totalZatoshi,
+    required this.statuses,
+  });
+
+  final List<BigInt> values;
+  final List<int> partNumbers;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      physics: const ClampingScrollPhysics(),
+      itemCount: values.length,
+      itemBuilder: (context, index) {
+        final isLast = index == values.length - 1;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MigrationStatusBatchRow(
+              key: ValueKey('ironwood_migration_status_batch_$index'),
+              partNumber: index < partNumbers.length
+                  ? partNumbers[index]
+                  : index + 1,
+              value: values[index],
+              totalZatoshi: totalZatoshi,
+              status: index < statuses.length
+                  ? statuses[index]
+                  : _MigrationBatchStatus.none,
+            ),
+            if (!isLast) ...[
+              const SizedBox(height: 12),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: context.colors.border.subtle,
+              ),
+              const SizedBox(height: 11),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MigrationStatusBatchRow extends StatelessWidget {
+  const _MigrationStatusBatchRow({
+    super.key,
+    required this.partNumber,
+    required this.value,
+    required this.totalZatoshi,
+    required this.status,
+  });
+
+  final int partNumber;
+  final BigInt value;
+  final BigInt totalZatoshi;
+  final _MigrationBatchStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final opacity = status == _MigrationBatchStatus.scheduled ? 0.5 : 1.0;
+    return Opacity(
+      opacity: opacity,
+      child: SizedBox(
+        height: 16,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Part $partNumber',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.accent,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 140,
+              child: _MigrationBatchAmountLabel(
+                value: value,
+                totalZatoshi: totalZatoshi,
+              ),
+            ),
+            SizedBox(
+              width: 130,
+              child: _MigrationBatchStatusLabel(status: status),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationBatchAmountLabel extends StatelessWidget {
+  const _MigrationBatchAmountLabel({
+    required this.value,
+    required this.totalZatoshi,
+  });
+
+  final BigInt value;
+  final BigInt totalZatoshi;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        text: '${_formatZecAmountCompact(value)} ZEC',
+        style: AppTypography.labelLarge.copyWith(
+          color: context.colors.text.accent,
+        ),
+        children: [
+          TextSpan(
+            text: ' ${_migrationPercentage(value, totalZatoshi)}',
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.right,
+    );
+  }
+}
+
+class _MigrationBatchStatusLabel extends StatelessWidget {
+  const _MigrationBatchStatusLabel({required this.status});
+
+  final _MigrationBatchStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final label = switch (status) {
+      _MigrationBatchStatus.none => null,
+      _MigrationBatchStatus.preparing => 'Preparing',
+      _MigrationBatchStatus.scheduled => 'Scheduled',
+      _MigrationBatchStatus.migrating => 'Migrating...',
+      _MigrationBatchStatus.confirming => 'Confirming...',
+      _MigrationBatchStatus.complete => 'Completed',
+      _MigrationBatchStatus.needsInput => 'Needs input',
+    };
+    if (label == null) return const SizedBox.shrink();
+
+    final isScheduled = status == _MigrationBatchStatus.scheduled;
+    final textColor = status == _MigrationBatchStatus.needsInput
+        ? const Color(0xFFB83AD9)
+        : isScheduled
+        ? colors.text.primary
+        : colors.text.accent;
+    final textStyle = AppTypography.labelLarge.copyWith(
+      color: textColor,
+      fontWeight: isScheduled ? FontWeight.w400 : FontWeight.w500,
+    );
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (status == _MigrationBatchStatus.complete) ...[
+          AppIcon(AppIcons.checkCircle, size: 16, color: colors.icon.regular),
+          const SizedBox(width: 4),
+        ] else if (status == _MigrationBatchStatus.migrating ||
+            status == _MigrationBatchStatus.confirming) ...[
+          AppIcon(AppIcons.loader, size: 16, color: colors.icon.regular),
+          const SizedBox(width: 4),
+        ],
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: textStyle,
+          ),
+        ),
+        if (status == _MigrationBatchStatus.needsInput) ...[
+          const SizedBox(width: 4),
+          const AppIcon(
+            AppIcons.chevronForward,
+            size: 16,
+            color: Color(0xFFB83AD9),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MigrationStatusInfo extends StatelessWidget {
+  const _MigrationStatusInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.secondary,
+    );
+    return Column(
+      children: [
+        Text(
+          'You can leave this screen.',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: style,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'But keep Vizor open & running.',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: style,
+        ),
+      ],
+    );
+  }
+}
+
 int _migrationSegmentFlex(BigInt value, BigInt total) {
   if (total <= BigInt.zero) return 1;
   final flex = ((value * BigInt.from(1000)) ~/ total).toInt();
@@ -3255,6 +3748,19 @@ String _formatMigrationTotal(BigInt zatoshi) {
   return '$whole.$hundredths';
 }
 
+String _migrationSpendableBalanceLabel({
+  required List<BigInt> values,
+  required List<_MigrationBatchStatus> statuses,
+}) {
+  var spendable = BigInt.zero;
+  for (var i = 0; i < values.length; i++) {
+    if (i < statuses.length && statuses[i] == _MigrationBatchStatus.complete) {
+      spendable += values[i];
+    }
+  }
+  return '${_formatZecAmountCompact(spendable)} ZEC';
+}
+
 class _MigrationStatusContent extends StatelessWidget {
   const _MigrationStatusContent({
     required this.status,
@@ -3272,12 +3778,14 @@ class _MigrationStatusContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final parts = [...status.parts]
-      ..sort((a, b) => a.partIndex.compareTo(b.partIndex));
+    final parts = [...status.parts];
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
         : [for (final value in status.targetValuesZatoshi) value];
     if (values.isEmpty) values = [BigInt.zero];
+    final partNumbers = parts.isNotEmpty
+        ? [for (final part in parts) part.partIndex + 1]
+        : [for (var i = 0; i < values.length; i++) i + 1];
     final statuses = parts.isNotEmpty
         ? [for (final part in parts) _migrationBatchStatus(part.state)]
         : _legacyMigrationBatchStatuses(status, values.length);
@@ -3298,6 +3806,10 @@ class _MigrationStatusContent extends StatelessWidget {
       isAdvancing: isAdvancing,
     );
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final spendableLabel = _migrationSpendableBalanceLabel(
+      values: values,
+      statuses: statuses,
+    );
     final buttonLabel = switch (action) {
       _StatusAction.needsInput => 'Sign with Keystone',
       _StatusAction.retry => 'Retry migration',
@@ -3313,13 +3825,13 @@ class _MigrationStatusContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 46,
+            top: 37.5,
             left: 12,
             width: 396,
             child: Column(
               children: [
                 Text(
-                  'Migration in progress',
+                  'Migration in Progress',
                   style: AppTypography.headlineSmall.copyWith(
                     color: context.colors.text.accent,
                   ),
@@ -3329,21 +3841,17 @@ class _MigrationStatusContent extends StatelessWidget {
           ),
           Positioned(
             left: 12,
-            top: 124,
+            top: 24,
             width: 396,
-            height: 414,
-            child: _MigrationBatchOverview(
+            height: 540,
+            child: _MigrationStatusBatchPanel(
               values: values,
+              partNumbers: partNumbers,
               totalZatoshi: total,
-              feeZatoshi: BigInt.zero,
-              feeLabel: 'Shown before each send',
-              completionLabel:
-                  status.phase ==
-                      kIronwoodMigrationWaitingDenomConfirmationsPhase
-                  ? 'Preparing notes'
-                  : 'In progress',
               statuses: statuses,
               progresses: progresses,
+              completionLabel: _transferEstimatedArrival(status),
+              spendableLabel: spendableLabel,
             ),
           ),
           Positioned(
@@ -3877,7 +4385,7 @@ class _MigrationScheduleDialog extends StatelessWidget {
                         key: ValueKey(
                           'ironwood_migration_schedule_batch_$index',
                         ),
-                        label: 'Batch ${index + 1}',
+                        label: 'Part ${index + 1}',
                         value:
                             '${_formatZecAmountCompact(transfer.valueZatoshi)} '
                             'ZEC  ·  +${transfer.blockOffset} blocks',
@@ -4877,8 +5385,52 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
 String _estimatedMigrationArrivalLabel(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
-  if (plan.scheduledTransfers.isEmpty) return 'Not scheduled';
-  return '~${plan.scheduledTransfers.last.blockOffset} blocks';
+  final estimatedBlocks = _estimatedMigrationCompletionBlocks(plan);
+  if (estimatedBlocks <= 0) return 'Not scheduled';
+  return _formatMigrationBlockDurationEstimate(estimatedBlocks);
+}
+
+int _estimatedMigrationCompletionBlocks(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) {
+  final scheduleBlocks = plan.scheduledTransfers.fold<int>(
+    0,
+    (maxOffset, transfer) => math.max(maxOffset, transfer.blockOffset),
+  );
+  final fallbackBatchCount = plan.plannedBatchCount < 1
+      ? 1
+      : plan.plannedBatchCount;
+  final fallbackScheduleBlocks =
+      plan.scheduleMeanDelayBlocks * fallbackBatchCount;
+  final preparedScheduleBlocks = scheduleBlocks > 0
+      ? scheduleBlocks
+      : fallbackScheduleBlocks;
+  if (preparedScheduleBlocks <= 0) return 0;
+
+  final int prepareBlocks = plan.denominationSplitStageCount <= 0
+      ? 0
+      : plan.denominationSplitStageCount * _migrationPrepareConfirmationBlocks +
+            _migrationPrepareBroadcastBufferBlocks;
+  return preparedScheduleBlocks + prepareBlocks;
+}
+
+String _formatMigrationBlockDurationEstimate(int blocks) {
+  if (blocks <= 0) return 'Not scheduled';
+  final duration = Duration(
+    seconds: blocks * _migrationEstimatedSecondsPerBlock,
+  );
+  final minutes = (duration.inSeconds / Duration.secondsPerMinute).ceil();
+  if (minutes < 60) {
+    return minutes == 1 ? '~1 min' : '~$minutes mins';
+  }
+
+  final hours = (duration.inSeconds / Duration.secondsPerHour).ceil();
+  if (hours < 48) {
+    return hours == 1 ? '~1 hr' : '~$hours hrs';
+  }
+
+  final days = (duration.inSeconds / Duration.secondsPerDay).ceil();
+  return days == 1 ? '~1 day' : '~$days days';
 }
 
 class _FlowButtons extends StatelessWidget {

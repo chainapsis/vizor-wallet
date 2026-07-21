@@ -2255,26 +2255,32 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 1,
         valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 144,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 3,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 288,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 0,
         valueZatoshi: BigInt.from(8_000_000_000),
         blockOffset: 432,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 5,
         valueZatoshi: BigInt.from(220_000_000),
         blockOffset: 576,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 4,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 720,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 2,
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 864,
       ),
@@ -2352,7 +2358,38 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         status: 'scheduled',
       ),
     ],
-    parts: const [],
+    parts: [
+      _previewMigrationPart(
+        1,
+        4_000_000_000,
+        rust_sync.MigrationPartState.completed,
+      ),
+      _previewMigrationPart(
+        4,
+        500_000_000,
+        rust_sync.MigrationPartState.migrating,
+      ),
+      _previewMigrationPart(
+        0,
+        8_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        5,
+        220_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        3,
+        500_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        2,
+        1_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+    ],
   );
 }
 
@@ -2385,7 +2422,52 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      _previewMigrationPart(
+        0,
+        4_000_000_000,
+        rust_sync.MigrationPartState.completed,
+      ),
+      _previewMigrationPart(
+        1,
+        500_000_000,
+        rust_sync.MigrationPartState.needsInput,
+      ),
+      _previewMigrationPart(
+        2,
+        8_000_000_000,
+        rust_sync.MigrationPartState.migrating,
+      ),
+      _previewMigrationPart(
+        3,
+        220_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        4,
+        500_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        5,
+        1_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+    ],
+  );
+}
+
+rust_sync.MigrationPartStatus _previewMigrationPart(
+  int partIndex,
+  int valueZatoshi,
+  rust_sync.MigrationPartState state,
+) {
+  return rust_sync.MigrationPartStatus(
+    partIndex: partIndex,
+    valueZatoshi: BigInt.from(valueZatoshi),
+    state: state,
+    confirmationCount: state == rust_sync.MigrationPartState.completed ? 3 : 0,
+    confirmationTarget: 3,
   );
 }
 

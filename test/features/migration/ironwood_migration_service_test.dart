@@ -418,6 +418,7 @@ void main() {
       final signedMessages = [_signedMigrationMessage()];
       final approvedSchedule = [
         rust_sync.MigrationScheduledTransfer(
+          partIndex: 0,
           valueZatoshi: BigInt.from(10_000_000),
           blockOffset: 144,
         ),

@@ -7309,9 +7309,11 @@ impl SseDecode for crate::api::sync::MigrationScheduledBroadcast {
 impl SseDecode for crate::api::sync::MigrationScheduledTransfer {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_partIndex = <u32>::sse_decode(deserializer);
         let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
         let mut var_blockOffset = <u32>::sse_decode(deserializer);
         return crate::api::sync::MigrationScheduledTransfer {
+            part_index: var_partIndex,
             value_zatoshi: var_valueZatoshi,
             block_offset: var_blockOffset,
         };
@@ -9638,6 +9640,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationScheduledBroad
 impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationScheduledTransfer {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.part_index.into_into_dart().into_dart(),
             self.value_zatoshi.into_into_dart().into_dart(),
             self.block_offset.into_into_dart().into_dart(),
         ]
@@ -11914,6 +11917,7 @@ impl SseEncode for crate::api::sync::MigrationScheduledBroadcast {
 impl SseEncode for crate::api::sync::MigrationScheduledTransfer {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.part_index, serializer);
         <u64>::sse_encode(self.value_zatoshi, serializer);
         <u32>::sse_encode(self.block_offset, serializer);
     }

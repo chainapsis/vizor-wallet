@@ -1173,22 +1173,26 @@ class MigrationScheduledBroadcast {
 }
 
 class MigrationScheduledTransfer {
+  final int partIndex;
   final BigInt valueZatoshi;
   final int blockOffset;
 
   const MigrationScheduledTransfer({
+    required this.partIndex,
     required this.valueZatoshi,
     required this.blockOffset,
   });
 
   @override
-  int get hashCode => valueZatoshi.hashCode ^ blockOffset.hashCode;
+  int get hashCode =>
+      partIndex.hashCode ^ valueZatoshi.hashCode ^ blockOffset.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is MigrationScheduledTransfer &&
           runtimeType == other.runtimeType &&
+          partIndex == other.partIndex &&
           valueZatoshi == other.valueZatoshi &&
           blockOffset == other.blockOffset;
 }

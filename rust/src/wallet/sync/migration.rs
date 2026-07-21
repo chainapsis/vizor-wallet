@@ -498,6 +498,8 @@ pub(crate) struct PendingMigrationTxMetadata {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct MigrationScheduleEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_index: Option<u32>,
     pub value_zatoshi: u64,
     pub block_offset: u32,
 }
@@ -1167,7 +1169,12 @@ fn insert_pending_txs_with_tx(
     for entry in &schedule {
         let position = pending_txs
             .iter()
-            .position(|pending| pending.value_zatoshi == entry.value_zatoshi)
+            .position(|pending| match entry.part_index {
+                Some(part_index) => {
+                    pending.part_index == part_index && pending.value_zatoshi == entry.value_zatoshi
+                }
+                None => pending.value_zatoshi == entry.value_zatoshi,
+            })
             .ok_or("Approved migration schedule no longer matches prepared values")?;
         scheduled_pending.push((pending_txs.swap_remove(position), entry.block_offset));
     }
@@ -1874,10 +1881,13 @@ pub(crate) fn replace_resigned_pending_parts(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    let schedule = planned_transfer_schedule_with_policy(
-        replacements
-            .iter()
-            .map(|replacement| replacement.replacement.value_zatoshi),
+    let schedule = planned_transfer_schedule_for_parts_with_policy(
+        replacements.iter().map(|replacement| {
+            (
+                replacement.replacement.part_index,
+                replacement.replacement.value_zatoshi,
+            )
+        }),
         network,
         timing_policy,
         &mut OsRng,
@@ -1897,8 +1907,12 @@ pub(crate) fn replace_resigned_pending_parts(
     for schedule_entry in schedule {
         let replacement_index = replacements
             .iter()
-            .position(|replacement| {
-                replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+            .position(|replacement| match schedule_entry.part_index {
+                Some(part_index) => {
+                    replacement.replacement.part_index == part_index
+                        && replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+                }
+                None => replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi,
             })
             .ok_or("Replacement migration schedule does not match its denominations")?;
         scheduled_replacements.push((replacements.swap_remove(replacement_index), schedule_entry));
@@ -3311,7 +3325,15 @@ where
     R: Rng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
-    planned_transfer_schedule_with_policy(values, network, configured_timing_policy(network), rng)
+    planned_transfer_schedule_for_parts_with_policy(
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
+        network,
+        configured_timing_policy(network),
+        rng,
+    )
 }
 
 fn planned_transfer_schedule_with_policy<R, I>(
@@ -3324,23 +3346,47 @@ where
     R: Rng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
-    let mut values = values.into_iter().collect::<Vec<_>>();
-    values.shuffle(rng);
+    planned_transfer_schedule_for_parts_with_policy(
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
+        network,
+        timing_policy,
+        rng,
+    )
+}
+
+fn planned_transfer_schedule_for_parts_with_policy<R, I>(
+    parts: I,
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    rng: &mut R,
+) -> Vec<MigrationScheduleEntry>
+where
+    R: Rng + ?Sized,
+    I: IntoIterator<Item = (u32, u64)>,
+{
+    let mut parts = parts.into_iter().collect::<Vec<_>>();
+    parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
     let offsets = random_schedule_block_offsets_with_rng(
-        values.len(),
+        parts.len(),
         mean_delay_blocks,
         max_delay_blocks,
         rng,
     );
-    values
+    parts
         .into_iter()
         .zip(offsets)
-        .map(|(value_zatoshi, block_offset)| MigrationScheduleEntry {
-            value_zatoshi,
-            block_offset,
-        })
+        .map(
+            |((part_index, value_zatoshi), block_offset)| MigrationScheduleEntry {
+                part_index: Some(part_index),
+                value_zatoshi,
+                block_offset,
+            },
+        )
         .collect()
 }
 
@@ -3366,16 +3412,18 @@ fn validate_schedule_with_policy(
     if schedule.len() != target_values.len() {
         return Err("Approved migration schedule count changed".to_string());
     }
+    let target_values_by_part = target_values.to_vec();
     let mut scheduled_values = schedule
         .iter()
         .map(|entry| entry.value_zatoshi)
         .collect::<Vec<_>>();
-    let mut target_values = target_values.to_vec();
+    let mut target_values = target_values_by_part.clone();
     scheduled_values.sort_unstable();
     target_values.sort_unstable();
     if scheduled_values != target_values {
         return Err("Approved migration schedule values changed".to_string());
     }
+    validate_schedule_part_indexes(schedule, &target_values_by_part)?;
 
     let (_, max_delay_blocks) = schedule_parameters_with_policy(network, timing_policy);
     let mut previous_offset = 0;
@@ -3388,6 +3436,35 @@ fn validate_schedule_with_policy(
             return Err("Approved migration schedule delay is outside policy".to_string());
         }
         previous_offset = entry.block_offset;
+    }
+    Ok(())
+}
+
+fn validate_schedule_part_indexes(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+) -> Result<(), String> {
+    if schedule.iter().all(|entry| entry.part_index.is_none()) {
+        return Ok(());
+    }
+    if schedule.iter().any(|entry| entry.part_index.is_none()) {
+        return Err("Approved migration schedule part indexes are incomplete".to_string());
+    }
+
+    let mut seen = BTreeSet::new();
+    for entry in schedule {
+        let part_index = entry
+            .part_index
+            .ok_or("Approved migration schedule part indexes are incomplete")?;
+        let value = target_values
+            .get(part_index as usize)
+            .ok_or("Approved migration schedule part index is outside the plan")?;
+        if !seen.insert(part_index) {
+            return Err("Approved migration schedule part index is duplicated".to_string());
+        }
+        if *value != entry.value_zatoshi {
+            return Err("Approved migration schedule part value changed".to_string());
+        }
     }
     Ok(())
 }
@@ -4256,14 +4333,17 @@ mod tests {
 
         let schedule = vec![
             MigrationScheduleEntry {
+                part_index: Some(1),
                 value_zatoshi: 200,
                 block_offset: 1,
             },
             MigrationScheduleEntry {
+                part_index: Some(0),
                 value_zatoshi: 100,
                 block_offset: 2,
             },
             MigrationScheduleEntry {
+                part_index: Some(2),
                 value_zatoshi: 300,
                 block_offset: 3,
             },
@@ -4340,6 +4420,93 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(remaining.len(), 2);
         assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
+    }
+
+    #[test]
+    fn approved_schedule_part_index_disambiguates_equal_values() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,100]')"
+            ),
+            params![db_path, PHASE_READY_TO_MIGRATE],
+        )
+        .unwrap();
+        drop(conn);
+
+        let schedule = vec![
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 100,
+                block_offset: 1,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 2,
+            },
+        ];
+        set_run_approved_schedule(
+            &db_path,
+            "run-1",
+            WalletNetwork::Regtest,
+            &schedule,
+            &[100, 100],
+        )
+        .unwrap();
+
+        let pending = [0u32, 1]
+            .into_iter()
+            .map(|part_index| {
+                let selected_note = PreparedOrchardNoteRef {
+                    txid_hex: format!("{:064x}", part_index + 10),
+                    output_index: 0,
+                    value_zatoshi: 110,
+                    note_version: 2,
+                    nullifier_hex: None,
+                };
+                PendingMigrationTxInsert {
+                    part_index,
+                    txid_hex: format!("{part_index:064x}"),
+                    raw_tx: vec![part_index as u8],
+                    target_height: 501,
+                    anchor_boundary_height: None,
+                    expiry_height: 1_000,
+                    value_zatoshi: 100,
+                    fee_zatoshi: 10,
+                    selected_note: selected_note.clone(),
+                    metadata: PendingMigrationTxMetadata {
+                        tx_kind: "migration".to_string(),
+                        funding_account_uuid: "account-1".to_string(),
+                        selected_note,
+                    },
+                }
+            })
+            .collect();
+        insert_pending_txs(&db_path, "run-1", pending, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+
+        let stored = {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT part_index, scheduled_height
+                     FROM vizor_migration_pending_txs
+                     ORDER BY scheduled_height",
+                )
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(stored, vec![(1, 501), (0, 502)]);
     }
 
     #[test]

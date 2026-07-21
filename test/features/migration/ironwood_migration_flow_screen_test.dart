@@ -163,13 +163,14 @@ void main() {
     await tester.pumpWidget(
       _migrationOptionsHarness(initialLocation: '/migration/private/review'),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~144 blocks'), findsOneWidget);
+    expect(find.text('~3 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
-    expect(find.text('Note 1'), findsOneWidget);
+    expect(find.text('Part 1'), findsOneWidget);
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
@@ -237,7 +238,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
   });
 
   testWidgets(
@@ -312,7 +313,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -474,11 +475,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in progress'), findsOneWidget);
-    expect(find.text('Note 1'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Part 1'), findsOneWidget);
     expect(find.text('Preparing'), findsOneWidget);
     expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('Preparing notes'), findsOneWidget);
+    expect(find.text('~144 blocks'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0 ZEC'), findsOneWidget);
+    expect(find.text('You can leave this screen.'), findsOneWidget);
+    expect(find.text('But keep Vizor open & running.'), findsOneWidget);
+    expect(find.text('shown before send'), findsNothing);
+    expect(find.text('Shown before each send'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });
 
@@ -525,7 +532,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -540,7 +547,7 @@ void main() {
     final cases = [
       _StatusUiCase(
         status: _status(),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -549,7 +556,7 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -558,7 +565,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastScheduledPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -567,7 +574,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -576,7 +583,7 @@ void main() {
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -680,12 +687,14 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('Scheduled'), findsOneWidget);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.1 ZEC'), findsOneWidget);
   });
 
   testWidgets('private transfer status distinguishes mined from completed', (
@@ -728,12 +737,14 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Confirming...'), findsNWidgets(2));
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.3 ZEC'), findsOneWidget);
   });
 
   testWidgets('private transfer ETA uses the next scheduled broadcast', (
@@ -771,11 +782,13 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('Scheduled'), findsNWidgets(2));
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Block 900'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 
   testWidgets('scheduled note progress follows remaining block height', (
@@ -880,7 +893,8 @@ void main() {
         activeAccountIsHardware: true,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(softwareContinued, isFalse);
     expect(find.text('Needs input'), findsOneWidget);
@@ -985,7 +999,8 @@ void main() {
         realStatusRoute: true,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('intro-route'), findsNothing);
     expect(find.text('Migrating...'), findsOneWidget);
@@ -1946,6 +1961,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 0,
         valueZatoshi: BigInt.from(10_000_000),
         blockOffset: 144,
       ),
