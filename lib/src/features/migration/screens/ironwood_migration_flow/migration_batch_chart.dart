@@ -165,6 +165,8 @@ class _MigrationProgressSegmentRow extends StatelessWidget {
     required this.statuses,
     required this.progresses,
     this.progressKeys = const [],
+    this.preparingStyle = false,
+    this.allowDashedBorder = true,
   });
 
   final List<BigInt> values;
@@ -172,6 +174,8 @@ class _MigrationProgressSegmentRow extends StatelessWidget {
   final List<_MigrationBatchStatus> statuses;
   final List<double> progresses;
   final List<String> progressKeys;
+  final bool preparingStyle;
+  final bool allowDashedBorder;
 
   @override
   Widget build(BuildContext context) {
@@ -199,6 +203,8 @@ class _MigrationProgressSegmentRow extends StatelessWidget {
                         ? statuses[i]
                         : _MigrationBatchStatus.none,
                     progress: i < progresses.length ? progresses[i] : 0,
+                    preparingStyle: preparingStyle,
+                    allowDashedBorder: allowDashedBorder,
                   ),
                 ),
               ],
@@ -223,11 +229,15 @@ class _MigrationProgressSegment extends StatelessWidget {
     required this.index,
     required this.status,
     required this.progress,
+    required this.preparingStyle,
+    required this.allowDashedBorder,
   });
 
   final int index;
   final _MigrationBatchStatus status;
   final double progress;
+  final bool preparingStyle;
+  final bool allowDashedBorder;
 
   @override
   Widget build(BuildContext context) {
@@ -250,10 +260,13 @@ class _MigrationProgressSegment extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             CustomPaint(
+              key: ValueKey('ironwood_migration_segment_painter_$index'),
               painter: _MigrationProgressSegmentPainter(
                 status: status,
                 progress: animatedProgress,
                 isDark: context.appTheme == AppThemeData.dark,
+                preparingStyle: preparingStyle,
+                allowDashedBorder: allowDashedBorder,
               ),
             ),
             SizedBox.expand(
@@ -281,6 +294,8 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
     required this.status,
     required this.progress,
     required this.isDark,
+    required this.preparingStyle,
+    required this.allowDashedBorder,
   });
 
   static const _green = GreenPrimitives.p500Light;
@@ -293,6 +308,8 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
   final _MigrationBatchStatus status;
   final double progress;
   final bool isDark;
+  final bool preparingStyle;
+  final bool allowDashedBorder;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -312,9 +329,15 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
         break;
       case _MigrationBatchStatus.none:
         _drawFilledPill(canvas, outline, _greenSoftFill);
-        _drawDashedBorder(canvas, borderPath, _green);
+        if (allowDashedBorder) {
+          _drawDashedBorder(canvas, borderPath, _green);
+        }
         break;
       case _MigrationBatchStatus.preparing:
+        if (preparingStyle) {
+          _drawDashedProgressSegment(canvas, clipPath, borderPath, outlineRect);
+          break;
+        }
         _drawProgressFill(
           canvas,
           clipPath,
@@ -322,9 +345,15 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
           progress,
           fillColor: _green,
         );
-        _drawDashedBorder(canvas, borderPath, _green);
+        if (allowDashedBorder) {
+          _drawDashedBorder(canvas, borderPath, _green);
+        }
         break;
       case _MigrationBatchStatus.scheduled:
+        if (preparingStyle) {
+          _drawDashedProgressSegment(canvas, clipPath, borderPath, outlineRect);
+          break;
+        }
         _drawStripedBackground(
           canvas,
           clipPath,
@@ -332,10 +361,13 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
           fillColor: _greenSoftFill,
           stripeColor: _scheduledStripeColor,
         );
-        _drawDashedBorder(canvas, borderPath, _green);
         break;
       case _MigrationBatchStatus.migrating:
       case _MigrationBatchStatus.confirming:
+        if (preparingStyle) {
+          _drawDashedProgressSegment(canvas, clipPath, borderPath, outlineRect);
+          break;
+        }
         _drawStripedBackground(
           canvas,
           clipPath,
@@ -405,6 +437,25 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
     canvas.drawRect(rect, Paint()..color = fillColor);
     _drawDiagonalStripes(canvas, rect, stripeColor);
     canvas.restore();
+  }
+
+  void _drawDashedProgressSegment(
+    Canvas canvas,
+    Path clipPath,
+    Path borderPath,
+    Rect rect,
+  ) {
+    _drawFilledPill(
+      canvas,
+      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+      _greenSoftFill,
+    );
+    final solidProgress = math.min(
+      progress.clamp(0, 1).toDouble(),
+      _scheduledBlockProgressCap,
+    );
+    _drawProgressFill(canvas, clipPath, rect, solidProgress, fillColor: _green);
+    _drawDashedBorder(canvas, borderPath, _green);
   }
 
   void _drawProgressFill(
@@ -497,7 +548,9 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
   bool shouldRepaint(covariant _MigrationProgressSegmentPainter oldDelegate) {
     return oldDelegate.status != status ||
         oldDelegate.progress != progress ||
-        oldDelegate.isDark != isDark;
+        oldDelegate.isDark != isDark ||
+        oldDelegate.preparingStyle != preparingStyle ||
+        oldDelegate.allowDashedBorder != allowDashedBorder;
   }
 }
 
@@ -797,6 +850,7 @@ class _MigrationStatusBatchChart extends StatelessWidget {
     required this.statuses,
     required this.progresses,
     required this.progressKeys,
+    this.preparingStyle = false,
   });
 
   final List<BigInt> values;
@@ -804,6 +858,7 @@ class _MigrationStatusBatchChart extends StatelessWidget {
   final List<_MigrationBatchStatus> statuses;
   final List<double> progresses;
   final List<String> progressKeys;
+  final bool preparingStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -861,6 +916,8 @@ class _MigrationStatusBatchChart extends StatelessWidget {
             statuses: statuses,
             progresses: progresses,
             progressKeys: progressKeys,
+            preparingStyle: preparingStyle,
+            allowDashedBorder: preparingStyle,
           ),
         ),
       ],

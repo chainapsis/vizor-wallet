@@ -704,6 +704,13 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
       findsNothing,
     );
+    final segmentPainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+        )
+        .painter;
+    expect((segmentPainter as dynamic).preparingStyle, isTrue);
+    expect((segmentPainter as dynamic).allowDashedBorder, isTrue);
     expect(find.text('Currently Spendable Balance'), findsNothing);
   });
 
@@ -746,7 +753,22 @@ void main() {
 
       expect(find.text('Note split'), findsNothing);
       expect(find.text('Completed'), findsNothing);
-      expect(find.text('Preparing'), findsNWidgets(2));
+      expect(find.text('Preparing'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_status_batch_1')),
+        findsOneWidget,
+      );
+      final segmentPainter = tester
+          .widget<CustomPaint>(
+            find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+          )
+          .painter;
+      expect((segmentPainter as dynamic).preparingStyle, isFalse);
+      expect((segmentPainter as dynamic).allowDashedBorder, isFalse);
       expect(find.text('Currently Spendable Balance'), findsOneWidget);
       expect(find.text('0 ZEC'), findsOneWidget);
       expect(find.text('~2 mins'), findsNothing);
@@ -784,6 +806,13 @@ void main() {
 
     expect(find.text('Note split'), findsNothing);
     expect(find.text('Scheduled'), findsOneWidget);
+    final segmentPainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+        )
+        .painter;
+    expect((segmentPainter as dynamic).preparingStyle, isFalse);
+    expect((segmentPainter as dynamic).allowDashedBorder, isFalse);
     expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 

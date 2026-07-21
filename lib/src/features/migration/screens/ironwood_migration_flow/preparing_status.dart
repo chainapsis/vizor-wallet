@@ -65,6 +65,7 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
               statuses: statuses,
               progresses: progresses,
               progressKeys: progressKeys,
+              preparingStyle: true,
             ),
           ),
           Positioned(
@@ -433,6 +434,19 @@ List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
     );
   }
 
+  final hasTransferProgress =
+      status.pendingTxCount > 0 ||
+      status.broadcastedTxCount > 0 ||
+      status.confirmedTxCount > 0 ||
+      status.scheduledBroadcasts.isNotEmpty;
+  if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+      !hasTransferProgress) {
+    return List<_MigrationBatchStatus>.filled(
+      count,
+      _MigrationBatchStatus.none,
+    );
+  }
+
   final hasBroadcastSchedule =
       status.scheduledBroadcasts.isNotEmpty ||
       status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
@@ -621,7 +635,7 @@ double _legacyMigrationBatchProgress({
   required bool isAdvancing,
 }) {
   return switch (visualStatus) {
-    _MigrationBatchStatus.none => 1,
+    _MigrationBatchStatus.none => 0,
     _MigrationBatchStatus.preparing => isAdvancing ? 0.18 : 0.12,
     _MigrationBatchStatus.scheduled => _legacyScheduledProgress(
       status,
