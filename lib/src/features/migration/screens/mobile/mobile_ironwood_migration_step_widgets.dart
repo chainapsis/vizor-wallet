@@ -56,7 +56,7 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       Text(
                         subtitle!,
-                        textAlign: TextAlign.start,
+                        textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
                         ),
@@ -98,47 +98,58 @@ class _MobilePrivateReviewScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final compact = MediaQuery.sizeOf(context).height < 650;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Transform.translate(
-              offset: const Offset(0, 20),
-              child: MobileTopNav.steps(
-                progress: _migrationProgress,
-                onBack: onBack,
-              ),
-            ),
-            SizedBox(height: compact ? 24 : 43),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              child: Text(
-                'Review Migration Plan',
-                style: AppTypography.headlineLarge.copyWith(
-                  color: colors.text.accent,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact =
+                constraints.maxHeight < _mobileMigrationReviewCompactHeight;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Transform.translate(
+                  offset: const Offset(0, 20),
+                  child: MobileTopNav.steps(
+                    progress: _migrationProgress,
+                    onBack: onBack,
+                  ),
                 ),
-              ),
-            ),
-            SizedBox(height: compact ? 24 : 42),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: child,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.xs,
-                AppSpacing.sm,
-                AppSpacing.s,
-              ),
-              child: bottom,
-            ),
-          ],
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    'Review Migration Plan',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                SizedBox(height: compact ? 24 : 42),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                    ),
+                    child: child,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm,
+                    AppSpacing.xs,
+                    AppSpacing.sm,
+                    AppSpacing.s,
+                  ),
+                  child: bottom,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -262,18 +273,28 @@ class _MobileMigrationProgressTrack extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final clampedValue = value.clamp(0.0, 1.0);
-    return SizedBox(
-      width: 196,
-      height: 12,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-        child: ColoredBox(
-          color: colors.background.neutralSubtleOpacity,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: clampedValue,
-              child: ColoredBox(color: colors.background.inverse),
+    return Semantics(
+      label: 'Migration plan analysis',
+      value: '${(clampedValue * 100).round()}%',
+      child: SizedBox(
+        width: 196,
+        height: 12,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          child: ColoredBox(
+            color: colors.background.neutralSubtleOpacity,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: clampedValue,
+                heightFactor: 1,
+                child: ColoredBox(
+                  key: const ValueKey(
+                    'mobile_ironwood_migration_analysis_progress_fill',
+                  ),
+                  color: colors.background.inverse,
+                ),
+              ),
             ),
           ),
         ),
@@ -486,7 +507,11 @@ class _MobileMigrationProcessCard extends StatelessWidget {
     return Column(
       children: [
         _MobileReviewCard(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+          surfaceKey: const ValueKey('mobile_ironwood_process_surface'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.base,
+          ),
           borderRadius: 24,
           showShadow: false,
           child: const Column(
@@ -498,7 +523,7 @@ class _MobileMigrationProcessCard extends StatelessWidget {
                     'Compare a privacy-optimized schedule with a faster '
                     'migration.',
               ),
-              SizedBox(height: AppSpacing.base),
+              SizedBox(height: AppSpacing.sm),
               _ProcessRow(
                 number: 2,
                 title: 'Prepare your balance',
@@ -506,7 +531,7 @@ class _MobileMigrationProcessCard extends StatelessWidget {
                     'Vizor reorganizes your balance into common-sized parts '
                     'before migration begins.',
               ),
-              SizedBox(height: AppSpacing.base),
+              SizedBox(height: AppSpacing.sm),
               _ProcessRow(
                 number: 3,
                 title: 'Move to Ironwood',
@@ -517,21 +542,25 @@ class _MobileMigrationProcessCard extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.s),
         DecoratedBox(
+          key: const ValueKey('mobile_ironwood_spend_surface'),
           decoration: BoxDecoration(
             color: colors.background.homeCard,
             borderRadius: BorderRadius.circular(24),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 22, 20, 22),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const AppIcon(
                   AppIcons.wallet,
                   size: 20,
-                  color: Color(0xFF00CF82),
+                  color: Color(0xFF00A460),
                 ),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
@@ -540,9 +569,8 @@ class _MobileMigrationProcessCard extends StatelessWidget {
                     children: [
                       Text(
                         'Spend as funds arrive',
-                        style: AppTypography.bodyLarge.copyWith(
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.homeCard,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xs),
@@ -551,7 +579,6 @@ class _MobileMigrationProcessCard extends StatelessWidget {
                         'while the rest continues.',
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.homeCard,
-                          height: 24 / 16,
                         ),
                       ),
                     ],
@@ -594,15 +621,15 @@ class _ProcessRow extends StatelessWidget {
             child: Center(
               child: Text(
                 '$number',
-                style: AppTypography.labelMedium.copyWith(
+                style: AppTypography.labelLarge.copyWith(
                   color: colors.text.secondary,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: AppSpacing.xs),
+        const SizedBox(width: AppSpacing.s),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,7 +638,6 @@ class _ProcessRow extends StatelessWidget {
                 title,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -619,7 +645,6 @@ class _ProcessRow extends StatelessWidget {
                 body,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
-                  height: 24 / 16,
                 ),
               ),
             ],
@@ -640,6 +665,7 @@ class _MobileMigrationOptionCard extends StatelessWidget {
     required this.icon,
     this.enabled = true,
     this.recommended = false,
+    this.onTap,
     super.key,
   });
 
@@ -649,114 +675,136 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   final _MigrationChoiceIcon icon;
   final bool enabled;
   final bool recommended;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Opacity(
-      opacity: enabled || selected ? 1 : 0.62,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          border: selected
-              ? Border.all(color: colors.border.strong, width: 2)
-              : null,
-          boxShadow: appSurfaceShadow(colors),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 17, 14, 17),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox.square(
-                dimension: 28,
-                child: Center(
-                  child: AppIcon(
-                    switch (icon) {
-                      _MigrationChoiceIcon.private => AppIcons.shieldKeyhole,
-                      _MigrationChoiceIcon.immediate => AppIcons.migrationFast,
-                    },
-                    key: ValueKey('mobile_ironwood_${icon.name}_icon'),
-                    size: 20,
-                    color: colors.icon.accent,
+    return Semantics(
+      selected: selected,
+      enabled: enabled,
+      button: onTap != null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            border: selected
+                ? Border.all(color: colors.border.strong, width: 2)
+                : null,
+            boxShadow: appSurfaceShadow(colors),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 16, 16, 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Opacity(
+                  opacity: selected ? 1 : 0.5,
+                  child: SizedBox.square(
+                    dimension: 32,
+                    child: Center(
+                      child: AppIcon(
+                        switch (icon) {
+                          _MigrationChoiceIcon.private =>
+                            AppIcons.shieldKeyhole,
+                          _MigrationChoiceIcon.immediate =>
+                            AppIcons.migrationFast,
+                        },
+                        key: ValueKey('mobile_ironwood_${icon.name}_icon'),
+                        size: 20,
+                        color: colors.icon.accent,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: AppSpacing.xs),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            title,
-                            style: AppTypography.bodyLarge.copyWith(
-                              color: colors.text.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (recommended) ...[
-                            const SizedBox(width: AppSpacing.xs),
-                            DecoratedBox(
-                              key: const ValueKey(
-                                'mobile_ironwood_recommended_badge',
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00CF82),
-                                borderRadius: BorderRadius.circular(
-                                  AppRadii.xSmall,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                      vertical: AppSpacing.xxs,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: 24,
+                          child: Row(
+                            children: [
+                              Text(
+                                title,
+                                style: AppTypography.bodyLarge.copyWith(
+                                  color: colors.text.accent,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(AppSpacing.xxs),
-                                child: Text(
-                                  'Recommended',
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: const Color(0xFF15362A),
+                              if (recommended) ...[
+                                const SizedBox(width: AppSpacing.xs),
+                                DecoratedBox(
+                                  key: const ValueKey(
+                                    'mobile_ironwood_recommended_badge',
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF00A460),
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadii.xSmall,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.xs,
+                                      vertical: AppSpacing.xxs,
+                                    ),
+                                    child: Text(
+                                      'Recommended',
+                                      style: AppTypography.labelLarge.copyWith(
+                                        color: const Color(0xFFD3FFE4),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        body,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.secondary,
+                              ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          body,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Container(
-                key: ValueKey(
-                  selected
-                      ? 'mobile_ironwood_selected_radio'
-                      : 'mobile_ironwood_unselected_radio',
+                Container(
+                  key: ValueKey(
+                    selected
+                        ? 'mobile_ironwood_selected_radio'
+                        : 'mobile_ironwood_unselected_radio',
+                  ),
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected
+                        ? colors.background.inverse
+                        : colors.background.neutralSubtleOpacity,
+                  ),
+                  child: selected
+                      ? AppIcon(
+                          AppIcons.check,
+                          size: 16,
+                          color: colors.text.inverse,
+                        )
+                      : null,
                 ),
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected
-                      ? colors.background.inverse
-                      : colors.background.neutralSubtleOpacity,
-                ),
-                child: selected
-                    ? AppIcon(
-                        AppIcons.check,
-                        size: 16,
-                        color: colors.text.inverse,
-                      )
-                    : null,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -764,60 +812,184 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   }
 }
 
-class _MobilePrivatePlan extends StatelessWidget {
+const _mobileMigrationPlanRevealDuration = Duration(milliseconds: 2000);
+const _mobileMigrationReviewCompactHeight = 760.0;
+const _mobileMigrationReviewCompactContentHeight = 430.0;
+const _mobileMigrationPlanBarMorphStartMilliseconds = 420;
+const _mobileMigrationPlanBarMorphMilliseconds = 700;
+const _mobileMigrationPlanBarStyleStaggerMilliseconds = 70;
+const _mobileMigrationPlanBarStyleMaxDelayMilliseconds = 350;
+const _mobileMigrationPlanRowStartMilliseconds = 1200;
+const _mobileMigrationPlanRowStaggerMilliseconds = 70;
+const _mobileMigrationPlanRowMaxDelayMilliseconds = 350;
+const _mobileMigrationPlanInitialBarWidth = 196.0;
+const _mobileMigrationPlanInitialBarHeight = 12.0;
+const _mobileMigrationPlanFinalBarHeight = 20.0;
+const _mobileMigrationPlanBarGap = 8.0;
+const _mobileMigrationPlanBarMorphCurve = Cubic(0.77, 0, 0.175, 1);
+const _mobileMigrationPartRowExtent = 48.0;
+const _mobileMigrationPartRowContentExtent = 24.0;
+const _mobileMigrationPartListMaxHeight = 264.0;
+const _mobileMigrationPlanSummaryLayoutGap = 41.0;
+const _mobileMigrationPlanSummaryVisualOffset = 12.5;
+const _mobileMigrationPartLabelWidth = 70.0;
+const _mobileMigrationPartValueWidth = 130.0;
+const _mobileMigrationPartStatusWidth = 130.0;
+
+double _mobileMigrationPartListContentHeight(int count) {
+  if (count <= 0) return 0;
+  return ((count - 1) * _mobileMigrationPartRowExtent) +
+      _mobileMigrationPartRowContentExtent;
+}
+
+Animation<double> _mobileMigrationPlanRevealAnimation(
+  Animation<double> parent, {
+  required int startMilliseconds,
+  required int durationMilliseconds,
+  Curve curve = _migrationAnalysisEaseOut,
+}) {
+  final totalMilliseconds = _mobileMigrationPlanRevealDuration.inMilliseconds
+      .toDouble();
+  final begin = (startMilliseconds / totalMilliseconds).clamp(0.0, 1.0);
+  final end = ((startMilliseconds + durationMilliseconds) / totalMilliseconds)
+      .clamp(0.0, 1.0);
+  return CurvedAnimation(
+    parent: parent,
+    curve: Interval(begin, end, curve: curve),
+  );
+}
+
+class _MobilePrivatePlan extends StatefulWidget {
   const _MobilePrivatePlan({required this.plan, required this.arrivalLabel});
 
   final rust_sync.OrchardMigrationPrivatePlan plan;
   final String arrivalLabel;
 
   @override
+  State<_MobilePrivatePlan> createState() => _MobilePrivatePlanState();
+}
+
+class _MobilePrivatePlanState extends State<_MobilePrivatePlan>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _revealController = AnimationController(
+    vsync: this,
+    duration: _mobileMigrationPlanRevealDuration,
+  );
+  bool? _animationsDisabled;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animationsDisabled = MediaQuery.disableAnimationsOf(context);
+    if (animationsDisabled) {
+      _revealController.value = 1;
+    } else if (_animationsDisabled != false && _revealController.value == 0) {
+      _revealController.forward();
+    }
+    _animationsDisabled = animationsDisabled;
+  }
+
+  @override
+  void dispose() {
+    _revealController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final total = _mobilePlanTotalZatoshi(plan);
-    final transfers = plan.scheduledTransfers;
+    final total = _mobilePlanTotalZatoshi(widget.plan);
+    final transfers = widget.plan.scheduledTransfers;
     final noteCount = transfers.isNotEmpty
         ? transfers.length
-        : plan.plannedBatchCount;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+        : widget.plan.plannedBatchCount;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxHeight < _mobileMigrationReviewCompactContentHeight;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                'Migration $noteCount notes',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
+            Row(
+              children: [
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      children: [
+                        const TextSpan(text: 'Migration '),
+                        TextSpan(
+                          text: '$noteCount notes',
+                          style: TextStyle(color: colors.text.secondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.xxs),
+                  child: Text(
+                    '${_compactZec(total)} ZEC',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: compact ? AppSpacing.xs : AppSpacing.xs + 4),
+            _MobileMigrationPartBars(
+              transfers: transfers,
+              reveal: _revealController,
+            ),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md * 2),
+            Flexible(
+              fit: FlexFit.loose,
+              child: SizedBox(
+                height: transfers.isEmpty
+                    ? 120
+                    : math.min(
+                        _mobileMigrationPartListContentHeight(transfers.length),
+                        compact ? 120 : _mobileMigrationPartListMaxHeight,
+                      ),
+                child: _MobileMigrationPartList(
+                  transfers: transfers,
+                  totalZatoshi: total,
+                  reveal: _revealController,
                 ),
               ),
             ),
-            Text(
-              '${_compactZec(total)} ZEC',
-              style: AppTypography.bodyLarge.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w600,
+            SizedBox(
+              height: compact
+                  ? AppSpacing.sm - 1
+                  : _mobileMigrationPlanSummaryLayoutGap,
+            ),
+            Transform.translate(
+              offset: Offset(
+                0,
+                compact ? 0 : _mobileMigrationPlanSummaryVisualOffset,
+              ),
+              child: Column(
+                children: [
+                  _ReviewRow(
+                    label: 'Est. completion',
+                    value: widget.arrivalLabel,
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  _ReviewRow(
+                    label: 'Fees (estimate)',
+                    value:
+                        '${_compactZec(widget.plan.estimatedTotalFeeZatoshi)} ZEC',
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        _MobileMigrationPartBars(transfers: transfers, totalZatoshi: total),
-        const SizedBox(height: AppSpacing.md),
-        Expanded(
-          child: _MobileMigrationPartList(
-            transfers: transfers,
-            totalZatoshi: total,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _ReviewRow(label: 'Est. completion', value: arrivalLabel),
-        const SizedBox(height: AppSpacing.xs),
-        _ReviewRow(
-          label: 'Fees (estimate)',
-          value: '${_compactZec(plan.estimatedTotalFeeZatoshi)} ZEC',
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -835,45 +1007,207 @@ BigInt _mobilePlanTotalZatoshi(rust_sync.OrchardMigrationPrivatePlan plan) {
 class _MobileMigrationPartBars extends StatelessWidget {
   const _MobileMigrationPartBars({
     required this.transfers,
-    required this.totalZatoshi,
+    required this.reveal,
   });
 
   final List<rust_sync.MigrationScheduledTransfer> transfers;
-  final BigInt totalZatoshi;
+  final Animation<double> reveal;
 
   @override
   Widget build(BuildContext context) {
-    if (transfers.isEmpty) return const SizedBox(height: 20);
+    if (transfers.isEmpty) {
+      return const SizedBox(height: _mobileMigrationPlanFinalBarHeight);
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final available = math.max(0.0, constraints.maxWidth - 4);
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const ClampingScrollPhysics(),
-          child: Row(
-            children: [
-              for (var index = 0; index < transfers.length; index++) ...[
-                _MobileMigrationRailSegment(
-                  key: ValueKey('mobile_ironwood_part_bar_$index'),
-                  width: _mobileRailSegmentWidth(
-                    available: available,
-                    value: transfers[index].valueZatoshi,
-                    total: totalZatoshi,
-                    count: transfers.length,
+        final available = math.max(0.0, constraints.maxWidth);
+        final finalWidths = _mobileRailSegmentWidths(
+          available: available,
+          transfers: transfers,
+        );
+        final finalSegmentsWidth = finalWidths.fold<double>(0, (a, b) => a + b);
+        final initialScale = finalSegmentsWidth <= 0
+            ? 1.0
+            : math.min(
+                1.0,
+                _mobileMigrationPlanInitialBarWidth / finalSegmentsWidth,
+              );
+        final morph = _mobileMigrationPlanRevealAnimation(
+          reveal,
+          startMilliseconds: _mobileMigrationPlanBarMorphStartMilliseconds,
+          durationMilliseconds: _mobileMigrationPlanBarMorphMilliseconds,
+          curve: _mobileMigrationPlanBarMorphCurve,
+        );
+        return AnimatedBuilder(
+          key: const ValueKey('mobile_ironwood_part_bar_morph'),
+          animation: reveal,
+          builder: (context, _) {
+            final scale = initialScale + ((1 - initialScale) * morph.value);
+            final gap = _mobileMigrationPlanBarGap * morph.value;
+            final height =
+                _mobileMigrationPlanInitialBarHeight +
+                ((_mobileMigrationPlanFinalBarHeight -
+                        _mobileMigrationPlanInitialBarHeight) *
+                    morph.value);
+            final contentWidth =
+                (finalSegmentsWidth * scale) +
+                (math.max(0, transfers.length - 1) * gap);
+            final leading = math.max(0.0, (available - contentWidth) / 2);
+            final singleTrackOpacity = (1 - (morph.value / 0.35)).clamp(
+              0.0,
+              1.0,
+            );
+            return SizedBox(
+              height: height,
+              child: Stack(
+                children: [
+                  ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        ...ScrollConfiguration.of(context).dragDevices,
+                        PointerDeviceKind.mouse,
+                      },
+                    ),
+                    child: SingleChildScrollView(
+                      key: const ValueKey('mobile_ironwood_part_bar_scroll'),
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      child: Padding(
+                        padding: EdgeInsets.only(left: leading),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(height / 2),
+                          child: Row(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < transfers.length;
+                                index++
+                              ) ...[
+                                Builder(
+                                  builder: (context) {
+                                    final delay = math.min(
+                                      index *
+                                          _mobileMigrationPlanBarStyleStaggerMilliseconds,
+                                      _mobileMigrationPlanBarStyleMaxDelayMilliseconds,
+                                    );
+                                    final styleReveal =
+                                        _mobileMigrationPlanRevealAnimation(
+                                          reveal,
+                                          startMilliseconds:
+                                              _mobileMigrationPlanBarMorphStartMilliseconds +
+                                              delay,
+                                          durationMilliseconds: 350,
+                                        );
+                                    return _MobileMigrationRailSegment(
+                                      key: ValueKey(
+                                        'mobile_ironwood_part_bar_$index',
+                                      ),
+                                      width: finalWidths[index] * scale,
+                                      height: height,
+                                      status: MobileIronwoodMigrationPartStatus
+                                          .pending,
+                                      morphProgress: styleReveal.value,
+                                    );
+                                  },
+                                ),
+                                if (index < transfers.length - 1)
+                                  SizedBox(width: gap),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  status: MobileIronwoodMigrationPartStatus.pending,
-                ),
-                if (index < transfers.length - 1) const SizedBox(width: 4),
-              ],
-            ],
-          ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Opacity(
+                          key: const ValueKey(
+                            'mobile_ironwood_part_bar_single_track',
+                          ),
+                          opacity: singleTrackOpacity,
+                          child: Container(
+                            width: math.min(contentWidth, available),
+                            height: height,
+                            decoration: BoxDecoration(
+                              color: context.colors.background.inverse,
+                              borderRadius: BorderRadius.circular(height / 2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 }
 
-double _mobileRailSegmentWidth({
+List<double> _mobileRailSegmentWidths({
+  required double available,
+  required List<rust_sync.MigrationScheduledTransfer> transfers,
+}) {
+  final count = transfers.length;
+  if (count <= 0) return const [];
+  final values = [
+    for (final transfer in transfers)
+      math.max(0.0, transfer.valueZatoshi.toDouble()),
+  ];
+  final valueTotal = values.fold<double>(0, (sum, value) => sum + value);
+
+  if (count > 6) {
+    if (valueTotal <= 0) {
+      return List<double>.filled(count, 12);
+    }
+    return [
+      for (final value in values) math.max(12, available * value / valueTotal),
+    ];
+  }
+
+  final gaps = math.max(0, count - 1) * _mobileMigrationPlanBarGap;
+  final usable = math.max(0.0, available - gaps);
+  if (usable <= 0) return List<double>.filled(count, 0);
+  if (valueTotal <= 0) return List<double>.filled(count, usable / count);
+
+  const minimumWidth = 8.0;
+  if (usable < minimumWidth * count) {
+    return List<double>.filled(count, usable / count);
+  }
+
+  final widths = List<double>.filled(count, 0);
+  final remaining = <int>{for (var index = 0; index < count; index++) index};
+  var remainingWidth = usable;
+  var remainingValue = valueTotal;
+  while (remaining.isNotEmpty) {
+    final belowMinimum = [
+      for (final index in remaining)
+        if (remainingValue <= 0 ||
+            remainingWidth * values[index] / remainingValue < minimumWidth)
+          index,
+    ];
+    if (belowMinimum.isEmpty) {
+      for (final index in remaining) {
+        widths[index] = remainingWidth * values[index] / remainingValue;
+      }
+      break;
+    }
+    for (final index in belowMinimum) {
+      widths[index] = minimumWidth;
+      remainingWidth -= minimumWidth;
+      remainingValue -= values[index];
+      remaining.remove(index);
+    }
+  }
+  return widths;
+}
+
+double _mobileStatusRailSegmentWidth({
   required double available,
   required BigInt value,
   required BigInt total,
@@ -881,7 +1215,9 @@ double _mobileRailSegmentWidth({
 }) {
   if (count <= 0) return 0;
   final gaps = math.max(0, count - 1) * 4;
-  final usable = math.max(0, available - gaps);
+  final usable = count <= 6
+      ? math.max(0, available - gaps)
+      : math.max(0, available);
   if (total <= BigInt.zero) return math.max(20, usable / count);
   return math.max(12, usable * value.toDouble() / total.toDouble());
 }
@@ -891,23 +1227,29 @@ class _MobileMigrationRailSegment extends StatelessWidget {
     required this.width,
     required this.status,
     this.progress,
+    this.height = _mobileMigrationPlanFinalBarHeight,
+    this.morphProgress = 1,
     super.key,
   });
 
   final double width;
   final MobileIronwoodMigrationPartStatus status;
   final double? progress;
+  final double height;
+  final double morphProgress;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
       width: width,
-      height: 20,
+      height: height,
       child: CustomPaint(
         painter: _MobileMigrationRailSegmentPainter(
           status: status,
           progress: progress,
+          morphProgress: morphProgress,
+          initialColor: colors.background.inverse,
           successColor: colors.icon.success,
           inputColor: colors.text.brandCrimson,
           pendingFill: colors.icon.success.withValues(alpha: 0.12),
@@ -920,6 +1262,8 @@ class _MobileMigrationRailSegment extends StatelessWidget {
 class _MobileMigrationRailSegmentPainter extends CustomPainter {
   const _MobileMigrationRailSegmentPainter({
     required this.status,
+    required this.morphProgress,
+    required this.initialColor,
     required this.successColor,
     required this.inputColor,
     required this.pendingFill,
@@ -927,6 +1271,8 @@ class _MobileMigrationRailSegmentPainter extends CustomPainter {
   });
 
   final MobileIronwoodMigrationPartStatus status;
+  final double morphProgress;
+  final Color initialColor;
   final Color successColor;
   final Color inputColor;
   final Color pendingFill;
@@ -935,9 +1281,10 @@ class _MobileMigrationRailSegmentPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
+    final morph = morphProgress.clamp(0.0, 1.0);
     final bounds = RRect.fromRectAndRadius(
       Offset.zero & size,
-      Radius.circular(size.height / 2),
+      Radius.circular((size.height / 2) * morph),
     );
     final accent = status == MobileIronwoodMigrationPartStatus.needsInput
         ? inputColor
@@ -947,8 +1294,17 @@ class _MobileMigrationRailSegmentPainter extends CustomPainter {
       case MobileIronwoodMigrationPartStatus.complete:
         canvas.drawRRect(bounds, Paint()..color = accent);
       case MobileIronwoodMigrationPartStatus.pending:
-        canvas.drawRRect(bounds, Paint()..color = pendingFill);
-        _drawDashedRailBorder(canvas, bounds, accent);
+        canvas.drawRRect(
+          bounds,
+          Paint()..color = Color.lerp(initialColor, pendingFill, morph)!,
+        );
+        if (morph > 0) {
+          _drawDashedRailBorder(
+            canvas,
+            bounds,
+            accent.withValues(alpha: morph),
+          );
+        }
       case MobileIronwoodMigrationPartStatus.active:
       case MobileIronwoodMigrationPartStatus.needsInput:
         canvas.drawRRect(
@@ -996,6 +1352,8 @@ class _MobileMigrationRailSegmentPainter extends CustomPainter {
   bool shouldRepaint(covariant _MobileMigrationRailSegmentPainter oldDelegate) {
     return oldDelegate.status != status ||
         oldDelegate.progress != progress ||
+        oldDelegate.morphProgress != morphProgress ||
+        oldDelegate.initialColor != initialColor ||
         oldDelegate.successColor != successColor ||
         oldDelegate.inputColor != inputColor ||
         oldDelegate.pendingFill != pendingFill;
@@ -1006,10 +1364,12 @@ class _MobileMigrationPartList extends StatelessWidget {
   const _MobileMigrationPartList({
     required this.transfers,
     required this.totalZatoshi,
+    required this.reveal,
   });
 
   final List<rust_sync.MigrationScheduledTransfer> transfers;
   final BigInt totalZatoshi;
+  final Animation<double> reveal;
 
   @override
   Widget build(BuildContext context) {
@@ -1025,64 +1385,162 @@ class _MobileMigrationPartList extends StatelessWidget {
       );
     }
     final colors = context.colors;
-    return ListView.separated(
-      physics: transfers.length > 4
-          ? const ClampingScrollPhysics()
-          : const NeverScrollableScrollPhysics(),
-      itemCount: transfers.length,
-      separatorBuilder: (_, _) =>
-          Divider(height: 1, color: colors.border.subtle),
-      itemBuilder: (context, index) {
-        final transfer = transfers[index];
-        final percentage = _mobileMigrationPercentage(
-          transfer.valueZatoshi,
-          totalZatoshi,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentHeight = _mobileMigrationPartListContentHeight(
+          transfers.length,
         );
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 70,
-                child: Text(
-                  'Part ${index + 1}',
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: '${_compactZec(transfer.valueZatoshi)} ZEC',
-                      ),
-                      if (percentage != null)
-                        TextSpan(
-                          text: ' $percentage',
-                          style: TextStyle(color: colors.text.secondary),
+        final canScroll = contentHeight > constraints.maxHeight + 0.5;
+        final flexibleColumnScale = math.min(
+          1.0,
+          math.max(0.0, constraints.maxWidth - _mobileMigrationPartLabelWidth) /
+              (_mobileMigrationPartValueWidth +
+                  _mobileMigrationPartStatusWidth),
+        );
+        final valueWidth = _mobileMigrationPartValueWidth * flexibleColumnScale;
+        final statusWidth =
+            _mobileMigrationPartStatusWidth * flexibleColumnScale;
+        return ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              ...ScrollConfiguration.of(context).dragDevices,
+              PointerDeviceKind.mouse,
+            },
+          ),
+          child: ListView.builder(
+            key: const ValueKey('mobile_ironwood_part_list'),
+            padding: EdgeInsets.zero,
+            physics: canScroll
+                ? const ClampingScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            itemCount: transfers.length,
+            itemBuilder: (context, index) {
+              final transfer = transfers[index];
+              final percentage = _mobileMigrationPercentage(
+                transfer.valueZatoshi,
+                totalZatoshi,
+              );
+              final rowReveal = _mobileMigrationPartRowReveal(reveal, index);
+              return FadeTransition(
+                key: ValueKey('mobile_ironwood_part_row_reveal_$index'),
+                opacity: rowReveal,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.12),
+                    end: Offset.zero,
+                  ).animate(rowReveal),
+                  child: SizedBox(
+                    height: index == transfers.length - 1
+                        ? _mobileMigrationPartRowContentExtent
+                        : _mobileMigrationPartRowExtent,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: _mobileMigrationPartRowContentExtent,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              SizedBox(
+                                key: ValueKey(
+                                  'mobile_ironwood_part_label_cell_$index',
+                                ),
+                                width: _mobileMigrationPartLabelWidth,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: AppSpacing.xxs,
+                                  ),
+                                  child: Text(
+                                    'Part ${index + 1}',
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.accent,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                key: ValueKey(
+                                  'mobile_ironwood_part_value_cell_$index',
+                                ),
+                                width: valueWidth,
+                                child: Text.rich(
+                                  TextSpan(
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.accent,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text:
+                                            '${_compactZec(transfer.valueZatoshi)} ZEC',
+                                      ),
+                                      if (percentage != null)
+                                        TextSpan(
+                                          text: ' $percentage',
+                                          style: TextStyle(
+                                            color: colors.text.secondary,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                ),
+                              ),
+                              SizedBox(
+                                key: ValueKey(
+                                  'mobile_ironwood_part_status_cell_$index',
+                                ),
+                                width: statusWidth,
+                                child: Text(
+                                  migrationBlockOffsetLabel(
+                                    transfer.blockOffset,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.secondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                    ],
+                        if (index < transfers.length - 1)
+                          Expanded(
+                            child: Center(
+                              child: Divider(
+                                height: 1,
+                                color: colors.border.subtle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                migrationBlockOffsetLabel(transfer.blockOffset),
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
+              );
+            },
           ),
         );
       },
     );
   }
+}
+
+Animation<double> _mobileMigrationPartRowReveal(
+  Animation<double> parent,
+  int index,
+) {
+  final delay = math.min(
+    index * _mobileMigrationPlanRowStaggerMilliseconds,
+    _mobileMigrationPlanRowMaxDelayMilliseconds,
+  );
+  return _mobileMigrationPlanRevealAnimation(
+    parent,
+    startMilliseconds: _mobileMigrationPlanRowStartMilliseconds + delay,
+    durationMilliseconds: 420,
+  );
 }
 
 String? _mobileMigrationPercentage(BigInt value, BigInt total) {
@@ -1098,17 +1556,20 @@ class _MobileReviewCard extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
     this.borderRadius = 24,
     this.showShadow = true,
+    this.surfaceKey,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double borderRadius;
   final bool showShadow;
+  final Key? surfaceKey;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return DecoratedBox(
+      key: surfaceKey,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(borderRadius),
@@ -1133,43 +1594,56 @@ class _ReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      children: [
-        Expanded(
-          flex: 3,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
+    return SizedBox(
+      height: 25,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xxs,
+          vertical: AppSpacing.xxs,
         ),
-        const SizedBox(width: AppSpacing.xs),
-        Flexible(
-          flex: 2,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Flexible(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.end,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.accent,
-                  ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.secondary,
                 ),
               ),
-              if (showInfo) ...[
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(AppIcons.help, size: 16, color: colors.icon.regular),
-              ],
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Flexible(
+              child: Row(
+                key: ValueKey('mobile_ironwood_review_value_$label'),
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: Text(
+                      value,
+                      textAlign: TextAlign.end,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ),
+                  if (showInfo) ...[
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.help,
+                      size: 16,
+                      color: colors.icon.regular,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

@@ -891,10 +891,29 @@ Widget buildMobileIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationPrivateManyPartsUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.privateReview,
+    previewPrivatePlan: _previewMobilePrivateMigrationManyPartsPlan(),
+  );
+}
+
 Widget buildMobileIronwoodMigrationAnalyzingUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.privateReview,
     reviewPreviewStage: MobileIronwoodMigrationReviewPreviewStage.analyzing,
+  );
+}
+
+Widget buildMobileIronwoodMigrationAnalyzingMotionUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.privateReview,
+    reviewPreviewStage:
+        MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing,
   );
 }
 
@@ -1074,6 +1093,7 @@ Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({required bool batch}) {
 
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
+  rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
   rust_sync.MigrationStatus? previewStatus,
   List<MobileIronwoodMigrationPartPresentation>? previewParts,
   MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
@@ -1102,7 +1122,8 @@ Widget _buildMobileIronwoodMigrationUseCase({
           zatoshi: zatoshi,
           accountName: accountName,
         ),
-        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+        previewPrivatePlan:
+            previewPrivatePlan ?? _previewMobilePrivateMigrationPlan(),
         previewStatus: previewStatus,
         previewReviewStage: reviewPreviewStage,
         previewParts: previewParts,
@@ -2725,6 +2746,42 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 960,
       ),
+    ],
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan
+_previewMobilePrivateMigrationManyPartsPlan() {
+  final values = <int>[
+    4_000_000_000,
+    500_000_000,
+    8_000_000_000,
+    100_000_000,
+    500_000_000,
+    1_000_000_000,
+    ...List<int>.filled(43, 2_700_000),
+    3_900_000,
+  ];
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList(values),
+    totalInputZatoshi: BigInt.from(14_223_000_000),
+    totalMigratableZatoshi: BigInt.from(14_220_000_000),
+    orchardChangeZatoshi: BigInt.zero,
+    denominationSplitFeeZatoshi: BigInt.from(150_000),
+    migrationFeeZatoshi: BigInt.from(150_000),
+    estimatedTotalFeeZatoshi: BigInt.from(300_000),
+    plannedBatchCount: values.length,
+    denominationSplitStageCount: 1,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 960,
+    maxPreparedNotesPerRun: 64,
+    scheduledTransfers: [
+      for (var index = 0; index < values.length; index++)
+        rust_sync.MigrationScheduledTransfer(
+          valueZatoshi: BigInt.from(values[index]),
+          blockOffset: index == 0 ? 12 : 960,
+        ),
     ],
   );
 }

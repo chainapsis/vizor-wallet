@@ -179,6 +179,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-private-review-many-parts',
+    description: 'Mobile private migration review with scrollable parts',
+    builder: buildMobileIronwoodMigrationPrivateManyPartsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-fast-review',
     description: 'Mobile immediate Ironwood migration review screen',
     builder: buildMobileIronwoodMigrationFastReviewUseCase,

@@ -364,8 +364,14 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Migration type - Private (many parts)',
+                      builder:
+                          buildMobileIronwoodMigrationPrivateManyPartsUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration type - Analyzing',
-                      builder: buildMobileIronwoodMigrationAnalyzingUseCase,
+                      builder:
+                          buildMobileIronwoodMigrationAnalyzingMotionUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Migration type - Fast',

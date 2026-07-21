@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Divider, Scaffold, VerticalDivider;
 import 'package:flutter/widgets.dart';
@@ -40,11 +41,68 @@ enum MobileIronwoodMigrationStep {
   migrating,
 }
 
-enum MobileIronwoodMigrationReviewPreviewStage { analyzing, review }
+enum MobileIronwoodMigrationReviewPreviewStage {
+  analyzing,
+  animatedAnalyzing,
+  review,
+}
 
 const _migrationProgress = 60 / 196;
-const _migrationAnalysisDuration = Duration(seconds: 3);
 const _migrationAnalysisPreviewProgress = 72 / 196;
+const _migrationAnalysisProgressDuration = Duration(milliseconds: 2745);
+const _migrationAnalysisCompletionDuration = Duration(milliseconds: 575);
+const _migrationAnalysisTransitionDuration = Duration(milliseconds: 420);
+const _migrationAnalysisEaseOut = Cubic(0.23, 1, 0.32, 1);
+
+class _MigrationAnalysisProgressStep {
+  const _MigrationAnalysisProgressStep({
+    required this.target,
+    required this.rampMilliseconds,
+    required this.pauseMilliseconds,
+  });
+
+  final double target;
+  final int rampMilliseconds;
+  final int pauseMilliseconds;
+}
+
+const _migrationAnalysisProgressSteps = [
+  _MigrationAnalysisProgressStep(
+    target: 0.15,
+    rampMilliseconds: 300,
+    pauseMilliseconds: 75,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.40,
+    rampMilliseconds: 285,
+    pauseMilliseconds: 45,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.47,
+    rampMilliseconds: 165,
+    pauseMilliseconds: 225,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.63,
+    rampMilliseconds: 315,
+    pauseMilliseconds: 90,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.71,
+    rampMilliseconds: 150,
+    pauseMilliseconds: 255,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.86,
+    rampMilliseconds: 270,
+    pauseMilliseconds: 120,
+  ),
+  _MigrationAnalysisProgressStep(
+    target: 0.97,
+    rampMilliseconds: 285,
+    pauseMilliseconds: 165,
+  ),
+];
 
 class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   const MobileIronwoodMigrationFlowScreen({
@@ -127,7 +185,9 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
-      MobileIronwoodMigrationStep.options => const _MobileMigrationOptions(),
+      MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        allowPreviewSelection: previewMode,
+      ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
@@ -367,14 +427,34 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
   }
 }
 
-class _MobileMigrationOptions extends StatelessWidget {
-  const _MobileMigrationOptions();
+enum _MobileMigrationOption { private, immediate }
+
+class _MobileMigrationOptions extends StatefulWidget {
+  const _MobileMigrationOptions({required this.allowPreviewSelection});
+
+  final bool allowPreviewSelection;
+
+  @override
+  State<_MobileMigrationOptions> createState() =>
+      _MobileMigrationOptionsState();
+}
+
+class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
+  var _selectedOption = _MobileMigrationOption.private;
+
+  void _select(_MobileMigrationOption option) {
+    if (!widget.allowPreviewSelection || _selectedOption == option) return;
+    setState(() => _selectedOption = option);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final privateSelected = _selectedOption == _MobileMigrationOption.private;
+    final immediateSelected =
+        _selectedOption == _MobileMigrationOption.immediate;
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/how-it-works'),
-      topGap: 83,
+      topGap: 91,
       childGap: 24,
       title: 'Choose How to Migrate',
       subtitle:
@@ -388,20 +468,27 @@ class _MobileMigrationOptions extends StatelessWidget {
       child: Column(
         children: [
           _MobileMigrationOptionCard(
+            key: const ValueKey('mobile_ironwood_private_option'),
             title: 'Private',
             body: 'Sends independent parts over time',
-            selected: true,
+            selected: privateSelected,
             icon: _MigrationChoiceIcon.private,
             recommended: true,
+            onTap: widget.allowPreviewSelection
+                ? () => _select(_MobileMigrationOption.private)
+                : null,
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _MobileMigrationOptionCard(
-            key: ValueKey('mobile_ironwood_immediate_unavailable'),
+          _MobileMigrationOptionCard(
+            key: const ValueKey('mobile_ironwood_immediate_unavailable'),
             title: 'Immediate',
             body: 'Sends now in one step.',
-            selected: false,
+            selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,
-            enabled: false,
+            enabled: widget.allowPreviewSelection,
+            onTap: widget.allowPreviewSelection
+                ? () => _select(_MobileMigrationOption.immediate)
+                : null,
           ),
         ],
       ),
@@ -409,16 +496,210 @@ class _MobileMigrationOptions extends StatelessWidget {
   }
 }
 
-class _MobileMigrationAnalyzing extends StatelessWidget {
-  const _MobileMigrationAnalyzing({required this.preview});
+class _MobileMigrationAnalyzing extends StatefulWidget {
+  const _MobileMigrationAnalyzing({
+    required this.preview,
+    required this.ready,
+    required this.completionSucceeded,
+    this.onCompleted,
+    super.key,
+  });
 
   final bool preview;
+  final bool ready;
+  final bool completionSucceeded;
+  final VoidCallback? onCompleted;
+
+  @override
+  State<_MobileMigrationAnalyzing> createState() =>
+      _MobileMigrationAnalyzingState();
+}
+
+class _MobileMigrationAnalyzingState extends State<_MobileMigrationAnalyzing>
+    with TickerProviderStateMixin {
+  static const _messages = [
+    'Analyzing your balance...',
+    'Finding private batches...',
+    'Preparing your migration plan...',
+    'Your migration plan is ready',
+  ];
+
+  late final AnimationController _progressController = AnimationController(
+    vsync: this,
+    duration: _migrationAnalysisProgressDuration,
+  );
+  late final AnimationController _completionController = AnimationController(
+    vsync: this,
+    duration: _migrationAnalysisCompletionDuration,
+  );
+  late final Animation<double> _progress = _buildProgressAnimation();
+  late final Animation<double> _completionProgress =
+      Tween<double>(begin: 0.97, end: 1).animate(
+        CurvedAnimation(
+          parent: _completionController,
+          curve: const Interval(0, 255 / 575, curve: Curves.easeInOutQuad),
+        ),
+      );
+  late final Animation<double> _completionScale =
+      TweenSequence<double>([
+        TweenSequenceItem(
+          tween: Tween<double>(
+            begin: 1,
+            end: 1.12,
+          ).chain(CurveTween(curve: _migrationAnalysisEaseOut)),
+          weight: 45,
+        ),
+        TweenSequenceItem(
+          tween: Tween<double>(
+            begin: 1.12,
+            end: 1,
+          ).chain(CurveTween(curve: _migrationAnalysisEaseOut)),
+          weight: 55,
+        ),
+      ]).animate(
+        CurvedAnimation(
+          parent: _completionController,
+          curve: const Interval(255 / 575, 1),
+        ),
+      );
+
+  bool _progressFinished = false;
+  bool _completionStarted = false;
+  bool _completionNotified = false;
+
+  bool get _shouldAnimate =>
+      !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+
+  Animation<double> _buildProgressAnimation() {
+    final items = <TweenSequenceItem<double>>[];
+    var from = 0.0;
+    for (final step in _migrationAnalysisProgressSteps) {
+      items.add(
+        TweenSequenceItem(
+          tween: Tween<double>(
+            begin: from,
+            end: step.target,
+          ).chain(CurveTween(curve: Curves.easeInOutQuad)),
+          weight: step.rampMilliseconds.toDouble(),
+        ),
+      );
+      if (step.pauseMilliseconds > 0) {
+        items.add(
+          TweenSequenceItem(
+            tween: ConstantTween<double>(step.target),
+            weight: step.pauseMilliseconds.toDouble(),
+          ),
+        );
+      }
+      from = step.target;
+    }
+    return TweenSequence<double>(items).animate(_progressController);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _progressController.addStatusListener(_handleProgressStatus);
+    _completionController.addStatusListener(_handleCompletionStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileMigrationAnalyzing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.ready && widget.ready) _tryStartCompletion();
+  }
+
+  void _syncMotion() {
+    if (widget.preview) {
+      _progressController.stop();
+      _completionController.stop();
+      return;
+    }
+    if (!_shouldAnimate) {
+      _progressController
+        ..stop()
+        ..value = 1;
+      _completionController
+        ..stop()
+        ..value = 1;
+      _progressFinished = true;
+      if (widget.ready) _notifyCompleted();
+      return;
+    }
+    if (!_progressFinished && !_progressController.isAnimating) {
+      _progressController.forward();
+    }
+    _tryStartCompletion();
+  }
+
+  void _handleProgressStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _progressFinished = true;
+    _tryStartCompletion();
+  }
+
+  void _tryStartCompletion() {
+    if (!mounted ||
+        widget.preview ||
+        !widget.ready ||
+        !_progressFinished ||
+        _completionStarted ||
+        _completionNotified) {
+      return;
+    }
+    if (!_shouldAnimate) {
+      _notifyCompleted();
+      return;
+    }
+    _completionStarted = true;
+    _completionController.forward();
+  }
+
+  void _handleCompletionStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _notifyCompleted();
+  }
+
+  void _notifyCompleted() {
+    if (_completionNotified) return;
+    _completionNotified = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onCompleted?.call();
+    });
+  }
+
+  String _messageFor(double progress) {
+    if (widget.preview || progress < 0.33) return _messages[0];
+    if (progress < 0.66) return _messages[1];
+    if (progress < 1) return _messages[2];
+    return widget.completionSucceeded
+        ? _messages[3]
+        : "Couldn't prepare your migration plan";
+  }
+
+  @override
+  void dispose() {
+    _progressController
+      ..removeStatusListener(_handleProgressStatus)
+      ..dispose();
+    _completionController
+      ..removeStatusListener(_handleCompletionStatus)
+      ..dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    final targetProgress = preview ? _migrationAnalysisPreviewProgress : 1.0;
+    final motion = Listenable.merge([
+      _progressController,
+      _completionController,
+    ]);
 
     return Scaffold(
       key: const ValueKey('mobile_ironwood_migration_analyzing'),
@@ -426,7 +707,7 @@ class _MobileMigrationAnalyzing extends StatelessWidget {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final progressTop = constraints.maxHeight * 0.255;
+            final progressTop = constraints.maxHeight * 0.273;
             final messageTop = constraints.maxHeight * 0.46;
             return Stack(
               children: [
@@ -435,18 +716,26 @@ class _MobileMigrationAnalyzing extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: targetProgress),
-                      duration: disableAnimations
-                          ? Duration.zero
-                          : _migrationAnalysisDuration,
-                      curve: Curves.easeInOutCubic,
-                      builder: (context, value, _) {
-                        return _MobileMigrationProgressTrack(
-                          key: const ValueKey(
-                            'mobile_ironwood_migration_analysis_progress',
+                    child: AnimatedBuilder(
+                      animation: motion,
+                      builder: (context, _) {
+                        final value = widget.preview
+                            ? _migrationAnalysisPreviewProgress
+                            : _completionStarted ||
+                                  _completionController.value > 0
+                            ? _completionProgress.value
+                            : _progress.value;
+                        final scale = widget.preview
+                            ? 1.0
+                            : _completionScale.value;
+                        return Transform.scale(
+                          scaleY: scale,
+                          child: _MobileMigrationProgressTrack(
+                            key: const ValueKey(
+                              'mobile_ironwood_migration_analysis_progress',
+                            ),
+                            value: value,
                           ),
-                          value: value,
                         );
                       },
                     ),
@@ -456,32 +745,65 @@ class _MobileMigrationAnalyzing extends StatelessWidget {
                   top: messageTop,
                   left: 28,
                   right: 28,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IronwoodMigrationShimmerText(
-                        key: const ValueKey(
-                          'mobile_ironwood_migration_analyzing_title',
-                        ),
-                        text: 'Analyzing your balance...',
-                        style: AppTypography.bodyLarge.copyWith(
-                          letterSpacing: 0,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        baseColor: colors.text.secondary,
-                        highlightColor: colors.text.accent,
-                      ),
-                      const SizedBox(height: AppSpacing.base),
-                      Text(
-                        'Vizor is working hard to find a perfect balance of '
-                        'safety, privacy, and speed for your migration',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.secondary,
-                          height: 24 / 16,
-                        ),
-                      ),
-                    ],
+                  child: AnimatedBuilder(
+                    animation: motion,
+                    builder: (context, _) {
+                      final progress = widget.preview
+                          ? _migrationAnalysisPreviewProgress
+                          : _completionStarted ||
+                                _completionController.value > 0
+                          ? _completionProgress.value
+                          : _progress.value;
+                      final title = _messageFor(progress);
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Semantics(
+                            liveRegion: true,
+                            child: AnimatedSwitcher(
+                              duration: widget.preview || !_shouldAnimate
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 350),
+                              switchInCurve: _migrationAnalysisEaseOut,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                final offset = Tween<Offset>(
+                                  begin: const Offset(0, 0.35),
+                                  end: Offset.zero,
+                                ).animate(animation);
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: offset,
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: IronwoodMigrationShimmerText(
+                                key: ValueKey(title),
+                                text: title,
+                                style: AppTypography.headlineSmall.copyWith(
+                                  letterSpacing: 0,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                baseColor: colors.text.secondary,
+                                highlightColor: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            'Vizor is working hard to find a perfect balance of '
+                            'safety, privacy, and speed for your migration',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.secondary,
+                              height: 25 / 16,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -513,34 +835,13 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
 
 class _MobileMigrationPrivateReviewState
     extends ConsumerState<_MobileMigrationPrivateReview> {
-  Timer? _analysisTimer;
-  bool _analysisStarted = false;
-  bool _minimumAnalysisComplete = false;
+  bool _analysisComplete = false;
   bool _isStarting = false;
   String? _startError;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_analysisStarted || widget.previewPlan != null) return;
-    _analysisStarted = true;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : _migrationAnalysisDuration;
-    if (duration == Duration.zero) {
-      _minimumAnalysisComplete = true;
-      return;
-    }
-    _analysisTimer = Timer(duration, () {
-      if (!mounted) return;
-      setState(() => _minimumAnalysisComplete = true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _analysisTimer?.cancel();
-    super.dispose();
+  void _handleAnalysisCompleted() {
+    if (_analysisComplete || !mounted) return;
+    setState(() => _analysisComplete = true);
   }
 
   Future<void> _startMigration(
@@ -611,79 +912,108 @@ class _MobileMigrationPrivateReviewState
     final planAsync = preview != null
         ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
         : ref.watch(ironwoodMigrationPrivatePlanProvider);
-    final showAnalyzing =
+    final staticAnalysisPreview =
         widget.previewStage ==
-            MobileIronwoodMigrationReviewPreviewStage.analyzing ||
-        (preview == null && (!_minimumAnalysisComplete || planAsync.isLoading));
+        MobileIronwoodMigrationReviewPreviewStage.analyzing;
+    final animatedAnalysisPreview =
+        widget.previewStage ==
+        MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing;
+    final awaitingInitialPlan = planAsync.isLoading && !planAsync.hasValue;
+    final plan = planAsync.hasValue ? planAsync.value : null;
+    final showAnalyzing =
+        staticAnalysisPreview ||
+        (animatedAnalysisPreview && !_analysisComplete) ||
+        (preview == null && (!_analysisComplete || awaitingInitialPlan));
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final Widget child;
     if (showAnalyzing) {
-      return _MobileMigrationAnalyzing(
-        preview:
-            widget.previewStage ==
-            MobileIronwoodMigrationReviewPreviewStage.analyzing,
+      child = _MobileMigrationAnalyzing(
+        key: const ValueKey('mobile_ironwood_migration_analysis_stage'),
+        preview: staticAnalysisPreview,
+        ready: !awaitingInitialPlan,
+        completionSucceeded: plan != null,
+        onCompleted: staticAnalysisPreview ? null : _handleAnalysisCompleted,
+      );
+    } else {
+      final keystonePlanSupported =
+          !widget.isHardware ||
+          plan == null ||
+          _keystoneTwoRoundPlanSupported(plan);
+      final canStart = plan != null && !_isStarting && keystonePlanSupported;
+
+      child = KeyedSubtree(
+        key: const ValueKey('mobile_ironwood_migration_review_stage'),
+        child: _MobilePrivateReviewScaffold(
+          onBack: () => context.go('/migration/options'),
+          bottom: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_startError != null) ...[
+                Text(
+                  _startError!,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: context.colors.text.destructive,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
+              if (!keystonePlanSupported) ...[
+                Text(
+                  'This migration needs more transactions than one Keystone '
+                  'signing request supports.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: context.colors.text.destructive,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
+              _MobileMigrationPrimaryButton(
+                key: const ValueKey('mobile_ironwood_authorize_start_button'),
+                label: _isStarting
+                    ? 'Preparing...'
+                    : widget.isHardware
+                    ? 'Continue with Keystone'
+                    : 'Start migration',
+                onPressed: canStart
+                    ? preview != null
+                          ? () {}
+                          : () => _startMigration(plan)
+                    : null,
+              ),
+            ],
+          ),
+          child: plan == null
+              ? const _MobileMigrationUnavailable()
+              : _MobilePrivatePlan(
+                  plan: plan,
+                  arrivalLabel: _migrationArrivalLabel(plan),
+                ),
+        ),
       );
     }
-    final plan = planAsync.asData?.value;
-    final keystonePlanSupported =
-        !widget.isHardware ||
-        plan == null ||
-        _keystoneTwoRoundPlanSupported(plan);
-    final canStart = plan != null && !_isStarting && keystonePlanSupported;
 
-    return _MobilePrivateReviewScaffold(
-      onBack: () => context.go('/migration/options'),
-      bottom: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_startError != null) ...[
-            Text(
-              _startError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (!keystonePlanSupported) ...[
-            Text(
-              'This migration needs more transactions than one Keystone '
-              'signing request supports.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          _MobileMigrationPrimaryButton(
-            key: const ValueKey('mobile_ironwood_authorize_start_button'),
-            label: _isStarting
-                ? 'Preparing...'
-                : widget.isHardware
-                ? 'Continue with Keystone'
-                : 'Start migration',
-            onPressed: canStart
-                ? preview != null
-                      ? () {}
-                      : () => _startMigration(plan)
-                : null,
-          ),
-        ],
-      ),
-      child: planAsync.when(
-        skipLoadingOnReload: true,
-        loading: () => const SizedBox(
-          height: 240,
-          child: Center(child: CircularProgressIndicator()),
-        ),
-        error: (_, _) => const _MobileMigrationUnavailable(),
-        data: (plan) => plan == null
-            ? const _MobileMigrationUnavailable()
-            : _MobilePrivatePlan(
-                plan: plan,
-                arrivalLabel: _migrationArrivalLabel(plan),
-              ),
-      ),
+    return AnimatedSwitcher(
+      duration: disableAnimations
+          ? Duration.zero
+          : _migrationAnalysisTransitionDuration,
+      reverseDuration: disableAnimations
+          ? Duration.zero
+          : const Duration(milliseconds: 280),
+      switchInCurve: _migrationAnalysisEaseOut,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final offset = Tween<Offset>(
+          begin: const Offset(0, 0.015),
+          end: Offset.zero,
+        ).animate(animation);
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: offset, child: child),
+        );
+      },
+      child: child,
     );
   }
 }

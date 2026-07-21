@@ -477,7 +477,7 @@ class _MobileMigrationStatusRail extends StatelessWidget {
             children: [
               for (var index = 0; index < parts.length; index++) ...[
                 _MobileMigrationRailSegment(
-                  width: _mobileRailSegmentWidth(
+                  width: _mobileStatusRailSegmentWidth(
                     available: constraints.maxWidth,
                     value: _mobilePartValueZatoshi(parts[index]) ?? BigInt.one,
                     total: total,

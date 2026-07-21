@@ -213,14 +213,19 @@ Widget _app({
   required MobileIronwoodMigrationStep step,
   AppThemeData theme = AppThemeData.light,
   rust_sync.MigrationStatus? previewStatus,
+  rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+  MobileIronwoodMigrationReviewPreviewStage previewReviewStage =
+      MobileIronwoodMigrationReviewPreviewStage.review,
+  bool disableAnimations = true,
 }) {
   late final GoRouter router;
   MobileIronwoodMigrationFlowScreen screen(MobileIronwoodMigrationStep value) {
     return MobileIronwoodMigrationFlowScreen(
       step: value,
       previewData: _data,
-      previewPrivatePlan: _plan,
+      previewPrivatePlan: previewPlan ?? _plan,
       previewStatus: previewStatus,
+      previewReviewStage: previewReviewStage,
     );
   }
 
@@ -273,7 +278,9 @@ Widget _app({
       child: MaterialApp.router(
         routerConfig: router,
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: disableAnimations),
           child: child!,
         ),
       ),
@@ -289,7 +296,10 @@ Widget _productionApp({
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
   bool hardware = false,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
+  Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
+  Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
   SyncState? syncState,
+  bool disableAnimations = true,
 }) {
   final cta = status == null
       ? const IronwoodHomeMigrationCtaState.start(
@@ -341,7 +351,10 @@ Widget _productionApp({
       ),
       ironwoodMigrationFlowDataProvider.overrideWith((ref) => _data),
       ironwoodMigrationPrivatePlanProvider.overrideWith(
-        (ref) async => privatePlan ?? _plan,
+        (ref) =>
+            privatePlanLoader?.call() ??
+            privatePlanFuture ??
+            Future.value(privatePlan ?? _plan),
       ),
       ironwoodMigrationRouteCtaProvider.overrideWith(
         (ref) async => ctaBuilder?.call() ?? cta,
@@ -359,7 +372,9 @@ Widget _productionApp({
       child: MaterialApp.router(
         routerConfig: router,
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: disableAnimations),
           child: child!,
         ),
       ),
@@ -532,9 +547,21 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Spend as funds arrive'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.text('Choose how you migrate'))
+          .style
+          ?.fontWeight,
+      FontWeight.w500,
+    );
+    expect(tester.widget<Text>(find.text('1')).style?.fontSize, 16);
+    expect(
+      tester.widget<Text>(find.text('1')).style?.fontWeight,
+      FontWeight.w400,
+    );
   });
 
-  testWidgets('shows the production migration type choice and private route', (
+  testWidgets('shows the migration type choice and preview selection', (
     tester,
   ) async {
     await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.options));
@@ -557,12 +584,85 @@ void main() {
     expect(find.text('Customise'), findsNothing);
     expect(find.text('Advanced'), findsNothing);
 
+    final subtitle = tester.widget<Text>(
+      find.text(
+        'Choose between more privacy over time or a faster migration. '
+        'You can review the details before anything moves.',
+      ),
+    );
+    expect(subtitle.textAlign, TextAlign.center);
+    expect(
+      tester.widget<Text>(find.text('Immediate')).style?.fontWeight,
+      FontWeight.w600,
+    );
+    expect(
+      tester
+          .widget<Text>(find.text('Sends now in one step.'))
+          .style
+          ?.fontWeight,
+      FontWeight.w500,
+    );
+    final immediateIconOpacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('mobile_ironwood_immediate_icon')),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(immediateIconOpacity.opacity, 0.5);
+    expect(
+      (tester
+                  .widget<DecoratedBox>(
+                    find.byKey(
+                      const ValueKey('mobile_ironwood_recommended_badge'),
+                    ),
+                  )
+                  .decoration
+              as BoxDecoration)
+          .color,
+      const Color(0xFF00A460),
+    );
+
     final unselectedRadio = tester.widget<Container>(
       find.byKey(const ValueKey('mobile_ironwood_unselected_radio')),
     );
     expect(
       (unselectedRadio.decoration! as BoxDecoration).color,
       const Color(0x33B8B8B8),
+    );
+
+    final privateOption = find.byKey(
+      const ValueKey('mobile_ironwood_private_option'),
+    );
+    final immediateOption = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_unavailable'),
+    );
+    await tester.tap(immediateOption);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: immediateOption,
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: privateOption,
+        matching: find.byKey(
+          const ValueKey('mobile_ironwood_unselected_radio'),
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(privateOption);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: privateOption,
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
     );
 
     await tester.tap(find.text('Continue'));
@@ -586,6 +686,345 @@ void main() {
     expect(find.text('Start migration'), findsOneWidget);
   });
 
+  testWidgets('scrolls migration parts only when the review overflows', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.privateReview,
+        previewPlan: _planWith(plannedBatchCount: 6),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getCenter(find.text('Review Migration Plan')).dx,
+      closeTo(393 / 2, 0.5),
+    );
+    final labelCell = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_part_label_cell_0')),
+    );
+    final valueCell = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_part_value_cell_0')),
+    );
+    final statusCell = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_part_status_cell_0')),
+    );
+    expect(labelCell.left, 16);
+    expect(labelCell.width, 70);
+    expect(labelCell.height, 24);
+    expect(valueCell.left, closeTo(101.5, 0.5));
+    expect(valueCell.width, 130);
+    expect(statusCell.right, 377);
+    expect(statusCell.width, 130);
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('mobile_ironwood_part_bar_5')))
+          .right,
+      closeTo(377, 0.5),
+    );
+    expect(
+      tester
+          .getRect(
+            find.byKey(
+              const ValueKey('mobile_ironwood_review_value_Est. completion'),
+            ),
+          )
+          .right,
+      373,
+    );
+
+    var partListPosition = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('mobile_ironwood_part_list')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    expect(partListPosition.maxScrollExtent, 0);
+    var railPosition = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('mobile_ironwood_part_bar_scroll')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    expect(railPosition.maxScrollExtent, 0);
+
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.privateReview,
+        previewPlan: _planWith(plannedBatchCount: 50, signingBatchLimit: 50),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    partListPosition = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('mobile_ironwood_part_list')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    expect(partListPosition.maxScrollExtent, greaterThan(0));
+    await tester.drag(
+      find.byKey(const ValueKey('mobile_ironwood_part_list')),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+    expect(partListPosition.pixels, greaterThan(0));
+    railPosition = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('mobile_ironwood_part_bar_scroll')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    expect(railPosition.maxScrollExtent, greaterThan(0));
+    await tester.drag(
+      find.byKey(const ValueKey('mobile_ironwood_part_bar_scroll')),
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(railPosition.pixels, greaterThan(0));
+  });
+
+  testWidgets('splits the analysis bar before staggering the part rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.privateReview,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    final firstBar = find.byKey(const ValueKey('mobile_ironwood_part_bar_0'));
+    final lastBar = find.byKey(const ValueKey('mobile_ironwood_part_bar_11'));
+    final firstRow = find.byKey(
+      const ValueKey('mobile_ironwood_part_row_reveal_0'),
+    );
+    final lastVisibleRow = find.byKey(
+      const ValueKey('mobile_ironwood_part_row_reveal_1'),
+    );
+    final singleTrack = find.byKey(
+      const ValueKey('mobile_ironwood_part_bar_single_track'),
+    );
+
+    final initialBarSpan =
+        tester.getRect(lastBar).right - tester.getRect(firstBar).left;
+    expect(initialBarSpan, closeTo(196, 0.5));
+    expect(tester.widget<Opacity>(singleTrack).opacity, 1);
+    expect(tester.widget<FadeTransition>(firstRow).opacity.value, 0);
+
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    final splitBarSpan =
+        tester.getRect(lastBar).right - tester.getRect(firstBar).left;
+    expect(splitBarSpan, greaterThan(initialBarSpan));
+    expect(tester.widget<Opacity>(singleTrack).opacity, 0);
+    expect(tester.widget<FadeTransition>(firstRow).opacity.value, 0);
+
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      tester.widget<FadeTransition>(firstRow).opacity.value,
+      greaterThan(tester.widget<FadeTransition>(lastVisibleRow).opacity.value),
+    );
+
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(tester.widget<FadeTransition>(lastVisibleRow).opacity.value, 1);
+  });
+
+  testWidgets('holds the analyzing preview at the Figma progress value', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.privateReview,
+        previewReviewStage: MobileIronwoodMigrationReviewPreviewStage.analyzing,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsOneWidget,
+    );
+    final progress = tester.widget<FractionallySizedBox>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_migration_analysis_progress'),
+        ),
+        matching: find.byType(FractionallySizedBox),
+      ),
+    );
+    expect(progress.widthFactor, closeTo(72 / 196, 0.001));
+    expect(
+      tester.getSize(
+        find.byKey(
+          const ValueKey('mobile_ironwood_migration_analysis_progress_fill'),
+        ),
+      ),
+      const Size(72, 12),
+    );
+    expect(find.text('Analyzing your balance...'), findsOneWidget);
+  });
+
+  testWidgets('advances the animated analyzing preview over time', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.privateReview,
+        previewReviewStage:
+            MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    final progressFinder = find.descendant(
+      of: find.byKey(
+        const ValueKey('mobile_ironwood_migration_analysis_progress'),
+      ),
+      matching: find.byType(FractionallySizedBox),
+    );
+    final initialProgress = tester
+        .widget<FractionallySizedBox>(progressFinder)
+        .widthFactor!;
+
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final advancedProgress = tester
+        .widget<FractionallySizedBox>(progressFinder)
+        .widthFactor!;
+    expect(advancedProgress, greaterThan(initialProgress));
+    expect(advancedProgress, lessThan(0.97));
+  });
+
+  testWidgets('waits for the plan before completing analysis', (tester) async {
+    _useMobileViewport(tester);
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanFuture: planCompleter.future,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    await tester.pump(const Duration(milliseconds: 2746));
+    var progress = tester.widget<FractionallySizedBox>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_migration_analysis_progress'),
+        ),
+        matching: find.byType(FractionallySizedBox),
+      ),
+    );
+    expect(progress.widthFactor, closeTo(0.97, 0.001));
+    expect(find.text('Review Migration Plan'), findsNothing);
+
+    planCompleter.complete(_plan);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 256));
+
+    progress = tester.widget<FractionallySizedBox>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_migration_analysis_progress'),
+        ),
+        matching: find.byType(FractionallySizedBox),
+      ),
+    );
+    expect(progress.widthFactor, closeTo(1, 0.001));
+    expect(find.text('Your migration plan is ready'), findsOneWidget);
+    expect(find.text('Review Migration Plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('keeps the review visible while its plan refreshes', (
+    tester,
+  ) async {
+    final refreshCompleter =
+        Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    var loadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () {
+          loadCount++;
+          return loadCount == 1 ? Future.value(_plan) : refreshCompleter.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    container.invalidate(ironwoodMigrationPrivatePlanProvider);
+    await tester.pump();
+
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
+
+    refreshCompleter.complete(_plan);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('does not announce a ready plan when analysis fails', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanFuture: Future.value(),
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2746));
+    await tester.pump(const Duration(milliseconds: 256));
+
+    expect(find.text('Your migration plan is ready'), findsNothing);
+    expect(find.text("Couldn't prepare your migration plan"), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+    expect(
+      find.textContaining('Migration review is not available yet'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('keeps the migration review usable at 320 by 568', (
     tester,
   ) async {
@@ -596,6 +1035,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('keeps review summary clear at the Widgetbook viewport', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(393, 720));
+    await tester.pumpWidget(
+      _app(step: MobileIronwoodMigrationStep.privateReview),
+    );
+    await tester.pumpAndSettle();
+
+    final feeRow = tester.getRect(find.text('Fees (estimate)'));
+    final startButton = tester.getRect(find.text('Start migration'));
+    expect(
+      startButton.top - feeRow.bottom,
+      greaterThanOrEqualTo(AppSpacing.sm),
+    );
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
 
