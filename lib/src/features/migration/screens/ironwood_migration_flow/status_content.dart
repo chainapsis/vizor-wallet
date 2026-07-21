@@ -188,7 +188,7 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
       statuses: statuses,
       rawProgresses: rawSegmentProgresses,
     );
-    if (_shouldShowPreparingStatusContent(status, statuses)) {
+    if (_shouldShowPreparingStatusContent(status)) {
       return _MigrationPreparingStatusContent(
         key: ValueKey('ironwood_migration_preparing_${status.activeRunId}'),
         status: status,
@@ -293,22 +293,5 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
   }
 }
 
-bool _shouldShowPreparingStatusContent(
-  rust_sync.MigrationStatus status,
-  List<_MigrationBatchStatus> statuses,
-) {
-  if (statuses.isEmpty) return false;
-  final hasLaterStatus = statuses.any(
-    (status) =>
-        status == _MigrationBatchStatus.scheduled ||
-        status == _MigrationBatchStatus.migrating ||
-        status == _MigrationBatchStatus.confirming ||
-        status == _MigrationBatchStatus.complete ||
-        status == _MigrationBatchStatus.needsInput,
-  );
-  if (hasLaterStatus) return false;
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-    return true;
-  }
-  return false;
-}
+bool _shouldShowPreparingStatusContent(rust_sync.MigrationStatus status) =>
+    status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase;

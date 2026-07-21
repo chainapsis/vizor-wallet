@@ -626,8 +626,85 @@ void main() {
 
     expect(firstTrackWidth, closeTo(secondTrackWidth, 1));
     expect(secondFillWidth, greaterThan(firstFillWidth * 4));
-    expect(find.text('Preparing'), findsOneWidget);
-    expect(find.text('Confirming...'), findsOneWidget);
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 2 migration parts'), findsOneWidget);
+    expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('private denomination broadcasts stay on the preparing UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000],
+          pendingSplitStageCount: 2,
+          denominationConfirmationCount: 0,
+          denominationConfirmationTarget: 3,
+          denominationSplitCompletedCount: 2,
+          denominationSplitTotalCount: 2,
+          totalCount: 2,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 2 migration parts'), findsOneWidget);
+    expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+      findsNothing,
+    );
+    expect(find.text('Currently Spendable Balance'), findsNothing);
   });
 
   testWidgets(
