@@ -38,6 +38,7 @@ Future<T?> showAppMobileSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isDismissible = true,
+  bool enableDrag = true,
   bool transparentBackground = false,
 }) {
   final appTheme = context.appTheme;
@@ -59,6 +60,7 @@ Future<T?> showAppMobileSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isDismissible: isDismissible,
+    enableDrag: enableDrag,
     isScrollControlled: true,
     useSafeArea: true,
     // Root navigator so the sheet and its scrim cover the floating tab

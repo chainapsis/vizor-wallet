@@ -14,7 +14,7 @@ Widget _app({
   VoidCallback? onNext,
   VoidCallback? onCancel,
   VoidCallback? onToggleFlashlight,
-  VoidCallback? onPickImage,
+  VoidCallback? onShowRequestQr,
 }) {
   return MaterialApp(
     home: AppTheme(
@@ -27,7 +27,7 @@ Widget _app({
         onNext: onNext,
         onCancel: onCancel,
         onToggleFlashlight: onToggleFlashlight,
-        onPickImage: onPickImage,
+        onShowRequestQr: onShowRequestQr,
       ),
     ),
   );
@@ -155,7 +155,7 @@ void main() {
     tester,
   ) async {
     _useMobileViewport(tester);
-    var images = 0;
+    var qrReturns = 0;
     await tester.pumpWidget(
       _app(
         state: MobileIronwoodKeystoneSigningViewState.scanner,
@@ -163,7 +163,7 @@ void main() {
           key: ValueKey('mobile_ironwood_keystone_signing_camera'),
           color: Colors.blue,
         ),
-        onPickImage: () => images++,
+        onShowRequestQr: () => qrReturns++,
       ),
     );
 
@@ -176,7 +176,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('mobile_ironwood_keystone_signing_gallery')),
+      find.byKey(const ValueKey('mobile_ironwood_keystone_signing_qr_action')),
       findsOneWidget,
     );
     expect(
@@ -185,19 +185,19 @@ void main() {
       ),
       findsOneWidget,
     );
-    final flashlight = tester.widget<IconButton>(
+    expect(
       find.descendant(
         of: find.byKey(
-          const ValueKey('mobile_ironwood_keystone_signing_flashlight'),
+          const ValueKey('mobile_ironwood_keystone_signing_qr_action'),
         ),
-        matching: find.byType(IconButton),
+        matching: find.byType(AppIcon),
       ),
+      findsOneWidget,
     );
-    expect(flashlight.onPressed, isNull);
     await tester.tap(
-      find.byKey(const ValueKey('mobile_ironwood_keystone_signing_gallery')),
+      find.byKey(const ValueKey('mobile_ironwood_keystone_signing_qr_action')),
     );
-    expect(images, 1);
+    expect(qrReturns, 1);
   });
 
   testWidgets('all states remain usable at 320 by 568', (tester) async {
@@ -238,7 +238,7 @@ void main() {
       _app(
         state: MobileIronwoodKeystoneSigningViewState.scanner,
         camera: const ColoredBox(color: Colors.black),
-        onPickImage: () {},
+        onShowRequestQr: () {},
       ),
     );
     expect(tester.takeException(), isNull);

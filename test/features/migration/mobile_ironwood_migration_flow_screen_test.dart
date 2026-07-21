@@ -74,6 +74,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
       rust_sync.MigrationScheduledTransfer(
+        partIndex: i,
         valueZatoshi: BigInt.from(
           i == plannedBatchCount - 1 ? 3_220_000_000 : 1_000_000_000,
         ),

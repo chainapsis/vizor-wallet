@@ -1,14 +1,17 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show IconButton, Icons, Scaffold;
+import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanViewfinderCorners;
 
-const _stepProgress = 0.3;
+const _stepOneProgress = 0.5;
+const _stepTwoProgress = 1.0;
 const _designHeight = 852.0;
 const _scannerTargetSize = 286.0;
 const _scannerTargetTop = 288.0;
@@ -37,8 +40,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
     this.onNext,
     this.onCancel,
     this.onToggleFlashlight,
-    this.onFocusCamera,
-    this.onPickImage,
+    this.onShowRequestQr,
     this.scannerMessage,
     this.scannerMessageIsError = false,
     super.key,
@@ -56,13 +58,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback? onCancel;
   final VoidCallback? onToggleFlashlight;
-
-  /// Opt-in center-focus action for the scanner chrome.
-  final VoidCallback? onFocusCamera;
-
-  /// Legacy right-side action used by the current migration parent to return
-  /// to the request QR. [onFocusCamera] takes precedence when supplied.
-  final VoidCallback? onPickImage;
+  final VoidCallback? onShowRequestQr;
   final String? scannerMessage;
   final bool scannerMessageIsError;
 
@@ -93,8 +89,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
           camera: camera,
           round: round,
           onToggleFlashlight: onToggleFlashlight,
-          onFocusCamera: onFocusCamera,
-          onPickImage: onPickImage,
+          onShowRequestQr: onShowRequestQr,
           onCancel: onCancel,
           message: scannerMessage,
           messageIsError: scannerMessageIsError,
@@ -140,8 +135,11 @@ class _StepOneContent extends StatelessWidget {
               child: IntrinsicHeight(
                 child: Column(
                   children: [
+                    const Offstage(
+                      child: AppIcon(AppIcons.qr, size: 26),
+                    ),
                     MobileTopNav.steps(
-                      progress: _stepProgress,
+                      progress: _stepOneProgress,
                       onBack: onCancel,
                       key: const ValueKey(
                         'mobile_ironwood_keystone_signing_top_nav',
@@ -398,8 +396,7 @@ class _ScannerContent extends StatelessWidget {
     required this.camera,
     required this.round,
     required this.onToggleFlashlight,
-    required this.onFocusCamera,
-    required this.onPickImage,
+    required this.onShowRequestQr,
     required this.onCancel,
     required this.message,
     required this.messageIsError,
@@ -408,8 +405,7 @@ class _ScannerContent extends StatelessWidget {
   final Widget? camera;
   final MobileIronwoodKeystoneSigningRound round;
   final VoidCallback? onToggleFlashlight;
-  final VoidCallback? onFocusCamera;
-  final VoidCallback? onPickImage;
+  final VoidCallback? onShowRequestQr;
   final VoidCallback? onCancel;
   final String? message;
   final bool messageIsError;
@@ -493,7 +489,7 @@ class _ScannerContent extends StatelessWidget {
                   child: Column(
                     children: [
                       MobileTopNav.steps(
-                        progress: _stepProgress,
+                        progress: _stepTwoProgress,
                         onBack: onCancel,
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_top_nav',
@@ -522,7 +518,11 @@ class _ScannerContent extends StatelessWidget {
                     key: ValueKey(
                       'mobile_ironwood_keystone_signing_scan_target',
                     ),
-                    child: _ScanTarget(),
+                    child: MobileScanViewfinderCorners(
+                      cornerLength: 60,
+                      cornerRadius: 32,
+                      strokeWidth: 6,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -567,21 +567,27 @@ class _ScannerContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_flashlight',
                         ),
-                        icon: Icons.flashlight_on_outlined,
-                        iconSize: 30,
                         label: 'Toggle flashlight',
                         onPressed: onToggleFlashlight,
+                        child: const Icon(
+                          Icons.flashlight_on_outlined,
+                          color: Color(0xFFFFFFFF),
+                          size: 30,
+                        ),
                       ),
                       _ScannerControl(
                         key: const ValueKey(
-                          'mobile_ironwood_keystone_signing_gallery',
+                          'mobile_ironwood_keystone_signing_qr_action',
                         ),
-                        icon: Icons.center_focus_strong_outlined,
-                        iconSize: 26,
-                        label: onFocusCamera != null
-                            ? 'Refocus camera'
-                            : 'Show request QR',
-                        onPressed: onFocusCamera ?? onPickImage,
+                        label: 'Show transaction QR',
+                        onPressed: onShowRequestQr,
+                        child: AppIcon(
+                          AppIcons.qr,
+                          color: const Color(0xFFFFFFFF).withValues(
+                            alpha: onShowRequestQr == null ? 0.4 : 1,
+                          ),
+                          size: 26,
+                        ),
                       ),
                     ],
                   ),
@@ -647,83 +653,33 @@ class _ScannerContent extends StatelessWidget {
 
 class _ScannerControl extends StatelessWidget {
   const _ScannerControl({
-    required this.icon,
-    required this.iconSize,
+    required this.child,
     required this.label,
     required this.onPressed,
     super.key,
   });
 
-  final IconData icon;
-  final double iconSize;
+  final Widget child;
   final String label;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.square(
-      dimension: _scannerActionSize,
-      child: Semantics(
-        button: true,
-        enabled: onPressed != null,
-        label: label,
-        excludeSemantics: true,
-        child: IconButton(
-          tooltip: label,
-          onPressed: onPressed,
-          padding: EdgeInsets.zero,
-          icon: Icon(icon, color: const Color(0xFFFFFFFF), size: iconSize),
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: SizedBox.square(
+          dimension: _scannerActionSize,
+          child: Center(child: child),
         ),
       ),
     );
   }
-}
-
-class _ScanTarget extends StatelessWidget {
-  const _ScanTarget();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _ScanTargetPainter());
-  }
-}
-
-class _ScanTargetPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6
-      ..strokeCap = StrokeCap.round;
-    const radius = 32.0;
-    const arm = 60.0;
-    const inset = 3.0;
-    final right = size.width - inset;
-    final bottom = size.height - inset;
-
-    final path = Path()
-      ..moveTo(inset, inset + arm)
-      ..lineTo(inset, inset + radius)
-      ..quadraticBezierTo(inset, inset, inset + radius, inset)
-      ..lineTo(inset + arm, inset)
-      ..moveTo(right - arm, inset)
-      ..lineTo(right - radius, inset)
-      ..quadraticBezierTo(right, inset, right, inset + radius)
-      ..lineTo(right, inset + arm)
-      ..moveTo(right, bottom - arm)
-      ..lineTo(right, bottom - radius)
-      ..quadraticBezierTo(right, bottom, right - radius, bottom)
-      ..lineTo(right - arm, bottom)
-      ..moveTo(inset + arm, bottom)
-      ..lineTo(inset + radius, bottom)
-      ..quadraticBezierTo(inset, bottom, inset, bottom - radius)
-      ..lineTo(inset, bottom - arm);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ScannerScrimPainter extends CustomPainter {

@@ -2,7 +2,6 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
@@ -33,9 +32,8 @@ import '../src/features/migration/providers/ironwood_migration_announcement_prov
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
-import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
-import '../src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_complete_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -64,8 +62,6 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
-
-void _noop() {}
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -650,6 +646,19 @@ Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeIronwoodMigrationCompleteUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _ironwoodMobileHomeAccountState,
+    syncState: _homeSyncedState(
+      ironwoodBalance: BigInt.from(14_212_300_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
+    swapEnabled: false,
+    showStaticIronwoodCompletion: true,
+  );
+}
+
 Widget buildMobileHomeIronwoodMigrationInProgressUseCase(BuildContext context) {
   final accountUuid = _ironwoodMobileHomeAccountState.activeAccountUuid!;
   return _buildMobileHomeUseCase(
@@ -1001,96 +1010,6 @@ Widget buildMobileIronwoodMigrationRecoveryUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileIronwoodMigrationKeystoneSplitSignUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationKeystoneSignUseCase(batch: false);
-}
-
-Widget buildMobileIronwoodMigrationKeystoneBatchSignUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationKeystoneSignUseCase(batch: true);
-}
-
-Widget buildMobileIronwoodMigrationKeystoneLoadingUseCase(
-  BuildContext context,
-) {
-  return const ProviderScope(
-    child: _MobilePreviewFrame(
-      child: MobileIronwoodKeystoneSigningView(
-        state: MobileIronwoodKeystoneSigningViewState.loading,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        onNext: _noop,
-        onCancel: _noop,
-      ),
-    ),
-  );
-}
-
-Widget buildMobileIronwoodMigrationKeystoneReadyUseCase(BuildContext context) {
-  return const ProviderScope(
-    child: _MobilePreviewFrame(
-      child: MobileIronwoodKeystoneSigningView(
-        state: MobileIronwoodKeystoneSigningViewState.ready,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        onNext: _noop,
-        onCancel: _noop,
-        qrCode: KeystonePcztQrStage(
-          phase: KeystonePcztQrStagePhase.ready,
-          urParts: ['UR:ZCASH-SIGN-BATCH/PREVIEW-SPLIT'],
-          error: null,
-          size: 305,
-          scanOptimized: true,
-        ),
-      ),
-    ),
-  );
-}
-
-Widget buildMobileIronwoodMigrationKeystoneScannerUseCase(
-  BuildContext context,
-) {
-  return const ProviderScope(
-    child: _MobilePreviewFrame(
-      child: MobileIronwoodKeystoneSigningView(
-        state: MobileIronwoodKeystoneSigningViewState.scanner,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        camera: ColoredBox(color: Color(0xFF242424)),
-        onToggleFlashlight: _noop,
-        onPickImage: _noop,
-      ),
-    ),
-  );
-}
-
-Widget _buildMobileIronwoodMigrationKeystoneSignUseCase({required bool batch}) {
-  final request = rust_sync.KeystoneMigrationSigningRequest(
-    requestId: batch ? 'preview-batch-request' : 'preview-split-request',
-    messages: [
-      rust_sync.KeystoneMigrationMessage(
-        id: batch ? 'migration-1' : 'split-1',
-        redactedPczt: Uint8List.fromList([1]),
-      ),
-      rust_sync.KeystoneMigrationMessage(
-        id: batch ? 'migration-2' : 'split-2',
-        redactedPczt: Uint8List.fromList([2]),
-      ),
-    ],
-    signingBatchLimit: 50,
-  );
-  final screen = batch
-      ? MobileIronwoodMigrationKeystoneBatchSignScreen(
-          previewRequest: request,
-          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-BATCH'],
-        )
-      : MobileIronwoodMigrationKeystoneDenominationSignScreen(
-          previewRequest: request,
-          previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW-SPLIT'],
-        );
-  return ProviderScope(child: _MobilePreviewFrame(child: screen));
-}
-
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
@@ -1184,6 +1103,7 @@ Widget _buildMobileHomeUseCase({
   ),
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
+  bool showStaticIronwoodCompletion = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -1214,11 +1134,15 @@ Widget _buildMobileHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
+      ironwoodMigrationCompletionProvider.overrideWith((ref) async {
+        return const IronwoodMigrationCompletionState.hidden();
+      }),
     ],
     child: _MobilePreviewFrame(
       child: _MobileHomeHarness(
         openAccountsSheet: openAccountsSheet,
         showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+        showStaticIronwoodCompletion: showStaticIronwoodCompletion,
       ),
     ),
   );
@@ -1792,10 +1716,12 @@ class _MobileHomeHarness extends StatefulWidget {
   const _MobileHomeHarness({
     required this.openAccountsSheet,
     required this.showStaticIronwoodAnnouncement,
+    required this.showStaticIronwoodCompletion,
   });
 
   final bool openAccountsSheet;
   final bool showStaticIronwoodAnnouncement;
+  final bool showStaticIronwoodCompletion;
 
   @override
   State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
@@ -1869,7 +1795,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   @override
   Widget build(BuildContext context) {
     final router = Router.withConfig(config: _router);
-    if (!widget.showStaticIronwoodAnnouncement) return router;
+    if (!widget.showStaticIronwoodAnnouncement &&
+        !widget.showStaticIronwoodCompletion) {
+      return router;
+    }
 
     return Stack(
       fit: StackFit.expand,
@@ -1880,10 +1809,15 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
           child: Align(
             alignment: Alignment.bottomCenter,
             child: MobileModalCard(
-              child: MobileIronwoodMigrationAnnouncementSheet(
-                onStartMigration: () {},
-                onOpenReleaseNotes: () {},
-              ),
+              child: widget.showStaticIronwoodCompletion
+                  ? MobileIronwoodMigrationCompleteSheet(
+                      transferredZatoshi: BigInt.from(14_212_300_000),
+                      onDone: () {},
+                    )
+                  : MobileIronwoodMigrationAnnouncementSheet(
+                      onStartMigration: () {},
+                      onOpenReleaseNotes: () {},
+                    ),
             ),
           ),
         ),
@@ -2723,26 +2657,32 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 0,
         valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 12,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 1,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 960,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 2,
         valueZatoshi: BigInt.from(8_000_000_000),
         blockOffset: 960,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 3,
         valueZatoshi: BigInt.from(100_000_000),
         blockOffset: 960,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 4,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 960,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 5,
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 960,
       ),
@@ -2779,6 +2719,7 @@ _previewMobilePrivateMigrationManyPartsPlan() {
     scheduledTransfers: [
       for (var index = 0; index < values.length; index++)
         rust_sync.MigrationScheduledTransfer(
+          partIndex: index,
           valueZatoshi: BigInt.from(values[index]),
           blockOffset: index == 0 ? 12 : 960,
         ),

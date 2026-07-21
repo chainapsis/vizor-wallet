@@ -1095,9 +1095,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           completing || waitingForProofs || scannerControls == null
           ? null
           : () => unawaited(scannerControls.toggleTorch()),
-      onFocusCamera: completing || waitingForProofs || scannerControls == null
-          ? null
-          : () => unawaited(scannerControls.focusCenter()),
+      onShowRequestQr:
+          completing || waitingForProofs ? null : _showMobileRequestQrAgain,
       onCancel: completing ? null : _showMobileRequestQrAgain,
     );
   }

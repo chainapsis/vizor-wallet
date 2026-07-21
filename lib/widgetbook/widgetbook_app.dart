@@ -348,6 +348,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileHomeIronwoodAnnouncementUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Home - Migration complete',
+                      builder: buildMobileHomeIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'About Ironwood',
                       builder: buildMobileIronwoodMigrationIntroUseCase,
                     ),
@@ -388,30 +392,6 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Migration type - Recovery needed',
                       builder: buildMobileIronwoodMigrationRecoveryUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Keystone - Loading QR',
-                      builder:
-                          buildMobileIronwoodMigrationKeystoneLoadingUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Keystone - QR ready',
-                      builder: buildMobileIronwoodMigrationKeystoneReadyUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Keystone - Scan response',
-                      builder:
-                          buildMobileIronwoodMigrationKeystoneScannerUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Keystone - Sign split',
-                      builder:
-                          buildMobileIronwoodMigrationKeystoneSplitSignUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Keystone - Sign migration',
-                      builder:
-                          buildMobileIronwoodMigrationKeystoneBatchSignUseCase,
                     ),
                   ],
                 ),

@@ -362,7 +362,6 @@ class _MobileKeystoneSigningFrame extends StatelessWidget {
                 'Use your Keystone wallet to scan this transaction QR code. '
                 'Follow the steps on your device.',
             keyPrefix: 'mobile_keystone_signing_widgetbook',
-            scanCaption: 'Scan the QR code on your Keystone to finish sending',
             onCancel: _noop,
             preparePczt: _prepare,
             scannerBuilder: _buildScannerPreview,

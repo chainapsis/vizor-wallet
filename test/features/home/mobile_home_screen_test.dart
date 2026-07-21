@@ -100,6 +100,29 @@ class _FakeIronwoodAnnouncementStore
   }
 }
 
+class _FakeIronwoodCompletionStore implements IronwoodMigrationCompletionStore {
+  bool seen = false;
+  int markCount = 0;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async =>
+      seen;
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    markCount += 1;
+    seen = true;
+  }
+}
+
 class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
   @override
   SyncKeepAwakeSettings build() =>
@@ -157,6 +180,9 @@ Widget _app(
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  IronwoodMigrationCompletionState completion =
+      const IronwoodMigrationCompletionState.hidden(),
+  _FakeIronwoodCompletionStore? completionStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -216,6 +242,12 @@ Widget _app(
       ),
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
         _FakeIronwoodAnnouncementStore(),
+      ),
+      ironwoodMigrationCompletionProvider.overrideWith(
+        (ref) async => completion,
+      ),
+      ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+        completionStore ?? _FakeIronwoodCompletionStore(),
       ),
     ],
     child: MaterialApp.router(
@@ -738,6 +770,49 @@ void main() {
     );
     expect(startRect.top, greaterThanOrEqualTo(bodyRect.bottom));
     expect(announcementRect.top, greaterThanOrEqualTo(startRect.bottom));
+  });
+
+  testWidgets('shows and acknowledges the completed migration receipt', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final completionStore = _FakeIronwoodCompletionStore();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(14_212_300_000)),
+        completion: IronwoodMigrationCompletionState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          completionId: '14000000000_212300000',
+          transferredZatoshi: BigInt.from(14_212_300_000),
+        ),
+        completionStore: completionStore,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Transferred: 142.123 ZEC'), findsOneWidget);
+    expect(find.text('Your funds now\nin Ironwood'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(completionStore.markCount, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_done')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(completionStore.markCount, 1);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_sheet')),
+      findsNothing,
+    );
   });
 
   testWidgets('Ironwood home surfaces do not overflow at 320 by 568', (
