@@ -1,13 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 
+const _configuredFastTestnetMigration = bool.fromEnvironment(
+  kZcashFastTestnetMigrationEnvKey,
+  defaultValue: false,
+);
+
 void main() {
   test('regtest Ironwood activation is opt-in by default', () {
     expect(kZcashRegtestIronwoodActivationHeight, 0xFFFFFFFF);
   });
 
-  test('fast Testnet migration is opt-in by default', () {
-    expect(kZcashFastTestnetMigration, isFalse);
+  test('fast Testnet migration follows the build-time setting', () {
+    expect(kZcashFastTestnetMigration, _configuredFastTestnetMigration);
   });
 
   group('normalizeZcashNetworkName', () {
