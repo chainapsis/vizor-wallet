@@ -23,6 +23,20 @@ enum _CameraAccessStatus { active, requesting, denied, unavailable }
 // and no footer until the camera feed is live.
 const _mobileFormFactor = kAppFormFactor == AppFormFactor.mobile;
 
+/// Camera actions exposed by [KeystoneQrScannerCard] to full-screen shells.
+///
+/// The card keeps ownership of its scanner controller; parents receive only
+/// the two operations the mobile scanner chrome is allowed to invoke.
+class KeystoneQrScannerControls {
+  const KeystoneQrScannerControls({
+    required this.toggleTorch,
+    required this.focusCenter,
+  });
+
+  final Future<void> Function() toggleTorch;
+  final Future<void> Function() focusCenter;
+}
+
 class KeystoneQrScannerCard extends StatefulWidget {
   const KeystoneQrScannerCard({
     required this.expectedUrType,
@@ -35,6 +49,9 @@ class KeystoneQrScannerCard extends StatefulWidget {
     this.decodingLabel = 'Reading QR...',
     this.cardWidth,
     this.cameraHeight,
+    this.fullBleedMobile = false,
+    this.showScanOverlay = true,
+    this.onControlsReady,
     super.key,
   });
 
@@ -51,6 +68,17 @@ class KeystoneQrScannerCard extends StatefulWidget {
   /// the desktop pane dimensions.
   final double? cardWidth;
   final double? cameraHeight;
+
+  /// Lets a mobile flow provide its own full-screen chrome around the camera.
+  /// Desktop rendering is intentionally unchanged.
+  final bool fullBleedMobile;
+
+  /// Set to false when the parent owns the viewfinder treatment.
+  final bool showScanOverlay;
+
+  /// Exposes torch and center-focus actions without leaking the scanner
+  /// controller. A full-screen parent can wire these into its own chrome.
+  final ValueChanged<KeystoneQrScannerControls>? onControlsReady;
 
   @override
   State<KeystoneQrScannerCard> createState() => _KeystoneQrScannerCardState();
@@ -82,6 +110,47 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     _controller = _createController();
     _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
     _loadCameras();
+    _notifyControlsReady();
+  }
+
+  @override
+  void didUpdateWidget(covariant KeystoneQrScannerCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.onControlsReady != widget.onControlsReady) {
+      _notifyControlsReady();
+    }
+  }
+
+  void _notifyControlsReady() {
+    final callback = widget.onControlsReady;
+    if (callback == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || callback != widget.onControlsReady) return;
+      callback(
+        KeystoneQrScannerControls(
+          toggleTorch: _toggleTorch,
+          focusCenter: _focusCenter,
+        ),
+      );
+    });
+  }
+
+  Future<void> _toggleTorch() async {
+    if (!_controller.value.isRunning) return;
+    try {
+      await _controller.toggleTorch();
+    } catch (e, st) {
+      log('KeystoneQrScannerCard: torch toggle error: $e\n$st');
+    }
+  }
+
+  Future<void> _focusCenter() async {
+    if (!_controller.value.isRunning) return;
+    try {
+      await _controller.setFocusPoint(const Offset(0.5, 0.5));
+    } catch (e, st) {
+      log('KeystoneQrScannerCard: center focus error: $e\n$st');
+    }
   }
 
   MobileScannerController _createController({String? cameraId}) {
@@ -354,6 +423,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     final surfaceColor = _mobileFormFactor
         ? colors.background.ground
         : cardSurface;
+    final fullBleed = _mobileFormFactor && widget.fullBleedMobile;
     // Mobile draws a single full-bleed rounded camera card (Figma
     // `Keystone Scan`, radius 32, no inner frame and no camera-picker
     // footer — the back camera is the only camera). Desktop keeps the
@@ -361,8 +431,16 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     final outerPadding = _mobileFormFactor
         ? EdgeInsets.zero
         : const EdgeInsets.all(AppSpacing.xxs);
-    final outerRadius = _mobileFormFactor ? AppRadii.xLarge : _outerRadius;
-    final cameraRadius = _mobileFormFactor ? AppRadii.xLarge : _cameraRadius;
+    final outerRadius = fullBleed
+        ? 0.0
+        : _mobileFormFactor
+        ? AppRadii.xLarge
+        : _outerRadius;
+    final cameraRadius = fullBleed
+        ? 0.0
+        : _mobileFormFactor
+        ? AppRadii.xLarge
+        : _cameraRadius;
     final cardWidth =
         widget.cardWidth ?? (_mobileFormFactor ? _mobileCardWidth : _cardWidth);
     final cameraAreaWidth = _mobileFormFactor
@@ -455,7 +533,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                             ),
                                           ),
                                         ),
-                                      if (canScan) const _ScanOverlay(),
+                                      if (canScan && widget.showScanOverlay)
+                                        const _ScanOverlay(),
                                       if (canScan &&
                                           _scanProgress > 0 &&
                                           _scanProgress < 100 &&
@@ -575,7 +654,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                   final active =
                                       _cameraAccessStatus(scannerState) ==
                                       _CameraAccessStatus.active;
-                                  if (_mobileFormFactor && !active) {
+                                  if (fullBleed ||
+                                      (_mobileFormFactor && !active)) {
                                     return const SizedBox.shrink();
                                   }
                                   return DecoratedBox(

@@ -15,9 +15,11 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
@@ -129,17 +131,17 @@ const _accountState = AccountState(
 );
 
 AppBootstrapState _bootstrap() => AppBootstrapState(
-      initialLocation: '/home',
-      initialAccountState: _accountState,
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.dark,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
+  initialLocation: '/home',
+  initialAccountState: _accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 Widget _app(
   SyncState syncState, {
@@ -228,17 +230,16 @@ SyncState _syncedState({
   BigInt? ironwoodBalance,
   BigInt? transparentBalance,
   bool canShieldTransparentBalance = false,
-}) =>
-    SyncState(
-      accountUuid: 'account-1',
-      hasAccountScopedData: true,
-      percentage: 1.0,
-      displayPercentage: 1.0,
-      orchardBalance: orchardBalance ?? BigInt.zero,
-      ironwoodBalance: ironwoodBalance ?? BigInt.zero,
-      transparentBalance: transparentBalance ?? BigInt.zero,
-      canShieldTransparentBalance: canShieldTransparentBalance,
-    );
+}) => SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+  percentage: 1.0,
+  displayPercentage: 1.0,
+  orchardBalance: orchardBalance ?? BigInt.zero,
+  ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+  transparentBalance: transparentBalance ?? BigInt.zero,
+  canShieldTransparentBalance: canShieldTransparentBalance,
+);
 
 rust_sync.TransactionInfo _tx(int index) {
   final seconds = BigInt.from(1800000000 + index);
@@ -382,6 +383,9 @@ void main() {
   testWidgets('shows the Ironwood home card state without hiding actions', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       _app(
         _syncedState(orchardBalance: BigInt.from(211200000)),
@@ -411,18 +415,161 @@ void main() {
     );
     expect(find.text(r'$1,200.12'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('mobile_home_ironwood_background')),
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_background'),
+      ),
       findsOneWidget,
     );
     expect(find.text('Send'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNull,
+    );
     expect(find.text('Receive'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+          )
+          .height,
+      52,
+    );
 
     await tester.tap(find.text('Migration required'));
     await tester.pumpAndSettle();
     expect(find.text('migration intro route'), findsOneWidget);
   });
 
+  testWidgets('shows migrated balance and remaining amount while migrating', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([100000000, 200000000]),
+      preparedNoteCount: 2,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 1,
+      broadcastedTxCount: 2,
+      confirmedTxCount: 1,
+      totalCount: 2,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      maxPreparedNotesPerRun: 64,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'confirmed',
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: now,
+          scheduledHeight: 3000000,
+          status: 'confirmed',
+        ),
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'scheduled',
+          valueZatoshi: BigInt.from(200000000),
+          scheduledAtMs: now,
+          scheduledHeight: 3000144,
+          status: 'scheduled',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(200000000),
+          ironwoodBalance: BigInt.from(150000000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('1.50 ZEC', findRichText: true), findsOneWidget);
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('does not infer an exact remaining amount without broadcasts', (
+    tester,
+  ) async {
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
+      preparedNoteCount: 1,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 1,
+      broadcastedTxCount: 0,
+      confirmedTxCount: 0,
+      totalCount: 1,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      maxPreparedNotesPerRun: 64,
+      scheduledBroadcasts: const [],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          ironwoodBalance: BigInt.from(50000000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('1 ZEC still migrating'), findsNothing);
+  });
+
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       _app(
         _syncedState(orchardBalance: BigInt.from(14312000000)),
@@ -462,8 +609,108 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
       findsOneWidget,
     );
-    expect(find.text('Start migration'), findsOneWidget);
-    expect(find.text('Official release note'), findsOneWidget);
+    expect(find.text('Upgrade to Ironwood'), findsOneWidget);
+    expect(find.text('Official announcement'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_close_button')),
+      findsOneWidget,
+    );
+
+    final bodyRect = tester.getRect(
+      find.textContaining('Zcash’s latest shielded pool'),
+    );
+    final startRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_start_migration_button')),
+    );
+    final announcementRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_release_notes_button')),
+    );
+    expect(startRect.top, greaterThanOrEqualTo(bodyRect.bottom));
+    expect(announcementRect.top, greaterThanOrEqualTo(startRect.bottom));
+  });
+
+  testWidgets('Ironwood home surfaces do not overflow at 320 by 568', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.start(
+          network: 'main',
+          accountUuid: 'account-1',
+        ),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: rust_sync.MigrationStatus(
+            phase: kIronwoodMigrationReadyPhase,
+            activeRunId: null,
+            preparedNoteCount: 0,
+            targetValuesZatoshi: frb.Uint64List.fromList([]),
+            denominationConfirmationCount: 0,
+            denominationConfirmationTarget: 0,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 0,
+            pendingTxCount: 0,
+            broadcastedTxCount: 0,
+            confirmedTxCount: 0,
+            totalCount: 0,
+            signedChildPcztCount: 0,
+            pendingSplitStageCount: 0,
+            message: null,
+            canAbandon: false,
+            signingBatchLimit: 0,
+            scheduleMeanDelayBlocks: 144,
+            scheduleMaxDelayBlocks: 576,
+            maxPreparedNotesPerRun: 0,
+            scheduledBroadcasts: const [],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Upgrade to Ironwood'), findsOneWidget);
+    await tester.ensureVisible(find.text('Official announcement'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('announcement scrolls at 320 width with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.4;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+        home: Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            width: 288,
+            height: 536,
+            child: MobileIronwoodMigrationAnnouncementSheet(
+              onStartMigration: () {},
+              onOpenReleaseNotes: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Official announcement'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('uses compact balance precision for long decimals', (

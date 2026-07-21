@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +26,7 @@ import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
+import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
@@ -61,9 +63,10 @@ class MobileHomeScreen extends ConsumerWidget {
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final ironwoodMigrationCta =
         ref.watch(ironwoodHomeMigrationCtaProvider).value ??
-            const IronwoodHomeMigrationCtaState.hidden();
+        const IronwoodHomeMigrationCtaState.hidden();
 
-    final isImporting = activeAccountUuid != null &&
+    final isImporting =
+        activeAccountUuid != null &&
         !sync.hasAccountScopedData &&
         sync.failure == null;
 
@@ -367,7 +370,8 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             children: [
               _SyncKeepAwakePromptBullet(
                 iconName: AppIcons.lock,
-                text: 'The app locks after 1 minute of inactivity. Syncing '
+                text:
+                    'The app locks after 1 minute of inactivity. Syncing '
                     'continues behind the lock.',
                 textStyle: bodyStyle,
               ),
@@ -501,8 +505,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
 
   Future<void> _openPay() async {
-    final accountUuid =
-        ref.read(accountProvider).value?.activeAccountUuid?.trim();
+    final accountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid
+        ?.trim();
     if (accountUuid == null || accountUuid.isEmpty) return;
 
     final router = GoRouter.of(context);
@@ -588,12 +595,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final sync = widget.sync;
     final activeAccountUuid = widget.activeAccountUuid;
     final privacyModeEnabled = widget.privacyModeEnabled;
-    final shieldedBalance = sync.saplingBalance +
-        sync.orchardBalance +
-        sync.ironwoodBalance +
-        sync.saplingPendingBalance +
-        sync.orchardPendingBalance +
-        sync.ironwoodPendingBalance;
+    final migrationRequired =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
+    final migrationInProgress =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final shieldedBalance = migrationRequired
+        ? sync.orchardBalance + sync.orchardPendingBalance
+        : migrationInProgress
+        ? sync.ironwoodBalance
+        : sync.saplingBalance +
+              sync.orchardBalance +
+              sync.ironwoodBalance +
+              sync.saplingPendingBalance +
+              sync.orchardPendingBalance +
+              sync.ironwoodPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
     final hasBalance =
@@ -605,19 +620,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
     final shieldedFiatBalanceText =
         privacyModeEnabled && fiatBalanceText != null
-            ? fixedPrivacyMask()
-            : fiatBalanceText;
+        ? fixedPrivacyMask()
+        : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
-    final payIntroductionClicked =
-        ref.watch(payIntroductionBadgeClickedProvider).value;
+    final payIntroductionClicked = ref
+        .watch(payIntroductionBadgeClickedProvider)
+        .value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
-            const <SwapActivityRowItem>[];
+              const <SwapActivityRowItem>[];
     final entries = <ActivityEntry>[
       for (final tx in sync.recentTransactions)
         ActivityEntry(
@@ -691,6 +707,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   isShieldingBalance: _isShieldingBalance,
                   privacyModeEnabled: privacyModeEnabled,
                   ironwoodMigrationCta: widget.ironwoodMigrationCta,
+                  balanceDisabled: migrationRequired,
                   onTogglePrivacyMode: widget.onTogglePrivacyMode,
                   onIronwoodMigrationTap: () {
                     final target = switch (widget.ironwoodMigrationCta.mode) {
@@ -713,7 +730,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           key: const ValueKey('mobile_home_send'),
                           expand: true,
                           constrainContent: true,
-                          onPressed: () => context.push('/send'),
+                          onPressed: migrationRequired
+                              ? null
+                              : () => context.push('/send'),
                           leading: const _ButtonIcon(AppIcons.plane),
                           height: _mobileHomeActionButtonHeight,
                           child: const Text(
@@ -744,7 +763,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       // rides the swap engine, so a server-side swap disable
                       // hides the button and its callout, mirroring desktop's
                       // `onPay == null` gating.
-                      if (payEnabled) ...[
+                      if (payEnabled && !migrationRequired) ...[
                         const SizedBox(width: AppSpacing.xs),
                         DecoratedBox(
                           key: const ValueKey('mobile_home_pay_glow'),
@@ -801,9 +820,24 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                if (widget.ironwoodMigrationCta.visible) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  _MobileIronwoodMigrationBanner(
+                    inProgress: migrationInProgress,
+                    remainingText: _mobileIronwoodRemainingAmountText(
+                      widget.ironwoodMigrationCta.status,
+                    ),
+                    onTap: () {
+                      final target = migrationRequired
+                          ? '/migration/intro'
+                          : '/migration/private/status';
+                      context.push(target);
+                    },
+                  ),
+                ],
               ],
             ),
-            if (hasBalance && showPayIntroduction) ...[
+            if (hasBalance && showPayIntroduction && !migrationRequired) ...[
               Positioned(
                 right: 41,
                 top: 172,
@@ -907,6 +941,7 @@ class _BalanceCard extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
+    required this.balanceDisabled,
     required this.onTogglePrivacyMode,
     required this.onIronwoodMigrationTap,
     required this.onShieldBalancePressed,
@@ -921,6 +956,7 @@ class _BalanceCard extends StatelessWidget {
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final bool balanceDisabled;
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback onIronwoodMigrationTap;
   final VoidCallback onShieldBalancePressed;
@@ -936,12 +972,10 @@ class _BalanceCard extends StatelessWidget {
     final priceChangeColor = roundedPriceChangePct == null
         ? null
         : roundedPriceChangePct > 0
-            ? colors.text.positiveStrong
-            : roundedPriceChangePct < 0
-                ? colors.text.destructive
-                : cardText;
-    final showIronwoodMigrationState = ironwoodMigrationCta.visible;
-
+        ? colors.text.positiveStrong
+        : roundedPriceChangePct < 0
+        ? colors.text.destructive
+        : cardText;
     return Container(
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -966,19 +1000,6 @@ class _BalanceCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (showIronwoodMigrationState)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      width: 312,
-                      height: 200,
-                      child: Image.asset(
-                        'assets/illustrations/'
-                        'ironwood_migration_home_card_background.png',
-                        key: const ValueKey('mobile_home_ironwood_background'),
-                        fit: BoxFit.fill,
-                      ),
-                    ),
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.sm),
                     child: Column(
@@ -986,9 +1007,12 @@ class _BalanceCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            if (showIronwoodMigrationState)
-                              _MobileIronwoodMigrationPill(
-                                onTap: onIronwoodMigrationTap,
+                            if (ironwoodMigrationCta.mode ==
+                                IronwoodHomeMigrationCtaMode.start)
+                              Expanded(
+                                child: _MobileIronwoodMigrationPill(
+                                  onTap: onIronwoodMigrationTap,
+                                ),
                               )
                             else ...[
                               AppIcon(
@@ -996,7 +1020,7 @@ class _BalanceCard extends StatelessWidget {
                                 size: 20,
                                 color: cardText,
                               ),
-                              const SizedBox(width: AppSpacing.xs),
+                              const SizedBox(width: AppSpacing.s),
                               Expanded(
                                 child: Text(
                                   'Shielded balance',
@@ -1006,7 +1030,6 @@ class _BalanceCard extends StatelessWidget {
                                 ),
                               ),
                             ],
-                            if (showIronwoodMigrationState) const Spacer(),
                             _PrivacyEyeButton(
                               enabled: privacyModeEnabled,
                               onTap: onTogglePrivacyMode,
@@ -1026,7 +1049,9 @@ class _BalanceCard extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: _mobileHomeLabelMStyle.copyWith(
-                                    color: cardText.withValues(alpha: 0.8),
+                                    color: cardText.withValues(
+                                      alpha: balanceDisabled ? 0.4 : 0.8,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1055,13 +1080,17 @@ class _BalanceCard extends StatelessWidget {
                               TextSpan(
                                 text: '$balanceText ',
                                 style: _mobileHomeBalanceAmountStyle.copyWith(
-                                  color: cardText,
+                                  color: cardText.withValues(
+                                    alpha: balanceDisabled ? 0.4 : 1,
+                                  ),
                                 ),
                               ),
                               TextSpan(
                                 text: kZcashDefaultCurrencyTicker,
                                 style: _mobileHomeBalanceTickerStyle.copyWith(
-                                  color: cardText,
+                                  color: cardText.withValues(
+                                    alpha: balanceDisabled ? 0.4 : 1,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1090,6 +1119,199 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
+String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
+  if (status == null) return null;
+  final broadcasts = status.scheduledBroadcasts;
+  if (broadcasts.isEmpty) return null;
+  final remaining = broadcasts
+      .where((item) => item.status.toLowerCase() != 'confirmed')
+      .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
+  if (remaining == BigInt.zero) return null;
+  return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
+}
+
+class _MobileIronwoodMigrationBanner extends StatefulWidget {
+  const _MobileIronwoodMigrationBanner({
+    required this.inProgress,
+    required this.remainingText,
+    required this.onTap,
+  });
+
+  final bool inProgress;
+  final String? remainingText;
+  final VoidCallback onTap;
+
+  @override
+  State<_MobileIronwoodMigrationBanner> createState() =>
+      _MobileIronwoodMigrationBannerState();
+}
+
+class _MobileIronwoodMigrationBannerState
+    extends State<_MobileIronwoodMigrationBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileIronwoodMigrationBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.inProgress != widget.inProgress) _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final animate =
+        !widget.inProgress &&
+        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+    if (animate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      _controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final label = widget.inProgress
+        ? widget.remainingText == null
+              ? 'Migration in progress'
+              : '${widget.remainingText} ZEC still migrating'
+        : 'Migrate to Ironwood';
+    final contentColor = colors.text.homeCard;
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        key: const ValueKey('mobile_home_ironwood_migration_banner'),
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          height: 52,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: colors.background.homeCard,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
+            ),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned(
+                top: 0,
+                right: 0,
+                width: 312,
+                height: 200,
+                child: Image.asset(
+                  'assets/illustrations/'
+                  'ironwood_migration_home_card_background.png',
+                  key: const ValueKey(
+                    'mobile_home_ironwood_migration_banner_background',
+                  ),
+                  fit: BoxFit.fill,
+                  alignment: Alignment.topRight,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    if (widget.inProgress)
+                      AppIcon(
+                        AppIcons.loader,
+                        key: const ValueKey(
+                          'mobile_home_ironwood_migration_loader',
+                        ),
+                        size: 20,
+                        color: contentColor,
+                      )
+                    else
+                      AnimatedBuilder(
+                        animation: _controller,
+                        builder: (context, child) {
+                          final pulse = Curves.easeInOut.transform(
+                            _controller.value,
+                          );
+                          return DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF00A460).withValues(
+                                    alpha: lerpDouble(0.16, 0.34, pulse)!,
+                                  ),
+                                  blurRadius: lerpDouble(8, 20, pulse)!,
+                                  spreadRadius: lerpDouble(2, 7, pulse)!,
+                                ),
+                              ],
+                            ),
+                            child: child,
+                          );
+                        },
+                        child: const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFF00A460),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    SizedBox(
+                      width: widget.inProgress ? AppSpacing.xxs : AppSpacing.s,
+                    ),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: contentColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AppIcon(
+                      AppIcons.chevronForward,
+                      size: 20,
+                      color: contentColor,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MobileIronwoodMigrationPill extends StatelessWidget {
   const _MobileIronwoodMigrationPill({required this.onTap});
 
@@ -1104,28 +1326,22 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
+        child: SizedBox(
           key: const ValueKey('mobile_home_ironwood_migration_required_pill'),
           height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-          decoration: const ShapeDecoration(
-            color: Color(0xFF00A460),
-            shape: StadiumBorder(),
-          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(AppIcons.shieldKeyhole, size: 20, color: contentColor),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Migration required',
-                style: AppTypography.labelLarge.copyWith(
-                  color: contentColor,
-                  fontWeight: FontWeight.w400,
+              AppIcon(AppIcons.lock, size: 20, color: contentColor),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Text(
+                  'Migration required',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
                 ),
               ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(AppIcons.chevronForward, size: 20, color: contentColor),
             ],
           ),
         ),

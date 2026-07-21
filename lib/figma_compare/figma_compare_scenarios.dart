@@ -33,6 +33,13 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-analyzing',
+    description: 'Mobile Ironwood balance analysis screen',
+    builder: buildMobileIronwoodMigrationAnalyzingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'pay-recipient',
     description: 'Pay recipient selection with recent contacts',
     builder: buildPayRecipientUseCase,
@@ -64,6 +71,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description:
         'Mobile home balance card in Ironwood migration-required state',
     builder: buildMobileHomeIronwoodMigrationRequiredUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-migration-in-progress',
+    description: 'Mobile home while an Ironwood migration is running',
+    builder: buildMobileHomeIronwoodMigrationInProgressUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -186,9 +200,23 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-migrating-modal',
-    description: 'Mobile Ironwood migration batch detail modal',
-    builder: buildMobileIronwoodMigrationMigratingModalUseCase,
+    id: 'mobile-ironwood-migration-keystone-loading',
+    description: 'Mobile Ironwood Keystone request loading screen',
+    builder: buildMobileIronwoodMigrationKeystoneLoadingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-keystone-ready',
+    description: 'Mobile Ironwood Keystone request QR screen',
+    builder: buildMobileIronwoodMigrationKeystoneReadyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-keystone-scanner',
+    description: 'Mobile Ironwood Keystone signature scanner screen',
+    builder: buildMobileIronwoodMigrationKeystoneScannerUseCase,
     desktop: false,
     mobile: true,
   ),

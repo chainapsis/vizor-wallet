@@ -35,6 +35,14 @@ void main() {
     );
   });
 
+  test('capture configuration accepts a form-factor-specific default', () {
+    final configuration = FigmaCompareConfiguration.fromEnvironment(
+      defaultScenarioId: 'mobile-home-default',
+    );
+
+    expect(configuration.scenarioId, 'mobile-home-default');
+  });
+
   test(
     'configuration resolves only scenarios supported by its form factor',
     () {

@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, Divider, Scaffold;
+    show CircularProgressIndicator, Divider, Scaffold, VerticalDivider;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -24,7 +25,6 @@ import '../../providers/ironwood_migration_announcement_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../../widgets/ironwood_migration_shimmer_text.dart';
 import '../../widgets/mobile/mobile_migration_passcode_view.dart';
-import '../../widgets/mobile/mobile_migration_progress_indicator.dart';
 import '../ironwood_migration_flow_screen.dart';
 
 part 'mobile_ironwood_migration_status_widgets.dart';
@@ -43,7 +43,11 @@ enum MobileIronwoodMigrationStep {
   passcodeWhileSyncing,
 }
 
+enum MobileIronwoodMigrationReviewPreviewStage { analyzing, review }
+
 const _migrationProgress = 60 / 196;
+const _migrationAnalysisDuration = Duration(seconds: 3);
+const _migrationAnalysisPreviewProgress = 72 / 196;
 
 class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   const MobileIronwoodMigrationFlowScreen({
@@ -51,7 +55,8 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewData,
     this.previewPrivatePlan,
     this.previewStatus,
-    this.previewShowBatchModal = false,
+    this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
+    this.previewParts,
     super.key,
   });
 
@@ -59,7 +64,8 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.MigrationStatus? previewStatus;
-  final bool previewShowBatchModal;
+  final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
+  final List<MobileIronwoodMigrationPartPresentation>? previewParts;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -70,7 +76,8 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         data: preview,
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
-        previewShowBatchModal: previewShowBatchModal,
+        previewReviewStage: previewReviewStage,
+        previewParts: previewParts,
         status: previewStatus,
       );
     }
@@ -81,18 +88,17 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
-          data:
-              (data) =>
-                  data == null
-                      ? const _MobileMigrationRedirectHome()
-                      : _MobileIronwoodMigrationContent(
-                        step: step,
-                        data: data,
-                        previewMode: false,
-                        previewPrivatePlan: previewPrivatePlan,
-                        previewShowBatchModal: previewShowBatchModal,
-                        status: null,
-                      ),
+          data: (data) => data == null
+              ? const _MobileMigrationRedirectHome()
+              : _MobileIronwoodMigrationContent(
+                  step: step,
+                  data: data,
+                  previewMode: false,
+                  previewPrivatePlan: previewPrivatePlan,
+                  previewReviewStage: previewReviewStage,
+                  previewParts: previewParts,
+                  status: null,
+                ),
         );
   }
 }
@@ -103,7 +109,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.data,
     required this.previewMode,
     required this.previewPrivatePlan,
-    required this.previewShowBatchModal,
+    required this.previewReviewStage,
+    required this.previewParts,
     this.status,
   });
 
@@ -111,7 +118,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final IronwoodMigrationFlowData data;
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
-  final bool previewShowBatchModal;
+  final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
+  final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -119,30 +127,17 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     final isHardware =
         !previewMode &&
         (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
-    final shouldLoadPlan =
-        !previewMode &&
-        (step == MobileIronwoodMigrationStep.howItWorks ||
-            step == MobileIronwoodMigrationStep.options);
-    final plan =
-        previewPrivatePlan ??
-        (shouldLoadPlan
-            ? ref.watch(ironwoodMigrationPrivatePlanProvider).asData?.value
-            : null);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
-      MobileIronwoodMigrationStep.howItWorks => _MobileMigrationHowItWorks(
-        data: data,
-        plan: plan,
-        isHardware: isHardware,
-      ),
-      MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-        data: data,
-      ),
+      MobileIronwoodMigrationStep.howItWorks =>
+        const _MobileMigrationHowItWorks(),
+      MobileIronwoodMigrationStep.options => const _MobileMigrationOptions(),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
           previewPlan: previewPrivatePlan,
           isHardware: isHardware,
+          previewStage: previewReviewStage,
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
@@ -151,12 +146,14 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,
         status: status,
+        previewPlan: previewPrivatePlan,
+        isHardware: isHardware,
       ),
       MobileIronwoodMigrationStep.migrating => _MobileMigrationMigrating(
         data: data,
         status: status,
         previewPlan: previewPrivatePlan,
-        initialShowBatchModal: previewShowBatchModal,
+        previewParts: previewParts,
       ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
         const MobileMigrationPasscodeView(progress: 0.1),
@@ -193,21 +190,19 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           skipLoadingOnReload: true,
           loading: () => const _MobileMigrationLoadingScreen(),
           error: (_, _) => const _MobileMigrationRedirectHome(),
-          data:
-              (data) =>
-                  data == null
-                      ? const _MobileMigrationRedirectHome()
-                      : _MobileMigrationLiveStatus(
-                        data: data,
-                        status: status,
-                        isHardware:
-                            ref
-                                .watch(accountProvider)
-                                .value
-                                ?.activeAccount
-                                ?.isHardware ??
-                            false,
-                      ),
+          data: (data) => data == null
+              ? const _MobileMigrationRedirectHome()
+              : _MobileMigrationLiveStatus(
+                  data: data,
+                  status: status,
+                  isHardware:
+                      ref
+                          .watch(accountProvider)
+                          .value
+                          ?.activeAccount
+                          ?.isHardware ??
+                      false,
+                ),
         );
       },
     );
@@ -236,7 +231,11 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      return _MobileMigrationPreparing(data: data, status: status);
+      return _MobileMigrationPreparing(
+        data: data,
+        status: status,
+        isHardware: isHardware,
+      );
     }
     if (status.phase == kIronwoodMigrationReadyToMigratePhase && isHardware) {
       return _MobileKeystoneMigrationReady(data: data, status: status);
@@ -245,7 +244,7 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
       data: data,
       status: status,
       previewPlan: null,
-      initialShowBatchModal: false,
+      previewParts: null,
     );
   }
 }
@@ -301,9 +300,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      'Ironwood is the latest Zcash shielded pool. It’s '
-                      'the first formally verified pool with cutting edge '
-                      'cryptography.',
+                      'A new shielded pool for Zcash.',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
@@ -311,13 +308,14 @@ class _MobileMigrationIntro extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      'There will be a one-time mandatory upgrade from '
-                      'the legacy (orchard) shielded pool. You need to '
-                      'transition your ${data.amountText} ZEC from the old '
-                      'Orchard pool into the new Ironwood pool.',
+                      'Your ${data.amountText} ZEC is currently in Orchard. '
+                      'To keep using these funds for shielded payments, '
+                      "you'll need to move them to Ironwood. You'll review "
+                      'the migration plan before any funds move.',
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.muted,
+                        height: 24 / 16,
                       ),
                     ),
                   ],
@@ -339,15 +337,18 @@ class _MobileMigrationIntro extends StatelessWidget {
                     expand: true,
                     height: 50,
                     onPressed: () => _openIronwoodReleaseNotes(),
+                    leading: const AppIcon(AppIcons.link, size: 18),
                     child: const Text('Official release note'),
                   ),
                   const SizedBox(height: AppSpacing.s),
-                  _MobileMigrationPrimaryButton(
+                  AppButton(
                     key: const ValueKey(
                       'mobile_ironwood_intro_continue_button',
                     ),
-                    label: 'How the migration works',
+                    expand: true,
+                    height: 50,
                     onPressed: () => context.go('/migration/how-it-works'),
+                    child: const Text('Next'),
                   ),
                 ],
               ),
@@ -360,15 +361,7 @@ class _MobileMigrationIntro extends StatelessWidget {
 }
 
 class _MobileMigrationHowItWorks extends StatelessWidget {
-  const _MobileMigrationHowItWorks({
-    required this.data,
-    required this.plan,
-    required this.isHardware,
-  });
-
-  final IronwoodMigrationFlowData data;
-  final rust_sync.OrchardMigrationPrivatePlan? plan;
-  final bool isHardware;
+  const _MobileMigrationHowItWorks();
 
   @override
   Widget build(BuildContext context) {
@@ -382,30 +375,24 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
         label: 'Continue',
         onPressed: () => context.go('/migration/options'),
       ),
-      child: _MobileMigrationProcessCard(
-        amount: data.amountText,
-        plan: plan,
-        isHardware: isHardware,
-      ),
+      child: const _MobileMigrationProcessCard(),
     );
   }
 }
 
 class _MobileMigrationOptions extends StatelessWidget {
-  const _MobileMigrationOptions({required this.data});
-
-  final IronwoodMigrationFlowData data;
+  const _MobileMigrationOptions();
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/how-it-works'),
       topGap: 83,
-      title: 'Choose How to Migrate\nyour ${data.amountText} ZEC',
+      childGap: 24,
+      title: 'Choose How to Migrate',
       subtitle:
-          'Whichever option you choose, your funds will be safely deposited '
-          'into the Ironwood pool.',
+          'Choose between more privacy over time or a faster migration. '
+          'You can review the details before anything moves.',
       bottom: _MobileMigrationPrimaryButton(
         key: const ValueKey('mobile_ironwood_options_continue_button'),
         label: 'Continue',
@@ -415,9 +402,7 @@ class _MobileMigrationOptions extends StatelessWidget {
         children: [
           _MobileMigrationOptionCard(
             title: 'Private',
-            body:
-                'Sends independent parts over time windows. Slower, harder '
-                'to track.',
+            body: 'Sends independent parts over time',
             selected: true,
             icon: _MigrationChoiceIcon.private,
             recommended: true,
@@ -426,23 +411,96 @@ class _MobileMigrationOptions extends StatelessWidget {
           const _MobileMigrationOptionCard(
             key: ValueKey('mobile_ironwood_immediate_unavailable'),
             title: 'Immediate',
-            body:
-                'Sends now in one step. Amount and timing are easier to '
-                'associate.',
+            body: 'Sends now in one step.',
             selected: false,
             icon: _MigrationChoiceIcon.immediate,
             enabled: false,
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Speed vs. correlation exposure. No anchors, cohorts, PCZTs, '
-            'or action counts here.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.primary,
-            ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _MobileMigrationAnalyzing extends StatelessWidget {
+  const _MobileMigrationAnalyzing({required this.preview});
+
+  final bool preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final targetProgress = preview ? _migrationAnalysisPreviewProgress : 1.0;
+
+    return Scaffold(
+      key: const ValueKey('mobile_ironwood_migration_analyzing'),
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final progressTop = constraints.maxHeight * 0.255;
+            final messageTop = constraints.maxHeight * 0.46;
+            return Stack(
+              children: [
+                Positioned(
+                  top: progressTop,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0, end: targetProgress),
+                      duration: disableAnimations
+                          ? Duration.zero
+                          : _migrationAnalysisDuration,
+                      curve: Curves.easeInOutCubic,
+                      builder: (context, value, _) {
+                        return _MobileMigrationProgressTrack(
+                          key: const ValueKey(
+                            'mobile_ironwood_migration_analysis_progress',
+                          ),
+                          value: value,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: messageTop,
+                  left: 28,
+                  right: 28,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IronwoodMigrationShimmerText(
+                        key: const ValueKey(
+                          'mobile_ironwood_migration_analyzing_title',
+                        ),
+                        text: 'Analyzing your balance...',
+                        style: AppTypography.bodyLarge.copyWith(
+                          letterSpacing: 0,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        baseColor: colors.text.secondary,
+                        highlightColor: colors.text.accent,
+                      ),
+                      const SizedBox(height: AppSpacing.base),
+                      Text(
+                        'Vizor is working hard to find a perfect balance of '
+                        'safety, privacy, and speed for your migration',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                          height: 24 / 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -453,11 +511,13 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
     required this.data,
     required this.previewPlan,
     required this.isHardware,
+    required this.previewStage,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final bool isHardware;
+  final MobileIronwoodMigrationReviewPreviewStage previewStage;
 
   @override
   ConsumerState<_MobileMigrationPrivateReview> createState() =>
@@ -466,8 +526,35 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
 
 class _MobileMigrationPrivateReviewState
     extends ConsumerState<_MobileMigrationPrivateReview> {
+  Timer? _analysisTimer;
+  bool _analysisStarted = false;
+  bool _minimumAnalysisComplete = false;
   bool _isStarting = false;
   String? _startError;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_analysisStarted || widget.previewPlan != null) return;
+    _analysisStarted = true;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _migrationAnalysisDuration;
+    if (duration == Duration.zero) {
+      _minimumAnalysisComplete = true;
+      return;
+    }
+    _analysisTimer = Timer(duration, () {
+      if (!mounted) return;
+      setState(() => _minimumAnalysisComplete = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _analysisTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _startMigration(
     rust_sync.OrchardMigrationPrivatePlan plan,
@@ -534,10 +621,20 @@ class _MobileMigrationPrivateReviewState
   @override
   Widget build(BuildContext context) {
     final preview = widget.previewPlan;
-    final planAsync =
-        preview != null
-            ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
-            : ref.watch(ironwoodMigrationPrivatePlanProvider);
+    final planAsync = preview != null
+        ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
+        : ref.watch(ironwoodMigrationPrivatePlanProvider);
+    final showAnalyzing =
+        widget.previewStage ==
+            MobileIronwoodMigrationReviewPreviewStage.analyzing ||
+        (preview == null && (!_minimumAnalysisComplete || planAsync.isLoading));
+    if (showAnalyzing) {
+      return _MobileMigrationAnalyzing(
+        preview:
+            widget.previewStage ==
+            MobileIronwoodMigrationReviewPreviewStage.analyzing,
+      );
+    }
     final plan = planAsync.asData?.value;
     final keystonePlanSupported =
         !widget.isHardware ||
@@ -545,15 +642,8 @@ class _MobileMigrationPrivateReviewState
         _keystoneTwoRoundPlanSupported(plan);
     final canStart = plan != null && !_isStarting && keystonePlanSupported;
 
-    return _MobileMigrationReviewScaffold(
+    return _MobilePrivateReviewScaffold(
       onBack: () => context.go('/migration/options'),
-      icon: const AppIcon(
-        AppIcons.shieldKeyhole,
-        size: 32,
-        color: Color(0xFF00A460),
-      ),
-      title: 'Review Migration Plan',
-      amount: '${widget.data.amountText} ZEC',
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -580,37 +670,32 @@ class _MobileMigrationPrivateReviewState
           ],
           _MobileMigrationPrimaryButton(
             key: const ValueKey('mobile_ironwood_authorize_start_button'),
-            label:
-                _isStarting
-                    ? 'Preparing...'
-                    : widget.isHardware
-                    ? 'Continue with Keystone'
-                    : 'Continue',
-            onPressed:
-                canStart
-                    ? preview != null
-                        ? () {}
-                        : () => _startMigration(plan)
-                    : null,
+            label: _isStarting
+                ? 'Preparing...'
+                : widget.isHardware
+                ? 'Continue with Keystone'
+                : 'Start migration',
+            onPressed: canStart
+                ? preview != null
+                      ? () {}
+                      : () => _startMigration(plan)
+                : null,
           ),
         ],
       ),
       child: planAsync.when(
         skipLoadingOnReload: true,
-        loading:
-            () => const SizedBox(
-              height: 240,
-              child: Center(child: CircularProgressIndicator()),
-            ),
+        loading: () => const SizedBox(
+          height: 240,
+          child: Center(child: CircularProgressIndicator()),
+        ),
         error: (_, _) => const _MobileMigrationUnavailable(),
-        data:
-            (plan) =>
-                plan == null
-                    ? const _MobileMigrationUnavailable()
-                    : _MobilePrivatePlan(
-                      plan: plan,
-                      arrivalLabel: _migrationArrivalLabel(plan),
-                    ),
+        data: (plan) => plan == null
+            ? const _MobileMigrationUnavailable()
+            : _MobilePrivatePlan(
+                plan: plan,
+                arrivalLabel: _migrationArrivalLabel(plan),
+              ),
       ),
     );
   }
@@ -789,128 +874,113 @@ class _MobileMigrationFastReview extends StatelessWidget {
 }
 
 class _MobileMigrationPreparing extends StatelessWidget {
-  const _MobileMigrationPreparing({required this.data, this.status});
+  const _MobileMigrationPreparing({
+    required this.data,
+    required this.isHardware,
+    this.status,
+    this.previewPlan,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool isHardware;
   final rust_sync.MigrationStatus? status;
+  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final confirmationsReady =
-        status != null &&
-        status!.denominationConfirmationTarget > 0 &&
-        status!.denominationConfirmationCount >=
-            status!.denominationConfirmationTarget;
+    final partCount = _mobilePlannedBatchCount(
+      status,
+      previewPlan: previewPlan,
+    );
+    final confirmationCount = status?.denominationConfirmationCount ?? 0;
+    final confirmationTarget = status?.denominationConfirmationTarget ?? 0;
+    final parts = _mobilePreparingPartPresentations(
+      status: status,
+      previewPlan: previewPlan,
+    );
+    final totalAmount = _mobileMigrationTotalAmountText(
+      status,
+      previewPlan: previewPlan,
+      fallback: data.amountText,
+    );
+    final compact = MediaQuery.sizeOf(context).height < 650;
     return _MobileMigrationStatusScaffold(
       key: const ValueKey('mobile_ironwood_migration_status_preparing'),
       data: data,
-      topNavSpacing: AppSpacing.s,
+      showAccountNav: false,
       contentPadding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        18,
-        AppSpacing.sm,
         0,
+        AppSpacing.sm,
+        AppSpacing.s,
       ),
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        child: Column(
-          children: [
-            SizedBox(
-              height: 220,
-              child: Stack(
-                alignment: Alignment.center,
+      child: Column(
+        children: [
+          SizedBox(height: compact ? 28 : 112),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: Column(
                 children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _PreparingParticlesPainter(
-                        color: colors.border.subtle,
-                      ),
+                  Text(
+                    'Migration in Progress',
+                    key: const ValueKey(
+                      'mobile_ironwood_migration_preparing_title',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.accent,
                     ),
                   ),
-                  Positioned(
-                    top: 97,
-                    child: Text(
-                      '${data.amountText} ZEC',
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: colors.text.accent,
-                      ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'This will take 10-20 min',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
                     ),
                   ),
-                  Positioned(
-                    top: 131,
-                    child: IronwoodMigrationShimmerText(
-                      key: const ValueKey(
-                        'mobile_ironwood_migration_preparing_title',
+                  const SizedBox(height: 46),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Migration $partCount notes',
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
-                      text: 'Preparing...',
-                      style: AppTypography.displayLarge.copyWith(
-                        letterSpacing: 0,
+                      Text(
+                        '$totalAmount ZEC',
+                        style: AppTypography.bodyLarge.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      baseColor: colors.text.secondary,
-                      highlightColor: colors.text.accent,
-                    ),
+                    ],
                   ),
-                  Positioned(
-                    top: 183,
-                    left: AppSpacing.sm,
-                    right: AppSpacing.sm,
-                    child: Text(
-                      status == null
-                          ? 'This will take around 10-20m'
-                          : migrationPreparationProgressLabel(status!),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
+                  const SizedBox(height: AppSpacing.xs),
+                  _MobileMigrationStatusRail(parts: parts),
+                  const SizedBox(height: AppSpacing.base),
+                  _MobileIronwoodWaitingStatusCard(
+                    partCount: partCount,
+                    confirmedConfirmations: confirmationCount,
+                    confirmationTarget: confirmationTarget,
+                    requiresKeystoneApproval: isHardware,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.base),
-            SizedBox(
-              height: 240,
-              child: _MobileStatusCard(
-                child: Center(
-                  child: SizedBox(
-                    height: 140,
-                    child: Column(
-                      children: [
-                        const _PreparingStatusRow(
-                          state: _PreparingStatusState.complete,
-                          label: 'Transaction splits submitted',
-                          showConnector: true,
-                        ),
-                        _PreparingStatusRow(
-                          state:
-                              confirmationsReady
-                                  ? _PreparingStatusState.complete
-                                  : _PreparingStatusState.waiting,
-                          label: 'Waiting for confirmation...',
-                          showConnector: true,
-                        ),
-                        const _PreparingStatusRow(
-                          state: _PreparingStatusState.pending,
-                          label: 'Migration schedule',
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.base),
-            const _MigrationCanLeaveMessage(),
-            const SizedBox(height: AppSpacing.base),
-            _MobileStatusBackHomeButton(
-              key: const ValueKey('mobile_ironwood_status_back_home_button'),
-              onPressed: () => context.go('/home'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _MobileStatusBackHomeButton(
+            label: 'Go home',
+            onPressed: () => context.go('/home'),
+          ),
+        ],
       ),
     );
   }
@@ -929,10 +999,9 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final batchCount = _mobilePlannedBatchCount(status);
-    final transactionLabel =
-        batchCount == 1
-            ? '1 migration transaction'
-            : '$batchCount migration transactions';
+    final transactionLabel = batchCount == 1
+        ? '1 migration transaction'
+        : '$batchCount migration transactions';
     return _MobileMigrationStatusScaffold(
       key: const ValueKey('mobile_ironwood_keystone_ready'),
       data: data,
@@ -1014,9 +1083,8 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                     'mobile_ironwood_keystone_batch_sign_button',
                   ),
                   expand: true,
-                  onPressed:
-                      () =>
-                          context.go('/migration/private/keystone/batch/sign'),
+                  onPressed: () =>
+                      context.go('/migration/private/keystone/batch/sign'),
                   child: const Text('Continue'),
                 ),
                 const SizedBox(height: AppSpacing.xs),
@@ -1035,14 +1103,14 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
 class _MobileMigrationMigrating extends StatefulWidget {
   const _MobileMigrationMigrating({
     required this.data,
-    required this.initialShowBatchModal,
     required this.previewPlan,
+    required this.previewParts,
     this.status,
   });
 
   final IronwoodMigrationFlowData data;
-  final bool initialShowBatchModal;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
+  final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -1051,140 +1119,104 @@ class _MobileMigrationMigrating extends StatefulWidget {
 }
 
 class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
-  late bool _showBatchModal = widget.initialShowBatchModal;
-
   @override
   Widget build(BuildContext context) {
     final status = widget.status;
-    final plannedBatchCount = _mobilePlannedBatchCount(
+    final colors = context.colors;
+    final totalAmount = _mobileMigrationTotalAmountText(
       status,
       previewPlan: widget.previewPlan,
-    );
-    final progress = _mobileMigrationProgress(
-      status,
-      previewPlan: widget.previewPlan,
-    );
-    final currentBatch = _mobileCurrentBatch(
-      status,
-      previewPlan: widget.previewPlan,
-    );
-    final arrivalLabel = _mobileStatusArrivalLabel(
-      status,
-      previewPlan: widget.previewPlan,
-    );
-    final timingLabel = _mobileStatusTimingLabel(status);
-    final remainingAmount = _mobileRemainingAmountText(
-      status,
       fallback: widget.data.amountText,
     );
-    return Stack(
-      children: [
-        _MobileMigrationStatusScaffold(
-          key: const ValueKey('mobile_ironwood_migration_status_migrating'),
-          data: widget.data,
-          topNavSpacing: AppSpacing.s,
-          contentPadding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            18,
-            AppSpacing.sm,
-            0,
+    final parts = _mobileMigrationPartPresentations(
+      status: status,
+      previewPlan: widget.previewPlan,
+      explicitParts: widget.previewParts,
+    );
+    final partCount = parts.isNotEmpty
+        ? parts.length
+        : _mobilePlannedBatchCount(status, previewPlan: widget.previewPlan);
+    final completion = status == null
+        ? widget.previewPlan == null
+              ? 'Schedule pending'
+              : _migrationArrivalLabel(widget.previewPlan!)
+        : migrationCompletionTimingLabel(status);
+    final spendable = _mobileSpendableAmountText(status);
+    final compact = MediaQuery.sizeOf(context).height < 650;
+    return _MobileMigrationStatusScaffold(
+      key: const ValueKey('mobile_ironwood_migration_status_migrating'),
+      data: widget.data,
+      showAccountNav: false,
+      contentPadding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        0,
+        AppSpacing.sm,
+        AppSpacing.s,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: compact ? 20 : 36),
+          Text(
+            'Migration in Progress',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineLarge.copyWith(
+              color: colors.text.accent,
+            ),
           ),
-          child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
-            child: Column(
-              children: [
-                MobileMigrationProgressHero(
-                  amount: remainingAmount,
-                  progress: progress,
+          const SizedBox(height: 48),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Migration $partCount notes',
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.base),
-                SizedBox(
-                  height: 240,
-                  child: _MobileStatusCard(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        SizedBox(
-                          height: 32,
-                          child: _StatusTextRow(
-                            label: plannedMigrationBatchesLabel(
-                              plannedBatchCount,
-                            ),
-                            value: 'View',
-                            emphasizeLabel: true,
-                            trailing: const AppIcon(
-                              AppIcons.chevronForward,
-                              size: 20,
-                            ),
-                            onTap: () => setState(() => _showBatchModal = true),
-                          ),
-                        ),
-                        const Divider(height: 1, thickness: 1),
-                        SizedBox(
-                          height: 63,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              SizedBox(
-                                height: 25,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: AppSpacing.xxs,
-                                  ),
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Current batch',
-                                      style: AppTypography.labelLarge.copyWith(
-                                        color: context.colors.text.accent,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              SizedBox(
-                                height: 30,
-                                child: _CurrentBatchRow(batch: currentBatch),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1, thickness: 1),
-                        SizedBox(
-                          height: 32,
-                          child: _StatusTextRow(
-                            label: timingLabel,
-                            value: arrivalLabel,
-                            largeValue: true,
-                          ),
-                        ),
-                      ],
+              ),
+              Text(
+                '$totalAmount ZEC',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Expanded(
+            child: parts.isEmpty
+                ? Center(
+                    child: Text(
+                      'Migration parts will appear as transactions are '
+                      'prepared.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.base),
-                const _MigrationCanLeaveMessage(),
-                const SizedBox(height: AppSpacing.base),
-                _MobileStatusBackHomeButton(
-                  key: const ValueKey(
-                    'mobile_ironwood_status_back_home_button',
-                  ),
-                  onPressed: () => context.go('/home'),
-                ),
-              ],
-            ),
+                  )
+                : _MobileIronwoodActiveStatus(parts: parts),
           ),
-        ),
-        if (_showBatchModal)
-          Positioned.fill(
-            child: _MigrationBatchModal(
-              status: status,
-              previewPlan: widget.previewPlan,
-              onClose: () => setState(() => _showBatchModal = false),
-            ),
+          const SizedBox(height: AppSpacing.s),
+          _ReviewRow(label: 'Est. completion', value: completion),
+          const SizedBox(height: AppSpacing.xs),
+          _ReviewRow(
+            label: 'Currently spendable balance',
+            value: spendable == '-' ? spendable : '$spendable ZEC',
           ),
-      ],
+          const SizedBox(height: AppSpacing.md),
+          const _MigrationCanLeaveMessage(),
+          const SizedBox(height: AppSpacing.md),
+          _MobileStatusBackHomeButton(
+            key: const ValueKey('mobile_ironwood_status_back_home_button'),
+            label: 'Go home',
+            onPressed: () => context.go('/home'),
+          ),
+        ],
+      ),
     );
   }
 }

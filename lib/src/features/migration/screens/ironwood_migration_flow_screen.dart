@@ -44,6 +44,7 @@ import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../providers/ironwood_migration_coordinator_provider.dart';
 import '../services/ironwood_migration_service.dart';
+import '../widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 
 enum IronwoodMigrationFlowStep { prepare, intro, howItWorks, options, review }
 
@@ -595,6 +596,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Timer? _proofPollTimer;
   rust_sync.KeystoneMigrationProofStatus? _proofStatus;
   List<rust_sync.KeystoneSignedMigrationMessage>? _pendingSignedMessages;
+  KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
   bool _requestCompleted = false;
 
@@ -636,6 +638,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _error = null;
       _proofStatus = null;
       _pendingSignedMessages = null;
+      _scannerControls = null;
       _decoding = false;
     });
 
@@ -965,240 +968,146 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Widget _buildMobileScreen(BuildContext context) {
-    final colors = context.colors;
     final completing = _stage == _KeystoneDenominationSignStage.completing;
+    final round = widget.step == _KeystonePrivateSignStep.denominations
+        ? MobileIronwoodKeystoneSigningRound.denominationSplit
+        : MobileIronwoodKeystoneSigningRound.migrationBatch;
     return PopScope<void>(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !completing) unawaited(_returnToReview());
       },
-      child: Scaffold(
+      child: KeyedSubtree(
         key: const ValueKey('mobile_ironwood_keystone_sign_screen'),
-        backgroundColor: colors.background.window,
-        body: SafeArea(
-          child: Column(
-            children: [
-              MobileTopNav.back(
-                title: 'Keystone migration',
-                onBack: () {
-                  if (!completing) unawaited(_returnToReview());
-                },
-              ),
-              Expanded(
-                child: switch (_stage) {
-                  _KeystoneDenominationSignStage.preparing => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                  _KeystoneDenominationSignStage.showQr =>
-                    _buildMobileQrContent(context),
-                  _KeystoneDenominationSignStage.scanning ||
-                  _KeystoneDenominationSignStage.waitingForProofs ||
-                  _KeystoneDenominationSignStage.completing =>
-                    _buildMobileScannerContent(context),
-                  _KeystoneDenominationSignStage.failed =>
-                    _buildMobileFailureContent(context),
-                },
-              ),
-            ],
+        child: switch (_stage) {
+          _KeystoneDenominationSignStage.preparing =>
+            MobileIronwoodKeystoneSigningView(
+              state: MobileIronwoodKeystoneSigningViewState.loading,
+              round: round,
+              onCancel: () => unawaited(_returnToReview()),
+            ),
+          _KeystoneDenominationSignStage.showQr => _buildMobileQrContent(
+            context,
+            round: round,
           ),
-        ),
+          _KeystoneDenominationSignStage.scanning ||
+          _KeystoneDenominationSignStage.waitingForProofs ||
+          _KeystoneDenominationSignStage.completing =>
+            _buildMobileScannerContent(context, round: round),
+          _KeystoneDenominationSignStage.failed => Scaffold(
+            backgroundColor: context.colors.background.window,
+            body: SafeArea(
+              child: Column(
+                children: [
+                  MobileTopNav.back(
+                    title: 'Keystone migration',
+                    onBack: () => unawaited(_returnToReview()),
+                  ),
+                  Expanded(child: _buildMobileFailureContent(context)),
+                ],
+              ),
+            ),
+          ),
+        },
       ),
     );
   }
 
-  Widget _buildMobileQrContent(BuildContext context) {
-    final colors = context.colors;
-    final request = _request;
-    final proofStatusText = _proofStatusText;
+  Widget _buildMobileQrContent(
+    BuildContext context, {
+    required MobileIronwoodKeystoneSigningRound round,
+  }) {
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final availableWidth = math.max(
-          160.0,
-          constraints.maxWidth - AppSpacing.sm * 2,
-        );
-        final availableHeight = math.max(160.0, constraints.maxHeight - 300);
-        final qrSize = math
-            .min(320.0, math.min(availableWidth, availableHeight))
-            .clamp(160.0, 320.0)
-            .toDouble();
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.s,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          child: Column(
-            children: [
-              Text(
-                'Step 1/2',
-                style: AppTypography.headlineLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                widget.step.qrTitle,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                widget.step.qrBody,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: KeystonePcztQrStage(
-                    key: const ValueKey('mobile_ironwood_keystone_qr'),
-                    phase: KeystonePcztQrStagePhase.ready,
-                    urParts: _urParts,
-                    error: _error,
-                    size: qrSize,
-                    scanOptimized: true,
-                  ),
-                ),
-              ),
-              Text(
-                request == null
-                    ? 'Preparing migration request'
-                    : '${request.messages.length} ${widget.step.messageUnit}'
-                          '${request.messages.length == 1 ? '' : 's'} to sign',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              if (proofStatusText != null) ...[
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  proofStatusText,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: proofFailed
-                        ? colors.text.destructive
-                        : colors.text.secondary,
-                  ),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.s),
-              AppButton(
-                key: const ValueKey(
-                  'mobile_ironwood_keystone_scan_signature_button',
-                ),
-                expand: true,
-                onPressed: _urParts.isEmpty || proofFailed
-                    ? null
-                    : () {
-                        setState(() {
-                          _stage = _KeystoneDenominationSignStage.scanning;
-                          _error = null;
-                          _decoding = false;
-                        });
-                      },
-                trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                child: const Text('Next step'),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              AppButton(
-                expand: true,
-                variant: AppButtonVariant.ghost,
-                onPressed: () => unawaited(_returnToReview()),
-                child: const Text('Cancel'),
-              ),
-            ],
-          ),
-        );
-      },
+    return MobileIronwoodKeystoneSigningView(
+      state: MobileIronwoodKeystoneSigningViewState.ready,
+      round: round,
+      qrCode: KeystonePcztQrStage(
+        key: const ValueKey('mobile_ironwood_keystone_qr'),
+        phase: KeystonePcztQrStagePhase.ready,
+        urParts: _urParts,
+        error: _error,
+        size: 305,
+        scanOptimized: true,
+      ),
+      onNext: _urParts.isEmpty || proofFailed
+          ? null
+          : () {
+              setState(() {
+                _stage = _KeystoneDenominationSignStage.scanning;
+                _error = null;
+                _decoding = false;
+              });
+            },
+      onCancel: () => unawaited(_returnToReview()),
     );
   }
 
-  Widget _buildMobileScannerContent(BuildContext context) {
-    final colors = context.colors;
+  Widget _buildMobileScannerContent(
+    BuildContext context, {
+    required MobileIronwoodKeystoneSigningRound round,
+  }) {
     final completing = _stage == _KeystoneDenominationSignStage.completing;
     final waitingForProofs =
         _stage == _KeystoneDenominationSignStage.waitingForProofs;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = math.max(
-          160.0,
-          constraints.maxWidth - AppSpacing.sm * 2,
-        );
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.s,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          children: [
-            Text(
-              'Step 2/2',
-              textAlign: TextAlign.center,
-              style: AppTypography.headlineLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              completing
-                  ? 'Applying the Keystone signature.'
-                  : waitingForProofs
-                  ? 'Signature captured. Waiting for local proofs.'
-                  : 'Scan the signed migration QR shown on Keystone.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            KeystoneQrScannerCard(
-              expectedUrType: _keystoneMigrationSignBatchResultUrType,
-              decoding: _decoding || waitingForProofs,
-              error: _error,
-              onProgress: (_) {
-                if (_pendingSignedMessages != null) return;
-                if (_error == null || !mounted) return;
-                setState(() {
-                  _error = null;
-                });
-              },
-              onDecodeError: _handleDecodeError,
-              onComplete: (result) => unawaited(_handleScanComplete(result)),
-              decodingLabel: waitingForProofs
-                  ? 'Preparing local proofs...'
-                  : 'Reading signature...',
-              unavailableMessage:
-                  'Allow camera access to scan the signed Keystone QR.',
-              cardWidth: cardWidth,
-              cameraHeight: 320,
-            ),
-            const SizedBox(height: AppSpacing.s),
-            AppButton(
-              expand: true,
-              variant: AppButtonVariant.ghost,
-              onPressed: completing || waitingForProofs
-                  ? null
-                  : () {
-                      setState(() {
-                        _stage = _KeystoneDenominationSignStage.showQr;
-                        _error = null;
-                        _decoding = false;
-                      });
-                    },
-              child: const Text('Back to QR'),
-            ),
-          ],
-        );
-      },
+    final scannerControls = _scannerControls;
+    return MobileIronwoodKeystoneSigningView(
+      state: MobileIronwoodKeystoneSigningViewState.scanner,
+      round: round,
+      camera: LayoutBuilder(
+        builder: (context, constraints) => KeystoneQrScannerCard(
+          expectedUrType: _keystoneMigrationSignBatchResultUrType,
+          decoding: _decoding || waitingForProofs,
+          error: null,
+          onProgress: (_) {
+            if (_pendingSignedMessages != null) return;
+            if (_error == null || !mounted) return;
+            setState(() => _error = null);
+          },
+          onDecodeError: _handleDecodeError,
+          onComplete: (result) => unawaited(_handleScanComplete(result)),
+          decodingLabel: waitingForProofs
+              ? 'Preparing local proofs...'
+              : 'Reading signature...',
+          unavailableMessage:
+              'Allow camera access to scan the signed Keystone QR.',
+          cardWidth: constraints.maxWidth,
+          cameraHeight: constraints.maxHeight,
+          fullBleedMobile: true,
+          showScanOverlay: false,
+          onControlsReady: _handleScannerControlsReady,
+        ),
+      ),
+      scannerMessage:
+          _error ??
+          (completing
+              ? 'Applying the Keystone signature.'
+              : waitingForProofs
+              ? 'Signature captured. Waiting for local proofs.'
+              : null),
+      onToggleFlashlight:
+          completing || waitingForProofs || scannerControls == null
+          ? null
+          : () => unawaited(scannerControls.toggleTorch()),
+      onFocusCamera: completing || waitingForProofs || scannerControls == null
+          ? null
+          : () => unawaited(scannerControls.focusCenter()),
+      onCancel: completing ? null : _showMobileRequestQrAgain,
     );
+  }
+
+  void _handleScannerControlsReady(KeystoneQrScannerControls controls) {
+    if (!mounted || identical(_scannerControls, controls)) return;
+    setState(() => _scannerControls = controls);
+  }
+
+  void _showMobileRequestQrAgain() {
+    if (!mounted) return;
+    setState(() {
+      _stage = _KeystoneDenominationSignStage.showQr;
+      _error = null;
+      _decoding = false;
+      _scannerControls = null;
+    });
   }
 
   Widget _buildMobileFailureContent(BuildContext context) {

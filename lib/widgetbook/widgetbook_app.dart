@@ -339,6 +339,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileHomeIronwoodMigrationRequiredUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Home - Migration in progress',
+                      builder:
+                          buildMobileHomeIronwoodMigrationInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Home - Announcement modal',
                       builder: buildMobileHomeIronwoodAnnouncementUseCase,
                     ),
@@ -359,6 +364,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Migration type - Analyzing',
+                      builder: buildMobileIronwoodMigrationAnalyzingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration type - Fast',
                       builder: buildMobileIronwoodMigrationFastReviewUseCase,
                     ),
@@ -371,14 +380,23 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationMigratingUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Migration type - Migrating modal',
-                      builder:
-                          buildMobileIronwoodMigrationMigratingModalUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'Passcode while syncing',
                       builder:
                           buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Loading QR',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - QR ready',
+                      builder: buildMobileIronwoodMigrationKeystoneReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Scan response',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneScannerUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Keystone - Sign split',

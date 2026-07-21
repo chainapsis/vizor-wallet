@@ -36,6 +36,9 @@ void runFigmaCompareCaptureTest({
     final configuration = FigmaCompareConfiguration.fromEnvironment(
       defaultLogicalSize: defaultLogicalSize,
       defaultPixelRatio: defaultPixelRatio,
+      defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
+          ? 'mobile-home-default'
+          : 'pay-recipient',
     );
     final scenario = configuration.resolveScenario(expectedFormFactor);
     final output = File(
@@ -82,10 +85,15 @@ void runFigmaCompareCaptureTest({
     // intentionally looping home-screen illustration motion.
     await tester.pump(const Duration(milliseconds: 400));
 
-    await expectLater(
-      find.byKey(captureBoundaryKey),
-      matchesGoldenFile(output.uri),
-    );
+    if (configuration.outputPath.isEmpty) {
+      expect(find.byKey(captureBoundaryKey), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } else {
+      await expectLater(
+        find.byKey(captureBoundaryKey),
+        matchesGoldenFile(output.uri),
+      );
+    }
     debugDefaultTargetPlatformOverride = null;
     debugPrint(
       'Figma comparison widget: ${output.path} '
@@ -129,6 +137,7 @@ Future<void> _loadAppFonts() async {
       'assets/fonts/GeistMono-Medium.ttf',
     ],
     'Young Serif': ['assets/fonts/YoungSerif-Regular.ttf'],
+    'MaterialIcons': ['fonts/MaterialIcons-Regular.otf'],
   };
 
   for (final entry in fonts.entries) {
