@@ -464,6 +464,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileAccountsRemoveAccountUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Remove account during migration',
+                      builder:
+                          buildMobileAccountsActiveMigrationRemoveAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Many accounts',
                       builder: buildMobileAccountsManyUseCase,
                     ),

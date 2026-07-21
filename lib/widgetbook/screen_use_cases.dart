@@ -587,6 +587,17 @@ Widget buildMobileAccountsRemoveAccountUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileAccountsActiveMigrationRemoveAccountUseCase(
+  BuildContext context,
+) {
+  return _buildMobileAccountsUseCase(
+    _accountsDesignState,
+    initialSheetAccountUuid: 'preview-account-2',
+    initialSheet: MobileAccountsInitialSheet.removeAccount,
+    migrationStatus: _previewMobileMigrationStatus(),
+  );
+}
+
 Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
 }
@@ -1308,6 +1319,7 @@ Widget _buildMobileAccountsUseCase(
   AccountState accountState, {
   String? initialSheetAccountUuid,
   MobileAccountsInitialSheet? initialSheet,
+  rust_sync.MigrationStatus? migrationStatus,
 }) {
   return ProviderScope(
     overrides: [
@@ -1318,6 +1330,12 @@ Widget _buildMobileAccountsUseCase(
       ),
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(accountState.activeAccountUuid),
+      ),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _PreviewMigrationCoordinator(
+          accountUuid: initialSheetAccountUuid,
+          status: migrationStatus,
+        ),
       ),
     ],
     child: Center(
