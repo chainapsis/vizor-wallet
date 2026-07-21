@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -609,11 +611,544 @@ void main() {
     expect(status, expected);
     expect(seenRequestId, 'request-1');
   });
+
+  test('mobile existing run without manifest uses legacy credential', () async {
+    String? seenPassword;
+    String? seenSalt;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'legacy-run'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: _backgroundCredentialStore(),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'session-password',
+      isMobile: () => true,
+      isHardwareAccount: (_) => true,
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            seenPassword = password;
+            seenSalt = saltBase64;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+
+    expect(seenPassword, 'session-password');
+    expect(seenSalt, isNotEmpty);
+    expect(
+      await service.backgroundCredentialStore.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      ),
+      isNull,
+    );
+  });
+
+  test(
+    'mobile new run stores random credential, binds, and schedules',
+    () async {
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-1'),
+      ];
+      final store = _backgroundCredentialStore();
+      var scheduledCount = 0;
+      String? seenPassword;
+      String? seenSalt;
+      String? expectedRunIdDuringStart;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+        isMobile: () => true,
+        isMacOS: () => false,
+        scheduleBackgroundMigration: () async {
+          scheduledCount++;
+          return true;
+        },
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async {
+              expectedRunIdDuringStart = (await store.read(
+                network: network,
+                accountUuid: accountUuid,
+              ))?.expectedRunId;
+              seenPassword = password;
+              seenSalt = saltBase64;
+              return _migrationResult();
+            },
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      final manifest = await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      expect(expectedRunIdDuringStart, isNull);
+      expect(seenPassword, List.filled(32, '01').join());
+      expect(seenSalt, 'AQEBAQEBAQEBAQEBAQEBAQ==');
+      expect(manifest?.expectedRunId, 'run-1');
+      expect(scheduledCount, 1);
+    },
+  );
+
+  test(
+    'mobile status cannot delete a provisional credential while start is in flight',
+    () async {
+      final store = _backgroundCredentialStore();
+      final startEntered = Completer<void>();
+      final releaseStart = Completer<void>();
+      var runCreated = false;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            _migrationStatus(activeRunId: runCreated ? 'run-1' : null),
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
+        isMobile: () => true,
+        isMacOS: () => false,
+        scheduleBackgroundMigration: () async => true,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async {
+              startEntered.complete();
+              await releaseStart.future;
+              runCreated = true;
+              return _migrationResult();
+            },
+      );
+
+      final startFuture = service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+      await startEntered.future;
+
+      final statusFuture = service.status(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      releaseStart.complete();
+
+      await startFuture;
+      await statusFuture;
+      expect(
+        (await store.read(
+          network: 'test',
+          accountUuid: 'account-1',
+        ))?.expectedRunId,
+        'run-1',
+      );
+    },
+  );
+
+  test(
+    'mobile status retries a failed native schedule for a bound manifest',
+    () async {
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var scheduleAttempts = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        scheduleBackgroundMigration: () async => ++scheduleAttempts > 1,
+      );
+
+      await service.status(network: 'test', accountUuid: 'account-1');
+      await service.status(network: 'test', accountUuid: 'account-1');
+      await service.status(network: 'test', accountUuid: 'account-1');
+
+      expect(scheduleAttempts, 2);
+    },
+  );
+
+  test(
+    'mobile failed start with no active run deletes provisional manifest',
+    () async {
+      final store = _backgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
+        isMobile: () => true,
+        isMacOS: () => false,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) => Future.error(StateError('start failed')),
+      );
+
+      await expectLater(
+        service.startSoftwarePrivateMigration(
+          accountUuid: 'account-1',
+          approvedSchedule: const [],
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNull,
+      );
+    },
+  );
+
+  test('mobile ambiguous failed start retains, binds, and schedules', () async {
+    final statuses = <rust_sync.MigrationStatus>[
+      _migrationStatus(),
+      _migrationStatus(activeRunId: 'run-after-error'),
+    ];
+    final store = _backgroundCredentialStore();
+    var scheduledCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(statuses.removeAt(0));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => throw StateError('session password used'),
+      getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
+      isMobile: () => true,
+      isMacOS: () => false,
+      scheduleBackgroundMigration: () async {
+        scheduledCount++;
+        return true;
+      },
+      startSoftwareMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required approvedSchedule,
+            required mnemonicBytes,
+            required password,
+            required saltBase64,
+          }) => Future.error(StateError('ambiguous failure')),
+    );
+
+    await expectLater(
+      service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      (await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      ))?.expectedRunId,
+      'run-after-error',
+    );
+    expect(scheduledCount, 1);
+  });
+
+  test('mobile active run id mismatch fails closed before Rust call', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    await store.bindExpectedRunId(
+      network: 'test',
+      accountUuid: 'account-1',
+      expectedRunId: 'run-1',
+    );
+    var rustCalled = false;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-2'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isHardwareAccount: (_) => true,
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) {
+            rustCalled = true;
+            return Future.value(_migrationResult());
+          },
+    );
+
+    await expectLater(
+      service.continueSoftwarePrivateMigration(accountUuid: 'account-1'),
+      throwsA(isA<IronwoodMigrationBackgroundCredentialRunMismatchException>()),
+    );
+    expect(rustCalled, isFalse);
+  });
+
+  test(
+    'Keystone prepare creates no credential and completions share rules',
+    () async {
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(),
+        _migrationStatus(activeRunId: 'keystone-run'),
+        _migrationStatus(activeRunId: 'keystone-run'),
+        _migrationStatus(activeRunId: 'keystone-run'),
+      ];
+      final store = _backgroundCredentialStore();
+      final credentials = <String>[];
+      var scheduledCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        isMobile: () => true,
+        scheduleBackgroundMigration: () async {
+          scheduledCount++;
+          return true;
+        },
+        prepareKeystoneDenominationMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _keystoneSigningRequest(),
+        completeKeystoneDenominationMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              credentials.add('$password:$saltBase64');
+              return _migrationResult();
+            },
+        prepareKeystoneBatchMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _keystoneSigningRequest(),
+        completeKeystoneBatchMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) async {
+              credentials.add('$password:$saltBase64');
+              return _migrationResult();
+            },
+      );
+
+      await service.prepareKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+      );
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNull,
+      );
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: [_signedMigrationMessage()],
+        approvedSchedule: const [],
+      );
+      await service.prepareKeystoneBatchPrivateMigration(
+        accountUuid: 'account-1',
+      );
+      await service.completeKeystoneBatchPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-2',
+        signedMessages: [_signedMigrationMessage()],
+      );
+
+      expect(credentials, hasLength(2));
+      expect(credentials[1], credentials[0]);
+      expect(scheduledCount, 1);
+    },
+  );
+
+  test(
+    'terminal mobile status deletes credential and cancels scheduler',
+    () async {
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var cancelledCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(phase: 'complete'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        cancelBackgroundMigration: () async => cancelledCount++,
+      );
+
+      await service.status(network: 'test', accountUuid: 'account-1');
+
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNull,
+      );
+      expect(cancelledCount, 1);
+    },
+  );
 }
 
-rust_sync.MigrationStatus _migrationStatus() {
+rust_sync.MigrationStatus _migrationStatus({
+  String phase = 'ready_to_prepare',
+  String? activeRunId,
+}) {
   return rust_sync.MigrationStatus(
-    phase: 'ready_to_prepare',
+    phase: phase,
+    activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List.fromList([]),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
@@ -633,6 +1168,18 @@ rust_sync.MigrationStatus _migrationStatus() {
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
+  );
+}
+
+RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
+  networkName: 'test',
+  lightwalletdUrl: 'https://lwd.example:443',
+);
+
+IronwoodMigrationBackgroundCredentialStore _backgroundCredentialStore() {
+  return IronwoodMigrationBackgroundCredentialStore.testing(
+    storage: const FlutterSecureStorage(),
+    randomBytes: (length) => Uint8List.fromList(List<int>.filled(length, 1)),
   );
 }
 

@@ -12,6 +12,7 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     FreshInstallKeychainCleaner.runIfNeeded()
+    BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
@@ -26,6 +27,54 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+
+    let backgroundMigrationChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/background_migration",
+      binaryMessenger: messenger
+    )
+    backgroundMigrationChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "schedule":
+        result(BackgroundMigrationManager.shared.schedule())
+      case "cancel":
+        BackgroundMigrationManager.shared.cancelIfNoRunnableWork()
+        result(true)
+      case "revokeAccount":
+        guard let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood migration account scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        BackgroundMigrationManager.shared.revokeAccount(
+          network: network,
+          accountUuid: accountUuid,
+          completion: { success in result(success) }
+        )
+      case "revokeAll":
+        BackgroundMigrationManager.shared.revokeAll {
+          success in result(success)
+        }
+      #if DEBUG || targetEnvironment(simulator)
+      case "runOnceForTesting":
+        DispatchQueue.global(qos: .utility).async {
+          let outcome = BackgroundMigrationManager.shared.runOnceForTesting()
+          DispatchQueue.main.async {
+            result(self.backgroundMigrationResult(outcome))
+          }
+        }
+      #endif
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
 
     // MethodChannel for background sync control
     let methodChannel = FlutterMethodChannel(
@@ -222,6 +271,35 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+
+  private func backgroundMigrationResult(
+    _ outcome: BackgroundMigrationRunOutcome
+  ) -> [String: Any] {
+    switch outcome {
+    case .noWork:
+      return ["outcome": "no_work"]
+    case .waiting(let nextHeight, let observedHeight):
+      return [
+        "outcome": "waiting",
+        "nextHeight": nextHeight as Any,
+        "observedHeight": observedHeight,
+      ]
+    case .advanced(let nextHeight, let observedHeight):
+      return [
+        "outcome": "advanced",
+        "nextHeight": nextHeight as Any,
+        "observedHeight": observedHeight,
+      ]
+    case .complete:
+      return ["outcome": "complete"]
+    case .needsUserAction:
+      return ["outcome": "needs_user_action"]
+    case .failed:
+      return ["outcome": "failed"]
+    case .cancelled:
+      return ["outcome": "cancelled"]
+    }
   }
 
   private func performSendSuccessHaptic() -> Bool {

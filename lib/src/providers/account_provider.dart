@@ -14,6 +14,7 @@ import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
+import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
@@ -496,6 +497,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     ];
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
+    await IronwoodMigrationBackgroundLifecycle.instance.revokeAccount(
+      network: network,
+      accountUuid: uuid,
+    );
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
     final rustDeleteWatch = Stopwatch()..start();
     await rust_wallet.deleteAccount(
@@ -595,6 +600,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // NOTHING deleted: wiping storage now would orphan the still-existing DB
     // file (a retry would generate a fresh name and never find the old one).
     final dbPath = await _getDbPath();
+
+    // Stop any native migration wake and revoke its dedicated credential
+    // before deleting the DB it is authorized to mutate.
+    await IronwoodMigrationBackgroundLifecycle.instance.revokeAll();
 
     // Best-effort internally; tolerates per-account failures.
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
