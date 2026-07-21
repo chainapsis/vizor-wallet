@@ -630,6 +630,52 @@ void main() {
     expect(find.text('Confirming...'), findsOneWidget);
   });
 
+  testWidgets(
+    'private ready-to-migrate status does not treat prepared denominations as completed transfers',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [1_000_000_000, 200_000_000],
+            totalCount: 2,
+            denominationConfirmationCount: 3,
+            denominationConfirmationTarget: 3,
+            denominationSplitCompletedCount: 2,
+            denominationSplitTotalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                1_000_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+              _migrationPart(
+                1,
+                200_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Note split'), findsNothing);
+      expect(find.text('Completed'), findsNothing);
+      expect(find.text('Preparing'), findsNWidgets(2));
+      expect(find.text('Currently Spendable Balance'), findsOneWidget);
+      expect(find.text('0 ZEC'), findsOneWidget);
+      expect(find.text('~2 mins'), findsNothing);
+    },
+  );
+
   testWidgets('private status keeps scheduled batches on the transfer UI', (
     tester,
   ) async {
