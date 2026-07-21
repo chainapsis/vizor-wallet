@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -54,6 +57,68 @@ class SharedPreferencesIronwoodMigrationAnnouncementStore
       ironwoodMigrationAnnouncementSeenStorageKey(
         network: network,
         accountUuid: accountUuid,
+      ),
+      true,
+    );
+  }
+}
+
+String ironwoodMigrationCompletionSeenStorageKey({
+  required String network,
+  required String accountUuid,
+  required String completionId,
+}) {
+  return 'zcash_ironwood_migration_completion_seen_'
+      '${network}_${accountUuid}_$completionId';
+}
+
+abstract class IronwoodMigrationCompletionStore {
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  });
+
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  });
+}
+
+class SharedPreferencesIronwoodMigrationCompletionStore
+    implements IronwoodMigrationCompletionStore {
+  const SharedPreferencesIronwoodMigrationCompletionStore();
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(
+          ironwoodMigrationCompletionSeenStorageKey(
+            network: network,
+            accountUuid: accountUuid,
+            completionId: completionId,
+          ),
+        ) ??
+        false;
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(
+      ironwoodMigrationCompletionSeenStorageKey(
+        network: network,
+        accountUuid: accountUuid,
+        completionId: completionId,
       ),
       true,
     );
@@ -416,10 +481,46 @@ class IronwoodPostMigrationState {
       mode == IronwoodPostMigrationMode.inProgress;
 }
 
+class IronwoodMigrationCompletionState {
+  const IronwoodMigrationCompletionState._({
+    required this.visible,
+    this.network,
+    this.accountUuid,
+    this.completionId,
+    this.transferredZatoshi,
+  });
+
+  const IronwoodMigrationCompletionState.hidden() : this._(visible: false);
+
+  const IronwoodMigrationCompletionState.visible({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+    required BigInt transferredZatoshi,
+  }) : this._(
+          visible: true,
+          network: network,
+          accountUuid: accountUuid,
+          completionId: completionId,
+          transferredZatoshi: transferredZatoshi,
+        );
+
+  final bool visible;
+  final String? network;
+  final String? accountUuid;
+  final String? completionId;
+  final BigInt? transferredZatoshi;
+}
+
 final ironwoodMigrationAnnouncementStoreProvider =
     Provider<IronwoodMigrationAnnouncementStore>(
-      (_) => const SharedPreferencesIronwoodMigrationAnnouncementStore(),
-    );
+  (_) => const SharedPreferencesIronwoodMigrationAnnouncementStore(),
+);
+
+final ironwoodMigrationCompletionStoreProvider =
+    Provider<IronwoodMigrationCompletionStore>(
+  (_) => const SharedPreferencesIronwoodMigrationCompletionStore(),
+);
 
 final orchardMigrationStatusGetterProvider =
     Provider<OrchardMigrationStatusGetter>(
@@ -534,9 +635,73 @@ final ironwoodMigrationStatusProvider =
 
 final ironwoodPostMigrationStateProvider =
     FutureProvider<IronwoodPostMigrationState>((ref) async {
-      final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      return _loadIronwoodPostMigrationState(ref, inputs);
-    });
+  final inputs = ref.watch(ironwoodMigrationInputsProvider);
+  return _loadIronwoodPostMigrationState(ref, inputs);
+});
+
+final ironwoodMigrationCompletionProvider =
+    FutureProvider<IronwoodMigrationCompletionState>((ref) async {
+  final inputs = ref.watch(ironwoodMigrationInputsProvider);
+  if (!inputs.ironwoodActiveAtTip ||
+      inputs.accountUuid == null ||
+      !inputs.hasAccountScopedData ||
+      inputs.isSyncing ||
+      inputs.isBackgroundMode ||
+      !inputs.isSyncComplete ||
+      inputs.hasSyncFailure ||
+      !inputs.hasIronwoodSpendableFunds) {
+    return const IronwoodMigrationCompletionState.hidden();
+  }
+
+  final postMigration = await ref.watch(
+    ironwoodPostMigrationStateProvider.future,
+  );
+  final status = postMigration.status;
+  if (postMigration.mode != IronwoodPostMigrationMode.complete ||
+      status == null ||
+      status.phase != kIronwoodMigrationCompletePhase ||
+      status.targetValuesZatoshi.isEmpty) {
+    return const IronwoodMigrationCompletionState.hidden();
+  }
+
+  final transferredZatoshi = status.targetValuesZatoshi.fold<BigInt>(
+    BigInt.zero,
+    (sum, value) => sum + value,
+  );
+  if (transferredZatoshi <= BigInt.zero) {
+    return const IronwoodMigrationCompletionState.hidden();
+  }
+
+  final accountUuid = inputs.accountUuid!;
+  final completionId = _ironwoodMigrationCompletionId(status);
+  final store = ref.watch(ironwoodMigrationCompletionStoreProvider);
+  if (await store.isSeen(
+    network: inputs.network,
+    accountUuid: accountUuid,
+    completionId: completionId,
+  )) {
+    return const IronwoodMigrationCompletionState.hidden();
+  }
+
+  return IronwoodMigrationCompletionState.visible(
+    network: inputs.network,
+    accountUuid: accountUuid,
+    completionId: completionId,
+    transferredZatoshi: transferredZatoshi,
+  );
+});
+
+String _ironwoodMigrationCompletionId(rust_sync.MigrationStatus status) {
+  final partIds = status.parts
+      .where((part) => part.txidHex?.isNotEmpty ?? false)
+      .map((part) => '${part.partIndex}:${part.txidHex}')
+      .toList()
+    ..sort();
+  final material = partIds.isNotEmpty
+      ? 'transactions:${partIds.join('|')}'
+      : 'values:${status.targetValuesZatoshi.join('|')}';
+  return sha256.convert(utf8.encode(material)).toString();
+}
 
 final ironwoodMigrationAnnouncementProvider =
     FutureProvider<IronwoodMigrationAnnouncementState>((ref) async {

@@ -707,6 +707,15 @@ pub(crate) fn migration_status(
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    if orchard_pending == 0 && !orchard_migratable {
+        if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
+            let mut status = status_for_run(&conn, run)?;
+            // Completed runs are receipts, not resumable work. Preserve their
+            // target values for completion UI without exposing an active run.
+            status.active_run_id = None;
+            return Ok(status);
+        }
+    }
     let phase = if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
     } else if orchard_migratable {
@@ -2854,6 +2863,42 @@ fn active_run(
     )
     .optional()
     .map_err(|e| format!("Read active migration run: {e}"))
+}
+
+fn latest_completed_run(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<Option<ActiveRun>, String> {
+    if !table_exists(conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+
+    conn.query_row(
+        &format!(
+            "SELECT run_id, phase, target_values_json, last_error
+             FROM {RUNS_TABLE}
+             WHERE account_uuid = ?1
+               AND network = ?2
+               AND phase = ?3
+             ORDER BY updated_at_ms DESC, created_at_ms DESC
+             LIMIT 1"
+        ),
+        params![account_uuid, network_name(network), PHASE_COMPLETE],
+        |row| {
+            let target_values_json: String = row.get(2)?;
+            let target_values_zatoshi =
+                serde_json::from_str::<Vec<u64>>(&target_values_json).unwrap_or_default();
+            Ok(ActiveRun {
+                run_id: row.get(0)?,
+                phase: row.get(1)?,
+                target_values_zatoshi,
+                last_error: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Read latest completed migration run: {e}"))
 }
 
 fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Result<(), String> {
@@ -5263,6 +5308,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.phase, PHASE_COMPLETE);
+        assert_eq!(status.active_run_id, None);
+        assert_eq!(status.target_values_zatoshi, vec![ZATOSHIS_PER_ZEC]);
+        assert_eq!(status.total_count, 1);
     }
 
     #[test]
@@ -5385,6 +5433,7 @@ mod tests {
             nullifier_hex: None,
         }];
         let approved_schedule = vec![MigrationScheduleEntry {
+            part_index: Some(0),
             value_zatoshi: 100_000_000,
             block_offset: 1,
         }];
@@ -5461,6 +5510,7 @@ mod tests {
             nullifier_hex: None,
         }];
         let approved_schedule = vec![MigrationScheduleEntry {
+            part_index: Some(0),
             value_zatoshi: 100_000_000,
             block_offset: 1,
         }];

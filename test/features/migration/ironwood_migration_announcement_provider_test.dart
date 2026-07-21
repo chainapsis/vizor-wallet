@@ -247,6 +247,101 @@ void main() {
   );
 
   test(
+    'completion modal waits for a settled recorded migration receipt',
+    () async {
+      final completionStore = _FakeCompletionStore();
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        migrationTargetValues: const [14_000_000_000, 212_300_000],
+        migrationPartTxids: const ['tx-a', 'tx-b'],
+        completionStore: completionStore,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(14_212_300_000),
+          spendableBalance: BigInt.from(14_212_300_000),
+          totalBalance: BigInt.from(14_212_300_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodMigrationCompletionProvider.future,
+      );
+
+      expect(state.visible, isTrue);
+      expect(state.network, 'main');
+      expect(state.accountUuid, _accountUuid);
+      expect(state.transferredZatoshi, BigInt.from(14_212_300_000));
+      expect(state.completionId, hasLength(64));
+    },
+  );
+
+  test(
+    'completion modal ignores an imported Ironwood balance without a receipt',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(100_000_000),
+          spendableBalance: BigInt.from(100_000_000),
+          totalBalance: BigInt.from(100_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodMigrationCompletionProvider.future,
+      );
+
+      expect(state.visible, isFalse);
+    },
+  );
+
+  test(
+    'completion modal stays hidden after that receipt was acknowledged',
+    () async {
+      final completionStore = _FakeCompletionStore(seesEverything: true);
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        migrationTargetValues: const [14_000_000_000, 212_300_000],
+        completionStore: completionStore,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(14_212_300_000),
+          spendableBalance: BigInt.from(14_212_300_000),
+          totalBalance: BigInt.from(14_212_300_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodMigrationCompletionProvider.future,
+      );
+
+      expect(state.visible, isFalse);
+    },
+  );
+
+  test(
     'post migration state falls back to Ironwood balance when status fails',
     () async {
       final container = _container(
@@ -727,7 +822,10 @@ ProviderContainer _container({
   String? migrationActiveRunId,
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
   _FakeAnnouncementStore? announcementStore,
+  _FakeCompletionStore? completionStore,
   List<String>? migrationStatusCalls,
+  List<int> migrationTargetValues = const [],
+  List<String> migrationPartTxids = const [],
   SyncState? syncState,
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
@@ -762,6 +860,9 @@ ProviderContainer _container({
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
         announcementStore ?? _FakeAnnouncementStore(),
       ),
+      ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+        completionStore ?? _FakeCompletionStore(),
+      ),
       walletDbPathGetterProvider.overrideWithValue(() async => _dbPath),
       orchardMigrationStatusGetterProvider.overrideWithValue(
         getMigrationStatus ??
@@ -774,6 +875,8 @@ ProviderContainer _container({
               return _migrationStatus(
                 migrationPhase,
                 activeRunId: migrationActiveRunId,
+                targetValues: migrationTargetValues,
+                partTxids: migrationPartTxids,
               );
             },
       ),
@@ -890,11 +993,13 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
 rust_sync.MigrationStatus _migrationStatus(
   String phase, {
   String? activeRunId,
+  List<int> targetValues = const [],
+  List<String> partTxids = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
     activeRunId: activeRunId,
-    targetValuesZatoshi: frb.Uint64List(0),
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValues),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
     denominationConfirmationTarget: 0,
@@ -912,7 +1017,17 @@ rust_sync.MigrationStatus _migrationStatus(
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      for (var index = 0; index < partTxids.length; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          valueZatoshi: BigInt.from(targetValues[index]),
+          state: rust_sync.MigrationPartState.completed,
+          txidHex: partTxids[index],
+          confirmationCount: 10,
+          confirmationTarget: 10,
+        ),
+    ],
   );
 }
 
@@ -953,4 +1068,39 @@ class _FakeAnnouncementStore implements IronwoodMigrationAnnouncementStore {
   }
 }
 
+class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
+  _FakeCompletionStore({Set<String>? seenKeys, this.seesEverything = false})
+      : _seenKeys = seenKeys ?? <String>{};
+
+  final Set<String> _seenKeys;
+  final bool seesEverything;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    return seesEverything || _seenKeys.contains(
+      _completionSeenKey(network, accountUuid, completionId),
+    );
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    _seenKeys.add(_completionSeenKey(network, accountUuid, completionId));
+  }
+}
+
 String _seenKey(String network, String accountUuid) => '$network|$accountUuid';
+
+String _completionSeenKey(
+  String network,
+  String accountUuid,
+  String completionId,
+) =>
+    '$network|$accountUuid|$completionId';
