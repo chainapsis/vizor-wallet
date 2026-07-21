@@ -106,23 +106,33 @@ use super::{
 #[derive(Clone, Copy)]
 struct MigrationBroadcastPolicy<'a> {
     max_per_step: Option<usize>,
+    max_proofs_per_step: Option<usize>,
+    defer_broadcast_after_proving: bool,
     cancel: Option<&'a AtomicBool>,
 }
 
 impl MigrationBroadcastPolicy<'_> {
     const FOREGROUND: Self = Self {
         max_per_step: None,
+        max_proofs_per_step: None,
+        defer_broadcast_after_proving: false,
         cancel: None,
     };
 
     const ONE_FOREGROUND: Self = Self {
         max_per_step: Some(1),
+        max_proofs_per_step: None,
+        defer_broadcast_after_proving: false,
         cancel: None,
     };
 
     fn background(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
         MigrationBroadcastPolicy {
             max_per_step: Some(1),
+            // Proof generation is the expensive local step. Bound it
+            // independently and let a later wake perform network broadcast.
+            max_proofs_per_step: Some(1),
+            defer_broadcast_after_proving: true,
             cancel: Some(cancel),
         }
     }
@@ -134,6 +144,14 @@ impl MigrationBroadcastPolicy<'_> {
 
     fn limit(self, total: usize) -> usize {
         self.max_per_step.unwrap_or(total).min(total)
+    }
+
+    fn proof_limit(self, total: usize) -> usize {
+        self.max_proofs_per_step.unwrap_or(total).min(total)
+    }
+
+    fn should_defer_broadcast(self, proofs_created: usize) -> bool {
+        self.defer_broadcast_after_proving && proofs_created > 0
     }
 }
 
@@ -908,8 +926,9 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                         &run.run_id,
                         pending_password.as_slice(),
                         pending_salt_base64,
+                        MigrationBroadcastPolicy::FOREGROUND,
                     )?;
-                    if !finalized {
+                    if finalized == 0 {
                         let result = prepared_notes_not_spendable_result(
                             run.target_values_zatoshi.len() as u32,
                             run.target_values_zatoshi.iter().sum(),
@@ -1120,8 +1139,9 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             &run.run_id,
             pending_password.as_slice(),
             pending_salt_base64,
+            policy,
         )?;
-        if !finalized {
+        if finalized == 0 || policy.should_defer_broadcast(finalized) {
             return Ok(prepared_notes_not_spendable_result(
                 run.target_values_zatoshi.len() as u32,
                 run.target_values_zatoshi.iter().sum(),
@@ -2135,14 +2155,24 @@ async fn advance_staged_denomination_run(
                 cancelled_migration_result(run),
             ));
         }
-        if finalize_ready_denomination_stages(
+        let finalized = finalize_ready_denomination_stages(
             db_path,
             network,
             account_uuid,
             &run.run_id,
             pending_password,
             pending_salt_base64,
-        )? {
+            policy,
+        )?;
+        if finalized > 0 {
+            if policy.should_defer_broadcast(finalized) {
+                return Ok(StagedDenominationAdvance::Waiting(
+                    prepared_notes_not_spendable_result(
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
+                ));
+            }
             let broadcast = broadcast_pending_denomination_stages(
                 db_path,
                 lightwalletd_url,
@@ -2181,6 +2211,7 @@ fn run_may_finalize_presigned_migration_children(run: &super::migration::ActiveR
         run.phase.as_str(),
         super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS
             | super::migration::PHASE_READY_TO_MIGRATE
+            | super::migration::PHASE_BROADCAST_SCHEDULED
     )
 }
 
@@ -5357,12 +5388,13 @@ fn finalize_presigned_migration_children(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-) -> Result<bool, String> {
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<usize, String> {
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
-        return Ok(false);
+        return Ok(0);
     }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
-        return Ok(false);
+        return Ok(0);
     }
 
     let signed_children = super::migration::signed_child_pczts_for_run(
@@ -5372,16 +5404,20 @@ fn finalize_presigned_migration_children(
         pending_salt_base64,
     )?;
     if signed_children.is_empty() {
-        return Ok(false);
+        return Ok(0);
     }
 
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
-    let mut pending_inserts = Vec::with_capacity(signed_children.len());
     let signed_child_count = signed_children.len();
+    let proof_limit = policy.proof_limit(signed_child_count);
+    let mut finalized_count = 0usize;
     for (child_index, child) in signed_children.into_iter().enumerate() {
+        if policy.is_cancelled() || finalized_count >= proof_limit {
+            break;
+        }
         if already_pending.contains(&(
             child.selected_note.txid_hex.to_ascii_lowercase(),
             child.selected_note.output_index,
@@ -5405,13 +5441,13 @@ fn finalize_presigned_migration_children(
                 Ok(result) => result,
                 Err(e) if is_orchard_witness_not_ready_error(&e) => {
                     mark_prepared_notes_waiting(db_path, run_id)?;
-                    return Ok(false);
+                    return Ok(finalized_count);
                 }
                 Err(e) => return Err(e),
             })
         else {
             mark_prepared_notes_waiting(db_path, run_id)?;
-            return Ok(false);
+            return Ok(finalized_count);
         };
         let current_note_nullifier_hex = current_note
             .nullifier_hex
@@ -5447,7 +5483,7 @@ fn finalize_presigned_migration_children(
             current_note.txid_hex,
             current_note.output_index,
         );
-        pending_inserts.push(super::migration::PendingMigrationTxInsert {
+        let pending_insert = super::migration::PendingMigrationTxInsert {
             part_index: child.child_index,
             txid_hex: extracted.txid.to_string(),
             raw_tx: extracted.raw_tx,
@@ -5462,21 +5498,22 @@ fn finalize_presigned_migration_children(
                 funding_account_uuid: child.metadata.funding_account_uuid,
                 selected_note: current_note.clone(),
             },
-        });
+        };
+        // Persist each completed proof independently so an OS expiration loses
+        // at most the proof that is currently in flight.
+        super::migration::promote_signed_child_pczts_to_pending_txs(
+            db_path,
+            run_id,
+            vec![pending_insert],
+            pending_password,
+            pending_salt_base64,
+        )?;
+        finalized_count = finalized_count
+            .checked_add(1)
+            .ok_or("Finalized migration proof count overflow")?;
     }
 
-    if pending_inserts.is_empty() {
-        return Ok(false);
-    }
-
-    super::migration::promote_signed_child_pczts_to_pending_txs(
-        db_path,
-        run_id,
-        pending_inserts,
-        pending_password,
-        pending_salt_base64,
-    )?;
-    Ok(true)
+    Ok(finalized_count)
 }
 
 fn finalize_ready_denomination_stages(
@@ -5486,7 +5523,8 @@ fn finalize_ready_denomination_stages(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-) -> Result<bool, String> {
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<usize, String> {
     let stages = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
         super::migration::denomination_stages_for_run(
@@ -5497,14 +5535,22 @@ fn finalize_ready_denomination_stages(
         )?
     };
     if stages.is_empty() {
-        return Ok(false);
+        return Ok(0);
     }
 
-    let mut promoted = false;
+    let awaiting_count = stages
+        .iter()
+        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+        .count();
+    let proof_limit = policy.proof_limit(awaiting_count);
+    let mut promoted_count = 0usize;
     for stage in stages
         .iter()
         .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
     {
+        if policy.is_cancelled() || promoted_count >= proof_limit {
+            break;
+        }
         let Some((anchor, witnesses)) = (match orchard_anchor_and_witnesses_for_denomination_inputs(
             db_path,
             network,
@@ -5512,7 +5558,7 @@ fn finalize_ready_denomination_stages(
             &stage.inputs,
         ) {
             Ok(result) => result,
-            Err(e) if is_orchard_witness_not_ready_error(&e) => return Ok(promoted),
+            Err(e) if is_orchard_witness_not_ready_error(&e) => return Ok(promoted_count),
             Err(e) => return Err(e),
         }) else {
             continue;
@@ -5548,9 +5594,11 @@ fn finalize_ready_denomination_stages(
             pending_password,
             pending_salt_base64,
         )?;
-        promoted = true;
+        promoted_count = promoted_count
+            .checked_add(1)
+            .ok_or("Finalized denomination proof count overflow")?;
     }
-    Ok(promoted)
+    Ok(promoted_count)
 }
 
 async fn broadcast_pending_denomination_stages(
@@ -6560,6 +6608,11 @@ mod tests {
         assert_eq!(policy.limit(0), 0);
         assert_eq!(policy.limit(1), 1);
         assert_eq!(policy.limit(500), 1);
+        assert_eq!(policy.proof_limit(0), 0);
+        assert_eq!(policy.proof_limit(1), 1);
+        assert_eq!(policy.proof_limit(500), 1);
+        assert!(!policy.should_defer_broadcast(0));
+        assert!(policy.should_defer_broadcast(1));
         assert!(!policy.is_cancelled());
 
         cancel.store(true, Ordering::SeqCst);
@@ -6569,7 +6622,21 @@ mod tests {
     #[test]
     fn foreground_migration_policy_keeps_existing_batch_behavior() {
         assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
+        assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
+        assert!(!MigrationBroadcastPolicy::FOREGROUND.should_defer_broadcast(500));
         assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
+    }
+
+    #[test]
+    fn incrementally_persisted_children_can_resume_proving() {
+        let run = crate::wallet::sync::migration::ActiveRun {
+            run_id: "run-1".to_string(),
+            phase: crate::wallet::sync::migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            target_values_zatoshi: vec![100, 200],
+            last_error: None,
+        };
+
+        assert!(run_may_finalize_presigned_migration_children(&run));
     }
 
     #[test]
@@ -6577,6 +6644,11 @@ mod tests {
         assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(0), 0);
         assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(1), 1);
         assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(500), 1);
+        assert_eq!(
+            MigrationBroadcastPolicy::ONE_FOREGROUND.proof_limit(500),
+            500
+        );
+        assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.should_defer_broadcast(500));
         assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.is_cancelled());
     }
 

@@ -1178,11 +1178,20 @@ fn insert_pending_txs_with_tx(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
-    let (network, timing_policy) = tx
+    let (network, timing_policy, target_values_json) = tx
         .query_row(
-            &format!("SELECT network, timing_policy FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            &format!(
+                "SELECT network, timing_policy, target_values_json
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
             params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
@@ -1192,7 +1201,8 @@ fn insert_pending_txs_with_tx(
     } else {
         MigrationTimingPolicy::Standard
     };
-    let mut pending_txs = pending_txs;
+    let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
+        .map_err(|e| format!("Decode migration run target values: {e}"))?;
     let schedule_json = tx
         .query_row(
             &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -1204,7 +1214,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Decode approved migration schedule: {e}"))?;
     if schedule.is_empty() {
         schedule = planned_transfer_schedule_with_policy(
-            pending_txs.iter().map(|pending| pending.value_zatoshi),
+            target_values.iter().copied(),
             network,
             timing_policy,
             &mut OsRng,
@@ -1217,34 +1227,68 @@ fn insert_pending_txs_with_tx(
         )
         .map_err(|e| format!("Save generated migration schedule: {e}"))?;
     }
-    validate_schedule_with_policy(
-        &schedule,
-        &pending_txs
-            .iter()
-            .map(|pending| pending.value_zatoshi)
-            .collect::<Vec<_>>(),
-        network,
-        timing_policy,
-    )?;
-    let construction_height = pending_txs
-        .iter()
-        .map(|pending| pending.target_height.saturating_sub(1))
-        .max()
-        .ok_or("Migration schedule has no transactions")?;
+    validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    let existing_schedule_origin = tx
+        .query_row(
+            &format!(
+                "SELECT scheduled_at_ms,
+                        COALESCE(schedule_start_height, target_height - 1),
+                        scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1
+                 ORDER BY part_index ASC
+                 LIMIT 1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read migration schedule origin: {e}"))?;
+    let (construction_height, scheduled_start_ms) =
+        if let Some((scheduled_at_ms, schedule_start_height, scheduled_height)) =
+            existing_schedule_origin
+        {
+            let existing_offset = scheduled_height.saturating_sub(schedule_start_height);
+            let scheduled_start_ms = scheduled_at_ms
+                .checked_sub(i64::from(existing_offset).saturating_mul(1000))
+                .ok_or("Migration scheduled time underflow")?;
+            (schedule_start_height, scheduled_start_ms)
+        } else {
+            let signed_child_construction_height = tx
+                .query_row(
+                    &format!(
+                        "SELECT MAX(target_height - 1)
+                         FROM {SIGNED_CHILD_PCZTS_TABLE}
+                         WHERE run_id = ?1"
+                    ),
+                    params![run_id],
+                    |row| row.get::<_, Option<u32>>(0),
+                )
+                .map_err(|e| format!("Read signed migration construction height: {e}"))?;
+            let construction_height = pending_txs
+                .iter()
+                .map(|pending| pending.target_height.saturating_sub(1))
+                .chain(signed_child_construction_height)
+                .max()
+                .ok_or("Migration schedule has no transactions")?;
+            (construction_height, now_ms()?)
+        };
     let mut scheduled_pending = Vec::with_capacity(pending_txs.len());
-    for entry in &schedule {
-        let position = pending_txs
-            .iter()
-            .position(|pending| match entry.part_index {
-                Some(part_index) => {
-                    pending.part_index == part_index && pending.value_zatoshi == entry.value_zatoshi
-                }
-                None => pending.value_zatoshi == entry.value_zatoshi,
-            })
+    let mut pending_part_indexes = BTreeSet::new();
+    for pending in pending_txs {
+        if !pending_part_indexes.insert(pending.part_index) {
+            return Err("Migration pending part index is duplicated".to_string());
+        }
+        let entry = schedule_entry_for_pending(&schedule, &target_values, &pending)
             .ok_or("Approved migration schedule no longer matches prepared values")?;
-        scheduled_pending.push((pending_txs.swap_remove(position), entry.block_offset));
+        scheduled_pending.push((pending, entry.block_offset));
     }
-    let scheduled_start_ms = now_ms()?;
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
 
     for (pending, block_offset) in scheduled_pending {
@@ -1308,6 +1352,36 @@ fn insert_pending_txs_with_tx(
     )
     .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
     Ok(())
+}
+
+fn schedule_entry_for_pending<'a>(
+    schedule: &'a [MigrationScheduleEntry],
+    target_values: &[u64],
+    pending: &PendingMigrationTxInsert,
+) -> Option<&'a MigrationScheduleEntry> {
+    if schedule.iter().all(|entry| entry.part_index.is_some()) {
+        return schedule.iter().find(|entry| {
+            entry.part_index == Some(pending.part_index)
+                && entry.value_zatoshi == pending.value_zatoshi
+        });
+    }
+
+    // Legacy schedules did not persist part indexes. Equal-value parts are
+    // mapped by their stable rank in the original plan so incremental proof
+    // persistence cannot reuse the same schedule entry.
+    let part_index = usize::try_from(pending.part_index).ok()?;
+    if target_values.get(part_index) != Some(&pending.value_zatoshi) {
+        return None;
+    }
+    let equal_value_rank = target_values
+        .iter()
+        .take(part_index)
+        .filter(|value| **value == pending.value_zatoshi)
+        .count();
+    schedule
+        .iter()
+        .filter(|entry| entry.value_zatoshi == pending.value_zatoshi)
+        .nth(equal_value_rank)
 }
 
 fn insert_signed_child_pczts_with_tx(
@@ -4885,6 +4959,186 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(stored, vec![(1, 501), (0, 502)]);
+    }
+
+    #[test]
+    fn approved_schedule_supports_incremental_proof_persistence() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                 created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]')"
+            ),
+            params![db_path, PHASE_READY_TO_MIGRATE],
+        )
+        .unwrap();
+        for (part_index, target_height) in [(0, 501), (1, 999)] {
+            conn.execute(
+                &format!(
+                    "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                     (run_id, message_id, child_index, encrypted_base_pczt,
+                      encrypted_compact_sigs, target_height, expiry_height,
+                      value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                     VALUES ('run-1', ?1, ?2, 'base', 'sigs', ?3, 1_000,
+                             ?4, 10, '{{}}', '{{}}')"
+                ),
+                params![
+                    format!("child-{part_index}"),
+                    part_index,
+                    target_height,
+                    if part_index == 0 { 100 } else { 200 },
+                ],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        set_run_approved_schedule(
+            &db_path,
+            "run-1",
+            WalletNetwork::Regtest,
+            &[
+                MigrationScheduleEntry {
+                    part_index: Some(1),
+                    value_zatoshi: 200,
+                    block_offset: 1,
+                },
+                MigrationScheduleEntry {
+                    part_index: Some(0),
+                    value_zatoshi: 100,
+                    block_offset: 2,
+                },
+            ],
+            &[100, 200],
+        )
+        .unwrap();
+
+        let pending = |part_index: u32, value_zatoshi: u64, target_height: u32| {
+            let selected_note = PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", part_index + 10),
+                output_index: 0,
+                value_zatoshi: value_zatoshi + 10,
+                note_version: 2,
+                nullifier_hex: None,
+            };
+            PendingMigrationTxInsert {
+                part_index,
+                txid_hex: format!("{part_index:064x}"),
+                raw_tx: vec![part_index as u8],
+                target_height,
+                anchor_boundary_height: None,
+                expiry_height: 1_000,
+                value_zatoshi,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note,
+                },
+            }
+        };
+
+        insert_pending_txs(
+            &db_path,
+            "run-1",
+            vec![pending(0, 100, 501)],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        insert_pending_txs(
+            &db_path,
+            "run-1",
+            vec![pending(1, 200, 999)],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT part_index, schedule_start_height, scheduled_height
+                 FROM vizor_migration_pending_txs
+                 ORDER BY scheduled_height",
+            )
+            .unwrap();
+        let stored = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(stored, vec![(1, 998, 999), (0, 998, 1_000)]);
+    }
+
+    #[test]
+    fn legacy_equal_value_schedule_maps_incremental_parts_by_rank() {
+        let schedule = [
+            MigrationScheduleEntry {
+                part_index: None,
+                value_zatoshi: 100,
+                block_offset: 1,
+            },
+            MigrationScheduleEntry {
+                part_index: None,
+                value_zatoshi: 100,
+                block_offset: 2,
+            },
+        ];
+        let pending = |part_index| PendingMigrationTxInsert {
+            part_index,
+            txid_hex: String::new(),
+            raw_tx: vec![],
+            target_height: 1,
+            anchor_boundary_height: None,
+            expiry_height: 2,
+            value_zatoshi: 100,
+            fee_zatoshi: 0,
+            selected_note: PreparedOrchardNoteRef {
+                txid_hex: String::new(),
+                output_index: 0,
+                value_zatoshi: 100,
+                note_version: 2,
+                nullifier_hex: None,
+            },
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: String::new(),
+                selected_note: PreparedOrchardNoteRef {
+                    txid_hex: String::new(),
+                    output_index: 0,
+                    value_zatoshi: 100,
+                    note_version: 2,
+                    nullifier_hex: None,
+                },
+            },
+        };
+
+        assert_eq!(
+            schedule_entry_for_pending(&schedule, &[100, 100], &pending(0))
+                .unwrap()
+                .block_offset,
+            1
+        );
+        assert_eq!(
+            schedule_entry_for_pending(&schedule, &[100, 100], &pending(1))
+                .unwrap()
+                .block_offset,
+            2
+        );
     }
 
     #[test]

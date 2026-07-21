@@ -36,6 +36,7 @@ pub(crate) struct BackgroundMigrationDecisionInputs<'a> {
     pub phase: &'a str,
     pub has_active_run: bool,
     pub expected_run_matches: bool,
+    pub has_unpromoted_signed_children: bool,
     pub scanned_height: u64,
     pub remote_tip_height: u64,
     pub next_scheduled_height: Option<u32>,
@@ -61,6 +62,9 @@ pub(crate) fn decide_background_migration_action(
             BackgroundMigrationAction::Complete
         }
         migration::PHASE_BROADCAST_SCHEDULED => {
+            if inputs.has_unpromoted_signed_children {
+                return BackgroundMigrationAction::Advance;
+            }
             let Some(scheduled_height) = inputs.next_scheduled_height.map(u64::from) else {
                 return BackgroundMigrationAction::NeedsUserAction;
             };
@@ -118,10 +122,18 @@ pub(crate) fn inspect_background_migration(
         .map(|run_id| migration::next_scheduled_height(db_path, run_id))
         .transpose()?
         .flatten();
+    let has_unpromoted_signed_children = status
+        .active_run_id
+        .as_deref()
+        .filter(|run_id| *run_id == expected_run_id)
+        .map(|run_id| migration::signed_child_pczt_count(db_path, run_id))
+        .transpose()?
+        .is_some_and(|count| count > 0);
     let action = decide_background_migration_action(BackgroundMigrationDecisionInputs {
         phase: &status.phase,
         has_active_run: status.active_run_id.is_some(),
         expected_run_matches: status.active_run_id.as_deref() == Some(expected_run_id),
+        has_unpromoted_signed_children,
         scanned_height: progress.scanned_height,
         remote_tip_height: progress.chain_tip_height,
         next_scheduled_height,
@@ -199,6 +211,7 @@ mod tests {
             phase,
             has_active_run: true,
             expected_run_matches: true,
+            has_unpromoted_signed_children: false,
             scanned_height,
             remote_tip_height,
             next_scheduled_height,
@@ -212,6 +225,7 @@ mod tests {
                 phase: migration::PHASE_READY_TO_PREPARE,
                 has_active_run: false,
                 expected_run_matches: true,
+                has_unpromoted_signed_children: false,
                 scanned_height: 500,
                 remote_tip_height: 500,
                 next_scheduled_height: None,
@@ -237,6 +251,22 @@ mod tests {
         assert_eq!(
             decide(migration::PHASE_BROADCAST_SCHEDULED, 500, 504, Some(505),),
             BackgroundMigrationAction::Wait
+        );
+    }
+
+    #[test]
+    fn scheduled_run_prepares_remaining_proofs_before_the_broadcast_height() {
+        assert_eq!(
+            decide_background_migration_action(BackgroundMigrationDecisionInputs {
+                phase: migration::PHASE_BROADCAST_SCHEDULED,
+                has_active_run: true,
+                expected_run_matches: true,
+                has_unpromoted_signed_children: true,
+                scanned_height: 500,
+                remote_tip_height: 504,
+                next_scheduled_height: Some(600),
+            }),
+            BackgroundMigrationAction::Advance
         );
     }
 
@@ -310,6 +340,7 @@ mod tests {
                 phase: migration::PHASE_BROADCAST_SCHEDULED,
                 has_active_run: true,
                 expected_run_matches: false,
+                has_unpromoted_signed_children: true,
                 scanned_height: 510,
                 remote_tip_height: 510,
                 next_scheduled_height: Some(505),
