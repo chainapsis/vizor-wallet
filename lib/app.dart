@@ -725,6 +725,10 @@ List<RouteBase> _desktopRoutes() => [
     builder: (_, _) => const IronwoodMigrationEntryScreen(),
   ),
   GoRoute(
+    path: '/migration/prepare',
+    builder: (_, _) => const IronwoodMigrationPrepareScreen(),
+  ),
+  GoRoute(
     path: '/migration/intro',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.intro,

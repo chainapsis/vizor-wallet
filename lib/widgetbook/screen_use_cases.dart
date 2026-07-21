@@ -639,14 +639,51 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
   return _buildDesktopHomeUseCase(
     accountState: _accountsDesignState,
     syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(99999900000),
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+      orchardBalance: BigInt.from(14_323_000_000),
+      transparentBalance: BigInt.from(1_412_000_000),
+      canShieldTransparentBalance: true,
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
     ),
     migrationCta: IronwoodHomeMigrationCtaState.start(
       network: 'main',
       accountUuid: _accountsDesignState.activeAccountUuid!,
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
+    zecUsdPrice: 1200.12 / 143.23,
+  );
+}
+
+Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
+  BuildContext context,
+) {
+  final status = _previewMigrationStatus(
+    kIronwoodMigrationBroadcastScheduledPhase,
+    activeRunId: 'preview-run',
+    parts: [
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        valueZatoshi: BigInt.from(10_000_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ],
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(10_221_000_000),
+      ironwoodBalance: BigInt.from(4_011_000_000),
+      transparentBalance: BigInt.from(1_412_000_000),
+      canShieldTransparentBalance: true,
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.resume(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: status,
+    ),
+    zecUsdPrice: 1200.12 / 40.11,
   );
 }
 
@@ -719,7 +756,7 @@ Widget buildIronwoodMigrationShuffleReviewUseCase(BuildContext context) {
     initialLocation: '/migration/private/review',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
-    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.shuffle,
+    reviewPreviewStage: IronwoodMigrationReviewPreviewStage.review,
   );
 }
 
@@ -836,6 +873,7 @@ Widget _buildDesktopHomeUseCase({
   required IronwoodHomeMigrationCtaState migrationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  double zecUsdPrice = 1.20012,
 }) {
   return ProviderScope(
     overrides: [
@@ -849,10 +887,12 @@ Widget _buildDesktopHomeUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
-        const _PreviewZecMarketDataSource(
-          ZecMarketData(usdPrice: 1.20012, change24hPct: 13.12),
+        _PreviewZecMarketDataSource(
+          ZecMarketData(usdPrice: zecUsdPrice, change24hPct: 13.12),
         ),
       ),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
+      zecPriceChange24hPctProvider.overrideWithValue(13.12),
       swapFeatureEnabledProvider.overrideWithValue(false),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
@@ -860,6 +900,15 @@ Widget _buildDesktopHomeUseCase({
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _PreviewMigrationCoordinator(
+          accountUuid: accountState.activeAccountUuid,
+          status: migrationCta.status?.activeRunId == null
+              ? null
+              : migrationCta.status,
+        ),
+      ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
@@ -874,7 +923,7 @@ Widget _buildIronwoodMigrationUseCase({
   required IronwoodMigrationFlowData data,
   rust_sync.MigrationStatus? previewStatus,
   IronwoodMigrationReviewPreviewStage reviewPreviewStage =
-      IronwoodMigrationReviewPreviewStage.split,
+      IronwoodMigrationReviewPreviewStage.review,
   bool isHardware = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
@@ -900,6 +949,9 @@ Widget _buildIronwoodMigrationUseCase({
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodMigrationAnalyzingMinimumDurationProvider.overrideWithValue(
+        Duration.zero,
+      ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _PreviewMigrationCoordinator(
           accountUuid: accountState.activeAccountUuid,
@@ -1506,7 +1558,10 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
   }
 }
 
@@ -1544,7 +1599,7 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     required this.initialStep,
     required this.data,
     this.previewStatus,
-    this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.split,
+    this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
   });
 
   final String initialLocation;
@@ -2093,17 +2148,28 @@ AppBootstrapState _homeBootstrap(AccountState accountState) {
 SyncState _homeSyncedState({
   String? accountUuid,
   BigInt? orchardBalance,
+  BigInt? ironwoodBalance,
+  BigInt? transparentBalance,
+  bool canShieldTransparentBalance = false,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
 }) {
   final resolvedOrchardBalance = orchardBalance ?? BigInt.zero;
+  final resolvedIronwoodBalance = ironwoodBalance ?? BigInt.zero;
+  final resolvedTransparentBalance = transparentBalance ?? BigInt.zero;
   return SyncState(
     accountUuid: accountUuid ?? _accountsDesignState.activeAccountUuid,
     hasAccountScopedData: true,
     percentage: 1,
     displayPercentage: 1,
     orchardBalance: resolvedOrchardBalance,
-    spendableBalance: resolvedOrchardBalance,
-    totalBalance: resolvedOrchardBalance,
+    ironwoodBalance: resolvedIronwoodBalance,
+    transparentBalance: resolvedTransparentBalance,
+    canShieldTransparentBalance: canShieldTransparentBalance,
+    spendableBalance: resolvedOrchardBalance + resolvedIronwoodBalance,
+    totalBalance:
+        resolvedOrchardBalance +
+        resolvedIronwoodBalance +
+        resolvedTransparentBalance,
     recentTransactions: recentTransactions,
   );
 }
@@ -2125,9 +2191,14 @@ rust_sync.TransactionInfo _homeTx(int index) {
   );
 }
 
-rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
+rust_sync.MigrationStatus _previewMigrationStatus(
+  String phase, {
+  String? activeRunId,
+  List<rust_sync.MigrationPartStatus> parts = const [],
+}) {
   return rust_sync.MigrationStatus(
     phase: phase,
+    activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List(0),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
@@ -2146,7 +2217,7 @@ rust_sync.MigrationStatus _previewMigrationStatus(String phase) {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: parts,
   );
 }
 
@@ -2184,26 +2255,32 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 1,
         valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 144,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 3,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 288,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 0,
         valueZatoshi: BigInt.from(8_000_000_000),
         blockOffset: 432,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 5,
         valueZatoshi: BigInt.from(220_000_000),
         blockOffset: 576,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 4,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 720,
       ),
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 2,
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 864,
       ),
@@ -2281,7 +2358,38 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         status: 'scheduled',
       ),
     ],
-    parts: const [],
+    parts: [
+      _previewMigrationPart(
+        1,
+        4_000_000_000,
+        rust_sync.MigrationPartState.completed,
+      ),
+      _previewMigrationPart(
+        4,
+        500_000_000,
+        rust_sync.MigrationPartState.migrating,
+      ),
+      _previewMigrationPart(
+        0,
+        8_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        5,
+        220_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        3,
+        500_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        2,
+        1_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+    ],
   );
 }
 
@@ -2314,7 +2422,52 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      _previewMigrationPart(
+        0,
+        4_000_000_000,
+        rust_sync.MigrationPartState.completed,
+      ),
+      _previewMigrationPart(
+        1,
+        500_000_000,
+        rust_sync.MigrationPartState.needsInput,
+      ),
+      _previewMigrationPart(
+        2,
+        8_000_000_000,
+        rust_sync.MigrationPartState.migrating,
+      ),
+      _previewMigrationPart(
+        3,
+        220_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        4,
+        500_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+      _previewMigrationPart(
+        5,
+        1_000_000_000,
+        rust_sync.MigrationPartState.scheduled,
+      ),
+    ],
+  );
+}
+
+rust_sync.MigrationPartStatus _previewMigrationPart(
+  int partIndex,
+  int valueZatoshi,
+  rust_sync.MigrationPartState state,
+) {
+  return rust_sync.MigrationPartStatus(
+    partIndex: partIndex,
+    valueZatoshi: BigInt.from(valueZatoshi),
+    state: state,
+    confirmationCount: state == rust_sync.MigrationPartState.completed ? 3 : 0,
+    confirmationTarget: 3,
   );
 }
 

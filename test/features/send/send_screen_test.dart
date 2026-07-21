@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -9,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -453,6 +456,30 @@ void main() {
     },
   );
 
+  testWidgets('active migration exposes only the Ironwood send balance', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(500000000),
+        ironwoodBalance: BigInt.from(100000000),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: kZcashDefaultNetworkName,
+          accountUuid: 'account-1',
+          status: _migrationStatus('broadcast_scheduled'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '2');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+  });
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -798,17 +825,46 @@ const _figmaModalSurfaceShadows = [
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
 ];
 
+MigrationStatus _migrationStatus(String phase) {
+  return MigrationStatus(
+    phase: phase,
+    activeRunId: 'run-1',
+    targetValuesZatoshi: frb.Uint64List(0),
+    preparedNoteCount: 0,
+    denominationConfirmationCount: 0,
+    denominationConfirmationTarget: 0,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 0,
+    pendingTxCount: 1,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 1,
+    signedChildPcztCount: 1,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 0,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: const [],
+    parts: const [],
+  );
+}
+
 Widget _sendHarness({
   SendPrefillArgs? prefill,
   AddressBookRepository? addressBookRepository,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? displaySpendableBalance,
+  BigInt? ironwoodBalance,
   SpendableBalanceFreshness displaySpendableFreshness =
       SpendableBalanceFreshness.authoritative,
   BigInt? transparentBalance,
   double? zecUsdPrice = 70,
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
+  IronwoodHomeMigrationCtaState migrationCta =
+      const IronwoodHomeMigrationCtaState.hidden(),
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -825,6 +881,9 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      ironwoodHomeMigrationCtaProvider.overrideWithValue(
+        AsyncValue.data(migrationCta),
+      ),
       zecUsdPriceProvider == null
           ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
           : zecHomeUsdUnitPriceProvider.overrideWith(
@@ -834,6 +893,7 @@ Widget _sendHarness({
         () => _FakeSyncNotifier(
           spendableBalance: spendableBalance ?? BigInt.from(500000000),
           displaySpendableBalance: displaySpendableBalance,
+          ironwoodBalance: ironwoodBalance ?? BigInt.zero,
           displaySpendableFreshness: displaySpendableFreshness,
           transparentBalance: transparentBalance ?? BigInt.zero,
         ),
@@ -961,12 +1021,14 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.displaySpendableBalance,
+    required this.ironwoodBalance,
     required this.displaySpendableFreshness,
     required this.transparentBalance,
   });
 
   final BigInt spendableBalance;
   final BigInt? displaySpendableBalance;
+  final BigInt ironwoodBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final BigInt transparentBalance;
 
@@ -976,6 +1038,7 @@ class _FakeSyncNotifier extends SyncNotifier {
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
     displaySpendableBalance: displaySpendableBalance,
+    ironwoodBalance: ironwoodBalance,
     displaySpendableFreshness: displaySpendableFreshness,
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,

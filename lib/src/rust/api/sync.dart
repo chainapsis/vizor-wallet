@@ -1091,6 +1091,7 @@ class MigrationPartStatus {
   final BigInt valueZatoshi;
   final MigrationPartState state;
   final String? txidHex;
+  final int? scheduleStartHeight;
   final int? scheduledHeight;
   final int confirmationCount;
   final int confirmationTarget;
@@ -1100,6 +1101,7 @@ class MigrationPartStatus {
     required this.valueZatoshi,
     required this.state,
     this.txidHex,
+    this.scheduleStartHeight,
     this.scheduledHeight,
     required this.confirmationCount,
     required this.confirmationTarget,
@@ -1111,6 +1113,7 @@ class MigrationPartStatus {
       valueZatoshi.hashCode ^
       state.hashCode ^
       txidHex.hashCode ^
+      scheduleStartHeight.hashCode ^
       scheduledHeight.hashCode ^
       confirmationCount.hashCode ^
       confirmationTarget.hashCode;
@@ -1124,6 +1127,7 @@ class MigrationPartStatus {
           valueZatoshi == other.valueZatoshi &&
           state == other.state &&
           txidHex == other.txidHex &&
+          scheduleStartHeight == other.scheduleStartHeight &&
           scheduledHeight == other.scheduledHeight &&
           confirmationCount == other.confirmationCount &&
           confirmationTarget == other.confirmationTarget;
@@ -1133,6 +1137,7 @@ class MigrationScheduledBroadcast {
   final String txidHex;
   final BigInt valueZatoshi;
   final PlatformInt64 scheduledAtMs;
+  final int? scheduleStartHeight;
   final int scheduledHeight;
   final String status;
 
@@ -1140,6 +1145,7 @@ class MigrationScheduledBroadcast {
     required this.txidHex,
     required this.valueZatoshi,
     required this.scheduledAtMs,
+    this.scheduleStartHeight,
     required this.scheduledHeight,
     required this.status,
   });
@@ -1149,6 +1155,7 @@ class MigrationScheduledBroadcast {
       txidHex.hashCode ^
       valueZatoshi.hashCode ^
       scheduledAtMs.hashCode ^
+      scheduleStartHeight.hashCode ^
       scheduledHeight.hashCode ^
       status.hashCode;
 
@@ -1160,27 +1167,32 @@ class MigrationScheduledBroadcast {
           txidHex == other.txidHex &&
           valueZatoshi == other.valueZatoshi &&
           scheduledAtMs == other.scheduledAtMs &&
+          scheduleStartHeight == other.scheduleStartHeight &&
           scheduledHeight == other.scheduledHeight &&
           status == other.status;
 }
 
 class MigrationScheduledTransfer {
+  final int partIndex;
   final BigInt valueZatoshi;
   final int blockOffset;
 
   const MigrationScheduledTransfer({
+    required this.partIndex,
     required this.valueZatoshi,
     required this.blockOffset,
   });
 
   @override
-  int get hashCode => valueZatoshi.hashCode ^ blockOffset.hashCode;
+  int get hashCode =>
+      partIndex.hashCode ^ valueZatoshi.hashCode ^ blockOffset.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is MigrationScheduledTransfer &&
           runtimeType == other.runtimeType &&
+          partIndex == other.partIndex &&
           valueZatoshi == other.valueZatoshi &&
           blockOffset == other.blockOffset;
 }

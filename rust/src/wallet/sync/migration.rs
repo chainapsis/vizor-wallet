@@ -498,6 +498,8 @@ pub(crate) struct PendingMigrationTxMetadata {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct MigrationScheduleEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_index: Option<u32>,
     pub value_zatoshi: u64,
     pub block_offset: u32,
 }
@@ -581,6 +583,7 @@ pub(crate) struct ScheduledMigrationBroadcast {
     pub txid_hex: String,
     pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: u32,
     pub status: String,
 }
@@ -601,6 +604,7 @@ pub(crate) struct MigrationPartStatus {
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -661,6 +665,12 @@ pub(crate) fn migration_status(
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    if orchard_pending == 0 && !orchard_migratable {
+        if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
+            return status_for_run(&conn, run);
+        }
+    }
+
     let phase = if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
     } else if orchard_migratable {
@@ -1165,7 +1175,12 @@ fn insert_pending_txs_with_tx(
     for entry in &schedule {
         let position = pending_txs
             .iter()
-            .position(|pending| pending.value_zatoshi == entry.value_zatoshi)
+            .position(|pending| match entry.part_index {
+                Some(part_index) => {
+                    pending.part_index == part_index && pending.value_zatoshi == entry.value_zatoshi
+                }
+                None => pending.value_zatoshi == entry.value_zatoshi,
+            })
             .ok_or("Approved migration schedule no longer matches prepared values")?;
         scheduled_pending.push((pending_txs.swap_remove(position), entry.block_offset));
     }
@@ -1194,8 +1209,8 @@ fn insert_pending_txs_with_tx(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'scheduled', ?15)"
+                  schedule_start_height, scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'scheduled', ?16)"
                 ),
                 params![
                     run_id,
@@ -1211,6 +1226,7 @@ fn insert_pending_txs_with_tx(
                     pending.selected_note.output_index,
                     pending.selected_note.value_zatoshi,
                     scheduled_at_ms,
+                    construction_height,
                     scheduled_height,
                     metadata_json,
                 ],
@@ -1871,10 +1887,13 @@ pub(crate) fn replace_resigned_pending_parts(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    let schedule = planned_transfer_schedule_with_policy(
-        replacements
-            .iter()
-            .map(|replacement| replacement.replacement.value_zatoshi),
+    let schedule = planned_transfer_schedule_for_parts_with_policy(
+        replacements.iter().map(|replacement| {
+            (
+                replacement.replacement.part_index,
+                replacement.replacement.value_zatoshi,
+            )
+        }),
         network,
         timing_policy,
         &mut OsRng,
@@ -1894,8 +1913,12 @@ pub(crate) fn replace_resigned_pending_parts(
     for schedule_entry in schedule {
         let replacement_index = replacements
             .iter()
-            .position(|replacement| {
-                replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+            .position(|replacement| match schedule_entry.part_index {
+                Some(part_index) => {
+                    replacement.replacement.part_index == part_index
+                        && replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+                }
+                None => replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi,
             })
             .ok_or("Replacement migration schedule does not match its denominations")?;
         scheduled_replacements.push((replacements.swap_remove(replacement_index), schedule_entry));
@@ -1960,9 +1983,9 @@ pub(crate) fn replace_resigned_pending_parts(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
+                  schedule_start_height, scheduled_height, status, metadata_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, 'scheduled', ?15)"
+                         ?13, ?14, ?15, 'scheduled', ?16)"
             ),
             params![
                 run_id,
@@ -1978,6 +2001,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 pending.selected_note.output_index,
                 pending.selected_note.value_zatoshi,
                 scheduled_at_ms,
+                construction_height,
                 scheduled_height,
                 metadata_json,
             ],
@@ -2181,10 +2205,11 @@ pub(crate) fn reschedule_overdue_pending_txs(
             .ok_or("Migration rescheduled height overflow")?;
         tx.execute(
             &format!(
-                "UPDATE {PENDING_TXS_TABLE} SET scheduled_height = ?1
-                 WHERE run_id = ?2 AND txid_hex = ?3 AND status = 'scheduled'"
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET scheduled_height = ?1, schedule_start_height = ?2
+                 WHERE run_id = ?3 AND txid_hex = ?4 AND status = 'scheduled'"
             ),
-            params![scheduled_height, run_id, txid],
+            params![scheduled_height, chain_tip_height, run_id, txid],
         )
         .map_err(|e| format!("Reschedule overdue migration transaction: {e}"))?;
     }
@@ -2306,7 +2331,8 @@ fn scheduled_broadcasts_for_run(
     }
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, value_zatoshi, scheduled_at_ms, scheduled_height, status
+            "SELECT txid_hex, value_zatoshi, scheduled_at_ms,
+                    schedule_start_height, scheduled_height, status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -2318,8 +2344,9 @@ fn scheduled_broadcasts_for_run(
                 txid_hex: row.get(0)?,
                 value_zatoshi: row.get(1)?,
                 scheduled_at_ms: row.get(2)?,
-                scheduled_height: row.get(3)?,
-                status: row.get(4)?,
+                schedule_start_height: row.get(3)?,
+                scheduled_height: row.get(4)?,
+                status: row.get(5)?,
             })
         })
         .map_err(|e| format!("Query migration schedule: {e}"))?;
@@ -2476,14 +2503,28 @@ fn migration_parts_for_run(
     phase: &str,
     confirmation_target: u32,
 ) -> Result<Vec<MigrationPartStatus>, String> {
+    if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        let denomination_parts =
+            denomination_migration_parts_for_run(conn, run_id, target_values, confirmation_target)?;
+        if !denomination_parts.is_empty() {
+            return Ok(denomination_parts);
+        }
+    }
+
+    let initial_state = if phase == PHASE_COMPLETE {
+        MigrationPartState::Completed
+    } else {
+        MigrationPartState::Preparing
+    };
     let mut parts = target_values
         .iter()
         .enumerate()
         .map(|(part_index, value_zatoshi)| MigrationPartStatus {
             part_index: part_index as u32,
             value_zatoshi: *value_zatoshi,
-            state: MigrationPartState::Preparing,
+            state: initial_state,
             txid_hex: None,
+            schedule_start_height: None,
             scheduled_height: None,
             confirmation_count: 0,
             confirmation_target,
@@ -2493,6 +2534,7 @@ fn migration_parts_for_run(
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi,
+                    COALESCE(schedule_start_height, target_height - 1),
                     scheduled_height, status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
@@ -2507,15 +2549,29 @@ fn migration_parts_for_run(
                 row.get::<_, u64>(2)?,
                 row.get::<_, u64>(3)?,
                 row.get::<_, u32>(4)?,
-                row.get::<_, String>(5)?,
+                row.get::<_, u32>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })
         .map_err(|e| format!("Query migration part statuses: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read migration part statuses: {e}"))?;
 
+    if phase == PHASE_READY_TO_MIGRATE && rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut assigned = BTreeSet::new();
-    for (stored_index, txid_hex, value_zatoshi, fee_zatoshi, scheduled_height, raw_status) in rows {
+    for (
+        stored_index,
+        txid_hex,
+        value_zatoshi,
+        fee_zatoshi,
+        schedule_start_height,
+        scheduled_height,
+        raw_status,
+    ) in rows
+    {
         let denomination_value = value_zatoshi.saturating_add(fee_zatoshi);
         let part_index = stored_index
             .filter(|index| (*index as usize) < parts.len() && !assigned.contains(index))
@@ -2567,6 +2623,7 @@ fn migration_parts_for_run(
                 .unwrap_or(denomination_value),
             state,
             txid_hex: Some(txid_hex),
+            schedule_start_height: Some(schedule_start_height),
             scheduled_height: Some(scheduled_height),
             confirmation_count,
             confirmation_target,
@@ -2579,6 +2636,134 @@ fn migration_parts_for_run(
     }
     parts.sort_by_key(|part| part.part_index);
     Ok(parts)
+}
+
+fn denomination_migration_parts_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    target_values: &[u64],
+    confirmation_target: u32,
+) -> Result<Vec<MigrationPartStatus>, String> {
+    let stages = denomination_stage_chain_records(conn, run_id)?;
+    if stages.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut parts = target_values
+        .iter()
+        .enumerate()
+        .map(|(part_index, value_zatoshi)| MigrationPartStatus {
+            part_index: part_index as u32,
+            value_zatoshi: *value_zatoshi,
+            state: MigrationPartState::Preparing,
+            txid_hex: None,
+            schedule_start_height: None,
+            scheduled_height: None,
+            confirmation_count: 0,
+            confirmation_target,
+        })
+        .collect::<Vec<_>>();
+    let mut assigned = BTreeSet::new();
+
+    for stage in stages {
+        let txid_hex = stage.expected_txid_hex.to_ascii_lowercase();
+        let (state, confirmation_count) =
+            denomination_stage_part_state(conn, &stage, confirmation_target)?;
+        for output in stage
+            .outputs
+            .iter()
+            .filter(|output| output.kind == DenominationStageOutputKind::Migration)
+        {
+            let part_index = output
+                .part_index
+                .filter(|index| (*index as usize) < parts.len() && !assigned.contains(index))
+                .or_else(|| {
+                    parts
+                        .iter()
+                        .find(|part| {
+                            part.value_zatoshi == output.value_zatoshi
+                                && !assigned.contains(&part.part_index)
+                        })
+                        .map(|part| part.part_index)
+                })
+                .or_else(|| {
+                    parts
+                        .iter()
+                        .find(|part| !assigned.contains(&part.part_index))
+                        .map(|part| part.part_index)
+                })
+                .unwrap_or(parts.len() as u32);
+            assigned.insert(part_index);
+
+            let part = MigrationPartStatus {
+                part_index,
+                value_zatoshi: parts
+                    .get(part_index as usize)
+                    .map(|part| part.value_zatoshi)
+                    .unwrap_or(output.value_zatoshi),
+                state,
+                txid_hex: Some(txid_hex.clone()),
+                schedule_start_height: None,
+                scheduled_height: None,
+                confirmation_count,
+                confirmation_target,
+            };
+            if let Some(slot) = parts.get_mut(part_index as usize) {
+                *slot = part;
+            } else {
+                parts.push(part);
+            }
+        }
+    }
+
+    parts.sort_by_key(|part| part.part_index);
+    Ok(parts)
+}
+
+fn denomination_stage_part_state(
+    conn: &rusqlite::Connection,
+    stage: &DenominationStageChainRecord,
+    confirmation_target: u32,
+) -> Result<(MigrationPartState, u32), String> {
+    match stage.status {
+        DenominationStageStatus::AwaitingInputs | DenominationStageStatus::Pending => {
+            Ok((MigrationPartState::Preparing, 0))
+        }
+        DenominationStageStatus::Broadcasted => {
+            let confirmation_count =
+                denomination_stage_confirmation_count(conn, &stage.expected_txid_hex)?;
+            let state = if confirmation_count == 0 {
+                MigrationPartState::Migrating
+            } else if confirmation_count >= confirmation_target {
+                MigrationPartState::Completed
+            } else {
+                MigrationPartState::Confirming
+            };
+            Ok((state, confirmation_count))
+        }
+        DenominationStageStatus::Confirmed => {
+            let confirmation_count = match stage.confirmed_mined_height {
+                Some(mined_height) => synced_orchard_confirmation_count(conn, mined_height)?,
+                None => denomination_stage_confirmation_count(conn, &stage.expected_txid_hex)?,
+            };
+            let state = if confirmation_count >= confirmation_target {
+                MigrationPartState::Completed
+            } else {
+                MigrationPartState::Confirming
+            };
+            Ok((state, confirmation_count))
+        }
+    }
+}
+
+fn denomination_stage_confirmation_count(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+) -> Result<u32, String> {
+    match local_denomination_chain_identity(conn, txid_hex)? {
+        Some(identity) => synced_orchard_confirmation_count(conn, identity.mined_height),
+        None => Ok(0),
+    }
 }
 
 fn active_run(
@@ -2616,6 +2801,42 @@ fn active_run(
     )
     .optional()
     .map_err(|e| format!("Read active migration run: {e}"))
+}
+
+fn latest_completed_run(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<Option<ActiveRun>, String> {
+    if !table_exists(conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+
+    conn.query_row(
+        &format!(
+            "SELECT run_id, phase, target_values_json, last_error
+             FROM {RUNS_TABLE}
+             WHERE account_uuid = ?1
+               AND network = ?2
+               AND phase = '{PHASE_COMPLETE}'
+             ORDER BY updated_at_ms DESC, created_at_ms DESC
+             LIMIT 1"
+        ),
+        params![account_uuid, network_name(network)],
+        |row| {
+            let target_values_json: String = row.get(2)?;
+            let target_values_zatoshi =
+                serde_json::from_str::<Vec<u64>>(&target_values_json).unwrap_or_default();
+            Ok(ActiveRun {
+                run_id: row.get(0)?,
+                phase: row.get(1)?,
+                target_values_zatoshi,
+                last_error: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Read completed migration run: {e}"))
 }
 
 fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Result<(), String> {
@@ -2664,6 +2885,7 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                     &format!(
                         "UPDATE {PENDING_TXS_TABLE}
                          SET status = 'scheduled', scheduled_at_ms = ?1,
+                             schedule_start_height = target_height,
                              scheduled_height = target_height
                          WHERE run_id = ?2 AND txid_hex = ?3"
                     ),
@@ -3290,7 +3512,15 @@ where
     R: Rng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
-    planned_transfer_schedule_with_policy(values, network, configured_timing_policy(network), rng)
+    planned_transfer_schedule_for_parts_with_policy(
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
+        network,
+        configured_timing_policy(network),
+        rng,
+    )
 }
 
 fn planned_transfer_schedule_with_policy<R, I>(
@@ -3303,23 +3533,47 @@ where
     R: Rng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
-    let mut values = values.into_iter().collect::<Vec<_>>();
-    values.shuffle(rng);
+    planned_transfer_schedule_for_parts_with_policy(
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
+        network,
+        timing_policy,
+        rng,
+    )
+}
+
+fn planned_transfer_schedule_for_parts_with_policy<R, I>(
+    parts: I,
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    rng: &mut R,
+) -> Vec<MigrationScheduleEntry>
+where
+    R: Rng + ?Sized,
+    I: IntoIterator<Item = (u32, u64)>,
+{
+    let mut parts = parts.into_iter().collect::<Vec<_>>();
+    parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
     let offsets = random_schedule_block_offsets_with_rng(
-        values.len(),
+        parts.len(),
         mean_delay_blocks,
         max_delay_blocks,
         rng,
     );
-    values
+    parts
         .into_iter()
         .zip(offsets)
-        .map(|(value_zatoshi, block_offset)| MigrationScheduleEntry {
-            value_zatoshi,
-            block_offset,
-        })
+        .map(
+            |((part_index, value_zatoshi), block_offset)| MigrationScheduleEntry {
+                part_index: Some(part_index),
+                value_zatoshi,
+                block_offset,
+            },
+        )
         .collect()
 }
 
@@ -3345,16 +3599,18 @@ fn validate_schedule_with_policy(
     if schedule.len() != target_values.len() {
         return Err("Approved migration schedule count changed".to_string());
     }
+    let target_values_by_part = target_values.to_vec();
     let mut scheduled_values = schedule
         .iter()
         .map(|entry| entry.value_zatoshi)
         .collect::<Vec<_>>();
-    let mut target_values = target_values.to_vec();
+    let mut target_values = target_values_by_part.clone();
     scheduled_values.sort_unstable();
     target_values.sort_unstable();
     if scheduled_values != target_values {
         return Err("Approved migration schedule values changed".to_string());
     }
+    validate_schedule_part_indexes(schedule, &target_values_by_part)?;
 
     let (_, max_delay_blocks) = schedule_parameters_with_policy(network, timing_policy);
     let mut previous_offset = 0;
@@ -3367,6 +3623,35 @@ fn validate_schedule_with_policy(
             return Err("Approved migration schedule delay is outside policy".to_string());
         }
         previous_offset = entry.block_offset;
+    }
+    Ok(())
+}
+
+fn validate_schedule_part_indexes(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+) -> Result<(), String> {
+    if schedule.iter().all(|entry| entry.part_index.is_none()) {
+        return Ok(());
+    }
+    if schedule.iter().any(|entry| entry.part_index.is_none()) {
+        return Err("Approved migration schedule part indexes are incomplete".to_string());
+    }
+
+    let mut seen = BTreeSet::new();
+    for entry in schedule {
+        let part_index = entry
+            .part_index
+            .ok_or("Approved migration schedule part indexes are incomplete")?;
+        let value = target_values
+            .get(part_index as usize)
+            .ok_or("Approved migration schedule part index is outside the plan")?;
+        if !seen.insert(part_index) {
+            return Err("Approved migration schedule part index is duplicated".to_string());
+        }
+        if *value != entry.value_zatoshi {
+            return Err("Approved migration schedule part value changed".to_string());
+        }
     }
     Ok(())
 }
@@ -3526,6 +3811,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             selected_note_output_index INTEGER NOT NULL,
             selected_note_value INTEGER NOT NULL,
             scheduled_at_ms INTEGER NOT NULL,
+            schedule_start_height INTEGER,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             metadata_json TEXT NOT NULL
@@ -3568,6 +3854,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "TEXT NOT NULL DEFAULT 'standard'",
     )?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     backfill_pending_part_indices(conn)?;
     conn.execute(
         &format!(
@@ -3587,6 +3874,18 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| format!("Backfill migration scheduled heights: {e}"))?;
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = CASE
+                 WHEN target_height > 0 THEN target_height - 1
+                 ELSE 0
+             END
+             WHERE schedule_start_height IS NULL"
+        ),
+        [],
+    )
+    .map_err(|e| format!("Backfill migration schedule start heights: {e}"))?;
     conn.execute(
         &format!(
             "CREATE INDEX IF NOT EXISTS idx_vizor_migration_pending_height_due
@@ -3700,8 +3999,25 @@ mod tests {
                 value_zatoshi: 100_000_000,
                 note_version: 2,
                 kind: DenominationStageOutputKind::Migration,
+                part_index: Some(0),
             }],
         }
+    }
+
+    fn pending_test_stage_for_part(
+        stage_index: u32,
+        expected_txid_hex: &str,
+        value_zatoshi: u64,
+        part_index: Option<u32>,
+    ) -> DenominationStageInsert {
+        let mut stage = pending_test_stage(expected_txid_hex, vec![1, 2, 3, 4]);
+        stage.stage_index = stage_index;
+        stage.inputs[0].txid_hex = format!("{:02x}", 0xa0 + stage_index as u8).repeat(32);
+        stage.inputs[0].output_index = stage_index;
+        stage.inputs[0].value_zatoshi = value_zatoshi.saturating_add(stage.fee_zatoshi);
+        stage.outputs[0].value_zatoshi = value_zatoshi;
+        stage.outputs[0].part_index = part_index;
+        stage
     }
 
     fn insert_test_stage(
@@ -4221,14 +4537,17 @@ mod tests {
 
         let schedule = vec![
             MigrationScheduleEntry {
+                part_index: Some(1),
                 value_zatoshi: 200,
                 block_offset: 1,
             },
             MigrationScheduleEntry {
+                part_index: Some(0),
                 value_zatoshi: 100,
                 block_offset: 2,
             },
             MigrationScheduleEntry {
+                part_index: Some(2),
                 value_zatoshi: 300,
                 block_offset: 3,
             },
@@ -4305,6 +4624,93 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(remaining.len(), 2);
         assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
+    }
+
+    #[test]
+    fn approved_schedule_part_index_disambiguates_equal_values() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,100]')"
+            ),
+            params![db_path, PHASE_READY_TO_MIGRATE],
+        )
+        .unwrap();
+        drop(conn);
+
+        let schedule = vec![
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 100,
+                block_offset: 1,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 2,
+            },
+        ];
+        set_run_approved_schedule(
+            &db_path,
+            "run-1",
+            WalletNetwork::Regtest,
+            &schedule,
+            &[100, 100],
+        )
+        .unwrap();
+
+        let pending = [0u32, 1]
+            .into_iter()
+            .map(|part_index| {
+                let selected_note = PreparedOrchardNoteRef {
+                    txid_hex: format!("{:064x}", part_index + 10),
+                    output_index: 0,
+                    value_zatoshi: 110,
+                    note_version: 2,
+                    nullifier_hex: None,
+                };
+                PendingMigrationTxInsert {
+                    part_index,
+                    txid_hex: format!("{part_index:064x}"),
+                    raw_tx: vec![part_index as u8],
+                    target_height: 501,
+                    anchor_boundary_height: None,
+                    expiry_height: 1_000,
+                    value_zatoshi: 100,
+                    fee_zatoshi: 10,
+                    selected_note: selected_note.clone(),
+                    metadata: PendingMigrationTxMetadata {
+                        tx_kind: "migration".to_string(),
+                        funding_account_uuid: "account-1".to_string(),
+                        selected_note,
+                    },
+                }
+            })
+            .collect();
+        insert_pending_txs(&db_path, "run-1", pending, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+
+        let stored = {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT part_index, scheduled_height
+                     FROM vizor_migration_pending_txs
+                     ORDER BY scheduled_height",
+                )
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(stored, vec![(1, 501), (0, 502)]);
     }
 
     #[test]
@@ -4724,6 +5130,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.phase, PHASE_COMPLETE);
+        assert_eq!(status.active_run_id.as_deref(), Some(run_id.as_str()));
+        assert_eq!(status.target_values_zatoshi, vec![ZATOSHIS_PER_ZEC]);
+        assert_eq!(status.parts.len(), 1);
+        assert_eq!(status.parts[0].value_zatoshi, ZATOSHIS_PER_ZEC);
+        assert_eq!(status.parts[0].state, MigrationPartState::Completed);
     }
 
     #[test]
@@ -5340,6 +5751,98 @@ mod tests {
             parts.iter().map(|part| part.part_index).collect::<Vec<_>>(),
             vec![0, 1, 2, 3]
         );
+    }
+
+    #[test]
+    fn denomination_parts_report_independent_split_stage_states() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (20)",
+            [],
+        )
+        .unwrap();
+
+        let run_id = "run-denomination-parts";
+        let confirming_txid = "11".repeat(32);
+        let preparing_txid = "22".repeat(32);
+        let tx = conn.unchecked_transaction().unwrap();
+        insert_denomination_stages_with_tx(
+            &tx,
+            run_id,
+            vec![
+                pending_test_stage_for_part(0, &confirming_txid, 20_000_000, Some(1)),
+                pending_test_stage_for_part(1, &preparing_txid, 10_000_000, Some(0)),
+            ],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        mark_denomination_stage_broadcasted(&conn, run_id, &confirming_txid).unwrap();
+
+        let mut confirming_blob = hex::decode(&confirming_txid).unwrap();
+        confirming_blob.reverse();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, 19)",
+            params![confirming_blob],
+        )
+        .unwrap();
+
+        let parts = migration_parts_for_run(
+            &conn,
+            run_id,
+            &[10_000_000, 20_000_000],
+            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].part_index, 0);
+        assert_eq!(parts[0].value_zatoshi, 10_000_000);
+        assert_eq!(parts[0].state, MigrationPartState::Preparing);
+        assert_eq!(parts[0].confirmation_count, 0);
+        assert_eq!(parts[1].part_index, 1);
+        assert_eq!(parts[1].value_zatoshi, 20_000_000);
+        assert_eq!(parts[1].state, MigrationPartState::Confirming);
+        assert_eq!(parts[1].confirmation_count, 2);
+    }
+
+    #[test]
+    fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+
+        let run_id = "run-ready-denomination-parts";
+        let txid = "11".repeat(32);
+        let tx = conn.unchecked_transaction().unwrap();
+        insert_denomination_stages_with_tx(
+            &tx,
+            run_id,
+            vec![pending_test_stage_for_part(0, &txid, 100_000_000, Some(0))],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        mark_denomination_stage_confirmed_at(&conn, run_id, &txid, 20, &[0xabu8; 32]).unwrap();
+
+        let parts =
+            migration_parts_for_run(&conn, run_id, &[100_000_000], PHASE_READY_TO_MIGRATE, 3)
+                .unwrap();
+
+        assert!(parts.is_empty());
     }
 
     #[test]

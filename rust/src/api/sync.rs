@@ -688,11 +688,13 @@ pub struct MigrationScheduledBroadcast {
     pub txid_hex: String,
     pub value_zatoshi: u64,
     pub scheduled_at_ms: i64,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: u32,
     pub status: String,
 }
 
 pub struct MigrationScheduledTransfer {
+    pub part_index: u32,
     pub value_zatoshi: u64,
     pub block_offset: u32,
 }
@@ -711,6 +713,7 @@ pub struct MigrationPartStatus {
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
+    pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -769,6 +772,7 @@ fn to_wallet_migration_schedule(
     schedule
         .into_iter()
         .map(|entry| wallet_sync::MigrationScheduleEntry {
+            part_index: Some(entry.part_index),
             value_zatoshi: entry.value_zatoshi,
             block_offset: entry.block_offset,
         })
@@ -1048,6 +1052,7 @@ pub fn get_orchard_migration_status(
                     txid_hex: broadcast.txid_hex,
                     value_zatoshi: broadcast.value_zatoshi,
                     scheduled_at_ms: broadcast.scheduled_at_ms,
+                    schedule_start_height: broadcast.schedule_start_height,
                     scheduled_height: broadcast.scheduled_height,
                     status: broadcast.status,
                 })
@@ -1071,6 +1076,7 @@ pub fn get_orchard_migration_status(
                         }
                     },
                     txid_hex: part.txid_hex,
+                    schedule_start_height: part.schedule_start_height,
                     scheduled_height: part.scheduled_height,
                     confirmation_count: part.confirmation_count,
                     confirmation_target: part.confirmation_target,
@@ -1107,6 +1113,7 @@ pub fn get_orchard_migration_private_plan(
                         .scheduled_transfers
                         .into_iter()
                         .map(|entry| MigrationScheduledTransfer {
+                            part_index: entry.part_index.unwrap_or(0),
                             value_zatoshi: entry.value_zatoshi,
                             block_offset: entry.block_offset,
                         })

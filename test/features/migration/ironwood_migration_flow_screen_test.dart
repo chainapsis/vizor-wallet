@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -58,6 +60,8 @@ void main() {
     final fastTitle = find.text('Faster but less private');
     expect(privateTitle, findsOneWidget);
     expect(fastTitle, findsOneWidget);
+    expect(find.text('Customize'), findsNothing);
+    expect(find.text('Customise'), findsNothing);
 
     final privateTitleInitialTopLeft = tester.getTopLeft(privateTitle);
     final fastTitleInitialTopLeft = tester.getTopLeft(fastTitle);
@@ -88,8 +92,64 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review migration plan'), findsOneWidget);
-    expect(find.textContaining('1 batch', findRichText: true), findsOneWidget);
-    expect(find.text('Next'), findsOneWidget);
+    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
+  });
+
+  testWidgets('private review keeps analyzing visible for minimum duration', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        analyzingMinimumDuration: const Duration(seconds: 6),
+        disableAnimations: false,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Analyzing your balance...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1919));
+    expect(find.text('Analyzing your balance...'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Finding private batches...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1590));
+    expect(find.text('Finding private batches...'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Preparing your migration plan...'), findsOneWidget);
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1590));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Review migration plan'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 81));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsNothing,
+    );
+    expect(find.text('Review migration plan'), findsOneWidget);
   });
 
   testWidgets('private review shows plan without preparing a transaction', (
@@ -103,17 +163,15 @@ void main() {
     await tester.pumpWidget(
       _migrationOptionsHarness(initialLocation: '/migration/private/review'),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.textContaining('1 batch', findRichText: true), findsOneWidget);
-    expect(find.text('~144 blocks'), findsOneWidget);
+    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
+    expect(find.text('~3 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(AppButton, 'Next'));
-    await tester.pumpAndSettle();
-    expect(find.text('Review shuffle'), findsOneWidget);
+    expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
 
@@ -180,7 +238,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
   });
 
   testWidgets(
@@ -255,7 +313,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -403,7 +461,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review migration plan'), findsOneWidget);
-    expect(find.textContaining('1 batch', findRichText: true), findsOneWidget);
+    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
   });
 
   testWidgets('private status shows resume progress state', (tester) async {
@@ -417,12 +475,345 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in progress'), findsOneWidget);
-    expect(find.text('Part 1'), findsOneWidget);
-    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 1 migration part'), findsOneWidget);
+    expect(find.text('Wait 1 block for confirmation'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Migration will start automatically once note split is complete.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('You can leave this screen, but keep Vizor open & running.'),
+      findsOneWidget,
+    );
     expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('Preparing batches'), findsOneWidget);
+    expect(find.text('2'), findsNothing);
+    expect(find.text('Currently Spendable Balance'), findsNothing);
+    expect(find.text('You can leave this screen.'), findsNothing);
+    expect(find.text('But keep Vizor open & running.'), findsNothing);
+    expect(find.text('shown before send'), findsNothing);
+    expect(find.text('Shown before each send'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+  });
+
+  testWidgets(
+    'private status treats denomination confirmation wait as split complete',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [
+              1_000_000_000,
+              200_000_000,
+              50_000_000,
+              20_000_000,
+              10_000_000,
+              2_000_000,
+            ],
+            pendingSplitStageCount: 6,
+            denominationConfirmationCount: 0,
+            denominationConfirmationTarget: 3,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 6,
+            totalCount: 6,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Split notes into 6 migration parts'), findsOneWidget);
+      expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('ironwood_migration_prepare_step_split_complete'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'ironwood_migration_prepare_step_confirmations_active',
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('private preparing status uses independent part progress', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 10_000_000],
+          pendingSplitStageCount: 1,
+          denominationConfirmationCount: 0,
+          denominationConfirmationTarget: 3,
+          denominationSplitCompletedCount: 1,
+          denominationSplitTotalCount: 2,
+          totalCount: 2,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.preparing,
+            ),
+            _migrationPart(
+              1,
+              10_000_000,
+              rust_sync.MigrationPartState.confirming,
+              confirmationCount: 2,
+              confirmationTarget: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final firstTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
+        )
+        .width;
+    final secondTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_1')),
+        )
+        .width;
+    final firstFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+    final secondFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_1')),
+        )
+        .width;
+
+    expect(firstTrackWidth, closeTo(secondTrackWidth, 1));
+    expect(secondFillWidth, greaterThan(firstFillWidth * 4));
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 2 migration parts'), findsOneWidget);
+    expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('private denomination broadcasts stay on the preparing UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000],
+          pendingSplitStageCount: 2,
+          denominationConfirmationCount: 0,
+          denominationConfirmationTarget: 3,
+          denominationSplitCompletedCount: 2,
+          denominationSplitTotalCount: 2,
+          totalCount: 2,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Note split'), findsOneWidget);
+    expect(find.text('Split notes into 2 migration parts'), findsOneWidget);
+    expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_split_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+      findsNothing,
+    );
+    final segmentPainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+        )
+        .painter;
+    expect((segmentPainter as dynamic).preparingStyle, isTrue);
+    expect((segmentPainter as dynamic).allowDashedBorder, isTrue);
+    expect(find.text('Currently Spendable Balance'), findsNothing);
+  });
+
+  testWidgets(
+    'private ready-to-migrate status does not treat prepared denominations as completed transfers',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [1_000_000_000, 200_000_000],
+            totalCount: 2,
+            denominationConfirmationCount: 3,
+            denominationConfirmationTarget: 3,
+            denominationSplitCompletedCount: 2,
+            denominationSplitTotalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                1_000_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+              _migrationPart(
+                1,
+                200_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Note split'), findsNothing);
+      expect(find.text('Completed'), findsNothing);
+      expect(find.text('Preparing'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_status_batch_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_status_batch_1')),
+        findsOneWidget,
+      );
+      final segmentPainter = tester
+          .widget<CustomPaint>(
+            find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+          )
+          .painter;
+      expect((segmentPainter as dynamic).preparingStyle, isFalse);
+      expect((segmentPainter as dynamic).allowDashedBorder, isFalse);
+      expect(find.text('Currently Spendable Balance'), findsOneWidget);
+      expect(find.text('0 ZEC'), findsOneWidget);
+      expect(find.text('~2 mins'), findsNothing);
+    },
+  );
+
+  testWidgets('private status keeps scheduled batches on the transfer UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleStartHeight: 700,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Note split'), findsNothing);
+    expect(find.text('Scheduled'), findsOneWidget);
+    final segmentPainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_segment_painter_0')),
+        )
+        .painter;
+    expect((segmentPainter as dynamic).preparingStyle, isFalse);
+    expect((segmentPainter as dynamic).allowDashedBorder, isFalse);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 
   testWidgets('status can return home while background migration advances', (
@@ -436,7 +827,8 @@ void main() {
     await tester.pumpWidget(
       _privateStatusHarness(status: _status(), coordinatorAdvancing: true),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     final button = find.byKey(
       const ValueKey('ironwood_migration_status_action_button'),
@@ -468,7 +860,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -483,7 +875,7 @@ void main() {
     final cases = [
       _StatusUiCase(
         status: _status(),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -492,7 +884,7 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -501,7 +893,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastScheduledPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -510,7 +902,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -519,7 +911,7 @@ void main() {
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress',
+        title: 'Migration in Progress',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -537,15 +929,16 @@ void main() {
           phase: kIronwoodMigrationCompletePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration Complete',
-        buttonLabel: 'Back home',
+        title: 'Migration in Progress',
+        buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
     ];
 
     for (final uiCase in cases) {
       await tester.pumpWidget(_privateStatusHarness(status: uiCase.status));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text(uiCase.title), findsOneWidget);
       if (uiCase.buttonLabel == null) {
@@ -582,7 +975,78 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('intro-route'), findsOneWidget);
+    expect(find.text('Migration status unavailable'), findsOneWidget);
+    expect(find.text('intro-route'), findsNothing);
+  });
+
+  testWidgets('private complete status uses all-completed transfer UI', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationCompletePhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 1,
+          confirmedTxCount: 1,
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.completed,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.scheduled,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Migration Complete'), findsNothing);
+    expect(find.text('Back home'), findsNothing);
+    expect(find.text('Migrating...'), findsNothing);
+    expect(find.text('Scheduled'), findsNothing);
+    expect(find.text('Completed'), findsAtLeastNWidgets(3));
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.6 ZEC'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+  });
+
+  testWidgets('private complete fallback without run details returns home', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(phase: kIronwoodMigrationCompletePhase),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home-route'), findsOneWidget);
+    expect(find.text('0 ZEC'), findsNothing);
+    expect(find.text('Completed'), findsNothing);
   });
 
   testWidgets('private transfer status uses authoritative per-part states', (
@@ -622,12 +1086,14 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Migrating...'), findsOneWidget);
     expect(find.text('Scheduled'), findsOneWidget);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.1 ZEC'), findsOneWidget);
   });
 
   testWidgets('private transfer status distinguishes mined from completed', (
@@ -670,15 +1136,18 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Confirming...'), findsNWidgets(2));
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('0.3 ZEC'), findsOneWidget);
+    expect(find.text('~3 mins'), findsOneWidget);
   });
 
-  testWidgets('private transfer ETA uses the next scheduled broadcast', (
+  testWidgets('private transfer ETA estimates total completion time', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -711,13 +1180,249 @@ void main() {
             ),
           ],
         ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 897,
+          chainTipHeight: 1000,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Scheduled'), findsNWidgets(2));
+    expect(find.text('~8 mins'), findsOneWidget);
+    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+  });
+
+  testWidgets('scheduled note progress follows remaining block height', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleStartHeight: 700,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 750,
+          chainTipHeight: 1000,
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.text('Scheduled'), findsNWidgets(2));
-    expect(find.text('In progress'), findsOneWidget);
+    final trackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
+        )
+        .width;
+    final fillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+
+    expect(fillWidth, closeTo(trackWidth * 0.35, 1));
+  });
+
+  testWidgets('note progress keeps dust migration parts readable', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const values = [
+      1_000_000_000,
+      200_000_000,
+      50_000_000,
+      20_000_000,
+      10_000_000,
+      2_000_000,
+    ];
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: values,
+          totalCount: values.length,
+          parts: [
+            for (var i = 0; i < values.length; i++)
+              _migrationPart(
+                i,
+                values[i],
+                rust_sync.MigrationPartState.scheduled,
+                scheduleStartHeight: 700,
+                scheduledHeight: 800,
+              ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 700,
+          chainTipHeight: 1000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final firstTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
+        )
+        .width;
+    final dustTrackWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_track_5')),
+        )
+        .width;
+
+    expect(dustTrackWidth, greaterThanOrEqualTo(16));
+    expect(firstTrackWidth, greaterThan(dustTrackWidth));
+  });
+
+  testWidgets(
+    'scheduled note progress does not shrink when sync height drops',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+      await tester.pumpWidget(
+        _MutablePrivateStatusHarness(
+          key: harnessKey,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [10_000_000],
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduleStartHeight: 700,
+                scheduledHeight: 800,
+              ),
+            ],
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 750,
+            chainTipHeight: 1000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final firstFillWidth = tester
+          .getSize(
+            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+          )
+          .width;
+
+      harnessKey.currentState!.setSyncState(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 710,
+          chainTipHeight: 1000,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final secondFillWidth = tester
+          .getSize(
+            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+          )
+          .width;
+
+      expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
+    },
+  );
+
+  testWidgets('migrating note progress does not shrink when advancing stops', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+    await tester.pumpWidget(
+      _MutablePrivateStatusHarness(
+        key: harnessKey,
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+              scheduleStartHeight: 700,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 800,
+          chainTipHeight: 1000,
+        ),
+        coordinatorAdvancing: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final firstFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+
+    harnessKey.currentState!.setCoordinatorAdvancing(false);
+    await tester.pump();
+
+    final secondFillWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
+        )
+        .width;
+
+    expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (
@@ -773,7 +1478,8 @@ void main() {
         activeAccountIsHardware: true,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(softwareContinued, isFalse);
     expect(find.text('Needs input'), findsOneWidget);
@@ -820,7 +1526,7 @@ void main() {
     expect(continueCount, 1);
   });
 
-  testWidgets('migration entry routes start state to intro', (tester) async {
+  testWidgets('migration entry routes start state to prepare', (tester) async {
     await tester.pumpWidget(
       _migrationEntryHarness(
         ctaState: IronwoodHomeMigrationCtaState.start(
@@ -832,7 +1538,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('intro-route'), findsOneWidget);
+    expect(find.text('prepare-route'), findsOneWidget);
   });
 
   testWidgets('migration entry routes resume state to private status', (
@@ -878,7 +1584,8 @@ void main() {
         realStatusRoute: true,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('intro-route'), findsNothing);
     expect(find.text('Migrating...'), findsOneWidget);
@@ -916,7 +1623,9 @@ void main() {
     }
   });
 
-  testWidgets('migration entry routes hidden state home', (tester) async {
+  testWidgets('migration entry keeps hidden state in migration flow', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _migrationEntryHarness(
         ctaState: const IronwoodHomeMigrationCtaState.hidden(),
@@ -924,8 +1633,101 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('home-route'), findsOneWidget);
+    expect(find.text('prepare-route'), findsOneWidget);
+    expect(find.text('home-route'), findsNothing);
   });
+
+  testWidgets('migration entry does not wait for route CTA loading', (
+    tester,
+  ) async {
+    final pendingCta = Completer<IronwoodHomeMigrationCtaState>();
+
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: const IronwoodHomeMigrationCtaState.hidden(),
+        routeCtaFuture: pendingCta.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('prepare-route'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('home-route'), findsNothing);
+  });
+
+  testWidgets('prepare stays in loading state while sync is running', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _migrationPrepareHarness(
+        inputs: _migrationInputs(isSyncing: true, isSyncComplete: false),
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(_migrationStatus());
+            },
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('intro-route'), findsNothing);
+    expect(find.text('home-route'), findsNothing);
+  });
+
+  testWidgets('prepare opens intro after confirming migration is startable', (
+    tester,
+  ) async {
+    var statusCalls = 0;
+
+    await tester.pumpWidget(
+      _migrationPrepareHarness(
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) {
+              statusCalls += 1;
+              return Future.value(
+                _migrationStatus(phase: kIronwoodMigrationReadyPhase),
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('intro-route'), findsOneWidget);
+    expect(statusCalls, greaterThanOrEqualTo(1));
+  });
+
+  testWidgets('prepare opens status when migration already has an active run', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _migrationPrepareHarness(
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(
+                _migrationStatus(
+                  phase: kIronwoodMigrationBroadcastScheduledPhase,
+                  activeRunId: 'run-1',
+                ),
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('private-status-route'), findsOneWidget);
+  });
+
+  testWidgets(
+    'migration flow does not redirect home when data is unavailable',
+    (tester) async {
+      await tester.pumpWidget(_migrationFlowDataHarness(flowData: null));
+      await tester.pump();
+
+      expect(find.text('Zcash Network Upgrade'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('home-route'), findsNothing);
+    },
+  );
 
   testWidgets('private status fails closed when status lookup fails', (
     tester,
@@ -954,7 +1756,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           ironwoodMigrationFlowDataProvider.overrideWith(
-            (ref) async => IronwoodMigrationFlowData(
+            (ref) => IronwoodMigrationFlowData(
               amountZatoshi: BigInt.from(10_000_000),
               accountName: 'Account 1',
               profilePictureId: kDefaultProfilePictureId,
@@ -970,6 +1772,7 @@ void main() {
               hasAccountScopedData: true,
               isSyncing: false,
               isBackgroundMode: false,
+              isSyncComplete: true,
               hasSyncFailure: false,
               orchardBalance: BigInt.from(10_000_000),
               orchardPendingBalance: BigInt.zero,
@@ -1067,27 +1870,13 @@ void main() {
 }
 
 Future<void> _openShuffleReview(WidgetTester tester) async {
-  await tester.tap(find.widgetWithText(AppButton, 'Next'));
-  await tester.pumpAndSettle();
+  expect(find.text('Review shuffle'), findsNothing);
+  expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
 }
 
 class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
   @override
-  IronwoodMigrationInputs build() => IronwoodMigrationInputs(
-    ironwoodActiveAtTip: true,
-    network: 'test',
-    accountUuid: 'account-1',
-    accountName: 'Account 1',
-    profilePictureId: kDefaultProfilePictureId,
-    hasAccountScopedData: true,
-    isSyncing: false,
-    isBackgroundMode: false,
-    hasSyncFailure: false,
-    orchardBalance: BigInt.from(10_000_000),
-    orchardPendingBalance: BigInt.zero,
-    ironwoodBalance: BigInt.zero,
-    ironwoodPendingBalance: BigInt.zero,
-  );
+  IronwoodMigrationInputs build() => _migrationInputs();
 
   void setSyncing(bool value) {
     state = IronwoodMigrationInputs(
@@ -1099,6 +1888,7 @@ class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
       hasAccountScopedData: state.hasAccountScopedData,
       isSyncing: value,
       isBackgroundMode: state.isBackgroundMode,
+      isSyncComplete: state.isSyncComplete,
       hasSyncFailure: state.hasSyncFailure,
       orchardBalance: state.orchardBalance,
       orchardPendingBalance: state.orchardPendingBalance,
@@ -1106,6 +1896,38 @@ class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
       ironwoodPendingBalance: state.ironwoodPendingBalance,
     );
   }
+}
+
+IronwoodMigrationInputs _migrationInputs({
+  bool ironwoodActiveAtTip = true,
+  String network = 'test',
+  String? accountUuid = 'account-1',
+  bool hasAccountScopedData = true,
+  bool isSyncing = false,
+  bool isBackgroundMode = false,
+  bool isSyncComplete = true,
+  bool hasSyncFailure = false,
+  BigInt? orchardBalance,
+  BigInt? orchardPendingBalance,
+  BigInt? ironwoodBalance,
+  BigInt? ironwoodPendingBalance,
+}) {
+  return IronwoodMigrationInputs(
+    ironwoodActiveAtTip: ironwoodActiveAtTip,
+    network: network,
+    accountUuid: accountUuid,
+    accountName: 'Account 1',
+    profilePictureId: kDefaultProfilePictureId,
+    hasAccountScopedData: hasAccountScopedData,
+    isSyncing: isSyncing,
+    isBackgroundMode: isBackgroundMode,
+    isSyncComplete: isSyncComplete,
+    hasSyncFailure: hasSyncFailure,
+    orchardBalance: orchardBalance ?? BigInt.from(10_000_000),
+    orchardPendingBalance: orchardPendingBalance ?? BigInt.zero,
+    ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+    ironwoodPendingBalance: ironwoodPendingBalance ?? BigInt.zero,
+  );
 }
 
 Widget _migrationOptionsHarness({
@@ -1116,6 +1938,8 @@ Widget _migrationOptionsHarness({
   OrchardMigrationStatusGetter? statusGetter,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
+  Duration analyzingMinimumDuration = Duration.zero,
+  bool disableAnimations = true,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -1193,6 +2017,9 @@ Widget _migrationOptionsHarness({
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodMigrationAnalyzingMinimumDurationProvider.overrideWithValue(
+        analyzingMinimumDuration,
+      ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _ScreenTestMigrationCoordinator(
           migrationService,
@@ -1211,6 +2038,7 @@ Widget _migrationOptionsHarness({
             hasAccountScopedData: true,
             isSyncing: false,
             isBackgroundMode: false,
+            isSyncComplete: true,
             hasSyncFailure: false,
             orchardBalance: BigInt.from(10_000_000),
             orchardPendingBalance: BigInt.zero,
@@ -1229,9 +2057,10 @@ Widget _migrationOptionsHarness({
     child: MaterialApp.router(
       routerConfig: router,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
+        data: MediaQuery.of(context).copyWith(
+          disableAnimations: disableAnimations,
+          textScaler: TextScaler.noScaling,
+        ),
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
     ),
@@ -1273,6 +2102,141 @@ class _ScreenTestMigrationCoordinator extends IronwoodMigrationCoordinator {
   }
 }
 
+class _MutableScreenTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  _MutableScreenTestMigrationCoordinator({required this.advancing});
+
+  final bool advancing;
+
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      IronwoodMigrationCoordinatorState(
+        advancingAccounts: advancing ? const {'account-1'} : const {},
+      );
+
+  void setAdvancing(bool advancing) {
+    state = state.copyWith(
+      advancingAccounts: advancing ? const {'account-1'} : const {},
+    );
+  }
+}
+
+class _MutableSyncNotifier extends SyncNotifier {
+  _MutableSyncNotifier(this.initialState);
+
+  final SyncState initialState;
+
+  @override
+  Future<SyncState> build() async => initialState;
+
+  void setSyncState(SyncState nextState) {
+    state = AsyncData(nextState);
+  }
+}
+
+class _MutablePrivateStatusHarness extends StatefulWidget {
+  const _MutablePrivateStatusHarness({
+    super.key,
+    required this.status,
+    required this.syncState,
+    this.coordinatorAdvancing = false,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final SyncState syncState;
+  final bool coordinatorAdvancing;
+
+  @override
+  State<_MutablePrivateStatusHarness> createState() =>
+      _MutablePrivateStatusHarnessState();
+}
+
+class _MutablePrivateStatusHarnessState
+    extends State<_MutablePrivateStatusHarness> {
+  final _scopeKey = GlobalKey();
+  late rust_sync.MigrationStatus _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = widget.status;
+  }
+
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(_scopeKey.currentContext!, listen: false);
+
+  void setStatus(rust_sync.MigrationStatus status) {
+    setState(() => _status = status);
+  }
+
+  void setSyncState(SyncState syncState) {
+    (_container.read(syncProvider.notifier) as _MutableSyncNotifier)
+        .setSyncState(syncState);
+  }
+
+  void setCoordinatorAdvancing(bool advancing) {
+    (_container.read(ironwoodMigrationCoordinatorProvider.notifier)
+            as _MutableScreenTestMigrationCoordinator)
+        .setAdvancing(advancing);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final router = GoRouter(
+      initialLocation: '/migration/private/status',
+      routes: [
+        GoRoute(
+          path: '/migration/private/status',
+          builder: (_, _) =>
+              IronwoodMigrationPrivateStatusScreen(previewStatus: _status),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+        GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
+        GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
+        GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+        GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => const Text('add account'),
+        ),
+        GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock')),
+      ],
+    );
+
+    return ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapFor(activeAccountIsHardware: false),
+        ),
+        syncProvider.overrideWith(() => _MutableSyncNotifier(widget.syncState)),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _MutableScreenTestMigrationCoordinator(
+            advancing: widget.coordinatorAdvancing,
+          ),
+        ),
+        swapFeatureEnabledProvider.overrideWithValue(true),
+        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+          const IronwoodHomeMigrationCtaState.hidden(),
+        ),
+      ],
+      child: Builder(
+        key: _scopeKey,
+        builder: (context) => MaterialApp.router(
+          routerConfig: router,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: true,
+              textScaler: TextScaler.noScaling,
+            ),
+            child: AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Widget _privateStatusHarness({
   required rust_sync.MigrationStatus status,
   OrchardMigrationStatusGetter? statusGetter,
@@ -1280,6 +2244,7 @@ Widget _privateStatusHarness({
   bool activeAccountIsHardware = false,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
+  SyncState? syncState,
 }) {
   return _migrationEntryHarness(
     ctaState: IronwoodHomeMigrationCtaState.resume(
@@ -1294,12 +2259,133 @@ Widget _privateStatusHarness({
     activeAccountIsHardware: activeAccountIsHardware,
     coordinatorAdvancing: coordinatorAdvancing,
     coordinatorStatus: coordinatorStatus,
+    syncState: syncState,
+  );
+}
+
+Widget _migrationFlowDataHarness({
+  required IronwoodMigrationFlowData? flowData,
+}) {
+  final router = GoRouter(
+    initialLocation: '/migration/intro',
+    routes: [
+      GoRoute(
+        path: '/migration/intro',
+        builder: (_, _) => const IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.intro,
+        ),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      ironwoodMigrationFlowDataProvider.overrideWith((ref) => flowData),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapFor(activeAccountIsHardware: false),
+      ),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
+  );
+}
+
+Widget _migrationPrepareHarness({
+  IronwoodMigrationInputs? inputs,
+  OrchardMigrationStatusGetter? statusGetter,
+  Object? routeError,
+}) {
+  final router = GoRouter(
+    initialLocation: '/migration/prepare',
+    routes: [
+      GoRoute(
+        path: '/migration/prepare',
+        builder: (_, _) => const IronwoodMigrationPrepareScreen(),
+      ),
+      GoRoute(
+        path: '/migration/intro',
+        builder: (_, _) => const Text('intro-route'),
+      ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) => const Text('private-status-route'),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+      GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting')),
+      GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
+      GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
+      GoRoute(
+        path: '/add-account',
+        builder: (_, _) => const Text('add account'),
+      ),
+      GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock')),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      ironwoodMigrationInputsProvider.overrideWithValue(
+        inputs ?? _migrationInputs(),
+      ),
+      walletDbPathGetterProvider.overrideWithValue(
+        () async => '/tmp/wallet.db',
+      ),
+      orchardMigrationStatusGetterProvider.overrideWith(
+        (ref) =>
+            ({required dbPath, required network, required accountUuid}) async {
+              final error = routeError;
+              if (error != null) throw error;
+              final getter = statusGetter;
+              if (getter != null) {
+                return getter(
+                  dbPath: dbPath,
+                  network: network,
+                  accountUuid: accountUuid,
+                );
+              }
+              return _migrationStatus();
+            },
+      ),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapFor(activeAccountIsHardware: false),
+      ),
+      syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      swapFeatureEnabledProvider.overrideWithValue(true),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: true, textScaler: TextScaler.noScaling),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
   );
 }
 
 Widget _migrationEntryHarness({
   required IronwoodHomeMigrationCtaState ctaState,
   String initialLocation = '/migration',
+  Future<IronwoodHomeMigrationCtaState>? routeCtaFuture,
   Object? routeError,
   bool realStatusRoute = false,
   rust_sync.MigrationStatus? routeStatus,
@@ -1308,6 +2394,7 @@ Widget _migrationEntryHarness({
   bool activeAccountIsHardware = false,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
+  SyncState? syncState,
 }) {
   final network = ctaState.network ?? 'test';
   final accountUuid = ctaState.accountUuid ?? 'account-1';
@@ -1322,6 +2409,10 @@ Widget _migrationEntryHarness({
       GoRoute(
         path: '/migration/intro',
         builder: (_, _) => const Text('intro-route'),
+      ),
+      GoRoute(
+        path: '/migration/prepare',
+        builder: (_, _) => const Text('prepare-route'),
       ),
       GoRoute(
         path: '/migration/private/status',
@@ -1339,7 +2430,10 @@ Widget _migrationEntryHarness({
 
   return ProviderScope(
     overrides: [
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(ctaState),
       ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
+        final future = routeCtaFuture;
+        if (future != null) return future;
         final error = routeError;
         if (error != null) throw error;
         return ctaState;
@@ -1354,6 +2448,7 @@ Widget _migrationEntryHarness({
           hasAccountScopedData: true,
           isSyncing: false,
           isBackgroundMode: false,
+          isSyncComplete: true,
           hasSyncFailure: false,
           orchardBalance: BigInt.from(10_000_000),
           orchardPendingBalance: BigInt.zero,
@@ -1383,7 +2478,9 @@ Widget _migrationEntryHarness({
       appBootstrapProvider.overrideWithValue(
         _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
       ),
-      syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      syncProvider.overrideWith(
+        () => _FakeSyncNotifier(syncState ?? _syncedSyncState),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(true),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _ScreenTestMigrationCoordinator(
@@ -1584,6 +2681,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
+        partIndex: 0,
         valueZatoshi: BigInt.from(10_000_000),
         blockOffset: 144,
       ),
@@ -1600,6 +2698,10 @@ rust_sync.MigrationStatus _migrationStatus({
   int confirmedTxCount = 0,
   int totalCount = 0,
   int pendingSplitStageCount = 0,
+  int denominationConfirmationCount = 0,
+  int denominationConfirmationTarget = 0,
+  int denominationSplitCompletedCount = 0,
+  int denominationSplitTotalCount = 0,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
   List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
@@ -1608,10 +2710,10 @@ rust_sync.MigrationStatus _migrationStatus({
     activeRunId: activeRunId,
     targetValuesZatoshi: frb.Uint64List.fromList(targetValuesZatoshi),
     preparedNoteCount: 0,
-    denominationConfirmationCount: 0,
-    denominationConfirmationTarget: 0,
-    denominationSplitCompletedCount: 0,
-    denominationSplitTotalCount: 0,
+    denominationConfirmationCount: denominationConfirmationCount,
+    denominationConfirmationTarget: denominationConfirmationTarget,
+    denominationSplitCompletedCount: denominationSplitCompletedCount,
+    denominationSplitTotalCount: denominationSplitTotalCount,
     pendingTxCount: pendingTxCount,
     broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: confirmedTxCount,
@@ -1634,10 +2736,14 @@ rust_sync.MigrationPartStatus _migrationPart(
   rust_sync.MigrationPartState state, {
   int confirmationCount = 0,
   int confirmationTarget = 3,
+  int? scheduleStartHeight,
+  int? scheduledHeight,
 }) => rust_sync.MigrationPartStatus(
   partIndex: partIndex,
   valueZatoshi: BigInt.from(valueZatoshi),
   state: state,
+  scheduleStartHeight: scheduleStartHeight,
+  scheduledHeight: scheduledHeight,
   confirmationCount: confirmationCount,
   confirmationTarget: confirmationTarget,
 );

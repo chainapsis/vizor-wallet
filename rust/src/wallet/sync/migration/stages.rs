@@ -94,6 +94,7 @@ pub(crate) struct DenominationStageOutputRef {
     pub value_zatoshi: u64,
     pub note_version: u8,
     pub kind: DenominationStageOutputKind,
+    pub part_index: Option<u32>,
 }
 
 /// A signed denomination stage ready to be inserted in an existing SQL
@@ -164,6 +165,7 @@ pub(crate) struct DenominationStageChainRecord {
     pub confirmed_mined_height: Option<u32>,
     pub confirmed_block_hash: Option<Vec<u8>>,
     pub parent_txids: Vec<String>,
+    pub outputs: Vec<DenominationStageOutputRef>,
 }
 
 /// Creates the normalized staged-denomination tables.
@@ -234,6 +236,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             value_zatoshi INTEGER NOT NULL,
             note_version INTEGER NOT NULL,
             kind TEXT NOT NULL CHECK (kind IN ('migration', 'change', 'continuation')),
+            part_index INTEGER,
             PRIMARY KEY (run_id, stage_index, output_order),
             UNIQUE (run_id, stage_index, output_index),
             FOREIGN KEY (run_id, stage_index)
@@ -246,7 +249,33 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Initialize migration denomination stage schema: {e}"))?;
 
     migrate_confirmed_stage_without_raw_constraint(conn)?;
+    add_column_if_missing(conn, STAGE_OUTPUTS_TABLE, "part_index", "INTEGER")?;
 
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), String> {
+    let exists = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+            params![table, column],
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|row| row.is_some())
+        .map_err(|e| format!("Check migration denomination column {table}.{column}: {e}"))?;
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )
+        .map_err(|e| format!("Add migration denomination column {table}.{column}: {e}"))?;
+    }
     Ok(())
 }
 
@@ -457,8 +486,8 @@ fn insert_stage(
             &format!(
                 "INSERT INTO {STAGE_OUTPUTS_TABLE}
                  (run_id, stage_index, output_order, output_index, value_zatoshi,
-                  note_version, kind)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+                  note_version, kind, part_index)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
             ),
             params![
                 run_id,
@@ -469,6 +498,7 @@ fn insert_stage(
                 output.value_zatoshi,
                 output.note_version,
                 output.kind.as_str(),
+                output.part_index,
             ],
         )
         .map_err(|e| format!("Insert migration denomination stage output: {e}"))?;
@@ -602,7 +632,7 @@ fn stage_outputs(
 ) -> Result<Vec<DenominationStageOutputRef>, String> {
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT output_index, value_zatoshi, note_version, kind
+            "SELECT output_index, value_zatoshi, note_version, kind, part_index
              FROM {STAGE_OUTPUTS_TABLE}
              WHERE run_id = ?1 AND stage_index = ?2
              ORDER BY output_order ASC"
@@ -615,18 +645,20 @@ fn stage_outputs(
                 row.get::<_, u64>(1)?,
                 row.get::<_, u8>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, Option<u32>>(4)?,
             ))
         })
         .map_err(|e| format!("Query migration denomination stage outputs: {e}"))?;
     let mut outputs = Vec::new();
     for row in rows {
-        let (output_index, value_zatoshi, note_version, kind) =
+        let (output_index, value_zatoshi, note_version, kind, part_index) =
             row.map_err(|e| format!("Read migration denomination stage output: {e}"))?;
         outputs.push(DenominationStageOutputRef {
             output_index,
             value_zatoshi,
             note_version,
             kind: DenominationStageOutputKind::parse(&kind)?,
+            part_index,
         });
     }
     Ok(outputs)
@@ -1043,6 +1075,7 @@ pub(crate) fn denomination_stage_chain_records(
             confirmed_mined_height,
             confirmed_block_hash,
             parent_txids: parents,
+            outputs: stage_outputs(conn, run_id, stage_index)?,
         });
     }
     Ok(records)
@@ -1300,6 +1333,14 @@ fn validate_stage_batch(run_id: &str, stages: &[DenominationStageInsert]) -> Res
 
         let mut output_indices = BTreeSet::new();
         for output in &stage.outputs {
+            if output.kind != DenominationStageOutputKind::Migration && output.part_index.is_some()
+            {
+                return Err(format!(
+                    "Migration denomination stage {} assigns a part index to a {} output",
+                    stage.stage_index,
+                    output.kind.as_str()
+                ));
+            }
             if !output_indices.insert(output.output_index) {
                 return Err(format!(
                     "Migration denomination stage {} repeats output index {}",
@@ -1372,6 +1413,7 @@ mod tests {
             value_zatoshi,
             note_version: 2,
             kind,
+            part_index: None,
         }
     }
 

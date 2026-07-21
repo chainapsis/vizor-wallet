@@ -42,13 +42,21 @@ class FigmaCompareApp extends StatelessWidget {
           ),
         ),
       ),
-      builder: (context, child) => AppThemeHost(
-        themeMode: themeMode,
-        child: ColoredBox(
-          color: appTheme.colors.background.window,
-          child: child!,
-        ),
-      ),
+      builder: (context, child) {
+        final themed = AppThemeHost(
+          themeMode: themeMode,
+          child: ColoredBox(
+            color: appTheme.colors.background.window,
+            child: child!,
+          ),
+        );
+        final mediaQuery = MediaQuery.maybeOf(context);
+        if (mediaQuery == null) return themed;
+        return MediaQuery(
+          data: mediaQuery.copyWith(disableAnimations: true),
+          child: themed,
+        );
+      },
     );
   }
 }

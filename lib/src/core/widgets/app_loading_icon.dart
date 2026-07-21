@@ -40,20 +40,24 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
   }
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.animated) {
-      _activeController.repeat();
-    }
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
   }
 
   @override
   void didUpdateWidget(covariant AppLoadingIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.animated == oldWidget.animated) {
-      return;
-    }
-    if (widget.animated) {
+    _syncAnimation();
+  }
+
+  bool get _effectiveAnimated {
+    return widget.animated &&
+        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+  }
+
+  void _syncAnimation() {
+    if (_effectiveAnimated) {
       _activeController.repeat();
     } else {
       final controller = _controller;
@@ -73,6 +77,8 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
 
   @override
   Widget build(BuildContext context) {
+    _syncAnimation();
+    final effectiveAnimated = _effectiveAnimated;
     final resolved =
         widget.color ??
         IconTheme.of(context).color ??
@@ -80,7 +86,7 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
     final icon = CustomPaint(
       painter: _LoaderIconPainter(
         color: resolved,
-        repaint: widget.animated ? _activeController : null,
+        repaint: effectiveAnimated ? _activeController : null,
       ),
       size: Size.square(widget.size),
     );

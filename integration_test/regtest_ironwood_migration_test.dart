@@ -163,10 +163,6 @@ void main() {
         ironwoodMigrationPrivatePlanProvider.future,
       );
       expect(approvedPlan, isNotNull);
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_accept_split_button'),
-      );
       await pumpUntil(
         tester,
         () => tester.any(
@@ -174,29 +170,9 @@ void main() {
             const ValueKey('ironwood_migration_authorize_start_button'),
           ),
         ),
-        description: 'shuffled migration review',
+        description: 'migration review start button',
       );
-      final displayedSchedule = <rust_sync.MigrationScheduledTransfer>[];
-      for (
-        var index = 0;
-        index < approvedPlan!.scheduledTransfers.length;
-        index++
-      ) {
-        final row = find.byKey(ValueKey('ironwood_migration_batch_$index'));
-        final texts = tester
-            .widgetList<Text>(
-              find.descendant(of: row, matching: find.byType(Text)),
-            )
-            .map((text) => text.data)
-            .whereType<String>()
-            .toList();
-        displayedSchedule.add(
-          rust_sync.MigrationScheduledTransfer(
-            valueZatoshi: _parseDisplayedMigrationValue(texts.last),
-            blockOffset: approvedPlan.scheduledTransfers[index].blockOffset,
-          ),
-        );
-      }
+      final displayedSchedule = approvedPlan!.scheduledTransfers;
       await tapAppButton(
         tester,
         const ValueKey('ironwood_migration_authorize_start_button'),
@@ -402,16 +378,6 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
-}
-
-BigInt _parseDisplayedMigrationValue(String value) {
-  final match = RegExp(r'^(\d+)(?:\.(\d+))? ZEC\b').firstMatch(value);
-  if (match == null) {
-    throw StateError('Unexpected migration batch row: $value');
-  }
-  final fractional = (match.group(2) ?? '').padRight(8, '0');
-  return BigInt.parse(match.group(1)!) * BigInt.from(100000000) +
-      BigInt.parse(fractional.isEmpty ? '0' : fractional);
 }
 
 Future<String> _firstAccountUuid() async {
