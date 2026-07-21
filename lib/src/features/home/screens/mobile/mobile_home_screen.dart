@@ -1202,7 +1202,7 @@ class _MobileIronwoodMigrationBannerState
         !widget.actionNeeded &&
         !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     if (animate) {
-      if (!_controller.isAnimating) _controller.repeat();
+      if (!_controller.isAnimating) _controller.repeat(reverse: true);
     } else {
       _controller
         ..stop()
@@ -1247,19 +1247,23 @@ class _MobileIronwoodMigrationBannerState
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Positioned(
-                top: 0,
-                right: 0,
-                width: 312,
-                height: 200,
-                child: Image.asset(
-                  'assets/illustrations/'
-                  'ironwood_migration_home_card_background.png',
+              Positioned.fill(
+                child: ShaderMask(
                   key: const ValueKey(
-                    'mobile_home_ironwood_migration_banner_background',
+                    'mobile_home_ironwood_migration_banner_image_mask',
                   ),
-                  fit: BoxFit.fill,
-                  alignment: Alignment.topRight,
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [Color(0x0DFFFFFF), Color(0x8CFFFFFF)],
+                  ).createShader(bounds),
+                  child: Image.asset(
+                    'assets/illustrations/'
+                    'ironwood_migration_home_card_background.png',
+                    key: const ValueKey(
+                      'mobile_home_ironwood_migration_banner_background',
+                    ),
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ),
               Padding(
@@ -1287,41 +1291,73 @@ class _MobileIronwoodMigrationBannerState
                     else
                       AnimatedBuilder(
                         animation: _controller,
-                        builder: (context, child) {
-                          final pulse = Curves.easeInOut.transform(
+                        builder: (context, _) {
+                          final pulse = Curves.easeInOutSine.transform(
                             _controller.value,
                           );
-                          return DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF00A460).withValues(
-                                    alpha: lerpDouble(0.16, 0.34, pulse)!,
+                          return SizedBox(
+                            key: const ValueKey(
+                              'mobile_home_ironwood_migration_blink',
+                            ),
+                            width: 12,
+                            height: 12,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned(
+                                  left: -14,
+                                  top: -14,
+                                  child: Opacity(
+                                    key: const ValueKey(
+                                      'mobile_home_ironwood_migration_blink_glow',
+                                    ),
+                                    opacity: lerpDouble(0.10, 0.26, pulse)!,
+                                    child: Transform.scale(
+                                      scale: lerpDouble(0.78, 1, pulse),
+                                      child: const SizedBox(
+                                        width: 40,
+                                        height: 40,
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: Color(0xFF00A460),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  blurRadius: lerpDouble(8, 20, pulse)!,
-                                  spreadRadius: lerpDouble(2, 7, pulse)!,
+                                ),
+                                const SizedBox(
+                                  width: 10,
+                                  height: 10,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: RadialGradient(
+                                        colors: [
+                                          Color(0xFF56DDA3),
+                                          Color(0xFF00A460),
+                                        ],
+                                      ),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Color(0xFF00A460),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
-                            child: child,
                           );
                         },
-                        child: const SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Color(0xFF00A460),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
                       ),
                     SizedBox(
                       width: widget.inProgress || widget.actionNeeded
                           ? AppSpacing.xxs
-                          : AppSpacing.s,
+                          : AppSpacing.sm,
                     ),
                     Expanded(
                       child: Text(
@@ -1371,7 +1407,7 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               AppIcon(AppIcons.lock, size: 20, color: contentColor),
-              const SizedBox(width: AppSpacing.s),
+              const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
                   'Migration required',

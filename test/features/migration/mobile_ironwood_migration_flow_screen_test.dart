@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
@@ -483,6 +484,30 @@ void main() {
         find.byKey(const ValueKey('mobile_ironwood_target_connection_dot')),
       ),
       const Size.square(16),
+    );
+    final profilePictures = find.byType(AppProfilePicture);
+    expect(profilePictures, findsNWidgets(2));
+    expect(
+      tester
+              .getCenter(
+                find.byKey(
+                  const ValueKey('mobile_ironwood_legacy_connection_dot'),
+                ),
+              )
+              .dy -
+          tester.getCenter(profilePictures.first).dy,
+      5,
+    );
+    expect(
+      tester
+              .getCenter(
+                find.byKey(
+                  const ValueKey('mobile_ironwood_target_connection_dot'),
+                ),
+              )
+              .dy -
+          tester.getCenter(profilePictures.last).dy,
+      5,
     );
     expect(find.text('A new shielded pool for Zcash.'), findsOneWidget);
     expect(find.text('Official release note'), findsOneWidget);
@@ -988,9 +1013,7 @@ void main() {
       );
 
       await tester.pumpWidget(signingApp());
-      final qr = find.byKey(
-        const ValueKey('mobile_ironwood_keystone_qr'),
-      );
+      final qr = find.byKey(const ValueKey('mobile_ironwood_keystone_qr'));
       for (var attempt = 0; attempt < 20 && !tester.any(qr); attempt++) {
         await tester.pump(const Duration(milliseconds: 50));
       }

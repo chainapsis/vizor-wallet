@@ -420,6 +420,54 @@ void main() {
       ),
       findsOneWidget,
     );
+    final migrationPill = find.byKey(
+      const ValueKey('mobile_home_ironwood_migration_required_pill'),
+    );
+    final migrationPillIcon = find.descendant(
+      of: migrationPill,
+      matching: find.byType(AppIcon),
+    );
+    final migrationPillLabel = find.descendant(
+      of: migrationPill,
+      matching: find.text('Migration required'),
+    );
+    expect(
+      tester.getTopLeft(migrationPillLabel).dx -
+          tester.getTopRight(migrationPillIcon).dx,
+      8,
+    );
+    expect(
+      tester
+          .widget<Image>(
+            find.byKey(
+              const ValueKey(
+                'mobile_home_ironwood_migration_banner_background',
+              ),
+            ),
+          )
+          .fit,
+      BoxFit.fill,
+    );
+    final imageMask = tester.widget<ShaderMask>(
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_image_mask'),
+      ),
+    );
+    expect(imageMask.blendMode, BlendMode.dstIn);
+    final maskShader = imageMask.shaderCallback(
+      const Rect.fromLTWH(0, 0, 361, 52),
+    );
+    expect(maskShader, isA<Shader>());
+    final blinkGlow = find.byKey(
+      const ValueKey('mobile_home_ironwood_migration_blink_glow'),
+    );
+    expect(tester.widget<Opacity>(blinkGlow).opacity, closeTo(0.10, 0.001));
+    await tester.pump(const Duration(milliseconds: 1400));
+    final peakOpacity = tester.widget<Opacity>(blinkGlow).opacity;
+    expect(peakOpacity, closeTo(0.26, 0.001));
+    await tester.pump(const Duration(milliseconds: 1));
+    final reversingOpacity = tester.widget<Opacity>(blinkGlow).opacity;
+    expect((peakOpacity - reversingOpacity).abs(), lessThan(0.001));
     expect(find.text('Send'), findsOneWidget);
     expect(
       tester
