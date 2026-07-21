@@ -77,6 +77,112 @@ class _MobileStatusCard extends StatelessWidget {
   }
 }
 
+class _MobileMigrationRecoveryCard extends StatelessWidget {
+  const _MobileMigrationRecoveryCard({
+    required this.sending,
+    required this.schedulingBackground,
+    required this.backgroundRetryScheduled,
+    required this.supportsBackgroundRetry,
+    required this.error,
+    required this.onSendOne,
+    required this.onRetryInBackground,
+  });
+
+  final bool sending;
+  final bool schedulingBackground;
+  final bool backgroundRetryScheduled;
+  final bool supportsBackgroundRetry;
+  final String? error;
+  final VoidCallback onSendOne;
+  final VoidCallback onRetryInBackground;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final busy = sending || schedulingBackground;
+    return _MobileStatusCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  'Transfer ready',
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            supportsBackgroundRetry
+                ? 'A scheduled transfer is still waiting. Send one now, or '
+                      'let Vizor try again in the background.'
+                : 'A scheduled transfer is still waiting. Send the next '
+                      'transfer now to continue.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Sending now can link this transfer more closely to your current '
+            'app activity.',
+            style: AppTypography.labelMedium.copyWith(color: colors.text.muted),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              error!,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            key: const ValueKey('mobile_ironwood_send_one_due_button'),
+            expand: true,
+            constrainContent: true,
+            height: 44,
+            onPressed: busy ? null : onSendOne,
+            child: Text(
+              sending ? 'Sending...' : 'Send one now',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (supportsBackgroundRetry) ...[
+            const SizedBox(height: AppSpacing.xs),
+            AppButton(
+              key: const ValueKey('mobile_ironwood_retry_background_button'),
+              variant: AppButtonVariant.secondary,
+              expand: true,
+              constrainContent: true,
+              height: 44,
+              onPressed: busy ? null : onRetryInBackground,
+              child: Text(
+                schedulingBackground
+                    ? 'Scheduling...'
+                    : backgroundRetryScheduled
+                    ? 'Background retry scheduled'
+                    : 'Retry in background',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// States used by the Figma status surface. These are intentionally supplied
 /// by the caller: the current migration status API does not expose stable
 /// part identifiers, fractional progress, or per-part input requirements.

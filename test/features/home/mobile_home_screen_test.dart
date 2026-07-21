@@ -568,6 +568,66 @@ void main() {
     expect(find.text('1 ZEC still migrating'), findsNothing);
   });
 
+  testWidgets('marks a migration that is more than two hours late', (
+    tester,
+  ) async {
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
+      preparedNoteCount: 1,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 1,
+      broadcastedTxCount: 0,
+      confirmedTxCount: 0,
+      totalCount: 1,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      maxPreparedNotesPerRun: 64,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'overdue',
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: DateTime.now()
+              .subtract(const Duration(hours: 3))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 3000000,
+          status: 'scheduled',
+        ),
+      ],
+      parts: const [],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migration needs attention'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_attention')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
+      findsNothing,
+    );
+  });
+
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() => tester.binding.setSurfaceSize(null));

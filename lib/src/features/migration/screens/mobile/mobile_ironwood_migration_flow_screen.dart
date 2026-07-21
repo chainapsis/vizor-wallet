@@ -22,6 +22,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../models/ironwood_migration_presentation.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';
+import '../../providers/ironwood_migration_coordinator_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../../widgets/ironwood_migration_shimmer_text.dart';
 import '../../widgets/mobile/mobile_migration_passcode_view.dart';
@@ -57,6 +58,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewStatus,
     this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
     this.previewParts,
+    this.previewRecoveryRequired = false,
     super.key,
   });
 
@@ -66,6 +68,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final rust_sync.MigrationStatus? previewStatus;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
+  final bool previewRecoveryRequired;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,6 +81,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewPrivatePlan: previewPrivatePlan,
         previewReviewStage: previewReviewStage,
         previewParts: previewParts,
+        previewRecoveryRequired: previewRecoveryRequired,
         status: previewStatus,
       );
     }
@@ -91,6 +95,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewPrivatePlan: previewPrivatePlan,
       previewReviewStage: previewReviewStage,
       previewParts: previewParts,
+      previewRecoveryRequired: false,
       status: null,
     );
   }
@@ -104,6 +109,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewPrivatePlan,
     required this.previewReviewStage,
     required this.previewParts,
+    required this.previewRecoveryRequired,
     this.status,
   });
 
@@ -113,6 +119,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
+  final bool previewRecoveryRequired;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -147,6 +154,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         status: status,
         previewPlan: previewPrivatePlan,
         previewParts: previewParts,
+        enableRecovery: !previewMode,
+        forceRecoveryPreview: previewMode && previewRecoveryRequired,
       ),
       MobileIronwoodMigrationStep.passcodeWhileSyncing =>
         const MobileMigrationPasscodeView(progress: 0.1),
@@ -228,6 +237,7 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
       status: status,
       previewPlan: null,
       previewParts: null,
+      enableRecovery: true,
     );
   }
 }
@@ -1083,11 +1093,13 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
   }
 }
 
-class _MobileMigrationMigrating extends StatefulWidget {
+class _MobileMigrationMigrating extends ConsumerStatefulWidget {
   const _MobileMigrationMigrating({
     required this.data,
     required this.previewPlan,
     required this.previewParts,
+    this.enableRecovery = false,
+    this.forceRecoveryPreview = false,
     this.status,
   });
 
@@ -1095,13 +1107,62 @@ class _MobileMigrationMigrating extends StatefulWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
+  final bool enableRecovery;
+  final bool forceRecoveryPreview;
 
   @override
-  State<_MobileMigrationMigrating> createState() =>
+  ConsumerState<_MobileMigrationMigrating> createState() =>
       _MobileMigrationMigratingState();
 }
 
-class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
+class _MobileMigrationMigratingState
+    extends ConsumerState<_MobileMigrationMigrating> {
+  bool _schedulingBackgroundRetry = false;
+  bool _backgroundRetryScheduled = false;
+  String? _recoveryError;
+
+  Future<void> _sendOneDue(String accountUuid) async {
+    setState(() => _recoveryError = null);
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .sendOneDue(accountUuid);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _recoveryError = "Couldn't send the transfer. Try again.";
+        });
+      }
+    }
+  }
+
+  Future<void> _retryInBackground(String accountUuid) async {
+    setState(() {
+      _schedulingBackgroundRetry = true;
+      _recoveryError = null;
+    });
+    try {
+      final scheduled = await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .retryInBackground(accountUuid);
+      if (!mounted) return;
+      setState(() {
+        _backgroundRetryScheduled = scheduled;
+        if (!scheduled) {
+          _recoveryError = "Couldn't schedule a background retry.";
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _recoveryError = "Couldn't schedule a background retry.";
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _schedulingBackgroundRetry = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = widget.status;
@@ -1126,6 +1187,115 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
         : migrationCompletionTimingLabel(status);
     final spendable = _mobileSpendableAmountText(status);
     final compact = MediaQuery.sizeOf(context).height < 650;
+    final syncState = widget.enableRecovery
+        ? ref.watch(syncProvider).value
+        : null;
+    final accountUuid = widget.enableRecovery
+        ? ref.watch(accountProvider).value?.activeAccountUuid
+        : null;
+    final recoveryRequired =
+        widget.forceRecoveryPreview ||
+        (status != null &&
+            _hasDueMobileMigrationTransfer(
+              status,
+              currentHeight: _mobileMigrationHeight(syncState),
+            ));
+    final coordinator = widget.enableRecovery
+        ? ref.watch(ironwoodMigrationCoordinatorProvider)
+        : const IronwoodMigrationCoordinatorState();
+    final supportsBackgroundRetry =
+        widget.forceRecoveryPreview ||
+        (widget.enableRecovery &&
+            ref
+                .read(ironwoodMigrationServiceProvider)
+                .supportsBackgroundMigrationRetry);
+    final sending =
+        accountUuid != null &&
+        coordinator.advancingAccounts.contains(accountUuid);
+    final partsContent = parts.isEmpty
+        ? Center(
+            child: Text(
+              'Migration parts will appear as transactions are prepared.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          )
+        : _MobileIronwoodActiveStatus(parts: parts);
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: compact ? 20 : 36),
+        Text(
+          'Migration in Progress',
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: 48),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Migration $partCount notes',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Text(
+              '$totalAmount ZEC',
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        if (compact)
+          SizedBox(
+            height: math.min(156, math.max(72, parts.length * 52).toDouble()),
+            child: partsContent,
+          )
+        else
+          Expanded(child: partsContent),
+        const SizedBox(height: AppSpacing.s),
+        _ReviewRow(label: 'Est. completion', value: completion),
+        const SizedBox(height: AppSpacing.xs),
+        _ReviewRow(
+          label: 'Currently spendable balance',
+          value: spendable == '-' ? spendable : '$spendable ZEC',
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (recoveryRequired &&
+            (widget.forceRecoveryPreview || accountUuid != null))
+          _MobileMigrationRecoveryCard(
+            sending: sending,
+            schedulingBackground: _schedulingBackgroundRetry,
+            backgroundRetryScheduled: _backgroundRetryScheduled,
+            error: _recoveryError ?? coordinator.errors[accountUuid],
+            supportsBackgroundRetry: supportsBackgroundRetry,
+            onSendOne: widget.forceRecoveryPreview
+                ? () {}
+                : () => unawaited(_sendOneDue(accountUuid!)),
+            onRetryInBackground: widget.forceRecoveryPreview
+                ? () {}
+                : () => unawaited(_retryInBackground(accountUuid!)),
+          )
+        else
+          const _MigrationCanLeaveMessage(),
+        const SizedBox(height: AppSpacing.md),
+        _MobileStatusBackHomeButton(
+          key: const ValueKey('mobile_ironwood_status_back_home_button'),
+          label: 'Go home',
+          onPressed: () => context.go('/home'),
+        ),
+      ],
+    );
     return _MobileMigrationStatusScaffold(
       key: const ValueKey('mobile_ironwood_migration_status_migrating'),
       data: widget.data,
@@ -1136,72 +1306,30 @@ class _MobileMigrationMigratingState extends State<_MobileMigrationMigrating> {
         AppSpacing.sm,
         AppSpacing.s,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: compact ? 20 : 36),
-          Text(
-            'Migration in Progress',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          const SizedBox(height: 48),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Migration $partCount notes',
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                '$totalAmount ZEC',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Expanded(
-            child: parts.isEmpty
-                ? Center(
-                    child: Text(
-                      'Migration parts will appear as transactions are '
-                      'prepared.',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  )
-                : _MobileIronwoodActiveStatus(parts: parts),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          _ReviewRow(label: 'Est. completion', value: completion),
-          const SizedBox(height: AppSpacing.xs),
-          _ReviewRow(
-            label: 'Currently spendable balance',
-            value: spendable == '-' ? spendable : '$spendable ZEC',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const _MigrationCanLeaveMessage(),
-          const SizedBox(height: AppSpacing.md),
-          _MobileStatusBackHomeButton(
-            key: const ValueKey('mobile_ironwood_status_back_home_button'),
-            label: 'Go home',
-            onPressed: () => context.go('/home'),
-          ),
-        ],
-      ),
+      child: compact ? SingleChildScrollView(child: body) : body,
     );
   }
+}
+
+int _mobileMigrationHeight(SyncState? syncState) {
+  if (syncState == null) return 0;
+  if (syncState.scannedHeight > 0 && syncState.chainTipHeight > 0) {
+    return math.min(syncState.scannedHeight, syncState.chainTipHeight);
+  }
+  return math.max(syncState.scannedHeight, syncState.chainTipHeight);
+}
+
+bool _hasDueMobileMigrationTransfer(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+}) {
+  if (currentHeight <= 0) return false;
+  return status.scheduledBroadcasts.any((broadcast) {
+    if (broadcast.status.toLowerCase() != 'scheduled') return false;
+    if (broadcast.scheduledHeight <= 0) return false;
+    return broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks <=
+        currentHeight;
+  });
 }
 
 class _MobileMigrationUnavailable extends StatelessWidget {

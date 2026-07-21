@@ -1,3 +1,6 @@
+@Tags(['mobile'])
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -10,6 +13,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -64,7 +68,7 @@ void main() {
   });
 
   test(
-    'broadcasts a signed Keystone migration without requesting a signature',
+    'does not broadcast a scheduled migration without user action',
     () async {
       final statuses = {
         _softwareUuid: _status('complete', activeRunId: null),
@@ -89,10 +93,76 @@ void main() {
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .refreshNow(forceAdvance: true);
 
-      expect(broadcasts, [_hardwareUuid]);
+      expect(broadcasts, isEmpty);
       expect(softwareStarts, isEmpty);
     },
   );
+
+  test('sends one scheduled transfer only after user action', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final oneBroadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      oneBroadcasts: oneBroadcasts,
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .sendOneDue(_softwareUuid);
+
+    expect(oneBroadcasts, [_softwareUuid]);
+  });
+
+  test('lets the user reschedule background migration work', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final backgroundCredentialStore =
+        IronwoodMigrationBackgroundCredentialStore();
+    await backgroundCredentialStore.prepare(
+      network: _endpoint.networkName,
+      accountUuid: _softwareUuid,
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
+    );
+    var scheduleCount = 0;
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      backgroundCredentialStore: backgroundCredentialStore,
+      scheduleBackgroundMigration: () async {
+        scheduleCount += 1;
+        return true;
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .retryInBackground(_softwareUuid);
+
+    expect(scheduleCount, 1);
+  });
 
   test(
     'coalesces a refresh requested while status loading is active',
@@ -142,7 +212,7 @@ void main() {
     },
   );
 
-  test('advances immediately when confirmation progress changes', () async {
+  test('refreshes confirmation progress without broadcasting', () async {
     final statuses = {
       _softwareUuid: _status('waiting_migration_confirmations'),
       _hardwareUuid: _status('complete', activeRunId: null),
@@ -171,7 +241,14 @@ void main() {
     );
     await coordinator.refreshNow();
 
-    expect(broadcasts, [_softwareUuid, _softwareUuid]);
+    expect(broadcasts, isEmpty);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .statuses[_softwareUuid]
+          ?.confirmedTxCount,
+      1,
+    );
   });
 
   test('ignores a status result that completes after disposal', () async {
@@ -213,6 +290,9 @@ ProviderContainer _container({
   required Map<String, rust_sync.MigrationStatus> statuses,
   required List<String> softwareStarts,
   required List<String> broadcasts,
+  List<String>? oneBroadcasts,
+  IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
+  IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
 }) {
   final service = IronwoodMigrationService(
@@ -225,10 +305,14 @@ ProviderContainer _container({
         ({required dbPath, required network, required accountUuid}) async =>
             null,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    backgroundCredentialStore: backgroundCredentialStore,
     getEndpoint: () => _endpoint,
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
+    isMobile: () => true,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
+    scheduleBackgroundMigration:
+        scheduleBackgroundMigration ?? () async => true,
     broadcastDueMigration:
         ({
           required dbPath,
@@ -245,6 +329,18 @@ ProviderContainer _container({
             return _result('waiting_migration_confirmations');
           }
           return _result(current.phase);
+        },
+    broadcastOneDueMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          oneBroadcasts?.add(accountUuid);
+          return _result('waiting_migration_confirmations');
         },
     startMacosSoftwareMigration:
         ({

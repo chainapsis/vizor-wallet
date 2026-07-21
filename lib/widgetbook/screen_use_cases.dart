@@ -944,6 +944,33 @@ Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationRecoveryUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.migrating,
+    previewStatus: _previewMobileMigrationStatus(),
+    previewRecoveryRequired: true,
+    previewParts: const [
+      MobileIronwoodMigrationPartPresentation(
+        label: 'Part 1',
+        status: MobileIronwoodMigrationPartStatus.complete,
+        detail: '40 ZEC',
+      ),
+      MobileIronwoodMigrationPartPresentation(
+        label: 'Part 2',
+        status: MobileIronwoodMigrationPartStatus.pending,
+        detail: '5 ZEC',
+        eta: 'Ready now',
+      ),
+      MobileIronwoodMigrationPartPresentation(
+        label: 'Part 3',
+        status: MobileIronwoodMigrationPartStatus.pending,
+        detail: '97.2 ZEC',
+        eta: '~20 hrs',
+      ),
+    ],
+  );
+}
+
 Widget buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase(
   BuildContext context,
 ) {
@@ -1048,6 +1075,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
   List<MobileIronwoodMigrationPartPresentation>? previewParts,
   MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
       MobileIronwoodMigrationReviewPreviewStage.review,
+  bool previewRecoveryRequired = false,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
@@ -1077,6 +1105,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
         previewStatus: previewStatus,
         previewReviewStage: reviewPreviewStage,
         previewParts: previewParts,
+        previewRecoveryRequired: previewRecoveryRequired,
       ),
     ),
   );

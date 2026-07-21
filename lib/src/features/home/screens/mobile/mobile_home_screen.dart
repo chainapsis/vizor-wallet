@@ -824,6 +824,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   const SizedBox(height: AppSpacing.s),
                   _MobileIronwoodMigrationBanner(
                     inProgress: migrationInProgress,
+                    actionNeeded: _mobileIronwoodMigrationNeedsAttention(
+                      widget.ironwoodMigrationCta.status,
+                    ),
                     remainingText: _mobileIronwoodRemainingAmountText(
                       widget.ironwoodMigrationCta.status,
                     ),
@@ -1130,14 +1133,32 @@ String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
   return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
 }
 
+bool _mobileIronwoodMigrationNeedsAttention(
+  rust_sync.MigrationStatus? status, {
+  DateTime? now,
+}) {
+  if (status == null) return false;
+  final currentTime = now ?? DateTime.now();
+  return status.scheduledBroadcasts.any(
+    (item) =>
+        item.status.toLowerCase() == 'scheduled' &&
+        item.scheduledAtMs > 0 &&
+        !DateTime.fromMillisecondsSinceEpoch(
+          item.scheduledAtMs,
+        ).add(kIronwoodMigrationLateGraceDuration).isAfter(currentTime),
+  );
+}
+
 class _MobileIronwoodMigrationBanner extends StatefulWidget {
   const _MobileIronwoodMigrationBanner({
     required this.inProgress,
+    required this.actionNeeded,
     required this.remainingText,
     required this.onTap,
   });
 
   final bool inProgress;
+  final bool actionNeeded;
   final String? remainingText;
   final VoidCallback onTap;
 
@@ -1169,12 +1190,16 @@ class _MobileIronwoodMigrationBannerState
   @override
   void didUpdateWidget(covariant _MobileIronwoodMigrationBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.inProgress != widget.inProgress) _syncAnimation();
+    if (oldWidget.inProgress != widget.inProgress ||
+        oldWidget.actionNeeded != widget.actionNeeded) {
+      _syncAnimation();
+    }
   }
 
   void _syncAnimation() {
     final animate =
         !widget.inProgress &&
+        !widget.actionNeeded &&
         !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     if (animate) {
       if (!_controller.isAnimating) _controller.repeat();
@@ -1194,7 +1219,9 @@ class _MobileIronwoodMigrationBannerState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final label = widget.inProgress
+    final label = widget.actionNeeded
+        ? 'Migration needs attention'
+        : widget.inProgress
         ? widget.remainingText == null
               ? 'Migration in progress'
               : '${widget.remainingText} ZEC still migrating'
@@ -1239,7 +1266,16 @@ class _MobileIronwoodMigrationBannerState
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    if (widget.inProgress)
+                    if (widget.actionNeeded)
+                      AppIcon(
+                        AppIcons.warning,
+                        key: const ValueKey(
+                          'mobile_home_ironwood_migration_attention',
+                        ),
+                        size: 20,
+                        color: colors.icon.warning,
+                      )
+                    else if (widget.inProgress)
                       AppIcon(
                         AppIcons.loader,
                         key: const ValueKey(
@@ -1283,7 +1319,9 @@ class _MobileIronwoodMigrationBannerState
                         ),
                       ),
                     SizedBox(
-                      width: widget.inProgress ? AppSpacing.xxs : AppSpacing.s,
+                      width: widget.inProgress || widget.actionNeeded
+                          ? AppSpacing.xxs
+                          : AppSpacing.s,
                     ),
                     Expanded(
                       child: Text(

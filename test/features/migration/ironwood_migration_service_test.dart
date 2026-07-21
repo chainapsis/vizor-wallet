@@ -892,6 +892,118 @@ void main() {
     },
   );
 
+  test(
+    'background retry is unavailable on unsupported mobile platforms',
+    () async {
+      var scheduleCalls = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        supportsBackgroundMigration: () => false,
+        scheduleBackgroundMigration: () async {
+          scheduleCalls++;
+          return true;
+        },
+      );
+
+      expect(service.supportsBackgroundMigrationRetry, isFalse);
+      expect(
+        await service.retryPrivateMigrationInBackground(
+          accountUuid: 'account-1',
+        ),
+        isFalse,
+      );
+      expect(scheduleCalls, 0);
+    },
+  );
+
+  test('background retry requires a manifest for the active run', () async {
+    var scheduleCalls = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-1'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: _backgroundCredentialStore(),
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      supportsBackgroundMigration: () => true,
+      scheduleBackgroundMigration: () async {
+        scheduleCalls++;
+        return true;
+      },
+    );
+
+    expect(
+      await service.retryPrivateMigrationInBackground(accountUuid: 'account-1'),
+      isFalse,
+    );
+    expect(scheduleCalls, 0);
+  });
+
+  test('background retry binds the manifest before scheduling', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    var scheduleCalls = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-1'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      supportsBackgroundMigration: () => true,
+      scheduleBackgroundMigration: () async {
+        scheduleCalls++;
+        return true;
+      },
+    );
+
+    expect(
+      await service.retryPrivateMigrationInBackground(accountUuid: 'account-1'),
+      isTrue,
+    );
+    expect(scheduleCalls, 1);
+    expect(
+      (await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      ))?.expectedRunId,
+      'run-1',
+    );
+  });
+
   test('mobile ambiguous failed start retains, binds, and schedules', () async {
     final statuses = <rust_sync.MigrationStatus>[
       _migrationStatus(),

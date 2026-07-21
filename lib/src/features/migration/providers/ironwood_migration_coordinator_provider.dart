@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -65,7 +66,11 @@ class IronwoodMigrationCoordinator
 
   void setForeground(bool foreground) {
     _foreground = foreground;
-    if (foreground) unawaited(refreshNow(forceAdvance: true));
+    if (foreground) {
+      unawaited(
+        refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
+      );
+    }
   }
 
   Future<void> startSoftwareMigration({
@@ -86,6 +91,53 @@ class IronwoodMigrationCoordinator
     await _advance(accountUuid);
     if (!ref.mounted) return;
     await refreshNow();
+  }
+
+  Future<void> sendOneDue(String accountUuid) async {
+    if (state.advancingAccounts.contains(accountUuid)) return;
+    state = state.copyWith(
+      advancingAccounts: {...state.advancingAccounts, accountUuid},
+    );
+    try {
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .sendOneDuePrivateMigration(accountUuid: accountUuid);
+      if (!ref.mounted) return;
+      state = state.copyWith(errors: {...state.errors}..remove(accountUuid));
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    } finally {
+      if (ref.mounted) {
+        state = state.copyWith(
+          advancingAccounts: {...state.advancingAccounts}..remove(accountUuid),
+        );
+      }
+    }
+    await refreshNow();
+  }
+
+  Future<bool> retryInBackground(String accountUuid) async {
+    try {
+      final scheduled = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .retryPrivateMigrationInBackground(accountUuid: accountUuid);
+      if (ref.mounted) {
+        state = state.copyWith(errors: {...state.errors}..remove(accountUuid));
+      }
+      return scheduled;
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<void> refreshNow({bool forceAdvance = false}) async {
@@ -170,9 +222,12 @@ class IronwoodMigrationCoordinator
             status.pendingSplitStageCount > 0) ||
         (!isHardware &&
             status.phase == kIronwoodMigrationReadyToMigratePhase) ||
-        status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
-        status.phase == kIronwoodMigrationBroadcastingPhase ||
-        status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
+        (kAppFormFactor == AppFormFactor.desktop &&
+            {
+              kIronwoodMigrationBroadcastScheduledPhase,
+              kIronwoodMigrationBroadcastingPhase,
+              kIronwoodMigrationWaitingConfirmationsPhase,
+            }.contains(status.phase));
     if (!phaseCanAdvance) return false;
     if (force) return true;
     final progressKey = _advanceProgressKey(status);

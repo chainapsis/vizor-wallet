@@ -380,6 +380,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationMigratingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Migration type - Recovery needed',
+                      builder: buildMobileIronwoodMigrationRecoveryUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Passcode while syncing',
                       builder:
                           buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,

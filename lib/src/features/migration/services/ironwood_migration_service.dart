@@ -68,6 +68,15 @@ typedef IronwoodMigrationDueBroadcaster =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationSingleDueBroadcaster =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String password,
+      required String saltBase64,
+    });
 typedef IronwoodMigrationKeystoneDenominationPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
       required String dbPath,
@@ -121,12 +130,14 @@ class IronwoodMigrationService {
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
     IronwoodMigrationPlatformCheck? isMobile,
+    IronwoodMigrationPlatformCheck? supportsBackgroundMigration,
     IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
+    IronwoodMigrationSingleDueBroadcaster? broadcastOneDueMigration,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
     IronwoodMigrationKeystoneDenominationCompleter?
@@ -144,6 +155,9 @@ class IronwoodMigrationService {
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
        isMacOS = isMacOS ?? _defaultIsMacOS,
        isMobile = isMobile ?? _defaultIsMobile,
+       supportsBackgroundMigration =
+           supportsBackgroundMigration ??
+           (scheduleBackgroundMigration == null ? _defaultIsIOS : _alwaysTrue),
        isHardwareAccount = isHardwareAccount ?? _defaultIsHardwareAccount,
        scheduleBackgroundMigration =
            scheduleBackgroundMigration ?? _defaultScheduleBackgroundMigration,
@@ -157,6 +171,9 @@ class IronwoodMigrationService {
        broadcastDueMigration =
            broadcastDueMigration ??
            rust_sync.broadcastDueOrchardMigrationTransactions,
+       broadcastOneDueMigration =
+           broadcastOneDueMigration ??
+           rust_sync.broadcastOneDueOrchardMigrationTransaction,
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
            rust_sync.prepareOrchardMigrationDenominationsPczt,
@@ -185,12 +202,14 @@ class IronwoodMigrationService {
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
   final IronwoodMigrationPlatformCheck isMobile;
+  final IronwoodMigrationPlatformCheck supportsBackgroundMigration;
   final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
+  final IronwoodMigrationSingleDueBroadcaster broadcastOneDueMigration;
   final IronwoodMigrationKeystoneDenominationPreparer
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneDenominationCompleter
@@ -202,6 +221,9 @@ class IronwoodMigrationService {
   discardKeystoneMigrationRequest;
   final Map<String, Future<void>> _credentialOperationTails = {};
   final Set<String> _scheduledBackgroundMigrations = {};
+
+  bool get supportsBackgroundMigrationRetry =>
+      isMobile() && supportsBackgroundMigration();
 
   Future<rust_sync.MigrationStatus> status({
     required String network,
@@ -371,6 +393,69 @@ class IronwoodMigrationService {
         }
       },
     );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult> sendOneDuePrivateMigration({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: false,
+      operation: (credential) => broadcastOneDueMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
+    );
+  }
+
+  Future<bool> retryPrivateMigrationInBackground({
+    required String accountUuid,
+  }) async {
+    if (!supportsBackgroundMigrationRetry) return false;
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _serializeCredentialState(context, () async {
+      final status = await _getStatusForContext(context);
+      final activeRunId = status.activeRunId;
+      if (activeRunId == null) return false;
+
+      final manifest = await backgroundCredentialStore.read(
+        network: context.network,
+        accountUuid: context.accountUuid,
+      );
+      if (manifest == null) return false;
+      _validateManifestContext(manifest, context);
+      await backgroundCredentialStore.bindExpectedRunId(
+        network: context.network,
+        accountUuid: context.accountUuid,
+        expectedRunId: activeRunId,
+      );
+
+      final scheduled = await scheduleBackgroundMigration();
+      if (scheduled) {
+        _scheduledBackgroundMigrations.add(_credentialKey(context));
+      }
+      return scheduled;
+    });
   }
 
   Future<rust_sync.KeystoneMigrationSigningRequest>
@@ -740,6 +825,8 @@ Future<List<int>?> _missingMnemonicBytesForAccount(String accountUuid) {
 
 bool _defaultIsMacOS() => Platform.isMacOS;
 bool _defaultIsMobile() => Platform.isIOS || Platform.isAndroid;
+bool _defaultIsIOS() => Platform.isIOS;
+bool _alwaysTrue() => true;
 bool _defaultIsHardwareAccount(String _) => false;
 
 const _backgroundMigrationChannel = MethodChannel(
@@ -747,7 +834,7 @@ const _backgroundMigrationChannel = MethodChannel(
 );
 
 Future<bool> _defaultScheduleBackgroundMigration() async {
-  if (!Platform.isIOS) return true;
+  if (!Platform.isIOS) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>('schedule') ??
       false;
 }
