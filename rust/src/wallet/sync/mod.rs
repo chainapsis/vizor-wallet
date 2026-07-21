@@ -39,7 +39,10 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
-pub(crate) use background_migration::{run_background_migration_cycle, BackgroundMigrationAction};
+pub(crate) use background_migration::{
+    inspect_background_migration, run_background_migration_cycle, BackgroundMigrationAction,
+    BackgroundMigrationInspection,
+};
 pub(crate) use migration::{
     configure_fast_testnet_migration, migration_status, MigrationPartState, MigrationScheduleEntry,
 };
@@ -51,9 +54,9 @@ pub use pczt::{
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::get_orchard_migration_private_plan;
 pub use send::{
-    broadcast_due_orchard_migration_transactions, estimate_fee, execute_proposal,
-    execute_proposal_with_seed_loader, propose_send, ExecuteProposalResult,
-    IronwoodMigrationResult,
+    broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
+    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
+    ExecuteProposalResult, IronwoodMigrationResult,
 };
 pub(crate) use send::{
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,

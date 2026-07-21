@@ -178,6 +178,7 @@ struct BackgroundMigrationNativeResult: Equatable {
 enum BackgroundMigrationRunOutcome: Equatable {
   case noWork
   case waiting(nextHeight: UInt64?, observedHeight: UInt64)
+  case synced(nextHeight: UInt64?, observedHeight: UInt64)
   case advanced(nextHeight: UInt64?, observedHeight: UInt64)
   case complete
   case needsUserAction
@@ -195,7 +196,8 @@ enum BackgroundMigrationReschedulePolicy {
       return nil
     }
     switch outcome {
-    case .waiting(let nextHeight, let observedHeight),
+    case .synced(let nextHeight, let observedHeight),
+      .waiting(let nextHeight, let observedHeight),
       .advanced(let nextHeight, let observedHeight):
       let delay = estimatedDelay(
         nextHeight: nextHeight,
@@ -232,6 +234,7 @@ struct BackgroundMigrationRunnerDependencies {
   var loadLastAttemptedKey: () -> String?
   var saveLastAttemptedKey: (String) -> Void
   var currentCancelEpoch: () -> UInt64
+  var inspect: (IronwoodMigrationBackgroundManifest) -> BackgroundMigrationNativeResult
   var runSync: (IronwoodMigrationBackgroundManifest, UInt64) -> Int32
   var runCycle: (IronwoodMigrationBackgroundManifest, UInt64) -> BackgroundMigrationNativeResult
   var deleteManifest: (IronwoodMigrationBackgroundManifest) -> Void
@@ -245,6 +248,7 @@ struct BackgroundMigrationRunnerDependencies {
     loadLastAttemptedKey: BackgroundMigrationCursorStore.load,
     saveLastAttemptedKey: BackgroundMigrationCursorStore.save,
     currentCancelEpoch: zcash_background_migration_cancellation_epoch,
+    inspect: BackgroundMigrationRunner.runNativeInspection,
     runSync: BackgroundMigrationRunner.runNativeSync,
     runCycle: BackgroundMigrationRunner.runNativeCycle,
     deleteManifest: IronwoodMigrationManifestStore.delete,
@@ -292,12 +296,55 @@ enum BackgroundMigrationRunner {
       return .cancelled
     }
     let cancelEpoch = dependencies.currentCancelEpoch()
-    let syncResult = dependencies.runSync(manifest, cancelEpoch)
-    guard syncResult == 0 else {
-      return syncResult == 5 || dependencies.isCancelled() ? .cancelled : .failed
+    let inspection = dependencies.inspect(manifest)
+    guard inspection.returnCode == 0 else {
+      return .failed
     }
-    guard !dependencies.isCancelled() else {
-      return .cancelled
+    switch inspection.action {
+    case .complete:
+      dependencies.deleteManifest(manifest)
+      dependencies.removeBlocked(manifest)
+      return .complete
+    case .needsUserAction:
+      dependencies.markBlocked(manifest)
+      return .needsUserAction
+    case .revokeAuthorization:
+      dependencies.deleteManifest(manifest)
+      dependencies.removeBlocked(manifest)
+      return .needsUserAction
+    case .wait, .sync:
+      let syncResult = dependencies.runSync(manifest, cancelEpoch)
+      guard syncResult == 0 else {
+        return syncResult == 5 || dependencies.isCancelled() ? .cancelled : .failed
+      }
+      guard !dependencies.isCancelled() else {
+        return .cancelled
+      }
+      let refreshed = dependencies.inspect(manifest)
+      guard refreshed.returnCode == 0 else {
+        return .failed
+      }
+      switch refreshed.action {
+      case .complete:
+        dependencies.deleteManifest(manifest)
+        dependencies.removeBlocked(manifest)
+        return .complete
+      case .needsUserAction:
+        dependencies.markBlocked(manifest)
+        return .needsUserAction
+      case .revokeAuthorization:
+        dependencies.deleteManifest(manifest)
+        dependencies.removeBlocked(manifest)
+        return .needsUserAction
+      case .wait, .sync, .advance:
+        break
+      }
+      return .synced(
+        nextHeight: refreshed.nextScheduledHeight,
+        observedHeight: refreshed.chainTipHeight
+      )
+    case .advance:
+      break
     }
 
     let result = dependencies.runCycle(manifest, cancelEpoch)
@@ -359,6 +406,35 @@ enum BackgroundMigrationRunner {
       manifest.network,
       cancelEpoch,
       { _ in }
+    )
+  }
+
+  fileprivate static func runNativeInspection(
+    manifest: IronwoodMigrationBackgroundManifest
+  ) -> BackgroundMigrationNativeResult {
+    guard let expectedRunId = manifest.expectedRunId else {
+      return failedNativeResult()
+    }
+    var output = CBackgroundMigrationResult()
+    let returnCode = zcash_inspect_background_migration(
+      manifest.dbPath,
+      manifest.network,
+      manifest.accountUuid,
+      expectedRunId,
+      &output
+    )
+    guard let action = BackgroundMigrationNativeAction(rawValue: output.action) else {
+      return failedNativeResult(returnCode: returnCode)
+    }
+    return BackgroundMigrationNativeResult(
+      returnCode: returnCode,
+      action: action,
+      cancelled: output.cancelled,
+      scannedHeight: output.scanned_height,
+      chainTipHeight: output.chain_tip_height,
+      nextScheduledHeight: output.next_scheduled_height == 0
+        ? nil : output.next_scheduled_height,
+      broadcastedCount: output.broadcasted_count
     )
   }
 

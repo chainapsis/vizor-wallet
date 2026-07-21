@@ -1157,6 +1157,40 @@ pub fn broadcast_due_orchard_migration_transactions(
     })
 }
 
+pub fn broadcast_one_due_orchard_migration_transaction(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(
+            wallet_sync::broadcast_one_due_orchard_migration_transaction(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                &account_uuid,
+                password,
+                &salt_base64,
+            ),
+        )?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 pub fn prepare_orchard_migration_denominations_pczt(
     db_path: String,
     network: String,

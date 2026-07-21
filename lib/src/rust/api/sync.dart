@@ -355,6 +355,23 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   saltBase64: saltBase64,
 );
 
+Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) =>
+    RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+      saltBase64: saltBase64,
+    );
+
 Future<KeystoneMigrationSigningRequest>
 prepareOrchardMigrationDenominationsPczt({
   required String dbPath,

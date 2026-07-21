@@ -285,6 +285,12 @@ import UIKit
         "nextHeight": nextHeight as Any,
         "observedHeight": observedHeight,
       ]
+    case .synced(let nextHeight, let observedHeight):
+      return [
+        "outcome": "synced",
+        "nextHeight": nextHeight as Any,
+        "observedHeight": observedHeight,
+      ]
     case .advanced(let nextHeight, let observedHeight):
       return [
         "outcome": "advanced",

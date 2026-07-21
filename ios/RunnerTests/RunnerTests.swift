@@ -201,9 +201,42 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     XCTAssertEqual(harness.cycleCount, 0)
   }
 
-  func testRunnerSyncsBeforeAdvancingOneCycle() {
+  func testRunnerRunsSyncWithoutAdvancingInTheSameWake() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [
+      makeNativeResult(action: .sync, chainTipHeight: 505, nextScheduledHeight: 500),
+      makeNativeResult(action: .advance, chainTipHeight: 510, nextScheduledHeight: 500),
+    ]
+
+    XCTAssertEqual(
+      BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
+      .synced(nextHeight: 500, observedHeight: 510)
+    )
+    XCTAssertEqual(harness.events, ["inspect", "sync", "inspect"])
+    XCTAssertEqual(harness.cycleCount, 0)
+  }
+
+  func testRunnerSyncsAWaitingWalletBeforeSchedulingTheNextWake() {
+    let manifest = makeBackgroundMigrationManifest()
+    let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [
+      makeNativeResult(action: .wait, chainTipHeight: 400, nextScheduledHeight: 500),
+      makeNativeResult(action: .wait, chainTipHeight: 450, nextScheduledHeight: 500),
+    ]
+
+    XCTAssertEqual(
+      BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
+      .synced(nextHeight: 500, observedHeight: 450)
+    )
+    XCTAssertEqual(harness.events, ["inspect", "sync", "inspect"])
+    XCTAssertEqual(harness.cycleCount, 0)
+  }
+
+  func testRunnerAdvancesWithoutSyncingInTheSameWake() {
+    let manifest = makeBackgroundMigrationManifest()
+    let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [makeNativeResult(action: .advance)]
     harness.nativeResult = makeNativeResult(
       action: .wait,
       chainTipHeight: 505,
@@ -215,13 +248,14 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
       BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
       .advanced(nextHeight: 510, observedHeight: 505)
     )
-    XCTAssertEqual(harness.events, ["sync", "cycle"])
+    XCTAssertEqual(harness.events, ["inspect", "cycle"])
+    XCTAssertEqual(harness.syncCount, 0)
   }
 
   func testRunnerDeletesCredentialOnlyAfterComplete() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
-    harness.nativeResult = makeNativeResult(action: .complete)
+    harness.inspectionResults = [makeNativeResult(action: .complete)]
 
     XCTAssertEqual(
       BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
@@ -234,7 +268,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
   func testRunnerPreservesCredentialWhenUserActionIsRequired() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
-    harness.nativeResult = makeNativeResult(action: .needsUserAction)
+    harness.inspectionResults = [makeNativeResult(action: .needsUserAction)]
 
     XCTAssertEqual(
       BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
@@ -247,6 +281,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
   func testRunnerDoesNotRunCycleAfterSyncFailureOrCancellation() {
     let manifest = makeBackgroundMigrationManifest()
     let failed = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    failed.inspectionResults = [makeNativeResult(action: .sync)]
     failed.syncResult = 1
     XCTAssertEqual(
       BackgroundMigrationRunner.runOnce(dependencies: failed.dependencies()),
@@ -270,7 +305,8 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
 
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
 
-    XCTAssertEqual(harness.syncedAccounts, ["account-a"])
+    XCTAssertEqual(harness.inspectedAccounts, ["account-a"])
+    XCTAssertTrue(harness.syncedAccounts.isEmpty)
     XCTAssertEqual(harness.cycledAccounts, ["account-a"])
   }
 
@@ -282,7 +318,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
 
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
 
-    XCTAssertEqual(harness.syncedAccounts, ["account-b"])
+    XCTAssertEqual(harness.inspectedAccounts, ["account-b"])
     XCTAssertEqual(harness.savedAttemptedKeys, [second.storageKey])
   }
 
@@ -295,8 +331,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
 
-    XCTAssertEqual(harness.syncedAccounts, ["account-a", "account-b", "account-a"])
-    XCTAssertEqual(harness.cycledAccounts, ["account-a", "account-b", "account-a"])
+    XCTAssertEqual(harness.inspectedAccounts, ["account-a", "account-b", "account-a"])
   }
 
   func testRunnerSkipsBlockedManifestOnLaterWake() {
@@ -307,8 +342,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
 
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
 
-    XCTAssertEqual(harness.syncedAccounts, ["account-b"])
-    XCTAssertEqual(harness.cycledAccounts, ["account-b"])
+    XCTAssertEqual(harness.inspectedAccounts, ["account-b"])
   }
 
   func testRunnerBlocksStaleManifestAndAdvancesValidAccountInSameWake() {
@@ -320,25 +354,38 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
 
     XCTAssertEqual(harness.blocked, [stale])
-    XCTAssertEqual(harness.syncedAccounts, ["account-b"])
-    XCTAssertEqual(harness.cycledAccounts, ["account-b"])
+    XCTAssertEqual(harness.inspectedAccounts, ["account-b"])
     XCTAssertEqual(harness.savedAttemptedKeys, [valid.storageKey])
   }
 
-  func testRunnerPassesOneCancellationEpochThroughSyncAndCycle() {
+  func testRunnerPassesCancellationEpochToTheSelectedOperation() {
     let manifest = makeBackgroundMigrationManifest()
-    let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
-    harness.cancelEpoch = 42
+    let syncHarness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    syncHarness.cancelEpoch = 42
+    syncHarness.inspectionResults = [
+      makeNativeResult(action: .sync),
+      makeNativeResult(action: .wait),
+    ]
 
-    _ = BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies())
+    _ = BackgroundMigrationRunner.runOnce(dependencies: syncHarness.dependencies())
 
-    XCTAssertEqual(harness.syncEpochs, [42])
-    XCTAssertEqual(harness.cycleEpochs, [42])
+    XCTAssertEqual(syncHarness.syncEpochs, [42])
+    XCTAssertTrue(syncHarness.cycleEpochs.isEmpty)
+
+    let cycleHarness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    cycleHarness.cancelEpoch = 43
+    cycleHarness.inspectionResults = [makeNativeResult(action: .advance)]
+
+    _ = BackgroundMigrationRunner.runOnce(dependencies: cycleHarness.dependencies())
+
+    XCTAssertTrue(cycleHarness.syncEpochs.isEmpty)
+    XCTAssertEqual(cycleHarness.cycleEpochs, [43])
   }
 
   func testRunnerTreatsInterruptedMigrationSyncAsCancellation() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [makeNativeResult(action: .sync)]
     harness.syncResult = 5
 
     XCTAssertEqual(
@@ -351,6 +398,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
   func testRunnerDoesNotEnterCycleWhenCancellationArrivesAfterSync() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [makeNativeResult(action: .sync)]
     harness.cancelAfterSync = true
 
     XCTAssertEqual(
@@ -364,7 +412,7 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
   func testRunnerRevokesManifestRejectedByNativeAccountValidation() {
     let manifest = makeBackgroundMigrationManifest()
     let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
-    harness.nativeResult = makeNativeResult(action: .revokeAuthorization)
+    harness.inspectionResults = [makeNativeResult(action: .revokeAuthorization)]
 
     XCTAssertEqual(
       BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
@@ -400,6 +448,17 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
         cancelledByExpiration: false
       ),
       2 * 60
+    )
+  }
+
+  func testReschedulePolicyUsesTheRefreshedHeightAfterSync() {
+    XCTAssertEqual(
+      BackgroundMigrationReschedulePolicy.delay(
+        after: .synced(nextHeight: 500, observedHeight: 505),
+        runnableManifestCount: 1,
+        cancelledByExpiration: false
+      ),
+      75
     )
   }
 }
@@ -455,6 +514,7 @@ private final class BackgroundMigrationRunnerHarness {
   var lastAttemptedKey: String?
   var cancelEpoch: UInt64 = 0
   var syncResult: Int32 = 0
+  var inspectionResults = [makeNativeResult(action: .advance)]
   var nativeResult = makeNativeResult(action: .wait)
   var cancelled = false
   var cancelAfterSync = false
@@ -463,6 +523,7 @@ private final class BackgroundMigrationRunnerHarness {
   var events: [String] = []
   var syncedAccounts: [String] = []
   var cycledAccounts: [String] = []
+  var inspectedAccounts: [String] = []
   var deleted: [IronwoodMigrationBackgroundManifest] = []
   var blocked: [IronwoodMigrationBackgroundManifest] = []
   var unblocked: [IronwoodMigrationBackgroundManifest] = []
@@ -484,6 +545,13 @@ private final class BackgroundMigrationRunnerHarness {
         self.savedAttemptedKeys.append($0)
       },
       currentCancelEpoch: { self.cancelEpoch },
+      inspect: { manifest in
+        self.events.append("inspect")
+        self.inspectedAccounts.append(manifest.accountUuid)
+        return self.inspectionResults.count > 1
+          ? self.inspectionResults.removeFirst()
+          : self.inspectionResults[0]
+      },
       runSync: { manifest, epoch in
         self.syncCount += 1
         self.events.append("sync")

@@ -115,6 +115,11 @@ impl MigrationBroadcastPolicy<'_> {
         cancel: None,
     };
 
+    const ONE_FOREGROUND: Self = Self {
+        max_per_step: Some(1),
+        cancel: None,
+    };
+
     fn background(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
         MigrationBroadcastPolicy {
             max_per_step: Some(1),
@@ -1014,6 +1019,27 @@ pub async fn broadcast_due_orchard_migration_transactions(
         pending_password,
         pending_salt_base64,
         MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await
+}
+
+pub async fn broadcast_one_due_orchard_migration_transaction(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    broadcast_due_orchard_migration_transactions_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        None,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::ONE_FOREGROUND,
     )
     .await
 }
@@ -6433,6 +6459,14 @@ mod tests {
     fn foreground_migration_policy_keeps_existing_batch_behavior() {
         assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
         assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
+    }
+
+    #[test]
+    fn on_open_migration_policy_sends_at_most_one_due_transaction() {
+        assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(0), 0);
+        assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(1), 1);
+        assert_eq!(MigrationBroadcastPolicy::ONE_FOREGROUND.limit(500), 1);
+        assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.is_cancelled());
     }
 
     fn taddr(seed: u8) -> TransparentAddress {

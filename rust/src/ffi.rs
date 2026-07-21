@@ -282,6 +282,79 @@ pub extern "C" fn zcash_set_sync_mode(mode: u8) {
     DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
 }
 
+/// Inspect an authorized Ironwood migration without syncing or broadcasting.
+///
+/// Returns 0 on success, 1 on validation/execution error, 2 on panic, and 3
+/// when another background migration operation is already running.
+#[no_mangle]
+pub extern "C" fn zcash_inspect_background_migration(
+    db_path: *const c_char,
+    network: *const c_char,
+    account_uuid: *const c_char,
+    expected_run_id: *const c_char,
+    output: *mut CBackgroundMigrationResult,
+) -> i32 {
+    if BACKGROUND_MIGRATION_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return 3;
+    }
+    let result = std::panic::catch_unwind(|| {
+        let output = match unsafe { output.as_mut() } {
+            Some(output) => output,
+            None => {
+                log::error!("ffi: background migration inspection output is null");
+                return 1;
+            }
+        };
+        *output = CBackgroundMigrationResult::default();
+
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        let Some(network_name) = (unsafe { c_str_to_str(network) }) else {
+            return 1;
+        };
+        let Some(account_uuid) = (unsafe { c_str_to_str(account_uuid) }) else {
+            return 1;
+        };
+        let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
+            return 1;
+        };
+        let network = match keys::parse_network(network_name) {
+            Ok(network) => network,
+            Err(error) => {
+                log::error!("ffi: parse background migration inspection network: {error}");
+                return 1;
+            }
+        };
+        let inspection = match sync::inspect_background_migration(
+            db_path,
+            network,
+            account_uuid,
+            expected_run_id,
+        ) {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                log::error!("ffi: background migration inspection failed: {error}");
+                return 1;
+            }
+        };
+        fill_background_migration_output(output, &inspection, false, 0);
+        0
+    });
+
+    BACKGROUND_MIGRATION_RUNNING.store(false, Ordering::SeqCst);
+    match result {
+        Ok(code) => code,
+        Err(_) => {
+            log::error!("ffi: panic during background migration inspection");
+            2
+        }
+    }
+}
+
 /// Advance only the already-authorized Ironwood migration run.
 ///
 /// Returns 0 on success, 1 on validation/execution error, 2 on panic, and 3
@@ -382,16 +455,12 @@ pub extern "C" fn zcash_run_background_migration_cycle(
             }
         };
 
-        output.action = cycle.inspection.action as u8;
-        output.cancelled = cycle.cancelled;
-        output.scanned_height = cycle.inspection.scanned_height;
-        output.chain_tip_height = cycle.inspection.chain_tip_height;
-        output.next_scheduled_height = cycle
-            .inspection
-            .next_scheduled_height
-            .map(u64::from)
-            .unwrap_or_default();
-        output.broadcasted_count = cycle.broadcasted_count;
+        fill_background_migration_output(
+            output,
+            &cycle.inspection,
+            cycle.cancelled,
+            cycle.broadcasted_count,
+        );
         0
     });
 
@@ -403,6 +472,23 @@ pub extern "C" fn zcash_run_background_migration_cycle(
             2
         }
     }
+}
+
+fn fill_background_migration_output(
+    output: &mut CBackgroundMigrationResult,
+    inspection: &sync::BackgroundMigrationInspection,
+    cancelled: bool,
+    broadcasted_count: u32,
+) {
+    output.action = inspection.action as u8;
+    output.cancelled = cancelled;
+    output.scanned_height = inspection.scanned_height;
+    output.chain_tip_height = inspection.chain_tip_height;
+    output.next_scheduled_height = inspection
+        .next_scheduled_height
+        .map(u64::from)
+        .unwrap_or_default();
+    output.broadcasted_count = broadcasted_count;
 }
 
 #[no_mangle]

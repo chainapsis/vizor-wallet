@@ -57,6 +57,15 @@ void zcash_set_sync_mode(uint8_t mode);
 /// Check if a sync is currently running.
 bool zcash_is_sync_running(void);
 
+/// Inspect an authorized Ironwood migration without syncing or broadcasting.
+int32_t zcash_inspect_background_migration(
+    const char* db_path,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    CBackgroundMigrationResult* output
+);
+
 /// Advance one bounded step of an already-authorized Ironwood migration.
 /// Returns 0 on success, 1 on validation/execution error, 2 on panic, and 3
 /// when another migration cycle is already running.
