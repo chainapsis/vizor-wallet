@@ -242,7 +242,49 @@ void main() {
       expect(state.mode, IronwoodPostMigrationMode.complete);
       expect(state.locksNavigation, isFalse);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
+    'route CTA keeps completed migration details available for the completed run',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        migrationActiveRunId: 'run-1',
+        migrationTargetValuesZatoshi: const [1_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.complete);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
       expect(routeCta.mode, IronwoodHomeMigrationCtaMode.resume);
+      expect(routeCta.status?.activeRunId, 'run-1');
+      expect(routeCta.status?.targetValuesZatoshi.toList(), [
+        BigInt.from(1_000_000),
+      ]);
     },
   );
 
@@ -701,6 +743,7 @@ ProviderContainer _container({
   bool ironwoodActiveAtTip = true,
   String migrationPhase = kIronwoodMigrationReadyPhase,
   String? migrationActiveRunId,
+  List<int> migrationTargetValuesZatoshi = const [],
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
   _FakeAnnouncementStore? announcementStore,
   List<String>? migrationStatusCalls,
@@ -750,6 +793,7 @@ ProviderContainer _container({
               return _migrationStatus(
                 migrationPhase,
                 activeRunId: migrationActiveRunId,
+                targetValuesZatoshi: migrationTargetValuesZatoshi,
               );
             },
       ),
@@ -866,11 +910,12 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
 rust_sync.MigrationStatus _migrationStatus(
   String phase, {
   String? activeRunId,
+  List<int> targetValuesZatoshi = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
     activeRunId: activeRunId,
-    targetValuesZatoshi: frb.Uint64List(0),
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValuesZatoshi),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
     denominationConfirmationTarget: 0,
@@ -879,7 +924,7 @@ rust_sync.MigrationStatus _migrationStatus(
     pendingTxCount: 0,
     broadcastedTxCount: 0,
     confirmedTxCount: 0,
-    totalCount: 0,
+    totalCount: targetValuesZatoshi.length,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,

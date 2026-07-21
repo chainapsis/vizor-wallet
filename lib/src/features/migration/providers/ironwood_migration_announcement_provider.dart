@@ -659,7 +659,7 @@ final ironwoodMigrationRouteCtaProvider =
         ironwoodMigrationStatusProvider(request).future,
       );
 
-      if (status.phase == kIronwoodMigrationCompletePhase) {
+      if (_isDetailedCompletedMigrationStatus(status)) {
         return IronwoodHomeMigrationCtaState.resume(
           network: inputs.network,
           accountUuid: accountUuid,
@@ -875,6 +875,16 @@ bool _shouldStartIronwoodMigration(String phase) {
 }
 
 bool _shouldResumeIronwoodMigration(rust_sync.MigrationStatus status) {
+  if (status.phase == kIronwoodMigrationCompletePhase) {
+    return false;
+  }
   if (status.activeRunId != null) return true;
   return isIronwoodMigrationInProgressPhase(status.phase);
+}
+
+bool _isDetailedCompletedMigrationStatus(rust_sync.MigrationStatus status) {
+  return status.phase == kIronwoodMigrationCompletePhase &&
+      (status.targetValuesZatoshi.isNotEmpty ||
+          status.parts.isNotEmpty ||
+          status.totalCount > 0);
 }

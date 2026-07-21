@@ -923,6 +923,26 @@ void main() {
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });
 
+  testWidgets('private complete fallback without run details returns home', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(phase: kIronwoodMigrationCompletePhase),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home-route'), findsOneWidget);
+    expect(find.text('0 ZEC'), findsNothing);
+    expect(find.text('Completed'), findsNothing);
+  });
+
   testWidgets('private transfer status uses authoritative per-part states', (
     tester,
   ) async {

@@ -140,6 +140,14 @@ bool _routeShouldStartMigration(String phase) {
   return kIronwoodMigrationStartPhases.contains(phase);
 }
 
+bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {
+  return status.phase == kIronwoodMigrationCompletePhase &&
+      status.activeRunId == null &&
+      status.targetValuesZatoshi.isEmpty &&
+      status.parts.isEmpty &&
+      status.totalCount == 0;
+}
+
 IronwoodMigrationFlowData _fallbackMigrationFlowData() {
   return IronwoodMigrationFlowData(
     amountZatoshi: BigInt.zero,
@@ -291,6 +299,9 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = previewStatus;
     if (preview != null) {
+      if (_isEmptyCompletedMigrationStatus(preview)) {
+        return const _RedirectTo('/home');
+      }
       final previewAccountUuid = ref
           .watch(accountProvider)
           .value
@@ -337,6 +348,9 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
                 coordinatedStatus?.activeRunId != null
             ? coordinatedStatus!
             : status;
+        if (_isEmptyCompletedMigrationStatus(effectiveStatus)) {
+          return const _RedirectTo('/home');
+        }
         if (effectiveStatus.activeRunId == null &&
             kIronwoodMigrationStartPhases.contains(effectiveStatus.phase)) {
           if (coordinator.advancingAccounts.contains(request.accountUuid)) {
@@ -4034,7 +4048,9 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
         : [for (final value in status.targetValuesZatoshi) value];
-    if (values.isEmpty) values = [BigInt.zero];
+    if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
+      values = [BigInt.zero];
+    }
     final partNumbers = parts.isNotEmpty
         ? [for (final part in parts) part.partIndex + 1]
         : [for (var i = 0; i < values.length; i++) i + 1];
