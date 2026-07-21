@@ -42,15 +42,9 @@ void main() {
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
+      await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        accountUuid,
         description: 'persisted migration status in the new process',
       );
       final resumed = await desktopRegtestMigrationStatus(accountUuid);

@@ -77,24 +77,11 @@ void main() {
       await openPrivateMigrationReview(tester);
       await startPrivateMigrationFromReview(tester);
       final accountUuid = await firstDesktopRegtestAccountUuid();
-      await waitForDesktopRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) => status.phase == 'waiting_denom_confirmations',
-        description: 'persisted denomination confirmation phase',
-        timeout: const Duration(minutes: 2),
-      );
       final navigator = find.byType(Navigator).first;
       GoRouter.of(tester.element(navigator)).go('/migration/private/status');
-      await pumpUntil(
+      await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        accountUuid,
         description: 'denomination confirmation status',
         timeout: const Duration(minutes: 5),
       );
@@ -233,7 +220,8 @@ void main() {
       await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
-        (status) => status.activeRunId == null && status.phase == 'complete',
+        (status) =>
+            status.activeRunId == originalRunId && status.phase == 'complete',
         description: 'completed migration after same-run expiry recovery',
         timeout: const Duration(minutes: 5),
       );

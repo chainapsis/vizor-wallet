@@ -178,20 +178,13 @@ void main() {
         const ValueKey('ironwood_migration_authorize_start_button'),
       );
 
-      await pumpUntil(
+      final started = await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        accountUuid,
         description: 'denomination confirmation status',
         timeout: const Duration(minutes: 5),
       );
 
-      final started = await _migrationStatus(accountUuid);
       expect(started.activeRunId, isNotNull);
       expect(started.denominationSplitTotalCount, greaterThan(0));
       expect(started.denominationSplitCompletedCount, 0);
@@ -208,15 +201,9 @@ void main() {
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
+      await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        accountUuid,
         description: 'active migration status after unlock',
       );
       final resumed = await _migrationStatus(accountUuid);

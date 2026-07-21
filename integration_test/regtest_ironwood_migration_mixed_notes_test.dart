@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -105,12 +106,15 @@ void main() {
       await openPrivateMigrationReview(tester);
       expect(
         find.textContaining(
-          '${migrationPlan.plannedBatchCount} batches',
+          '${migrationPlan.plannedBatchCount} notes',
           findRichText: true,
         ),
         findsOneWidget,
       );
-      expect(find.text('~0.0029 ZEC'), findsOneWidget);
+      expect(
+        find.textContaining('~0.0029 ZEC', findRichText: true),
+        findsOneWidget,
+      );
 
       await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
@@ -146,6 +150,9 @@ void main() {
         description: 'mixed-note denomination progress 1/2',
       );
       expect(firstStageConfirmed.pendingSplitStageCount, 2);
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .retry(accountUuid);
       expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
 
       e2eLog('confirming mixed-note denomination stage 2/2');
@@ -191,7 +198,7 @@ void main() {
       await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
-        (status) => status.activeRunId == null && status.phase == 'complete',
+        (status) => status.activeRunId == runId && status.phase == 'complete',
         description: 'completed mixed-note migration',
       );
       await _refreshMigrationStatusUi(tester, container, accountUuid);

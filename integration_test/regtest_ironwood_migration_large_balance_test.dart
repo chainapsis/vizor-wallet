@@ -85,12 +85,15 @@ void main() {
       await openPrivateMigrationReview(tester);
       expect(
         find.textContaining(
-          '${migrationPlan.plannedBatchCount} batches',
+          '${migrationPlan.plannedBatchCount} notes',
           findRichText: true,
         ),
         findsOneWidget,
       );
-      expect(find.text('~0.0026 ZEC'), findsOneWidget);
+      expect(
+        find.textContaining('~0.0026 ZEC', findRichText: true),
+        findsOneWidget,
+      );
 
       await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
@@ -218,7 +221,7 @@ void main() {
       await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
-        (status) => status.activeRunId == null && status.phase == 'complete',
+        (status) => status.activeRunId == runId && status.phase == 'complete',
         description: 'completed large-balance migration',
       );
       await _refreshMigrationStatusUi(tester, container, accountUuid);
@@ -308,10 +311,10 @@ Future<void> _expectIntermediateProgressUi(
       ),
       description: 'large-balance scheduled broadcast progress UI',
     );
-    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(find.text('Migration in Progress'), findsOneWidget);
     expect(
       find.textContaining(
-        '${plan.plannedBatchCount} batches',
+        '${plan.plannedBatchCount} notes',
         findRichText: true,
       ),
       findsOneWidget,
@@ -324,13 +327,13 @@ Future<void> _expectIntermediateProgressUi(
     tester,
     () => tester.any(
       find.textContaining(
-        '${plan.plannedBatchCount} batches',
+        '${plan.plannedBatchCount} notes',
         findRichText: true,
       ),
     ),
     description: 'large-balance transfer progress UI',
   );
-  expect(find.text('Migration in progress'), findsOneWidget);
+  expect(find.text('Migration in Progress'), findsOneWidget);
   expect(find.text('Completed'), findsWidgets);
 }
 

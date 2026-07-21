@@ -75,20 +75,14 @@ void main() {
       e2eLog('stopping lightwalletd before migration authorization');
       await ironwoodDriverPost(_driverUrl, '/lightwalletd/stop');
       await startPrivateMigrationFromReview(tester);
-      await pumpUntil(
+      final accountUuid = await firstDesktopRegtestAccountUuid();
+      await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        accountUuid,
         description: 'persisted denomination run while lightwalletd is offline',
         timeout: const Duration(minutes: 3),
       );
 
-      final accountUuid = await firstDesktopRegtestAccountUuid();
       final status = await desktopRegtestMigrationStatus(accountUuid);
       expect(status.activeRunId, isNotNull);
       expect(status.phase, 'waiting_denom_confirmations');

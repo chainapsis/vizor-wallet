@@ -217,7 +217,7 @@ void main() {
       final complete = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
-        (status) => status.activeRunId == null && status.phase == 'complete',
+        (status) => status.activeRunId == runId && status.phase == 'complete',
         description: 'completed migration after both reorgs',
       );
       expect(complete.confirmedTxCount, complete.totalCount);

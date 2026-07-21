@@ -108,20 +108,13 @@ void main() {
       expect(migrationPlan, isNotNull);
       await openPrivateMigrationReview(tester);
       await startPrivateMigrationFromReview(tester);
-      await pumpUntil(
+      final started = await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        firstAccount.uuid,
         description: 'first-account denomination status',
         timeout: const Duration(minutes: 5),
       );
 
-      final started = await desktopRegtestMigrationStatus(firstAccount.uuid);
       expect(started.activeRunId, isNotNull);
 
       await switchDesktopRegtestAccount(tester, secondAccount.uuid);
@@ -149,15 +142,9 @@ void main() {
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
+      await waitForDesktopRegtestPreparingStatusScreen(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
+        firstAccount.uuid,
         description: 'first-account migration restored after account switch',
       );
 
@@ -275,6 +262,11 @@ void main() {
         _driverUrl,
         '/mine',
         payload: const {'blocks': 10},
+      );
+      await _syncToRegtestTip(
+        tester,
+        container,
+        description: 'post-migration Ironwood receive confirmation sync',
       );
       final confirmedReceive = await _waitForHistoryTransaction(
         tester,
@@ -433,6 +425,27 @@ String _reverseTxidBytes(String txid) {
       txid.substring(offset, offset + 2),
   ];
   return bytes.reversed.join();
+}
+
+Future<void> _syncToRegtestTip(
+  WidgetTester tester,
+  ProviderContainer container, {
+  required String description,
+}) async {
+  final chain = await ironwoodDriverGet(_driverUrl, '/status');
+  final tipHeight = (chain['zcashdHeight'] as num).toInt();
+  container.read(syncProvider.notifier).startSync(latestTipHeight: tipHeight);
+  await pumpUntil(
+    tester,
+    () {
+      final sync = container.read(syncProvider).value;
+      return sync?.isSyncing == false &&
+          sync?.isSyncComplete == true &&
+          (sync?.scannedHeight ?? 0) >= tipHeight;
+    },
+    description: description,
+    timeout: const Duration(minutes: 5),
+  );
 }
 
 Future<rust_sync.TransactionInfo> _waitForHistoryTransaction(

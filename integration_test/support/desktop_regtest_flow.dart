@@ -240,6 +240,36 @@ Future<rust_sync.MigrationStatus> waitForDesktopRegtestMigrationStatus(
   fail('Timed out waiting for $description.$statusDetail$errorDetail');
 }
 
+Finder ironwoodMigrationPreparingStatusFinder() {
+  return find.byWidgetPredicate((widget) {
+    final key = widget.key;
+    return key is ValueKey<String> &&
+        key.value.startsWith('ironwood_migration_preparing_');
+  });
+}
+
+Future<rust_sync.MigrationStatus> waitForDesktopRegtestPreparingStatusScreen(
+  WidgetTester tester,
+  String accountUuid, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  final status = await waitForDesktopRegtestMigrationStatus(
+    tester,
+    accountUuid,
+    (status) => status.phase == 'waiting_denom_confirmations',
+    description: description,
+    timeout: timeout,
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(ironwoodMigrationPreparingStatusFinder()),
+    description: description,
+    timeout: timeout,
+  );
+  return status;
+}
+
 Future<rust_sync.MigrationStatus> advanceDesktopRegtestMigrationSchedule(
   WidgetTester tester,
   String driverUrl,
