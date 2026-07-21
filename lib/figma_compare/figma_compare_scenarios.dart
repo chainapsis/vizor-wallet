@@ -220,13 +220,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     desktop: false,
     mobile: true,
   ),
-  FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-passcode-while-syncing',
-    description: 'Mobile passcode screen while Ironwood migration continues',
-    builder: buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
-    desktop: false,
-    mobile: true,
-  ),
 ];
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {

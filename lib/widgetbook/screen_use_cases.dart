@@ -982,14 +982,6 @@ Widget buildMobileIronwoodMigrationRecoveryUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.passcodeWhileSyncing,
-  );
-}
-
 Widget buildMobileIronwoodMigrationKeystoneSplitSignUseCase(
   BuildContext context,
 ) {
@@ -1094,14 +1086,12 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.options => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.privateReview ||
     MobileIronwoodMigrationStep.fastReview ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing ||
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating => BigInt.from(14_220_000_000),
   };
   final accountName = switch (step) {
     MobileIronwoodMigrationStep.preparing ||
-    MobileIronwoodMigrationStep.migrating ||
-    MobileIronwoodMigrationStep.passcodeWhileSyncing => 'Account1',
+    MobileIronwoodMigrationStep.migrating => 'Account1',
     _ => 'Username',
   };
   return ProviderScope(

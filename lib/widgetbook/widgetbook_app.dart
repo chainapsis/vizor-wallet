@@ -384,11 +384,6 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationRecoveryUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Passcode while syncing',
-                      builder:
-                          buildMobileIronwoodMigrationPasscodeWhileSyncingUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'Keystone - Loading QR',
                       builder:
                           buildMobileIronwoodMigrationKeystoneLoadingUseCase,

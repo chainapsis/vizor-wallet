@@ -222,8 +222,6 @@ Widget _app({
       MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
       MobileIronwoodMigrationStep.preparing => '/migration/private/preparing',
       MobileIronwoodMigrationStep.migrating => '/migration/private/status',
-      MobileIronwoodMigrationStep.passcodeWhileSyncing =>
-        '/migration/private/unlock',
     },
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
@@ -254,11 +252,6 @@ Widget _app({
       GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.migrating),
-      ),
-      GoRoute(
-        path: '/migration/private/unlock',
-        builder: (_, _) =>
-            screen(MobileIronwoodMigrationStep.passcodeWhileSyncing),
       ),
     ],
   );
@@ -687,20 +680,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Go home').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('renders passcode while migration keeps running', (tester) async {
-    _useMobileViewport(tester);
-    await tester.pumpWidget(
-      _app(step: MobileIronwoodMigrationStep.passcodeWhileSyncing),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Welcome Back'), findsOneWidget);
-    expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.bySemanticsLabel('10% done'), findsOneWidget);
-    expect(find.text('1'), findsOneWidget);
-    expect(find.text('0'), findsOneWidget);
   });
 
   testWidgets('starts a software migration and opens the status route', (

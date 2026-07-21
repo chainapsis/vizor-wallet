@@ -25,7 +25,6 @@ import '../../providers/ironwood_migration_announcement_provider.dart';
 import '../../providers/ironwood_migration_coordinator_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../../widgets/ironwood_migration_shimmer_text.dart';
-import '../../widgets/mobile/mobile_migration_passcode_view.dart';
 import '../ironwood_migration_flow_screen.dart';
 
 part 'mobile_ironwood_migration_status_widgets.dart';
@@ -39,9 +38,6 @@ enum MobileIronwoodMigrationStep {
   fastReview,
   preparing,
   migrating,
-  // The passcode state remains a deterministic design surface until its
-  // privacy-lock trigger is specified for migration work.
-  passcodeWhileSyncing,
 }
 
 enum MobileIronwoodMigrationReviewPreviewStage { analyzing, review }
@@ -157,8 +153,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         enableRecovery: !previewMode,
         forceRecoveryPreview: previewMode && previewRecoveryRequired,
       ),
-      MobileIronwoodMigrationStep.passcodeWhileSyncing =>
-        const MobileMigrationPasscodeView(progress: 0.1),
     };
   }
 }
