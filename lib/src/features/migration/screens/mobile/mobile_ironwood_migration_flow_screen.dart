@@ -82,24 +82,17 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       );
     }
 
-    return ref
-        .watch(ironwoodMigrationFlowDataProvider)
-        .when(
-          skipLoadingOnReload: true,
-          loading: () => const _MobileMigrationLoadingScreen(),
-          error: (_, _) => const _MobileMigrationRedirectHome(),
-          data: (data) => data == null
-              ? const _MobileMigrationRedirectHome()
-              : _MobileIronwoodMigrationContent(
-                  step: step,
-                  data: data,
-                  previewMode: false,
-                  previewPrivatePlan: previewPrivatePlan,
-                  previewReviewStage: previewReviewStage,
-                  previewParts: previewParts,
-                  status: null,
-                ),
-        );
+    final data = ref.watch(ironwoodMigrationFlowDataProvider);
+    if (data == null) return const _MobileMigrationRedirectHome();
+    return _MobileIronwoodMigrationContent(
+      step: step,
+      data: data,
+      previewMode: false,
+      previewPrivatePlan: previewPrivatePlan,
+      previewReviewStage: previewReviewStage,
+      previewParts: previewParts,
+      status: null,
+    );
   }
 }
 
@@ -167,7 +160,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
-    final dataAsync = ref.watch(ironwoodMigrationFlowDataProvider);
+    final data = ref.watch(ironwoodMigrationFlowDataProvider);
 
     return ctaAsync.when(
       skipLoadingOnReload: true,
@@ -186,23 +179,13 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
           return const _MobileMigrationRedirectHome();
         }
 
-        return dataAsync.when(
-          skipLoadingOnReload: true,
-          loading: () => const _MobileMigrationLoadingScreen(),
-          error: (_, _) => const _MobileMigrationRedirectHome(),
-          data: (data) => data == null
-              ? const _MobileMigrationRedirectHome()
-              : _MobileMigrationLiveStatus(
-                  data: data,
-                  status: status,
-                  isHardware:
-                      ref
-                          .watch(accountProvider)
-                          .value
-                          ?.activeAccount
-                          ?.isHardware ??
-                      false,
-                ),
+        if (data == null) return const _MobileMigrationRedirectHome();
+        return _MobileMigrationLiveStatus(
+          data: data,
+          status: status,
+          isHardware:
+              ref.watch(accountProvider).value?.activeAccount?.isHardware ??
+              false,
         );
       },
     );

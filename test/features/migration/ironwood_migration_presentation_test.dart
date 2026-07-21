@@ -117,5 +117,6 @@ rust_sync.MigrationStatus _status({
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: broadcasts,
+    parts: const [],
   );
 }

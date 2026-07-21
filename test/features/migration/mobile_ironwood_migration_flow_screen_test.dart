@@ -114,6 +114,7 @@ rust_sync.MigrationStatus _status({
                 status: broadcastStatuses[index],
               ),
           ],
+    parts: const [],
   );
 }
 
@@ -168,6 +169,7 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
           },
         ),
     ],
+    parts: const [],
   );
 }
 
@@ -331,7 +333,7 @@ Widget _productionApp({
           SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
         ),
       ),
-      ironwoodMigrationFlowDataProvider.overrideWith((ref) async => _data),
+      ironwoodMigrationFlowDataProvider.overrideWith((ref) => _data),
       ironwoodMigrationPrivatePlanProvider.overrideWith(
         (ref) async => privatePlan ?? _plan,
       ),

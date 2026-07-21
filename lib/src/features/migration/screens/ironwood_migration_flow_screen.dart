@@ -80,9 +80,11 @@ bool ironwoodMigrationKeystoneFirmwareSupportsBatch(List<int> version) {
   if (version.length < _keystoneIronwoodBatchMinimumFirmwareVersion.length) {
     return false;
   }
-  for (var i = 0;
-      i < _keystoneIronwoodBatchMinimumFirmwareVersion.length;
-      i++) {
+  for (
+    var i = 0;
+    i < _keystoneIronwoodBatchMinimumFirmwareVersion.length;
+    i++
+  ) {
     final actual = version[i];
     final minimum = _keystoneIronwoodBatchMinimumFirmwareVersion[i];
     if (actual != minimum) return actual > minimum;
@@ -1792,7 +1794,7 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
                       title: 'Move to Ironwood',
                       body:
                           'Privacy-optimized migrations send parts at staggered '
-                        'times to reduce linkability.',
+                          'times to reduce linkability.',
                     ),
                   ],
                 ),

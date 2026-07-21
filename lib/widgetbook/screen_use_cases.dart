@@ -2721,6 +2721,7 @@ rust_sync.MigrationStatus _previewMobilePreparingStatus() {
     scheduleMaxDelayBlocks: 960,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
+    parts: const [],
   );
 }
 
@@ -2772,6 +2773,7 @@ rust_sync.MigrationStatus _previewMobileMigrationStatus() {
           status: statuses[i],
         ),
     ],
+    parts: const [],
   );
 }
 
@@ -2815,6 +2817,7 @@ rust_sync.MigrationStatus _previewMobileHomeMigrationStatus() {
           status: i == 0 ? 'confirmed' : 'scheduled',
         ),
     ],
+    parts: const [],
   );
 }
 

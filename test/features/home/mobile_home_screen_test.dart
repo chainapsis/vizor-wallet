@@ -489,6 +489,7 @@ void main() {
           status: 'scheduled',
         ),
       ],
+      parts: const [],
     );
 
     await tester.pumpWidget(
@@ -545,6 +546,7 @@ void main() {
       scheduleMaxDelayBlocks: 576,
       maxPreparedNotesPerRun: 64,
       scheduledBroadcasts: const [],
+      parts: const [],
     );
 
     await tester.pumpWidget(
@@ -598,6 +600,7 @@ void main() {
             scheduleMaxDelayBlocks: 576,
             maxPreparedNotesPerRun: 0,
             scheduledBroadcasts: const [],
+            parts: const [],
           ),
         ),
       ),
@@ -667,6 +670,7 @@ void main() {
             scheduleMaxDelayBlocks: 576,
             maxPreparedNotesPerRun: 0,
             scheduledBroadcasts: const [],
+            parts: const [],
           ),
         ),
       ),
