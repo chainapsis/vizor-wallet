@@ -1045,7 +1045,7 @@ String _mobilePrivateMigrationStartErrorMessage(Object error) {
   return "Couldn't start migration. Try again.";
 }
 
-class _MobileMigrationFastReview extends StatelessWidget {
+class _MobileMigrationFastReview extends StatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
     required this.previewMode,
@@ -1055,19 +1055,19 @@ class _MobileMigrationFastReview extends StatelessWidget {
   final bool previewMode;
 
   @override
+  State<_MobileMigrationFastReview> createState() =>
+      _MobileMigrationFastReviewState();
+}
+
+class _MobileMigrationFastReviewState
+    extends State<_MobileMigrationFastReview> {
+  late bool _acknowledged = widget.previewMode;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
-      topGap: 40,
-      iconTitleGap: 22,
-      icon: AppIcon(
-        AppIcons.migrationFast,
-        size: 32,
-        color: colors.icon.disabled,
-      ),
-      title: 'Review Migration Plan',
-      amount: '${data.amountText} ZEC',
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1084,34 +1084,48 @@ class _MobileMigrationFastReview extends StatelessWidget {
             variant: AppButtonVariant.destructive,
             expand: true,
             height: 50,
-            onPressed: previewMode ? () {} : null,
+            onPressed: _acknowledged && widget.previewMode ? () {} : null,
             leading: const AppIcon(AppIcons.warning, size: 20),
-            child: const Text('Authorise anyway'),
+            child: const Text('Continue anyway'),
           ),
         ],
       ),
       child: Column(
         children: [
-          _MobileReviewCard(
-            child: Column(
-              children: [
-                _ReviewRow(
-                  label: 'Fees (estimate)',
-                  value: 'shown before send',
-                ),
-                const SizedBox(height: AppSpacing.s),
-                const _ReviewRow(
-                  label: 'Orchard remains',
-                  value: '<0.001 ZEC',
-                  showInfo: true,
-                ),
-              ],
+          SizedBox(
+            height: 153,
+            child: _MobileReviewCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.md,
+              ),
+              child: Column(
+                children: [
+                  _ReviewRow(
+                    label: 'Amount',
+                    value: '${widget.data.amountText} ZEC',
+                    height: 32,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  const _ReviewRow(
+                    label: 'Fees (estimate)',
+                    value: 'shown before send',
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  const _ReviewRow(
+                    label: 'Migration complete in',
+                    value: '~5 mins',
+                    showInfo: true,
+                    height: 32,
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
             key: const ValueKey('mobile_ironwood_fast_privacy_card'),
-            height: 172,
+            height: 189,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
@@ -1124,7 +1138,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm,
-                  vertical: AppSpacing.md,
+                  vertical: AppSpacing.base,
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1147,7 +1161,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 7),
+                          const SizedBox(height: AppSpacing.xs),
                           Text.rich(
                             TextSpan(
                               style: AppTypography.bodyMedium.copyWith(
@@ -1158,13 +1172,12 @@ class _MobileMigrationFastReview extends StatelessWidget {
                                 TextSpan(
                                   text:
                                       'Crosses in one visible step — your '
-                                      '${data.amountText} ZEC and timing are ',
+                                      '${widget.data.amountText} ZEC and '
+                                      'timing are ',
                                 ),
-                                TextSpan(
+                                const TextSpan(
                                   text: 'easier to associate with your wallet',
-                                  style: TextStyle(
-                                    color: const Color(0xFFC06ECE),
-                                  ),
+                                  style: TextStyle(color: Color(0xFFC06ECE)),
                                 ),
                                 const TextSpan(text: '. '),
                                 const TextSpan(
@@ -1181,6 +1194,54 @@ class _MobileMigrationFastReview extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Semantics(
+            checked: _acknowledged,
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_ironwood_fast_acknowledgement'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _acknowledged = !_acknowledged),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: _acknowledged
+                          ? colors.button.destructive.bg
+                          : colors.background.ground,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: _acknowledged
+                            ? colors.button.destructive.bg
+                            : colors.border.regular,
+                      ),
+                    ),
+                    child: _acknowledged
+                        ? AppIcon(
+                            AppIcons.check,
+                            size: 14,
+                            color: colors.button.destructive.label,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: Text(
+                      'I understand that this migration’s amount and timing '
+                      'will be visible on the Zcash network.',
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1234,7 +1295,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
       ),
       child: Column(
         children: [
-          SizedBox(height: compact ? 28 : 112),
+          SizedBox(height: compact ? 28 : 81),
           Expanded(
             child: SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
@@ -1248,38 +1309,53 @@ class _MobileMigrationPreparing extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'This will take 10-20 min',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: 300,
+                    child: Text(
+                      'Preparing your balance for migration. This step usually '
+                      'takes 10-20 mins.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 46),
+                  const SizedBox(height: 39),
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'Migration $partCount notes',
-                          style: AppTypography.bodyLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w600,
+                        child: Text.rich(
+                          TextSpan(
+                            style: AppTypography.bodyLarge.copyWith(
+                              color: colors.text.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            children: [
+                              const TextSpan(text: 'Migration '),
+                              TextSpan(
+                                text: '$partCount notes',
+                                style: TextStyle(color: colors.text.secondary),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      Text(
-                        '$totalAmount ZEC',
-                        style: AppTypography.bodyLarge.copyWith(
-                          color: colors.text.accent,
-                          fontWeight: FontWeight.w600,
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xxs),
+                        child: Text(
+                          '$totalAmount ZEC',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: 12),
                   _MobileMigrationStatusRail(parts: parts),
                   const SizedBox(height: AppSpacing.base),
                   _MobileIronwoodWaitingStatusCard(
@@ -1550,44 +1626,55 @@ class _MobileMigrationMigratingState
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(height: compact ? 20 : 36),
+        SizedBox(height: compact ? 20 : 46),
         Text(
           'Migration in Progress',
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,
+            fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 48),
+        SizedBox(height: compact ? AppSpacing.md : 44),
         Row(
           children: [
             Expanded(
-              child: Text(
-                'Migration $partCount notes',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
+              child: Text.rich(
+                TextSpan(
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Migration '),
+                    TextSpan(
+                      text: '$partCount notes',
+                      style: TextStyle(color: colors.text.secondary),
+                    ),
+                  ],
                 ),
               ),
             ),
-            Text(
-              '$totalAmount ZEC',
-              style: AppTypography.bodyLarge.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xxs),
+              child: Text(
+                '$totalAmount ZEC',
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.xs),
+        SizedBox(height: compact ? AppSpacing.xs : 3),
         if (compact)
           SizedBox(
             height: math.min(156, math.max(72, parts.length * 52).toDouble()),
             child: partsContent,
           )
         else
-          Expanded(child: partsContent),
-        const SizedBox(height: AppSpacing.s),
+          SizedBox(height: recoveryRequired ? 180 : 331, child: partsContent),
+        SizedBox(height: compact || recoveryRequired ? AppSpacing.s : 52),
         _ReviewRow(label: 'Est. completion', value: completion),
         const SizedBox(height: AppSpacing.xs),
         _ReviewRow(
@@ -1612,11 +1699,14 @@ class _MobileMigrationMigratingState
           )
         else
           const _MigrationCanLeaveMessage(),
-        const SizedBox(height: AppSpacing.md),
-        _MobileStatusBackHomeButton(
-          key: const ValueKey('mobile_ironwood_status_back_home_button'),
-          label: 'Go home',
-          onPressed: () => context.go('/home'),
+        SizedBox(height: compact || recoveryRequired ? AppSpacing.md : 38),
+        Transform.translate(
+          offset: Offset(0, compact || recoveryRequired ? 0 : 14),
+          child: _MobileStatusBackHomeButton(
+            key: const ValueKey('mobile_ironwood_status_back_home_button'),
+            label: 'Go home',
+            onPressed: () => context.go('/home'),
+          ),
         ),
       ],
     );
@@ -1630,7 +1720,9 @@ class _MobileMigrationMigratingState
         AppSpacing.sm,
         AppSpacing.s,
       ),
-      child: compact ? SingleChildScrollView(child: body) : body,
+      child: compact || recoveryRequired
+          ? SingleChildScrollView(child: body)
+          : body,
     );
   }
 }

@@ -159,23 +159,13 @@ class _MobilePrivateReviewScaffold extends StatelessWidget {
 class _MobileMigrationReviewScaffold extends StatelessWidget {
   const _MobileMigrationReviewScaffold({
     required this.onBack,
-    required this.icon,
-    required this.title,
-    required this.amount,
     required this.child,
     required this.bottom,
-    this.topGap = 29,
-    this.iconTitleGap = 32,
   });
 
   final VoidCallback onBack;
-  final Widget icon;
-  final String title;
-  final String amount;
   final Widget child;
   final Widget bottom;
-  final double topGap;
-  final double iconTitleGap;
 
   @override
   Widget build(BuildContext context) {
@@ -195,31 +185,23 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
+                padding: const EdgeInsets.fromLTRB(
                   AppSpacing.sm,
-                  topGap,
+                  39,
                   AppSpacing.sm,
                   AppSpacing.md,
                 ),
                 child: Column(
                   children: [
-                    icon,
-                    SizedBox(height: iconTitleGap),
                     Text(
-                      title,
-                      style: AppTypography.bodyLarge.copyWith(
+                      'Review Migration Plan',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      amount,
-                      style: AppTypography.displayLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
                     child,
                   ],
                 ),
@@ -1207,19 +1189,36 @@ List<double> _mobileRailSegmentWidths({
   return widths;
 }
 
-double _mobileStatusRailSegmentWidth({
+List<double> _mobileStatusRailSegmentWidths({
   required double available,
-  required BigInt value,
-  required BigInt total,
-  required int count,
+  required List<BigInt> values,
 }) {
-  if (count <= 0) return 0;
-  final gaps = math.max(0, count - 1) * 4;
-  final usable = count <= 6
-      ? math.max(0, available - gaps)
-      : math.max(0, available);
-  if (total <= BigInt.zero) return math.max(20, usable / count);
-  return math.max(12, usable * value.toDouble() / total.toDouble());
+  final count = values.length;
+  if (count <= 0) return const [];
+  final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+  if (count > 6) {
+    if (total <= BigInt.zero) return List<double>.filled(count, 12);
+    return [
+      for (final value in values)
+        math.max(12, available * value.toDouble() / total.toDouble()),
+    ];
+  }
+
+  final gaps = math.max(0, count - 1) * _mobileMigrationPlanBarGap;
+  final usable = math.max(0.0, available - gaps);
+  if (usable <= 0) return List<double>.filled(count, 0);
+  if (total <= BigInt.zero) return List<double>.filled(count, usable / count);
+
+  const minimumWidth = 8.0;
+  final doubleTotal = total.toDouble();
+  final widths = [
+    for (final value in values)
+      math.max(minimumWidth, usable * value.toDouble() / doubleTotal),
+  ];
+  final widthTotal = widths.fold<double>(0, (sum, width) => sum + width);
+  if (widthTotal <= usable) return widths;
+  final scale = usable / widthTotal;
+  return [for (final width in widths) width * scale];
 }
 
 class _MobileMigrationRailSegment extends StatelessWidget {
@@ -1585,17 +1584,19 @@ class _ReviewRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.showInfo = false,
+    this.height = 25,
   });
 
   final String label;
   final String value;
   final bool showInfo;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      height: 25,
+      height: height,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.xxs,
@@ -1615,31 +1616,23 @@ class _ReviewRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            Flexible(
-              child: Row(
-                key: ValueKey('mobile_ironwood_review_value_$label'),
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: Text(
-                      value,
-                      textAlign: TextAlign.end,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
+            Row(
+              key: ValueKey('mobile_ironwood_review_value_$label'),
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
                   ),
-                  if (showInfo) ...[
-                    const SizedBox(width: AppSpacing.xxs),
-                    AppIcon(
-                      AppIcons.help,
-                      size: 16,
-                      color: colors.icon.regular,
-                    ),
-                  ],
+                ),
+                if (showInfo) ...[
+                  const SizedBox(width: AppSpacing.xxs),
+                  AppIcon(AppIcons.help, size: 16, color: colors.icon.regular),
                 ],
-              ),
+              ],
             ),
           ],
         ),

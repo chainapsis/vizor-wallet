@@ -1080,10 +1080,26 @@ void main() {
             find.byKey(const ValueKey('mobile_ironwood_fast_privacy_card')),
           )
           .height,
-      172,
+      189,
     );
-    expect(find.text('<0.001 ZEC'), findsOneWidget);
-    expect(find.text('Authorise anyway'), findsOneWidget);
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('142.23 ZEC'), findsOneWidget);
+    expect(find.text('Migration complete in'), findsOneWidget);
+    expect(find.text('~5 mins'), findsOneWidget);
+    expect(find.text('Orchard remains'), findsNothing);
+    expect(
+      find.text(
+        'I understand that this migration’s amount and timing will be visible '
+        'on the Zcash network.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_fast_acknowledgement')),
+      findsOneWidget,
+    );
+    expect(find.text('Continue anyway'), findsOneWidget);
+    expect(find.text('Authorise anyway'), findsNothing);
   });
 
   testWidgets('renders the preparing migration state', (tester) async {
@@ -1092,12 +1108,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Migration in Progress'), findsOneWidget);
-    expect(find.text('This will take 10-20 min'), findsOneWidget);
+    expect(
+      find.text(
+        'Preparing your balance for migration. This step usually takes '
+        '10-20 mins.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Migration 12 notes'), findsOneWidget);
-    expect(find.text('Note split'), findsOneWidget);
-    expect(find.text('Split notes into 12 migration parts'), findsOneWidget);
+    expect(find.text('Note Split'), findsOneWidget);
+    expect(find.text('Split Notes into 12 Migration Parts'), findsOneWidget);
     expect(find.text('Wait for confirmation'), findsOneWidget);
+    final loader = tester.widget<AppIcon>(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+      ),
+    );
+    expect(loader.animated, isFalse);
     expect(
       find.text(
         'Migration will start automatically once note split is complete.',
@@ -1105,6 +1133,26 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Go home'), findsOneWidget);
+  });
+
+  testWidgets('animates the preparing confirmation loader', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.preparing,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    final loader = tester.widget<AppIcon>(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+      ),
+    );
+    expect(loader.animated, isTrue);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('renders migrating parts inline', (tester) async {
@@ -1145,6 +1193,31 @@ void main() {
       ),
       findsOneWidget,
     );
+    final rail = find.byKey(
+      const ValueKey('mobile_ironwood_status_rail_scroll'),
+    );
+    final railScrollable = find.descendant(
+      of: rail,
+      matching: find.byType(Scrollable),
+    );
+    final railPosition = tester.state<ScrollableState>(railScrollable).position;
+    expect(railPosition.maxScrollExtent, greaterThan(0));
+    await tester.drag(rail, const Offset(-120, 0));
+    await tester.pump();
+    expect(railPosition.pixels, greaterThan(0));
+
+    final partList = find.byKey(
+      const ValueKey('mobile_ironwood_active_part_list'),
+    );
+    final listScrollable = find.descendant(
+      of: partList,
+      matching: find.byType(Scrollable),
+    );
+    final listPosition = tester.state<ScrollableState>(listScrollable).position;
+    expect(listPosition.maxScrollExtent, greaterThan(0));
+    await tester.drag(partList, const Offset(0, -120));
+    await tester.pump();
+    expect(listPosition.pixels, greaterThan(0));
     expect(find.text('Currently spendable balance'), findsOneWidget);
     expect(find.text('4.12 ZEC'), findsWidgets);
     expect(
@@ -1563,7 +1636,7 @@ void main() {
     expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('Wait for confirmation'), findsOneWidget);
     expect(find.text('2/10 blocks'), findsOneWidget);
-    expect(find.text('Split notes into 3 migration parts'), findsOneWidget);
+    expect(find.text('Split Notes into 3 Migration Parts'), findsOneWidget);
   });
 
   testWidgets('explains the additional Keystone approval while waiting', (
