@@ -623,8 +623,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     _stopProofPolling();
     if (!_requestCompleted) {
       final requestId = _request?.requestId;
-      if (requestId != null) {
-        unawaited(_discardRequest(requestId));
+      final accountUuid = _accountUuid;
+      if (requestId != null && accountUuid != null) {
+        unawaited(_discardRequest(accountUuid, requestId));
       }
     }
     super.dispose();
@@ -645,6 +646,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     });
 
     String? requestIdToDiscard;
+    String? requestAccountUuid;
     try {
       final accountState = await ref.read(accountProvider.future);
       final accountUuid = accountState.activeAccountUuid;
@@ -655,6 +657,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       if (activeAccount == null || !activeAccount.isHardware) {
         throw StateError('Active account is not a Keystone account.');
       }
+      requestAccountUuid = accountUuid;
 
       final request = await widget.step.prepare(
         _migrationService,
@@ -662,7 +665,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       );
       requestIdToDiscard = request.requestId;
       if (!mounted) {
-        await _discardRequest(request.requestId);
+        await _discardRequest(accountUuid, request.requestId);
         return;
       }
       if (request.messages.isEmpty) {
@@ -700,8 +703,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _accountUuid = null;
       _proofStatus = null;
       _pendingSignedMessages = null;
-      if (requestId != null) {
-        unawaited(_discardRequest(requestId));
+      if (requestId != null && requestAccountUuid != null) {
+        unawaited(_discardRequest(requestAccountUuid, requestId));
       }
       if (!mounted) return;
       setState(() {
@@ -886,9 +889,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     }
   }
 
-  Future<void> _discardRequest(String requestId) async {
+  Future<void> _discardRequest(String accountUuid, String requestId) async {
     try {
       await _migrationService.discardKeystonePrivateMigrationRequest(
+        accountUuid: accountUuid,
         requestId: requestId,
       );
     } catch (e, st) {
@@ -902,10 +906,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Future<void> _returnToReview() async {
     if (_stage == _KeystoneDenominationSignStage.completing) return;
     final requestId = _request?.requestId;
+    final accountUuid = _accountUuid;
     _stopProofPolling();
     _request = null;
-    if (requestId != null) {
-      await _discardRequest(requestId);
+    if (requestId != null && accountUuid != null) {
+      await _discardRequest(accountUuid, requestId);
     }
     if (!mounted) return;
     context.go(widget.step.previousRoute);

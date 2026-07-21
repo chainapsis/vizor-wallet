@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -167,6 +168,74 @@ void main() {
       }
     },
   );
+
+  test('account revocation waits for an in-flight migration start', () async {
+    final registry = IronwoodMigrationOperationRegistry();
+    final started = Completer<void>();
+    final finish = Completer<void>();
+    var startCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'test-password',
+      isMacOS: () => true,
+      operationRegistry: registry,
+      startMacosSoftwareMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+            required approvedSchedule,
+          }) async {
+            startCount += 1;
+            started.complete();
+            await finish.future;
+            return _migrationResult();
+          },
+    );
+
+    final migration = service.startSoftwarePrivateMigration(
+      accountUuid: 'account-1',
+      approvedSchedule: const [],
+    );
+    await started.future;
+
+    var revocationCompleted = false;
+    final revocationFuture = registry
+        .revokeAndWait(network: 'test', accountUuid: 'account-1')
+        .then((value) {
+          revocationCompleted = true;
+          return value;
+        });
+    await Future<void>.delayed(Duration.zero);
+    expect(revocationCompleted, isFalse);
+
+    finish.complete();
+    await migration;
+    final revocation = await revocationFuture;
+    revocation.commit();
+
+    await expectLater(
+      service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      ),
+      throwsA(isA<IronwoodMigrationAccountRevokedException>()),
+    );
+    expect(startCount, 1);
+  });
 
   test(
     'startSoftwarePrivateMigration uses macOS stored mnemonic path',
@@ -567,6 +636,7 @@ void main() {
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
+      getEndpoint: _testEndpoint,
       discardKeystoneMigrationRequest: ({required requestId}) {
         seenRequestId = requestId;
         return Future.value();
@@ -574,6 +644,7 @@ void main() {
     );
 
     await service.discardKeystonePrivateMigrationRequest(
+      accountUuid: 'account-1',
       requestId: 'request-1',
     );
 

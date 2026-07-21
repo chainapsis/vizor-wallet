@@ -336,6 +336,26 @@ class IronwoodMigrationBackgroundLifecycle {
   final bool _isIOS;
   final bool _isAndroid;
 
+  Future<void> quiesce() async {
+    if (!_isIOS) return;
+    final quiesced = await _channel.invokeMethod<bool>('quiesce');
+    if (quiesced != true) {
+      throw StateError(
+        'Failed to pause Ironwood migration before wallet data changed.',
+      );
+    }
+  }
+
+  Future<void> resumeAfterFailedMutation() async {
+    if (!_isIOS) return;
+    final resumed = await _channel.invokeMethod<bool>('resume');
+    if (resumed != true) {
+      throw StateError(
+        'Failed to resume Ironwood migration after wallet data was kept.',
+      );
+    }
+  }
+
   Future<void> revokeAccount({
     required String network,
     required String accountUuid,

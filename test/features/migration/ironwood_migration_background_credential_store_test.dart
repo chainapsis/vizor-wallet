@@ -197,6 +197,64 @@ void main() {
     },
   );
 
+  test('iOS quiesce and resume use separate native lifecycle steps', () async {
+    const channel = MethodChannel('test/background_migration/quiesce');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: true,
+      isAndroid: false,
+    );
+
+    await lifecycle.quiesce();
+    await lifecycle.resumeAfterFailedMutation();
+
+    expect(calls.map((call) => call.method), ['quiesce', 'resume']);
+  });
+
+  test('Android quiesce retains the credential until revocation commits', () async {
+    final storage = FlutterSecureStorage();
+    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+      storage: storage,
+      randomBytes: (length) => Uint8List(length),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      credentialStore: store,
+      isIOS: false,
+      isAndroid: true,
+    );
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+
+    await lifecycle.quiesce();
+    expect(
+      await store.read(network: 'test', accountUuid: 'account-1'),
+      isNotNull,
+    );
+
+    await lifecycle.revokeAccount(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
+    expect(
+      await store.read(network: 'test', accountUuid: 'account-1'),
+      isNull,
+    );
+  });
+
   test('iOS wallet reset fails closed when native revocation fails', () async {
     const channel = MethodChannel('test/background_migration/revoke_all');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

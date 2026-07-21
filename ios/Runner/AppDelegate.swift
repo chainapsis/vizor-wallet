@@ -39,6 +39,12 @@ import UIKit
       case "cancel":
         BackgroundMigrationManager.shared.cancelIfNoRunnableWork()
         result(true)
+      case "quiesce":
+        BackgroundMigrationManager.shared.quiesce {
+          success in result(success)
+        }
+      case "resume":
+        result(BackgroundMigrationManager.shared.resumeAfterFailedMutation())
       case "revokeAccount":
         guard let arguments = call.arguments as? [String: Any],
           let network = arguments["network"] as? String,

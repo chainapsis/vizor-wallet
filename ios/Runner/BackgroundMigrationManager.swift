@@ -502,6 +502,7 @@ final class BackgroundMigrationManager {
   private let stateLock = NSLock()
   private var cancelled = false
   private var expired = false
+  private var mutationQuiesced = false
 
   private init() {}
 
@@ -511,6 +512,10 @@ final class BackgroundMigrationManager {
 
   private var shouldRetryCancelledWake: Bool {
     stateLock.vizorWithLock { expired }
+  }
+
+  private var isMutationQuiesced: Bool {
+    stateLock.vizorWithLock { mutationQuiesced }
   }
 
   func registerBackgroundTask() {
@@ -531,6 +536,7 @@ final class BackgroundMigrationManager {
     earliestBeginDate: Date = Date(),
     clearsBlockedManifests: Bool = true
   ) -> Bool {
+    guard !isMutationQuiesced else { return false }
     if clearsBlockedManifests {
       BackgroundMigrationBlockedStore.clear()
     }
@@ -548,9 +554,16 @@ final class BackgroundMigrationManager {
   }
 
   func cancel() {
+    stopActiveWork(quiesceForMutation: false)
+  }
+
+  private func stopActiveWork(quiesceForMutation: Bool) {
     stateLock.vizorWithLock {
       cancelled = true
       expired = false
+      if quiesceForMutation {
+        mutationQuiesced = true
+      }
     }
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
@@ -570,12 +583,28 @@ final class BackgroundMigrationManager {
     }
   }
 
+  func quiesce(completion: @escaping (Bool) -> Void) {
+    stopActiveWork(quiesceForMutation: true)
+    queue.async {
+      DispatchQueue.main.async { completion(true) }
+    }
+  }
+
+  func resumeAfterFailedMutation() -> Bool {
+    endMutationQuiescence()
+    guard hasRunnableManifest() else { return true }
+    return schedule(
+      earliestBeginDate: Date().addingTimeInterval(60),
+      clearsBlockedManifests: false
+    )
+  }
+
   func revokeAccount(
     network: String,
     accountUuid: String,
     completion: @escaping (Bool) -> Void
   ) {
-    cancel()
+    stopActiveWork(quiesceForMutation: true)
     queue.async { [weak self] in
       let storageKey = "\(network):\(accountUuid)"
       IronwoodMigrationManifestStore.delete(
@@ -592,7 +621,7 @@ final class BackgroundMigrationManager {
   }
 
   func revokeAll(completion: @escaping (Bool) -> Void) {
-    cancel()
+    stopActiveWork(quiesceForMutation: true)
     queue.async {
       IronwoodMigrationManifestStore.deleteAll()
       BackgroundMigrationBlockedStore.clear()
@@ -602,12 +631,15 @@ final class BackgroundMigrationManager {
   }
 
   func runOnceForTesting() -> BackgroundMigrationRunOutcome {
-    resetCancellation()
+    guard prepareForBackgroundWake() else { return .cancelled }
     return BackgroundMigrationRunner.runOnce()
   }
 
   private func handle(_ task: BGProcessingTask) {
-    resetCancellation()
+    guard prepareForBackgroundWake() else {
+      task.setTaskCompleted(success: true)
+      return
+    }
     task.expirationHandler = { [weak self] in
       self?.expire()
     }
@@ -622,8 +654,18 @@ final class BackgroundMigrationManager {
     }
   }
 
-  private func resetCancellation() {
+  private func prepareForBackgroundWake() -> Bool {
     stateLock.vizorWithLock {
+      guard !mutationQuiesced else { return false }
+      cancelled = false
+      expired = false
+      return true
+    }
+  }
+
+  private func endMutationQuiescence() {
+    stateLock.vizorWithLock {
+      mutationQuiesced = false
       cancelled = false
       expired = false
     }
@@ -663,7 +705,7 @@ final class BackgroundMigrationManager {
   }
 
   private func scheduleRemainingWork() {
-    resetCancellation()
+    endMutationQuiescence()
     if hasRunnableManifest() {
       _ = schedule(
         earliestBeginDate: Date().addingTimeInterval(60),
