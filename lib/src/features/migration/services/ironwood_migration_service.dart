@@ -37,6 +37,8 @@ typedef IronwoodMigrationMnemonicBytesGetter =
 typedef IronwoodMigrationPlatformCheck = bool Function();
 typedef IronwoodMigrationBackgroundScheduler = Future<bool> Function();
 typedef IronwoodMigrationBackgroundCanceler = Future<void> Function();
+typedef IronwoodMigrationNotificationAuthorizationRequester =
+    Future<bool> Function();
 typedef IronwoodMigrationHardwareAccountCheck =
     bool Function(String accountUuid);
 typedef IronwoodMigrationSoftwareStarter =
@@ -131,10 +133,13 @@ class IronwoodMigrationService {
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
     IronwoodMigrationPlatformCheck? isMobile,
+    IronwoodMigrationPlatformCheck? isIOS,
     IronwoodMigrationPlatformCheck? supportsBackgroundMigration,
     IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
+    IronwoodMigrationNotificationAuthorizationRequester?
+    requestNotificationAuthorization,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
@@ -157,6 +162,7 @@ class IronwoodMigrationService {
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
        isMacOS = isMacOS ?? _defaultIsMacOS,
        isMobile = isMobile ?? _defaultIsMobile,
+       isIOS = isIOS ?? _defaultIsIOS,
        supportsBackgroundMigration =
            supportsBackgroundMigration ??
            (scheduleBackgroundMigration == null ? _defaultIsIOS : _alwaysTrue),
@@ -165,6 +171,9 @@ class IronwoodMigrationService {
            scheduleBackgroundMigration ?? _defaultScheduleBackgroundMigration,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
+       requestNotificationAuthorization =
+           requestNotificationAuthorization ??
+           _defaultRequestNotificationAuthorization,
        startSoftwareMigration =
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
        startMacosSoftwareMigration =
@@ -206,10 +215,13 @@ class IronwoodMigrationService {
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
   final IronwoodMigrationPlatformCheck isMobile;
+  final IronwoodMigrationPlatformCheck isIOS;
   final IronwoodMigrationPlatformCheck supportsBackgroundMigration;
   final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
+  final IronwoodMigrationNotificationAuthorizationRequester
+  requestNotificationAuthorization;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
@@ -316,9 +328,13 @@ class IronwoodMigrationService {
       );
     }
 
-    return _runCredentialOperation(
+    var hasActiveRun = false;
+    final result = await _runCredentialOperation(
       context: context,
       mayCreateRun: true,
+      onMobileSuccessStatus: (status) {
+        hasActiveRun = status.activeRunId != null;
+      },
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
@@ -343,6 +359,10 @@ class IronwoodMigrationService {
         return resultFuture;
       },
     );
+    if (hasActiveRun) {
+      await _requestNotificationAuthorizationBestEffort();
+    }
+    return result;
   }
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
@@ -589,6 +609,7 @@ class IronwoodMigrationService {
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
     required Future<T> Function(_MigrationCredential credential) operation,
+    void Function(rust_sync.MigrationStatus status)? onMobileSuccessStatus,
   }) async {
     return operationRegistry.run(
       network: context.network,
@@ -633,6 +654,7 @@ class IronwoodMigrationService {
           if (operationError != null) {
             Error.throwWithStackTrace(operationError, operationStackTrace!);
           }
+          onMobileSuccessStatus?.call(currentStatus);
           return result;
         });
       },
@@ -819,6 +841,18 @@ class IronwoodMigrationService {
     }
   }
 
+  Future<void> _requestNotificationAuthorizationBestEffort() async {
+    if (!isIOS()) return;
+    try {
+      await requestNotificationAuthorization();
+    } catch (error) {
+      debugPrint(
+        'Failed to request Ironwood migration notification authorization: '
+        '$error',
+      );
+    }
+  }
+
   Future<void> discardKeystonePrivateMigrationRequest({
     required String accountUuid,
     required String requestId,
@@ -897,6 +931,13 @@ Future<bool> _defaultScheduleBackgroundMigration() async {
 Future<void> _defaultCancelBackgroundMigration() async {
   if (!Platform.isIOS) return;
   await _backgroundMigrationChannel.invokeMethod<void>('cancel');
+}
+
+Future<bool> _defaultRequestNotificationAuthorization() async {
+  final authorized = await _backgroundMigrationChannel.invokeMethod<bool>(
+    'requestNotificationAuthorization',
+  );
+  return authorized ?? false;
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>

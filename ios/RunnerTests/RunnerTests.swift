@@ -190,12 +190,177 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     XCTAssertNil(IronwoodMigrationBackgroundManifest.decode(provisional))
   }
 
+  func testWatchdogIdentifierIsStablePerManifestRun() {
+    let first = makeBackgroundMigrationManifest(
+      accountUuid: "private-account",
+      expectedRunId: "private-run"
+    )
+    let same = makeBackgroundMigrationManifest(
+      accountUuid: "private-account",
+      expectedRunId: "private-run"
+    )
+    let nextRun = makeBackgroundMigrationManifest(
+      accountUuid: "private-account",
+      expectedRunId: "next-run"
+    )
+
+    let identifier = BackgroundMigrationNotificationPolicy.identifier(for: first)
+
+    XCTAssertEqual(
+      identifier,
+      BackgroundMigrationNotificationPolicy.identifier(for: same)
+    )
+    XCTAssertNotEqual(
+      identifier,
+      BackgroundMigrationNotificationPolicy.identifier(for: nextRun)
+    )
+    XCTAssertFalse(identifier.contains("private-account"))
+    XCTAssertFalse(identifier.contains("private-run"))
+  }
+
+  func testWatchdogDeadlineUsesScheduledHeightAndNinetySixBlockGrace() {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    let deadline = BackgroundMigrationNotificationPolicy.watchdogDate(
+      now: now,
+      nextScheduledHeight: 1_100,
+      observedHeight: 1_000
+    )
+
+    XCTAssertEqual(
+      deadline.timeIntervalSince(now),
+      TimeInterval(100 + 96) * 75
+    )
+  }
+
+  func testWatchdogDeadlineStartsGraceAtAnAlreadyReachedHeight() {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    let deadline = BackgroundMigrationNotificationPolicy.watchdogDate(
+      now: now,
+      nextScheduledHeight: 900,
+      observedHeight: 1_000
+    )
+
+    XCTAssertEqual(deadline.timeIntervalSince(now), TimeInterval(96) * 75)
+  }
+
+  func testWatchdogDeadlineUsesConservativeFallbackWithoutNextHeight() {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    let deadline = BackgroundMigrationNotificationPolicy.watchdogDate(
+      now: now,
+      nextScheduledHeight: nil,
+      observedHeight: 1_000
+    )
+
+    XCTAssertEqual(
+      deadline.timeIntervalSince(now),
+      TimeInterval(144 + 96) * 75
+    )
+  }
+
+  func testRepeatedWatchdogReconciliationDoesNotPostponeTheSameTarget() {
+    let identifier = "watchdog-id"
+    let firstDeadline = Date(timeIntervalSince1970: 10_000)
+    let first = BackgroundMigrationNotificationPolicy.resolvedWatchdogState(
+      identifier: identifier,
+      nextScheduledHeight: 1_100,
+      proposedDeadline: firstDeadline,
+      existing: nil
+    )
+
+    let repeated = BackgroundMigrationNotificationPolicy.resolvedWatchdogState(
+      identifier: identifier,
+      nextScheduledHeight: 1_100,
+      proposedDeadline: firstDeadline.addingTimeInterval(600),
+      existing: first
+    )
+
+    XCTAssertEqual(repeated.deadline, firstDeadline)
+  }
+
+  func testWatchdogReconciliationReplacesDeadlineForTheNextTarget() {
+    let identifier = "watchdog-id"
+    let first = BackgroundMigrationWatchdogState(
+      identifier: identifier,
+      nextScheduledHeight: 1_100,
+      deadline: Date(timeIntervalSince1970: 10_000)
+    )
+    let nextDeadline = Date(timeIntervalSince1970: 20_000)
+
+    let next = BackgroundMigrationNotificationPolicy.resolvedWatchdogState(
+      identifier: identifier,
+      nextScheduledHeight: 1_200,
+      proposedDeadline: nextDeadline,
+      existing: first
+    )
+
+    XCTAssertEqual(next.deadline, nextDeadline)
+    XCTAssertEqual(next.nextScheduledHeight, 1_200)
+  }
+
+  func testNeedsUserActionNotificationIsImmediatePrivateAndDeduplicated() {
+    let manifest = makeBackgroundMigrationManifest(
+      accountUuid: "sensitive-account",
+      expectedRunId: "sensitive-run"
+    )
+
+    let first = BackgroundMigrationNotificationPolicy.needsUserActionPlan(
+      for: manifest,
+      alreadyNotified: false
+    )
+
+    XCTAssertEqual(first?.delivery, .immediate)
+    XCTAssertFalse(first?.title.contains("sensitive-account") ?? true)
+    XCTAssertFalse(first?.body.contains("sensitive-account") ?? true)
+    XCTAssertFalse(first?.body.contains("sensitive-run") ?? true)
+    XCTAssertNil(
+      BackgroundMigrationNotificationPolicy.needsUserActionPlan(
+        for: manifest,
+        alreadyNotified: true
+      )
+    )
+  }
+
+  func testWatchdogCopyDoesNotExposeManifestIdentity() {
+    let manifest = makeBackgroundMigrationManifest(
+      accountUuid: "sensitive-account",
+      expectedRunId: "sensitive-run"
+    )
+
+    let plan = BackgroundMigrationNotificationPolicy.watchdogPlan(
+      for: manifest,
+      now: Date(timeIntervalSince1970: 1_000),
+      nextScheduledHeight: 1_100,
+      observedHeight: 1_000
+    )
+
+    XCTAssertFalse(plan.title.contains("sensitive-account"))
+    XCTAssertFalse(plan.body.contains("sensitive-account"))
+    XCTAssertFalse(plan.body.contains("sensitive-run"))
+  }
+
   func testRunnerReturnsNoWorkWithoutManifest() {
     let harness = BackgroundMigrationRunnerHarness(manifests: [])
 
     XCTAssertEqual(
       BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
       .noWork
+    )
+    XCTAssertEqual(harness.syncCount, 0)
+    XCTAssertEqual(harness.cycleCount, 0)
+  }
+
+  func testRunnerRetriesWhenManifestKeychainIsTemporarilyUnavailable() {
+    let harness = BackgroundMigrationRunnerHarness(
+      manifests: [makeBackgroundMigrationManifest()]
+    )
+    harness.manifestsAccessible = false
+
+    XCTAssertEqual(
+      BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
+      .temporarilyUnavailable
     )
     XCTAssertEqual(harness.syncCount, 0)
     XCTAssertEqual(harness.cycleCount, 0)
@@ -250,6 +415,23 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     )
     XCTAssertEqual(harness.events, ["inspect", "cycle"])
     XCTAssertEqual(harness.syncCount, 0)
+  }
+
+  func testRunnerSchedulesAQuickFollowUpWhileProofsRemain() {
+    let manifest = makeBackgroundMigrationManifest()
+    let harness = BackgroundMigrationRunnerHarness(manifests: [manifest])
+    harness.inspectionResults = [makeNativeResult(action: .advance)]
+    harness.nativeResult = makeNativeResult(
+      action: .advance,
+      chainTipHeight: 500,
+      nextScheduledHeight: 600
+    )
+
+    XCTAssertEqual(
+      BackgroundMigrationRunner.runOnce(dependencies: harness.dependencies()),
+      .preparing(nextHeight: 600, observedHeight: 500)
+    )
+    XCTAssertEqual(harness.events, ["inspect", "cycle"])
   }
 
   func testRunnerDeletesCredentialOnlyAfterComplete() {
@@ -440,6 +622,28 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     )
   }
 
+  func testReschedulePolicyRetriesTemporarilyUnavailableKeychainWithoutManifestCount() {
+    XCTAssertEqual(
+      BackgroundMigrationReschedulePolicy.delay(
+        after: .temporarilyUnavailable,
+        runnableManifestCount: 0,
+        cancelledByExpiration: false
+      ),
+      10 * 60
+    )
+  }
+
+  func testReschedulePolicyQuicklyContinuesProofPreparation() {
+    XCTAssertEqual(
+      BackgroundMigrationReschedulePolicy.delay(
+        after: .preparing(nextHeight: 600, observedHeight: 500),
+        runnableManifestCount: 1,
+        cancelledByExpiration: false
+      ),
+      60
+    )
+  }
+
   func testReschedulePolicyCapsWaitingAccountWhenAnotherAccountCanRun() {
     XCTAssertEqual(
       BackgroundMigrationReschedulePolicy.delay(
@@ -510,6 +714,7 @@ private final class FreshInstallCleanerHarness {
 
 private final class BackgroundMigrationRunnerHarness {
   var manifests: [IronwoodMigrationBackgroundManifest]
+  var manifestsAccessible = true
   var blockedKeys: Set<String> = []
   var lastAttemptedKey: String?
   var cancelEpoch: UInt64 = 0
@@ -537,7 +742,9 @@ private final class BackgroundMigrationRunnerHarness {
 
   func dependencies() -> BackgroundMigrationRunnerDependencies {
     BackgroundMigrationRunnerDependencies(
-      loadManifests: { self.manifests },
+      loadManifests: {
+        self.manifestsAccessible ? self.manifests : nil
+      },
       loadBlockedKeys: { self.blockedKeys },
       loadLastAttemptedKey: { self.lastAttemptedKey },
       saveLastAttemptedKey: {

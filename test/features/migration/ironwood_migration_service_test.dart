@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
+import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -168,6 +169,152 @@ void main() {
       }
     },
   );
+
+  test(
+    'explicit iOS software migration start requests notification authorization',
+    () async {
+      const channel = MethodChannel('com.zcash.wallet/background_migration');
+      final methodCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            methodCalls.add(call);
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final service = _notificationAuthorizationService(
+        isIOS: true,
+        statuses: [
+          _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
+        ],
+      );
+
+      final result = await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(result.status, 'broadcasted');
+      expect(methodCalls, hasLength(1));
+      expect(methodCalls.single.method, 'requestNotificationAuthorization');
+    },
+  );
+
+  test(
+    'notification authorization refusal does not fail software migration',
+    () async {
+      var requestCount = 0;
+      final service = _notificationAuthorizationService(
+        isIOS: true,
+        statuses: [
+          _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
+        ],
+        requestNotificationAuthorization: () async {
+          requestCount++;
+          return false;
+        },
+      );
+
+      final result = await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(result.status, 'broadcasted');
+      expect(requestCount, 1);
+    },
+  );
+
+  test(
+    'notification authorization failure is best effort for software migration',
+    () async {
+      var requestCount = 0;
+      final service = _notificationAuthorizationService(
+        isIOS: true,
+        statuses: [
+          _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
+        ],
+        requestNotificationAuthorization: () async {
+          requestCount++;
+          throw StateError('authorization unavailable');
+        },
+      );
+
+      final result = await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(result.status, 'broadcasted');
+      expect(requestCount, 1);
+    },
+  );
+
+  test('non-iOS software migration does not request authorization', () async {
+    var requestCount = 0;
+    final service = _notificationAuthorizationService(
+      isIOS: false,
+      statuses: [
+        _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-1'),
+      ],
+      requestNotificationAuthorization: () async {
+        requestCount++;
+        return true;
+      },
+    );
+
+    final result = await service.startSoftwarePrivateMigration(
+      accountUuid: 'account-1',
+      approvedSchedule: const [],
+    );
+
+    expect(result.status, 'broadcasted');
+    expect(requestCount, 0);
+  });
+
+  test(
+    'software start without an active run does not request authorization',
+    () async {
+      var requestCount = 0;
+      final service = _notificationAuthorizationService(
+        isIOS: true,
+        statuses: [_migrationStatus(), _migrationStatus()],
+        requestNotificationAuthorization: () async {
+          requestCount++;
+          return true;
+        },
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(requestCount, 0);
+    },
+  );
+
+  test('status polling does not request notification authorization', () async {
+    var requestCount = 0;
+    final service = _notificationAuthorizationService(
+      isIOS: true,
+      statuses: [_migrationStatus(activeRunId: 'run-1')],
+      requestNotificationAuthorization: () async {
+        requestCount++;
+        return true;
+      },
+    );
+
+    await service.status(network: 'test', accountUuid: 'account-1');
+
+    expect(requestCount, 0);
+  });
 
   test('account revocation waits for an in-flight migration start', () async {
     final registry = IronwoodMigrationOperationRegistry();
@@ -1197,6 +1344,7 @@ void main() {
       final store = _backgroundCredentialStore();
       final credentials = <String>[];
       var scheduledCount = 0;
+      var notificationAuthorizationRequestCount = 0;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -1213,6 +1361,11 @@ void main() {
         getEndpoint: _testEndpoint,
         getSessionPassword: () => throw StateError('session password used'),
         isMobile: () => true,
+        isIOS: () => true,
+        requestNotificationAuthorization: () async {
+          notificationAuthorizationRequestCount++;
+          return true;
+        },
         scheduleBackgroundMigration: () async {
           scheduledCount++;
           return true;
@@ -1278,6 +1431,7 @@ void main() {
       expect(credentials, hasLength(2));
       expect(credentials[1], credentials[0]);
       expect(scheduledCount, 1);
+      expect(notificationAuthorizationRequestCount, 0);
     },
   );
 
@@ -1358,6 +1512,43 @@ RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
   networkName: 'test',
   lightwalletdUrl: 'https://lwd.example:443',
 );
+
+IronwoodMigrationService _notificationAuthorizationService({
+  required bool isIOS,
+  required List<rust_sync.MigrationStatus> statuses,
+  Future<bool> Function()? requestNotificationAuthorization,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus: ({required dbPath, required network, required accountUuid}) {
+      return Future.value(statuses.removeAt(0));
+    },
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            null,
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    backgroundCredentialStore: _backgroundCredentialStore(),
+    getEndpoint: _testEndpoint,
+    getSessionPassword: () => throw StateError('session password used'),
+    getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+    isMacOS: () => false,
+    isMobile: () => true,
+    isIOS: () => isIOS,
+    requestNotificationAuthorization: requestNotificationAuthorization,
+    scheduleBackgroundMigration: () async => true,
+    startSoftwareMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) async => _migrationResult(),
+  );
+}
 
 IronwoodMigrationBackgroundCredentialStore _backgroundCredentialStore() {
   return IronwoodMigrationBackgroundCredentialStore.testing(

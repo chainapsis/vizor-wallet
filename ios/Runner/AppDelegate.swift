@@ -34,6 +34,10 @@ import UIKit
     )
     backgroundMigrationChannel.setMethodCallHandler { call, result in
       switch call.method {
+      case "requestNotificationAuthorization":
+        BackgroundMigrationManager.shared.requestNotificationAuthorization {
+          granted in result(granted)
+        }
       case "schedule":
         result(BackgroundMigrationManager.shared.schedule())
       case "cancel":
@@ -285,6 +289,14 @@ import UIKit
     switch outcome {
     case .noWork:
       return ["outcome": "no_work"]
+    case .temporarilyUnavailable:
+      return ["outcome": "temporarily_unavailable"]
+    case .preparing(let nextHeight, let observedHeight):
+      return [
+        "outcome": "preparing",
+        "nextHeight": nextHeight as Any,
+        "observedHeight": observedHeight,
+      ]
     case .waiting(let nextHeight, let observedHeight):
       return [
         "outcome": "waiting",
