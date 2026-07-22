@@ -314,6 +314,63 @@ void main() {
   );
 
   test(
+    'iOS software continuation resumes background denomination preparation',
+    () async {
+      var preparationStartCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            _migrationStatus(
+              phase: 'waiting_denom_confirmations',
+              activeRunId: 'run-1',
+            ),
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'test-password',
+        isHardwareAccount: (_) => false,
+        isMacOS: () => false,
+        isMobile: () => true,
+        isIOS: () => true,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
+      );
+
+      await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+
+      expect(preparationStartCount, 1);
+    },
+  );
+
+  test(
     'explicit iOS software migration start requests notification authorization',
     () async {
       const channel = MethodChannel('com.zcash.wallet/background_migration');

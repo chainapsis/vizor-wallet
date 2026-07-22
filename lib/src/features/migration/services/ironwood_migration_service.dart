@@ -466,8 +466,13 @@ class IronwoodMigrationService {
         ),
       );
     }
-    if (isHardwareAccount(accountUuid) ||
-        broadcastResult.status != 'ready_to_migrate') {
+    final isHardware = isHardwareAccount(accountUuid);
+    if (!isHardware &&
+        broadcastResult.status ==
+            kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      await _startBackgroundPreparationBestEffort();
+    }
+    if (isHardware || broadcastResult.status != 'ready_to_migrate') {
       return broadcastResult;
     }
 
