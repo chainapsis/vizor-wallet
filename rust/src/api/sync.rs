@@ -1041,6 +1041,40 @@ pub fn migrate_orchard_to_ironwood(
     })
 }
 
+/// User-attended Immediate migration. This directly spends Orchard notes into
+/// Ironwood and intentionally does not create a staged migration run.
+pub fn migrate_orchard_to_ironwood_immediately(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood_immediately(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            seed,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 pub fn retire_unbroadcast_orchard_migration(
     db_path: String,
     lightwalletd_url: String,

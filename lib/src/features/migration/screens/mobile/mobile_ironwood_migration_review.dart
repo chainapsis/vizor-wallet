@@ -527,17 +527,13 @@ class _MobileMigrationFastReviewState
         throw StateError('No active account is selected.');
       }
 
-      // An Immediate migration still uses the verified Orchard-to-Ironwood
-      // transaction builder. The difference is that the user starts it from
-      // this foreground flow rather than enrolling any background work.
-      // Keep the actual broadcast awaited so the CTA cannot be submitted
-      // twice, then let the home sync observe its pending/confirmed state.
-      final plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
-      if (plan == null) {
-        throw StateError('Migration plan is not available yet.');
-      }
-
       if (accountState.activeAccount?.isHardware ?? false) {
+        final plan = await ref.read(
+          ironwoodMigrationPrivatePlanProvider.future,
+        );
+        if (plan == null) {
+          throw StateError('Migration plan is not available yet.');
+        }
         if (!mounted) return;
         context.go(
           '/migration/private/keystone/denominations/sign',
@@ -548,10 +544,7 @@ class _MobileMigrationFastReviewState
 
       await ref
           .read(ironwoodMigrationServiceProvider)
-          .startSoftwareImmediateMigration(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
+          .startSoftwareImmediateMigration(accountUuid: accountUuid);
       if (!mounted) return;
 
       try {
