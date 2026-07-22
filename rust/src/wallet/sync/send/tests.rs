@@ -410,6 +410,48 @@ fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
 }
 
 #[test]
+fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+
+    reconcile_orchard_migration_outbox_receipt(
+        &db_path,
+        WalletNetwork::Test,
+        MIGRATION_TEST_ACCOUNT,
+        &run_id,
+        &pending_txid,
+        "expired",
+        120,
+        None,
+        Vec::new(),
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+
+    migration::apply_accepted_migration_outbox_receipt(
+        &db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        &run_id,
+        &pending_txid,
+        121,
+        &[],
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let status: String = conn
+        .query_row(
+            "SELECT status FROM vizor_migration_pending_txs
+             WHERE run_id = ?1 AND txid_hex = ?2",
+            params![run_id, pending_txid],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "broadcasted");
+}
+
+#[test]
 fn send_proposals_use_v6_after_nu6_3() {
     let network = WalletNetwork::Regtest;
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();

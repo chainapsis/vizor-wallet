@@ -2352,7 +2352,7 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
         })?;
     if !matches!(
         accepted_status.as_str(),
-        "scheduled" | "broadcasted" | "confirmed"
+        "scheduled" | "broadcasted" | "confirmed" | "needs_resign"
     ) {
         return Err(format!(
             "Migration outbox receipt cannot accept a transaction in status {accepted_status}"
@@ -2466,11 +2466,12 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
         }
     }
 
-    if accepted_status == "scheduled" {
+    if matches!(accepted_status.as_str(), "scheduled" | "needs_resign") {
         tx.execute(
             &format!(
                 "UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted'
-                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2) AND status = 'scheduled'"
+                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2)
+                   AND status IN ('scheduled', 'needs_resign')"
             ),
             params![run_id, txid_hex],
         )

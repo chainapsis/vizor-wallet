@@ -18,6 +18,8 @@ pub(super) fn send_rejection_is_already_accepted(message: &str) -> bool {
         || message.contains("already have transaction")
         || message.contains("transaction already in block chain")
         || message.contains("transaction is already in state")
+        || message.contains("transaction already exists")
+        || message.contains("txn-already-known")
         || message.contains("txn-already-in-mempool")
         || message.contains("already known")
 }
@@ -51,6 +53,8 @@ mod tests {
             "already have transaction",
             "transaction already in block chain",
             "failed to validate tx: WtxId(\"private\"), error: transaction is already in state",
+            "transaction already exists",
+            "txn-already-known",
             "txn-already-in-mempool",
             "already known",
             "Error: TXN-ALREADY-IN-MEMPOOL from node",
