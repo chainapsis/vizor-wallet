@@ -34,6 +34,10 @@ _mobileMigrationPartPresentations({
 
   final statusParts = status?.parts ?? const [];
   if (statusParts.isNotEmpty) {
+    final lateScheduledTxids = _mobileLateScheduledTxids(
+      status!,
+      currentHeight: currentHeight,
+    );
     final plannedTransferByPart = {
       for (final transfer in previewPlan?.scheduledTransfers ?? const [])
         transfer.partIndex: transfer,
@@ -62,16 +66,24 @@ _mobileMigrationPartPresentations({
     }
     return List.generate(orderedParts.length, (displayIndex) {
       final part = orderedParts[displayIndex];
+      final needsAttention =
+          part.txidHex != null &&
+          lateScheduledTxids.contains(part.txidHex!.toLowerCase());
       return MobileIronwoodMigrationPartPresentation(
         label: 'Part ${displayIndex + 1}',
-        status: _mobileMigrationPartStatus(part),
-        detail: '${_compactZec(part.valueZatoshi)} ZEC',
-        eta: _mobileMigrationPartDetail(
+        status: _mobileMigrationPartStatus(
           part,
-          status: status,
-          currentHeight: currentHeight,
-          plannedTransfer: plannedTransferByPart[part.partIndex],
+          needsAttention: needsAttention,
         ),
+        detail: '${_compactZec(part.valueZatoshi)} ZEC',
+        eta: needsAttention
+            ? null
+            : _mobileMigrationPartDetail(
+                part,
+                status: status,
+                currentHeight: currentHeight,
+                plannedTransfer: plannedTransferByPart[part.partIndex],
+              ),
         progress: _mobileMigrationPartProgress(part),
         valueZatoshi: part.valueZatoshi,
       );
@@ -154,21 +166,40 @@ _mobileMigrationPartPresentations({
 }
 
 MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
-  rust_sync.MigrationPartStatus part,
-) => switch (part.state) {
-  rust_sync.MigrationPartState.completed =>
-    MobileIronwoodMigrationPartStatus.complete,
-  rust_sync.MigrationPartState.needsInput =>
-    MobileIronwoodMigrationPartStatus.needsInput,
-  rust_sync.MigrationPartState.scheduled =>
-    MobileIronwoodMigrationPartStatus.pending,
-  rust_sync.MigrationPartState.preparing when part.scheduledHeight != null =>
-    MobileIronwoodMigrationPartStatus.pending,
-  rust_sync.MigrationPartState.preparing ||
-  rust_sync.MigrationPartState.migrating ||
-  rust_sync.MigrationPartState.confirming =>
-    MobileIronwoodMigrationPartStatus.active,
-};
+  rust_sync.MigrationPartStatus part, {
+  bool needsAttention = false,
+}) => needsAttention
+    ? MobileIronwoodMigrationPartStatus.needsInput
+    : switch (part.state) {
+        rust_sync.MigrationPartState.completed =>
+          MobileIronwoodMigrationPartStatus.complete,
+        rust_sync.MigrationPartState.needsInput =>
+          MobileIronwoodMigrationPartStatus.needsInput,
+        rust_sync.MigrationPartState.scheduled =>
+          MobileIronwoodMigrationPartStatus.pending,
+        rust_sync.MigrationPartState.preparing
+            when part.scheduledHeight != null =>
+          MobileIronwoodMigrationPartStatus.pending,
+        rust_sync.MigrationPartState.preparing ||
+        rust_sync.MigrationPartState.migrating ||
+        rust_sync.MigrationPartState.confirming =>
+          MobileIronwoodMigrationPartStatus.active,
+      };
+
+Set<String> _mobileLateScheduledTxids(
+  rust_sync.MigrationStatus status, {
+  required int? currentHeight,
+}) {
+  if (currentHeight == null || currentHeight <= 0) return const {};
+  return {
+    for (final broadcast in status.scheduledBroadcasts)
+      if (broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.scheduledHeight > 0 &&
+          currentHeight >=
+              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks)
+        broadcast.txidHex.toLowerCase(),
+  };
+}
 
 String? _mobileMigrationPartDetail(
   rust_sync.MigrationPartStatus part, {

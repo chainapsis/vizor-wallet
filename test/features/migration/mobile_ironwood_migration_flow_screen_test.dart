@@ -1642,16 +1642,66 @@ void main() {
     );
     expect(find.text('4.12 ZEC'), findsWidgets);
     expect(
-      find.text('You can leave this screen.').hitTestable(),
+      find.text('Keep Vizor open & unlocked.').hitTestable(),
       findsOneWidget,
     );
     expect(
-      find.text('But keep Vizor open & running.').hitTestable(),
+      find.text('Vizor will retry automatically.').hitTestable(),
       findsOneWidget,
     );
     await tester.ensureVisible(find.text('Go home'));
     await tester.pumpAndSettle();
     expect(find.text('Go home').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('retries an overdue migration when Needs input is tapped', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var continueCount = 0;
+    final overdueStatus = _status(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      broadcastStatuses: const ['scheduled'],
+      targetValues: const [412_000_000],
+      parts: [
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(412_000_000),
+          state: rust_sync.MigrationPartState.scheduled,
+          txidHex: 'tx-0',
+          scheduledHeight: 3_000_000,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          onContinue: (_) async {
+            continueCount++;
+            return _migrationResult();
+          },
+        ),
+        status: overdueStatus,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_100,
+          chainTipHeight: 3_000_100,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(continueCount, 0);
+
+    await tester.tap(find.text('Needs input'));
+    await tester.pumpAndSettle();
+
+    expect(continueCount, greaterThanOrEqualTo(1));
   });
 
   testWidgets('keeps migration status actions reachable on compact screens', (

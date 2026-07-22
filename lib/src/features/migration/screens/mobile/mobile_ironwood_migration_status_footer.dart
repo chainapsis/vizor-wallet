@@ -1,7 +1,10 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MigrationCanLeaveMessage extends StatelessWidget {
-  const _MigrationCanLeaveMessage();
+  const _MigrationCanLeaveMessage({this.primary, this.secondary});
+
+  final String? primary;
+  final String? secondary;
 
   @override
   Widget build(BuildContext context) {
@@ -10,9 +13,9 @@ class _MigrationCanLeaveMessage extends StatelessWidget {
     );
     return Column(
       children: [
-        Text('You can leave this screen.', style: style),
+        Text(primary ?? 'You can leave this screen.', style: style),
         const SizedBox(height: AppSpacing.xs),
-        Text('But keep Vizor open & running.', style: style),
+        Text(secondary ?? 'But keep Vizor open & running.', style: style),
       ],
     );
   }

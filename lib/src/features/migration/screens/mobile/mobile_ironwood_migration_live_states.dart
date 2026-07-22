@@ -267,6 +267,12 @@ class _MobileMigrationMigratingState
     final status = widget.status;
     final colors = context.colors;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final migrationCoordinator = ref.watch(
+      ironwoodMigrationCoordinatorProvider,
+    );
+    final coordinatorError = accountUuid == null
+        ? null
+        : migrationCoordinator.errors[accountUuid];
     final syncState = (ref.watch(syncProvider).value ?? SyncState())
         .scopedToAccount(accountUuid);
     final totalAmount = _mobileMigrationTotalAmountText(
@@ -284,6 +290,14 @@ class _MobileMigrationMigratingState
     final partCount = parts.isNotEmpty
         ? parts.length
         : _mobilePlannedBatchCount(status, previewPlan: widget.previewPlan);
+    final needsAttention = parts.any(
+      (part) => part.status == MobileIronwoodMigrationPartStatus.needsInput,
+    );
+    final waitingForSafeBlock =
+        status?.phase == kIronwoodMigrationReadyToMigratePhase &&
+        status?.nextActionHeight != null &&
+        etaHeight > 0 &&
+        status!.nextActionHeight! > etaHeight;
     final completion = status == null
         ? widget.previewPlan == null
               ? 'Schedule pending'
@@ -309,7 +323,12 @@ class _MobileMigrationMigratingState
               ),
             ),
           )
-        : _MobileIronwoodActiveStatus(parts: parts);
+        : _MobileIronwoodActiveStatus(
+            parts: parts,
+            onPartTap: accountUuid == null
+                ? null
+                : (_) => unawaited(_retryMigration(accountUuid)),
+          );
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -369,7 +388,20 @@ class _MobileMigrationMigratingState
           value: spendable == '-' ? spendable : '$spendable ZEC',
         ),
         const SizedBox(height: AppSpacing.md),
-        const _MigrationCanLeaveMessage(),
+        _MigrationCanLeaveMessage(
+          primary: coordinatorError != null
+              ? "Couldn't continue migration. Try again."
+              : needsAttention
+              ? 'Keep Vizor open & unlocked.'
+              : waitingForSafeBlock
+              ? 'Waiting for a safe block to continue.'
+              : null,
+          secondary: coordinatorError != null || needsAttention
+              ? 'Vizor will retry automatically.'
+              : waitingForSafeBlock
+              ? 'You can leave this screen.'
+              : null,
+        ),
         SizedBox(height: compact ? AppSpacing.md : 38),
         Transform.translate(
           offset: Offset(0, compact ? 0 : 14),
@@ -393,6 +425,17 @@ class _MobileMigrationMigratingState
       ),
       child: compact ? SingleChildScrollView(child: body) : body,
     );
+  }
+
+  Future<void> _retryMigration(String accountUuid) async {
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .retry(accountUuid);
+    } catch (_) {
+      // The coordinator retains the account-scoped error for presentation and
+      // the next automatic retry.
+    }
   }
 }
 

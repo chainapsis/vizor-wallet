@@ -919,6 +919,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     inProgress: migrationInProgress,
                     actionNeeded: _mobileIronwoodMigrationNeedsAttention(
                       widget.ironwoodMigrationCta.status,
+                      currentHeight: sync.chainTipHeight,
                     ),
                     remainingText: _mobileIronwoodRemainingAmountText(
                       widget.ironwoodMigrationCta.status,
@@ -1228,17 +1229,15 @@ String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
 
 bool _mobileIronwoodMigrationNeedsAttention(
   rust_sync.MigrationStatus? status, {
-  DateTime? now,
+  required int currentHeight,
 }) {
-  if (status == null) return false;
-  final currentTime = now ?? DateTime.now();
+  if (status == null || currentHeight <= 0) return false;
   return status.scheduledBroadcasts.any(
     (item) =>
         item.status.toLowerCase() == 'scheduled' &&
-        item.scheduledAtMs > 0 &&
-        !DateTime.fromMillisecondsSinceEpoch(
-          item.scheduledAtMs,
-        ).add(kIronwoodMigrationLateGraceDuration).isAfter(currentTime),
+        item.scheduledHeight > 0 &&
+        currentHeight >=
+            item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
   );
 }
 

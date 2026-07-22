@@ -19,7 +19,6 @@ const kIronwoodMigrationAbandonedPhase = 'abandoned';
 const kIronwoodMigrationReleaseNotesUrl =
     'https://tachyon.z.cash/blog/auditing-orchard-supply/';
 const kIronwoodMigrationLateGraceBlocks = 96;
-const kIronwoodMigrationLateGraceDuration = Duration(hours: 2);
 
 const kIronwoodMigrationStartPhases = {
   kIronwoodMigrationWaitingForSpendableOrchardPhase,

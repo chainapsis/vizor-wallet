@@ -1,11 +1,7 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobileIronwoodActiveStatus extends StatelessWidget {
-  const _MobileIronwoodActiveStatus({
-    required this.parts,
-    // ignore: unused_element_parameter
-    this.onPartTap,
-  });
+  const _MobileIronwoodActiveStatus({required this.parts, this.onPartTap});
 
   final List<MobileIronwoodMigrationPartPresentation> parts;
   final ValueChanged<int>? onPartTap;
@@ -41,7 +37,12 @@ class _MobileIronwoodActiveStatus extends StatelessWidget {
                     part: parts[index],
                     totalZatoshi: total,
                     isLast: index == parts.length - 1,
-                    onTap: onPartTap == null ? null : () => onPartTap!(index),
+                    onTap:
+                        onPartTap == null ||
+                            parts[index].status !=
+                                MobileIronwoodMigrationPartStatus.needsInput
+                        ? null
+                        : () => onPartTap!(index),
                   ),
                 ),
               ),
