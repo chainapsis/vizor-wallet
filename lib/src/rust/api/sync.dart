@@ -319,6 +319,24 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   approvedSchedule: approvedSchedule,
 );
 
+Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediate({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodImmediate(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+);
+
 Future<MigrationStatus> getOrchardMigrationStatus({
   required String dbPath,
   required String network,
@@ -334,6 +352,16 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   required String network,
   required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+Future<OrchardMigrationImmediatePlan?> getOrchardMigrationImmediatePlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationImmediatePlan(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
@@ -444,6 +472,40 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+  password: password,
+  saltBase64: saltBase64,
 );
 
 Future<KeystoneMigrationProofStatus> keystoneMigrationProofStatus({
@@ -1345,6 +1407,49 @@ class MigrationStatus {
           nextActionPartIndex == other.nextActionPartIndex &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
           parts == other.parts;
+}
+
+class OrchardMigrationImmediatePlan {
+  final Uint64List targetValuesZatoshi;
+  final BigInt totalInputZatoshi;
+  final BigInt totalMigratableZatoshi;
+  final BigInt estimatedTotalFeeZatoshi;
+  final int plannedTransactionCount;
+  final int keystoneSigningRoundCount;
+  final int signingBatchLimit;
+
+  const OrchardMigrationImmediatePlan({
+    required this.targetValuesZatoshi,
+    required this.totalInputZatoshi,
+    required this.totalMigratableZatoshi,
+    required this.estimatedTotalFeeZatoshi,
+    required this.plannedTransactionCount,
+    required this.keystoneSigningRoundCount,
+    required this.signingBatchLimit,
+  });
+
+  @override
+  int get hashCode =>
+      targetValuesZatoshi.hashCode ^
+      totalInputZatoshi.hashCode ^
+      totalMigratableZatoshi.hashCode ^
+      estimatedTotalFeeZatoshi.hashCode ^
+      plannedTransactionCount.hashCode ^
+      keystoneSigningRoundCount.hashCode ^
+      signingBatchLimit.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OrchardMigrationImmediatePlan &&
+          runtimeType == other.runtimeType &&
+          targetValuesZatoshi == other.targetValuesZatoshi &&
+          totalInputZatoshi == other.totalInputZatoshi &&
+          totalMigratableZatoshi == other.totalMigratableZatoshi &&
+          estimatedTotalFeeZatoshi == other.estimatedTotalFeeZatoshi &&
+          plannedTransactionCount == other.plannedTransactionCount &&
+          keystoneSigningRoundCount == other.keystoneSigningRoundCount &&
+          signingBatchLimit == other.signingBatchLimit;
 }
 
 class OrchardMigrationPrivatePlan {

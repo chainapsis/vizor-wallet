@@ -28,6 +28,12 @@ typedef IronwoodMigrationPrivatePlanGetter =
       required String network,
       required String accountUuid,
     });
+typedef IronwoodMigrationImmediatePlanGetter =
+    Future<rust_sync.OrchardMigrationImmediatePlan?> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+    });
 
 typedef IronwoodMigrationWalletDbPathGetter = Future<String> Function();
 typedef IronwoodMigrationEndpointGetter = RpcEndpointConfig Function();
@@ -51,6 +57,16 @@ typedef IronwoodMigrationSoftwareStarter =
       required String password,
       required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    });
+typedef IronwoodMigrationImmediateSoftwareStarter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required List<int> mnemonicBytes,
+      required String password,
+      required String saltBase64,
     });
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -105,6 +121,25 @@ typedef IronwoodMigrationKeystoneBatchCompleter =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationKeystoneImmediatePreparer =
+    Future<rust_sync.KeystoneMigrationSigningRequest> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String password,
+      required String saltBase64,
+    });
+typedef IronwoodMigrationKeystoneImmediateCompleter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String requestId,
+      required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+      required String password,
+      required String saltBase64,
+    });
 typedef IronwoodMigrationKeystoneProofStatusGetter =
     Future<rust_sync.KeystoneMigrationProofStatus> Function({
       required String requestId,
@@ -117,6 +152,7 @@ class IronwoodMigrationService {
     required this.getWalletDbPath,
     required this.getStatus,
     required this.getPrivatePlan,
+    IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     required this.secureStore,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
@@ -132,6 +168,7 @@ class IronwoodMigrationService {
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
+    IronwoodMigrationImmediateSoftwareStarter? startImmediateSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
     IronwoodMigrationKeystoneDenominationPreparer?
@@ -140,10 +177,16 @@ class IronwoodMigrationService {
     completeKeystoneDenominationMigration,
     IronwoodMigrationKeystoneBatchPreparer? prepareKeystoneBatchMigration,
     IronwoodMigrationKeystoneBatchCompleter? completeKeystoneBatchMigration,
+    IronwoodMigrationKeystoneImmediatePreparer?
+    prepareKeystoneImmediateMigration,
+    IronwoodMigrationKeystoneImmediateCompleter?
+    completeKeystoneImmediateMigration,
     IronwoodMigrationKeystoneProofStatusGetter? getKeystoneProofStatus,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
     IronwoodMigrationOperationRegistry? operationRegistry,
-  }) : backgroundCredentialStore =
+  }) : getImmediatePlan =
+           getImmediatePlan ?? rust_sync.getOrchardMigrationImmediatePlan,
+       backgroundCredentialStore =
            backgroundCredentialStore ??
            IronwoodMigrationBackgroundCredentialStore.instance,
        getEndpoint = getEndpoint ?? _missingEndpoint,
@@ -166,6 +209,9 @@ class IronwoodMigrationService {
            _defaultRequestNotificationAuthorization,
        startSoftwareMigration =
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
+       startImmediateSoftwareMigration =
+           startImmediateSoftwareMigration ??
+           rust_sync.migrateOrchardToIronwoodImmediate,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ??
            rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic,
@@ -184,6 +230,12 @@ class IronwoodMigrationService {
        completeKeystoneBatchMigration =
            completeKeystoneBatchMigration ??
            rust_sync.completeOrchardMigrationBatchPczt,
+       prepareKeystoneImmediateMigration =
+           prepareKeystoneImmediateMigration ??
+           rust_sync.prepareOrchardMigrationImmediatePczt,
+       completeKeystoneImmediateMigration =
+           completeKeystoneImmediateMigration ??
+           rust_sync.completeOrchardMigrationImmediatePczt,
        getKeystoneProofStatus =
            getKeystoneProofStatus ?? rust_sync.keystoneMigrationProofStatus,
        discardKeystoneMigrationRequest =
@@ -195,6 +247,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationWalletDbPathGetter getWalletDbPath;
   final IronwoodMigrationStatusGetter getStatus;
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
+  final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
@@ -210,6 +263,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationNotificationAuthorizationRequester
   requestNotificationAuthorization;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
+  final IronwoodMigrationImmediateSoftwareStarter
+  startImmediateSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
   final IronwoodMigrationKeystoneDenominationPreparer
@@ -218,6 +273,10 @@ class IronwoodMigrationService {
   completeKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneBatchPreparer prepareKeystoneBatchMigration;
   final IronwoodMigrationKeystoneBatchCompleter completeKeystoneBatchMigration;
+  final IronwoodMigrationKeystoneImmediatePreparer
+  prepareKeystoneImmediateMigration;
+  final IronwoodMigrationKeystoneImmediateCompleter
+  completeKeystoneImmediateMigration;
   final IronwoodMigrationKeystoneProofStatusGetter getKeystoneProofStatus;
   final IronwoodMigrationKeystoneRequestDiscarder
   discardKeystoneMigrationRequest;
@@ -266,6 +325,24 @@ class IronwoodMigrationService {
       operation: () async {
         final dbPath = await getWalletDbPath();
         return getPrivatePlan(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+      },
+    );
+  }
+
+  Future<rust_sync.OrchardMigrationImmediatePlan?> immediatePlan({
+    required String network,
+    required String accountUuid,
+  }) async {
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () async {
+        final dbPath = await getWalletDbPath();
+        return getImmediatePlan(
           dbPath: dbPath,
           network: network,
           accountUuid: accountUuid,
@@ -339,6 +416,43 @@ class IronwoodMigrationService {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
         return resultFuture;
+      },
+    );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: true,
+      enrollNotificationsOnActiveRun: true,
+      operation: (credential) async {
+        final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw Exception('Mnemonic not found for the migration account.');
+        }
+        try {
+          return startImmediateSoftwareMigration(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            mnemonicBytes: mnemonicBytes,
+            password: credential.password,
+            saltBase64: credential.saltBase64,
+          );
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
       },
     );
   }
@@ -544,6 +658,60 @@ class IronwoodMigrationService {
       enrollNotificationsOnActiveRun: true,
       operation: (credential) => completeKeystoneBatchMigration(
         dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        requestId: requestId,
+        signedMessages: signedMessages,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
+    );
+  }
+
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareKeystoneImmediateMigrationRequest({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: true,
+      operation: (credential) => prepareKeystoneImmediateMigration(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
+    );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult>
+  completeKeystoneImmediateMigrationRequest({
+    required String accountUuid,
+    required String requestId,
+    required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: true,
+      operation: (credential) => completeKeystoneImmediateMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,

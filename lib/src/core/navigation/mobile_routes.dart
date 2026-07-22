@@ -11,7 +11,8 @@ import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_s
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
         MobileIronwoodMigrationKeystoneBatchSignScreen,
-        MobileIronwoodMigrationKeystoneDenominationSignScreen;
+        MobileIronwoodMigrationKeystoneDenominationSignScreen,
+        MobileIronwoodMigrationKeystoneImmediateSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -351,16 +352,20 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
       ),
     ),
-    // The Immediate path is intentionally not linked from the production
-    // option picker until its migration backend exists. Keeping the supplied
-    // review UI routable lets deterministic previews validate the design.
     GoRoute(
-      path: '/migration/fast/review',
+      path: '/migration/immediate/review',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.fastReview,
         ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/immediate/keystone/sign',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationKeystoneImmediateSignScreen(),
       ),
     ),
     GoRoute(

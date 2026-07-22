@@ -390,21 +390,28 @@ fn create_orchard_to_ironwood_pczt_from_note(
     }
     let target_height_u32: u32 = target_height.into();
     let anchor_height_u32 = u32::from(anchor_height);
-    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
-    let mined_height = orchard_selected
-        .mined_height()
-        .ok_or("Prepared migration note mined height unavailable")?;
-    let Some(anchor_boundary_height) =
-        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
-            network,
-            timing_policy,
-            anchor_height_u32,
-            u32::from(mined_height),
-            nu6_3_activation_height,
-            anchor_cohort_counts,
-        )
-    else {
-        return Ok(None);
+    let anchor_boundary_height = if timing_policy
+        == super::migration::MigrationTimingPolicy::Immediate
+    {
+        anchor_height_u32
+    } else {
+        let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
+        let mined_height = orchard_selected
+            .mined_height()
+            .ok_or("Prepared migration note mined height unavailable")?;
+        let Some(anchor_boundary_height) =
+            super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+                network,
+                timing_policy,
+                anchor_height_u32,
+                u32::from(mined_height),
+                nu6_3_activation_height,
+                anchor_cohort_counts,
+            )
+        else {
+            return Ok(None);
+        };
+        anchor_boundary_height
     };
     *anchor_cohort_counts
         .entry(anchor_boundary_height)
@@ -453,7 +460,9 @@ fn create_orchard_to_ironwood_pczt_from_note(
     }
     let migrated_amount: Zatoshis = (selected_value - fee_amount)
         .ok_or_else(|| "Exact-note migration amount underflow".to_string())?;
-    if !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount)) {
+    if timing_policy != super::migration::MigrationTimingPolicy::Immediate
+        && !super::migration::is_zip318_canonical_denomination(u64::from(migrated_amount))
+    {
         return Err(
             "Exact-note migration amount is not a ZIP 318 canonical denomination".to_string(),
         );

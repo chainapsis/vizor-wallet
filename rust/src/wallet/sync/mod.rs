@@ -53,6 +53,7 @@ pub use pczt::{
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::get_orchard_migration_immediate_plan;
 pub(crate) use send::get_orchard_migration_private_plan;
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
@@ -61,11 +62,13 @@ pub use send::{
 };
 pub(crate) use send::{
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
-    complete_orchard_migration_single_qr_pczt, discard_all_keystone_migration_requests,
-    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
-    keystone_migration_proof_status, migrate_orchard_to_ironwood,
+    complete_orchard_migration_immediate_pczt, complete_orchard_migration_single_qr_pczt,
+    discard_all_keystone_migration_requests, discard_keystone_migration_request,
+    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
+    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediate,
     prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
-    prepare_orchard_migration_single_qr_pczt, KeystoneSignedMigrationMessage,
+    prepare_orchard_migration_immediate_pczt, prepare_orchard_migration_single_qr_pczt,
+    KeystoneSignedMigrationMessage,
 };
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,

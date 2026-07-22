@@ -103,6 +103,53 @@ void main() {
   );
 
   test(
+    'immediatePlan resolves wallet db path before calling Rust plan API',
+    () async {
+      String? seenDbPath;
+      String? seenNetwork;
+      String? seenAccountUuid;
+      final expected = rust_sync.OrchardMigrationImmediatePlan(
+        targetValuesZatoshi: frb.Uint64List.fromList([99_990_000]),
+        totalInputZatoshi: BigInt.from(100_000_000),
+        totalMigratableZatoshi: BigInt.from(99_990_000),
+        estimatedTotalFeeZatoshi: BigInt.from(10_000),
+        plannedTransactionCount: 1,
+        keystoneSigningRoundCount: 1,
+        signingBatchLimit: 8,
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        getImmediatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              seenDbPath = dbPath;
+              seenNetwork = network;
+              seenAccountUuid = accountUuid;
+              return Future.value(expected);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+      );
+
+      final plan = await service.immediatePlan(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(plan, expected);
+      expect(seenDbPath, '/tmp/wallet.db');
+      expect(seenNetwork, 'test');
+      expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
     'startSoftwarePrivateMigration reuses pending tx salt and zeroizes mnemonic bytes',
     () async {
       final returnedMnemonicBytes = <Uint8List>[];
@@ -167,6 +214,59 @@ void main() {
       for (final bytes in returnedMnemonicBytes) {
         expect(bytes, everyElement(0));
       }
+    },
+  );
+
+  test(
+    'startSoftwareImmediateMigration passes credentials and zeroizes mnemonic',
+    () async {
+      late Uint8List returnedMnemonicBytes;
+      List<int>? seenMnemonicBytes;
+      String? seenSalt;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'test-password',
+        getMnemonicBytesForAccount: (_) async {
+          returnedMnemonicBytes = Uint8List.fromList([1, 2, 3, 4]);
+          return returnedMnemonicBytes;
+        },
+        isMacOS: () => false,
+        startImmediateSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async {
+              expect(dbPath, '/tmp/wallet.db');
+              expect(lightwalletdUrl, 'https://lwd.example:443');
+              expect(network, 'test');
+              expect(accountUuid, 'account-1');
+              expect(password, 'test-password');
+              seenMnemonicBytes = List<int>.from(mnemonicBytes);
+              seenSalt = saltBase64;
+              return _migrationResult();
+            },
+      );
+
+      await service.startSoftwareImmediateMigration(accountUuid: 'account-1');
+
+      expect(seenMnemonicBytes, [1, 2, 3, 4]);
+      expect(seenSalt, isNotEmpty);
+      expect(returnedMnemonicBytes, everyElement(0));
     },
   );
 
@@ -766,6 +866,83 @@ void main() {
       expect(seenMessages, [signedMessages, signedMessages]);
       expect(seenSalts, hasLength(2));
       expect(seenSalts[1], seenSalts[0]);
+    },
+  );
+
+  test(
+    'Immediate Keystone requests carry reusable encrypted-run credentials',
+    () async {
+      String? preparePassword;
+      String? prepareSalt;
+      String? completePassword;
+      String? completeSalt;
+      final expectedRequest = _keystoneSigningRequest();
+      final signedMessages = [_signedMigrationMessage()];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'test-password',
+        isMobile: () => false,
+        prepareKeystoneImmediateMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              expect(dbPath, '/tmp/wallet.db');
+              expect(network, 'test');
+              expect(accountUuid, 'account-1');
+              preparePassword = password;
+              prepareSalt = saltBase64;
+              return expectedRequest;
+            },
+        completeKeystoneImmediateMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) async {
+              expect(lightwalletdUrl, 'https://lwd.example:443');
+              expect(requestId, 'request-1');
+              expect(signedMessages, hasLength(1));
+              completePassword = password;
+              completeSalt = saltBase64;
+              return _migrationResult();
+            },
+      );
+
+      expect(
+        await service.prepareKeystoneImmediateMigrationRequest(
+          accountUuid: 'account-1',
+        ),
+        expectedRequest,
+      );
+      await service.completeKeystoneImmediateMigrationRequest(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+
+      expect(preparePassword, 'test-password');
+      expect(completePassword, 'test-password');
+      expect(prepareSalt, isNotEmpty);
+      expect(completeSalt, prepareSalt);
     },
   );
 

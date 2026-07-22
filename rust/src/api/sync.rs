@@ -771,6 +771,16 @@ pub struct OrchardMigrationPrivatePlan {
     pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
 }
 
+pub struct OrchardMigrationImmediatePlan {
+    pub target_values_zatoshi: Vec<u64>,
+    pub total_input_zatoshi: u64,
+    pub total_migratable_zatoshi: u64,
+    pub estimated_total_fee_zatoshi: u64,
+    pub planned_transaction_count: u32,
+    pub keystone_signing_round_count: u32,
+    pub signing_batch_limit: u32,
+}
+
 fn to_wallet_migration_schedule(
     schedule: Vec<MigrationScheduledTransfer>,
 ) -> Vec<wallet_sync::MigrationScheduleEntry> {
@@ -1012,6 +1022,43 @@ pub fn migrate_orchard_to_ironwood(
     })
 }
 
+pub fn migrate_orchard_to_ironwood_immediate(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let password = Zeroizing::new(password.into_bytes());
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood_immediate(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            seed,
+            password,
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 pub fn get_orchard_migration_status(
     db_path: String,
     network: String,
@@ -1127,6 +1174,29 @@ pub fn get_orchard_migration_private_plan(
                             block_offset: entry.block_offset,
                         })
                         .collect(),
+                })
+            },
+        )
+    })
+}
+
+pub fn get_orchard_migration_immediate_plan(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Option<OrchardMigrationImmediatePlan>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_orchard_migration_immediate_plan(&db_path, network, &account_uuid).map(
+            |plan| {
+                plan.map(|plan| OrchardMigrationImmediatePlan {
+                    target_values_zatoshi: plan.target_values_zatoshi,
+                    total_input_zatoshi: plan.total_input_zatoshi,
+                    total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                    estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
+                    planned_transaction_count: plan.planned_transaction_count,
+                    keystone_signing_round_count: plan.keystone_signing_round_count,
+                    signing_batch_limit: plan.signing_batch_limit,
                 })
             },
         )
@@ -1398,6 +1468,73 @@ pub fn prepare_orchard_migration_batch_pczt(
                 })
                 .collect(),
         })
+    })
+}
+
+pub fn prepare_orchard_migration_immediate_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<KeystoneMigrationSigningRequest, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let request = wallet_sync::prepare_orchard_migration_immediate_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+            password.as_slice(),
+            &salt_base64,
+        )?;
+        Ok(KeystoneMigrationSigningRequest {
+            request_id: request.request_id,
+            signing_batch_limit: request.signing_batch_limit,
+            messages: request
+                .messages
+                .into_iter()
+                .map(|message| KeystoneMigrationMessage {
+                    id: message.id,
+                    redacted_pczt: message.redacted_pczt,
+                })
+                .collect(),
+        })
+    })
+}
+
+pub async fn complete_orchard_migration_immediate_pczt(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    request_id: String,
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    let network = parse_network_and_migrate(&db_path, &network)?;
+    let password = Zeroizing::new(password.into_bytes());
+    let signed_messages = to_wallet_signed_messages(signed_messages)?;
+    let r = wallet_sync::complete_orchard_migration_immediate_pczt(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        &request_id,
+        signed_messages,
+        password.as_slice(),
+        &salt_base64,
+    )
+    .await?;
+    Ok(IronwoodMigrationResult {
+        txids: r.txids,
+        status: r.status,
+        broadcasted_count: r.broadcasted_count,
+        total_count: r.total_count,
+        message: r.message,
+        fee_zatoshi: r.fee_zatoshi,
+        migrated_zatoshi: r.migrated_zatoshi,
     })
 }
 

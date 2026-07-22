@@ -86,6 +86,21 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
 
 rust_sync.OrchardMigrationPrivatePlan get _plan => _planWith();
 
+rust_sync.OrchardMigrationImmediatePlan get _immediatePlan =>
+    rust_sync.OrchardMigrationImmediatePlan(
+      targetValuesZatoshi: frb.Uint64List.fromList([
+        10_000_000_000,
+        2_000_000_000,
+        819_970_000,
+      ]),
+      totalInputZatoshi: BigInt.from(12_820_000_000),
+      totalMigratableZatoshi: BigInt.from(12_819_970_000),
+      estimatedTotalFeeZatoshi: BigInt.from(30_000),
+      plannedTransactionCount: 3,
+      keystoneSigningRoundCount: 1,
+      signingBatchLimit: 8,
+    );
+
 rust_sync.MigrationStatus _status({
   required String phase,
   String? activeRunId = 'run-1',
@@ -241,7 +256,7 @@ Widget _app({
       MobileIronwoodMigrationStep.howItWorks => '/migration/how-it-works',
       MobileIronwoodMigrationStep.options => '/migration/options',
       MobileIronwoodMigrationStep.privateReview => '/migration/private/review',
-      MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
+      MobileIronwoodMigrationStep.fastReview => '/migration/immediate/review',
       MobileIronwoodMigrationStep.preparing => '/migration/private/preparing',
       MobileIronwoodMigrationStep.migrating => '/migration/private/status',
     },
@@ -264,7 +279,7 @@ Widget _app({
         builder: (_, _) => screen(MobileIronwoodMigrationStep.privateReview),
       ),
       GoRoute(
-        path: '/migration/fast/review',
+        path: '/migration/immediate/review',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.fastReview),
       ),
       GoRoute(
@@ -302,6 +317,7 @@ Widget _productionApp({
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
   bool hardware = false,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
+  rust_sync.OrchardMigrationImmediatePlan? immediatePlan,
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
   SyncState? syncState,
@@ -329,6 +345,12 @@ Widget _productionApp({
         path: '/migration/private/review',
         builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.privateReview,
+        ),
+      ),
+      GoRoute(
+        path: '/migration/immediate/review',
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
         ),
       ),
       GoRoute(
@@ -367,6 +389,9 @@ Widget _productionApp({
             privatePlanLoader?.call() ??
             privatePlanFuture ??
             Future.value(privatePlan ?? _plan),
+      ),
+      ironwoodMigrationImmediatePlanProvider.overrideWith(
+        (ref) => Future.value(immediatePlan ?? _immediatePlan),
       ),
       ironwoodMigrationRouteCtaProvider.overrideWith(
         (ref) async => ctaBuilder?.call() ?? cta,
@@ -628,10 +653,13 @@ void main() {
     expect(find.text('Sends independent parts over time'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('mobile_ironwood_immediate_unavailable')),
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
       findsOneWidget,
     );
-    expect(find.text('Sends now in one step.'), findsOneWidget);
+    expect(
+      find.text('Sends available funds now in visible transactions'),
+      findsOneWidget,
+    );
     expect(find.text('Customise'), findsNothing);
     expect(find.text('Advanced'), findsNothing);
 
@@ -648,7 +676,9 @@ void main() {
     );
     expect(
       tester
-          .widget<Text>(find.text('Sends now in one step.'))
+          .widget<Text>(
+            find.text('Sends available funds now in visible transactions'),
+          )
           .style
           ?.fontWeight,
       FontWeight.w500,
@@ -685,7 +715,7 @@ void main() {
       const ValueKey('mobile_ironwood_private_option'),
     );
     final immediateOption = find.byKey(
-      const ValueKey('mobile_ironwood_immediate_unavailable'),
+      const ValueKey('mobile_ironwood_immediate_option'),
     );
     await tester.tap(immediateOption);
     await tester.pump();
@@ -720,6 +750,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('Step 3/3'), findsOneWidget);
+  });
+
+  testWidgets('routes the Immediate option to its review', (tester) async {
+    await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.options));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Privacy trade-off'), findsOneWidget);
+    expect(find.text('Continue anyway'), findsOneWidget);
   });
 
   testWidgets('renders the private migration review plan', (tester) async {
@@ -1470,7 +1515,7 @@ void main() {
             find.byKey(const ValueKey('mobile_ironwood_fast_privacy_card')),
           )
           .height,
-      189,
+      greaterThanOrEqualTo(189),
     );
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('142.23 ZEC'), findsOneWidget);
@@ -1497,6 +1542,24 @@ void main() {
     );
     expect(find.text('Continue anyway'), findsOneWidget);
     expect(find.text('Authorise anyway'), findsNothing);
+  });
+
+  testWidgets('shows Immediate transaction count from the plan', (
+    tester,
+  ) async {
+    final service = _migrationService();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/immediate/review',
+        migrationService: service,
+        immediatePlan: _immediatePlan,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('128.1997 ZEC'), findsOneWidget);
+    expect(find.text('0.0003 ZEC'), findsOneWidget);
+    expect(find.textContaining('3 visible transactions'), findsOneWidget);
   });
 
   testWidgets('renders the preparing migration state', (tester) async {

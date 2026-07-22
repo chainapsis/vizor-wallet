@@ -452,7 +452,7 @@ String _mobilePrivateMigrationStartErrorMessage(Object error) {
   return "Couldn't start migration. Try again.";
 }
 
-class _MobileMigrationFastReview extends StatefulWidget {
+class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
     required this.previewMode,
@@ -462,17 +462,69 @@ class _MobileMigrationFastReview extends StatefulWidget {
   final bool previewMode;
 
   @override
-  State<_MobileMigrationFastReview> createState() =>
+  ConsumerState<_MobileMigrationFastReview> createState() =>
       _MobileMigrationFastReviewState();
 }
 
 class _MobileMigrationFastReviewState
-    extends State<_MobileMigrationFastReview> {
+    extends ConsumerState<_MobileMigrationFastReview> {
   late bool _acknowledged = widget.previewMode;
+  bool _isStarting = false;
+  String? _error;
+
+  Future<void> _startImmediateMigration() async {
+    if (_isStarting) return;
+    setState(() {
+      _isStarting = true;
+      _error = null;
+    });
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      if (accountState.activeAccount?.isHardware ?? false) {
+        if (!mounted) return;
+        context.go('/migration/immediate/keystone/sign');
+        return;
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .startSoftwareImmediateMigration(accountUuid: accountUuid);
+      if (!mounted) return;
+      final statusRequest = IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      );
+      ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      ref.invalidate(ironwoodHomeMigrationCtaProvider);
+      ref.invalidate(ironwoodMigrationFlowDataProvider);
+      ref.invalidate(ironwoodMigrationImmediatePlanProvider);
+      context.go('/migration/private/status');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _mobilePrivateMigrationStartErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _isStarting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final planAsync = widget.previewMode
+        ? const AsyncValue<rust_sync.OrchardMigrationImmediatePlan?>.data(null)
+        : ref.watch(ironwoodMigrationImmediatePlanProvider);
+    final plan = planAsync.asData?.value;
+    final amountText = plan == null
+        ? widget.data.amountText
+        : formatZecAmount(plan.totalMigratableZatoshi);
+    final feeText = plan == null
+        ? 'shown before send'
+        : '${formatZecAmount(plan.estimatedTotalFeeZatoshi)} ZEC';
+    final transactionCount = plan?.plannedTransactionCount ?? 1;
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
       bottom: Column(
@@ -491,16 +543,28 @@ class _MobileMigrationFastReviewState
             variant: AppButtonVariant.destructive,
             expand: true,
             height: 50,
-            onPressed: _acknowledged && widget.previewMode ? () {} : null,
-            leading: const AppIcon(AppIcons.warning, size: 20),
-            child: const Text('Continue anyway'),
+            onPressed:
+                _acknowledged &&
+                    !_isStarting &&
+                    (widget.previewMode || plan != null)
+                ? (widget.previewMode ? () {} : _startImmediateMigration)
+                : null,
+            leading: _isStarting
+                ? AppLoadingIcon(
+                    size: 20,
+                    color: colors.button.destructive.label,
+                  )
+                : const AppIcon(AppIcons.warning, size: 20),
+            child: Text(
+              _isStarting ? 'Starting migration...' : 'Continue anyway',
+            ),
           ),
         ],
       ),
       child: Column(
         children: [
-          SizedBox(
-            height: 153,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 153),
             child: _MobileReviewCard(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,
@@ -510,19 +574,18 @@ class _MobileMigrationFastReviewState
                 children: [
                   _ReviewRow(
                     label: 'Amount',
-                    value: '${widget.data.amountText} ZEC',
+                    value: '$amountText ZEC',
                     height: 32,
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  const _ReviewRow(
-                    label: 'Fees (estimate)',
-                    value: 'shown before send',
-                  ),
+                  _ReviewRow(label: 'Fees (estimate)', value: feeText),
                   const SizedBox(height: AppSpacing.xs),
-                  const _ReviewRow(
+                  _ReviewRow(
                     label: 'Migration complete in',
                     value: '~5 mins',
                     showInfo: true,
+                    onInfoPressed: () =>
+                        _showMobileMigrationTimingSheet(context),
                     height: 32,
                   ),
                 ],
@@ -530,9 +593,9 @@ class _MobileMigrationFastReviewState
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          SizedBox(
+          ConstrainedBox(
             key: const ValueKey('mobile_ironwood_fast_privacy_card'),
-            height: 189,
+            constraints: const BoxConstraints(minHeight: 189),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
@@ -578,8 +641,10 @@ class _MobileMigrationFastReviewState
                               children: [
                                 TextSpan(
                                   text:
-                                      'Crosses in one visible step — your '
-                                      '${widget.data.amountText} ZEC and '
+                                      'Moves without private scheduling — your '
+                                      '$amountText ZEC across '
+                                      '$transactionCount visible '
+                                      '${transactionCount == 1 ? 'transaction' : 'transactions'} and '
                                       'timing are ',
                                 ),
                                 const TextSpan(
@@ -652,6 +717,20 @@ class _MobileMigrationFastReviewState
               ),
             ),
           ),
+          if (planAsync.isLoading && !widget.previewMode) ...[
+            const SizedBox(height: AppSpacing.sm),
+            const AppLoadingIcon(size: 20),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
         ],
       ),
     );

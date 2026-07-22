@@ -29,6 +29,7 @@ static FAST_TESTNET_MIGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 pub(crate) enum MigrationTimingPolicy {
     Standard,
     FastTestnet,
+    Immediate,
 }
 
 impl MigrationTimingPolicy {
@@ -36,6 +37,7 @@ impl MigrationTimingPolicy {
         match self {
             Self::Standard => "standard",
             Self::FastTestnet => "fast_testnet",
+            Self::Immediate => "immediate",
         }
     }
 
@@ -43,6 +45,7 @@ impl MigrationTimingPolicy {
         match value {
             "standard" => Ok(Self::Standard),
             "fast_testnet" => Ok(Self::FastTestnet),
+            "immediate" => Ok(Self::Immediate),
             _ => Err(format!("Unsupported migration timing policy: {value}")),
         }
     }
@@ -68,6 +71,9 @@ fn schedule_parameters_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
 ) -> (u32, u32) {
+    if timing_policy == MigrationTimingPolicy::Immediate {
+        return (1, 1);
+    }
     match network {
         WalletNetwork::Regtest => (
             REGTEST_TRANSFER_MEAN_DELAY_BLOCKS,

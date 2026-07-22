@@ -21,7 +21,11 @@ const _scannerActionTop = 762.0;
 const _scannerActionSize = 40.0;
 
 /// The user-facing signing round represented by this view.
-enum MobileIronwoodKeystoneSigningRound { denominationSplit, migrationBatch }
+enum MobileIronwoodKeystoneSigningRound {
+  denominationSplit,
+  migrationBatch,
+  immediate,
+}
 
 /// The visual state of a single Keystone signing request.
 enum MobileIronwoodKeystoneSigningViewState { loading, ready, scanner }
@@ -135,9 +139,7 @@ class _StepOneContent extends StatelessWidget {
               child: IntrinsicHeight(
                 child: Column(
                   children: [
-                    const Offstage(
-                      child: AppIcon(AppIcons.qr, size: 26),
-                    ),
+                    const Offstage(child: AppIcon(AppIcons.qr, size: 26)),
                     MobileTopNav.steps(
                       progress: _stepOneProgress,
                       onBack: onCancel,

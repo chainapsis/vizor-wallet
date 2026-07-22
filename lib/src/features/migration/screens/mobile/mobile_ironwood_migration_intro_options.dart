@@ -148,7 +148,7 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
   var _selectedOption = _MobileMigrationOption.private;
 
   void _select(_MobileMigrationOption option) {
-    if (!widget.allowPreviewSelection || _selectedOption == option) return;
+    if (_selectedOption == option) return;
     setState(() => _selectedOption = option);
   }
 
@@ -169,7 +169,11 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
       bottom: _MobileMigrationPrimaryButton(
         key: const ValueKey('mobile_ironwood_options_continue_button'),
         label: 'Continue',
-        onPressed: () => context.go('/migration/private/review'),
+        onPressed: () => context.go(
+          immediateSelected
+              ? '/migration/immediate/review'
+              : '/migration/private/review',
+        ),
       ),
       child: Column(
         children: [
@@ -180,21 +184,17 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
             selected: privateSelected,
             icon: _MigrationChoiceIcon.private,
             recommended: true,
-            onTap: widget.allowPreviewSelection
-                ? () => _select(_MobileMigrationOption.private)
-                : null,
+            onTap: () => _select(_MobileMigrationOption.private),
           ),
           const SizedBox(height: AppSpacing.sm),
           _MobileMigrationOptionCard(
-            key: const ValueKey('mobile_ironwood_immediate_unavailable'),
+            key: const ValueKey('mobile_ironwood_immediate_option'),
             title: 'Immediate',
-            body: 'Sends now in one step.',
+            body: 'Sends available funds now in visible transactions',
             selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,
-            enabled: widget.allowPreviewSelection,
-            onTap: widget.allowPreviewSelection
-                ? () => _select(_MobileMigrationOption.immediate)
-                : null,
+            enabled: true,
+            onTap: () => _select(_MobileMigrationOption.immediate),
           ),
         ],
       ),

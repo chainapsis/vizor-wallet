@@ -310,12 +310,17 @@ pub(crate) fn migration_status(
     adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
 
     if let Some(original_run) = active_run(&conn, account_uuid, network)? {
+        let timing_policy = timing_policy_for_run_with_conn(&conn, &original_run.run_id, network)?;
         drop(conn);
-        reconcile_denomination_stage_chain_state(db_path, &original_run.run_id)?;
+        if timing_policy != MigrationTimingPolicy::Immediate {
+            reconcile_denomination_stage_chain_state(db_path, &original_run.run_id)?;
+        }
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
         ensure_schema(&conn)?;
         let run = active_run(&conn, account_uuid, network)?.unwrap_or(original_run);
-        reconcile_denomination_confirmations(&conn, &run)?;
+        if timing_policy != MigrationTimingPolicy::Immediate {
+            reconcile_denomination_confirmations(&conn, &run)?;
+        }
         reconcile_run_confirmations(&conn, &run.run_id)?;
         let run = active_run(&conn, account_uuid, network)?.unwrap_or(run);
         return status_for_run(&conn, run);
@@ -461,9 +466,6 @@ fn timing_policy_for_run_with_conn(
     run_id: &str,
     network: WalletNetwork,
 ) -> Result<MigrationTimingPolicy, String> {
-    if network != WalletNetwork::Test {
-        return Ok(MigrationTimingPolicy::Standard);
-    }
     let value = conn
         .query_row(
             &format!("SELECT timing_policy FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -471,7 +473,121 @@ fn timing_policy_for_run_with_conn(
             |row| row.get::<_, String>(0),
         )
         .map_err(|e| format!("Read migration timing policy: {e}"))?;
-    MigrationTimingPolicy::from_str(&value)
+    let policy = MigrationTimingPolicy::from_str(&value)?;
+    Ok(match policy {
+        MigrationTimingPolicy::Immediate => MigrationTimingPolicy::Immediate,
+        MigrationTimingPolicy::FastTestnet if network == WalletNetwork::Test => {
+            MigrationTimingPolicy::FastTestnet
+        }
+        _ => MigrationTimingPolicy::Standard,
+    })
+}
+
+pub(crate) fn run_is_immediate(db_path: &str, run_id: &str) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    Ok(
+        timing_policy_for_run_with_conn(&conn, run_id, WalletNetwork::Main)?
+            == MigrationTimingPolicy::Immediate,
+    )
+}
+
+pub(crate) fn create_immediate_run(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    target_values: &[u64],
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<String, String> {
+    if prepared_notes.is_empty() || prepared_notes.len() != target_values.len() {
+        return Err("Immediate migration plan does not match its prepared notes".to_string());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    if let Some(run) = active_run(&conn, account_uuid, network)? {
+        return Err(format!("Migration already active: {}", run.run_id));
+    }
+
+    let run_id = new_run_id(account_uuid);
+    let now = now_ms()?;
+    let target_values_json = serde_json::to_string(target_values)
+        .map_err(|e| format!("Encode immediate migration targets: {e}"))?;
+    let schedule = target_values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            Ok(MigrationScheduleEntry {
+                part_index: Some(
+                    u32::try_from(index)
+                        .map_err(|_| "Immediate migration part index exceeds u32")?,
+                ),
+                value_zatoshi: *value,
+                block_offset: 0,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let schedule_json = serde_json::to_string(&schedule)
+        .map_err(|e| format!("Encode immediate migration schedule: {e}"))?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin immediate migration run: {e}"))?;
+    tx.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+              updated_at_ms, target_values_json, timing_policy, schedule_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9)"
+        ),
+        params![
+            run_id,
+            account_uuid,
+            network_name(network),
+            db_path,
+            PHASE_READY_TO_MIGRATE,
+            now,
+            target_values_json,
+            MigrationTimingPolicy::Immediate.as_str(),
+            schedule_json,
+        ],
+    )
+    .map_err(|e| format!("Create immediate migration run: {e}"))?;
+    insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
+    insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
+    tx.commit()
+        .map_err(|e| format!("Commit immediate migration run: {e}"))?;
+    Ok(run_id)
+}
+
+pub(crate) fn unsigned_immediate_prepared_notes(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<(u32, PreparedOrchardNoteRef)>, String> {
+    let notes = prepared_notes_for_run(db_path, run_id)?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT child_index FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1
+             UNION SELECT part_index FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"
+        ))
+        .map_err(|e| format!("Prepare signed immediate part query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| row.get::<_, u32>(0))
+        .map_err(|e| format!("Query signed immediate parts: {e}"))?;
+    let completed = rows
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|e| format!("Read signed immediate parts: {e}"))?;
+    Ok(notes
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, note)| {
+            let index = u32::try_from(index).ok()?;
+            (!completed.contains(&index)).then_some((index, note))
+        })
+        .collect())
 }
 
 fn adopt_configured_timing_policy_for_active_run(
@@ -834,11 +950,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let timing_policy = if network == WalletNetwork::Test {
-        MigrationTimingPolicy::from_str(&timing_policy)?
-    } else {
-        MigrationTimingPolicy::Standard
-    };
+    let timing_policy = MigrationTimingPolicy::from_str(&timing_policy)?;
     let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
         .map_err(|e| format!("Decode migration run target values: {e}"))?;
     let schedule_json = tx
@@ -865,7 +977,20 @@ fn insert_pending_txs_with_tx(
         )
         .map_err(|e| format!("Save generated migration schedule: {e}"))?;
     }
-    validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    if timing_policy == MigrationTimingPolicy::Immediate {
+        let valid_immediate_schedule = schedule.len() == target_values.len()
+            && schedule.iter().all(|entry| entry.block_offset == 0)
+            && target_values.iter().enumerate().all(|(index, value)| {
+                schedule.iter().any(|entry| {
+                    entry.part_index == u32::try_from(index).ok() && entry.value_zatoshi == *value
+                })
+            });
+        if !valid_immediate_schedule {
+            return Err("Immediate migration schedule is invalid".to_string());
+        }
+    } else {
+        validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    }
     let existing_schedule_origin = tx
         .query_row(
             &format!(
@@ -1989,6 +2114,10 @@ pub(crate) fn reschedule_overdue_pending_txs(
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    if timing_policy_for_run_with_conn(&conn, run_id, network)? == MigrationTimingPolicy::Immediate
+    {
+        return Ok(());
+    }
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT txid_hex FROM {PENDING_TXS_TABLE}

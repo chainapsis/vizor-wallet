@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, Divider, Scaffold, VerticalDivider;
+    show CircularProgressIndicator, Divider, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -18,13 +18,13 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_loading_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../models/ironwood_migration_presentation.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';
-import '../../providers/ironwood_migration_coordinator_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../../widgets/ironwood_migration_shimmer_text.dart';
 import '../ironwood_migration_flow_screen.dart';

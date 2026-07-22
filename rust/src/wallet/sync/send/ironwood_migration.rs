@@ -702,7 +702,14 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
         .iter()
         .map(|message| message.selected_note.clone())
         .collect::<Vec<_>>();
-    let prepared_notes_unchanged = if stored.recovery_old_txids.is_empty() {
+    let is_immediate = super::migration::run_is_immediate(db_path, &run.run_id)?;
+    let prepared_notes_unchanged = if is_immediate {
+        request_prepared.iter().all(|requested| {
+            current_prepared
+                .iter()
+                .any(|current| same_prepared_note_without_nullifier(current, requested))
+        })
+    } else if stored.recovery_old_txids.is_empty() {
         current_prepared == request_prepared
     } else {
         request_prepared.iter().all(|requested| {
@@ -715,7 +722,8 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
         reset_migration_request_after_failed_completion(request_id);
         return Err("Prepared migration notes changed before completion".to_string());
     }
-    if stored.recovery_old_txids.is_empty()
+    if !is_immediate
+        && stored.recovery_old_txids.is_empty()
         && super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count > 0
     {
         reset_migration_request_after_failed_completion(request_id);
@@ -748,7 +756,12 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                 fee_zatoshi: message.fee_zatoshi,
                 selected_note: message.selected_note.clone(),
                 metadata: super::migration::PendingMigrationTxMetadata {
-                    tx_kind: "migration".to_string(),
+                    tx_kind: if is_immediate {
+                        "immediate_migration"
+                    } else {
+                        "migration"
+                    }
+                    .to_string(),
                     funding_account_uuid: account_uuid.to_string(),
                     selected_note: message.selected_note,
                 },
@@ -798,10 +811,23 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     if let Ok(mut store) = keystone_migration_requests().lock() {
         store.remove(request_id);
     }
+    let unsigned_remaining = if is_immediate {
+        super::migration::unsigned_immediate_prepared_notes(db_path, &stored.run_id)?.len()
+    } else {
+        0
+    };
     Ok(migration_result_from_pending_totals(
         totals,
         super::migration::PHASE_BROADCAST_SCHEDULED,
-        Some("Migration transactions were signed and scheduled for delayed broadcast.".to_string()),
+        Some(if unsigned_remaining > 0 {
+            format!(
+                "Signed this batch. {unsigned_remaining} immediate migration transaction(s) still need Keystone approval."
+            )
+        } else if is_immediate {
+            "All immediate migration transactions are signed and ready to send.".to_string()
+        } else {
+            "Migration transactions were signed and scheduled for delayed broadcast.".to_string()
+        }),
         stored.fallback_total_count,
         stored.fallback_migrated_zatoshi,
     ))
@@ -814,3 +840,5 @@ include!("ironwood_migration/keystone_requests.rs");
 include!("ironwood_migration/denomination_split.rs");
 
 include!("ironwood_migration/plan_child.rs");
+
+include!("ironwood_migration/immediate.rs");

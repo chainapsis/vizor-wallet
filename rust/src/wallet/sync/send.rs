@@ -232,6 +232,16 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
 }
 
+pub(crate) struct OrchardMigrationImmediatePlan {
+    pub target_values_zatoshi: Vec<u64>,
+    pub total_input_zatoshi: u64,
+    pub total_migratable_zatoshi: u64,
+    pub estimated_total_fee_zatoshi: u64,
+    pub planned_transaction_count: u32,
+    pub keystone_signing_round_count: u32,
+    pub signing_batch_limit: u32,
+}
+
 pub(crate) struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
@@ -367,6 +377,9 @@ fn pending_migration_policy_rebuild_message(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<Option<String>, String> {
+    if super::migration::run_is_immediate(db_path, run_id)? {
+        return Ok(None);
+    }
     let canonical_fee = canonical_migration_fee_zatoshi(
         network,
         chain_tip_height
@@ -1106,6 +1119,47 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     }
     if policy.is_cancelled() {
         return Ok(cancelled_migration_result(&run));
+    }
+
+    if super::migration::run_is_immediate(db_path, &run.run_id)? {
+        let unsigned = super::migration::unsigned_immediate_prepared_notes(db_path, &run.run_id)?;
+        if !unsigned.is_empty() {
+            return Ok(IronwoodMigrationResult {
+                txids: String::new(),
+                status: run.phase.clone(),
+                broadcasted_count: 0,
+                total_count: run.target_values_zatoshi.len() as u32,
+                message: Some(format!(
+                    "{} immediate migration transaction(s) still need approval.",
+                    unsigned.len()
+                )),
+                fee_zatoshi: 0,
+                migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+            });
+        }
+        if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+            finalize_presigned_migration_children(
+                db_path,
+                network,
+                account_uuid,
+                &run.run_id,
+                pending_password.as_slice(),
+                pending_salt_base64,
+                policy,
+            )?;
+        }
+        return broadcast_due_scheduled_migration_txs(
+            db_path,
+            lightwalletd_url,
+            network,
+            &run.run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+            policy,
+        )
+        .await;
     }
 
     // Reconcile chain changes before deciding whether an already-scheduled
@@ -2240,6 +2294,28 @@ fn orchard_anchor_and_witness_for_prepared_note(
         return Err("Prepared note value changed during revalidation".to_string());
     }
     let anchor_height_u32 = u32::from(anchor_height);
+    if timing_policy == super::migration::MigrationTimingPolicy::Immediate {
+        let orchard_selected = ReceivedNote::from_parts(
+            *selected.internal_note_id(),
+            *selected.txid(),
+            selected.output_index(),
+            orchard_note,
+            selected.spending_key_scope(),
+            selected.note_commitment_tree_position(),
+            selected.mined_height(),
+            selected.max_shielding_input_height(),
+        );
+        let (orchard_anchor, mut orchard_inputs) = orchard_witnesses(
+            &mut db,
+            anchor_height,
+            std::slice::from_ref(&orchard_selected),
+        )?;
+        let (_, witness) = orchard_inputs
+            .pop()
+            .ok_or("Prepared immediate migration note witness missing")?;
+        return Ok(Some((anchor_height_u32, orchard_anchor, witness)));
+    }
+
     let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
     let mined_height = selected
         .mined_height()

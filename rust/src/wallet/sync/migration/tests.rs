@@ -905,6 +905,90 @@ fn fast_testnet_uses_regtest_schedule_and_anchor_timing() {
 }
 
 #[test]
+fn immediate_run_persists_zero_delay_parts_and_resumes_unsigned_work() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let prepared_notes = (0u32..10)
+        .map(|index| PreparedOrchardNoteRef {
+            txid_hex: format!("{index:064x}"),
+            output_index: index,
+            value_zatoshi: 100_010_000 + u64::from(index),
+            note_version: 2,
+            nullifier_hex: Some(format!("{:064x}", index + 100)),
+        })
+        .collect::<Vec<_>>();
+    let targets = (0u32..10)
+        .map(|index| 100_000_000 + u64::from(index))
+        .collect::<Vec<_>>();
+
+    let run_id = create_immediate_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &prepared_notes,
+        &targets,
+        Vec::new(),
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (policy, schedule_json): (String, String) = conn
+        .query_row(
+            &format!("SELECT timing_policy, schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(policy, MigrationTimingPolicy::Immediate.as_str());
+    let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json).unwrap();
+    assert_eq!(schedule.len(), targets.len());
+    assert!(schedule.iter().all(|entry| entry.block_offset == 0));
+    assert_eq!(
+        schedule
+            .iter()
+            .map(|entry| entry.part_index)
+            .collect::<Vec<_>>(),
+        (0u32..10).map(Some).collect::<Vec<_>>()
+    );
+    drop(conn);
+
+    assert_eq!(
+        unsigned_immediate_prepared_notes(&db_path, &run_id)
+            .unwrap()
+            .len(),
+        10
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES (?1, 'pending-0', 0, 'ciphertext', 100, 200, ?2, 10000,
+                     ?3, 0, ?4, 1, 99, 99, 'scheduled', '{{}}')"
+        ),
+        params![
+            run_id,
+            targets[0],
+            prepared_notes[0].txid_hex,
+            prepared_notes[0].value_zatoshi,
+        ],
+    )
+    .unwrap();
+    drop(conn);
+
+    let remaining = unsigned_immediate_prepared_notes(&db_path, &run_id).unwrap();
+    assert_eq!(remaining.len(), 9);
+    assert_eq!(remaining[0].0, 1);
+}
+
+#[test]
 fn fast_testnet_adopts_unstarted_run_and_replaces_schedule() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
