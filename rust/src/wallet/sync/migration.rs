@@ -2741,29 +2741,26 @@ fn migration_parts_for_run(
     phase: &str,
     confirmation_target: u32,
 ) -> Result<Vec<MigrationPartStatus>, String> {
-    if matches!(
-        phase,
-        PHASE_WAITING_DENOM_CONFIRMATIONS | PHASE_READY_TO_MIGRATE
-    ) {
-        let denomination_parts = denomination_migration_parts_for_run(
-            conn,
-            run_id,
-            target_values,
-            phase,
-            confirmation_target,
-        )?;
+    if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        let denomination_parts =
+            denomination_migration_parts_for_run(conn, run_id, target_values, confirmation_target)?;
         if !denomination_parts.is_empty() {
             return Ok(denomination_parts);
         }
     }
 
+    let initial_state = if phase == PHASE_COMPLETE {
+        MigrationPartState::Completed
+    } else {
+        MigrationPartState::Preparing
+    };
     let mut parts = target_values
         .iter()
         .enumerate()
         .map(|(part_index, value_zatoshi)| MigrationPartStatus {
             part_index: part_index as u32,
             value_zatoshi: *value_zatoshi,
-            state: MigrationPartState::Preparing,
+            state: initial_state,
             txid_hex: None,
             schedule_start_height: None,
             scheduled_height: None,
@@ -2797,6 +2794,10 @@ fn migration_parts_for_run(
         .map_err(|e| format!("Query migration part statuses: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read migration part statuses: {e}"))?;
+
+    if phase == PHASE_READY_TO_MIGRATE && rows.is_empty() {
+        return Ok(Vec::new());
+    }
 
     let mut assigned = BTreeSet::new();
     for (
@@ -2879,7 +2880,6 @@ fn denomination_migration_parts_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
     target_values: &[u64],
-    phase: &str,
     confirmation_target: u32,
 ) -> Result<Vec<MigrationPartStatus>, String> {
     let stages = denomination_stage_chain_records(conn, run_id)?;
@@ -2906,7 +2906,7 @@ fn denomination_migration_parts_for_run(
     for stage in stages {
         let txid_hex = stage.expected_txid_hex.to_ascii_lowercase();
         let (state, confirmation_count) =
-            denomination_stage_part_state(conn, &stage, phase, confirmation_target)?;
+            denomination_stage_part_state(conn, &stage, confirmation_target)?;
         for output in stage
             .outputs
             .iter()
@@ -2961,7 +2961,6 @@ fn denomination_migration_parts_for_run(
 fn denomination_stage_part_state(
     conn: &rusqlite::Connection,
     stage: &DenominationStageChainRecord,
-    phase: &str,
     confirmation_target: u32,
 ) -> Result<(MigrationPartState, u32), String> {
     match stage.status {
@@ -2985,12 +2984,11 @@ fn denomination_stage_part_state(
                 Some(mined_height) => synced_orchard_confirmation_count(conn, mined_height)?,
                 None => denomination_stage_confirmation_count(conn, &stage.expected_txid_hex)?,
             };
-            let state =
-                if phase == PHASE_READY_TO_MIGRATE || confirmation_count >= confirmation_target {
-                    MigrationPartState::Completed
-                } else {
-                    MigrationPartState::Confirming
-                };
+            let state = if confirmation_count >= confirmation_target {
+                MigrationPartState::Completed
+            } else {
+                MigrationPartState::Confirming
+            };
             Ok((state, confirmation_count))
         }
     }
@@ -5843,6 +5841,9 @@ mod tests {
         assert_eq!(status.active_run_id, None);
         assert_eq!(status.target_values_zatoshi, vec![ZATOSHIS_PER_ZEC]);
         assert_eq!(status.total_count, 1);
+        assert_eq!(status.parts.len(), 1);
+        assert_eq!(status.parts[0].value_zatoshi, ZATOSHIS_PER_ZEC);
+        assert_eq!(status.parts[0].state, MigrationPartState::Completed);
     }
 
     #[test]
@@ -6637,6 +6638,32 @@ mod tests {
         assert_eq!(parts[1].value_zatoshi, 20_000_000);
         assert_eq!(parts[1].state, MigrationPartState::Confirming);
         assert_eq!(parts[1].confirmation_count, 2);
+    }
+
+    #[test]
+    fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+
+        let run_id = "run-ready-denomination-parts";
+        let txid = "11".repeat(32);
+        let tx = conn.unchecked_transaction().unwrap();
+        insert_denomination_stages_with_tx(
+            &tx,
+            run_id,
+            vec![pending_test_stage_for_part(0, &txid, 100_000_000, Some(0))],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        mark_denomination_stage_confirmed_at(&conn, run_id, &txid, 20, &[0xabu8; 32]).unwrap();
+
+        let parts =
+            migration_parts_for_run(&conn, run_id, &[100_000_000], PHASE_READY_TO_MIGRATE, 3)
+                .unwrap();
+
+        assert!(parts.is_empty());
     }
 
     #[test]

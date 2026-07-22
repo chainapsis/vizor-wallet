@@ -163,6 +163,14 @@ bool _routeShouldStartMigration(String phase) {
   return kIronwoodMigrationStartPhases.contains(phase);
 }
 
+bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {
+  return status.phase == kIronwoodMigrationCompletePhase &&
+      status.activeRunId == null &&
+      status.targetValuesZatoshi.isEmpty &&
+      status.parts.isEmpty &&
+      status.totalCount == 0;
+}
+
 IronwoodMigrationFlowData _fallbackMigrationFlowData() {
   return IronwoodMigrationFlowData(
     amountZatoshi: BigInt.zero,
@@ -314,6 +322,9 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = previewStatus;
     if (preview != null) {
+      if (_isEmptyCompletedMigrationStatus(preview)) {
+        return const _RedirectTo('/home');
+      }
       final previewAccountUuid = ref
           .watch(accountProvider)
           .value
@@ -360,6 +371,9 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
                 coordinatedStatus?.activeRunId != null
             ? coordinatedStatus!
             : status;
+        if (_isEmptyCompletedMigrationStatus(effectiveStatus)) {
+          return const _RedirectTo('/home');
+        }
         if (effectiveStatus.activeRunId == null &&
             kIronwoodMigrationStartPhases.contains(effectiveStatus.phase)) {
           if (coordinator.advancingAccounts.contains(request.accountUuid)) {
@@ -1095,8 +1109,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           completing || waitingForProofs || scannerControls == null
           ? null
           : () => unawaited(scannerControls.toggleTorch()),
-      onShowRequestQr:
-          completing || waitingForProofs ? null : _showMobileRequestQrAgain,
+      onShowRequestQr: completing || waitingForProofs
+          ? null
+          : _showMobileRequestQrAgain,
       onCancel: completing ? null : _showMobileRequestQrAgain,
     );
   }
@@ -4194,6 +4209,32 @@ String _migrationSpendableBalanceLabel({
   return '${_formatZecAmountCompact(spendable)} ZEC';
 }
 
+List<rust_sync.MigrationPartStatus> _displayMigrationParts(
+  rust_sync.MigrationStatus status,
+) {
+  final parts = [...status.parts];
+  if (status.phase != kIronwoodMigrationReadyToMigratePhase) {
+    return parts;
+  }
+
+  final hasTransferProgress =
+      status.pendingTxCount > 0 ||
+      status.broadcastedTxCount > 0 ||
+      status.confirmedTxCount > 0 ||
+      status.scheduledBroadcasts.isNotEmpty ||
+      parts.any(
+        (part) =>
+            part.state == rust_sync.MigrationPartState.scheduled ||
+            part.state == rust_sync.MigrationPartState.migrating ||
+            part.state == rust_sync.MigrationPartState.confirming ||
+            part.state == rust_sync.MigrationPartState.needsInput ||
+            part.scheduleStartHeight != null ||
+            part.scheduledHeight != null,
+      );
+  if (hasTransferProgress) return parts;
+  return const <rust_sync.MigrationPartStatus>[];
+}
+
 class _MigrationStatusContent extends StatefulWidget {
   const _MigrationStatusContent({
     required this.status,
@@ -4236,12 +4277,13 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
 
   List<String> _progressKeys({
     required String runId,
+    required String progressScope,
     required List<rust_sync.MigrationPartStatus> parts,
     required int count,
   }) {
     return [
       for (var i = 0; i < count; i++)
-        '$runId:part:${parts.isNotEmpty && i < parts.length ? parts[i].partIndex : i}',
+        '$runId:$progressScope:part:${parts.isNotEmpty && i < parts.length ? parts[i].partIndex : i}',
     ];
   }
 
@@ -4282,11 +4324,13 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     final runId = status.activeRunId ?? 'inactive';
     _syncProgressRun(runId);
 
-    final parts = [...status.parts];
+    final parts = _displayMigrationParts(status);
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
         : [for (final value in status.targetValuesZatoshi) value];
-    if (values.isEmpty) values = [BigInt.zero];
+    if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
+      values = [BigInt.zero];
+    }
     final partNumbers = parts.isNotEmpty
         ? [for (final part in parts) part.partIndex + 1]
         : [for (var i = 0; i < values.length; i++) i + 1];
@@ -4328,6 +4372,10 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     ];
     final progressKeys = _progressKeys(
       runId: runId,
+      progressScope:
+          status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
+          ? 'denomination'
+          : 'transfer',
       parts: parts,
       count: values.length,
     );
@@ -4398,6 +4446,7 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
                 status,
                 currentHeight: displayCurrentHeight,
                 needsInput: widget.action == _StatusAction.needsInput,
+                parts: parts,
               ),
               spendableLabel: spendableLabel,
             ),
@@ -4457,9 +4506,7 @@ bool _shouldShowPreparingStatusContent(
   if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
     return true;
   }
-  return status.parts.any(
-    (part) => part.state == rust_sync.MigrationPartState.preparing,
-  );
+  return false;
 }
 
 class _MigrationPreparingStatusContent extends StatelessWidget {
@@ -6416,17 +6463,20 @@ String _transferEstimatedCompletion(
   rust_sync.MigrationStatus status, {
   required int currentHeight,
   bool needsInput = false,
+  List<rust_sync.MigrationPartStatus>? parts,
 }) {
   if (status.phase == kIronwoodMigrationCompletePhase) {
     return 'Completed';
   }
-  if (needsInput || _migrationNeedsUserInput(status)) {
+  final displayParts = parts ?? _displayMigrationParts(status);
+  if (needsInput || _migrationNeedsUserInput(status, parts: displayParts)) {
     return 'After signing';
   }
 
   final remainingBlocks = _remainingMigrationCompletionBlocks(
     status,
     currentHeight: currentHeight,
+    parts: displayParts,
   );
   if (remainingBlocks == null) {
     return _formatMigrationBlockDurationEstimate(
@@ -6436,8 +6486,12 @@ String _transferEstimatedCompletion(
   return _formatMigrationBlockDurationEstimate(math.max(1, remainingBlocks));
 }
 
-bool _migrationNeedsUserInput(rust_sync.MigrationStatus status) {
-  return status.parts.any(
+bool _migrationNeedsUserInput(
+  rust_sync.MigrationStatus status, {
+  List<rust_sync.MigrationPartStatus>? parts,
+}) {
+  final displayParts = parts ?? _displayMigrationParts(status);
+  return displayParts.any(
     (part) => part.state == rust_sync.MigrationPartState.needsInput,
   );
 }
@@ -6445,10 +6499,12 @@ bool _migrationNeedsUserInput(rust_sync.MigrationStatus status) {
 int? _remainingMigrationCompletionBlocks(
   rust_sync.MigrationStatus status, {
   required int currentHeight,
+  List<rust_sync.MigrationPartStatus>? parts,
 }) {
-  if (status.parts.isNotEmpty) {
+  final displayParts = parts ?? _displayMigrationParts(status);
+  if (displayParts.isNotEmpty) {
     var remainingBlocks = 0;
-    for (final part in status.parts) {
+    for (final part in displayParts) {
       final partRemaining = _remainingMigrationPartCompletionBlocks(
         part,
         currentHeight: currentHeight,

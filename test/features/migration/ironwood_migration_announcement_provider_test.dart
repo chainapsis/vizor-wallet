@@ -242,7 +242,49 @@ void main() {
       expect(state.mode, IronwoodPostMigrationMode.complete);
       expect(state.locksNavigation, isFalse);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+    },
+  );
+
+  test(
+    'route CTA keeps completed migration details available for the completed run',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationCompletePhase,
+        migrationActiveRunId: 'run-1',
+        migrationTargetValues: const [1_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(1_000_000),
+          totalBalance: BigInt.from(1_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+
+      expect(state.mode, IronwoodPostMigrationMode.complete);
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
       expect(routeCta.mode, IronwoodHomeMigrationCtaMode.resume);
+      expect(routeCta.status?.activeRunId, 'run-1');
+      expect(routeCta.status?.targetValuesZatoshi.toList(), [
+        BigInt.from(1_000_000),
+      ]);
     },
   );
 
@@ -1008,7 +1050,7 @@ rust_sync.MigrationStatus _migrationStatus(
     pendingTxCount: 0,
     broadcastedTxCount: 0,
     confirmedTxCount: 0,
-    totalCount: 0,
+    totalCount: targetValues.length,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
@@ -1070,7 +1112,7 @@ class _FakeAnnouncementStore implements IronwoodMigrationAnnouncementStore {
 
 class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
   _FakeCompletionStore({Set<String>? seenKeys, this.seesEverything = false})
-      : _seenKeys = seenKeys ?? <String>{};
+    : _seenKeys = seenKeys ?? <String>{};
 
   final Set<String> _seenKeys;
   final bool seesEverything;
@@ -1081,9 +1123,10 @@ class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
     required String accountUuid,
     required String completionId,
   }) async {
-    return seesEverything || _seenKeys.contains(
-      _completionSeenKey(network, accountUuid, completionId),
-    );
+    return seesEverything ||
+        _seenKeys.contains(
+          _completionSeenKey(network, accountUuid, completionId),
+        );
   }
 
   @override
@@ -1102,5 +1145,4 @@ String _completionSeenKey(
   String network,
   String accountUuid,
   String completionId,
-) =>
-    '$network|$accountUuid|$completionId';
+) => '$network|$accountUuid|$completionId';
