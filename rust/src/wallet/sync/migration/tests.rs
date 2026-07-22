@@ -963,6 +963,17 @@ fn immediate_run_persists_zero_delay_parts_and_resumes_unsigned_work() {
     );
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let run = active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .unwrap();
+    let status = status_for_run(&conn, run).unwrap();
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
+    assert_eq!(status.denomination_split_total_count, 0);
+    assert_eq!(status.denomination_split_completed_count, 0);
+    assert_eq!(status.pending_split_stage_count, 0);
+    drop(conn);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute(
         &format!(
             "INSERT INTO {PENDING_TXS_TABLE}

@@ -69,6 +69,35 @@ void main() {
     );
   });
 
+  test(
+    'retries recoverable software failures without advancing Keystone',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('failed_recoverable'),
+        _hardwareUuid: _status('failed_recoverable'),
+      };
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+      );
+      addTearDown(container.dispose);
+
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(broadcasts, [_softwareUuid]);
+    },
+  );
+
   test('does not broadcast a scheduled migration before it is due', () async {
     final statuses = {
       _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),

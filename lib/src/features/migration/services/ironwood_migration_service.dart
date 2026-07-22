@@ -678,6 +678,7 @@ class IronwoodMigrationService {
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
     return _runCredentialOperation(
       context: context,

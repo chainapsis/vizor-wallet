@@ -367,6 +367,11 @@ Widget _productionApp({
         path: '/migration/private/keystone/batch/sign',
         builder: (_, _) => const Text('keystone batch sign route'),
       ),
+      GoRoute(
+        path: '/migration/immediate/keystone/sign',
+        builder: (_, _) =>
+            const MobileIronwoodMigrationKeystoneImmediateSignScreen(),
+      ),
     ],
   );
 
@@ -427,6 +432,7 @@ IronwoodMigrationService _migrationService({
   onStart,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
   onContinue,
+  IronwoodMigrationKeystoneImmediatePreparer? prepareImmediate,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -465,6 +471,15 @@ IronwoodMigrationService _migrationService({
           required password,
           required saltBase64,
         }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
+    prepareKeystoneImmediateMigration: prepareImmediate,
+    getKeystoneProofStatus: ({required requestId}) async =>
+        const rust_sync.KeystoneMigrationProofStatus(
+          readyCount: 1,
+          totalCount: 1,
+          isReady: true,
+          isFailed: false,
+        ),
+    discardKeystoneMigrationRequest: ({required requestId}) async {},
     scheduleBackgroundMigration: () async => true,
   );
 }
@@ -1560,6 +1575,83 @@ void main() {
     expect(find.text('128.1997 ZEC'), findsOneWidget);
     expect(find.text('0.0003 ZEC'), findsOneWidget);
     expect(find.textContaining('3 visible transactions'), findsOneWidget);
+  });
+
+  testWidgets('routes a 2-round Immediate Keystone plan to an 8-tx QR', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final plan = rust_sync.OrchardMigrationImmediatePlan(
+      targetValuesZatoshi: frb.Uint64List.fromList(
+        List<int>.filled(9, 10_000_000),
+      ),
+      totalInputZatoshi: BigInt.from(90_090_000),
+      totalMigratableZatoshi: BigInt.from(90_000_000),
+      estimatedTotalFeeZatoshi: BigInt.from(90_000),
+      plannedTransactionCount: 9,
+      keystoneSigningRoundCount: 2,
+      signingBatchLimit: 8,
+    );
+    final request = rust_sync.KeystoneMigrationSigningRequest(
+      requestId: 'immediate-round-1',
+      messages: [
+        for (var index = 0; index < 8; index++)
+          rust_sync.KeystoneMigrationMessage(
+            id: 'immediate-$index',
+            redactedPczt: Uint8List.fromList([index + 1]),
+          ),
+      ],
+      signingBatchLimit: 8,
+    );
+    var prepareCount = 0;
+    final service = _migrationService(
+      prepareImmediate:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async {
+            prepareCount += 1;
+            return request;
+          },
+    );
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/immediate/review',
+        migrationService: service,
+        immediatePlan: plan,
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('9 visible transactions'), findsOneWidget);
+    final acknowledgement = find.byKey(
+      const ValueKey('mobile_ironwood_fast_acknowledgement'),
+    );
+    await tester.ensureVisible(acknowledgement);
+    await tester.pumpAndSettle();
+    await tester.tap(acknowledgement);
+    await tester.pump();
+    final startButton = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_start_button'),
+    );
+    await tester.ensureVisible(startButton);
+    await tester.pumpAndSettle();
+    await tester.tap(startButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(prepareCount, 1);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('renders the preparing migration state', (tester) async {

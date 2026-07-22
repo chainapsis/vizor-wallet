@@ -2639,7 +2639,8 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         .optional()
         .map_err(|e| format!("Read durable migration phase: {e}"))?
         .unwrap_or_else(|| run.phase.clone());
-    if phase == PHASE_READY_TO_MIGRATE
+    if timing_policy != MigrationTimingPolicy::Immediate
+        && phase == PHASE_READY_TO_MIGRATE
         && pending_tx_count == 0
         && prepared_note_count > 0
         && !prepared_note_spend_metadata_available_for_run(conn, &run.run_id)?
@@ -2647,7 +2648,11 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
     }
     let denomination_confirmation_target = denomination_confirmations_required();
-    let denomination_split_progress = denomination_split_progress_for_run(conn, &run.run_id)?;
+    let denomination_split_progress = if timing_policy == MigrationTimingPolicy::Immediate {
+        DenominationSplitProgress::default()
+    } else {
+        denomination_split_progress_for_run(conn, &run.run_id)?
+    };
     let denomination_confirmation_count = if denomination_split_progress.total_count > 0 {
         if denomination_split_progress.completed_count == denomination_split_progress.total_count {
             denomination_confirmation_target

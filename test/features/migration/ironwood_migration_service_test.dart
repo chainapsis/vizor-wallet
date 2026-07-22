@@ -946,6 +946,48 @@ void main() {
     },
   );
 
+  test(
+    'mobile Immediate Keystone prepare creates a background credential',
+    () async {
+      final expectedRequest = _keystoneSigningRequest();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        isMobile: () => true,
+        prepareKeystoneImmediateMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              expect(password, isNotEmpty);
+              expect(saltBase64, isNotEmpty);
+              return expectedRequest;
+            },
+      );
+
+      expect(
+        await service.prepareKeystoneImmediateMigrationRequest(
+          accountUuid: 'account-1',
+        ),
+        expectedRequest,
+      );
+    },
+  );
+
   test('discardKeystonePrivateMigrationRequest discards request id', () async {
     String? seenRequestId;
     final service = IronwoodMigrationService(

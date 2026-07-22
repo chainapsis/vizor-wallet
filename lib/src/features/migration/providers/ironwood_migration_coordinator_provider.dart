@@ -175,6 +175,8 @@ class IronwoodMigrationCoordinator
             status.pendingSplitStageCount > 0) ||
         (!isHardware &&
             status.phase == kIronwoodMigrationReadyToMigratePhase) ||
+        (!isHardware &&
+            status.phase == kIronwoodMigrationFailedRecoverablePhase) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
             _hasDueScheduledBroadcast(status)) ||

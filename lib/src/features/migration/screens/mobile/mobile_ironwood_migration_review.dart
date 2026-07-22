@@ -533,6 +533,7 @@ class _MobileMigrationFastReviewState
           AppButton(
             variant: AppButtonVariant.ghost,
             expand: true,
+            constrainContent: true,
             height: 44,
             onPressed: () => context.go('/migration/options'),
             leading: const AppIcon(AppIcons.chevronBackward, size: 20),
@@ -540,8 +541,10 @@ class _MobileMigrationFastReviewState
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
+            key: const ValueKey('mobile_ironwood_immediate_start_button'),
             variant: AppButtonVariant.destructive,
             expand: true,
+            constrainContent: true,
             height: 50,
             onPressed:
                 _acknowledged &&

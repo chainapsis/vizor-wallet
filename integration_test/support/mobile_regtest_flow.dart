@@ -486,6 +486,67 @@ Future<void> openMobilePrivateMigrationReview(WidgetTester tester) async {
   );
 }
 
+Future<void> openMobileImmediateMigrationReview(WidgetTester tester) async {
+  final announcementSheet = find.byKey(
+    const ValueKey('mobile_ironwood_announcement_sheet'),
+  );
+  final announcementStart = find.byKey(
+    const ValueKey('mobile_ironwood_start_migration_button'),
+  );
+  final homeCta = find.byKey(
+    const ValueKey('mobile_home_ironwood_migration_required_pill'),
+  );
+  final intro = find.byKey(
+    const ValueKey('mobile_ironwood_intro_continue_button'),
+  );
+  final deadline = DateTime.now().add(const Duration(minutes: 5));
+  var lastTap = DateTime.fromMillisecondsSinceEpoch(0);
+  while (tester.any(announcementSheet) || !tester.any(intro.hitTestable())) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Timed out entering the mobile Ironwood migration flow.');
+    }
+    if (DateTime.now().difference(lastTap) > const Duration(seconds: 1)) {
+      final tappableAnnouncementStart = announcementStart.hitTestable();
+      final tappableHomeCta = homeCta.hitTestable();
+      if (tester.any(tappableAnnouncementStart)) {
+        lastTap = DateTime.now();
+        await tester.tap(tappableAnnouncementStart);
+      } else if (!tester.any(announcementSheet) &&
+          tester.any(tappableHomeCta)) {
+        lastTap = DateTime.now();
+        await tester.tap(tappableHomeCta);
+      }
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  logE2e('entered mobile Ironwood immediate migration flow');
+
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_intro_continue_button'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_steps_continue_button'),
+    timeout: const Duration(minutes: 2),
+  );
+  await tapWidget(tester, const ValueKey('mobile_ironwood_immediate_option'));
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_options_continue_button'),
+    timeout: const Duration(minutes: 2),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('mobile_ironwood_fast_acknowledgement')),
+    ),
+    description: 'mobile immediate migration review',
+    timeout: const Duration(minutes: 3),
+  );
+}
+
 /// The mobile balance card renders e.g. `1.25 ZEC` (rich text).
 Future<void> waitForShieldedBalance(
   WidgetTester tester,
