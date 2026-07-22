@@ -107,7 +107,52 @@ typedef IronwoodMigrationOutboxReceiptLister =
     Future<List<Map<Object?, Object?>>> Function();
 typedef IronwoodMigrationOutboxReceiptAcknowledger =
     Future<void> Function(List<String> receiptIds);
-typedef IronwoodMigrationOutboxForegroundRunner = Future<void> Function();
+typedef IronwoodMigrationOutboxForegroundRunner =
+    Future<IronwoodMigrationOutboxRunResult> Function();
+
+enum IronwoodMigrationOutboxRunOutcome {
+  noWork,
+  waiting,
+  accepted,
+  needsUserAction,
+  temporarilyUnavailable,
+  cancelled,
+}
+
+class IronwoodMigrationOutboxRunResult {
+  const IronwoodMigrationOutboxRunResult({
+    required this.outcome,
+    this.nextHeight,
+    this.observedHeight,
+  });
+
+  factory IronwoodMigrationOutboxRunResult.fromMap(
+    Map<Object?, Object?> values,
+  ) {
+    final outcome = switch (values['outcome']) {
+      'noWork' => IronwoodMigrationOutboxRunOutcome.noWork,
+      'waiting' => IronwoodMigrationOutboxRunOutcome.waiting,
+      'accepted' => IronwoodMigrationOutboxRunOutcome.accepted,
+      'needsUserAction' => IronwoodMigrationOutboxRunOutcome.needsUserAction,
+      'temporarilyUnavailable' =>
+        IronwoodMigrationOutboxRunOutcome.temporarilyUnavailable,
+      'cancelled' => IronwoodMigrationOutboxRunOutcome.cancelled,
+      _ => throw const FormatException(
+        'Ironwood migration outbox returned an invalid outcome.',
+      ),
+    };
+    return IronwoodMigrationOutboxRunResult(
+      outcome: outcome,
+      nextHeight: (values['nextHeight'] as num?)?.toInt(),
+      observedHeight: (values['observedHeight'] as num?)?.toInt(),
+    );
+  }
+
+  final IronwoodMigrationOutboxRunOutcome outcome;
+  final int? nextHeight;
+  final int? observedHeight;
+}
+
 typedef IronwoodMigrationKeystoneDenominationPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
       required String dbPath,
@@ -1003,39 +1048,80 @@ class IronwoodMigrationService {
     }
     _scheduledBackgroundMigrations.add(_credentialKey(context));
 
-    try {
-      await runMigrationOutboxOnceNow();
-    } catch (error) {
-      debugPrint(
-        'Failed to run Ironwood migration outbox in foreground: $error',
-      );
-    }
-    final reconciledReceipt = await _reconcileMigrationOutboxReceipts(
+    final foregroundRun = await runMigrationOutboxOnceNow();
+    final reconciledTxids = await _reconcileMigrationOutboxReceipts(
       context: context,
       credential: credential,
     );
+    _validateForegroundOutboxRun(
+      batch: batch,
+      run: foregroundRun,
+      reconciledTxids: reconciledTxids,
+    );
     return _MigrationOutboxRefreshResult(
       staged: true,
-      reconciledReceipt: reconciledReceipt,
+      reconciledReceipt: reconciledTxids.isNotEmpty,
     );
   }
 
-  Future<bool> _reconcileMigrationOutboxReceipts({
+  void _validateForegroundOutboxRun({
+    required rust_sync.MigrationOutboxBatch batch,
+    required IronwoodMigrationOutboxRunResult run,
+    required Set<String> reconciledTxids,
+  }) {
+    final observedHeight = run.observedHeight;
+    final hadDueItem =
+        observedHeight != null &&
+        batch.items.any((item) => item.scheduledHeight <= observedHeight);
+
+    switch (run.outcome) {
+      case IronwoodMigrationOutboxRunOutcome.accepted:
+        final reconciledCurrentBatch = batch.items.any(
+          (item) => reconciledTxids.contains(item.txidHex.toLowerCase()),
+        );
+        if (!reconciledCurrentBatch) {
+          throw StateError(
+            'Migration broadcast was accepted but not reconciled.',
+          );
+        }
+        return;
+      case IronwoodMigrationOutboxRunOutcome.needsUserAction:
+        throw StateError('Migration broadcast needs user action.');
+      case IronwoodMigrationOutboxRunOutcome.temporarilyUnavailable:
+        throw StateError('Migration broadcast is temporarily unavailable.');
+      case IronwoodMigrationOutboxRunOutcome.cancelled:
+        throw StateError('Migration broadcast was cancelled.');
+      case IronwoodMigrationOutboxRunOutcome.noWork:
+        if (hadDueItem) {
+          throw StateError(
+            'Migration broadcast did not submit a due transfer.',
+          );
+        }
+        return;
+      case IronwoodMigrationOutboxRunOutcome.waiting:
+        if (hadDueItem) {
+          throw StateError('Migration broadcast is waiting to retry.');
+        }
+        return;
+    }
+  }
+
+  Future<Set<String>> _reconcileMigrationOutboxReceipts({
     required _MigrationCredentialContext context,
     required _MigrationCredential credential,
   }) async {
     final rawReceipts = await listMigrationOutboxReceipts();
     final acknowledgedReceiptIds = <String>[];
-    Object? firstError;
-    StackTrace? firstStackTrace;
+    final reconciledTxids = <String>{};
+    var failedReceiptCount = 0;
 
     for (final rawReceipt in rawReceipts) {
-      final receipt = _MigrationOutboxReceipt.fromMap(rawReceipt);
-      if (receipt.network != context.network ||
-          receipt.accountUuid != context.accountUuid) {
-        continue;
-      }
       try {
+        final receipt = _MigrationOutboxReceipt.fromMap(rawReceipt);
+        if (receipt.network != context.network ||
+            receipt.accountUuid != context.accountUuid) {
+          continue;
+        }
         await reconcileMigrationOutboxReceipt(
           dbPath: context.dbPath,
           network: context.network,
@@ -1050,20 +1136,25 @@ class IronwoodMigrationService {
           saltBase64: credential.saltBase64,
         );
         acknowledgedReceiptIds.add(receipt.receiptId);
-      } catch (error, stackTrace) {
-        firstError ??= error;
-        firstStackTrace ??= stackTrace;
-        break;
+        reconciledTxids.add(receipt.txidHex.toLowerCase());
+      } catch (error) {
+        failedReceiptCount++;
+        debugPrint(
+          'Failed to reconcile an Ironwood migration outbox receipt: $error',
+        );
       }
     }
 
     if (acknowledgedReceiptIds.isNotEmpty) {
       await acknowledgeMigrationOutboxReceipts(acknowledgedReceiptIds);
     }
-    if (firstError != null) {
-      Error.throwWithStackTrace(firstError, firstStackTrace!);
+    if (failedReceiptCount > 0) {
+      debugPrint(
+        'Skipped $failedReceiptCount unreconciled Ironwood migration '
+        'outbox receipt(s).',
+      );
     }
-    return acknowledgedReceiptIds.isNotEmpty;
+    return reconciledTxids;
   }
 
   Future<T> _serializeCredentialState<T>(
@@ -1278,10 +1369,16 @@ Future<void> _defaultAcknowledgeMigrationOutboxReceipts(
   });
 }
 
-Future<void> _defaultRunMigrationOutboxOnceNow() async {
-  await _backgroundMigrationChannel.invokeMethod<Map<Object?, Object?>>(
-    'runOutboxOnceNow',
-  );
+Future<IronwoodMigrationOutboxRunResult>
+_defaultRunMigrationOutboxOnceNow() async {
+  final result = await _backgroundMigrationChannel
+      .invokeMethod<Map<Object?, Object?>>('runOutboxOnceNow');
+  if (result == null) {
+    throw const FormatException(
+      'Ironwood migration outbox returned no result.',
+    );
+  }
+  return IronwoodMigrationOutboxRunResult.fromMap(result);
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>

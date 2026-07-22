@@ -206,17 +206,18 @@ void main() {
         },
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
-        prepareMigrationOutbox: ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) async {
-          events.add('prepareOutbox');
-          return _migrationResult(status: 'ready_to_migrate');
-        },
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('prepareOutbox');
+              return _migrationResult(status: 'ready_to_migrate');
+            },
         exportMigrationOutbox:
             ({
               required dbPath,
@@ -1531,7 +1532,10 @@ void main() {
             armCalls++;
             return true;
           },
-      runMigrationOutboxOnceNow: () async {},
+      runMigrationOutboxOnceNow: () async =>
+          const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          ),
     );
 
     expect(
@@ -2069,11 +2073,71 @@ void main() {
     },
   );
 
+  test('iOS surfaces a due outbox transfer that did not submit', () async {
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-1'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'session-password',
+      isMobile: () => true,
+      isIOS: () => true,
+      isMacOS: () => false,
+      listMigrationOutboxReceipts: () async => const [],
+      prepareMigrationOutbox:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _migrationResult(),
+      exportMigrationOutbox:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _outboxBatch(),
+      stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
+      armMigrationOutboxBatch:
+          ({required batchId, required expectedDigests}) async => true,
+      runMigrationOutboxOnceNow: () async =>
+          const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+            nextHeight: 288,
+            observedHeight: 300,
+          ),
+    );
+
+    await expectLater(
+      service.continueSoftwarePrivateMigration(accountUuid: 'account-1'),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Migration broadcast is waiting to retry.',
+        ),
+      ),
+    );
+  });
+
   test(
-    'outbox receipts are acknowledged only after Rust applies them',
+    'a failed receipt does not block later receipts or outbox recovery',
     () async {
       final events = <String>[];
       List<String>? acknowledgedReceiptIds;
+      var receiptsAvailable = true;
+      var prepareCount = 0;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -2089,11 +2153,13 @@ void main() {
         getSessionPassword: () => 'session-password',
         isMobile: () => true,
         isIOS: () => true,
-        listMigrationOutboxReceipts: () async => [
-          _outboxReceipt(receiptId: 'receipt-good', txidHex: 'tx-good'),
-          _outboxReceipt(receiptId: 'receipt-bad', txidHex: 'tx-bad'),
-          _outboxReceipt(receiptId: 'receipt-later', txidHex: 'tx-later'),
-        ],
+        listMigrationOutboxReceipts: () async => receiptsAvailable
+            ? [
+                _outboxReceipt(receiptId: 'receipt-good', txidHex: 'tx-good'),
+                _outboxReceipt(receiptId: 'receipt-bad', txidHex: 'tx-bad'),
+                _outboxReceipt(receiptId: 'receipt-later', txidHex: 'tx-later'),
+              ]
+            : const [],
         reconcileMigrationOutboxReceipt:
             ({
               required dbPath,
@@ -2116,16 +2182,40 @@ void main() {
         acknowledgeMigrationOutboxReceipts: (receiptIds) async {
           events.add('ack:${receiptIds.join(',')}');
           acknowledgedReceiptIds = receiptIds;
+          receiptsAvailable = false;
         },
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              prepareCount++;
+              return _migrationResult();
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
       );
 
-      await expectLater(
-        service.continueSoftwarePrivateMigration(accountUuid: 'account-1'),
-        throwsA(isA<StateError>()),
-      );
+      await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
 
-      expect(events, ['rust:tx-good', 'rust:tx-bad', 'ack:receipt-good']);
-      expect(acknowledgedReceiptIds, ['receipt-good']);
+      expect(events, [
+        'rust:tx-good',
+        'rust:tx-bad',
+        'rust:tx-later',
+        'ack:receipt-good,receipt-later',
+      ]);
+      expect(acknowledgedReceiptIds, ['receipt-good', 'receipt-later']);
+      expect(prepareCount, 1);
     },
   );
 
