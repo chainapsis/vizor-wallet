@@ -13,6 +13,36 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn migration_anchor_uses_latest_checkpoint_before_an_empty_bucket_boundary() {
+    let checkpoints = [5_318, 5_450, 5_460, 5_500];
+
+    assert_eq!(
+        representative_orchard_checkpoint(&checkpoints, 5_472, 5_400),
+        Some(5_460)
+    );
+}
+
+#[test]
+fn migration_anchor_never_uses_a_checkpoint_before_the_prepared_note() {
+    let checkpoints = [5_318, 5_399, 5_500];
+
+    assert_eq!(
+        representative_orchard_checkpoint(&checkpoints, 5_472, 5_400),
+        None
+    );
+}
+
+#[test]
+fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
+    let checkpoints = [5_400, 5_800];
+
+    assert_eq!(
+        available_orchard_anchor_candidates(&[5_760, 5_616, 5_472], &checkpoints, 5_300),
+        vec![(5_760, 5_400)]
+    );
+}
+
+#[test]
 fn keystone_migration_signing_rejects_more_than_fifty_messages() {
     let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {

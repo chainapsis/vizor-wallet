@@ -163,7 +163,7 @@ pub(crate) fn zip318_anchor_boundary_at_or_before(
     )
 }
 
-fn zip318_anchor_boundary_at_or_before_with_policy(
+pub(crate) fn zip318_anchor_boundary_at_or_before_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
     height: u32,
@@ -208,7 +208,7 @@ pub(crate) fn zip318_anchor_candidate_boundaries(
     )
 }
 
-fn zip318_anchor_candidate_boundaries_with_policy(
+pub(crate) fn zip318_anchor_candidate_boundaries_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
     observed_anchor_height: u32,
@@ -321,11 +321,6 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
     nu6_3_activation_height: u32,
     cohort_counts: &BTreeMap<u32, u32>,
 ) -> Option<u32> {
-    let latest_boundary = zip318_anchor_boundary_at_or_before_with_policy(
-        network,
-        timing_policy,
-        observed_anchor_height,
-    )?;
     let candidates = zip318_anchor_candidate_boundaries_with_policy(
         network,
         timing_policy,
@@ -333,13 +328,34 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
         note_mined_height,
         nu6_3_activation_height,
     );
-    if candidates.is_empty() {
+    zip318_draw_anchor_boundary_from_available_with_policy(
+        network,
+        timing_policy,
+        observed_anchor_height,
+        &candidates,
+        cohort_counts,
+    )
+}
+
+pub(crate) fn zip318_draw_anchor_boundary_from_available_with_policy(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    observed_anchor_height: u32,
+    available_candidates: &[u32],
+    cohort_counts: &BTreeMap<u32, u32>,
+) -> Option<u32> {
+    let latest_boundary = zip318_anchor_boundary_at_or_before_with_policy(
+        network,
+        timing_policy,
+        observed_anchor_height,
+    )?;
+    if available_candidates.is_empty() {
         return None;
     }
 
-    let mut weighted = Vec::with_capacity(candidates.len());
+    let mut weighted = Vec::with_capacity(available_candidates.len());
     let mut total_weight = 0u32;
-    for boundary in candidates {
+    for boundary in available_candidates.iter().copied() {
         if cohort_counts.get(&boundary).copied().unwrap_or_default()
             >= ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
         {

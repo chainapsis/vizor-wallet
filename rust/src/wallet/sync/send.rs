@@ -46,7 +46,10 @@ use std::time::Instant;
 
 use rand::{rngs::OsRng, Rng};
 use secrecy::{ExposeSecret, SecretVec};
-use shardtree::error::{QueryError, ShardTreeError};
+use shardtree::{
+    error::{QueryError, ShardTreeError},
+    store::ShardStore,
+};
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
     GreedyInputSelector, InputSelector, SpendPolicy,
@@ -1492,6 +1495,70 @@ fn migration_orchard_witnesses(
     }))
 }
 
+fn orchard_checkpoint_heights(db: &mut WalletDatabase) -> Result<Vec<u32>, String> {
+    let result: Result<Vec<u32>, ShardTreeError<commitment_tree::Error>> = db
+        .with_orchard_tree_mut(|tree| {
+            let checkpoint_count = tree
+                .store()
+                .checkpoint_count()
+                .map_err(ShardTreeError::Storage)?;
+            let mut heights = Vec::with_capacity(checkpoint_count);
+            tree.store()
+                .for_each_checkpoint(checkpoint_count, |height, _| {
+                    heights.push(u32::from(*height));
+                    Ok(())
+                })
+                .map_err(ShardTreeError::Storage)?;
+            Ok(heights)
+        });
+    result.map_err(|e| format!("Read Orchard checkpoint heights: {e:?}"))
+}
+
+fn representative_orchard_checkpoint(
+    checkpoint_heights: &[u32],
+    logical_boundary_height: u32,
+    note_mined_height: u32,
+) -> Option<u32> {
+    checkpoint_heights
+        .iter()
+        .copied()
+        .filter(|height| *height >= note_mined_height && *height <= logical_boundary_height)
+        .max()
+}
+
+fn available_orchard_anchor_candidates(
+    logical_boundaries: &[u32],
+    checkpoint_heights: &[u32],
+    note_mined_height: u32,
+) -> Vec<(u32, u32)> {
+    let mut seen_checkpoints = BTreeSet::new();
+    logical_boundaries
+        .iter()
+        .filter_map(|boundary| {
+            let checkpoint = representative_orchard_checkpoint(
+                checkpoint_heights,
+                *boundary,
+                note_mined_height,
+            )?;
+            // Several empty ZIP 318 buckets can share one Orchard root. Treat
+            // that root as one cohort instead of multiplying its draw weight
+            // and per-cohort allowance under different logical heights.
+            seen_checkpoints
+                .insert(checkpoint)
+                .then_some((*boundary, checkpoint))
+        })
+        .collect()
+}
+
+fn retain_orchard_checkpoint(
+    db: &mut WalletDatabase,
+    checkpoint_height: u32,
+) -> Result<(), String> {
+    let result: Result<(), ShardTreeError<commitment_tree::Error>> =
+        db.with_orchard_tree_mut(|tree| tree.ensure_retained(BlockHeight::from(checkpoint_height)));
+    result.map_err(|e| format!("Retain Orchard migration checkpoint: {e:?}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make_orchard_split_builder_with_type(
     network: WalletNetwork,
@@ -2444,13 +2511,71 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let mined_height = u32::from(mined_height);
+    let checkpoint_heights = orchard_checkpoint_heights(&mut db)?;
+    // The ZIP 318 bucket is a logical chain height. Empty blocks do not always
+    // create an Orchard checkpoint, so the tree root for a bucket can live at
+    // the last checkpoint before that boundary. Preserve the newest such root
+    // while it is still young; one bucket later it becomes eligible instead of
+    // being pruned before the proof attempt.
+    if let Some(latest_boundary) = super::migration::zip318_anchor_boundary_at_or_before_with_policy(
+        network,
+        timing_policy,
+        anchor_height_u32,
+    ) {
+        if let Some(checkpoint_height) =
+            representative_orchard_checkpoint(&checkpoint_heights, latest_boundary, mined_height)
+        {
+            retain_orchard_checkpoint(&mut db, checkpoint_height)?;
+        }
+    }
+    let policy_candidates = super::migration::zip318_anchor_candidate_boundaries_with_policy(
+        network,
+        timing_policy,
+        anchor_height_u32,
+        mined_height,
+        nu6_3_activation_height,
+    );
+    let available_anchor_candidates =
+        available_orchard_anchor_candidates(&policy_candidates, &checkpoint_heights, mined_height);
+    let available_candidates = available_anchor_candidates
+        .iter()
+        .map(|(boundary, _)| *boundary)
+        .collect::<Vec<_>>();
+    let mut checkpoint_cohort_counts = BTreeMap::<u32, u32>::new();
+    for (boundary, count) in anchor_cohort_counts.iter() {
+        if let Some(checkpoint) =
+            representative_orchard_checkpoint(&checkpoint_heights, *boundary, mined_height)
+        {
+            let cohort_count = checkpoint_cohort_counts.entry(checkpoint).or_default();
+            *cohort_count = cohort_count
+                .checked_add(*count)
+                .ok_or("Migration anchor cohort count overflow")?;
+        }
+    }
+    let draw_cohort_counts = available_anchor_candidates
+        .iter()
+        .map(|(boundary, checkpoint)| {
+            (
+                *boundary,
+                checkpoint_cohort_counts
+                    .get(checkpoint)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let anchor_boundary_height = preferred_anchor_boundary_height
         .filter(|boundary| {
-            anchor_cohort_counts
-                .get(boundary)
-                .copied()
-                .unwrap_or_default()
-                < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+            available_anchor_candidates
+                .iter()
+                .find(|(candidate, _)| candidate == boundary)
+                .is_some_and(|(_, checkpoint)| {
+                    checkpoint_cohort_counts
+                        .get(checkpoint)
+                        .copied()
+                        .unwrap_or_default()
+                        < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+                })
                 && super::migration::zip318_anchor_boundary_is_candidate_with_policy(
                     network,
                     timing_policy,
@@ -2459,20 +2584,27 @@ fn orchard_anchor_and_witness_for_prepared_note(
                     mined_height,
                     nu6_3_activation_height,
                 )
+                && available_candidates.contains(boundary)
         })
         .or_else(|| {
-            super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+            super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
                 network,
                 timing_policy,
                 anchor_height_u32,
-                mined_height,
-                nu6_3_activation_height,
-                anchor_cohort_counts,
+                &available_candidates,
+                &draw_cohort_counts,
             )
         });
     let Some(anchor_boundary_height) = anchor_boundary_height else {
         return Ok(None);
     };
+    let checkpoint_height = available_anchor_candidates
+        .iter()
+        .find_map(|(boundary, checkpoint)| {
+            (*boundary == anchor_boundary_height).then_some(*checkpoint)
+        })
+        .ok_or("Orchard migration checkpoint disappeared during anchor selection")?;
+    retain_orchard_checkpoint(&mut db, checkpoint_height)?;
     *anchor_cohort_counts
         .entry(anchor_boundary_height)
         .or_default() += 1;
@@ -2490,7 +2622,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
     let (orchard_anchor, mut orchard_inputs) = migration_orchard_witnesses(
         &mut db,
         network,
-        BlockHeight::from(anchor_boundary_height),
+        BlockHeight::from(checkpoint_height),
         std::slice::from_ref(&orchard_selected),
     )?;
     let (_, witness) = orchard_inputs

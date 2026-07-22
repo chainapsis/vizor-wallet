@@ -674,6 +674,35 @@ fn anchor_bucket_draw_skips_full_wallet_cohorts() {
 }
 
 #[test]
+fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
+    let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
+    let available = vec![candidates[1], candidates[3]];
+
+    for _ in 0..32 {
+        let boundary = zip318_draw_anchor_boundary_from_available_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            &available,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(available.contains(&boundary));
+    }
+
+    assert_eq!(
+        zip318_draw_anchor_boundary_from_available_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            &[],
+            &BTreeMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn planner_chunks_more_than_max_prepared_outputs_into_follow_up_run() {
     let input = 1_999_999_950_000_000;
     let migration_fee = 10_000;
