@@ -418,6 +418,34 @@ Future<void> waitForHome(WidgetTester tester) async {
 }
 
 Future<void> openMobilePrivateMigrationReview(WidgetTester tester) async {
+  await openMobileMigrationOptions(tester);
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_ironwood_options_continue_button'),
+    timeout: const Duration(minutes: 2),
+  );
+  await pumpUntil(
+    tester,
+    () {
+      final keyed = find.byKey(
+        const ValueKey('mobile_ironwood_authorize_start_button'),
+      );
+      final button = find.descendant(
+        of: keyed,
+        matching: find.byType(AppButton),
+        matchRoot: true,
+      );
+      return tester.any(button) &&
+          tester.widget<AppButton>(button).onPressed != null;
+    },
+    description: 'mobile private migration review plan',
+    timeout: const Duration(minutes: 3),
+  );
+}
+
+/// Opens the choice screen after the migration announcement, intro, and
+/// explanation steps. Callers choose either Private or Immediate from here.
+Future<void> openMobileMigrationOptions(WidgetTester tester) async {
   final announcementSheet = find.byKey(
     const ValueKey('mobile_ironwood_announcement_sheet'),
   );
@@ -462,27 +490,13 @@ Future<void> openMobilePrivateMigrationReview(WidgetTester tester) async {
     const ValueKey('mobile_ironwood_steps_continue_button'),
     timeout: const Duration(minutes: 2),
   );
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_ironwood_options_continue_button'),
-    timeout: const Duration(minutes: 2),
-  );
   await pumpUntil(
     tester,
-    () {
-      final keyed = find.byKey(
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-      );
-      final button = find.descendant(
-        of: keyed,
-        matching: find.byType(AppButton),
-        matchRoot: true,
-      );
-      return tester.any(button) &&
-          tester.widget<AppButton>(button).onPressed != null;
-    },
-    description: 'mobile private migration review plan',
-    timeout: const Duration(minutes: 3),
+    () => tester.any(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    ),
+    description: 'mobile migration options',
+    timeout: const Duration(minutes: 2),
   );
 }
 

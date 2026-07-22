@@ -18,9 +18,9 @@ const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
   seconds:
       String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest' ||
-              kZcashFastTestnetMigration
-          ? 1
-          : 30,
+          kZcashFastTestnetMigration
+      ? 1
+      : 30,
 );
 
 class IronwoodMigrationCoordinatorState {
@@ -126,6 +126,10 @@ class IronwoodMigrationCoordinator
           nextStatuses[account.uuid] = status;
           nextErrors.remove(account.uuid);
 
+          if (status.activeRunId == null) {
+            service.clearForegroundImmediateMigration(account.uuid);
+          }
+
           if (_shouldAdvance(
             status,
             isHardware: account.isHardware,
@@ -222,10 +226,9 @@ class IronwoodMigrationCoordinator
 
     final scannedHeight = syncState.scannedHeight;
     final chainTipHeight = syncState.chainTipHeight;
-    final currentHeight =
-        scannedHeight > 0 && chainTipHeight > 0
-            ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
-            : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
+    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
+        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
+        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
     return currentHeight;
   }
 
@@ -242,9 +245,16 @@ class IronwoodMigrationCoordinator
       _lastAdvanceProgressKeys[accountUuid] = _advanceProgressKey(status);
     }
     try {
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+      final service = ref.read(ironwoodMigrationServiceProvider);
+      if (service.isForegroundImmediateMigration(accountUuid)) {
+        await service.continueSoftwareImmediateMigration(
+          accountUuid: accountUuid,
+        );
+      } else {
+        await service.continueSoftwarePrivateMigration(
+          accountUuid: accountUuid,
+        );
+      }
     } finally {
       if (ref.mounted) {
         state = state.copyWith(
@@ -290,10 +300,11 @@ class IronwoodMigrationCoordinator
   }
 }
 
-final ironwoodMigrationCoordinatorProvider = NotifierProvider<
-  IronwoodMigrationCoordinator,
-  IronwoodMigrationCoordinatorState
->(IronwoodMigrationCoordinator.new);
+final ironwoodMigrationCoordinatorProvider =
+    NotifierProvider<
+      IronwoodMigrationCoordinator,
+      IronwoodMigrationCoordinatorState
+    >(IronwoodMigrationCoordinator.new);
 
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({required this.child, super.key});
@@ -322,18 +333,15 @@ class _IronwoodMigrationCoordinatorHostState
       );
     });
     _lifecycleListener = AppLifecycleListener(
-      onResume:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(true),
-      onHide:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
-      onPause:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
+      onResume: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(true),
+      onHide: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
+      onPause: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
     );
   }
 
