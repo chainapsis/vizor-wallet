@@ -89,18 +89,19 @@ rust_sync.MigrationStatus _status({
   required String phase,
   String? activeRunId = 'run-1',
   List<String>? broadcastStatuses,
+  List<rust_sync.MigrationPartStatus> parts = const [],
+  List<int> targetValues = const [412_000_000, 412_000_000, 412_000_000],
+  int? nextActionHeight,
+  int? estimatedCompletionHeight,
+  int? nextActionPartIndex,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
     activeRunId: activeRunId,
-    targetValuesZatoshi: frb.Uint64List.fromList([
-      412_000_000,
-      412_000_000,
-      412_000_000,
-    ]),
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValues),
     preparedNoteCount: 3,
     denominationConfirmationCount: 2,
-    denominationConfirmationTarget: 10,
+    denominationConfirmationTarget: 3,
     denominationSplitCompletedCount: 1,
     denominationSplitTotalCount: 3,
     pendingTxCount: 2,
@@ -114,6 +115,9 @@ rust_sync.MigrationStatus _status({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 12,
+    nextActionHeight: nextActionHeight,
+    estimatedCompletionHeight: estimatedCompletionHeight,
+    nextActionPartIndex: nextActionPartIndex,
     scheduledBroadcasts: broadcastStatuses == null
         ? const []
         : [
@@ -126,7 +130,7 @@ rust_sync.MigrationStatus _status({
                 status: broadcastStatuses[index],
               ),
           ],
-    parts: const [],
+    parts: parts,
   );
 }
 
@@ -347,7 +351,11 @@ Widget _productionApp({
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           syncState ??
-              SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                isSyncComplete: true,
+              ),
         ),
       ),
       ironwoodMigrationFlowDataProvider.overrideWith((ref) => _data),
@@ -681,7 +689,19 @@ void main() {
     expect(find.text('Migration 12 notes'), findsOneWidget);
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Est. completion'), findsOneWidget);
-    expect(find.text('~1728 blocks'), findsOneWidget);
+    final completionText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_review_value_Est. completion'),
+        ),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(
+      completionText.data,
+      matches(RegExp(r'^[A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$')),
+    );
+    expect(completionText.data, isNot(contains('blocks')));
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('0.1442 ZEC'), findsOneWidget);
     expect(find.text('Start migration'), findsOneWidget);
@@ -1021,7 +1041,261 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
     expect(
-      find.textContaining('Migration review is not available yet'),
+      find.textContaining('Vizor needs an up-to-date balance'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('retries plan analysis when foreground sync finishes', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () async {
+          planLoadCount++;
+          return planLoadCount == 1 ? null : _plan;
+        },
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          isSyncComplete: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsOneWidget,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      ),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(planLoadCount, 2);
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(
+      find.textContaining('Vizor needs an up-to-date balance'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('does not reactivate a stale plan while sync refreshes it', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final refreshedPlan = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () {
+          planLoadCount++;
+          return planLoadCount == 1
+              ? Future.value(_plan)
+              : refreshedPlan.future;
+        },
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+      ),
+    );
+    await tester.pump();
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pump();
+
+    expect(planLoadCount, greaterThanOrEqualTo(2));
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsOneWidget,
+    );
+    expect(find.text('Start migration').hitTestable(), findsNothing);
+
+    refreshedPlan.complete(_plan);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('does not reactivate a stale plan after refresh fails', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () {
+          planLoadCount++;
+          return planLoadCount == 1
+              ? Future.value(_plan)
+              : Future.error(StateError('plan refresh failed'));
+        },
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+      ),
+    );
+    await tester.pump();
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2746));
+    await tester.pump(const Duration(milliseconds: 256));
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(planLoadCount, greaterThanOrEqualTo(2));
+    final startButton = tester.widget<AppButton>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_authorize_start_button'),
+        ),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(startButton.onPressed, isNull);
+    expect(
+      find.textContaining('Vizor needs an up-to-date balance'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('does not reactivate a stale plan after sync fails', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () async {
+          planLoadCount++;
+          return _plan;
+        },
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+      ),
+    );
+    await tester.pump();
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: false,
+        error: 'sync failed',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2746));
+    await tester.pump(const Duration(milliseconds: 256));
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(planLoadCount, greaterThanOrEqualTo(2));
+    final startButton = tester.widget<AppButton>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_authorize_start_button'),
+        ),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(startButton.onPressed, isNull);
+    expect(
+      find.textContaining('Vizor needs an up-to-date balance'),
       findsOneWidget,
     );
   });
@@ -1170,27 +1444,27 @@ void main() {
     expect(find.text('Migration 12 notes'), findsOneWidget);
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
-    expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('Needs input'), findsOneWidget);
-    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Action needed'), findsOneWidget);
+    expect(find.text('Sending'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
-        matching: find.text('Completed'),
+        matching: find.text('Done'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_1')),
-        matching: find.text('Needs input'),
+        matching: find.text('Action needed'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_2')),
-        matching: find.text('Migrating...'),
+        matching: find.text('Sending'),
       ),
       findsOneWidget,
     );
@@ -1629,6 +1903,29 @@ void main() {
         migrationService: _migrationService(),
         status: _status(
           phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          parts: [
+            rust_sync.MigrationPartStatus(
+              partIndex: 0,
+              valueZatoshi: BigInt.from(412_000_000),
+              state: rust_sync.MigrationPartState.confirming,
+              confirmationCount: 2,
+              confirmationTarget: 3,
+            ),
+            rust_sync.MigrationPartStatus(
+              partIndex: 1,
+              valueZatoshi: BigInt.from(412_000_000),
+              state: rust_sync.MigrationPartState.preparing,
+              confirmationCount: 0,
+              confirmationTarget: 3,
+            ),
+            rust_sync.MigrationPartStatus(
+              partIndex: 2,
+              valueZatoshi: BigInt.from(412_000_000),
+              state: rust_sync.MigrationPartState.preparing,
+              confirmationCount: 0,
+              confirmationTarget: 3,
+            ),
+          ],
         ),
       ),
     );
@@ -1636,8 +1933,10 @@ void main() {
 
     expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('Wait for confirmation'), findsOneWidget);
-    expect(find.text('2/10 blocks'), findsOneWidget);
+    expect(find.text('2/3 blocks'), findsOneWidget);
     expect(find.text('Split Notes into 3 Migration Parts'), findsOneWidget);
+    expect(find.bySemanticsLabel('Part 1 progress 20%'), findsNothing);
+    expect(find.bySemanticsLabel('Part 1 progress 76%'), findsNothing);
   });
 
   testWidgets('explains the additional Keystone approval while waiting', (
@@ -1686,6 +1985,83 @@ void main() {
     expect(find.text('Part 3'), findsOneWidget);
   });
 
+  testWidgets('uses per-part state and confirmation progress from Rust', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final status = _status(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      parts: [
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(412_000_000),
+          state: rust_sync.MigrationPartState.completed,
+          confirmationCount: 3,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          valueZatoshi: BigInt.from(412_000_000),
+          state: rust_sync.MigrationPartState.confirming,
+          confirmationCount: 2,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 2,
+          valueZatoshi: BigInt.from(412_000_000),
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduleStartHeight: 3_499_900,
+          scheduledHeight: 3_500_100,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: status,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          ironwoodBalance: BigInt.from(100_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Confirming · 2/3'), findsOneWidget);
+    expect(find.bySemanticsLabel('Part 2 progress 90%'), findsOneWidget);
+    expect(find.text('Currently spendable balance'), findsOneWidget);
+    expect(find.text('1.00 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('does not render synthetic migration values before run data', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final status = _status(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      targetValues: const [],
+      parts: const [],
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: status,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.textContaining('Migration 1 notes'), findsNothing);
+    expect(find.text('Schedule pending'), findsNothing);
+  });
+
   testWidgets('maps out-of-order broadcasts by their explicit status', (
     tester,
   ) async {
@@ -1705,24 +2081,60 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
-        matching: find.text('Completed'),
+        matching: find.text('Done'),
       ),
       findsNothing,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_1')),
-        matching: find.text('Completed'),
+        matching: find.text('Done'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_2')),
-        matching: find.text('Migrating...'),
+        matching: find.text('Sending'),
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('shows compact queued and waiting states with timing help', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          nextActionHeight: 3_000_020,
+          estimatedCompletionHeight: 3_000_040,
+          nextActionPartIndex: 1,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Queued'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.textContaining('Waiting · ~'), findsOneWidget);
+    expect(find.bySemanticsLabel('About estimated completion'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('About estimated completion'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('About migration timing'), findsOneWidget);
+    expect(find.textContaining('privacy checkpoints'), findsOneWidget);
   });
 
   testWidgets('keeps an all-confirmed waiting run in progress', (tester) async {
@@ -1741,7 +2153,7 @@ void main() {
 
     expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('Migration complete'), findsNothing);
-    expect(find.text('Completed'), findsNWidgets(3));
+    expect(find.text('Done'), findsNWidgets(3));
   });
 
   testWidgets('offers explicit recovery when a scheduled transfer is due', (

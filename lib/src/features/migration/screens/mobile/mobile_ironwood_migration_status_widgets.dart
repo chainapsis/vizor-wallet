@@ -186,9 +186,6 @@ class _MobileMigrationRecoveryCard extends StatelessWidget {
   }
 }
 
-/// States used by the Figma status surface. These are intentionally supplied
-/// by the caller: the current migration status API does not expose stable
-/// part identifiers, fractional progress, or per-part input requirements.
 enum MobileIronwoodMigrationPartStatus { complete, needsInput, active, pending }
 
 class MobileIronwoodMigrationPartPresentation {
@@ -217,8 +214,30 @@ _mobileMigrationPartPresentations({
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   required List<MobileIronwoodMigrationPartPresentation>? explicitParts,
+  int? currentHeight,
 }) {
   if (explicitParts != null) return explicitParts;
+
+  final statusParts = status?.parts ?? const [];
+  if (statusParts.isNotEmpty) {
+    final orderedParts = [...statusParts]
+      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+    return [
+      for (final part in orderedParts)
+        MobileIronwoodMigrationPartPresentation(
+          label: 'Part ${part.partIndex + 1}',
+          status: _mobileMigrationPartStatus(part.state),
+          detail: '${_compactZec(part.valueZatoshi)} ZEC',
+          eta: _mobileMigrationPartDetail(
+            part,
+            status: status,
+            currentHeight: currentHeight,
+          ),
+          progress: _mobileMigrationPartProgress(part),
+          valueZatoshi: part.valueZatoshi,
+        ),
+    ];
+  }
 
   final broadcasts = status?.scheduledBroadcasts ?? const [];
   if (broadcasts.isNotEmpty) {
@@ -236,9 +255,17 @@ _mobileMigrationPartPresentations({
           },
           detail: '${_compactZec(broadcasts[index].valueZatoshi)} ZEC',
           valueZatoshi: broadcasts[index].valueZatoshi,
-          eta: broadcasts[index].status.toLowerCase() == 'confirmed'
-              ? null
-              : _mobileBatchDispatchLabel(status: status, index: index),
+          eta: switch (broadcasts[index].status.toLowerCase()) {
+            'confirmed' ||
+            'broadcasted' ||
+            'submitted' ||
+            'mined' ||
+            'needs_input' => null,
+            _ =>
+              currentHeight == null || currentHeight <= 0
+                  ? 'Waiting'
+                  : 'Waiting · ${migrationHeightTimingLabel(broadcasts[index].scheduledHeight, currentHeight: currentHeight)}',
+          },
         ),
     ];
   }
@@ -264,6 +291,9 @@ _mobileMigrationPartPresentations({
               : MobileIronwoodMigrationPartStatus.pending,
           detail: '${_compactZec(targetValues[index])} ZEC',
           valueZatoshi: targetValues[index],
+          eta: index == status.nextActionPartIndex
+              ? _mobileWaitingLabel(status, currentHeight: currentHeight)
+              : 'Queued',
         ),
     ];
   }
@@ -279,6 +309,94 @@ _mobileMigrationPartPresentations({
         eta: '+${transfers[index].blockOffset} blocks',
       ),
   ];
+}
+
+MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
+  rust_sync.MigrationPartState state,
+) => switch (state) {
+  rust_sync.MigrationPartState.completed =>
+    MobileIronwoodMigrationPartStatus.complete,
+  rust_sync.MigrationPartState.needsInput =>
+    MobileIronwoodMigrationPartStatus.needsInput,
+  rust_sync.MigrationPartState.scheduled =>
+    MobileIronwoodMigrationPartStatus.pending,
+  rust_sync.MigrationPartState.preparing ||
+  rust_sync.MigrationPartState.migrating ||
+  rust_sync.MigrationPartState.confirming =>
+    MobileIronwoodMigrationPartStatus.active,
+};
+
+String? _mobileMigrationPartDetail(
+  rust_sync.MigrationPartStatus part, {
+  required rust_sync.MigrationStatus? status,
+  required int? currentHeight,
+}) {
+  if (part.state == rust_sync.MigrationPartState.completed) return null;
+  if (part.state == rust_sync.MigrationPartState.confirming &&
+      part.confirmationTarget > 0) {
+    return 'Confirming · '
+        '${part.confirmationCount.clamp(0, part.confirmationTarget)}/'
+        '${part.confirmationTarget}';
+  }
+  if (part.state == rust_sync.MigrationPartState.preparing) {
+    if (status?.nextActionPartIndex == part.partIndex) {
+      return _mobileWaitingLabel(status!, currentHeight: currentHeight);
+    }
+    return 'Queued';
+  }
+  return switch (part.state) {
+    rust_sync.MigrationPartState.scheduled => _mobileScheduledPartLabel(
+      part,
+      status: status,
+      currentHeight: currentHeight,
+    ),
+    rust_sync.MigrationPartState.migrating => 'Sending',
+    rust_sync.MigrationPartState.needsInput => 'Action needed',
+    _ => null,
+  };
+}
+
+String _mobileScheduledPartLabel(
+  rust_sync.MigrationPartStatus part, {
+  required rust_sync.MigrationStatus? status,
+  required int? currentHeight,
+}) {
+  final scheduledHeight = part.scheduledHeight;
+  if (scheduledHeight == null || currentHeight == null || currentHeight <= 0) {
+    return 'Waiting';
+  }
+  final timing = migrationHeightTimingLabel(
+    scheduledHeight,
+    currentHeight: currentHeight,
+  );
+  return 'Waiting · $timing';
+}
+
+String _mobileWaitingLabel(
+  rust_sync.MigrationStatus status, {
+  required int? currentHeight,
+}) {
+  final timing = migrationNextActionTimingLabel(
+    status,
+    currentHeight: currentHeight,
+  );
+  return timing == null ? 'Waiting' : 'Waiting · $timing';
+}
+
+double? _mobileMigrationPartProgress(rust_sync.MigrationPartStatus part) {
+  if (part.state == rust_sync.MigrationPartState.completed) return 1;
+  final confirmationProgress = part.confirmationTarget <= 0
+      ? 0.0
+      : (part.confirmationCount / part.confirmationTarget).clamp(0.0, 1.0);
+  return switch (part.state) {
+    rust_sync.MigrationPartState.preparing => confirmationProgress * 0.2,
+    rust_sync.MigrationPartState.scheduled => 0.25,
+    rust_sync.MigrationPartState.migrating => 0.7,
+    rust_sync.MigrationPartState.confirming =>
+      0.7 + (confirmationProgress * 0.3),
+    rust_sync.MigrationPartState.needsInput => null,
+    _ => null,
+  };
 }
 
 /// Reusable waiting card for the mobile migration status design.
@@ -506,10 +624,16 @@ class _MobileMigrationStatusRail extends StatelessWidget {
             child: Row(
               children: [
                 for (var index = 0; index < parts.length; index++) ...[
-                  _MobileMigrationRailSegment(
-                    width: widths[index],
-                    status: parts[index].status,
-                    progress: parts[index].progress,
+                  Semantics(
+                    label: parts[index].progress == null
+                        ? null
+                        : '${parts[index].label} progress '
+                              '${(parts[index].progress! * 100).round()}%',
+                    child: _MobileMigrationRailSegment(
+                      width: widths[index],
+                      status: parts[index].status,
+                      progress: parts[index].progress,
+                    ),
                   ),
                   if (index < parts.length - 1)
                     const SizedBox(width: _mobileMigrationPlanBarGap),
@@ -650,7 +774,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Flexible(
             child: Text(
-              'Completed',
+              'Done',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -663,7 +787,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         children: [
           Flexible(
             child: Text(
-              'Needs input',
+              'Action needed',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -678,11 +802,15 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         ],
       ),
       MobileIronwoodMigrationPartStatus.active => Text(
-        'Migrating...',
+        part.eta ?? 'Sending',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: style,
       ),
       MobileIronwoodMigrationPartStatus.pending => Text(
-        part.eta ?? 'Pending',
+        part.eta ?? 'Queued',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: style,
       ),
     };
@@ -746,6 +874,18 @@ _mobilePreparingPartPresentations({
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
 }) {
+  final statusParts = [...?status?.parts]
+    ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+  if (statusParts.isNotEmpty) {
+    return [
+      for (final part in statusParts)
+        MobileIronwoodMigrationPartPresentation(
+          label: 'Part ${part.partIndex + 1}',
+          status: MobileIronwoodMigrationPartStatus.pending,
+          valueZatoshi: part.valueZatoshi,
+        ),
+    ];
+  }
   final values = status?.targetValuesZatoshi ?? const [];
   final transfers = previewPlan?.scheduledTransfers ?? const [];
   final count = values.isNotEmpty
@@ -755,19 +895,11 @@ _mobilePreparingPartPresentations({
       : _mobilePlannedBatchCount(status, previewPlan: previewPlan);
   if (count <= 0) return const [];
 
-  final confirmationTarget = status?.denominationConfirmationTarget ?? 0;
-  final confirmationCount = status?.denominationConfirmationCount ?? 0;
-  final progress = confirmationTarget > 0
-      ? (confirmationCount / confirmationTarget).clamp(0.0, 1.0)
-      : 0.0;
   return [
     for (var index = 0; index < count; index++)
       MobileIronwoodMigrationPartPresentation(
         label: 'Part ${index + 1}',
-        status: index == 0
-            ? MobileIronwoodMigrationPartStatus.active
-            : MobileIronwoodMigrationPartStatus.pending,
-        progress: index == 0 ? progress : null,
+        status: MobileIronwoodMigrationPartStatus.pending,
         valueZatoshi: values.isNotEmpty
             ? values[index]
             : transfers.isNotEmpty
@@ -782,6 +914,7 @@ int _mobilePlannedBatchCount(
   rust_sync.OrchardMigrationPrivatePlan? previewPlan,
 }) {
   if (status == null) return previewPlan?.plannedBatchCount ?? 0;
+  if (status.parts.isNotEmpty) return status.parts.length;
   if (status.totalCount > 0) return status.totalCount;
   if (status.targetValuesZatoshi.isNotEmpty) {
     return status.targetValuesZatoshi.length;
@@ -798,6 +931,15 @@ String _mobileMigrationTotalAmountText(
       ? BigInt.zero
       : _mobilePlanTotalZatoshi(previewPlan);
   if (planTotal > BigInt.zero) return _compactZec(planTotal);
+
+  final parts = status?.parts ?? const [];
+  if (parts.isNotEmpty) {
+    final total = parts.fold<BigInt>(
+      BigInt.zero,
+      (sum, part) => sum + part.valueZatoshi,
+    );
+    if (total > BigInt.zero) return _compactZec(total);
+  }
 
   final broadcasts = status?.scheduledBroadcasts ?? const [];
   if (broadcasts.isNotEmpty) {
@@ -818,23 +960,22 @@ String _mobileMigrationTotalAmountText(
   return fallback;
 }
 
-String _mobileSpendableAmountText(rust_sync.MigrationStatus? status) {
+String _mobileSpendableAmountText(
+  rust_sync.MigrationStatus? status, {
+  BigInt? ironwoodBalance,
+}) {
+  if (ironwoodBalance != null) return _compactZec(ironwoodBalance);
+  final parts = status?.parts ?? const [];
+  if (parts.isNotEmpty) {
+    final spendable = parts
+        .where((part) => part.state == rust_sync.MigrationPartState.completed)
+        .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
+    return _compactZec(spendable);
+  }
   final broadcasts = status?.scheduledBroadcasts ?? const [];
   if (broadcasts.isEmpty) return '-';
   final spendable = broadcasts
       .where((item) => item.status.toLowerCase() == 'confirmed')
       .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
   return _compactZec(spendable);
-}
-
-String _mobileBatchDispatchLabel({
-  required rust_sync.MigrationStatus? status,
-  required int index,
-}) {
-  if (status == null) return 'Pending';
-  if (index >= status.scheduledBroadcasts.length) return 'Pending';
-  return migrationScheduledBroadcastLabel(
-    status.scheduledBroadcasts[index],
-    approximate: true,
-  );
 }

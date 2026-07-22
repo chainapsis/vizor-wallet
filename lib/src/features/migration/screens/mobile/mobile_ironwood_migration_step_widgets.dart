@@ -1584,19 +1584,21 @@ class _ReviewRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.showInfo = false,
+    this.onInfoPressed,
     this.height = 25,
   });
 
   final String label;
   final String value;
   final bool showInfo;
+  final VoidCallback? onInfoPressed;
   final double height;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: height,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.xxs,
@@ -1605,7 +1607,8 @@ class _ReviewRow extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Flexible(
+            Expanded(
+              flex: 2,
               child: Text(
                 label,
                 maxLines: 1,
@@ -1616,23 +1619,46 @@ class _ReviewRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            Row(
-              key: ValueKey('mobile_ironwood_review_value_$label'),
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  value,
-                  textAlign: TextAlign.end,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
+            Expanded(
+              flex: 3,
+              child: Row(
+                key: ValueKey('mobile_ironwood_review_value_$label'),
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
                   ),
-                ),
-                if (showInfo) ...[
-                  const SizedBox(width: AppSpacing.xxs),
-                  AppIcon(AppIcons.help, size: 16, color: colors.icon.regular),
+                  if (showInfo) ...[
+                    const SizedBox(width: AppSpacing.xxs),
+                    Semantics(
+                      button: onInfoPressed != null,
+                      label: 'About estimated completion',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onInfoPressed,
+                        child: SizedBox.square(
+                          dimension: onInfoPressed == null ? 20 : 44,
+                          child: Center(
+                            child: AppIcon(
+                              AppIcons.help,
+                              size: 16,
+                              color: colors.icon.regular,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ],
         ),

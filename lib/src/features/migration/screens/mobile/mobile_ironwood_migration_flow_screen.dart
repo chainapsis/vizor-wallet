@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -53,6 +54,51 @@ const _migrationAnalysisProgressDuration = Duration(milliseconds: 2745);
 const _migrationAnalysisCompletionDuration = Duration(milliseconds: 575);
 const _migrationAnalysisTransitionDuration = Duration(milliseconds: 420);
 const _migrationAnalysisEaseOut = Cubic(0.23, 1, 0.32, 1);
+
+Future<void> _showMobileMigrationTimingSheet(BuildContext context) {
+  return showAppMobileSheet<void>(
+    context: context,
+    builder: (sheetContext) {
+      final colors = sheetContext.colors;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.base,
+          AppSpacing.sm,
+          AppSpacing.base,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'About migration timing',
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Vizor spaces private transfers across privacy checkpoints. '
+              'The estimate updates as blocks arrive and transactions are '
+              'confirmed.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              variant: AppButtonVariant.secondary,
+              expand: true,
+              onPressed: () => Navigator.of(sheetContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
 class _MigrationAnalysisProgressStep {
   const _MigrationAnalysisProgressStep({
@@ -243,6 +289,9 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         }
 
         if (data == null) return const _MobileMigrationRedirectHome();
+        if (!_hasRenderableMobileMigrationStatus(status)) {
+          return const _MobileMigrationLoadingScreen();
+        }
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
@@ -253,6 +302,12 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+bool _hasRenderableMobileMigrationStatus(rust_sync.MigrationStatus status) {
+  return status.parts.isNotEmpty ||
+      status.scheduledBroadcasts.isNotEmpty ||
+      status.targetValuesZatoshi.isNotEmpty;
 }
 
 bool _hasMobileMigrationStatusDesign(String phase) {
@@ -836,8 +891,62 @@ class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
 class _MobileMigrationPrivateReviewState
     extends ConsumerState<_MobileMigrationPrivateReview> {
   bool _analysisComplete = false;
+  int _analysisEpoch = 0;
   bool _isStarting = false;
   String? _startError;
+  ProviderSubscription<bool>? _syncReadinessSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.previewPlan != null) return;
+    _syncReadinessSubscription = ref.listenManual(
+      ironwoodMigrationInputsProvider.select(
+        (inputs) =>
+            inputs.isSyncing ||
+            inputs.isBackgroundMode ||
+            !inputs.isSyncComplete ||
+            inputs.hasSyncFailure,
+      ),
+      (wasWaiting, isWaiting) {
+        if (wasWaiting == isWaiting) return;
+        if (isWaiting) {
+          _resetAnalysis();
+        } else {
+          _retryAnalysis();
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _syncReadinessSubscription?.close();
+    super.dispose();
+  }
+
+  void _resetAnalysis({bool invalidatePlan = false}) {
+    if (!mounted) return;
+    setState(() {
+      _analysisComplete = false;
+      _analysisEpoch++;
+    });
+    if (invalidatePlan) {
+      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+    }
+  }
+
+  void _retryAnalysis() {
+    if (!mounted) return;
+    _resetAnalysis(invalidatePlan: true);
+
+    final inputs = ref.read(ironwoodMigrationInputsProvider);
+    if ((!inputs.isSyncComplete || inputs.hasSyncFailure) &&
+        !inputs.isSyncing &&
+        !inputs.isBackgroundMode) {
+      unawaited(ref.read(syncProvider.notifier).startSyncAnyway());
+    }
+  }
 
   void _handleAnalysisCompleted() {
     if (_analysisComplete || !mounted) return;
@@ -909,6 +1018,9 @@ class _MobileMigrationPrivateReviewState
   @override
   Widget build(BuildContext context) {
     final preview = widget.previewPlan;
+    final migrationInputs = preview == null
+        ? ref.watch(ironwoodMigrationInputsProvider)
+        : null;
     final planAsync = preview != null
         ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
         : ref.watch(ironwoodMigrationPrivatePlanProvider);
@@ -918,21 +1030,38 @@ class _MobileMigrationPrivateReviewState
     final animatedAnalysisPreview =
         widget.previewStage ==
         MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing;
-    final awaitingInitialPlan = planAsync.isLoading && !planAsync.hasValue;
-    final plan = planAsync.hasValue ? planAsync.value : null;
+    final syncReadyForPlan =
+        preview != null ||
+        (!migrationInputs!.isSyncing &&
+            !migrationInputs.isBackgroundMode &&
+            migrationInputs.isSyncComplete &&
+            !migrationInputs.hasSyncFailure);
+    final plan =
+        syncReadyForPlan &&
+            planAsync is AsyncData<rust_sync.OrchardMigrationPrivatePlan?>
+        ? planAsync.value
+        : null;
+    final awaitingInitialPlan = planAsync.isLoading && plan == null;
+    final waitingForSync =
+        preview == null &&
+        (migrationInputs!.isSyncing || migrationInputs.isBackgroundMode);
+    final waitingForPlan = awaitingInitialPlan || waitingForSync;
     final showAnalyzing =
         staticAnalysisPreview ||
         (animatedAnalysisPreview && !_analysisComplete) ||
-        (preview == null && (!_analysisComplete || awaitingInitialPlan));
+        (preview == null && (!_analysisComplete || waitingForPlan));
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final Widget child;
     if (showAnalyzing) {
-      child = _MobileMigrationAnalyzing(
-        key: const ValueKey('mobile_ironwood_migration_analysis_stage'),
-        preview: staticAnalysisPreview,
-        ready: !awaitingInitialPlan,
-        completionSucceeded: plan != null,
-        onCompleted: staticAnalysisPreview ? null : _handleAnalysisCompleted,
+      child = KeyedSubtree(
+        key: ValueKey('mobile_ironwood_analysis_epoch_$_analysisEpoch'),
+        child: _MobileMigrationAnalyzing(
+          key: const ValueKey('mobile_ironwood_migration_analysis_stage'),
+          preview: staticAnalysisPreview,
+          ready: !waitingForPlan,
+          completionSucceeded: plan != null,
+          onCompleted: staticAnalysisPreview ? null : _handleAnalysisCompleted,
+        ),
       );
     } else {
       final keystonePlanSupported =
@@ -985,7 +1114,7 @@ class _MobileMigrationPrivateReviewState
             ],
           ),
           child: plan == null
-              ? const _MobileMigrationUnavailable()
+              ? _MobileMigrationUnavailable(onRetry: _retryAnalysis)
               : _MobilePrivatePlan(
                   plan: plan,
                   arrivalLabel: _migrationArrivalLabel(plan),
@@ -1003,6 +1132,16 @@ class _MobileMigrationPrivateReviewState
           : const Duration(milliseconds: 280),
       switchInCurve: _migrationAnalysisEaseOut,
       switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            for (final previousChild in previousChildren)
+              IgnorePointer(child: previousChild),
+            ?currentChild,
+          ],
+        );
+      },
       transitionBuilder: (child, animation) {
         final offset = Tween<Offset>(
           begin: const Offset(0, 0.015),
@@ -1567,6 +1706,14 @@ class _MobileMigrationMigratingState
   Widget build(BuildContext context) {
     final status = widget.status;
     final colors = context.colors;
+    final accountUuid = widget.enableRecovery
+        ? ref.watch(accountProvider).value?.activeAccountUuid
+        : null;
+    final syncState = widget.enableRecovery
+        ? (ref.watch(syncProvider).value ?? SyncState()).scopedToAccount(
+            accountUuid,
+          )
+        : null;
     final totalAmount = _mobileMigrationTotalAmountText(
       status,
       previewPlan: widget.previewPlan,
@@ -1576,6 +1723,7 @@ class _MobileMigrationMigratingState
       status: status,
       previewPlan: widget.previewPlan,
       explicitParts: widget.previewParts,
+      currentHeight: _mobileMigrationHeight(syncState),
     );
     final partCount = parts.isNotEmpty
         ? parts.length
@@ -1584,15 +1732,17 @@ class _MobileMigrationMigratingState
         ? widget.previewPlan == null
               ? 'Schedule pending'
               : _migrationArrivalLabel(widget.previewPlan!)
-        : migrationCompletionTimingLabel(status);
-    final spendable = _mobileSpendableAmountText(status);
+        : migrationCompletionTimingLabel(
+            status,
+            currentHeight: _mobileMigrationHeight(syncState),
+          );
+    final spendable = _mobileSpendableAmountText(
+      status,
+      ironwoodBalance: syncState?.hasBalanceData ?? false
+          ? syncState!.ironwoodBalance
+          : null,
+    );
     final compact = MediaQuery.sizeOf(context).height < 650;
-    final syncState = widget.enableRecovery
-        ? ref.watch(syncProvider).value
-        : null;
-    final accountUuid = widget.enableRecovery
-        ? ref.watch(accountProvider).value?.activeAccountUuid
-        : null;
     final recoveryRequired =
         widget.forceRecoveryPreview ||
         (status != null &&
@@ -1673,9 +1823,15 @@ class _MobileMigrationMigratingState
             child: partsContent,
           )
         else
-          SizedBox(height: recoveryRequired ? 180 : 331, child: partsContent),
+          SizedBox(height: recoveryRequired ? 180 : 304, child: partsContent),
         SizedBox(height: compact || recoveryRequired ? AppSpacing.s : 52),
-        _ReviewRow(label: 'Est. completion', value: completion),
+        _ReviewRow(
+          label: 'Est. completion',
+          value: completion,
+          showInfo: true,
+          onInfoPressed: () =>
+              unawaited(_showMobileMigrationTimingSheet(context)),
+        ),
         const SizedBox(height: AppSpacing.xs),
         _ReviewRow(
           label: 'Currently spendable balance',
@@ -1749,19 +1905,26 @@ bool _hasDueMobileMigrationTransfer(
 }
 
 class _MobileMigrationUnavailable extends StatelessWidget {
-  const _MobileMigrationUnavailable();
+  const _MobileMigrationUnavailable({required this.onRetry});
+
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return _MobileReviewCard(
-      child: Text(
-        'Migration review is not available yet. Wait for sync to finish and '
-        'try again.',
-        textAlign: TextAlign.center,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.secondary,
+    return Column(
+      children: [
+        _MobileReviewCard(
+          child: Text(
+            'Vizor needs an up-to-date balance to prepare this plan.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        _MobileMigrationPrimaryButton(label: 'Try again', onPressed: onRetry),
+      ],
     );
   }
 }
@@ -1839,7 +2002,7 @@ String _compactZec(BigInt zatoshi) {
 }
 
 String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
-  return migrationPlanCompletionLabel(plan);
+  return migrationPlanCompletionTimingLabel(plan);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {
