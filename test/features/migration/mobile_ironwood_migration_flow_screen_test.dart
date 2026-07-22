@@ -299,6 +299,7 @@ Widget _productionApp({
   required IronwoodMigrationService migrationService,
   rust_sync.MigrationStatus? status,
   rust_sync.MigrationStatus? startedStatus,
+  Future<rust_sync.MigrationStatus> Function()? statusLoader,
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
   bool hardware = false,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
@@ -373,6 +374,7 @@ Widget _productionApp({
       ),
       ironwoodMigrationStatusProvider.overrideWith(
         (ref, request) async =>
+            await statusLoader?.call() ??
             startedStatus ??
             status ??
             _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
@@ -2037,6 +2039,90 @@ void main() {
 
     expect(find.text("Couldn't start migration. Try again."), findsOneWidget);
     expect(find.text('Preparing...'), findsNothing);
+  });
+
+  testWidgets('opens status when start reports an error after creating a run', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var started = false;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(
+          onStart: (_, _) {
+            started = true;
+            return Future.error(StateError('post-start failure'));
+          },
+        ),
+        startedStatus: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+        ),
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                ),
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Start migration'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Couldn't start migration. Try again."), findsNothing);
+    expect(find.text('Migration in Progress'), findsOneWidget);
+  });
+
+  testWidgets('opens status when post-start verification is unavailable', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var started = false;
+    var statusReadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(
+          onStart: (_, _) async {
+            started = true;
+            return _migrationResult();
+          },
+        ),
+        statusLoader: () async {
+          statusReadCount++;
+          throw StateError('temporary status failure');
+        },
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                ),
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Start migration'));
+    await tester.pumpAndSettle();
+
+    expect(statusReadCount, 1);
+    expect(find.text("Couldn't start migration. Try again."), findsNothing);
+    expect(find.text('Migration in Progress'), findsOneWidget);
   });
 
   testWidgets('maps a live denomination status to Preparing', (tester) async {

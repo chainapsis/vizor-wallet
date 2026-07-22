@@ -1,5 +1,7 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
+const _mobileMigrationStartVerificationTimeout = Duration(seconds: 2);
+
 class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
   const _MobileMigrationPrivateReview({
     required this.data,
@@ -188,6 +190,9 @@ class _MobileMigrationPrivateReviewState
     rust_sync.OrchardMigrationPrivatePlan plan,
   ) async {
     if (_isStarting) return;
+    IronwoodMigrationStatusRequest? statusRequest;
+    String? softwareAccountUuid;
+    var softwareStartAttempted = false;
     setState(() {
       _isStarting = true;
       _startError = null;
@@ -200,7 +205,7 @@ class _MobileMigrationPrivateReviewState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final statusRequest = IronwoodMigrationStatusRequest(
+      statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
@@ -212,6 +217,8 @@ class _MobileMigrationPrivateReviewState
         return;
       }
 
+      softwareAccountUuid = accountUuid;
+      softwareStartAttempted = true;
       await ref
           .read(ironwoodMigrationServiceProvider)
           .startSoftwarePrivateMigration(
@@ -219,20 +226,23 @@ class _MobileMigrationPrivateReviewState
             approvedSchedule: plan.scheduledTransfers,
           );
       if (!mounted) return;
-      ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
-      final startedStatus = await ref.read(
-        ironwoodMigrationStatusProvider(statusRequest).future,
-      );
-      if (!mounted) return;
-      if (startedStatus.activeRunId == null) {
+      if (!await _migrationMayHaveStarted(statusRequest)) {
         throw StateError('Migration did not create an active run.');
       }
-      ref.invalidate(ironwoodMigrationRouteCtaProvider);
-      ref.invalidate(ironwoodHomeMigrationCtaProvider);
-      ref.invalidate(ironwoodMigrationFlowDataProvider);
-      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-      context.go('/migration/private/status', extra: plan);
+      if (!mounted) return;
+      _openMigrationStatus(plan);
     } catch (error) {
+      if (!mounted) return;
+      final request = statusRequest;
+      if (softwareStartAttempted &&
+          softwareAccountUuid != null &&
+          request != null &&
+          await _migrationMayHaveStarted(request)) {
+        unawaited(_recoverBackgroundTrackingBestEffort(softwareAccountUuid));
+        if (!mounted) return;
+        _openMigrationStatus(plan);
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _startError = _mobilePrivateMigrationStartErrorMessage(error);
@@ -244,6 +254,42 @@ class _MobileMigrationPrivateReviewState
         });
       }
     }
+  }
+
+  Future<bool> _migrationMayHaveStarted(
+    IronwoodMigrationStatusRequest request,
+  ) async {
+    ref.invalidate(ironwoodMigrationStatusProvider(request));
+    try {
+      final status = await ref
+          .read(ironwoodMigrationStatusProvider(request).future)
+          .timeout(_mobileMigrationStartVerificationTimeout);
+      return status.activeRunId != null;
+    } catch (_) {
+      // A status read failure after submission is not proof that no durable
+      // migration run exists. The status route can safely reconcile it.
+      return true;
+    }
+  }
+
+  Future<void> _recoverBackgroundTrackingBestEffort(String accountUuid) async {
+    try {
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+    } catch (error) {
+      debugPrint(
+        'Failed to recover Ironwood background migration tracking: $error',
+      );
+    }
+  }
+
+  void _openMigrationStatus(rust_sync.OrchardMigrationPrivatePlan plan) {
+    ref.invalidate(ironwoodMigrationRouteCtaProvider);
+    ref.invalidate(ironwoodHomeMigrationCtaProvider);
+    ref.invalidate(ironwoodMigrationFlowDataProvider);
+    ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+    context.go('/migration/private/status', extra: plan);
   }
 
   @override
