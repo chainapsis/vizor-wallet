@@ -13,6 +13,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/ironwood_migration_phases.dart';
 import 'ironwood_migration_background_credential_store.dart';
 import 'ironwood_migration_operation_registry.dart';
 
@@ -164,6 +165,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPlatformCheck? supportsBackgroundMigration,
     IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
+    IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
@@ -204,6 +206,8 @@ class IronwoodMigrationService {
        isHardwareAccount = isHardwareAccount ?? _defaultIsHardwareAccount,
        scheduleBackgroundMigration =
            scheduleBackgroundMigration ?? _defaultScheduleBackgroundMigration,
+       startBackgroundPreparation =
+           startBackgroundPreparation ?? _defaultStartBackgroundPreparation,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
        requestNotificationAuthorization =
@@ -269,6 +273,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPlatformCheck supportsBackgroundMigration;
   final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
+  final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
   final IronwoodMigrationNotificationAuthorizationRequester
   requestNotificationAuthorization;
@@ -386,7 +391,7 @@ class IronwoodMigrationService {
       );
     }
 
-    return _runCredentialOperation(
+    final result = await _runCredentialOperation(
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
@@ -414,6 +419,10 @@ class IronwoodMigrationService {
         return resultFuture;
       },
     );
+    if (result.status == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      await _startBackgroundPreparationBestEffort();
+    }
+    return result;
   }
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
@@ -1084,6 +1093,18 @@ class IronwoodMigrationService {
     }
   }
 
+  Future<void> _startBackgroundPreparationBestEffort() async {
+    if (!isIOS() || !isMobile()) return;
+    try {
+      await startBackgroundPreparation();
+    } catch (error) {
+      debugPrint(
+        'Failed to continue Ironwood migration preparation in background: '
+        '$error',
+      );
+    }
+  }
+
   Future<void> discardKeystonePrivateMigrationRequest({
     required String accountUuid,
     required String requestId,
@@ -1153,6 +1174,14 @@ const _backgroundMigrationChannel = MethodChannel(
 Future<bool> _defaultScheduleBackgroundMigration() async {
   if (!Platform.isIOS) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>('schedule') ??
+      false;
+}
+
+Future<bool> _defaultStartBackgroundPreparation() async {
+  if (!Platform.isIOS) return false;
+  return await _backgroundMigrationChannel.invokeMethod<bool>(
+        'startPreparation',
+      ) ??
       false;
 }
 

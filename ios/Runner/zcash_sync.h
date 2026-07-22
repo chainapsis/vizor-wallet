@@ -17,6 +17,14 @@ typedef struct {
 
 typedef void (*SyncProgressCallback)(CSyncProgress);
 
+typedef struct {
+    uint8_t state;
+    uint32_t confirmation_count;
+    uint32_t confirmation_target;
+    uint32_t completed_stage_count;
+    uint32_t total_stage_count;
+} CMigrationPreparationProgress;
+
 /// Run full sync. Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error, 2 on panic.
 int32_t zcash_run_full_sync(
@@ -24,6 +32,25 @@ int32_t zcash_run_full_sync(
     const char* lightwalletd_url,
     const char* network,
     SyncProgressCallback progress_callback
+);
+
+int32_t zcash_run_full_sync_for_migration_preparation(
+    const char* db_path,
+    const char* lightwalletd_url,
+    const char* network,
+    SyncProgressCallback progress_callback
+);
+
+int32_t zcash_advance_migration_preparation(
+    const char* db_path,
+    const char* lightwalletd_url,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    const uint8_t* credential,
+    uintptr_t credential_len,
+    const char* salt_base64,
+    CMigrationPreparationProgress* output
 );
 
 /// Cancel a running sync.

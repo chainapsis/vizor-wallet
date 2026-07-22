@@ -31,6 +31,7 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		B7C6E66ECB0517259883CB1B /* LiveActivitiesAppAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F754445942A6FAE31362F45C /* LiveActivitiesAppAttributes.swift */; };
 		BGSYNC001ED2DC5600515810 /* BackgroundSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */; };
+		BGPREP001ED2DC5600515810 /* BackgroundMigrationPreparationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BGPREP000ED2DC5600515810 /* BackgroundMigrationPreparationManager.swift */; };
 		NATIVELW1ED2DC5600515810 /* NativeLightwalletdClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = NATIVELW0ED2DC5600515810 /* NativeLightwalletdClient.swift */; };
 		B6A100022F9A000100000001 /* BackgroundMigrationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A100012F9A000100000001 /* BackgroundMigrationManager.swift */; };
 		BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */; };
@@ -118,6 +119,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackgroundSyncManager.swift; sourceTree = "<group>"; };
+		BGPREP000ED2DC5600515810 /* BackgroundMigrationPreparationManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackgroundMigrationPreparationManager.swift; sourceTree = "<group>"; };
 		NATIVELW0ED2DC5600515810 /* NativeLightwalletdClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NativeLightwalletdClient.swift; sourceTree = "<group>"; };
 		B6A100012F9A000100000001 /* BackgroundMigrationManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackgroundMigrationManager.swift; sourceTree = "<group>"; };
 		BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BiometricUnlockHandler.swift; sourceTree = "<group>"; };
@@ -270,6 +272,7 @@
 				OUTBOX000000000000000005 /* BackgroundMigrationOutboxChannel.swift */,
 				NATIVELW0ED2DC5600515810 /* NativeLightwalletdClient.swift */,
 				BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */,
+				BGPREP000ED2DC5600515810 /* BackgroundMigrationPreparationManager.swift */,
 				B6A100012F9A000100000001 /* BackgroundMigrationManager.swift */,
 				BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */,
 				DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */,
@@ -547,6 +550,7 @@
 				OUTBOX010000000000000005 /* BackgroundMigrationOutboxChannel.swift in Sources */,
 				NATIVELW1ED2DC5600515810 /* NativeLightwalletdClient.swift in Sources */,
 				BGSYNC001ED2DC5600515810 /* BackgroundSyncManager.swift in Sources */,
+				BGPREP001ED2DC5600515810 /* BackgroundMigrationPreparationManager.swift in Sources */,
 				B6A100022F9A000100000001 /* BackgroundMigrationManager.swift in Sources */,
 				BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */,
 				DATEPCK01ED2DC5600515810 /* DatePickerHandler.swift in Sources */,

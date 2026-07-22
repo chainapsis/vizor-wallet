@@ -126,6 +126,15 @@ impl MigrationBroadcastPolicy<'_> {
         cancel: None,
     };
 
+    fn background_preparation(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
+        MigrationBroadcastPolicy {
+            max_per_step: None,
+            max_proofs_per_step: None,
+            defer_broadcast_after_proving: false,
+            cancel: Some(cancel),
+        }
+    }
+
     fn is_cancelled(self) -> bool {
         self.cancel
             .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
@@ -1170,6 +1179,67 @@ async fn prepare_orchard_migration_outbox(
         run.target_values_zatoshi.len() as u32,
         run.target_values_zatoshi.iter().sum(),
     ))
+}
+
+/// Advances only the denomination preparation graph for an existing migration.
+///
+/// This deliberately stops at `ready_to_migrate`: child proof creation stays
+/// in the foreground, while prepared migration transaction broadcast belongs
+/// to the separate mobile outbox lane.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn advance_orchard_migration_preparation_for_run(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    cancel: &AtomicBool,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Err("Ironwood migration preparation has no active run".to_string());
+    };
+    if run.run_id != expected_run_id {
+        return Err("Ironwood migration preparation run changed".to_string());
+    }
+
+    if run.phase != super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: run.phase.clone(),
+            broadcasted_count: 0,
+            total_count: run.target_values_zatoshi.len() as u32,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+        });
+    }
+
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        MigrationBroadcastPolicy::background_preparation(cancel),
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => Ok(result),
+        StagedDenominationAdvance::Ready => Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
+            broadcasted_count: 0,
+            total_count: run.target_values_zatoshi.len() as u32,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+        }),
+    }
 }
 
 pub async fn broadcast_due_orchard_migration_transactions(

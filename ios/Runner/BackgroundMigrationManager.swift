@@ -7,7 +7,56 @@ import UserNotifications
 let ironwoodMigrationBackgroundCredentialService =
   "com.keplr.vizor.ironwood-migration-background.v1"
 
-private enum IronwoodMigrationBackgroundCredentialStore {
+struct IronwoodMigrationBackgroundManifest: Decodable {
+  let version: Int
+  let network: String
+  let accountUuid: String
+  let dbPath: String
+  let lightwalletdUrl: String
+  let credentialHex: String
+  let saltBase64: String
+  let expectedRunId: String?
+}
+
+enum IronwoodMigrationBackgroundCredentialStore {
+  static func loadAll() -> [IronwoodMigrationBackgroundManifest]? {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: ironwoodMigrationBackgroundCredentialService,
+      kSecReturnData: true,
+      kSecMatchLimit: kSecMatchLimitAll,
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return [] }
+    guard status == errSecSuccess else {
+      print("[BGMigration] keychain load failed: \(status)")
+      return nil
+    }
+    let values: [Data]
+    if let data = result as? Data {
+      values = [data]
+    } else {
+      values = result as? [Data] ?? []
+    }
+    var manifests: [IronwoodMigrationBackgroundManifest] = []
+    for value in values {
+      guard
+        let manifest = try? JSONDecoder().decode(
+          IronwoodMigrationBackgroundManifest.self,
+          from: value
+        )
+      else {
+        print("[BGMigration] keychain manifest decode failed")
+        return nil
+      }
+      manifests.append(manifest)
+    }
+    return manifests.sorted {
+      ($0.network, $0.accountUuid) < ($1.network, $1.accountUuid)
+    }
+  }
+
   static func delete(network: String, accountUuid: String) {
     delete(account: "\(network):\(accountUuid)")
   }

@@ -171,6 +171,149 @@ void main() {
   );
 
   test(
+    'iOS software start hands denomination confirmation to background preparation',
+    () async {
+      var preparationStartCount = 0;
+      final statuses = [
+        _migrationStatus(),
+        _migrationStatus(
+          phase: 'waiting_denom_confirmations',
+          activeRunId: 'run-1',
+        ),
+      ];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+        isMacOS: () => false,
+        isMobile: () => true,
+        isIOS: () => true,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        requestNotificationAuthorization: () async => true,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(preparationStartCount, 1);
+    },
+  );
+
+  test(
+    'iOS software start does not start preparation after denomination is ready',
+    () async {
+      var preparationStartCount = 0;
+      final statuses = [
+        _migrationStatus(),
+        _migrationStatus(phase: 'ready_to_migrate', activeRunId: 'run-1'),
+      ];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+        isMacOS: () => false,
+        isMobile: () => true,
+        isIOS: () => true,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        requestNotificationAuthorization: () async => true,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'ready_to_migrate'),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'ready_to_migrate'),
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(preparationStartCount, 0);
+    },
+  );
+
+  test(
     'explicit iOS software migration start requests notification authorization',
     () async {
       const channel = MethodChannel('com.zcash.wallet/background_migration');

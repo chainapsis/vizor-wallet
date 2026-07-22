@@ -16,6 +16,7 @@ import UIKit
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
+      BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
       )
@@ -40,6 +41,12 @@ import UIKit
         }
       case "schedule":
         result(BackgroundMigrationManager.shared.schedule())
+      case "startPreparation":
+        if #available(iOS 26.0, *) {
+          result(BackgroundMigrationPreparationManager.shared.start())
+        } else {
+          result(false)
+        }
       case "stageOutboxBatch":
         do {
           result(try BackgroundMigrationOutboxChannel.stageBatch(arguments: call.arguments))
@@ -73,6 +80,10 @@ import UIKit
         }
       case "cancel":
         BackgroundMigrationManager.shared.cancelIfNoRunnableWork()
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .cancelIfNoActivePreparation()
+        }
         result(true)
       case "quiesce":
         BackgroundMigrationManager.shared.quiesce {
