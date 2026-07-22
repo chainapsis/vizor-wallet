@@ -7344,6 +7344,7 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_partIndex = <u32>::sse_decode(deserializer);
+        let mut var_scheduleOrder = <Option<u32>>::sse_decode(deserializer);
         let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
         let mut var_state = <crate::api::sync::MigrationPartState>::sse_decode(deserializer);
         let mut var_txidHex = <Option<String>>::sse_decode(deserializer);
@@ -7353,6 +7354,7 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
         let mut var_confirmationTarget = <u32>::sse_decode(deserializer);
         return crate::api::sync::MigrationPartStatus {
             part_index: var_partIndex,
+            schedule_order: var_scheduleOrder,
             value_zatoshi: var_valueZatoshi,
             state: var_state,
             txid_hex: var_txidHex,
@@ -9675,6 +9677,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPartStatus {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.part_index.into_into_dart().into_dart(),
+            self.schedule_order.into_into_dart().into_dart(),
             self.value_zatoshi.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
             self.txid_hex.into_into_dart().into_dart(),
@@ -11983,6 +11986,7 @@ impl SseEncode for crate::api::sync::MigrationPartStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.part_index, serializer);
+        <Option<u32>>::sse_encode(self.schedule_order, serializer);
         <u64>::sse_encode(self.value_zatoshi, serializer);
         <crate::api::sync::MigrationPartState>::sse_encode(self.state, serializer);
         <Option<String>>::sse_encode(self.txid_hex, serializer);

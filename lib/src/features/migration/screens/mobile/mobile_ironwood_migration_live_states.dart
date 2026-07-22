@@ -329,11 +329,13 @@ class _MobileMigrationMigratingState
       previewPlan: widget.previewPlan,
       fallback: widget.data.amountText,
     );
+    final etaHeight = _mobileMigrationEtaHeight(syncState);
+    final schedulingHeight = _mobileMigrationSchedulingHeight(syncState);
     final parts = _mobileMigrationPartPresentations(
       status: status,
       previewPlan: widget.previewPlan,
       explicitParts: widget.previewParts,
-      currentHeight: _mobileMigrationHeight(syncState),
+      currentHeight: etaHeight,
     );
     final partCount = parts.isNotEmpty
         ? parts.length
@@ -342,9 +344,9 @@ class _MobileMigrationMigratingState
         ? widget.previewPlan == null
               ? 'Schedule pending'
               : _migrationArrivalLabel(widget.previewPlan!)
-        : migrationCompletionTimingLabel(
+        : migrationApproximateCompletionTimingLabel(
             status,
-            currentHeight: _mobileMigrationHeight(syncState),
+            currentHeight: etaHeight,
           );
     final spendable = _mobileSpendableAmountText(
       status,
@@ -358,7 +360,7 @@ class _MobileMigrationMigratingState
         (status != null &&
             _hasDueMobileMigrationTransfer(
               status,
-              currentHeight: _mobileMigrationHeight(syncState),
+              currentHeight: schedulingHeight,
             ));
     final coordinator = widget.enableRecovery
         ? ref.watch(ironwoodMigrationCoordinatorProvider)
@@ -435,13 +437,7 @@ class _MobileMigrationMigratingState
         else
           SizedBox(height: recoveryRequired ? 180 : 304, child: partsContent),
         SizedBox(height: compact || recoveryRequired ? AppSpacing.s : 52),
-        _ReviewRow(
-          label: 'Est. completion',
-          value: completion,
-          showInfo: true,
-          onInfoPressed: () =>
-              unawaited(_showMobileMigrationTimingSheet(context)),
-        ),
+        _ReviewRow(label: 'Est. completion', value: completion),
         const SizedBox(height: AppSpacing.xs),
         _ReviewRow(
           label: 'Currently spendable balance',
@@ -493,12 +489,18 @@ class _MobileMigrationMigratingState
   }
 }
 
-int _mobileMigrationHeight(SyncState? syncState) {
+int _mobileMigrationSchedulingHeight(SyncState? syncState) {
   if (syncState == null) return 0;
   if (syncState.scannedHeight > 0 && syncState.chainTipHeight > 0) {
     return math.min(syncState.scannedHeight, syncState.chainTipHeight);
   }
   return math.max(syncState.scannedHeight, syncState.chainTipHeight);
+}
+
+int _mobileMigrationEtaHeight(SyncState? syncState) {
+  if (syncState == null) return 0;
+  if (syncState.chainTipHeight > 0) return syncState.chainTipHeight;
+  return syncState.scannedHeight;
 }
 
 bool _hasDueMobileMigrationTransfer(

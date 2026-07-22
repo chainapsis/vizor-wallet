@@ -564,6 +564,25 @@ fn timing_projection_includes_proof_retry_schedule_and_trusted_depth() {
     assert_eq!(projection.next_action_height, Some(200));
     assert_eq!(projection.next_action_part_index, Some(0));
     assert_eq!(projection.estimated_completion_height, Some(391));
+    assert_eq!(
+        projection.schedule_order_by_part,
+        BTreeMap::from([(0, 0), (1, 1)])
+    );
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![
+            MigrationTimingProjectedSignedPart {
+                part_index: 0,
+                schedule_start_height: 100,
+                scheduled_height: 244,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 1,
+                schedule_start_height: 100,
+                scheduled_height: 388,
+            },
+        ]
+    );
 }
 
 #[test]
@@ -606,6 +625,14 @@ fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
     assert_eq!(projection.next_action_height, Some(550));
     assert_eq!(projection.next_action_part_index, Some(1));
     assert_eq!(projection.estimated_completion_height, Some(791));
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![MigrationTimingProjectedSignedPart {
+            part_index: 1,
+            schedule_start_height: 500,
+            scheduled_height: 788,
+        }]
+    );
 }
 
 #[test]

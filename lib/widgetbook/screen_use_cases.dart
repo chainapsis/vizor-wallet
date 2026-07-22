@@ -966,19 +966,19 @@ Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
         label: 'Part 4',
         status: MobileIronwoodMigrationPartStatus.pending,
         detail: '1 ZEC',
-        eta: 'Waiting · ~12:37',
+        eta: '~20 hrs',
       ),
       MobileIronwoodMigrationPartPresentation(
         label: 'Part 5',
         status: MobileIronwoodMigrationPartStatus.pending,
         detail: '5 ZEC',
-        eta: 'Queued',
+        eta: '~20 hrs',
       ),
       MobileIronwoodMigrationPartPresentation(
         label: 'Part 6',
         status: MobileIronwoodMigrationPartStatus.pending,
         detail: '10 ZEC',
-        eta: 'Queued',
+        eta: '~20 hrs',
       ),
     ],
   );

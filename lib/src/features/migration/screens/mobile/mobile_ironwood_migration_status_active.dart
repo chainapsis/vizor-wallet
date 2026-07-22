@@ -234,7 +234,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Flexible(
             child: Text(
-              'Done',
+              'Completed',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -247,7 +247,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         children: [
           Flexible(
             child: Text(
-              'Action needed',
+              'Needs input',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -262,13 +262,13 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         ],
       ),
       MobileIronwoodMigrationPartStatus.active => Text(
-        part.eta ?? 'Sending',
+        part.eta ?? 'Migrating...',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,
       ),
       MobileIronwoodMigrationPartStatus.pending => Text(
-        part.eta ?? 'Queued',
+        part.eta ?? 'Waiting',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,

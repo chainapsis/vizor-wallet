@@ -210,12 +210,47 @@ void main() {
     );
   });
 
+  test(
+    'estimates completion while an active schedule is being recalculated',
+    () {
+      final now = DateTime(2026, 7, 17, 12);
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        activeRunId: 'run-1',
+        broadcasts: const [],
+        totalCount: 3,
+        nextActionHeight: 1_020,
+        confirmationTarget: 3,
+      );
+
+      expect(
+        migrationApproximateCompletionTimingLabel(
+          status,
+          now: now,
+          currentHeight: 1_000,
+        ),
+        'Jul 17, 18:28',
+      );
+    },
+  );
+
   test('keeps next-day action labels compact', () {
     final now = DateTime(2026, 7, 17, 23, 50);
 
     expect(
       migrationHeightTimingLabel(1_020, currentHeight: 1_000, now: now),
       '~Jul 18',
+    );
+  });
+
+  test('formats remaining migration delay as a duration', () {
+    expect(
+      migrationHeightRemainingDurationLabel(1_020, currentHeight: 1_000),
+      '~in 25 minutes',
+    );
+    expect(
+      migrationHeightRemainingDurationLabel(1_000, currentHeight: 1_000),
+      'soon',
     );
   });
 }

@@ -1444,27 +1444,27 @@ void main() {
     expect(find.text('Migration 12 notes'), findsOneWidget);
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
-    expect(find.text('Action needed'), findsOneWidget);
-    expect(find.text('Sending'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('Migrating...'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
-        matching: find.text('Done'),
+        matching: find.text('Completed'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_1')),
-        matching: find.text('Action needed'),
+        matching: find.text('Needs input'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_2')),
-        matching: find.text('Sending'),
+        matching: find.text('Migrating...'),
       ),
       findsOneWidget,
     );
@@ -2032,7 +2032,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Confirming · 2/3'), findsOneWidget);
     expect(find.bySemanticsLabel('Part 2 progress 90%'), findsOneWidget);
     expect(find.text('Currently spendable balance'), findsOneWidget);
@@ -2081,27 +2081,27 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
-        matching: find.text('Done'),
+        matching: find.text('Completed'),
       ),
       findsNothing,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_1')),
-        matching: find.text('Done'),
+        matching: find.text('Completed'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_ironwood_part_row_2')),
-        matching: find.text('Sending'),
+        matching: find.text('Migrating...'),
       ),
       findsOneWidget,
     );
   });
 
-  testWidgets('shows compact queued and waiting states with timing help', (
+  testWidgets('shows compact waiting states without timing help', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -2118,6 +2118,118 @@ void main() {
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
+          scannedHeight: 2_999_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Queued'), findsNothing);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.textContaining('~'), findsOneWidget);
+    expect(find.text('Waiting'), findsOneWidget);
+    expect(find.bySemanticsLabel('About estimated completion'), findsNothing);
+  });
+
+  testWidgets('shows projected timing for every prepared migration part', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 3; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          valueZatoshi: BigInt.from(412_000_000),
+          state: rust_sync.MigrationPartState.preparing,
+          scheduleStartHeight: 3_000_000,
+          scheduledHeight: 3_000_020 + index * 20,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          parts: parts,
+          nextActionHeight: 3_000_020,
+          nextActionPartIndex: 0,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 2_999_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Queued'), findsNothing);
+    expect(find.text('~in 25 minutes'), findsOneWidget);
+    for (var index = 0; index < 3; index++) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('mobile_ironwood_part_row_$index')),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Text && (widget.data?.startsWith('~') ?? false),
+          ),
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('keeps the analyzed broadcast order in migration progress', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        scheduleOrder: 2,
+        valueZatoshi: BigInt.from(100_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        scheduledHeight: 3_000_020,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 1,
+        scheduleOrder: 0,
+        valueZatoshi: BigInt.from(200_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        scheduledHeight: 3_000_020,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 2,
+        scheduleOrder: 1,
+        valueZatoshi: BigInt.from(300_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        scheduledHeight: 3_000_040,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          parts: parts,
+          nextActionHeight: 3_000_020,
+          nextActionPartIndex: 1,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
           scannedHeight: 3_000_000,
           chainTipHeight: 3_000_000,
         ),
@@ -2125,16 +2237,27 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Queued'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
-    expect(find.textContaining('Waiting · ~'), findsOneWidget);
-    expect(find.bySemanticsLabel('About estimated completion'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('About estimated completion'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('About migration timing'), findsOneWidget);
-    expect(find.textContaining('privacy checkpoints'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
+        matching: find.textContaining('2.00 ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_row_1')),
+        matching: find.textContaining('3.00 ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_row_2')),
+        matching: find.textContaining('1.00 ZEC'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('keeps an all-confirmed waiting run in progress', (tester) async {
@@ -2153,7 +2276,7 @@ void main() {
 
     expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('Migration complete'), findsNothing);
-    expect(find.text('Done'), findsNWidgets(3));
+    expect(find.text('Completed'), findsNWidgets(3));
   });
 
   testWidgets('offers explicit recovery when a scheduled transfer is due', (

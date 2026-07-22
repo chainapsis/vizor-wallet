@@ -219,6 +219,7 @@ pub(crate) enum MigrationPartState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MigrationPartStatus {
     pub part_index: u32,
+    pub schedule_order: Option<u32>,
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
@@ -263,11 +264,20 @@ pub(crate) struct MigrationStatus {
     pub parts: Vec<MigrationPartStatus>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct MigrationTimingProjection {
     next_action_height: Option<u32>,
     estimated_completion_height: Option<u32>,
     next_action_part_index: Option<u32>,
+    schedule_order_by_part: BTreeMap<u32, u32>,
+    projected_signed_parts: Vec<MigrationTimingProjectedSignedPart>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MigrationTimingProjectedSignedPart {
+    part_index: u32,
+    schedule_start_height: u32,
+    scheduled_height: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -2325,6 +2335,14 @@ fn calculate_migration_timing_projection(
     total_count: u32,
     confirmation_target: u32,
 ) -> Result<MigrationTimingProjection, String> {
+    let mut schedule_order_by_part = BTreeMap::new();
+    for (schedule_order, entry) in schedule.iter().enumerate() {
+        if let Some(part_index) = entry.part_index {
+            let schedule_order = u32::try_from(schedule_order)
+                .map_err(|_| "Migration schedule order exceeds u32".to_string())?;
+            schedule_order_by_part.insert(part_index, schedule_order);
+        }
+    }
     let scheduled_next = pending
         .iter()
         .filter(|part| part.status == "scheduled")
@@ -2349,7 +2367,7 @@ fn calculate_migration_timing_projection(
         (None, None) => None,
     };
 
-    let projected_signed_broadcast_heights = if signed_children.is_empty() {
+    let projected_signed_parts = if signed_children.is_empty() {
         Vec::new()
     } else {
         // Promotion reuses the first persisted schedule origin. Before any
@@ -2383,7 +2401,11 @@ fn calculate_migration_timing_projection(
                 schedule_origin
                     .checked_add(offset)
                     .ok_or("Migration projected broadcast height overflow")
-                    .map(|height| height.max(proof_retry_height.unwrap_or(0)))
+                    .map(|height| MigrationTimingProjectedSignedPart {
+                        part_index: child.part_index,
+                        schedule_start_height: schedule_origin,
+                        scheduled_height: height.max(proof_retry_height.unwrap_or(0)),
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?
     };
@@ -2395,9 +2417,9 @@ fn calculate_migration_timing_projection(
             .iter()
             .filter(|part| part.status == "scheduled" && part.scheduled_height <= retry_height)
             .count();
-        let signed_due = projected_signed_broadcast_heights
+        let signed_due = projected_signed_parts
             .iter()
-            .filter(|height| **height <= retry_height)
+            .filter(|part| part.scheduled_height <= retry_height)
             .count();
         pending_due.saturating_add(signed_due) > 1
     });
@@ -2428,8 +2450,10 @@ fn calculate_migration_timing_projection(
             }));
         }
 
-        if let Some(projected_broadcast_height) =
-            projected_signed_broadcast_heights.iter().copied().max()
+        if let Some(projected_broadcast_height) = projected_signed_parts
+            .iter()
+            .map(|part| part.scheduled_height)
+            .max()
         {
             let projected_completion_height = projected_broadcast_height
                 .checked_add(confirmation_target)
@@ -2449,6 +2473,8 @@ fn calculate_migration_timing_projection(
         next_action_height: next_action.map(|value| value.0),
         next_action_part_index: next_action.and_then(|value| value.1),
         estimated_completion_height,
+        schedule_order_by_part,
+        projected_signed_parts,
     })
 }
 
@@ -2511,7 +2537,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
             | PHASE_FAILED_RECOVERABLE
             | PHASE_PAUSED
     ) && pending_tx_count == 0;
-    let parts = migration_parts_for_run(
+    let mut parts = migration_parts_for_run(
         conn,
         &run.run_id,
         &run.target_values_zatoshi,
@@ -2524,6 +2550,23 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         total_count,
         denomination_confirmation_target,
     )?;
+    for part in &mut parts {
+        part.schedule_order = timing_projection
+            .schedule_order_by_part
+            .get(&part.part_index)
+            .copied();
+    }
+    for projected in &timing_projection.projected_signed_parts {
+        if let Some(part) = parts
+            .iter_mut()
+            .find(|part| part.part_index == projected.part_index)
+        {
+            if part.state == MigrationPartState::Preparing {
+                part.schedule_start_height = Some(projected.schedule_start_height);
+                part.scheduled_height = Some(projected.scheduled_height);
+            }
+        }
+    }
 
     Ok(MigrationStatus {
         phase,
@@ -2579,6 +2622,7 @@ fn migration_parts_for_run(
         .enumerate()
         .map(|(part_index, value_zatoshi)| MigrationPartStatus {
             part_index: part_index as u32,
+            schedule_order: None,
             value_zatoshi: *value_zatoshi,
             state: initial_state,
             txid_hex: None,
@@ -2675,6 +2719,7 @@ fn migration_parts_for_run(
         };
         let part = MigrationPartStatus {
             part_index,
+            schedule_order: None,
             value_zatoshi: parts
                 .get(part_index as usize)
                 .map(|part| part.value_zatoshi)
@@ -2712,6 +2757,7 @@ fn denomination_migration_parts_for_run(
         .enumerate()
         .map(|(part_index, value_zatoshi)| MigrationPartStatus {
             part_index: part_index as u32,
+            schedule_order: None,
             value_zatoshi: *value_zatoshi,
             state: MigrationPartState::Preparing,
             txid_hex: None,
@@ -2755,6 +2801,7 @@ fn denomination_migration_parts_for_run(
 
             let part = MigrationPartStatus {
                 part_index,
+                schedule_order: None,
                 value_zatoshi: parts
                     .get(part_index as usize)
                     .map(|part| part.value_zatoshi)

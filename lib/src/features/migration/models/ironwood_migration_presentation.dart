@@ -238,6 +238,55 @@ String migrationCompletionTimingLabel(
   );
 }
 
+/// Returns a local completion estimate when the persisted schedule is being
+/// recalculated and cannot yet provide an exact final height.
+///
+/// This is intended for progress UI only. Scheduling and broadcast decisions
+/// continue to use the persisted Rust state.
+String migrationApproximateCompletionTimingLabel(
+  rust_sync.MigrationStatus status, {
+  DateTime? now,
+  required int currentHeight,
+  bool abbreviateMonth = true,
+}) {
+  final exact = migrationCompletionTimingLabel(
+    status,
+    now: now,
+    currentHeight: currentHeight,
+    abbreviateMonth: abbreviateMonth,
+  );
+  if (exact != 'Schedule pending' || currentHeight <= 0) return exact;
+
+  final remainingPartCount = status.parts.isNotEmpty
+      ? status.parts
+            .where(
+              (part) => part.state != rust_sync.MigrationPartState.completed,
+            )
+            .length
+      : (status.totalCount - status.confirmedTxCount).clamp(
+          0,
+          status.totalCount,
+        );
+  if (remainingPartCount <= 0) return exact;
+
+  final nextHeight = status.nextActionHeight ?? currentHeight;
+  final blocksUntilNext = nextHeight > currentHeight
+      ? nextHeight - currentHeight
+      : 0;
+  final remainingGaps = remainingPartCount > 1 ? remainingPartCount - 1 : 0;
+  final estimatedBlocks =
+      blocksUntilNext +
+      status.scheduleMeanDelayBlocks * remainingGaps +
+      status.denominationConfirmationTarget;
+  if (estimatedBlocks <= 0) return exact;
+
+  return _estimatedLocalCompletionTime(
+    estimatedBlocks,
+    now: now,
+    abbreviateMonth: abbreviateMonth,
+  );
+}
+
 String? migrationNextActionTimingLabel(
   rust_sync.MigrationStatus status, {
   required int? currentHeight,
@@ -274,6 +323,20 @@ String migrationHeightTimingLabel(
     return '~$time';
   }
   return '~${_shortMonth(nextTime.month)} ${nextTime.day}';
+}
+
+String migrationHeightRemainingDurationLabel(
+  int targetHeight, {
+  required int currentHeight,
+}) {
+  if (targetHeight <= currentHeight) return 'soon';
+  final remainingBlocks = targetHeight - currentHeight;
+  final seconds = remainingBlocks * _estimatedSecondsPerBlock;
+  final minutes = (seconds / Duration.secondsPerMinute).ceil();
+  if (minutes < 60) {
+    return minutes == 1 ? '~in 1 minute' : '~in $minutes minutes';
+  }
+  return _formatMigrationDuration(remainingBlocks);
 }
 
 String _estimatedLocalCompletionTime(

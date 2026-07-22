@@ -711,6 +711,7 @@ pub enum MigrationPartState {
 
 pub struct MigrationPartStatus {
     pub part_index: u32,
+    pub schedule_order: Option<u32>,
     pub value_zatoshi: u64,
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
@@ -1069,6 +1070,7 @@ pub fn get_orchard_migration_status(
                 .into_iter()
                 .map(|part| MigrationPartStatus {
                     part_index: part.part_index,
+                    schedule_order: part.schedule_order,
                     value_zatoshi: part.value_zatoshi,
                     state: match part.state {
                         wallet_sync::MigrationPartState::Preparing => MigrationPartState::Preparing,

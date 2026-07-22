@@ -1108,6 +1108,7 @@ enum MigrationPartState {
 
 class MigrationPartStatus {
   final int partIndex;
+  final int? scheduleOrder;
   final BigInt valueZatoshi;
   final MigrationPartState state;
   final String? txidHex;
@@ -1118,6 +1119,7 @@ class MigrationPartStatus {
 
   const MigrationPartStatus({
     required this.partIndex,
+    this.scheduleOrder,
     required this.valueZatoshi,
     required this.state,
     this.txidHex,
@@ -1130,6 +1132,7 @@ class MigrationPartStatus {
   @override
   int get hashCode =>
       partIndex.hashCode ^
+      scheduleOrder.hashCode ^
       valueZatoshi.hashCode ^
       state.hashCode ^
       txidHex.hashCode ^
@@ -1144,6 +1147,7 @@ class MigrationPartStatus {
       other is MigrationPartStatus &&
           runtimeType == other.runtimeType &&
           partIndex == other.partIndex &&
+          scheduleOrder == other.scheduleOrder &&
           valueZatoshi == other.valueZatoshi &&
           state == other.state &&
           txidHex == other.txidHex &&
