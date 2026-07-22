@@ -17,19 +17,9 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    'native background wakes cap proving and submit due children while Flutter is paused',
+    'persists one proof without broadcasting before process restart',
     (tester) async {
       tolerateRenderOverflows();
-      addTearDown(() async {
-        resumeFlutterAfterNativeBackgroundMigration(tester);
-        try {
-          await postDriver('/lightwalletd/start', const {});
-        } catch (_) {
-          // The runner resets the stack after a failed recovery attempt.
-        }
-        await revokeAllBackgroundMigrationAuthorization(ignoreErrors: true);
-        await cleanupE2eWalletState();
-      });
       await cleanupE2eWalletState();
 
       final initialChain = await getDriver('/status');
@@ -72,102 +62,45 @@ void main() {
         (status) =>
             status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0,
-        description: 'background migration denomination run',
+        description: 'proof-restart denomination run',
       );
       expect(started.activeRunId, isNotNull);
-      expect(started.totalCount, greaterThanOrEqualTo(2));
       expect(started.pendingTxCount, 0);
       expect(started.signedChildPcztCount, greaterThanOrEqualTo(2));
 
-      final submittedBefore =
-          started.broadcastedTxCount + started.confirmedTxCount;
-      expect(started.totalCount - submittedBefore, greaterThanOrEqualTo(2));
-
-      // Pause Flutter before the chain advances so no foreground coordinator
-      // work can be mistaken for native background progress.
       await pauseFlutterAndQuiesceMigrationForNativeWakes(tester, container);
       final paused = await mobileRegtestMigrationStatus(accountUuid);
       expect(paused.pendingTxCount, started.pendingTxCount);
       expect(paused.signedChildPcztCount, started.signedChildPcztCount);
       expect(
         paused.broadcastedTxCount + paused.confirmedTxCount,
-        submittedBefore,
+        started.broadcastedTxCount + started.confirmedTxCount,
       );
-      // Make the denomination stage trusted and every regtest schedule offset
-      // due while only the native background runner is allowed to advance.
       await postDriver('/mine', const {'blocks': 50});
-      final firstProof = await _runNativeWakesUntilProofPersisted(
+      final proofed = await _runUntilOneProofIsPersisted(
         accountUuid: accountUuid,
         initialStatus: paused,
       );
-      final firstProofTxids = firstProof.scheduledBroadcasts
-          .map((entry) => entry.txidHex)
-          .toSet();
-      expect(firstProofTxids, hasLength(1));
 
-      await postDriver('/lightwalletd/stop', const {});
-      final failedWake = await runNativeBackgroundMigrationWake();
-      final whileOffline = await mobileRegtestMigrationStatus(accountUuid);
-      expect(failedWake['outcome'], anyOf('waiting', 'failed'));
-      expect(whileOffline.activeRunId, firstProof.activeRunId);
-      expect(whileOffline.phase, kIronwoodMigrationFailedRecoverablePhase);
-      expect(whileOffline.pendingTxCount, firstProof.pendingTxCount);
+      expect(proofed.activeRunId, paused.activeRunId);
+      expect(proofed.pendingTxCount, 1);
+      expect(proofed.signedChildPcztCount, paused.signedChildPcztCount - 1);
+      expect(proofed.broadcastedTxCount + proofed.confirmedTxCount, 0);
+      expect(proofed.scheduledBroadcasts, hasLength(1));
+      final chain = await getDriver('/status');
       expect(
-        whileOffline.signedChildPcztCount,
-        firstProof.signedChildPcztCount,
-      );
-      expect(
-        whileOffline.broadcastedTxCount + whileOffline.confirmedTxCount,
-        submittedBefore,
-      );
-      expect(
-        whileOffline.scheduledBroadcasts.map((entry) => entry.txidHex).toSet(),
-        firstProofTxids,
+        proofed.scheduledBroadcasts.single.scheduledHeight,
+        lessThanOrEqualTo((chain['zcashdHeight'] as num).toInt()),
       );
       await waitForNativeBackgroundMempoolSize(0);
 
-      await postDriver(
-        '/lightwalletd/start',
-        const {},
-        timeout: const Duration(minutes: 5),
-      );
-      final recoveredWake = await runNativeBackgroundMigrationWake();
-      final afterRecovery = await mobileRegtestMigrationStatus(accountUuid);
-      expect(recoveredWake['outcome'], 'advanced');
-      expect(afterRecovery.pendingTxCount, firstProof.pendingTxCount);
-      expect(
-        afterRecovery.signedChildPcztCount,
-        firstProof.signedChildPcztCount,
-      );
-      expect(
-        afterRecovery.broadcastedTxCount + afterRecovery.confirmedTxCount,
-        submittedBefore + 1,
-      );
-      expect(
-        afterRecovery.scheduledBroadcasts.map((entry) => entry.txidHex).toSet(),
-        firstProofTxids,
-      );
-      await waitForNativeBackgroundMempoolTxid(firstProofTxids.single);
-
-      final afterSecond = await runNativeDueWakesUntilSubmitted(
-        accountUuid: accountUuid,
-        initialStatus: afterRecovery,
-        submittedTarget: submittedBefore + 2,
-        minimumProofsCreated: 1,
-      );
-
-      expect(
-        afterSecond.broadcastedTxCount + afterSecond.confirmedTxCount,
-        submittedBefore + 2,
-      );
-      expect(afterSecond.activeRunId, started.activeRunId);
-      expect(afterSecond.totalCount, started.totalCount);
+      await snapshotWalletDbToDriver();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
 }
 
-Future<rust_sync.MigrationStatus> _runNativeWakesUntilProofPersisted({
+Future<rust_sync.MigrationStatus> _runUntilOneProofIsPersisted({
   required String accountUuid,
   required rust_sync.MigrationStatus initialStatus,
 }) async {
@@ -176,21 +109,17 @@ Future<rust_sync.MigrationStatus> _runNativeWakesUntilProofPersisted({
   for (var wake = 0; wake < maxWakes; wake++) {
     final result = await runNativeBackgroundMigrationWake();
     final current = await mobileRegtestMigrationStatus(accountUuid);
-    final previousSubmitted =
-        previous.broadcastedTxCount + previous.confirmedTxCount;
-    final currentSubmitted =
-        current.broadcastedTxCount + current.confirmedTxCount;
     final proofDelta = current.pendingTxCount - previous.pendingTxCount;
     final signedChildDelta =
         previous.signedChildPcztCount - current.signedChildPcztCount;
+    final submitted = current.broadcastedTxCount + current.confirmedTxCount;
 
     expect(proofDelta, inInclusiveRange(0, 1));
-    expect(currentSubmitted, previousSubmitted);
     expect(signedChildDelta, proofDelta);
+    expect(submitted, 0);
     expect(current.activeRunId, initialStatus.activeRunId);
     if (proofDelta == 1) {
       expect(result['outcome'], anyOf('preparing', 'waiting'));
-      expect(current.pendingTxCount, initialStatus.pendingTxCount + 1);
       return current;
     }
 
@@ -198,7 +127,7 @@ Future<rust_sync.MigrationStatus> _runNativeWakesUntilProofPersisted({
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
 
-  fail('Native background wakes did not persist the first proof.');
+  fail('Native background wakes did not persist a proof before restart.');
 }
 
 Future<void> _waitForIdleSync(
@@ -214,7 +143,7 @@ Future<void> _waitForIdleSync(
           sync?.isSyncComplete == true &&
           (sync?.scannedHeight ?? 0) >= targetHeight;
     },
-    description: 'idle mobile wallet sync at $targetHeight',
+    description: 'idle mobile wallet sync before proof restart',
     timeout: const Duration(minutes: 5),
   );
 }
@@ -233,7 +162,7 @@ Future<void> _waitForIronwoodSync(
           sync?.isSyncComplete == true &&
           (sync?.scannedHeight ?? 0) >= 500;
     },
-    description: 'active Ironwood chain and completed mobile sync',
+    description: 'active Ironwood chain before proof restart',
     timeout: const Duration(minutes: 5),
   );
 }

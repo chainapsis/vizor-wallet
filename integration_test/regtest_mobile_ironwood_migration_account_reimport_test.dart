@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -176,7 +177,18 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
-      await enterPasscode(tester, mobileE2ePasscode);
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.bySemanticsLabel('Digit 1')) ||
+            tester.any(
+              find.byKey(const ValueKey('mobile_home_shielded_balance')),
+            ),
+        description: 'restored wallet bootstrap destination',
+      );
+      if (tester.any(find.bySemanticsLabel('Digit 1'))) {
+        await enterPasscode(tester, mobileE2ePasscode);
+      }
       await waitForHome(tester);
 
       await openAddAccountFlow(tester);
@@ -191,11 +203,14 @@ void main() {
       expect(reimportedAccountUuid, isNot(emptyAccountUuid));
       expect(await accountUuidAtOrder(0), emptyAccountUuid);
 
-      await switchAccountTo(tester, reimportedAccountUuid);
       final reimportedContainer = ProviderScope.containerOf(
         tester.element(
           find.byKey(const ValueKey('mobile_home_shielded_balance')),
         ),
+      );
+      expect(
+        reimportedContainer.read(accountProvider).value?.activeAccountUuid,
+        reimportedAccountUuid,
       );
       final chainAfterReimport = await getDriver('/status');
       final recoveredBalance = await _waitForRecoveredBalance(
