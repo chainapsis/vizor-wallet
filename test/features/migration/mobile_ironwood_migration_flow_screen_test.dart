@@ -57,6 +57,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   int plannedBatchCount = 12,
   int denominationSplitStageCount = 1,
   int signingBatchLimit = 12,
+  int blockOffsetAdjustment = 0,
 }) => rust_sync.OrchardMigrationPrivatePlan(
   targetValuesZatoshi: frb.Uint64List.fromList([]),
   totalInputZatoshi: BigInt.from(14_223_000_000),
@@ -78,7 +79,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
         valueZatoshi: BigInt.from(
           i == plannedBatchCount - 1 ? 3_220_000_000 : 1_000_000_000,
         ),
-        blockOffset: (i + 1) * 144,
+        blockOffset: (i + 1) * 144 + blockOffsetAdjustment,
       ),
   ],
 );
@@ -1085,7 +1086,7 @@ void main() {
     expect(find.text('Try again'), findsOneWidget);
   });
 
-  testWidgets('retries plan analysis when foreground sync finishes', (
+  testWidgets('keeps review visible when foreground sync finishes', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -1107,15 +1108,12 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
 
-    expect(
-      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
-      findsOneWidget,
-    );
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Syncing...'), findsOneWidget);
     final container = ProviderScope.containerOf(
-      tester.element(
-        find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
-      ),
+      tester.element(find.text('Review Migration Plan')),
     );
     final syncNotifier =
         container.read(syncProvider.notifier) as FakeSyncNotifier;
@@ -1178,6 +1176,12 @@ void main() {
       ),
     );
     await tester.pump();
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
+    expect(find.text('Syncing...'), findsOneWidget);
     syncNotifier.emit(
       SyncState(
         accountUuid: 'account-1',
@@ -1190,14 +1194,18 @@ void main() {
     expect(planLoadCount, greaterThanOrEqualTo(2));
     expect(
       find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Updating plan...'), findsOneWidget);
     expect(find.text('Start migration').hitTestable(), findsNothing);
 
-    refreshedPlan.complete(_plan);
+    refreshedPlan.complete(_planWith(blockOffsetAdjustment: 75));
     await tester.pumpAndSettle();
 
     expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.textContaining('Migration plan updated'), findsNothing);
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
 
@@ -1255,6 +1263,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 420));
 
     expect(planLoadCount, greaterThanOrEqualTo(2));
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
     final startButton = tester.widget<AppButton>(
       find.descendant(
         of: find.byKey(
@@ -1263,11 +1275,12 @@ void main() {
         matching: find.byType(AppButton),
       ),
     );
-    expect(startButton.onPressed, isNull);
+    expect(startButton.onPressed, isNotNull);
     expect(
-      find.textContaining('Vizor needs an up-to-date balance'),
+      find.textContaining("Couldn't update the migration plan after sync"),
       findsOneWidget,
     );
+    expect(find.text('Try again'), findsOneWidget);
   });
 
   testWidgets('does not reactivate a stale plan after sync fails', (
@@ -1292,6 +1305,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
+    final initialPlanLoadCount = planLoadCount;
 
     final container = ProviderScope.containerOf(
       tester.element(find.text('Review Migration Plan')),
@@ -1322,7 +1336,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
 
-    expect(planLoadCount, greaterThanOrEqualTo(2));
+    expect(planLoadCount, initialPlanLoadCount);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
     final startButton = tester.widget<AppButton>(
       find.descendant(
         of: find.byKey(
@@ -1331,11 +1349,67 @@ void main() {
         matching: find.byType(AppButton),
       ),
     );
-    expect(startButton.onPressed, isNull);
+    expect(startButton.onPressed, isNotNull);
+    expect(find.textContaining("Sync didn't finish"), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('keeps review visible when sync updates the plan', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final refreshedPlan = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () {
+          planLoadCount++;
+          return planLoadCount == 1
+              ? Future.value(_plan)
+              : refreshedPlan.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+      ),
+    );
+    await tester.pump();
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pump();
+
+    refreshedPlan.complete(_planWith(plannedBatchCount: 6));
+    await tester.pumpAndSettle();
+
     expect(
-      find.textContaining('Vizor needs an up-to-date balance'),
+      find.byKey(const ValueKey('mobile_ironwood_migration_analyzing')),
+      findsNothing,
+    );
+    expect(find.text('Migration 6 notes'), findsOneWidget);
+    expect(
+      find.textContaining('Migration plan updated after sync'),
       findsOneWidget,
     );
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
 
   testWidgets('keeps the migration review usable at 320 by 568', (
