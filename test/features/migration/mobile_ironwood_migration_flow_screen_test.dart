@@ -1382,6 +1382,21 @@ void main() {
     expect(find.text('Note Split'), findsOneWidget);
     expect(find.text('Split Notes into 12 Migration Parts'), findsOneWidget);
     expect(find.text('Wait for confirmation'), findsOneWidget);
+    final connector = find.byKey(
+      const ValueKey('mobile_ironwood_waiting_step_connector'),
+    );
+    final connectorLine = find.byKey(
+      const ValueKey('mobile_ironwood_waiting_step_connector_line'),
+    );
+    final completedStepIcon = find.byWidgetPredicate(
+      (widget) => widget is AppIcon && widget.name == AppIcons.check,
+    );
+    expect(tester.getSize(connector), const Size(24, 34));
+    expect(tester.getSize(connectorLine), const Size(2, 20));
+    expect(
+      tester.getCenter(connector).dx,
+      closeTo(tester.getCenter(completedStepIcon).dx, 0.1),
+    );
     final loader = tester.widget<AppIcon>(
       find.byWidgetPredicate(
         (widget) => widget is AppIcon && widget.name == AppIcons.loader,

@@ -43,13 +43,25 @@ class _MobileIronwoodWaitingStatusCard extends StatelessWidget {
                 value: '',
                 active: false,
               ),
-              Padding(
-                padding: const EdgeInsets.only(left: 12),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: SizedBox(
-                  height: 24,
-                  child: VerticalDivider(
-                    width: 1,
-                    color: context.colors.border.regular,
+                  key: const ValueKey(
+                    'mobile_ironwood_waiting_step_connector',
+                  ),
+                  width: 24,
+                  height: 34,
+                  child: Center(
+                    child: DecoratedBox(
+                      key: const ValueKey(
+                        'mobile_ironwood_waiting_step_connector_line',
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.colors.border.subtle,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                      child: const SizedBox(width: 2, height: 20),
+                    ),
                   ),
                 ),
               ),
