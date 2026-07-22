@@ -4,6 +4,79 @@ use rand::{rngs::StdRng, SeedableRng};
 const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
+fn create_outbox_test_run(
+    db_path: &str,
+    run_id: &str,
+    values: &[u64],
+    anchors: &[Option<u32>],
+) -> Vec<String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES (?1, 'account-1', 'regtest', ?2, ?3, 1, 1, ?4)"
+        ),
+        params![
+            run_id,
+            db_path,
+            PHASE_READY_TO_MIGRATE,
+            serde_json::to_string(values).unwrap(),
+        ],
+    )
+    .unwrap();
+    drop(conn);
+
+    let schedule = values
+        .iter()
+        .enumerate()
+        .map(|(index, value_zatoshi)| MigrationScheduleEntry {
+            part_index: Some(index as u32),
+            value_zatoshi: *value_zatoshi,
+            block_offset: index as u32 + 1,
+        })
+        .collect::<Vec<_>>();
+    set_run_approved_schedule(db_path, run_id, WalletNetwork::Regtest, &schedule, values).unwrap();
+    let txids = values
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("{:064x}", index + 1))
+        .collect::<Vec<_>>();
+    let pending = values
+        .iter()
+        .enumerate()
+        .map(|(index, value_zatoshi)| {
+            let selected_note = PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", index + 100),
+                output_index: 0,
+                value_zatoshi: value_zatoshi + 10,
+                note_version: 2,
+                nullifier_hex: Some(format!("{:064x}", index + 200)),
+            };
+            PendingMigrationTxInsert {
+                part_index: index as u32,
+                txid_hex: txids[index].clone(),
+                raw_tx: vec![index as u8, 0xaa, 0x55],
+                target_height: 101,
+                anchor_boundary_height: anchors[index],
+                expiry_height: 1_000,
+                value_zatoshi: *value_zatoshi,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note,
+                },
+            }
+        })
+        .collect();
+    insert_pending_txs(db_path, run_id, pending, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    txids
+}
+
 fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
     DenominationStageInsert {
         stage_index: 0,
@@ -4247,3 +4320,259 @@ fn denomination_reconciliation_waits_for_spendable_note_metadata() {
 }
 
 const MINIMUM_OUTPUT_FOR_TEST: u64 = 1;
+
+#[test]
+fn migration_outbox_export_decrypts_only_scheduled_children() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "outbox-export",
+        &[100, 200, 300],
+        &[Some(90), Some(91), Some(92)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted' WHERE txid_hex = ?1"),
+        params![txids[1]],
+    )
+    .unwrap();
+    drop(conn);
+
+    let batch = export_scheduled_migration_outbox(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(batch.run_id, "outbox-export");
+    assert!(batch.timing_mean_blocks > 0);
+    assert!(batch.timing_max_blocks >= batch.timing_mean_blocks);
+    assert_eq!(batch.next_proof_height, None);
+    assert_eq!(batch.items.len(), 2);
+    assert_eq!(batch.items[0].item_id, txids[0]);
+    assert_eq!(batch.items[0].raw_tx, vec![0, 0xaa, 0x55]);
+    assert_eq!(batch.items[0].anchor_boundary_height, 90);
+    assert_eq!(batch.items[1].item_id, txids[2]);
+    assert_eq!(batch.items[1].raw_tx, vec![2, 0xaa, 0x55]);
+}
+
+#[test]
+fn migration_outbox_export_fails_closed_without_anchor() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "outbox-no-anchor", &[100], &[None]);
+
+    let error = export_scheduled_migration_outbox(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap_err();
+
+    assert!(error.contains("missing its anchor boundary"));
+}
+
+#[test]
+fn migration_outbox_export_reports_next_proof_height_without_items() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, proof_retry_height)
+             VALUES ('proof-wait', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]', 321)"
+        ),
+        params![db_path, PHASE_WAITING_DENOM_CONFIRMATIONS],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+             (run_id, message_id, child_index, encrypted_base_pczt,
+              encrypted_compact_sigs, target_height, expiry_height,
+              value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+             VALUES ('proof-wait', 'child-0', 0, 'base', 'sigs', 300, 400,
+                     100, 10, ?1, '{{}}')"
+        ),
+        params![serde_json::to_string(&selected_note).unwrap()],
+    )
+    .unwrap();
+    drop(conn);
+
+    let batch = export_scheduled_migration_outbox(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert!(batch.items.is_empty());
+    assert_eq!(batch.next_proof_height, Some(321));
+}
+
+#[test]
+fn accepted_outbox_receipt_atomically_reschedules_overdue_peers() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "outbox-accepted",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    for txid in &txids {
+        conn.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET schedule_start_height = 90, scheduled_height = ?1
+                 WHERE txid_hex = ?2"
+            ),
+            params![100, txid],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let updates = vec![
+        MigrationOutboxScheduleUpdate {
+            item_id: txids[1].clone(),
+            scheduled_height: 104,
+            schedule_start_height: 100,
+        },
+        MigrationOutboxScheduleUpdate {
+            item_id: txids[2].clone(),
+            scheduled_height: 108,
+            schedule_start_height: 100,
+        },
+    ];
+
+    apply_accepted_migration_outbox_receipt(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "outbox-accepted",
+        &txids[0],
+        100,
+        &updates,
+    )
+    .unwrap();
+    apply_accepted_migration_outbox_receipt(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "outbox-accepted",
+        &txids[0],
+        100,
+        &updates,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let rows = txids
+        .iter()
+        .map(|txid| {
+            conn.query_row(
+                &format!(
+                    "SELECT status, scheduled_height, schedule_start_height
+                     FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"
+                ),
+                params![txid],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, u32>(1)?,
+                        row.get::<_, u32>(2)?,
+                    ))
+                },
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rows[0].0, "broadcasted");
+    assert_eq!(rows[1], ("scheduled".to_string(), 104, 100));
+    assert_eq!(rows[2], ("scheduled".to_string(), 108, 100));
+}
+
+#[test]
+fn invalid_outbox_schedule_rolls_back_accepted_transition() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "outbox-invalid",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 90, scheduled_height = 100"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let error = apply_accepted_migration_outbox_receipt(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "outbox-invalid",
+        &txids[0],
+        100,
+        &[],
+    )
+    .unwrap_err();
+    assert!(error.contains("exactly the remaining overdue items"));
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let status: String = conn
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+            params![txids[0]],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "scheduled");
+}

@@ -122,6 +122,7 @@ struct FreshInstallKeychainCleaner {
     static let servicesToClear = [
         biometricUnlockService,
         ironwoodMigrationBackgroundCredentialService,
+        ironwoodMigrationOutboxKeyService,
         // Keep this last: it holds zcash_wallet_db_name, the stale-install anchor.
         secureStoreService,
     ]

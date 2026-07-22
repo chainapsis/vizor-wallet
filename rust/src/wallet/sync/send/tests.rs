@@ -2,6 +2,7 @@ use super::super::migration;
 use super::*;
 
 use incrementalmerkletree::Position;
+use rusqlite::params;
 use transparent::bundle::{OutPoint, TxOut};
 use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
 use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
@@ -107,25 +108,6 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         assert!(keystone_migration_proof_status(request_id).is_ok());
         discard_keystone_migration_request(request_id).unwrap();
     }
-}
-
-#[test]
-fn background_migration_policy_limits_each_broadcast_step() {
-    let cancel = AtomicBool::new(false);
-    let policy = MigrationBroadcastPolicy::background(&cancel);
-
-    assert_eq!(policy.limit(0), 0);
-    assert_eq!(policy.limit(1), 1);
-    assert_eq!(policy.limit(500), 1);
-    assert_eq!(policy.proof_limit(0), 0);
-    assert_eq!(policy.proof_limit(1), 1);
-    assert_eq!(policy.proof_limit(500), 1);
-    assert!(!policy.should_defer_broadcast(0));
-    assert!(policy.should_defer_broadcast(1));
-    assert!(!policy.is_cancelled());
-
-    cancel.store(true, Ordering::SeqCst);
-    assert!(policy.is_cancelled());
 }
 
 #[test]
@@ -261,6 +243,61 @@ fn migration_test_stage(
     }
 }
 
+fn create_outbox_receipt_test_run(
+    expiry_height: u32,
+) -> (tempfile::TempDir, String, String, String) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let denomination_input_txid = "30".repeat(32);
+    let selected_note_txid = "10".repeat(32);
+    let pending_txid = "20".repeat(32);
+    let selected_note = migration_test_note(&selected_note_txid);
+    let run_id = migration::create_run_with_staged_denominations_and_signed_children(
+        &db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        &migration_test_plan(),
+        std::slice::from_ref(&selected_note),
+        Vec::new(),
+        vec![migration_test_stage(
+            &denomination_input_txid,
+            &selected_note_txid,
+        )],
+        None,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    migration::insert_pending_txs(
+        &db_path,
+        &run_id,
+        vec![migration::PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: pending_txid.clone(),
+            raw_tx: vec![5, 6, 7, 8],
+            target_height: 100,
+            anchor_boundary_height: Some(90),
+            expiry_height,
+            value_zatoshi: 100_000,
+            fee_zatoshi: 10_000,
+            selected_note: selected_note.clone(),
+            metadata: migration::PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
+                selected_note,
+            },
+        }],
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    (temp_dir, db_path, run_id, pending_txid)
+}
+
 #[test]
 fn parse_txid_hex_accepts_display_order_hex() {
     let txid_hex = "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd";
@@ -297,6 +334,79 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
     ));
+}
+
+#[test]
+fn rejected_outbox_receipt_retires_run_idempotently() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+
+    for _ in 0..2 {
+        reconcile_orchard_migration_outbox_receipt(
+            &db_path,
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &pending_txid,
+            "rejected",
+            100,
+            Some("policy reject"),
+            Vec::new(),
+            MIGRATION_TEST_PASSWORD,
+            MIGRATION_TEST_SALT,
+        )
+        .unwrap();
+    }
+
+    assert!(
+        migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test,)
+            .unwrap()
+            .is_none()
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase: String = conn
+        .query_row(
+            "SELECT phase FROM vizor_migration_runs WHERE run_id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, migration::PHASE_FAILED_TERMINAL);
+}
+
+#[test]
+fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+
+    for _ in 0..2 {
+        reconcile_orchard_migration_outbox_receipt(
+            &db_path,
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &pending_txid,
+            "expired",
+            120,
+            None,
+            Vec::new(),
+            MIGRATION_TEST_PASSWORD,
+            MIGRATION_TEST_SALT,
+        )
+        .unwrap();
+    }
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (phase, status): (String, String) = conn
+        .query_row(
+            "SELECT r.phase, p.status
+             FROM vizor_migration_runs r
+             JOIN vizor_migration_pending_txs p ON p.run_id = r.run_id
+             WHERE r.run_id = ?1",
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, migration::PHASE_READY_TO_MIGRATE);
+    assert_eq!(status, "needs_resign");
 }
 
 #[test]

@@ -40,6 +40,37 @@ import UIKit
         }
       case "schedule":
         result(BackgroundMigrationManager.shared.schedule())
+      case "stageOutboxBatch":
+        do {
+          result(try BackgroundMigrationOutboxChannel.stageBatch(arguments: call.arguments))
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "armOutboxBatch":
+        do {
+          try BackgroundMigrationOutboxChannel.armBatch(arguments: call.arguments)
+          result(BackgroundMigrationManager.shared.schedule())
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "listOutboxReceipts":
+        do {
+          result(try BackgroundMigrationOutboxChannel.listReceipts())
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "ackOutboxReceipts":
+        do {
+          try BackgroundMigrationOutboxChannel.acknowledgeReceipts(arguments: call.arguments)
+          result(true)
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "runOutboxOnceNow":
+        DispatchQueue.global(qos: .utility).async {
+          let outcome = BackgroundMigrationOutboxChannel.runOnceNow()
+          DispatchQueue.main.async { result(self.backgroundOutboxResult(outcome)) }
+        }
       case "cancel":
         BackgroundMigrationManager.shared.cancelIfNoRunnableWork()
         result(true)
@@ -73,18 +104,18 @@ import UIKit
           success in result(success)
         }
       #if DEBUG || targetEnvironment(simulator)
-      case "runOnceForTesting":
-        DispatchQueue.global(qos: .utility).async {
-          let outcome = BackgroundMigrationManager.shared.runOnceForTesting()
-          DispatchQueue.main.async {
-            result(self.backgroundMigrationResult(outcome))
+        case "runOnceForTesting":
+          DispatchQueue.global(qos: .utility).async {
+            let outcome = BackgroundMigrationManager.shared.runOnceForTesting()
+            DispatchQueue.main.async {
+              result(self.backgroundOutboxResult(outcome))
+            }
           }
-        }
-      case "resumeWithoutSchedulingForTesting":
-        result(
-          BackgroundMigrationManager.shared
-            .resumeWithoutSchedulingForTesting()
-        )
+        case "resumeWithoutSchedulingForTesting":
+          result(
+            BackgroundMigrationManager.shared
+              .resumeWithoutSchedulingForTesting()
+          )
       #endif
       default:
         result(FlutterMethodNotImplemented)
@@ -288,44 +319,55 @@ import UIKit
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
   }
 
-  private func backgroundMigrationResult(
-    _ outcome: BackgroundMigrationRunOutcome
-  ) -> [String: Any] {
+  private func backgroundMigrationFlutterError(_ error: Error) -> FlutterError {
+    FlutterError(
+      code: "ironwood_outbox_error",
+      message: String(describing: error),
+      details: nil
+    )
+  }
+
+  private func backgroundOutboxResult(
+    _ runResult: BackgroundMigrationOutboxRunResult
+  ) -> [String: Any?] {
+    let transport = backgroundTransportResult(runResult.transport)
+    var result = transport
+    result["transport"] = transport
+    if let proofReady = runResult.proofReady {
+      result["proofReady"] = [
+        "batchId": proofReady.batchId,
+        "observedHeight": proofReady.observedHeight,
+      ]
+    } else {
+      result["proofReady"] = NSNull()
+    }
+    return result
+  }
+
+  private func backgroundTransportResult(
+    _ outcome: BackgroundMigrationTransportOutcome
+  ) -> [String: Any?] {
     switch outcome {
     case .noWork:
-      return ["outcome": "no_work"]
-    case .temporarilyUnavailable:
-      return ["outcome": "temporarily_unavailable"]
-    case .preparing(let nextHeight, let observedHeight):
-      return [
-        "outcome": "preparing",
-        "nextHeight": nextHeight as Any,
-        "observedHeight": observedHeight,
-      ]
-    case .waiting(let nextHeight, let observedHeight):
+      return ["outcome": "noWork"]
+    case .waiting(let nextHeight, let observedHeight, let delay):
       return [
         "outcome": "waiting",
-        "nextHeight": nextHeight as Any,
+        "nextHeight": nextHeight,
         "observedHeight": observedHeight,
+        "delaySeconds": delay,
       ]
-    case .synced(let nextHeight, let observedHeight):
+    case .accepted(let nextHeight, let observedHeight, let delay):
       return [
-        "outcome": "synced",
-        "nextHeight": nextHeight as Any,
+        "outcome": "accepted",
+        "nextHeight": nextHeight,
         "observedHeight": observedHeight,
+        "delaySeconds": delay,
       ]
-    case .advanced(let nextHeight, let observedHeight):
-      return [
-        "outcome": "advanced",
-        "nextHeight": nextHeight as Any,
-        "observedHeight": observedHeight,
-      ]
-    case .complete:
-      return ["outcome": "complete"]
     case .needsUserAction:
-      return ["outcome": "needs_user_action"]
-    case .failed:
-      return ["outcome": "failed"]
+      return ["outcome": "needsUserAction"]
+    case .temporarilyUnavailable:
+      return ["outcome": "temporarilyUnavailable"]
     case .cancelled:
       return ["outcome": "cancelled"]
     }
@@ -369,7 +411,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00)
               ],
               relativeTime: 0.06,
               duration: 0.04
@@ -418,7 +460,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70)
               ],
               relativeTime: 0,
               duration: 0.04
@@ -426,7 +468,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70)
               ],
               relativeTime: 0.08,
               duration: 0.04
@@ -434,7 +476,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90)
               ],
               relativeTime: 0.16,
               duration: 0.04
@@ -442,7 +484,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60)
               ],
               relativeTime: 0.24,
               duration: 0.05
@@ -520,13 +562,13 @@ private enum WindowAppearanceHandler {
       style = .light
     }
 
-    UIApplication.shared.connectedScenes
+    let windows = UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }
       .flatMap { $0.windows }
-      .forEach { window in
-        window.overrideUserInterfaceStyle = style
-        window.rootViewController?.overrideUserInterfaceStyle = style
-      }
+    for window in windows {
+      window.overrideUserInterfaceStyle = style
+      window.rootViewController?.overrideUserInterfaceStyle = style
+    }
   }
 }
 

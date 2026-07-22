@@ -1,5 +1,6 @@
 import 'dart:async' show Completer;
 import 'dart:io' show Platform;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,6 +72,41 @@ typedef IronwoodMigrationDueBroadcaster =
       required String password,
       required String saltBase64,
     });
+typedef IronwoodMigrationOutboxPreparer = IronwoodMigrationDueBroadcaster;
+typedef IronwoodMigrationOutboxExporter =
+    Future<rust_sync.MigrationOutboxBatch?> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String password,
+      required String saltBase64,
+    });
+typedef IronwoodMigrationOutboxReceiptReconciler =
+    Future<void> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String runId,
+      required String txidHex,
+      required String outcome,
+      required int remoteHeight,
+      String? responseMessage,
+      required List<rust_sync.MigrationOutboxScheduleUpdate> scheduleUpdates,
+      required String password,
+      required String saltBase64,
+    });
+typedef IronwoodMigrationOutboxBatchStager =
+    Future<Map<String, String>> Function(Map<String, Object?> payload);
+typedef IronwoodMigrationOutboxBatchArmer =
+    Future<bool> Function({
+      required String batchId,
+      required Map<String, String> expectedDigests,
+    });
+typedef IronwoodMigrationOutboxReceiptLister =
+    Future<List<Map<Object?, Object?>>> Function();
+typedef IronwoodMigrationOutboxReceiptAcknowledger =
+    Future<void> Function(List<String> receiptIds);
+typedef IronwoodMigrationOutboxForegroundRunner = Future<void> Function();
 typedef IronwoodMigrationKeystoneDenominationPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
       required String dbPath,
@@ -134,6 +170,15 @@ class IronwoodMigrationService {
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
+    IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
+    IronwoodMigrationOutboxExporter? exportMigrationOutbox,
+    IronwoodMigrationOutboxReceiptReconciler? reconcileMigrationOutboxReceipt,
+    IronwoodMigrationOutboxBatchStager? stageMigrationOutboxBatch,
+    IronwoodMigrationOutboxBatchArmer? armMigrationOutboxBatch,
+    IronwoodMigrationOutboxReceiptLister? listMigrationOutboxReceipts,
+    IronwoodMigrationOutboxReceiptAcknowledger?
+    acknowledgeMigrationOutboxReceipts,
+    IronwoodMigrationOutboxForegroundRunner? runMigrationOutboxOnceNow,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
     IronwoodMigrationKeystoneDenominationCompleter?
@@ -172,6 +217,24 @@ class IronwoodMigrationService {
        broadcastDueMigration =
            broadcastDueMigration ??
            rust_sync.broadcastDueOrchardMigrationTransactions,
+       prepareMigrationOutbox =
+           prepareMigrationOutbox ?? rust_sync.prepareOrchardMigrationOutbox,
+       exportMigrationOutbox =
+           exportMigrationOutbox ?? rust_sync.exportOrchardMigrationOutbox,
+       reconcileMigrationOutboxReceipt =
+           reconcileMigrationOutboxReceipt ??
+           rust_sync.reconcileOrchardMigrationOutboxReceipt,
+       stageMigrationOutboxBatch =
+           stageMigrationOutboxBatch ?? _defaultStageMigrationOutboxBatch,
+       armMigrationOutboxBatch =
+           armMigrationOutboxBatch ?? _defaultArmMigrationOutboxBatch,
+       listMigrationOutboxReceipts =
+           listMigrationOutboxReceipts ?? _defaultListMigrationOutboxReceipts,
+       acknowledgeMigrationOutboxReceipts =
+           acknowledgeMigrationOutboxReceipts ??
+           _defaultAcknowledgeMigrationOutboxReceipts,
+       runMigrationOutboxOnceNow =
+           runMigrationOutboxOnceNow ?? _defaultRunMigrationOutboxOnceNow,
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
            rust_sync.prepareOrchardMigrationDenominationsPczt,
@@ -212,6 +275,16 @@ class IronwoodMigrationService {
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
+  final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
+  final IronwoodMigrationOutboxExporter exportMigrationOutbox;
+  final IronwoodMigrationOutboxReceiptReconciler
+  reconcileMigrationOutboxReceipt;
+  final IronwoodMigrationOutboxBatchStager stageMigrationOutboxBatch;
+  final IronwoodMigrationOutboxBatchArmer armMigrationOutboxBatch;
+  final IronwoodMigrationOutboxReceiptLister listMigrationOutboxReceipts;
+  final IronwoodMigrationOutboxReceiptAcknowledger
+  acknowledgeMigrationOutboxReceipts;
+  final IronwoodMigrationOutboxForegroundRunner runMigrationOutboxOnceNow;
   final IronwoodMigrationKeystoneDenominationPreparer
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneDenominationCompleter
@@ -355,18 +428,35 @@ class IronwoodMigrationService {
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
 
-    final broadcastResult = await _runCredentialOperation(
-      context: context,
-      mayCreateRun: false,
-      operation: (credential) => broadcastDueMigration(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
-      ),
-    );
+    final rust_sync.IronwoodMigrationResult broadcastResult;
+    if (isIOS() && isMobile()) {
+      broadcastResult = await _runCredentialOperation(
+        context: context,
+        mayCreateRun: false,
+        prepareOutboxAfterOperation: false,
+        operation: (credential) => prepareMigrationOutbox(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+        ),
+      );
+    } else {
+      broadcastResult = await _runCredentialOperation(
+        context: context,
+        mayCreateRun: false,
+        operation: (credential) => broadcastDueMigration(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+        ),
+      );
+    }
     if (isHardwareAccount(accountUuid) ||
         broadcastResult.status != 'ready_to_migrate') {
       return broadcastResult;
@@ -446,6 +536,26 @@ class IronwoodMigrationService {
           accountUuid: context.accountUuid,
           expectedRunId: activeRunId,
         );
+
+        if (isIOS()) {
+          final credential = _MigrationCredential(
+            password: manifest.credentialHex,
+            saltBase64: manifest.saltBase64,
+          );
+          await _reconcileMigrationOutboxReceipts(
+            context: context,
+            credential: credential,
+          );
+          final refresh = await _refreshMigrationOutbox(
+            context: context,
+            credential: credential,
+            prepare: true,
+          );
+          if (refresh.staged) {
+            await _requestNotificationAuthorizationBestEffort();
+          }
+          return refresh.staged;
+        }
 
         final scheduled = await scheduleBackgroundMigration();
         if (scheduled) {
@@ -559,6 +669,7 @@ class IronwoodMigrationService {
     required bool mayCreateRun,
     required Future<T> Function(_MigrationCredential credential) operation,
     bool enrollNotificationsOnActiveRun = false,
+    bool prepareOutboxAfterOperation = true,
   }) async {
     return operationRegistry.run(
       network: context.network,
@@ -575,6 +686,12 @@ class IronwoodMigrationService {
             status: initialStatus,
             mayCreateRun: mayCreateRun,
           );
+          if (isIOS()) {
+            await _reconcileMigrationOutboxReceipts(
+              context: context,
+              credential: credential,
+            );
+          }
 
           late T result;
           Object? operationError;
@@ -584,6 +701,25 @@ class IronwoodMigrationService {
           } catch (error, stackTrace) {
             operationError = error;
             operationStackTrace = stackTrace;
+          }
+
+          if (isIOS()) {
+            try {
+              await _reconcileMigrationOutboxReceipts(
+                context: context,
+                credential: credential,
+              );
+            } catch (error, stackTrace) {
+              if (operationError == null) {
+                operationError = error;
+                operationStackTrace = stackTrace;
+              } else {
+                debugPrint(
+                  'Failed to reconcile Ironwood migration outbox receipts '
+                  'after an operation error: $error',
+                );
+              }
+            }
           }
 
           rust_sync.MigrationStatus currentStatus;
@@ -599,6 +735,28 @@ class IronwoodMigrationService {
             context: context,
             status: currentStatus,
           );
+          if (isIOS() && currentStatus.activeRunId != null) {
+            try {
+              final outboxRefresh = await _refreshMigrationOutbox(
+                context: context,
+                credential: credential,
+                prepare: prepareOutboxAfterOperation,
+              );
+              if (outboxRefresh.reconciledReceipt) {
+                currentStatus = await _getStatusForContext(context);
+                await _reconcileBackgroundCredential(
+                  context: context,
+                  status: currentStatus,
+                );
+              }
+            } catch (error) {
+              if (operationError == null) rethrow;
+              debugPrint(
+                'Failed to refresh Ironwood migration outbox after an '
+                'operation error: $error',
+              );
+            }
+          }
           if (enrollNotificationsOnActiveRun &&
               currentStatus.activeRunId != null) {
             await _requestNotificationAuthorizationBestEffort();
@@ -631,7 +789,6 @@ class IronwoodMigrationService {
         accountUuid: context.accountUuid,
         expectedRunId: activeRunId,
       );
-      await _ensureBackgroundMigrationScheduled(context);
       return _MigrationCredential(
         password: resolvedManifest.credentialHex,
         saltBase64: resolvedManifest.saltBase64,
@@ -694,7 +851,6 @@ class IronwoodMigrationService {
         accountUuid: context.accountUuid,
         expectedRunId: activeRunId,
       );
-      await _ensureBackgroundMigrationScheduled(context);
       return;
     }
 
@@ -755,21 +911,132 @@ class IronwoodMigrationService {
     );
   }
 
-  Future<void> _ensureBackgroundMigrationScheduled(
-    _MigrationCredentialContext context,
-  ) async {
-    final credentialKey = _credentialKey(context);
-    if (_scheduledBackgroundMigrations.contains(credentialKey)) return;
+  Future<_MigrationOutboxRefreshResult> _refreshMigrationOutbox({
+    required _MigrationCredentialContext context,
+    required _MigrationCredential credential,
+    required bool prepare,
+  }) async {
+    final lightwalletdUrl = context.lightwalletdUrl;
+    if (lightwalletdUrl == null) {
+      return const _MigrationOutboxRefreshResult();
+    }
+
+    if (prepare) {
+      await prepareMigrationOutbox(
+        dbPath: context.dbPath,
+        lightwalletdUrl: lightwalletdUrl,
+        network: context.network,
+        accountUuid: context.accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      );
+    }
+
+    final batch = await exportMigrationOutbox(
+      dbPath: context.dbPath,
+      network: context.network,
+      accountUuid: context.accountUuid,
+      password: credential.password,
+      saltBase64: credential.saltBase64,
+    );
+    if (batch == null) return const _MigrationOutboxRefreshResult();
+
+    final batchId = _migrationOutboxBatchId(context, batch.runId);
+    final expectedDigests = await stageMigrationOutboxBatch({
+      'batchId': batchId,
+      'network': context.network,
+      'accountUuid': context.accountUuid,
+      'runId': batch.runId,
+      'lightwalletdUrl': lightwalletdUrl,
+      'timingMeanBlocks': batch.timingMeanBlocks,
+      'timingMaxBlocks': batch.timingMaxBlocks,
+      'createdAtMs': DateTime.now().millisecondsSinceEpoch,
+      'nextProofHeight': batch.nextProofHeight,
+      'items': batch.items
+          .map(
+            (item) => <String, Object?>{
+              'itemId': item.itemId,
+              'partIndex': item.partIndex,
+              'txidHex': item.txidHex,
+              'rawTransaction': Uint8List.fromList(item.rawTransaction),
+              'anchorBoundaryHeight': item.anchorBoundaryHeight,
+              'scheduledHeight': item.scheduledHeight,
+              'scheduleStartHeight': item.scheduleStartHeight,
+              'expiryHeight': item.expiryHeight,
+            },
+          )
+          .toList(growable: false),
+    });
+    final armedAndScheduled = await armMigrationOutboxBatch(
+      batchId: batchId,
+      expectedDigests: expectedDigests,
+    );
+    if (!armedAndScheduled) {
+      throw StateError('Failed to schedule the Ironwood migration outbox.');
+    }
+    _scheduledBackgroundMigrations.add(_credentialKey(context));
 
     try {
-      if (await scheduleBackgroundMigration()) {
-        _scheduledBackgroundMigrations.add(credentialKey);
-      } else {
-        debugPrint('Failed to schedule Ironwood background migration.');
-      }
+      await runMigrationOutboxOnceNow();
     } catch (error) {
-      debugPrint('Failed to schedule Ironwood background migration: $error');
+      debugPrint(
+        'Failed to run Ironwood migration outbox in foreground: $error',
+      );
     }
+    final reconciledReceipt = await _reconcileMigrationOutboxReceipts(
+      context: context,
+      credential: credential,
+    );
+    return _MigrationOutboxRefreshResult(
+      staged: true,
+      reconciledReceipt: reconciledReceipt,
+    );
+  }
+
+  Future<bool> _reconcileMigrationOutboxReceipts({
+    required _MigrationCredentialContext context,
+    required _MigrationCredential credential,
+  }) async {
+    final rawReceipts = await listMigrationOutboxReceipts();
+    final acknowledgedReceiptIds = <String>[];
+    Object? firstError;
+    StackTrace? firstStackTrace;
+
+    for (final rawReceipt in rawReceipts) {
+      final receipt = _MigrationOutboxReceipt.fromMap(rawReceipt);
+      if (receipt.network != context.network ||
+          receipt.accountUuid != context.accountUuid) {
+        continue;
+      }
+      try {
+        await reconcileMigrationOutboxReceipt(
+          dbPath: context.dbPath,
+          network: context.network,
+          accountUuid: context.accountUuid,
+          runId: receipt.runId,
+          txidHex: receipt.txidHex,
+          outcome: receipt.outcome,
+          remoteHeight: receipt.remoteHeight,
+          responseMessage: receipt.responseMessage,
+          scheduleUpdates: receipt.scheduleUpdates,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+        );
+        acknowledgedReceiptIds.add(receipt.receiptId);
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
+        break;
+      }
+    }
+
+    if (acknowledgedReceiptIds.isNotEmpty) {
+      await acknowledgeMigrationOutboxReceipts(acknowledgedReceiptIds);
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStackTrace!);
+    }
+    return acknowledgedReceiptIds.isNotEmpty;
   }
 
   Future<T> _serializeCredentialState<T>(
@@ -901,6 +1168,51 @@ Future<bool> _defaultRequestNotificationAuthorization() async {
   return authorized ?? false;
 }
 
+Future<Map<String, String>> _defaultStageMigrationOutboxBatch(
+  Map<String, Object?> payload,
+) async {
+  final result = await _backgroundMigrationChannel
+      .invokeMethod<Map<Object?, Object?>>('stageOutboxBatch', payload);
+  if (result == null) return const {};
+  return result.map((key, value) => MapEntry(key as String, value as String));
+}
+
+Future<bool> _defaultArmMigrationOutboxBatch({
+  required String batchId,
+  required Map<String, String> expectedDigests,
+}) async {
+  return await _backgroundMigrationChannel.invokeMethod<bool>(
+        'armOutboxBatch',
+        {'batchId': batchId, 'expectedDigests': expectedDigests},
+      ) ??
+      false;
+}
+
+Future<List<Map<Object?, Object?>>>
+_defaultListMigrationOutboxReceipts() async {
+  final result = await _backgroundMigrationChannel.invokeMethod<List<Object?>>(
+    'listOutboxReceipts',
+  );
+  if (result == null) return const [];
+  return result
+      .map((receipt) => receipt as Map<Object?, Object?>)
+      .toList(growable: false);
+}
+
+Future<void> _defaultAcknowledgeMigrationOutboxReceipts(
+  List<String> receiptIds,
+) async {
+  await _backgroundMigrationChannel.invokeMethod<void>('ackOutboxReceipts', {
+    'receiptIds': receiptIds,
+  });
+}
+
+Future<void> _defaultRunMigrationOutboxOnceNow() async {
+  await _backgroundMigrationChannel.invokeMethod<Map<Object?, Object?>>(
+    'runOutboxOnceNow',
+  );
+}
+
 bool _isTerminalCredentialCleanupPhase(String phase) =>
     phase == 'complete' || phase == 'abandoned';
 
@@ -933,4 +1245,91 @@ class _MigrationCredential {
 
   final String password;
   final String saltBase64;
+}
+
+class _MigrationOutboxRefreshResult {
+  const _MigrationOutboxRefreshResult({
+    this.staged = false,
+    this.reconciledReceipt = false,
+  });
+
+  final bool staged;
+  final bool reconciledReceipt;
+}
+
+class _MigrationOutboxReceipt {
+  const _MigrationOutboxReceipt({
+    required this.receiptId,
+    required this.network,
+    required this.accountUuid,
+    required this.runId,
+    required this.txidHex,
+    required this.outcome,
+    required this.remoteHeight,
+    required this.responseMessage,
+    required this.scheduleUpdates,
+  });
+
+  factory _MigrationOutboxReceipt.fromMap(Map<Object?, Object?> values) {
+    final rawUpdates = values['scheduleUpdates'];
+    if (rawUpdates is! List<Object?>) {
+      throw const FormatException(
+        'Ironwood migration outbox receipt has invalid schedule updates.',
+      );
+    }
+    return _MigrationOutboxReceipt(
+      receiptId: _requiredOutboxString(values, 'receiptId'),
+      network: _requiredOutboxString(values, 'network'),
+      accountUuid: _requiredOutboxString(values, 'accountUuid'),
+      runId: _requiredOutboxString(values, 'runId'),
+      txidHex: _requiredOutboxString(values, 'txidHex'),
+      outcome: _requiredOutboxString(values, 'outcome'),
+      remoteHeight: _requiredOutboxInt(values, 'remoteHeight'),
+      responseMessage: values['responseMessage'] as String?,
+      scheduleUpdates: rawUpdates
+          .map((rawUpdate) {
+            if (rawUpdate is! Map<Object?, Object?>) {
+              throw const FormatException(
+                'Ironwood migration outbox receipt has an invalid schedule update.',
+              );
+            }
+            return rust_sync.MigrationOutboxScheduleUpdate(
+              itemId: _requiredOutboxString(rawUpdate, 'itemId'),
+              scheduledHeight: _requiredOutboxInt(rawUpdate, 'scheduledHeight'),
+              scheduleStartHeight: _requiredOutboxInt(
+                rawUpdate,
+                'scheduleStartHeight',
+              ),
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
+  final String receiptId;
+  final String network;
+  final String accountUuid;
+  final String runId;
+  final String txidHex;
+  final String outcome;
+  final int remoteHeight;
+  final String? responseMessage;
+  final List<rust_sync.MigrationOutboxScheduleUpdate> scheduleUpdates;
+}
+
+String _migrationOutboxBatchId(
+  _MigrationCredentialContext context,
+  String runId,
+) => '${context.network}:${context.accountUuid}:$runId';
+
+String _requiredOutboxString(Map<Object?, Object?> values, String key) {
+  final value = values[key];
+  if (value is String && value.isNotEmpty) return value;
+  throw FormatException('Ironwood migration outbox value is invalid: $key.');
+}
+
+int _requiredOutboxInt(Map<Object?, Object?> values, String key) {
+  final value = values[key];
+  if (value is int && value >= 0) return value;
+  throw FormatException('Ironwood migration outbox value is invalid: $key.');
 }

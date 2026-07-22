@@ -188,6 +188,40 @@ pub(crate) struct DuePendingMigrationTx {
     pub raw_tx: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub(crate) struct MigrationOutboxItem {
+    pub item_id: String,
+    pub part_index: u32,
+    pub txid_hex: String,
+    pub raw_tx: Vec<u8>,
+    pub anchor_boundary_height: u32,
+    pub scheduled_height: u32,
+    pub schedule_start_height: u32,
+    pub expiry_height: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct MigrationOutboxBatch {
+    pub run_id: String,
+    pub timing_mean_blocks: u32,
+    pub timing_max_blocks: u32,
+    pub next_proof_height: Option<u32>,
+    pub items: Vec<MigrationOutboxItem>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationOutboxScheduleUpdate {
+    pub item_id: String,
+    pub scheduled_height: u32,
+    pub schedule_start_height: u32,
+}
+
+pub(crate) struct MigrationOutboxTxState {
+    pub run_phase: String,
+    pub status: String,
+    pub expiry_height: u32,
+}
+
 pub(crate) struct PendingMigrationTotals {
     pub txids: Vec<String>,
     pub value_zatoshi: u64,
@@ -1479,6 +1513,201 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
     Ok(())
 }
 
+pub(crate) fn export_scheduled_migration_outbox(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Option<MigrationOutboxBatch>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let Some(run) = active_run(&conn, account_uuid, network)? else {
+        return Ok(None);
+    };
+    let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
+    let (timing_mean_blocks, timing_max_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
+    let unmaterialized_count = unpromoted_signed_child_pczt_count_with_conn(&conn, &run.run_id)?;
+    let next_proof_height = if unmaterialized_count == 0 {
+        None
+    } else {
+        let persisted = conn
+            .query_row(
+                &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run.run_id],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .map_err(|e| format!("Read migration outbox proof retry height: {e}"))?;
+        if persisted.is_some() {
+            persisted
+        } else {
+            migration_timing_projection_for_run(
+                &conn,
+                &run.run_id,
+                run.target_values_zatoshi.len() as u32,
+                denomination_confirmations_required(),
+            )?
+            .next_action_height
+        }
+    };
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT part_index, txid_hex, encrypted_raw_tx,
+                    anchor_boundary_height, scheduled_height,
+                    schedule_start_height, expiry_height
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'scheduled'
+             ORDER BY scheduled_height ASC, part_index ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration outbox export: {e}"))?;
+    let rows = stmt
+        .query_map(params![run.run_id], |row| {
+            Ok((
+                row.get::<_, Option<u32>>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<u32>>(3)?,
+                row.get::<_, u32>(4)?,
+                row.get::<_, Option<u32>>(5)?,
+                row.get::<_, u32>(6)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration outbox export: {e}"))?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        let (
+            part_index,
+            txid_hex,
+            encrypted_raw_tx,
+            anchor_boundary_height,
+            scheduled_height,
+            schedule_start_height,
+            expiry_height,
+        ) = row.map_err(|e| format!("Read migration outbox export: {e}"))?;
+        let part_index = part_index.ok_or_else(|| {
+            format!("Migration outbox transaction {txid_hex} is missing its part index")
+        })?;
+        let anchor_boundary_height = anchor_boundary_height.ok_or_else(|| {
+            format!("Migration outbox transaction {txid_hex} is missing its anchor boundary")
+        })?;
+        let schedule_start_height = schedule_start_height.ok_or_else(|| {
+            format!("Migration outbox transaction {txid_hex} is missing its schedule origin")
+        })?;
+        if scheduled_height >= expiry_height {
+            return Err(format!(
+                "Migration outbox transaction {txid_hex} is scheduled at or after expiry"
+            ));
+        }
+        let raw_tx = secret_payload::decrypt_payload(
+            encrypted_raw_tx.as_bytes(),
+            password,
+            salt.as_slice(),
+        )?;
+        let item_id = txid_hex.to_ascii_lowercase();
+        items.push(MigrationOutboxItem {
+            item_id,
+            part_index,
+            txid_hex,
+            raw_tx: raw_tx.to_vec(),
+            anchor_boundary_height,
+            scheduled_height,
+            schedule_start_height,
+            expiry_height,
+        });
+    }
+    Ok(Some(MigrationOutboxBatch {
+        run_id: run.run_id,
+        timing_mean_blocks,
+        timing_max_blocks,
+        next_proof_height,
+        items,
+    }))
+}
+
+fn migration_outbox_run_phase_with_conn(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<String, String> {
+    conn.query_row(
+        &format!(
+            "SELECT phase FROM {RUNS_TABLE}
+             WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3"
+        ),
+        params![run_id, account_uuid, network_name(network)],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| format!("Read migration outbox run scope: {e}"))?
+    .ok_or_else(|| "Migration outbox receipt does not match this account and run".to_string())
+}
+
+pub(crate) fn migration_outbox_tx_state(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    txid_hex: &str,
+) -> Result<MigrationOutboxTxState, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run_phase = migration_outbox_run_phase_with_conn(&conn, account_uuid, network, run_id)?;
+    let (status, expiry_height) = conn
+        .query_row(
+            &format!(
+                "SELECT status, expiry_height FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND lower(txid_hex) = lower(?2)"
+            ),
+            params![run_id, txid_hex],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration outbox receipt transaction: {e}"))?
+        .ok_or_else(|| {
+            "Migration outbox receipt transaction was not found in this run".to_string()
+        })?;
+    Ok(MigrationOutboxTxState {
+        run_phase,
+        status,
+        expiry_height,
+    })
+}
+
+pub(crate) fn migration_outbox_raw_tx(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    txid_hex: &str,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Vec<u8>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    migration_outbox_run_phase_with_conn(&conn, account_uuid, network, run_id)?;
+    let encrypted_raw_tx = conn
+        .query_row(
+            &format!(
+                "SELECT encrypted_raw_tx FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2)"
+            ),
+            params![run_id, txid_hex],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration outbox transaction payload: {e}"))?
+        .ok_or_else(|| {
+            "Migration outbox receipt transaction was not found in this run".to_string()
+        })?;
+    secret_payload::decrypt_payload(encrypted_raw_tx.as_bytes(), password, salt.as_slice())
+        .map(|raw_tx| raw_tx.to_vec())
+}
+
 pub(crate) fn due_pending_txs(
     db_path: &str,
     run_id: &str,
@@ -2059,6 +2288,16 @@ pub(crate) fn mark_pending_broadcasted(
         params![run_id, txid_hex],
     )
     .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
+    update_run_after_pending_broadcast(&tx, run_id, now)?;
+    tx.commit()
+        .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+}
+
+fn update_run_after_pending_broadcast(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    now: i64,
+) -> Result<(), String> {
     let scheduled_remaining = count_pending_with_status(&tx, run_id, "scheduled")?;
     let pending_count = count_for_run(&tx, PENDING_TXS_TABLE, run_id)?;
     let planned_count = planned_part_count_with_conn(&tx, run_id)?;
@@ -2079,8 +2318,167 @@ pub(crate) fn mark_pending_broadcasted(
         params![next_phase, now, run_id],
     )
     .map_err(|e| format!("Mark migration waiting confirmations: {e}"))?;
+    Ok(())
+}
+
+pub(crate) fn apply_accepted_migration_outbox_receipt(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    txid_hex: &str,
+    remote_height: u32,
+    schedule_updates: &[MigrationOutboxScheduleUpdate],
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration outbox receipt reconciliation: {e}"))?;
+    migration_outbox_run_phase_with_conn(&tx, account_uuid, network, run_id)?;
+    let accepted_status = tx
+        .query_row(
+            &format!(
+                "SELECT status FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2)"
+            ),
+            params![run_id, txid_hex],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read accepted migration outbox transaction: {e}"))?
+        .ok_or_else(|| {
+            "Migration outbox receipt transaction was not found in this run".to_string()
+        })?;
+    if !matches!(
+        accepted_status.as_str(),
+        "scheduled" | "broadcasted" | "confirmed"
+    ) {
+        return Err(format!(
+            "Migration outbox receipt cannot accept a transaction in status {accepted_status}"
+        ));
+    }
+
+    let timing_policy = timing_policy_for_run_with_conn(&tx, run_id, network)?;
+    let (_, timing_max_blocks) = schedule_parameters_with_policy(network, timing_policy);
+    let accepted_txid = txid_hex.to_ascii_lowercase();
+    let mut supplied = BTreeMap::new();
+    let mut previous_scheduled_height = remote_height;
+    for update in schedule_updates {
+        let item_id = update.item_id.to_ascii_lowercase();
+        if item_id == accepted_txid {
+            return Err("Accepted migration outbox item cannot reschedule itself".to_string());
+        }
+        if supplied.insert(item_id.clone(), update).is_some() {
+            return Err(format!(
+                "Migration outbox schedule update {item_id} is duplicated"
+            ));
+        }
+        if update.schedule_start_height != remote_height {
+            return Err(format!(
+                "Migration outbox schedule update {item_id} does not start at the receipt height"
+            ));
+        }
+        let incremental_delay = update
+            .scheduled_height
+            .checked_sub(previous_scheduled_height)
+            .ok_or_else(|| format!("Migration outbox schedule update {item_id} moves backward"))?;
+        if incremental_delay == 0 || incremental_delay > timing_max_blocks {
+            return Err(format!(
+                "Migration outbox schedule update {item_id} is outside the timing window"
+            ));
+        }
+        previous_scheduled_height = update.scheduled_height;
+    }
+
+    if accepted_status == "scheduled" {
+        let mut expected_stmt = tx
+            .prepare_cached(&format!(
+                "SELECT lower(txid_hex) FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND status = 'scheduled'
+                   AND scheduled_height <= ?2 AND expiry_height > ?2
+                   AND lower(txid_hex) != lower(?3)"
+            ))
+            .map_err(|e| format!("Prepare overdue migration outbox peers: {e}"))?;
+        let expected = expected_stmt
+            .query_map(params![run_id, remote_height, txid_hex], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| format!("Query overdue migration outbox peers: {e}"))?
+            .collect::<Result<BTreeSet<_>, _>>()
+            .map_err(|e| format!("Read overdue migration outbox peers: {e}"))?;
+        let supplied_ids = supplied.keys().cloned().collect::<BTreeSet<_>>();
+        if supplied_ids != expected {
+            return Err(
+                "Migration outbox receipt must reschedule exactly the remaining overdue items"
+                    .to_string(),
+            );
+        }
+    }
+
+    for (item_id, update) in supplied {
+        let (status, current_scheduled_height, current_schedule_start_height, expiry_height) = tx
+            .query_row(
+                &format!(
+                    "SELECT status, scheduled_height, schedule_start_height, expiry_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND lower(txid_hex) = ?2"
+                ),
+                params![run_id, item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, u32>(1)?,
+                        row.get::<_, Option<u32>>(2)?,
+                        row.get::<_, u32>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read migration outbox schedule target: {e}"))?
+            .ok_or_else(|| format!("Migration outbox schedule item {item_id} was not found"))?;
+        if update.scheduled_height >= expiry_height {
+            return Err(format!(
+                "Migration outbox schedule update {item_id} reaches transaction expiry"
+            ));
+        }
+        if status == "scheduled" {
+            tx.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET scheduled_height = ?1, schedule_start_height = ?2
+                     WHERE run_id = ?3 AND lower(txid_hex) = ?4 AND status = 'scheduled'"
+                ),
+                params![
+                    update.scheduled_height,
+                    update.schedule_start_height,
+                    run_id,
+                    item_id,
+                ],
+            )
+            .map_err(|e| format!("Apply migration outbox schedule update: {e}"))?;
+        } else if current_scheduled_height != update.scheduled_height
+            || current_schedule_start_height != Some(update.schedule_start_height)
+        {
+            return Err(format!(
+                "Migration outbox schedule item {item_id} is no longer scheduled"
+            ));
+        }
+    }
+
+    if accepted_status == "scheduled" {
+        tx.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted'
+                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2) AND status = 'scheduled'"
+            ),
+            params![run_id, txid_hex],
+        )
+        .map_err(|e| format!("Mark migration outbox transaction broadcasted: {e}"))?;
+        update_run_after_pending_broadcast(&tx, run_id, now_ms()?)?;
+    }
     tx.commit()
-        .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+        .map_err(|e| format!("Commit migration outbox receipt reconciliation: {e}"))
 }
 
 pub(crate) fn scheduled_pending_count(db_path: &str, run_id: &str) -> Result<u32, String> {

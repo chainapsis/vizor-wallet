@@ -700,6 +700,32 @@ pub struct MigrationScheduledTransfer {
     pub block_offset: u32,
 }
 
+pub struct MigrationOutboxItem {
+    /// Stable Swift outbox item identifier. This is the finalized txid.
+    pub item_id: String,
+    pub part_index: u32,
+    pub txid_hex: String,
+    pub raw_transaction: Vec<u8>,
+    pub anchor_boundary_height: u32,
+    pub scheduled_height: u32,
+    pub schedule_start_height: u32,
+    pub expiry_height: u32,
+}
+
+pub struct MigrationOutboxBatch {
+    pub run_id: String,
+    pub timing_mean_blocks: u32,
+    pub timing_max_blocks: u32,
+    pub next_proof_height: Option<u32>,
+    pub items: Vec<MigrationOutboxItem>,
+}
+
+pub struct MigrationOutboxScheduleUpdate {
+    pub item_id: String,
+    pub scheduled_height: u32,
+    pub schedule_start_height: u32,
+}
+
 pub enum MigrationPartState {
     Preparing,
     Scheduled,
@@ -1129,6 +1155,126 @@ pub fn get_orchard_migration_private_plan(
                         .collect(),
                 })
             },
+        )
+    })
+}
+
+/// Foreground-only migration preparation for the Swift-owned outbox.
+/// Denomination stages may advance, and every currently provable signed child
+/// is materialized, but scheduled child transactions are never broadcast here.
+pub fn prepare_orchard_migration_outbox(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let result = rt.block_on(wallet_sync::IronwoodMigrationResult::prepare_outbox(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            password.as_slice(),
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: result.txids,
+            status: result.status,
+            broadcasted_count: result.broadcasted_count,
+            total_count: result.total_count,
+            message: result.message,
+            fee_zatoshi: result.fee_zatoshi,
+            migrated_zatoshi: result.migrated_zatoshi,
+        })
+    })
+}
+
+pub fn export_orchard_migration_outbox(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<Option<MigrationOutboxBatch>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        wallet_sync::IronwoodMigrationResult::export_outbox(
+            &db_path,
+            network,
+            &account_uuid,
+            password.as_slice(),
+            &salt_base64,
+        )
+        .map(|batch| {
+            batch.map(|batch| MigrationOutboxBatch {
+                run_id: batch.run_id,
+                timing_mean_blocks: batch.timing_mean_blocks,
+                timing_max_blocks: batch.timing_max_blocks,
+                next_proof_height: batch.next_proof_height,
+                items: batch
+                    .items
+                    .into_iter()
+                    .map(|item| MigrationOutboxItem {
+                        item_id: item.item_id,
+                        part_index: item.part_index,
+                        txid_hex: item.txid_hex,
+                        raw_transaction: item.raw_tx,
+                        anchor_boundary_height: item.anchor_boundary_height,
+                        scheduled_height: item.scheduled_height,
+                        schedule_start_height: item.schedule_start_height,
+                        expiry_height: item.expiry_height,
+                    })
+                    .collect(),
+            })
+        })
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn reconcile_orchard_migration_outbox_receipt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    run_id: String,
+    txid_hex: String,
+    outcome: String,
+    remote_height: u32,
+    response_message: Option<String>,
+    schedule_updates: Vec<MigrationOutboxScheduleUpdate>,
+    password: String,
+    salt_base64: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let schedule_updates = schedule_updates
+            .into_iter()
+            .map(|update| {
+                (
+                    update.item_id,
+                    update.scheduled_height,
+                    update.schedule_start_height,
+                )
+            })
+            .collect();
+        wallet_sync::IronwoodMigrationResult::reconcile_outbox_receipt(
+            &db_path,
+            network,
+            &account_uuid,
+            &run_id,
+            &txid_hex,
+            &outcome,
+            remote_height,
+            response_message.as_deref(),
+            schedule_updates,
+            password.as_slice(),
+            &salt_base64,
         )
     })
 }

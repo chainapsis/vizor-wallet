@@ -126,17 +126,6 @@ impl MigrationBroadcastPolicy<'_> {
         cancel: None,
     };
 
-    fn background(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
-        MigrationBroadcastPolicy {
-            max_per_step: Some(1),
-            // Proof generation is the expensive local step. Bound it
-            // independently and let a later wake perform network broadcast.
-            max_proofs_per_step: Some(1),
-            defer_broadcast_after_proving: true,
-            cancel: Some(cancel),
-        }
-    }
-
     fn is_cancelled(self) -> bool {
         self.cancel
             .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
@@ -183,6 +172,72 @@ pub struct IronwoodMigrationResult {
     pub message: Option<String>,
     pub fee_zatoshi: u64,
     pub migrated_zatoshi: u64,
+}
+
+impl IronwoodMigrationResult {
+    pub(crate) async fn prepare_outbox(
+        db_path: &str,
+        lightwalletd_url: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        pending_password: &[u8],
+        pending_salt_base64: &str,
+    ) -> Result<Self, String> {
+        prepare_orchard_migration_outbox(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            pending_password,
+            pending_salt_base64,
+        )
+        .await
+    }
+
+    pub(crate) fn export_outbox(
+        db_path: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        pending_password: &[u8],
+        pending_salt_base64: &str,
+    ) -> Result<Option<super::migration::MigrationOutboxBatch>, String> {
+        super::migration::export_scheduled_migration_outbox(
+            db_path,
+            account_uuid,
+            network,
+            pending_password,
+            pending_salt_base64,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reconcile_outbox_receipt(
+        db_path: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        run_id: &str,
+        txid_hex: &str,
+        outcome: &str,
+        remote_height: u32,
+        response_message: Option<&str>,
+        schedule_updates: Vec<(String, u32, u32)>,
+        pending_password: &[u8],
+        pending_salt_base64: &str,
+    ) -> Result<(), String> {
+        reconcile_orchard_migration_outbox_receipt(
+            db_path,
+            network,
+            account_uuid,
+            run_id,
+            txid_hex,
+            outcome,
+            remote_height,
+            response_message,
+            schedule_updates,
+            pending_password,
+            pending_salt_base64,
+        )
+    }
 }
 
 pub(crate) struct SendMaxEstimateResult {
@@ -1014,6 +1069,109 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     ))
 }
 
+async fn prepare_orchard_migration_outbox(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_COMPLETE.to_string(),
+            broadcasted_count: 0,
+            total_count: 0,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: 0,
+        });
+    };
+
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => return Ok(result),
+        StagedDenominationAdvance::Ready => {}
+    }
+
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(message) =
+        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
+    {
+        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_FAILED_TERMINAL,
+            Some(message),
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+        ));
+    }
+    let expired_count = super::migration::mark_expired_pending_parts_for_resign(
+        db_path,
+        &run.run_id,
+        chain_tip_height,
+    )?;
+    if expired_count > 0 {
+        let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some(format!(
+                "{expired_count} migration transaction(s) need fresh signatures before outbox export."
+            )),
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+        ));
+    }
+
+    if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0
+        && run_may_finalize_presigned_migration_children(&run)
+    {
+        finalize_presigned_migration_children(
+            db_path,
+            network,
+            account_uuid,
+            &run.run_id,
+            pending_password,
+            pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )?;
+    }
+
+    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+    let status = super::migration::run_phase(db_path, &run.run_id)?;
+    let message = if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+        "Migration proofs will continue when the next anchor is ready."
+    } else if totals.total_count > 0 {
+        "Migration transactions are prepared for the Swift outbox."
+    } else {
+        "No migration transactions are ready for outbox export yet."
+    };
+    Ok(migration_result_from_pending_totals(
+        totals,
+        &status,
+        Some(message.to_string()),
+        run.target_values_zatoshi.len() as u32,
+        run.target_values_zatoshi.iter().sum(),
+    ))
+}
+
 pub async fn broadcast_due_orchard_migration_transactions(
     db_path: &str,
     lightwalletd_url: &str,
@@ -1027,7 +1185,6 @@ pub async fn broadcast_due_orchard_migration_transactions(
         lightwalletd_url,
         network,
         account_uuid,
-        None,
         pending_password,
         pending_salt_base64,
         MigrationBroadcastPolicy::FOREGROUND,
@@ -1048,33 +1205,9 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
         lightwalletd_url,
         network,
         account_uuid,
-        None,
         pending_password,
         pending_salt_base64,
         MigrationBroadcastPolicy::ONE_FOREGROUND,
-    )
-    .await
-}
-
-pub(crate) async fn broadcast_due_orchard_migration_transactions_for_run(
-    db_path: &str,
-    lightwalletd_url: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
-    expected_run_id: &str,
-    pending_password: zeroize::Zeroizing<Vec<u8>>,
-    pending_salt_base64: &str,
-    cancel: &AtomicBool,
-) -> Result<IronwoodMigrationResult, String> {
-    broadcast_due_orchard_migration_transactions_inner(
-        db_path,
-        lightwalletd_url,
-        network,
-        account_uuid,
-        Some(expected_run_id),
-        pending_password,
-        pending_salt_base64,
-        MigrationBroadcastPolicy::background(cancel),
     )
     .await
 }
@@ -1084,7 +1217,6 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    expected_run_id: Option<&str>,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
@@ -1101,9 +1233,6 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             migrated_zatoshi: 0,
         });
     };
-    if expected_run_id.is_some_and(|expected| expected != run.run_id) {
-        return Err("Background migration run no longer matches the authorized run".to_string());
-    }
     if policy.is_cancelled() {
         return Ok(cancelled_migration_result(&run));
     }
@@ -2992,6 +3121,122 @@ fn decrypt_and_store_migration_tx(
     raw_tx: &[u8],
 ) -> Result<(), String> {
     super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconcile_orchard_migration_outbox_receipt(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    txid_hex: &str,
+    outcome: &str,
+    remote_height: u32,
+    response_message: Option<&str>,
+    schedule_updates: Vec<(String, u32, u32)>,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let state = super::migration::migration_outbox_tx_state(
+        db_path,
+        account_uuid,
+        network,
+        run_id,
+        txid_hex,
+    )?;
+    match outcome {
+        "accepted" | "acceptedEquivalent" => {
+            if state.run_phase == super::migration::PHASE_FAILED_TERMINAL
+                || state.run_phase == super::migration::PHASE_ABANDONED
+            {
+                return Err(
+                    "Migration outbox receipt cannot accept a retired migration run".to_string(),
+                );
+            }
+            let raw_tx = super::migration::migration_outbox_raw_tx(
+                db_path,
+                account_uuid,
+                network,
+                run_id,
+                txid_hex,
+                pending_password,
+                pending_salt_base64,
+            )?;
+            decrypt_and_store_migration_tx(db_path, network, &raw_tx)?;
+            let schedule_updates = schedule_updates
+                .into_iter()
+                .map(|(item_id, scheduled_height, schedule_start_height)| {
+                    super::migration::MigrationOutboxScheduleUpdate {
+                        item_id,
+                        scheduled_height,
+                        schedule_start_height,
+                    }
+                })
+                .collect::<Vec<_>>();
+            super::migration::apply_accepted_migration_outbox_receipt(
+                db_path,
+                account_uuid,
+                network,
+                run_id,
+                txid_hex,
+                remote_height,
+                &schedule_updates,
+            )
+        }
+        "rejected" => {
+            if !schedule_updates.is_empty() {
+                return Err("Rejected migration outbox receipt cannot update schedules".to_string());
+            }
+            if state.run_phase == super::migration::PHASE_FAILED_TERMINAL {
+                return Ok(());
+            }
+            let message = response_message
+                .filter(|message| !message.is_empty())
+                .map(|message| {
+                    format!("Swift outbox rejected migration transaction {txid_hex}: {message}")
+                })
+                .unwrap_or_else(|| {
+                    format!("Swift outbox rejected migration transaction {txid_hex}")
+                });
+            super::migration::retire_run_for_rebuild(db_path, run_id, &message)
+        }
+        "expired" => {
+            if !schedule_updates.is_empty() {
+                return Err("Expired migration outbox receipt cannot update schedules".to_string());
+            }
+            if state.expiry_height == 0 || state.expiry_height > remote_height {
+                return Err(
+                    "Migration outbox receipt expired before the transaction expiry height"
+                        .to_string(),
+                );
+            }
+            if state.status == "needs_resign" {
+                return Ok(());
+            }
+            if !matches!(state.status.as_str(), "scheduled" | "broadcasted") {
+                return Err(format!(
+                    "Migration outbox receipt cannot expire a transaction in status {}",
+                    state.status
+                ));
+            }
+            let updated = super::migration::mark_expired_pending_parts_for_resign(
+                db_path,
+                run_id,
+                remote_height,
+            )?;
+            if updated == 0 {
+                return Err(
+                    "Migration outbox expiry receipt did not find an expired transaction"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "Unsupported migration outbox receipt outcome: {outcome}"
+        )),
+    }
 }
 
 fn migration_storage_retry_message(tx_label: &str, txid_hex: &str, error: &str) -> String {

@@ -879,7 +879,7 @@ void main() {
   });
 
   test(
-    'mobile new run stores random credential, binds, and schedules',
+    'mobile new run stores random credential and binds before outbox staging',
     () async {
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
@@ -946,7 +946,7 @@ void main() {
       expect(seenPassword, List.filled(32, '01').join());
       expect(seenSalt, 'AQEBAQEBAQEBAQEBAQEBAQ==');
       expect(manifest?.expectedRunId, 'run-1');
-      expect(scheduledCount, 1);
+      expect(scheduledCount, 0);
     },
   );
 
@@ -1021,7 +1021,7 @@ void main() {
   );
 
   test(
-    'mobile status retries a failed native schedule for a bound manifest',
+    'mobile status does not schedule a bound manifest without staged outbox work',
     () async {
       final store = _backgroundCredentialStore();
       await store.prepare(
@@ -1057,7 +1057,7 @@ void main() {
       await service.status(network: 'test', accountUuid: 'account-1');
       await service.status(network: 'test', accountUuid: 'account-1');
 
-      expect(scheduleAttempts, 2);
+      expect(scheduleAttempts, 0);
     },
   );
 
@@ -1177,7 +1177,7 @@ void main() {
     expect(scheduleCalls, 0);
   });
 
-  test('background retry binds the manifest before scheduling', () async {
+  test('background retry stages and arms the bound manifest outbox', () async {
     final store = _backgroundCredentialStore();
     await store.prepare(
       network: 'test',
@@ -1185,7 +1185,7 @@ void main() {
       dbPath: '/tmp/wallet.db',
       lightwalletdUrl: 'https://lwd.example:443',
     );
-    var scheduleCalls = 0;
+    var armCalls = 0;
     var notificationAuthorizationRequestCount = 0;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
@@ -1208,17 +1208,38 @@ void main() {
         notificationAuthorizationRequestCount++;
         return true;
       },
-      scheduleBackgroundMigration: () async {
-        scheduleCalls++;
-        return true;
-      },
+      listMigrationOutboxReceipts: () async => const [],
+      prepareMigrationOutbox:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _migrationResult(),
+      exportMigrationOutbox:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _outboxBatch(),
+      stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
+      armMigrationOutboxBatch:
+          ({required batchId, required expectedDigests}) async {
+            armCalls++;
+            return true;
+          },
+      runMigrationOutboxOnceNow: () async {},
     );
 
     expect(
       await service.retryPrivateMigrationInBackground(accountUuid: 'account-1'),
       isTrue,
     );
-    expect(scheduleCalls, 1);
+    expect(armCalls, 1);
     expect(notificationAuthorizationRequestCount, 1);
     expect(
       (await store.read(
@@ -1229,71 +1250,92 @@ void main() {
     );
   });
 
-  test('mobile ambiguous failed start retains, binds, and schedules', () async {
-    final statuses = <rust_sync.MigrationStatus>[
-      _migrationStatus(),
-      _migrationStatus(activeRunId: 'run-after-error'),
-    ];
-    final store = _backgroundCredentialStore();
-    var scheduledCount = 0;
-    var notificationAuthorizationRequestCount = 0;
-    final service = IronwoodMigrationService(
-      getWalletDbPath: () async => '/tmp/wallet.db',
-      getStatus: ({required dbPath, required network, required accountUuid}) {
-        return Future.value(statuses.removeAt(0));
-      },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
-      backgroundCredentialStore: store,
-      getEndpoint: _testEndpoint,
-      getSessionPassword: () => throw StateError('session password used'),
-      getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
-      isMobile: () => true,
-      isIOS: () => true,
-      isMacOS: () => false,
-      requestNotificationAuthorization: () async {
-        notificationAuthorizationRequestCount++;
-        return true;
-      },
-      scheduleBackgroundMigration: () async {
-        scheduledCount++;
-        return true;
-      },
-      startSoftwareMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required approvedSchedule,
-            required mnemonicBytes,
-            required password,
-            required saltBase64,
-          }) => Future.error(StateError('ambiguous failure')),
-    );
+  test(
+    'mobile ambiguous failed start retains and binds its credential',
+    () async {
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-after-error'),
+      ];
+      final store = _backgroundCredentialStore();
+      var scheduledCount = 0;
+      var notificationAuthorizationRequestCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        requestNotificationAuthorization: () async {
+          notificationAuthorizationRequestCount++;
+          return true;
+        },
+        scheduleBackgroundMigration: () async {
+          scheduledCount++;
+          return true;
+        },
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) => Future.error(StateError('ambiguous failure')),
+      );
 
-    await expectLater(
-      service.startSoftwarePrivateMigration(
-        accountUuid: 'account-1',
-        approvedSchedule: const [],
-      ),
-      throwsA(isA<StateError>()),
-    );
-    expect(
-      (await store.read(
-        network: 'test',
-        accountUuid: 'account-1',
-      ))?.expectedRunId,
-      'run-after-error',
-    );
-    expect(scheduledCount, 1);
-    expect(notificationAuthorizationRequestCount, 1);
-  });
+      await expectLater(
+        service.startSoftwarePrivateMigration(
+          accountUuid: 'account-1',
+          approvedSchedule: const [],
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        (await store.read(
+          network: 'test',
+          accountUuid: 'account-1',
+        ))?.expectedRunId,
+        'run-after-error',
+      );
+      expect(scheduledCount, 0);
+      expect(notificationAuthorizationRequestCount, 1);
+    },
+  );
 
   test('mobile active run id mismatch fails closed before Rust call', () async {
     final store = _backgroundCredentialStore();
@@ -1384,6 +1426,24 @@ void main() {
           scheduledCount++;
           return true;
         },
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
@@ -1392,7 +1452,7 @@ void main() {
         (await store.read(network: 'test', accountUuid: 'account-1'))?.dbPath,
         currentDbPath,
       );
-      expect(scheduledCount, 1);
+      expect(scheduledCount, 0);
     },
   );
 
@@ -1434,6 +1494,24 @@ void main() {
           scheduledCount++;
           return true;
         },
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
       );
 
       await expectLater(
@@ -1487,6 +1565,24 @@ void main() {
           scheduledCount++;
           return true;
         },
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => null,
         prepareKeystoneDenominationMigration:
             ({required dbPath, required network, required accountUuid}) async =>
                 _keystoneSigningRequest(),
@@ -1547,10 +1643,250 @@ void main() {
 
       expect(credentials, hasLength(2));
       expect(credentials[1], credentials[0]);
-      expect(scheduledCount, 1);
+      expect(scheduledCount, 0);
       expect(notificationAuthorizationRequestCount, 2);
     },
   );
+
+  test(
+    'iOS stages and arms typed outbox payload after foreground preparation',
+    () async {
+      const channel = MethodChannel('com.zcash.wallet/background_migration');
+      final events = <String>[];
+      Map<Object?, Object?>? stagedPayload;
+      Map<Object?, Object?>? armedPayload;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            events.add(call.method);
+            switch (call.method) {
+              case 'listOutboxReceipts':
+                return <Object?>[];
+              case 'stageOutboxBatch':
+                stagedPayload = call.arguments as Map<Object?, Object?>;
+                return <String, String>{'txid-1': 'digest-1'};
+              case 'armOutboxBatch':
+                armedPayload = call.arguments as Map<Object?, Object?>;
+                return true;
+              case 'requestNotificationAuthorization':
+                return true;
+              case 'runOutboxOnceNow':
+                return <String, Object?>{'outcome': 'waiting'};
+            }
+            throw StateError('Unexpected method ${call.method}');
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-1'),
+      ];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              events.add('credentialOperation');
+              return _migrationResult();
+            },
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('prepareOutbox');
+              return _migrationResult();
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('exportOutbox');
+              return _outboxBatch();
+            },
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(events, [
+        'listOutboxReceipts',
+        'credentialOperation',
+        'listOutboxReceipts',
+        'prepareOutbox',
+        'exportOutbox',
+        'stageOutboxBatch',
+        'armOutboxBatch',
+        'runOutboxOnceNow',
+        'listOutboxReceipts',
+        'requestNotificationAuthorization',
+      ]);
+      expect(stagedPayload?['batchId'], 'test:account-1:run-1');
+      expect(stagedPayload?['nextProofHeight'], 576);
+      final items = stagedPayload?['items'] as List<Object?>;
+      final item = items.single as Map<Object?, Object?>;
+      expect(item['rawTransaction'], isA<Uint8List>());
+      expect(item['rawTransaction'], Uint8List.fromList([1, 2, 3, 4]));
+      expect(armedPayload, {
+        'batchId': 'test:account-1:run-1',
+        'expectedDigests': {'txid-1': 'digest-1'},
+      });
+    },
+  );
+
+  test(
+    'outbox receipts are acknowledged only after Rust applies them',
+    () async {
+      final events = <String>[];
+      List<String>? acknowledgedReceiptIds;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'session-password',
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => [
+          _outboxReceipt(receiptId: 'receipt-good', txidHex: 'tx-good'),
+          _outboxReceipt(receiptId: 'receipt-bad', txidHex: 'tx-bad'),
+          _outboxReceipt(receiptId: 'receipt-later', txidHex: 'tx-later'),
+        ],
+        reconcileMigrationOutboxReceipt:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required runId,
+              required txidHex,
+              required outcome,
+              required remoteHeight,
+              responseMessage,
+              required scheduleUpdates,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('rust:$txidHex');
+              if (txidHex == 'tx-bad') {
+                throw StateError('Rust rejected receipt');
+              }
+            },
+        acknowledgeMigrationOutboxReceipts: (receiptIds) async {
+          events.add('ack:${receiptIds.join(',')}');
+          acknowledgedReceiptIds = receiptIds;
+        },
+      );
+
+      await expectLater(
+        service.continueSoftwarePrivateMigration(accountUuid: 'account-1'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(events, ['rust:tx-good', 'rust:tx-bad', 'ack:receipt-good']);
+      expect(acknowledgedReceiptIds, ['receipt-good']);
+    },
+  );
+
+  test('iOS continuation never calls the Rust due broadcaster', () async {
+    var prepareCount = 0;
+    var dueBroadcastCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-1'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'session-password',
+      isMobile: () => true,
+      isIOS: () => true,
+      listMigrationOutboxReceipts: () async => const [],
+      prepareMigrationOutbox:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async {
+            prepareCount++;
+            return _migrationResult();
+          },
+      exportMigrationOutbox:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => null,
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async {
+            dueBroadcastCount++;
+            return _migrationResult();
+          },
+    );
+
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+
+    expect(prepareCount, 1);
+    expect(dueBroadcastCount, 0);
+  });
 
   test(
     'terminal mobile status deletes credential and cancels scheduler',
@@ -1653,6 +1989,24 @@ IronwoodMigrationService _notificationAuthorizationService({
     isIOS: () => isIOS,
     requestNotificationAuthorization: requestNotificationAuthorization,
     scheduleBackgroundMigration: () async => true,
+    listMigrationOutboxReceipts: () async => const [],
+    prepareMigrationOutbox:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async => _migrationResult(),
+    exportMigrationOutbox:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async => null,
     startSoftwareMigration:
         ({
           required dbPath,
@@ -1685,6 +2039,48 @@ rust_sync.IronwoodMigrationResult _migrationResult({
     feeZatoshi: BigInt.from(10_000),
     migratedZatoshi: BigInt.from(100_000_000),
   );
+}
+
+rust_sync.MigrationOutboxBatch _outboxBatch() {
+  return rust_sync.MigrationOutboxBatch(
+    runId: 'run-1',
+    timingMeanBlocks: 144,
+    timingMaxBlocks: 576,
+    nextProofHeight: 576,
+    items: [
+      rust_sync.MigrationOutboxItem(
+        itemId: 'txid-1',
+        partIndex: 0,
+        txidHex: 'txid-1',
+        rawTransaction: Uint8List.fromList([1, 2, 3, 4]),
+        anchorBoundaryHeight: 144,
+        scheduledHeight: 288,
+        scheduleStartHeight: 288,
+        expiryHeight: 34_560,
+      ),
+    ],
+  );
+}
+
+Map<Object?, Object?> _outboxReceipt({
+  required String receiptId,
+  required String txidHex,
+}) {
+  return <Object?, Object?>{
+    'receiptId': receiptId,
+    'batchId': 'test:account-1:run-1',
+    'itemId': txidHex,
+    'network': 'test',
+    'accountUuid': 'account-1',
+    'runId': 'run-1',
+    'txidHex': txidHex,
+    'outcome': 'accepted',
+    'remoteHeight': 300,
+    'responseCode': 0,
+    'responseMessage': null,
+    'recordedAtMs': 1,
+    'scheduleUpdates': <Object?>[],
+  };
 }
 
 rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {

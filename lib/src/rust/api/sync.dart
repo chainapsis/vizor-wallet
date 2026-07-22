@@ -339,6 +339,65 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   accountUuid: accountUuid,
 );
 
+/// Foreground-only migration preparation for the Swift-owned outbox.
+/// Denomination stages may advance, and every currently provable signed child
+/// is materialized, but scheduled child transactions are never broadcast here.
+Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationOutbox(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<MigrationOutboxBatch?> exportOrchardMigrationOutbox({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncExportOrchardMigrationOutbox(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<void> reconcileOrchardMigrationOutboxReceipt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String runId,
+  required String txidHex,
+  required String outcome,
+  required int remoteHeight,
+  String? responseMessage,
+  required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncReconcileOrchardMigrationOutboxReceipt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  runId: runId,
+  txidHex: txidHex,
+  outcome: outcome,
+  remoteHeight: remoteHeight,
+  responseMessage: responseMessage,
+  scheduleUpdates: scheduleUpdates,
+  password: password,
+  saltBase64: saltBase64,
+);
+
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   required String dbPath,
   required String lightwalletdUrl,
@@ -1095,6 +1154,114 @@ class KeystoneSignedMigrationMessage {
           runtimeType == other.runtimeType &&
           id == other.id &&
           sigs == other.sigs;
+}
+
+class MigrationOutboxBatch {
+  final String runId;
+  final int timingMeanBlocks;
+  final int timingMaxBlocks;
+  final int? nextProofHeight;
+  final List<MigrationOutboxItem> items;
+
+  const MigrationOutboxBatch({
+    required this.runId,
+    required this.timingMeanBlocks,
+    required this.timingMaxBlocks,
+    this.nextProofHeight,
+    required this.items,
+  });
+
+  @override
+  int get hashCode =>
+      runId.hashCode ^
+      timingMeanBlocks.hashCode ^
+      timingMaxBlocks.hashCode ^
+      nextProofHeight.hashCode ^
+      items.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxBatch &&
+          runtimeType == other.runtimeType &&
+          runId == other.runId &&
+          timingMeanBlocks == other.timingMeanBlocks &&
+          timingMaxBlocks == other.timingMaxBlocks &&
+          nextProofHeight == other.nextProofHeight &&
+          items == other.items;
+}
+
+class MigrationOutboxItem {
+  /// Stable Swift outbox item identifier. This is the finalized txid.
+  final String itemId;
+  final int partIndex;
+  final String txidHex;
+  final Uint8List rawTransaction;
+  final int anchorBoundaryHeight;
+  final int scheduledHeight;
+  final int scheduleStartHeight;
+  final int expiryHeight;
+
+  const MigrationOutboxItem({
+    required this.itemId,
+    required this.partIndex,
+    required this.txidHex,
+    required this.rawTransaction,
+    required this.anchorBoundaryHeight,
+    required this.scheduledHeight,
+    required this.scheduleStartHeight,
+    required this.expiryHeight,
+  });
+
+  @override
+  int get hashCode =>
+      itemId.hashCode ^
+      partIndex.hashCode ^
+      txidHex.hashCode ^
+      rawTransaction.hashCode ^
+      anchorBoundaryHeight.hashCode ^
+      scheduledHeight.hashCode ^
+      scheduleStartHeight.hashCode ^
+      expiryHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxItem &&
+          runtimeType == other.runtimeType &&
+          itemId == other.itemId &&
+          partIndex == other.partIndex &&
+          txidHex == other.txidHex &&
+          rawTransaction == other.rawTransaction &&
+          anchorBoundaryHeight == other.anchorBoundaryHeight &&
+          scheduledHeight == other.scheduledHeight &&
+          scheduleStartHeight == other.scheduleStartHeight &&
+          expiryHeight == other.expiryHeight;
+}
+
+class MigrationOutboxScheduleUpdate {
+  final String itemId;
+  final int scheduledHeight;
+  final int scheduleStartHeight;
+
+  const MigrationOutboxScheduleUpdate({
+    required this.itemId,
+    required this.scheduledHeight,
+    required this.scheduleStartHeight,
+  });
+
+  @override
+  int get hashCode =>
+      itemId.hashCode ^ scheduledHeight.hashCode ^ scheduleStartHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxScheduleUpdate &&
+          runtimeType == other.runtimeType &&
+          itemId == other.itemId &&
+          scheduledHeight == other.scheduledHeight &&
+          scheduleStartHeight == other.scheduleStartHeight;
 }
 
 enum MigrationPartState {
