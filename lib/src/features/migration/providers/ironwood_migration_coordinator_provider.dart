@@ -252,6 +252,10 @@ class IronwoodMigrationCoordinator
           nextStatuses[account.uuid] = status;
           nextErrors.remove(account.uuid);
 
+          if (status.activeRunId == null) {
+            service.clearForegroundImmediateMigration(account.uuid);
+          }
+
           if (_shouldAdvance(
             status,
             isHardware: account.isHardware,
@@ -392,9 +396,16 @@ class IronwoodMigrationCoordinator
       _lastAdvanceProgressKeys[accountUuid] = _advanceProgressKey(status);
     }
     try {
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+      final service = ref.read(ironwoodMigrationServiceProvider);
+      if (service.isForegroundImmediateMigration(accountUuid)) {
+        await service.continueSoftwareImmediateMigration(
+          accountUuid: accountUuid,
+        );
+      } else {
+        await service.continueSoftwarePrivateMigration(
+          accountUuid: accountUuid,
+        );
+      }
     } finally {
       if (ref.mounted) {
         state = state.copyWith(

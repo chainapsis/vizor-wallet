@@ -387,6 +387,17 @@ class IronwoodMigrationService {
   final IronwoodMigrationKeystoneRequestDiscarder
   discardKeystoneMigrationRequest;
   final IronwoodMigrationOperationRegistry operationRegistry;
+  final Set<String> _foregroundImmediateAccounts = <String>{};
+
+  /// Whether an active migration must stay on the user-attended, foreground
+  /// path. Immediate migration deliberately never uses the iOS outbox.
+  bool isForegroundImmediateMigration(String accountUuid) =>
+      _foregroundImmediateAccounts.contains(accountUuid);
+
+  void clearForegroundImmediateMigration(String accountUuid) {
+    _foregroundImmediateAccounts.remove(accountUuid);
+  }
+
   final Map<String, Future<void>> _credentialOperationTails = {};
   final Set<String> _scheduledBackgroundMigrations = {};
 
@@ -572,41 +583,80 @@ class IronwoodMigrationService {
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
 
+    _foregroundImmediateAccounts.add(accountUuid);
+    try {
+      return await operationRegistry.run(
+        network: context.network,
+        accountUuid: context.accountUuid,
+        operation: () async {
+          final credential = await _legacyCredential(context);
+          if (isMacOS()) {
+            return startMacosSoftwareMigration(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              password: credential.password,
+              saltBase64: credential.saltBase64,
+              approvedSchedule: approvedSchedule,
+            );
+          }
+
+          final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+          if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+            throw Exception('Mnemonic not found for the migration account.');
+          }
+          try {
+            return await startSoftwareMigration(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              mnemonicBytes: mnemonicBytes,
+              password: credential.password,
+              saltBase64: credential.saltBase64,
+              approvedSchedule: approvedSchedule,
+            );
+          } finally {
+            mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+          }
+        },
+      );
+    } catch (_) {
+      _foregroundImmediateAccounts.remove(accountUuid);
+      rethrow;
+    }
+  }
+
+  /// Broadcasts a due Immediate migration transaction in the foreground.
+  ///
+  /// Unlike Private migration, this has no Swift outbox or background
+  /// credential enrollment. The app coordinator invokes it while foregrounded.
+  Future<rust_sync.IronwoodMigrationResult> continueSoftwareImmediateMigration({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+
     return operationRegistry.run(
       network: context.network,
       accountUuid: context.accountUuid,
       operation: () async {
         final credential = await _legacyCredential(context);
-        if (isMacOS()) {
-          return startMacosSoftwareMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-            approvedSchedule: approvedSchedule,
-          );
-        }
-
-        final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw Exception('Mnemonic not found for the migration account.');
-        }
-        try {
-          return await startSoftwareMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            mnemonicBytes: mnemonicBytes,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-            approvedSchedule: approvedSchedule,
-          );
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
-        }
+        return broadcastDueMigration(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+        );
       },
     );
   }
