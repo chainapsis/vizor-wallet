@@ -69,6 +69,17 @@ void main() {
       ),
       isFalse,
     );
+
+    final relocated = await store.replaceDbPath(
+      network: 'test',
+      accountUuid: 'account-1',
+      expectedDbPath: '/tmp/wallet.db',
+      dbPath: '/new-container/wallet.db',
+    );
+    expect(relocated.dbPath, '/new-container/wallet.db');
+    expect(relocated.credentialHex, prepared.credentialHex);
+    expect(relocated.saltBase64, prepared.saltBase64);
+    expect(relocated.expectedRunId, 'run-1');
   });
 
   test('manifest decoding rejects non-strict or invalid values', () {
@@ -221,39 +232,39 @@ void main() {
     expect(calls.map((call) => call.method), ['quiesce', 'resume']);
   });
 
-  test('Android quiesce retains the credential until revocation commits', () async {
-    final storage = FlutterSecureStorage();
-    final store = IronwoodMigrationBackgroundCredentialStore.testing(
-      storage: storage,
-      randomBytes: (length) => Uint8List(length),
-    );
-    final lifecycle = IronwoodMigrationBackgroundLifecycle(
-      credentialStore: store,
-      isIOS: false,
-      isAndroid: true,
-    );
-    await store.prepare(
-      network: 'test',
-      accountUuid: 'account-1',
-      dbPath: '/tmp/wallet.db',
-      lightwalletdUrl: 'https://lwd.example:443',
-    );
+  test(
+    'Android quiesce retains the credential until revocation commits',
+    () async {
+      final storage = FlutterSecureStorage();
+      final store = IronwoodMigrationBackgroundCredentialStore.testing(
+        storage: storage,
+        randomBytes: (length) => Uint8List(length),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        credentialStore: store,
+        isIOS: false,
+        isAndroid: true,
+      );
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
 
-    await lifecycle.quiesce();
-    expect(
-      await store.read(network: 'test', accountUuid: 'account-1'),
-      isNotNull,
-    );
+      await lifecycle.quiesce();
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNotNull,
+      );
 
-    await lifecycle.revokeAccount(
-      network: 'test',
-      accountUuid: 'account-1',
-    );
-    expect(
-      await store.read(network: 'test', accountUuid: 'account-1'),
-      isNull,
-    );
-  });
+      await lifecycle.revokeAccount(network: 'test', accountUuid: 'account-1');
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNull,
+      );
+    },
+  );
 
   test('iOS wallet reset fails closed when native revocation fails', () async {
     const channel = MethodChannel('test/background_migration/revoke_all');

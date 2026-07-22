@@ -165,6 +165,19 @@ class IronwoodMigrationBackgroundCredentialManifest {
     );
   }
 
+  IronwoodMigrationBackgroundCredentialManifest replaceDbPath(String value) {
+    return IronwoodMigrationBackgroundCredentialManifest(
+      version: version,
+      network: network,
+      accountUuid: accountUuid,
+      dbPath: value,
+      lightwalletdUrl: lightwalletdUrl,
+      credentialHex: credentialHex,
+      saltBase64: saltBase64,
+      expectedRunId: expectedRunId,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -273,6 +286,29 @@ class IronwoodMigrationBackgroundCredentialStore {
     if (manifest.expectedRunId == expectedRunId) return false;
     await _write(bound);
     return true;
+  }
+
+  Future<IronwoodMigrationBackgroundCredentialManifest> replaceDbPath({
+    required String network,
+    required String accountUuid,
+    required String expectedDbPath,
+    required String dbPath,
+  }) async {
+    final manifest = await read(network: network, accountUuid: accountUuid);
+    if (manifest == null) {
+      throw StateError('Ironwood migration credential manifest is missing.');
+    }
+    if (manifest.dbPath != expectedDbPath) {
+      throw StateError(
+        'Ironwood migration credential manifest changed while it was being '
+        'updated.',
+      );
+    }
+    if (manifest.dbPath == dbPath) return manifest;
+
+    final updated = manifest.replaceDbPath(dbPath);
+    await _write(updated);
+    return updated;
   }
 
   Future<void> delete({required String network, required String accountUuid}) {

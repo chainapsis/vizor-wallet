@@ -315,26 +315,22 @@ class IronwoodMigrationService {
       return _runCredentialOperation(
         context: context,
         mayCreateRun: true,
-        operation:
-            (credential) => startMacosSoftwareMigration(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
-              accountUuid: accountUuid,
-              password: credential.password,
-              saltBase64: credential.saltBase64,
-              approvedSchedule: approvedSchedule,
-            ),
+        operation: (credential) => startMacosSoftwareMigration(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+          approvedSchedule: approvedSchedule,
+        ),
       );
     }
 
-    var hasActiveRun = false;
-    final result = await _runCredentialOperation(
+    return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      onMobileSuccessStatus: (status) {
-        hasActiveRun = status.activeRunId != null;
-      },
+      enrollNotificationsOnActiveRun: true,
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
@@ -359,10 +355,6 @@ class IronwoodMigrationService {
         return resultFuture;
       },
     );
-    if (hasActiveRun) {
-      await _requestNotificationAuthorizationBestEffort();
-    }
-    return result;
   }
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
@@ -380,15 +372,14 @@ class IronwoodMigrationService {
     final broadcastResult = await _runCredentialOperation(
       context: context,
       mayCreateRun: false,
-      operation:
-          (credential) => broadcastDueMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-          ),
+      operation: (credential) => broadcastDueMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
     );
     if (isHardwareAccount(accountUuid) ||
         broadcastResult.status != 'ready_to_migrate') {
@@ -399,16 +390,15 @@ class IronwoodMigrationService {
       return _runCredentialOperation(
         context: context,
         mayCreateRun: true,
-        operation:
-            (credential) => startMacosSoftwareMigration(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
-              accountUuid: accountUuid,
-              password: credential.password,
-              saltBase64: credential.saltBase64,
-              approvedSchedule: const [],
-            ),
+        operation: (credential) => startMacosSoftwareMigration(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          password: credential.password,
+          saltBase64: credential.saltBase64,
+          approvedSchedule: const [],
+        ),
       );
     }
 
@@ -452,15 +442,14 @@ class IronwoodMigrationService {
     return _runCredentialOperation(
       context: context,
       mayCreateRun: false,
-      operation:
-          (credential) => broadcastOneDueMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-          ),
+      operation: (credential) => broadcastOneDueMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
     );
   }
 
@@ -490,7 +479,7 @@ class IronwoodMigrationService {
           accountUuid: context.accountUuid,
         );
         if (manifest == null) return false;
-        _validateManifestContext(manifest, context);
+        await _resolveManifestContext(manifest, context);
         await backgroundCredentialStore.bindExpectedRunId(
           network: context.network,
           accountUuid: context.accountUuid,
@@ -500,6 +489,7 @@ class IronwoodMigrationService {
         final scheduled = await scheduleBackgroundMigration();
         if (scheduled) {
           _scheduledBackgroundMigrations.add(_credentialKey(context));
+          await _requestNotificationAuthorizationBestEffort();
         }
         return scheduled;
       }),
@@ -515,12 +505,11 @@ class IronwoodMigrationService {
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
-      operation:
-          () => prepareKeystoneDenominationMigration(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-          ),
+      operation: () => prepareKeystoneDenominationMigration(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+      ),
     );
   }
 
@@ -543,18 +532,18 @@ class IronwoodMigrationService {
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      operation:
-          (credential) => completeKeystoneDenominationMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            requestId: requestId,
-            signedMessages: signedMessages,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-            approvedSchedule: approvedSchedule,
-          ),
+      enrollNotificationsOnActiveRun: true,
+      operation: (credential) => completeKeystoneDenominationMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        requestId: requestId,
+        signedMessages: signedMessages,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+        approvedSchedule: approvedSchedule,
+      ),
     );
   }
 
@@ -565,12 +554,11 @@ class IronwoodMigrationService {
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
-      operation:
-          () => prepareKeystoneBatchMigration(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-          ),
+      operation: () => prepareKeystoneBatchMigration(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+      ),
     );
   }
 
@@ -592,16 +580,16 @@ class IronwoodMigrationService {
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      operation:
-          (credential) => completeKeystoneBatchMigration(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            requestId: requestId,
-            signedMessages: signedMessages,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-          ),
+      enrollNotificationsOnActiveRun: true,
+      operation: (credential) => completeKeystoneBatchMigration(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        requestId: requestId,
+        signedMessages: signedMessages,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
     );
   }
 
@@ -609,7 +597,7 @@ class IronwoodMigrationService {
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
     required Future<T> Function(_MigrationCredential credential) operation,
-    void Function(rust_sync.MigrationStatus status)? onMobileSuccessStatus,
+    bool enrollNotificationsOnActiveRun = false,
   }) async {
     return operationRegistry.run(
       network: context.network,
@@ -650,11 +638,14 @@ class IronwoodMigrationService {
             context: context,
             status: currentStatus,
           );
+          if (enrollNotificationsOnActiveRun &&
+              currentStatus.activeRunId != null) {
+            await _requestNotificationAuthorizationBestEffort();
+          }
 
           if (operationError != null) {
             Error.throwWithStackTrace(operationError, operationStackTrace!);
           }
-          onMobileSuccessStatus?.call(currentStatus);
           return result;
         });
       },
@@ -673,7 +664,7 @@ class IronwoodMigrationService {
         accountUuid: context.accountUuid,
       );
       if (manifest == null) return _legacyCredential(context);
-      _validateManifestContext(manifest, context);
+      final resolvedManifest = await _resolveManifestContext(manifest, context);
       await backgroundCredentialStore.bindExpectedRunId(
         network: context.network,
         accountUuid: context.accountUuid,
@@ -681,8 +672,8 @@ class IronwoodMigrationService {
       );
       await _ensureBackgroundMigrationScheduled(context);
       return _MigrationCredential(
-        password: manifest.credentialHex,
-        saltBase64: manifest.saltBase64,
+        password: resolvedManifest.credentialHex,
+        saltBase64: resolvedManifest.saltBase64,
       );
     }
 
@@ -736,7 +727,7 @@ class IronwoodMigrationService {
         _scheduledBackgroundMigrations.remove(_credentialKey(context));
         return;
       }
-      _validateManifestContext(manifest, context);
+      await _resolveManifestContext(manifest, context);
       await backgroundCredentialStore.bindExpectedRunId(
         network: context.network,
         accountUuid: context.accountUuid,
@@ -777,18 +768,30 @@ class IronwoodMigrationService {
     }
   }
 
-  void _validateManifestContext(
+  Future<IronwoodMigrationBackgroundCredentialManifest> _resolveManifestContext(
     IronwoodMigrationBackgroundCredentialManifest manifest,
     _MigrationCredentialContext context,
-  ) {
-    if (manifest.network != context.network ||
-        manifest.accountUuid != context.accountUuid ||
-        manifest.dbPath != context.dbPath) {
-      throw StateError(
-        'Ironwood migration credential manifest does not match the active '
-        'wallet context.',
-      );
+  ) async {
+    if (manifest.network == context.network &&
+        manifest.accountUuid == context.accountUuid) {
+      if (manifest.dbPath == context.dbPath) return manifest;
+
+      final storedDbName = _fileName(manifest.dbPath);
+      final currentDbName = _fileName(context.dbPath);
+      if (isIOS() && storedDbName != null && storedDbName == currentDbName) {
+        return backgroundCredentialStore.replaceDbPath(
+          network: context.network,
+          accountUuid: context.accountUuid,
+          expectedDbPath: manifest.dbPath,
+          dbPath: context.dbPath,
+        );
+      }
     }
+
+    throw StateError(
+      'Ironwood migration credential manifest does not match the active '
+      'wallet context.',
+    );
   }
 
   Future<void> _ensureBackgroundMigrationScheduled(
@@ -881,15 +884,12 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     getPrivatePlan: rust_sync.getOrchardMigrationPrivatePlan,
     secureStore: AppSecureStore.instance,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
-    getSessionPassword:
-        () =>
-            ref
-                .read(appSecurityProvider.notifier)
-                .requireSessionPasswordForNativeSecretUse(),
-    getMnemonicBytesForAccount:
-        (accountUuid) => ref
-            .read(accountProvider.notifier)
-            .getMnemonicBytesForAccount(accountUuid),
+    getSessionPassword: () => ref
+        .read(appSecurityProvider.notifier)
+        .requireSessionPasswordForNativeSecretUse(),
+    getMnemonicBytesForAccount: (accountUuid) => ref
+        .read(accountProvider.notifier)
+        .getMnemonicBytesForAccount(accountUuid),
     isHardwareAccount: (accountUuid) {
       final state = ref.read(accountProvider).value;
       for (final account in state?.accounts ?? const <AccountInfo>[]) {
@@ -955,6 +955,13 @@ class _MigrationCredentialContext {
   final String network;
   final String accountUuid;
   final String? lightwalletdUrl;
+}
+
+String? _fileName(String path) {
+  final segments = Uri.file(
+    path,
+  ).pathSegments.where((segment) => segment.isNotEmpty);
+  return segments.isEmpty ? null : segments.last;
 }
 
 class _MigrationCredential {

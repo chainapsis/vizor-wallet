@@ -1186,6 +1186,7 @@ void main() {
       lightwalletdUrl: 'https://lwd.example:443',
     );
     var scheduleCalls = 0;
+    var notificationAuthorizationRequestCount = 0;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -1201,7 +1202,12 @@ void main() {
       backgroundCredentialStore: store,
       getEndpoint: _testEndpoint,
       isMobile: () => true,
+      isIOS: () => true,
       supportsBackgroundMigration: () => true,
+      requestNotificationAuthorization: () async {
+        notificationAuthorizationRequestCount++;
+        return true;
+      },
       scheduleBackgroundMigration: () async {
         scheduleCalls++;
         return true;
@@ -1213,6 +1219,7 @@ void main() {
       isTrue,
     );
     expect(scheduleCalls, 1);
+    expect(notificationAuthorizationRequestCount, 1);
     expect(
       (await store.read(
         network: 'test',
@@ -1229,6 +1236,7 @@ void main() {
     ];
     final store = _backgroundCredentialStore();
     var scheduledCount = 0;
+    var notificationAuthorizationRequestCount = 0;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -1246,7 +1254,12 @@ void main() {
       getSessionPassword: () => throw StateError('session password used'),
       getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1]),
       isMobile: () => true,
+      isIOS: () => true,
       isMacOS: () => false,
+      requestNotificationAuthorization: () async {
+        notificationAuthorizationRequestCount++;
+        return true;
+      },
       scheduleBackgroundMigration: () async {
         scheduledCount++;
         return true;
@@ -1279,6 +1292,7 @@ void main() {
       'run-after-error',
     );
     expect(scheduledCount, 1);
+    expect(notificationAuthorizationRequestCount, 1);
   });
 
   test('mobile active run id mismatch fails closed before Rust call', () async {
@@ -1333,7 +1347,110 @@ void main() {
   });
 
   test(
-    'Keystone prepare creates no credential and completions share rules',
+    'iOS active run rebinds the same wallet DB after container relocation',
+    () async {
+      const oldDbPath =
+          '/old-container/Application Support/zcash_wallet_abc.db';
+      const currentDbPath =
+          '/new-container/Application Support/zcash_wallet_abc.db';
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: oldDbPath,
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var scheduledCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => currentDbPath,
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        isIOS: () => true,
+        scheduleBackgroundMigration: () async {
+          scheduledCount++;
+          return true;
+        },
+      );
+
+      await service.status(network: 'test', accountUuid: 'account-1');
+
+      expect(
+        (await store.read(network: 'test', accountUuid: 'account-1'))?.dbPath,
+        currentDbPath,
+      );
+      expect(scheduledCount, 1);
+    },
+  );
+
+  test(
+    'iOS active run rejects a different wallet DB after relocation',
+    () async {
+      const oldDbPath =
+          '/old-container/Application Support/zcash_wallet_abc.db';
+      const currentDbPath =
+          '/new-container/Application Support/zcash_wallet_other.db';
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: oldDbPath,
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var scheduledCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => currentDbPath,
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        isIOS: () => true,
+        scheduleBackgroundMigration: () async {
+          scheduledCount++;
+          return true;
+        },
+      );
+
+      await expectLater(
+        service.status(network: 'test', accountUuid: 'account-1'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        (await store.read(network: 'test', accountUuid: 'account-1'))?.dbPath,
+        oldDbPath,
+      );
+      expect(scheduledCount, 0);
+    },
+  );
+
+  test(
+    'Keystone prepare stays silent and completions enroll notifications',
     () async {
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
@@ -1431,7 +1548,7 @@ void main() {
       expect(credentials, hasLength(2));
       expect(credentials[1], credentials[0]);
       expect(scheduledCount, 1);
-      expect(notificationAuthorizationRequestCount, 0);
+      expect(notificationAuthorizationRequestCount, 2);
     },
   );
 
