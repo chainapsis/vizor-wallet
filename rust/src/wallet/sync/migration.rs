@@ -2877,6 +2877,21 @@ fn calculate_migration_timing_projection(
     })
 }
 
+fn migration_timing_projection_or_default(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    total_count: u32,
+    confirmation_target: u32,
+) -> MigrationTimingProjection {
+    match migration_timing_projection_for_run(conn, run_id, total_count, confirmation_target) {
+        Ok(projection) => projection,
+        Err(error) => {
+            log::warn!("migration: timing projection unavailable for run {run_id}: {error}");
+            MigrationTimingProjection::default()
+        }
+    }
+}
+
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
     let network = conn
         .query_row(
@@ -2943,12 +2958,12 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         &phase,
         denomination_confirmation_target,
     )?;
-    let timing_projection = migration_timing_projection_for_run(
+    let timing_projection = migration_timing_projection_or_default(
         conn,
         &run.run_id,
         total_count,
         denomination_confirmation_target,
-    )?;
+    );
     for part in &mut parts {
         part.schedule_order = timing_projection
             .schedule_order_by_part

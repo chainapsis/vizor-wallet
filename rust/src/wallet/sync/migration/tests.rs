@@ -920,6 +920,73 @@ fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
 }
 
 #[test]
+fn timing_projection_failure_does_not_block_migration_status() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap().to_string();
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json,
+              schedule_json, proof_retry_height)
+             VALUES ('run-timing-gap', 'account-1', 'test', 'db', ?1, 1, 1,
+                     '[100]', '{{', NULL)"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    insert_test_stage(
+        &conn,
+        "run-timing-gap",
+        &"33".repeat(32),
+        DenominationStageStatus::Confirmed,
+        Some(100),
+    );
+    conn.execute(
+        &format!(
+            "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+             (run_id, message_id, child_index, encrypted_base_pczt,
+              encrypted_compact_sigs, target_height, expiry_height,
+              value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+             VALUES ('run-timing-gap', 'message-0', 0, 'base', 'sigs', 101,
+                     900, 99, 1, ?1, '{{}}')"
+        ),
+        params![serde_json::to_string(&PreparedOrchardNoteRef {
+            txid_hex: "11".repeat(32),
+            output_index: 0,
+            value_zatoshi: 100,
+            note_version: 2,
+            nullifier_hex: Some("22".repeat(32)),
+        })
+        .unwrap()],
+    )
+    .unwrap();
+
+    let run = active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .unwrap();
+    let status = status_for_run(&conn, run).unwrap();
+
+    assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(status.next_action_height, None);
+    assert_eq!(status.estimated_completion_height, None);
+    drop(conn);
+
+    let export_error = export_scheduled_migration_outbox(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        b"password",
+        TEST_SALT_BASE64,
+    )
+    .unwrap_err();
+    assert!(export_error.contains("Decode migration timing schedule"));
+}
+
+#[test]
 fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
     let mut rng = StdRng::seed_from_u64(0x318);
     let offsets = random_schedule_block_offsets_with_rng(
