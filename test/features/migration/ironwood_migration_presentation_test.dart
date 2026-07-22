@@ -35,6 +35,7 @@ void main() {
     );
 
     expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
+    expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
       'Jul 17, 18:05',

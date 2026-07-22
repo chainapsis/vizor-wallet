@@ -118,6 +118,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/intro'),
+      stepLabel: 'Step 1/3',
       topGap: 31,
       childGap: 32,
       title: 'How Migration Works',
@@ -158,6 +159,7 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
         _selectedOption == _MobileMigrationOption.immediate;
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/how-it-works'),
+      stepLabel: 'Step 2/3',
       topGap: 91,
       childGap: 24,
       title: 'Choose How to Migrate',

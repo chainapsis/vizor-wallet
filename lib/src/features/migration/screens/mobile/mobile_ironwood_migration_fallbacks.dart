@@ -98,7 +98,7 @@ String _compactZec(BigInt zatoshi) {
 }
 
 String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
-  return migrationPlanCompletionTimingLabel(plan);
+  return migrationPlanCompletionDurationLabel(plan);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {

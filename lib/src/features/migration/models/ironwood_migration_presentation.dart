@@ -112,6 +112,9 @@ String _formatMigrationDuration(int blocks) {
 String migrationBlockOffsetLabel(int blocks) =>
     blocks > 0 ? '~$blocks blocks' : 'Schedule pending';
 
+String migrationBlockOffsetDurationLabel(int blocks) =>
+    blocks > 0 ? _formatMigrationDuration(blocks) : 'Schedule pending';
+
 String migrationScheduledBroadcastLabel(
   rust_sync.MigrationScheduledBroadcast broadcast, {
   DateTime? now,

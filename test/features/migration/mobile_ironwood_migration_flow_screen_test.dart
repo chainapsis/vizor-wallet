@@ -527,6 +527,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('How Migration Works'), findsOneWidget);
+    expect(find.text('Step 1/3'), findsOneWidget);
     expect(find.textContaining('Choose how you migrate'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_process_step_1')),
@@ -564,6 +565,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Choose How to Migrate'), findsOneWidget);
+    expect(find.text('Step 2/3'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Recommended'), findsOneWidget);
     expect(
@@ -664,6 +666,7 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Step 3/3'), findsOneWidget);
   });
 
   testWidgets('renders the private migration review plan', (tester) async {
@@ -684,11 +687,9 @@ void main() {
         matching: find.byType(Text),
       ),
     );
-    expect(
-      completionText.data,
-      matches(RegExp(r'^[A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$')),
-    );
+    expect(completionText.data, '~37 hrs');
     expect(completionText.data, isNot(contains('blocks')));
+    expect(find.text('~3 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('0.1442 ZEC'), findsOneWidget);
     expect(find.text('Start migration'), findsOneWidget);

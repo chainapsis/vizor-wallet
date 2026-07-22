@@ -270,7 +270,7 @@ class _MobileMigrationPartList extends StatelessWidget {
                                 ),
                                 width: statusWidth,
                                 child: Text(
-                                  migrationBlockOffsetLabel(
+                                  migrationBlockOffsetDurationLabel(
                                     transfer.blockOffset,
                                   ),
                                   maxLines: 1,
