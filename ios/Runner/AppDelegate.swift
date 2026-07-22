@@ -80,6 +80,11 @@ import UIKit
             result(self.backgroundMigrationResult(outcome))
           }
         }
+      case "resumeWithoutSchedulingForTesting":
+        result(
+          BackgroundMigrationManager.shared
+            .resumeWithoutSchedulingForTesting()
+        )
       #endif
       default:
         result(FlutterMethodNotImplemented)

@@ -47,6 +47,21 @@ struct IronwoodMigrationBackgroundManifest: Codable, Equatable {
     }
     return manifest
   }
+
+  func replacingDbPath(_ resolvedDbPath: String)
+    -> IronwoodMigrationBackgroundManifest
+  {
+    IronwoodMigrationBackgroundManifest(
+      version: version,
+      network: network,
+      accountUuid: accountUuid,
+      dbPath: resolvedDbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      credentialHex: credentialHex,
+      saltBase64: saltBase64,
+      expectedRunId: expectedRunId
+    )
+  }
 }
 
 enum IronwoodMigrationManifestStore {
@@ -239,7 +254,8 @@ enum BackgroundMigrationReschedulePolicy {
     guard let nextHeight else {
       return 2 * 60
     }
-    let remainingBlocks = nextHeight > observedHeight
+    let remainingBlocks =
+      nextHeight > observedHeight
       ? nextHeight - observedHeight : 1
     return max(60, TimeInterval(remainingBlocks) * 75)
   }
@@ -268,6 +284,13 @@ enum BackgroundMigrationNotificationPolicy {
   static let graceBlockCount: UInt64 = 96
   static let fallbackSchedulingBlockCount: UInt64 = 144
 
+  static func shouldScheduleFallbackWatchdog(
+    existing: BackgroundMigrationWatchdogState?,
+    needsActionAlreadyNotified: Bool
+  ) -> Bool {
+    existing == nil && !needsActionAlreadyNotified
+  }
+
   static func identifier(
     for manifest: IronwoodMigrationBackgroundManifest
   ) -> String {
@@ -290,7 +313,8 @@ enum BackgroundMigrationNotificationPolicy {
   ) -> Date {
     let blocksUntilScheduled: UInt64
     if let nextScheduledHeight {
-      blocksUntilScheduled = nextScheduledHeight > observedHeight
+      blocksUntilScheduled =
+        nextScheduledHeight > observedHeight
         ? nextScheduledHeight - observedHeight : 0
     } else {
       // With no usable height, wait one normal scheduling interval in
@@ -479,6 +503,7 @@ private enum BackgroundMigrationNotificationStore {
 
 struct BackgroundMigrationRunnerDependencies {
   var loadManifests: () -> [IronwoodMigrationBackgroundManifest]?
+  var resolveManifest: (IronwoodMigrationBackgroundManifest) -> IronwoodMigrationBackgroundManifest?
   var loadBlockedKeys: () -> Set<String>
   var loadLastAttemptedKey: () -> String?
   var saveLastAttemptedKey: (String) -> Void
@@ -493,6 +518,7 @@ struct BackgroundMigrationRunnerDependencies {
 
   static let live = BackgroundMigrationRunnerDependencies(
     loadManifests: IronwoodMigrationManifestStore.loadAllIfAccessible,
+    resolveManifest: BackgroundMigrationRunner.resolveAllowedManifest,
     loadBlockedKeys: BackgroundMigrationBlockedStore.load,
     loadLastAttemptedKey: BackgroundMigrationCursorStore.load,
     saveLastAttemptedKey: BackgroundMigrationCursorStore.save,
@@ -533,8 +559,8 @@ enum BackgroundMigrationRunner {
     }
     var manifest: IronwoodMigrationBackgroundManifest?
     for candidate in ordered {
-      if isAllowed(candidate) {
-        manifest = candidate
+      if let resolved = dependencies.resolveManifest(candidate) {
+        manifest = resolved
         break
       }
       dependencies.markBlocked(candidate)
@@ -640,20 +666,43 @@ enum BackgroundMigrationRunner {
     }
   }
 
-  private static func isAllowed(
+  fileprivate static func resolveAllowedManifest(
     _ manifest: IronwoodMigrationBackgroundManifest
-  ) -> Bool {
+  ) -> IronwoodMigrationBackgroundManifest? {
+    guard let support = try? resolveWalletSupportDirectory()
+    else {
+      return nil
+    }
+    let dbName = URL(fileURLWithPath: manifest.dbPath).lastPathComponent
+    let currentDbPath = support.appendingPathComponent(dbName).path
+    return resolveAllowedManifest(
+      manifest,
+      currentDbPath: currentDbPath,
+      supportDirectory: support
+    )
+  }
+
+  static func resolveAllowedManifest(
+    _ manifest: IronwoodMigrationBackgroundManifest,
+    currentDbPath: String,
+    supportDirectory: URL
+  ) -> IronwoodMigrationBackgroundManifest? {
     guard manifest.isValid,
       let endpoint = URL(string: manifest.lightwalletdUrl),
       ["http", "https"].contains(endpoint.scheme?.lowercased() ?? ""),
-      FileManager.default.fileExists(atPath: manifest.dbPath),
-      let support = try? resolveWalletSupportDirectory()
+      FileManager.default.fileExists(atPath: currentDbPath)
     else {
-      return false
+      return nil
     }
-    let dbUrl = URL(fileURLWithPath: manifest.dbPath).standardizedFileURL
-    let supportUrl = support.standardizedFileURL
-    return dbUrl.deletingLastPathComponent() == supportUrl
+    let storedDbUrl = URL(fileURLWithPath: manifest.dbPath).standardizedFileURL
+    let currentDbUrl = URL(fileURLWithPath: currentDbPath).standardizedFileURL
+    let supportUrl = supportDirectory.standardizedFileURL
+    guard storedDbUrl.lastPathComponent == currentDbUrl.lastPathComponent,
+      currentDbUrl.deletingLastPathComponent() == supportUrl
+    else {
+      return nil
+    }
+    return manifest.replacingDbPath(currentDbUrl.path)
   }
 
   fileprivate static func runNativeSync(
@@ -759,61 +808,123 @@ private final class BackgroundMigrationNotificationCoordinator {
     label: "com.keplr.vizor.ironwood-migration.notifications",
     qos: .utility
   )
+  private var addGenerationByStorageKey: [String: UInt64] = [:]
+  private var inFlightAddCountByStorageKey: [String: Int] = [:]
+  private var cancellationWaitersByStorageKey: [String: [() -> Void]] = [:]
+  private var cancelAllWaiters: [() -> Void] = []
 
   private init(center: UNUserNotificationCenter = .current()) {
     self.center = center
   }
 
   func requestAuthorization(completion: @escaping (Bool) -> Void) {
-    center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+    center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
       if let error {
         print("[BGMigration] notification authorization failed: \(error)")
       }
-      DispatchQueue.main.async { completion(granted) }
+      if granted {
+        guard let self else {
+          DispatchQueue.main.async { completion(false) }
+          return
+        }
+        self.reconcile(completion: { completion(true) })
+        return
+      }
+      DispatchQueue.main.async { completion(false) }
     }
   }
 
   func reconcile(
     after outcome: BackgroundMigrationRunOutcome? = nil,
     attemptedStorageKey: String? = nil,
-    now: Date = Date()
+    now: Date = Date(),
+    completion: (() -> Void)? = nil
   ) {
     queue.async { [weak self] in
-      self?.reconcileOnQueue(
+      guard let self else {
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+        return
+      }
+      let pendingAdds = DispatchGroup()
+      self.reconcileOnQueue(
         after: outcome,
         attemptedStorageKey: attemptedStorageKey,
-        now: now
+        now: now,
+        pendingAdds: pendingAdds
       )
+      pendingAdds.notify(queue: self.queue) {
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+      }
     }
   }
 
-  func cancel(storageKey: String) {
+  func cancel(
+    storageKey: String,
+    completion: (() -> Void)? = nil
+  ) {
     queue.async { [weak self] in
+      guard let self else {
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+        return
+      }
+      self.invalidateAdds(for: storageKey)
       let identifier = BackgroundMigrationNotificationStore.removeIdentifier(
         for: storageKey
       )
       BackgroundMigrationNotificationStore.removeWatchdogState(
         for: storageKey
       )
-      guard let identifier else { return }
-      self?.cancelNotification(identifier)
+      if let identifier {
+        self.cancelNotification(identifier)
+      }
+      self.afterInFlightAddsFinish(for: storageKey) {
+        if let identifier {
+          self.cancelNotification(identifier)
+        }
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+      }
     }
   }
 
-  func cancelAll() {
+  func cancelAll(completion: (() -> Void)? = nil) {
     queue.async { [weak self] in
+      guard let self else {
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+        return
+      }
+      for storageKey in self.inFlightAddCountByStorageKey.keys {
+        self.invalidateAdds(for: storageKey)
+      }
       let identifiers = BackgroundMigrationNotificationStore.clearIdentifiers()
       BackgroundMigrationNotificationStore.clearAllNeedsActionNotifications()
       BackgroundMigrationNotificationStore.clearWatchdogStates()
-      self?.center.removePendingNotificationRequests(withIdentifiers: identifiers)
-      self?.center.removeDeliveredNotifications(withIdentifiers: identifiers)
+      self.center.removePendingNotificationRequests(withIdentifiers: identifiers)
+      self.center.removeDeliveredNotifications(withIdentifiers: identifiers)
+      self.afterAllInFlightAddsFinish {
+        self.center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        self.center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        if let completion {
+          DispatchQueue.main.async(execute: completion)
+        }
+      }
     }
   }
 
   private func reconcileOnQueue(
     after outcome: BackgroundMigrationRunOutcome?,
     attemptedStorageKey: String?,
-    now: Date
+    now: Date,
+    pendingAdds: DispatchGroup
   ) {
     guard let manifests = IronwoodMigrationManifestStore.loadAllIfAccessible()
     else {
@@ -825,7 +936,11 @@ private final class BackgroundMigrationNotificationCoordinator {
     for manifest in manifests {
       let identifier = registerIdentifier(for: manifest)
       if blockedKeys.contains(manifest.storageKey) {
-        scheduleNeedsUserAction(for: manifest, identifier: identifier)
+        scheduleNeedsUserAction(
+          for: manifest,
+          identifier: identifier,
+          pendingAdds: pendingAdds
+        )
         continue
       }
       if manifest.storageKey == attemptedStorageKey,
@@ -834,27 +949,31 @@ private final class BackgroundMigrationNotificationCoordinator {
           outcome: outcome,
           to: manifest,
           identifier: identifier,
-          now: now
+          now: now,
+          pendingAdds: pendingAdds
         )
       {
         continue
       }
-      reconcileInspection(for: manifest, identifier: identifier, now: now)
+      reconcileInspection(
+        for: manifest,
+        identifier: identifier,
+        now: now,
+        pendingAdds: pendingAdds
+      )
     }
 
-    for storageKey in BackgroundMigrationNotificationStore
+    for storageKey
+      in BackgroundMigrationNotificationStore
       .identifiersByStorageKey().keys where !activeStorageKeys.contains(storageKey)
     {
-      guard let identifier =
-        BackgroundMigrationNotificationStore.removeIdentifier(for: storageKey)
-      else {
-        BackgroundMigrationNotificationStore.removeWatchdogState(
+      cancel(
+        storageKey: storageKey,
+        identifier: BackgroundMigrationNotificationStore.identifier(
           for: storageKey
-        )
-        continue
-      }
-      BackgroundMigrationNotificationStore.removeWatchdogState(for: storageKey)
-      cancelNotification(identifier)
+        ),
+        pendingAdds: pendingAdds
+      )
     }
   }
 
@@ -881,7 +1000,8 @@ private final class BackgroundMigrationNotificationCoordinator {
     outcome: BackgroundMigrationRunOutcome,
     to manifest: IronwoodMigrationBackgroundManifest,
     identifier: String,
-    now: Date
+    now: Date,
+    pendingAdds: DispatchGroup
   ) -> Bool {
     switch outcome {
     case .preparing(let nextHeight, let observedHeight),
@@ -893,14 +1013,23 @@ private final class BackgroundMigrationNotificationCoordinator {
         identifier: identifier,
         now: now,
         nextScheduledHeight: nextHeight,
-        observedHeight: observedHeight
+        observedHeight: observedHeight,
+        pendingAdds: pendingAdds
       )
       return true
     case .needsUserAction:
-      scheduleNeedsUserAction(for: manifest, identifier: identifier)
+      scheduleNeedsUserAction(
+        for: manifest,
+        identifier: identifier,
+        pendingAdds: pendingAdds
+      )
       return true
     case .complete:
-      cancel(manifest: manifest, identifier: identifier)
+      cancel(
+        manifest: manifest,
+        identifier: identifier,
+        pendingAdds: pendingAdds
+      )
       return true
     case .noWork, .temporarilyUnavailable, .failed, .cancelled:
       return false
@@ -910,33 +1039,70 @@ private final class BackgroundMigrationNotificationCoordinator {
   private func reconcileInspection(
     for manifest: IronwoodMigrationBackgroundManifest,
     identifier: String,
-    now: Date
+    now: Date,
+    pendingAdds: DispatchGroup
   ) {
+    guard
+      let resolvedManifest =
+        BackgroundMigrationRunner
+        .resolveAllowedManifest(manifest)
+    else {
+      scheduleNeedsUserAction(
+        for: manifest,
+        identifier: identifier,
+        pendingAdds: pendingAdds
+      )
+      return
+    }
     let inspection = BackgroundMigrationRunner.runNativeInspection(
-      manifest: manifest
+      manifest: resolvedManifest
     )
     guard inspection.returnCode == 0 else {
+      let existing = BackgroundMigrationNotificationStore.watchdogState(
+        for: manifest.storageKey
+      )
+      let needsActionAlreadyNotified =
+        BackgroundMigrationNotificationStore
+        .needsActionIdentifiers().contains(identifier)
+      guard
+        BackgroundMigrationNotificationPolicy.shouldScheduleFallbackWatchdog(
+          existing: existing,
+          needsActionAlreadyNotified: needsActionAlreadyNotified
+        )
+      else {
+        return
+      }
       scheduleWatchdog(
         for: manifest,
         identifier: identifier,
         now: now,
         nextScheduledHeight: nil,
-        observedHeight: 0
+        observedHeight: 0,
+        pendingAdds: pendingAdds
       )
       return
     }
     switch inspection.action {
     case .complete, .revokeAuthorization:
-      cancel(manifest: manifest, identifier: identifier)
+      cancel(
+        manifest: manifest,
+        identifier: identifier,
+        pendingAdds: pendingAdds
+      )
     case .needsUserAction:
-      scheduleNeedsUserAction(for: manifest, identifier: identifier)
+      scheduleNeedsUserAction(
+        for: manifest,
+        identifier: identifier,
+        pendingAdds: pendingAdds
+      )
     case .wait, .sync, .advance:
       scheduleWatchdog(
         for: manifest,
         identifier: identifier,
         now: now,
         nextScheduledHeight: inspection.nextScheduledHeight,
-        observedHeight: inspection.chainTipHeight
+        observedHeight: inspection.chainTipHeight,
+        pendingAdds: pendingAdds
       )
     }
   }
@@ -946,7 +1112,8 @@ private final class BackgroundMigrationNotificationCoordinator {
     identifier: String,
     now: Date,
     nextScheduledHeight: UInt64?,
-    observedHeight: UInt64
+    observedHeight: UInt64,
+    pendingAdds: DispatchGroup
   ) {
     BackgroundMigrationNotificationStore.clearNeedsActionNotified(identifier)
     let existingState = BackgroundMigrationNotificationStore.watchdogState(
@@ -970,8 +1137,7 @@ private final class BackgroundMigrationNotificationCoordinator {
     {
       center.removeDeliveredNotifications(withIdentifiers: [identifier])
     }
-    BackgroundMigrationNotificationStore.saveWatchdogState(
-      state,
+    BackgroundMigrationNotificationStore.removeWatchdogState(
       for: manifest.storageKey
     )
     add(
@@ -979,15 +1145,23 @@ private final class BackgroundMigrationNotificationCoordinator {
         for: manifest,
         deadline: state.deadline
       ),
-      watchdogStateOnFailure: (manifest.storageKey, state)
-    )
+      storageKey: manifest.storageKey,
+      pendingAdds: pendingAdds
+    ) {
+      BackgroundMigrationNotificationStore.saveWatchdogState(
+        state,
+        for: manifest.storageKey
+      )
+    }
   }
 
   private func scheduleNeedsUserAction(
     for manifest: IronwoodMigrationBackgroundManifest,
-    identifier: String
+    identifier: String,
+    pendingAdds: DispatchGroup
   ) {
-    let alreadyNotified = BackgroundMigrationNotificationStore
+    let alreadyNotified =
+      BackgroundMigrationNotificationStore
       .needsActionIdentifiers().contains(identifier)
     guard !alreadyNotified else { return }
 
@@ -1000,21 +1174,32 @@ private final class BackgroundMigrationNotificationCoordinator {
     BackgroundMigrationNotificationStore.removeWatchdogState(
       for: manifest.storageKey
     )
-    guard let plan = BackgroundMigrationNotificationPolicy.needsUserActionPlan(
-      for: manifest,
-      alreadyNotified: false
-    ) else {
+    guard
+      let plan = BackgroundMigrationNotificationPolicy.needsUserActionPlan(
+        for: manifest,
+        alreadyNotified: false
+      )
+    else {
       return
     }
-    BackgroundMigrationNotificationStore.markNeedsActionNotified(identifier)
-    add(plan, clearsNeedsActionOnFailure: true)
+    add(
+      plan,
+      storageKey: manifest.storageKey,
+      pendingAdds: pendingAdds
+    ) {
+      BackgroundMigrationNotificationStore.markNeedsActionNotified(identifier)
+    }
   }
 
   private func add(
     _ plan: BackgroundMigrationNotificationPlan,
-    clearsNeedsActionOnFailure: Bool = false,
-    watchdogStateOnFailure: (String, BackgroundMigrationWatchdogState)? = nil
+    storageKey: String,
+    pendingAdds: DispatchGroup,
+    onSuccess: @escaping () -> Void
   ) {
+    let generation = nextAddGeneration(for: storageKey)
+    inFlightAddCountByStorageKey[storageKey, default: 0] += 1
+    pendingAdds.enter()
     center.removePendingNotificationRequests(withIdentifiers: [plan.identifier])
     let content = UNMutableNotificationContent()
     content.title = plan.title
@@ -1036,47 +1221,124 @@ private final class BackgroundMigrationNotificationCoordinator {
       content: content,
       trigger: trigger
     )
-    center.add(request) { [weak self] error in
-      guard let error else { return }
-      print("[BGMigration] notification scheduling failed: \(error)")
-      self?.queue.async {
-        if clearsNeedsActionOnFailure {
-          BackgroundMigrationNotificationStore.clearNeedsActionNotified(
-            plan.identifier
-          )
+    center.add(request) { [self] error in
+      queue.async {
+        defer {
+          self.finishInFlightAdd(for: storageKey)
+          pendingAdds.leave()
         }
-        if let watchdogStateOnFailure {
-          let (storageKey, expectedState) = watchdogStateOnFailure
-          guard BackgroundMigrationNotificationStore.watchdogState(
-            for: storageKey
-          ) == expectedState else {
-            return
+        if let error {
+          print("[BGMigration] notification scheduling failed: \(error)")
+          return
+        }
+        guard self.addGenerationByStorageKey[storageKey] == generation else {
+          if BackgroundMigrationNotificationStore.identifier(for: storageKey)
+            != plan.identifier
+          {
+            self.cancelNotification(plan.identifier)
           }
-          BackgroundMigrationNotificationStore.removeWatchdogState(
-            for: storageKey
-          )
+          return
         }
+        onSuccess()
       }
     }
   }
 
   private func cancel(
     manifest: IronwoodMigrationBackgroundManifest,
-    identifier: String
+    identifier: String,
+    pendingAdds: DispatchGroup
   ) {
+    cancel(
+      storageKey: manifest.storageKey,
+      identifier: identifier,
+      pendingAdds: pendingAdds
+    )
+  }
+
+  private func cancel(
+    storageKey: String,
+    identifier: String?,
+    pendingAdds: DispatchGroup
+  ) {
+    invalidateAdds(for: storageKey)
     _ = BackgroundMigrationNotificationStore.removeIdentifier(
-      for: manifest.storageKey
+      for: storageKey
     )
     BackgroundMigrationNotificationStore.removeWatchdogState(
-      for: manifest.storageKey
+      for: storageKey
     )
-    cancelNotification(identifier)
+    if let identifier {
+      cancelNotification(identifier)
+    }
+    guard inFlightAddCountByStorageKey[storageKey, default: 0] > 0
+    else {
+      return
+    }
+    pendingAdds.enter()
+    afterInFlightAddsFinish(for: storageKey) { [self] in
+      if let identifier {
+        cancelNotification(identifier)
+      }
+      pendingAdds.leave()
+    }
   }
 
   private func cancelNotification(_ identifier: String) {
     BackgroundMigrationNotificationStore.clearNeedsActionNotified(identifier)
     center.removePendingNotificationRequests(withIdentifiers: [identifier])
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
+  }
+
+  private func nextAddGeneration(for storageKey: String) -> UInt64 {
+    let generation = addGenerationByStorageKey[storageKey, default: 0] &+ 1
+    addGenerationByStorageKey[storageKey] = generation
+    return generation
+  }
+
+  private func invalidateAdds(for storageKey: String) {
+    _ = nextAddGeneration(for: storageKey)
+  }
+
+  private func afterInFlightAddsFinish(
+    for storageKey: String,
+    _ completion: @escaping () -> Void
+  ) {
+    guard inFlightAddCountByStorageKey[storageKey, default: 0] > 0 else {
+      completion()
+      return
+    }
+    cancellationWaitersByStorageKey[storageKey, default: []].append(completion)
+  }
+
+  private func afterAllInFlightAddsFinish(_ completion: @escaping () -> Void) {
+    guard !inFlightAddCountByStorageKey.isEmpty else {
+      completion()
+      return
+    }
+    cancelAllWaiters.append(completion)
+  }
+
+  private func finishInFlightAdd(for storageKey: String) {
+    let remaining = inFlightAddCountByStorageKey[storageKey, default: 0] - 1
+    if remaining > 0 {
+      inFlightAddCountByStorageKey[storageKey] = remaining
+      return
+    }
+    inFlightAddCountByStorageKey.removeValue(forKey: storageKey)
+    let storageKeyWaiters =
+      cancellationWaitersByStorageKey.removeValue(
+        forKey: storageKey
+      ) ?? []
+    for waiter in storageKeyWaiters {
+      waiter()
+    }
+    guard inFlightAddCountByStorageKey.isEmpty else { return }
+    let allWaiters = cancelAllWaiters
+    cancelAllWaiters.removeAll()
+    for waiter in allWaiters {
+      waiter()
+    }
   }
 }
 
@@ -1220,10 +1482,12 @@ final class BackgroundMigrationManager {
         BackgroundMigrationCursorStore.clear()
       }
       BackgroundMigrationNotificationCoordinator.shared.cancel(
-        storageKey: storageKey
+        storageKey: storageKey,
+        completion: {
+          self?.scheduleRemainingWork()
+          completion(true)
+        }
       )
-      self?.scheduleRemainingWork()
-      DispatchQueue.main.async { completion(true) }
     }
   }
 
@@ -1233,14 +1497,20 @@ final class BackgroundMigrationManager {
       IronwoodMigrationManifestStore.deleteAll()
       BackgroundMigrationBlockedStore.clear()
       BackgroundMigrationCursorStore.clear()
-      BackgroundMigrationNotificationCoordinator.shared.cancelAll()
-      DispatchQueue.main.async { completion(true) }
+      BackgroundMigrationNotificationCoordinator.shared.cancelAll {
+        completion(true)
+      }
     }
   }
 
   func runOnceForTesting() -> BackgroundMigrationRunOutcome {
     guard prepareForBackgroundWake() else { return .cancelled }
     return BackgroundMigrationRunner.runOnce()
+  }
+
+  func resumeWithoutSchedulingForTesting() -> Bool {
+    endMutationQuiescence()
+    return true
   }
 
   private func handle(_ task: BGProcessingTask) {
@@ -1257,8 +1527,11 @@ final class BackgroundMigrationManager {
         return
       }
       let outcome = BackgroundMigrationRunner.runOnce()
-      self.reschedule(after: outcome)
-      task.setTaskCompleted(success: outcome != .failed && outcome != .cancelled)
+      self.reschedule(after: outcome) {
+        task.setTaskCompleted(
+          success: outcome != .failed && outcome != .cancelled
+        )
+      }
     }
   }
 
@@ -1288,20 +1561,31 @@ final class BackgroundMigrationManager {
     zcash_cancel_sync()
   }
 
-  private func reschedule(after outcome: BackgroundMigrationRunOutcome) {
+  private func reschedule(
+    after outcome: BackgroundMigrationRunOutcome,
+    completion: @escaping () -> Void
+  ) {
     BackgroundMigrationNotificationCoordinator.shared.reconcile(
       after: outcome,
-      attemptedStorageKey: BackgroundMigrationCursorStore.load()
-    )
-    let delay = BackgroundMigrationReschedulePolicy.delay(
-      after: outcome,
-      runnableManifestCount: runnableManifestCount(),
-      cancelledByExpiration: shouldRetryCancelledWake
-    )
-    guard let delay else { return }
-    _ = schedule(
-      earliestBeginDate: Date().addingTimeInterval(delay),
-      clearsBlockedManifests: false
+      attemptedStorageKey: BackgroundMigrationCursorStore.load(),
+      completion: { [weak self] in
+        guard let self else {
+          completion()
+          return
+        }
+        let delay = BackgroundMigrationReschedulePolicy.delay(
+          after: outcome,
+          runnableManifestCount: self.runnableManifestCount(),
+          cancelledByExpiration: self.shouldRetryCancelledWake
+        )
+        if let delay {
+          _ = self.schedule(
+            earliestBeginDate: Date().addingTimeInterval(delay),
+            clearsBlockedManifests: false
+          )
+        }
+        completion()
+      }
     )
   }
 

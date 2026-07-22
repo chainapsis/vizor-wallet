@@ -1,8 +1,9 @@
 import Flutter
-@testable import Runner
 import Security
 import UIKit
 import XCTest
+
+@testable import Runner
 
 class RunnerTests: XCTestCase {
 
@@ -90,7 +91,7 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
     harness.deleteStatuses = [
-      FreshInstallKeychainCleaner.servicesToClear[0]: errSecAuthFailed,
+      FreshInstallKeychainCleaner.servicesToClear[0]: errSecAuthFailed
     ]
 
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
@@ -150,7 +151,7 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
     harness.deleteStatuses = [
-      FreshInstallKeychainCleaner.servicesToClear.last!: errSecAuthFailed,
+      FreshInstallKeychainCleaner.servicesToClear.last!: errSecAuthFailed
     ]
 
     FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
@@ -188,6 +189,30 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
       makeBackgroundMigrationManifest(expectedRunId: nil)
     )
     XCTAssertNil(IronwoodMigrationBackgroundManifest.decode(provisional))
+  }
+
+  func testManifestResolutionRebasesTheSameWalletDbIntoTheCurrentContainer() {
+    let current = makeBackgroundMigrationManifest(accountUuid: "rebase")
+    let support = try! resolveWalletSupportDirectory()
+    let dbName = URL(fileURLWithPath: current.dbPath).lastPathComponent
+    let stale = current.replacingDbPath(
+      "/old/app-container/Library/Application Support/\(dbName)"
+    )
+
+    let resolved = BackgroundMigrationRunner.resolveAllowedManifest(
+      stale,
+      currentDbPath: current.dbPath,
+      supportDirectory: support
+    )
+
+    XCTAssertEqual(resolved?.dbPath, current.dbPath)
+    XCTAssertNil(
+      BackgroundMigrationRunner.resolveAllowedManifest(
+        stale.replacingDbPath("/old/app-container/different-wallet.db"),
+        currentDbPath: current.dbPath,
+        supportDirectory: support
+      )
+    )
   }
 
   func testWatchdogIdentifierIsStablePerManifestRun() {
@@ -278,6 +303,33 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     )
 
     XCTAssertEqual(repeated.deadline, firstDeadline)
+  }
+
+  func testInspectionFailurePreservesAnExistingWatchdog() {
+    let existing = BackgroundMigrationWatchdogState(
+      identifier: "watchdog-id",
+      nextScheduledHeight: 1_100,
+      deadline: Date(timeIntervalSince1970: 10_000)
+    )
+
+    XCTAssertFalse(
+      BackgroundMigrationNotificationPolicy.shouldScheduleFallbackWatchdog(
+        existing: existing,
+        needsActionAlreadyNotified: false
+      )
+    )
+    XCTAssertTrue(
+      BackgroundMigrationNotificationPolicy.shouldScheduleFallbackWatchdog(
+        existing: nil,
+        needsActionAlreadyNotified: false
+      )
+    )
+    XCTAssertFalse(
+      BackgroundMigrationNotificationPolicy.shouldScheduleFallbackWatchdog(
+        existing: nil,
+        needsActionAlreadyNotified: true
+      )
+    )
   }
 
   func testWatchdogReconciliationReplacesDeadlineForTheNextTarget() {
@@ -745,6 +797,10 @@ private final class BackgroundMigrationRunnerHarness {
       loadManifests: {
         self.manifestsAccessible ? self.manifests : nil
       },
+      resolveManifest: { manifest in
+        FileManager.default.fileExists(atPath: manifest.dbPath)
+          ? manifest : nil
+      },
       loadBlockedKeys: { self.blockedKeys },
       loadLastAttemptedKey: { self.lastAttemptedKey },
       saveLastAttemptedKey: {
@@ -795,7 +851,8 @@ private func makeBackgroundMigrationManifest(
   expectedRunId: String? = "run-1"
 ) -> IronwoodMigrationBackgroundManifest {
   let support = try! resolveWalletSupportDirectory()
-  let dbPath = support
+  let dbPath =
+    support
     .appendingPathComponent("background-migration-test-\(accountUuid).db").path
   FileManager.default.createFile(atPath: dbPath, contents: Data())
   return IronwoodMigrationBackgroundManifest(
