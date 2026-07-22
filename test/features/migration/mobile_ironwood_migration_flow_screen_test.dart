@@ -333,7 +333,9 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/status',
-        builder: (_, _) => const MobileIronwoodMigrationPrivateStatusScreen(),
+        builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
+          approvedPlan: privatePlan,
+        ),
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
@@ -2250,9 +2252,7 @@ void main() {
     );
   });
 
-  testWidgets('shows compact waiting states without timing help', (
-    tester,
-  ) async {
+  testWidgets('shows timing for every queued migration part', (tester) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(
@@ -2264,6 +2264,7 @@ void main() {
           estimatedCompletionHeight: 3_000_040,
           nextActionPartIndex: 1,
         ),
+        privatePlan: _planWith(plannedBatchCount: 3),
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -2276,9 +2277,15 @@ void main() {
 
     expect(find.text('Queued'), findsNothing);
     expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('Waiting · ~in 25 minutes'), findsOneWidget);
+    expect(find.text('~in 25 minutes'), findsOneWidget);
     expect(find.textContaining('~18:'), findsNothing);
-    expect(find.text('Waiting'), findsOneWidget);
+    expect(find.textContaining('Waiting'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && (widget.data?.startsWith('~') ?? false),
+      ),
+      findsNWidgets(2),
+    );
     expect(find.bySemanticsLabel('About estimated completion'), findsNothing);
   });
 

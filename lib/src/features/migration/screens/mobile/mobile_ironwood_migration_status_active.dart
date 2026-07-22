@@ -268,7 +268,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         style: style,
       ),
       MobileIronwoodMigrationPartStatus.pending => Text(
-        part.eta ?? 'Waiting',
+        part.eta ?? 'Queued',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,

@@ -106,7 +106,12 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 }
 
 class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
-  const MobileIronwoodMigrationPrivateStatusScreen({super.key});
+  const MobileIronwoodMigrationPrivateStatusScreen({
+    this.approvedPlan,
+    super.key,
+  });
+
+  final rust_sync.OrchardMigrationPrivatePlan? approvedPlan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -137,6 +142,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
+          approvedPlan: approvedPlan,
           isHardware:
               ref.watch(accountProvider).value?.activeAccount?.isHardware ??
               false,
@@ -164,11 +170,13 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
   const _MobileMigrationLiveStatus({
     required this.data,
     required this.status,
+    required this.approvedPlan,
     required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus status;
+  final rust_sync.OrchardMigrationPrivatePlan? approvedPlan;
   final bool isHardware;
 
   @override
@@ -186,7 +194,7 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
     return _MobileMigrationMigrating(
       data: data,
       status: status,
-      previewPlan: null,
+      previewPlan: approvedPlan,
       previewParts: null,
     );
   }

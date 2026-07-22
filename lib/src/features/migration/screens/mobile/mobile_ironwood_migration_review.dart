@@ -231,7 +231,7 @@ class _MobileMigrationPrivateReviewState
       ref.invalidate(ironwoodHomeMigrationCtaProvider);
       ref.invalidate(ironwoodMigrationFlowDataProvider);
       ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-      context.go('/migration/private/status');
+      context.go('/migration/private/status', extra: plan);
     } catch (error) {
       if (!mounted) return;
       setState(() {

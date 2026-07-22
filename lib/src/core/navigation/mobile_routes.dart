@@ -316,10 +316,18 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/status',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileIronwoodMigrationPrivateStatusScreen(),
-      ),
+      pageBuilder: (context, state) {
+        final approvedPlan = switch (state.extra) {
+          rust_sync.OrchardMigrationPrivatePlan plan => plan,
+          _ => null,
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationPrivateStatusScreen(
+            approvedPlan: approvedPlan,
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',
