@@ -180,6 +180,10 @@ void main() {
           phase: 'waiting_denom_confirmations',
           activeRunId: 'run-1',
         ),
+        _migrationStatus(
+          phase: 'waiting_denom_confirmations',
+          activeRunId: 'run-1',
+        ),
       ];
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -250,6 +254,7 @@ void main() {
       final statuses = [
         _migrationStatus(),
         _migrationStatus(phase: 'ready_to_migrate', activeRunId: 'run-1'),
+        _migrationStatus(phase: 'ready_to_migrate', activeRunId: 'run-1'),
       ];
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -301,7 +306,7 @@ void main() {
               required mnemonicBytes,
               required password,
               required saltBase64,
-            }) async => _migrationResult(status: 'ready_to_migrate'),
+            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
       );
 
       await service.startSoftwarePrivateMigration(
@@ -389,6 +394,7 @@ void main() {
         statuses: [
           _migrationStatus(),
           _migrationStatus(activeRunId: 'run-1'),
+          _migrationStatus(activeRunId: 'run-1'),
         ],
       );
 
@@ -411,6 +417,7 @@ void main() {
         isIOS: true,
         statuses: [
           _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
           _migrationStatus(activeRunId: 'run-1'),
         ],
         requestNotificationAuthorization: () async {
@@ -437,6 +444,7 @@ void main() {
         isIOS: true,
         statuses: [
           _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
           _migrationStatus(activeRunId: 'run-1'),
         ],
         requestNotificationAuthorization: () async {
@@ -1083,6 +1091,7 @@ void main() {
     () async {
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-1'),
         _migrationStatus(activeRunId: 'run-1'),
       ];
       final store = _backgroundCredentialStore();
@@ -1880,6 +1889,7 @@ void main() {
       );
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
+        _migrationStatus(activeRunId: 'run-1'),
         _migrationStatus(activeRunId: 'run-1'),
       ];
       final service = IronwoodMigrationService(

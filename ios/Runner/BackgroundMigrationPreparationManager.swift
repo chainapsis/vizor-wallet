@@ -20,6 +20,7 @@ final class BackgroundMigrationPreparationManager {
   )
   private let stateLock = NSLock()
   private var expired = false
+  private var requestActive = false
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
 
@@ -40,6 +41,13 @@ final class BackgroundMigrationPreparationManager {
 
   @discardableResult
   func start() -> Bool {
+    let shouldSubmit = stateLock.withPreparationLock { () -> Bool in
+      guard !requestActive else { return false }
+      requestActive = true
+      return true
+    }
+    guard shouldSubmit else { return true }
+
     scheduleWatchdog()
     let request = BGContinuedProcessingTaskRequest(
       identifier: Self.taskIdentifier,
@@ -50,6 +58,7 @@ final class BackgroundMigrationPreparationManager {
       try BGTaskScheduler.shared.submit(request)
       return true
     } catch {
+      stateLock.withPreparationLock { requestActive = false }
       print("[BGPreparation] submit failed: \(error)")
       postNeedsActionNotification()
       return false
@@ -77,6 +86,7 @@ final class BackgroundMigrationPreparationManager {
 
   private func handle(_ task: BGContinuedProcessingTask) {
     stateLock.withPreparationLock {
+      requestActive = true
       expired = false
       taskProgress = task.progress
       taskProgress?.totalUnitCount = 1000
@@ -101,7 +111,15 @@ final class BackgroundMigrationPreparationManager {
         return
       }
       let success = self.runPreparation()
-      self.stateLock.withPreparationLock { self.taskProgress = nil }
+      self.stateLock.withPreparationLock {
+        self.requestActive = false
+        self.taskProgress = nil
+      }
+      if success {
+        BGTaskScheduler.shared.cancel(
+          taskRequestWithIdentifier: Self.taskIdentifier
+        )
+      }
       task.setTaskCompleted(success: success)
     }
   }

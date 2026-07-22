@@ -395,6 +395,7 @@ class IronwoodMigrationService {
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
+      onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
@@ -419,9 +420,6 @@ class IronwoodMigrationService {
         return resultFuture;
       },
     );
-    if (result.status == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      await _startBackgroundPreparationBestEffort();
-    }
     return result;
   }
 
@@ -443,6 +441,9 @@ class IronwoodMigrationService {
         context: context,
         mayCreateRun: false,
         prepareOutboxAfterOperation: false,
+        onCurrentStatus: isHardwareAccount(accountUuid)
+            ? null
+            : _reconcileBackgroundPreparationBestEffort,
         operation: (credential) => prepareMigrationOutbox(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -467,11 +468,6 @@ class IronwoodMigrationService {
       );
     }
     final isHardware = isHardwareAccount(accountUuid);
-    if (!isHardware &&
-        broadcastResult.status ==
-            kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      await _startBackgroundPreparationBestEffort();
-    }
     if (isHardware || broadcastResult.status != 'ready_to_migrate') {
       return broadcastResult;
     }
@@ -684,6 +680,7 @@ class IronwoodMigrationService {
     required Future<T> Function(_MigrationCredential credential) operation,
     bool enrollNotificationsOnActiveRun = false,
     bool prepareOutboxAfterOperation = true,
+    Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
   }) async {
     return operationRegistry.run(
       network: context.network,
@@ -756,7 +753,8 @@ class IronwoodMigrationService {
                 credential: credential,
                 prepare: prepareOutboxAfterOperation,
               );
-              if (outboxRefresh.reconciledReceipt) {
+              if ((prepareOutboxAfterOperation && onCurrentStatus != null) ||
+                  outboxRefresh.reconciledReceipt) {
                 currentStatus = await _getStatusForContext(context);
                 await _reconcileBackgroundCredential(
                   context: context,
@@ -771,6 +769,7 @@ class IronwoodMigrationService {
               );
             }
           }
+          await onCurrentStatus?.call(currentStatus);
           if (enrollNotificationsOnActiveRun &&
               currentStatus.activeRunId != null) {
             await _requestNotificationAuthorizationBestEffort();
@@ -1098,8 +1097,13 @@ class IronwoodMigrationService {
     }
   }
 
-  Future<void> _startBackgroundPreparationBestEffort() async {
+  Future<void> _reconcileBackgroundPreparationBestEffort(
+    rust_sync.MigrationStatus status,
+  ) async {
     if (!isIOS() || !isMobile()) return;
+    if (status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      return;
+    }
     try {
       await startBackgroundPreparation();
     } catch (error) {
