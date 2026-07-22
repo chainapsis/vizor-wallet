@@ -11,12 +11,13 @@ pub(super) fn send_response_rejection_error(resp: &SendResponse) -> Option<Strin
     ))
 }
 
-fn send_rejection_is_already_accepted(message: &str) -> bool {
+pub(super) fn send_rejection_is_already_accepted(message: &str) -> bool {
     let message = message.to_ascii_lowercase();
     message.contains("transaction was committed to the best chain")
         || message.contains("already in mempool")
         || message.contains("already have transaction")
         || message.contains("transaction already in block chain")
+        || message.contains("transaction is already in state")
         || message.contains("txn-already-in-mempool")
         || message.contains("already known")
 }
@@ -49,11 +50,12 @@ mod tests {
             "already in mempool",
             "already have transaction",
             "transaction already in block chain",
+            "failed to validate tx: WtxId(\"private\"), error: transaction is already in state",
             "txn-already-in-mempool",
             "already known",
             "Error: TXN-ALREADY-IN-MEMPOOL from node",
         ] {
-            let resp = send_response(18, message);
+            let resp = send_response(-25, message);
 
             assert_eq!(send_response_rejection_error(&resp), None, "{message}");
         }
