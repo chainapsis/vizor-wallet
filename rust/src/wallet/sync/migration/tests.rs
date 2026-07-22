@@ -48,6 +48,98 @@ fn pending_test_stage_for_part(
     stage
 }
 
+#[test]
+fn active_run_recovers_latest_duplicate_broadcast_terminal_failure() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, last_error)
+             VALUES ('duplicate-run', 'account-1', 'test', 'wallet.db', ?1,
+                     1, 1, '[100000]', ?2)"
+        ),
+        params![
+            PHASE_FAILED_TERMINAL,
+            "Migration transaction abc was rejected by the network. Error: Broadcast rejected: failed to validate tx: WtxId(\"private\"), error: transaction is already in state (code -25)",
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PREPARED_NOTES_TABLE}
+             (run_id, txid_hex, output_index, value_zatoshi, note_version, lock_state)
+             VALUES ('duplicate-run', ?1, 0, 115000, 2, 'unlocked')"
+        ),
+        params!["11".repeat(32)],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              scheduled_height, status, metadata_json)
+             VALUES ('duplicate-run', ?1, 0, 'encrypted', 10, 100, 100000,
+                     15000, ?2, 0, 115000, 1, 20, 'scheduled', '{{}}')"
+        ),
+        params!["22".repeat(32), "11".repeat(32)],
+    )
+    .unwrap();
+
+    let run = active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(run.run_id, "duplicate-run");
+    assert_eq!(run.phase, PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(run.last_error, None);
+    let lock_state: String = conn
+        .query_row(
+            &format!(
+                "SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = 'duplicate-run'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(lock_state, "locked");
+}
+
+#[test]
+fn active_run_does_not_recover_other_terminal_broadcast_failures() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, last_error)
+             VALUES ('rejected-run', 'account-1', 'test', 'wallet.db', ?1,
+                     1, 1, '[100000]', ?2)"
+        ),
+        params![
+            PHASE_FAILED_TERMINAL,
+            "Broadcast rejected: bad-txns-inputs-spent (code 18)",
+        ],
+    )
+    .unwrap();
+
+    assert!(active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .is_none());
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'rejected-run'"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_FAILED_TERMINAL);
+}
+
 fn insert_test_stage(
     conn: &rusqlite::Connection,
     run_id: &str,

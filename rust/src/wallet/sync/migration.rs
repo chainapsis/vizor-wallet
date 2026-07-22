@@ -2880,6 +2880,8 @@ fn active_run(
         return Ok(None);
     }
 
+    recover_latest_idempotent_broadcast_failure(conn, account_uuid, network)?;
+
     conn.query_row(
         &format!(
             "SELECT run_id, phase, target_values_json, last_error
@@ -2906,6 +2908,91 @@ fn active_run(
     )
     .optional()
     .map_err(|e| format!("Read active migration run: {e}"))
+}
+
+fn recover_latest_idempotent_broadcast_failure(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    if !table_exists(conn, PENDING_TXS_TABLE)? || !table_exists(conn, PREPARED_NOTES_TABLE)? {
+        return Ok(());
+    }
+
+    let latest = conn
+        .query_row(
+            &format!(
+                "SELECT run_id, phase, last_error
+                 FROM {RUNS_TABLE}
+                 WHERE account_uuid = ?1 AND network = ?2
+                 ORDER BY created_at_ms DESC
+                 LIMIT 1"
+            ),
+            params![account_uuid, network_name(network)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read latest migration run for broadcast recovery: {e}"))?;
+    let Some((run_id, phase, Some(last_error))) = latest else {
+        return Ok(());
+    };
+    if phase != PHASE_FAILED_TERMINAL
+        || !super::broadcast::send_rejection_is_already_accepted(&last_error)
+    {
+        return Ok(());
+    }
+
+    let scheduled_count = count_pending_with_status(conn, &run_id, "scheduled")?;
+    if scheduled_count == 0 {
+        return Ok(());
+    }
+
+    let now = now_ms()?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin idempotent migration broadcast recovery: {e}"))?;
+    let recovered = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase = ?4 AND last_error = ?5"
+            ),
+            params![
+                PHASE_BROADCAST_SCHEDULED,
+                now,
+                run_id,
+                PHASE_FAILED_TERMINAL,
+                last_error,
+            ],
+        )
+        .map_err(|e| format!("Restore migration after duplicate broadcast response: {e}"))?;
+    if recovered == 0 {
+        tx.rollback()
+            .map_err(|e| format!("Roll back stale migration broadcast recovery: {e}"))?;
+        return Ok(());
+    }
+    tx.execute(
+        &format!(
+            "UPDATE {PREPARED_NOTES_TABLE}
+             SET lock_state = 'locked'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Restore migration note locks after duplicate broadcast: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit idempotent migration broadcast recovery: {e}"))?;
+    log::info!(
+        "migration: restored run {run_id} after lightwalletd reported an already accepted transaction"
+    );
+    Ok(())
 }
 
 fn latest_completed_run(
