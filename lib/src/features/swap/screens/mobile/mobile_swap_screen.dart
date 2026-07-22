@@ -13,11 +13,11 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/sync_provider.dart';
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
@@ -304,16 +304,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
-    final accountState = ref.watch(accountProvider).value;
-    final activeAccountUuid = accountState?.activeAccountUuid;
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) =>
-            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
-      ),
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
     final zecAvailableText = ZecAmount.fromZatoshi(
-      sync.displaySpendableBalance,
+      migrationSpendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
 
     void openReview() {
@@ -415,7 +413,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           Expanded(
                             child: _MobileSwapReviewButton(
                               state: swapState,
-                              zecAvailableZatoshi: sync.displaySpendableBalance,
+                              zecAvailableZatoshi: migrationSpendable,
                               onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),

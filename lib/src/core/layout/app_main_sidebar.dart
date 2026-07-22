@@ -345,10 +345,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final ironwoodHomeMigrationPresentation = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
+    final ironwoodPostMigrationState = ref
+        .watch(ironwoodPostMigrationStateProvider)
+        .value;
     final ironwoodMigrationNavigationLocked =
-        ironwoodHomeMigrationPresentation.visible ||
-        (ref.watch(ironwoodPostMigrationStateProvider).value?.locksNavigation ??
-            false);
+        ironwoodPostMigrationState?.locksNavigation ??
+        (ironwoodHomeMigrationPresentation.mode ==
+            IronwoodHomeMigrationCtaMode.start);
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );

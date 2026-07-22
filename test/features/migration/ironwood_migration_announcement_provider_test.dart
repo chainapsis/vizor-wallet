@@ -173,6 +173,39 @@ void main() {
     expect(state.buttonLabel, 'Continue migration');
   });
 
+  test('active migration keeps migrated Ironwood funds usable', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationBroadcastScheduledPhase,
+      migrationActiveRunId: 'run-1',
+      migrationTargetValues: const [1_000_000, 2_000_000],
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        orchardBalance: BigInt.from(3_000_000),
+        ironwoodBalance: BigInt.from(1_000_000),
+        spendableBalance: BigInt.from(4_000_000),
+        totalBalance: BigInt.from(4_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodPostMigrationStateProvider.future,
+    );
+    final migrationSpendable = container.read(
+      ironwoodMigrationAwareDisplaySpendableProvider(_accountUuid),
+    );
+
+    expect(state.mode, IronwoodPostMigrationMode.inProgress);
+    expect(state.locksNavigation, isFalse);
+    expect(migrationSpendable, BigInt.from(1_000_000));
+  });
+
   test(
     'post migration state waits for externally migrated pending Ironwood',
     () async {

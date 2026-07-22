@@ -18,11 +18,11 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
@@ -168,17 +168,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
-    final accountState = ref.watch(accountProvider).value;
-    final activeAccountUuid = accountState?.activeAccountUuid;
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) =>
-            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
-      ),
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        sync.displaySpendableBalance,
+        migrationSpendable,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
@@ -260,7 +258,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           _swapModal == _SwapModalSurface.slippageSettings,
                       onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                       zecAvailableText: zecAvailableText,
-                      zecAvailableZatoshi: sync.displaySpendableBalance,
+                      zecAvailableZatoshi: migrationSpendable,
                       destinationContactName: swapDestinationContactFor(
                         swapState,
                         ref.watch(addressBookProvider).value?.contacts ??
@@ -289,7 +287,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         const SizedBox(height: AppSpacing.md),
                         _SwapReviewFooter(
                           state: swapState,
-                          zecAvailableZatoshi: sync.displaySpendableBalance,
+                          zecAvailableZatoshi: migrationSpendable,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
                         ),

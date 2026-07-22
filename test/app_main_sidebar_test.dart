@@ -539,6 +539,34 @@ void main() {
     },
   );
 
+  testWidgets(
+    'sidebar restores ordinary actions once Ironwood migration is active',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _mixedMigrationStatus,
+          ),
+          ironwoodPostMigrationState: IronwoodPostMigrationState.inProgress(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _mixedMigrationStatus,
+          ),
+          migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+            statuses: {'account-1': _mixedMigrationStatus},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(_sidebarItemWithLabel(tester, 'Swap').onTap, isNotNull);
+      expect(_sidebarItemWithLabel(tester, 'Vote').onTap, isNotNull);
+    },
+  );
+
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
   ) async {

@@ -33,6 +33,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../widgets/send_recipient_resolver.dart';
@@ -44,6 +45,26 @@ enum _SendStep { recipient, amount, review }
 enum _SendPhase { compose, failed }
 
 enum MobileSendAmountInputMode { zec, usd }
+
+final _mobileSendSpendableStateProvider = Provider.autoDispose
+    .family<({BigInt balance, SpendableBalanceFreshness freshness}), String?>((
+      ref,
+      accountUuid,
+    ) {
+      final freshness = ref.watch(
+        syncProvider.select(
+          (value) => (value.value ?? SyncState())
+              .scopedToAccount(accountUuid)
+              .displaySpendableFreshness,
+        ),
+      );
+      return (
+        balance: ref.watch(
+          ironwoodMigrationAwareDisplaySpendableProvider(accountUuid),
+        ),
+        freshness: freshness,
+      );
+    });
 
 class _ReviewRecipientPresentation {
   const _ReviewRecipientPresentation({
@@ -615,16 +636,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   BigInt get _spendable {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    return (ref.read(syncProvider).value ?? SyncState())
-        .scopedToAccount(accountUuid)
-        .displaySpendableBalance;
+    return ref.read(_mobileSendSpendableStateProvider(accountUuid)).balance;
   }
 
   bool get _isUsingCompletedSpendableSnapshot {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    return (ref.read(syncProvider).value ?? SyncState())
-        .scopedToAccount(accountUuid)
-        .isUsingCompletedSpendableSnapshot;
+    return ref.read(_mobileSendSpendableStateProvider(accountUuid)).freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
   }
 
   String? get _activeAccountUuid =>
@@ -1479,38 +1497,29 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final accountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    ref.watch(
-      syncProvider.select((value) {
-        final sync = (value.value ?? SyncState()).scopedToAccount(accountUuid);
-        return (sync.displaySpendableBalance, sync.displaySpendableFreshness);
-      }),
-    );
-    ref.listen(
-      syncProvider.select((value) {
-        final sync = (value.value ?? SyncState()).scopedToAccount(accountUuid);
-        return (sync.displaySpendableBalance, sync.displaySpendableFreshness);
-      }),
-      (previous, next) {
-        if (previous == next) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          if (_isMaxMode) {
-            if (next.$2 == SpendableBalanceFreshness.lastCompletedSync) {
-              _invalidateMaxQuoteForSync();
-            } else {
-              unawaited(_resolveMaxEstimate());
-            }
-          } else if (_step == _SendStep.amount &&
-              _amountText.trim().isNotEmpty) {
-            unawaited(_validateAmount());
-          } else if (_step == _SendStep.review &&
-              !_isRefreshingReviewFee &&
-              !_hasCurrentReviewFeeQuote) {
-            unawaited(_refreshReviewQuote());
+    ref.watch(_mobileSendSpendableStateProvider(accountUuid));
+    ref.listen(_mobileSendSpendableStateProvider(accountUuid), (
+      previous,
+      next,
+    ) {
+      if (previous == next) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_isMaxMode) {
+          if (next.freshness == SpendableBalanceFreshness.lastCompletedSync) {
+            _invalidateMaxQuoteForSync();
+          } else {
+            unawaited(_resolveMaxEstimate());
           }
-        });
-      },
-    );
+        } else if (_step == _SendStep.amount && _amountText.trim().isNotEmpty) {
+          unawaited(_validateAmount());
+        } else if (_step == _SendStep.review &&
+            !_isRefreshingReviewFee &&
+            !_hasCurrentReviewFeeQuote) {
+          unawaited(_refreshReviewQuote());
+        }
+      });
+    });
     final colors = context.colors;
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
     final showRecipientFieldLayer =

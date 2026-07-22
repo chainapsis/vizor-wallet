@@ -476,9 +476,7 @@ class IronwoodPostMigrationState {
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;
 
-  bool get locksNavigation =>
-      mode == IronwoodPostMigrationMode.required ||
-      mode == IronwoodPostMigrationMode.inProgress;
+  bool get locksNavigation => mode == IronwoodPostMigrationMode.required;
 }
 
 class IronwoodMigrationCompletionState {
@@ -802,6 +800,20 @@ final ironwoodHomeMigrationPresentationProvider =
 
       cache.lastVisible = null;
       return const IronwoodHomeMigrationCtaState.hidden();
+    });
+
+final ironwoodMigrationAwareDisplaySpendableProvider =
+    Provider.autoDispose.family<BigInt, String?>((ref, accountUuid) {
+      final sync = ref.watch(
+        syncProvider.select(
+          (value) => (value.value ?? SyncState()).scopedToAccount(accountUuid),
+        ),
+      );
+      final migration = ref.watch(ironwoodHomeMigrationPresentationProvider);
+      return migration.mode == IronwoodHomeMigrationCtaMode.resume &&
+              migration.accountUuid == accountUuid
+          ? sync.ironwoodBalance
+          : sync.displaySpendableBalance;
     });
 
 final ironwoodMigrationRouteCtaProvider =
