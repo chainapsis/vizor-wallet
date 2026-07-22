@@ -9,7 +9,8 @@ use crate::wallet::{keys, sync, sync_engine};
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
-    /// 0 waiting, 1 ready for migration, 2 needs user action, 3 cancelled.
+    /// 0 waiting, 1 ready for migration, 2 needs user action, 3 cancelled,
+    /// 4 no matching active preparation.
     pub state: u8,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -129,6 +130,14 @@ fn fill_migration_preparation_progress(
     output: &mut CMigrationPreparationProgress,
     status: &sync::MigrationStatus,
 ) {
+    if status.active_run_id.is_none() {
+        output.state = 4;
+        output.confirmation_count = 0;
+        output.confirmation_target = 0;
+        output.completed_stage_count = 0;
+        output.total_stage_count = 0;
+        return;
+    }
     output.state = match status.phase.as_str() {
         "waiting_denom_confirmations" => 0,
         "ready_to_migrate"
@@ -142,6 +151,64 @@ fn fill_migration_preparation_progress(
     output.confirmation_target = status.denomination_confirmation_target;
     output.completed_stage_count = status.denomination_split_completed_count;
     output.total_stage_count = status.denomination_split_total_count;
+}
+
+/// Inspect local migration preparation state without syncing or loading a
+/// signing credential. This lets iOS avoid presenting unrelated wallet sync as
+/// migration preparation after the run has already advanced.
+#[no_mangle]
+pub extern "C" fn zcash_inspect_migration_preparation(
+    db_path: *const c_char,
+    network: *const c_char,
+    account_uuid: *const c_char,
+    expected_run_id: *const c_char,
+    output: *mut CMigrationPreparationProgress,
+) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        let Some(network_str) = (unsafe { c_str_to_str(network) }) else {
+            return 1;
+        };
+        let Some(account_uuid) = (unsafe { c_str_to_str(account_uuid) }) else {
+            return 1;
+        };
+        let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
+            return 1;
+        };
+        let Some(output) = (unsafe { output.as_mut() }) else {
+            return 1;
+        };
+        let network = match keys::parse_network(network_str) {
+            Ok(network) => network,
+            Err(error) => {
+                log::error!("ffi: parse migration preparation network: {error}");
+                return 1;
+            }
+        };
+        let status = match sync::migration_status(db_path, network, account_uuid, 0, 0, 0, 0) {
+            Ok(status) => status,
+            Err(error) => {
+                log::error!("ffi: inspect migration preparation: {error}");
+                return 1;
+            }
+        };
+        if status.active_run_id.as_deref() != Some(expected_run_id) {
+            output.state = 4;
+            output.confirmation_count = 0;
+            output.confirmation_target = 0;
+            output.completed_stage_count = 0;
+            output.total_stage_count = 0;
+            return 0;
+        }
+        fill_migration_preparation_progress(output, &status);
+        0
+    });
+    match result {
+        Ok(code) => code,
+        Err(_) => 2,
+    }
 }
 
 /// Advance denomination preparation once and stop before child proof creation.

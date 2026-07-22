@@ -171,15 +171,12 @@ void main() {
   );
 
   test(
-    'iOS software start hands denomination confirmation to background preparation',
+    'iOS software start hands confirmation waiting to background preparation',
     () async {
       var preparationStartCount = 0;
+      final events = <String>[];
       final statuses = [
         _migrationStatus(),
-        _migrationStatus(
-          phase: 'waiting_denom_confirmations',
-          activeRunId: 'run-1',
-        ),
         _migrationStatus(
           phase: 'waiting_denom_confirmations',
           activeRunId: 'run-1',
@@ -204,19 +201,22 @@ void main() {
         isIOS: () => true,
         startBackgroundPreparation: () async {
           preparationStartCount++;
+          events.add('startBackgroundPreparation');
           return true;
         },
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
-        prepareMigrationOutbox:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
+        prepareMigrationOutbox: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          events.add('prepareOutbox');
+          return _migrationResult(status: 'ready_to_migrate');
+        },
         exportMigrationOutbox:
             ({
               required dbPath,
@@ -244,6 +244,7 @@ void main() {
       );
 
       expect(preparationStartCount, 1);
+      expect(events, ['startBackgroundPreparation']);
     },
   );
 
@@ -522,6 +523,95 @@ void main() {
     await service.status(network: 'test', accountUuid: 'account-1');
 
     expect(requestCount, 0);
+  });
+
+  test(
+    'iOS software status restores preparation only for a bound waiting run',
+    () async {
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var preparationStartCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'waiting_denom_confirmations',
+                  activeRunId: 'run-1',
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        isIOS: () => true,
+        isHardwareAccount: (_) => false,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+      );
+
+      await service.status(network: 'test', accountUuid: 'account-1');
+
+      expect(preparationStartCount, 1);
+    },
+  );
+
+  test('iOS hardware status does not restore preparation', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    await store.bindExpectedRunId(
+      network: 'test',
+      accountUuid: 'account-1',
+      expectedRunId: 'run-1',
+    );
+    var preparationStartCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(
+                phase: 'waiting_denom_confirmations',
+                activeRunId: 'run-1',
+              ),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      isMobile: () => true,
+      isIOS: () => true,
+      isHardwareAccount: (_) => true,
+      startBackgroundPreparation: () async {
+        preparationStartCount++;
+        return true;
+      },
+    );
+
+    await service.status(network: 'test', accountUuid: 'account-1');
+
+    expect(preparationStartCount, 0);
   });
 
   test('account revocation waits for an in-flight migration start', () async {

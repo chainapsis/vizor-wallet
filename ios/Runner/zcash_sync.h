@@ -25,6 +25,14 @@ typedef struct {
     uint32_t total_stage_count;
 } CMigrationPreparationProgress;
 
+int32_t zcash_inspect_migration_preparation(
+    const char* db_path,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    CMigrationPreparationProgress* output
+);
+
 /// Run full sync. Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error, 2 on panic.
 int32_t zcash_run_full_sync(

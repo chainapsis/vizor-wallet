@@ -13,6 +13,12 @@ final class BackgroundMigrationPreparationManager {
   private static let needsActionIdentifier =
     "com.keplr.vizor.ironwood-preparation.needs-action"
   private static let watchdogDelay: TimeInterval = 15 * 60
+  private static let schedulingStateKey =
+    "ironwoodMigrationPreparationSchedulingState"
+  private static let schedulingStateUpdatedAtKey =
+    "ironwoodMigrationPreparationSchedulingStateUpdatedAt"
+  private static let schedulingErrorKey =
+    "ironwoodMigrationPreparationSchedulingError"
 
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-preparation",
@@ -20,11 +26,20 @@ final class BackgroundMigrationPreparationManager {
   )
   private let stateLock = NSLock()
   private var expired = false
-  private var requestActive = false
+  private var submissionInFlight = false
+  private var taskRunning = false
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
 
   private init() {}
+
+  func cancelPendingRequestForForegroundLaunch() {
+    BGTaskScheduler.shared.cancel(
+      taskRequestWithIdentifier: Self.taskIdentifier
+    )
+    recordSchedulingState("cancelled_on_launch")
+    cancelWatchdog()
+  }
 
   func registerBackgroundTask() {
     BGTaskScheduler.shared.register(
@@ -39,41 +54,88 @@ final class BackgroundMigrationPreparationManager {
     }
   }
 
-  @discardableResult
-  func start() -> Bool {
-    let shouldSubmit = stateLock.withPreparationLock { () -> Bool in
-      guard !requestActive else { return false }
-      requestActive = true
+  func start(completion: @escaping (Bool) -> Void) {
+    let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
+      guard !submissionInFlight && !taskRunning else { return false }
+      submissionInFlight = true
       return true
     }
-    guard shouldSubmit else { return true }
+    guard shouldCheckScheduler else {
+      completion(true)
+      return
+    }
+    guard !zcash_is_sync_running() else {
+      stateLock.withPreparationLock { submissionInFlight = false }
+      recordSchedulingState("deferred_for_foreground_sync")
+      completion(true)
+      return
+    }
 
-    scheduleWatchdog()
-    let request = BGContinuedProcessingTaskRequest(
-      identifier: Self.taskIdentifier,
-      title: "Preparing migration",
-      subtitle: "You can continue using your device"
-    )
-    do {
-      try BGTaskScheduler.shared.submit(request)
-      return true
-    } catch {
-      stateLock.withPreparationLock { requestActive = false }
-      print("[BGPreparation] submit failed: \(error)")
-      postNeedsActionNotification()
-      return false
+    recordSchedulingState("checking")
+    BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
+      guard let self else {
+        completion(false)
+        return
+      }
+      if requests.contains(where: { $0.identifier == Self.taskIdentifier }) {
+        self.stateLock.withPreparationLock { self.submissionInFlight = false }
+        self.recordSchedulingState("pending")
+        completion(true)
+        return
+      }
+
+      self.scheduleWatchdog()
+      let request = BGContinuedProcessingTaskRequest(
+        identifier: Self.taskIdentifier,
+        title: "Preparing migration",
+        subtitle: "You can continue using your device"
+      )
+      do {
+        try BGTaskScheduler.shared.submit(request)
+        self.stateLock.withPreparationLock {
+          self.submissionInFlight = false
+        }
+        self.recordSchedulingState("submitted")
+        print("[BGPreparation] submitted")
+        completion(true)
+      } catch {
+        self.stateLock.withPreparationLock {
+          self.submissionInFlight = false
+        }
+        self.recordSchedulingState("failed", error: error)
+        print("[BGPreparation] submit failed: \(error)")
+        self.postNeedsActionNotification()
+        completion(false)
+      }
     }
   }
 
   func cancelIfNoActivePreparation() {
-    let hasPreparation =
-      IronwoodMigrationBackgroundCredentialStore.loadAll()?.contains {
-        $0.expectedRunId != nil
-      } ?? true
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return }
+    let hasPreparation = manifests.contains { manifest in
+      guard let runId = manifest.expectedRunId else { return false }
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let code = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      return code != 0 || preparation.state == 0
+    }
     guard !hasPreparation else { return }
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
+    recordSchedulingState("cancelled")
     cancelWatchdog()
   }
 
@@ -86,12 +148,14 @@ final class BackgroundMigrationPreparationManager {
 
   private func handle(_ task: BGContinuedProcessingTask) {
     stateLock.withPreparationLock {
-      requestActive = true
+      submissionInFlight = false
+      taskRunning = true
       expired = false
       taskProgress = task.progress
       taskProgress?.totalUnitCount = 1000
       lastCompletedUnitCount = 0
     }
+    recordSchedulingState("running")
     updateProgress(25)
 
     task.expirationHandler = { [weak self] in
@@ -112,7 +176,7 @@ final class BackgroundMigrationPreparationManager {
       }
       let success = self.runPreparation()
       self.stateLock.withPreparationLock {
-        self.requestActive = false
+        self.taskRunning = false
         self.taskProgress = nil
       }
       if success {
@@ -120,7 +184,22 @@ final class BackgroundMigrationPreparationManager {
           taskRequestWithIdentifier: Self.taskIdentifier
         )
       }
+      self.recordSchedulingState(success ? "completed" : "failed")
       task.setTaskCompleted(success: success)
+    }
+  }
+
+  private func recordSchedulingState(_ state: String, error: Error? = nil) {
+    let defaults = UserDefaults.standard
+    defaults.set(state, forKey: Self.schedulingStateKey)
+    defaults.set(
+      Date().timeIntervalSince1970,
+      forKey: Self.schedulingStateUpdatedAtKey
+    )
+    if let error {
+      defaults.set(String(describing: error), forKey: Self.schedulingErrorKey)
+    } else {
+      defaults.removeObject(forKey: Self.schedulingErrorKey)
     }
   }
 
@@ -158,7 +237,8 @@ final class BackgroundMigrationPreparationManager {
         guard
           let preparation = runPreparationStep(
             manifest,
-            shouldSync: syncedContexts.insert(syncContext).inserted
+            syncContext: syncContext,
+            syncedContexts: &syncedContexts
           )
         else {
           return false
@@ -167,7 +247,7 @@ final class BackgroundMigrationPreparationManager {
         updateProgress(aggregatePreparationUnits(accountProgress))
 
         switch preparation.state {
-        case 1:
+        case 1, 4:
           accountProgress[entry.offset] = 1
           updateProgress(aggregatePreparationUnits(accountProgress))
         case 2:
@@ -194,7 +274,8 @@ final class BackgroundMigrationPreparationManager {
 
   private func runPreparationStep(
     _ manifest: IronwoodMigrationBackgroundManifest,
-    shouldSync: Bool
+    syncContext: String,
+    syncedContexts: inout Set<String>
   ) -> CMigrationPreparationProgress? {
     guard let runId = manifest.expectedRunId,
       manifest.credentialHex.count == 64
@@ -202,9 +283,29 @@ final class BackgroundMigrationPreparationManager {
       postNeedsActionNotification()
       return nil
     }
-    let credential = Data(manifest.credentialHex.utf8)
 
-    if shouldSync {
+    var preparation = CMigrationPreparationProgress(
+      state: 0,
+      confirmation_count: 0,
+      confirmation_target: 0,
+      completed_stage_count: 0,
+      total_stage_count: 0
+    )
+    let inspectCode = zcash_inspect_migration_preparation(
+      manifest.dbPath,
+      manifest.network,
+      manifest.accountUuid,
+      runId,
+      &preparation
+    )
+    guard inspectCode == 0 else {
+      print("[BGPreparation] inspection failed: \(inspectCode)")
+      postNeedsActionNotification()
+      return nil
+    }
+    guard preparation.state == 0 else { return preparation }
+
+    if syncedContexts.insert(syncContext).inserted {
       var syncCode = runSync(manifest)
       if syncCode == 3 {
         guard waitForRunningSync() else { return nil }
@@ -223,13 +324,7 @@ final class BackgroundMigrationPreparationManager {
       return nil
     }
 
-    var preparation = CMigrationPreparationProgress(
-      state: 0,
-      confirmation_count: 0,
-      confirmation_target: 0,
-      completed_stage_count: 0,
-      total_stage_count: 0
-    )
+    let credential = Data(manifest.credentialHex.utf8)
     let advanceCode = credential.withUnsafeBytes { bytes in
       zcash_advance_migration_preparation(
         manifest.dbPath,

@@ -328,6 +328,12 @@ class IronwoodMigrationService {
             context: context,
             status: status,
           );
+          if (!isHardwareAccount(accountUuid)) {
+            await _resumeBackgroundPreparationIfNeeded(
+              context: context,
+              status: status,
+            );
+          }
           return status;
         });
       },
@@ -746,7 +752,16 @@ class IronwoodMigrationService {
             context: context,
             status: currentStatus,
           );
-          if (isIOS() && currentStatus.activeRunId != null) {
+          // Register continued preparation as soon as the durable run enters
+          // its confirmation phase. Waiting until outbox refresh completes can
+          // miss the last foreground execution window when the app is hidden.
+          await onCurrentStatus?.call(currentStatus);
+          final waitingForDenominationConfirmations =
+              currentStatus.phase ==
+              kIronwoodMigrationWaitingDenomConfirmationsPhase;
+          if (isIOS() &&
+              currentStatus.activeRunId != null &&
+              !waitingForDenominationConfirmations) {
             try {
               final outboxRefresh = await _refreshMigrationOutbox(
                 context: context,
@@ -769,7 +784,6 @@ class IronwoodMigrationService {
               );
             }
           }
-          await onCurrentStatus?.call(currentStatus);
           if (enrollNotificationsOnActiveRun &&
               currentStatus.activeRunId != null) {
             await _requestNotificationAuthorizationBestEffort();
@@ -1112,6 +1126,25 @@ class IronwoodMigrationService {
         '$error',
       );
     }
+  }
+
+  Future<void> _resumeBackgroundPreparationIfNeeded({
+    required _MigrationCredentialContext context,
+    required rust_sync.MigrationStatus status,
+  }) async {
+    if (status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+        status.activeRunId == null) {
+      return;
+    }
+    final manifest = await backgroundCredentialStore.read(
+      network: context.network,
+      accountUuid: context.accountUuid,
+    );
+    if (manifest == null || manifest.expectedRunId != status.activeRunId) {
+      return;
+    }
+    await _resolveManifestContext(manifest, context);
+    await _reconcileBackgroundPreparationBestEffort(status);
   }
 
   Future<void> discardKeystonePrivateMigrationRequest({

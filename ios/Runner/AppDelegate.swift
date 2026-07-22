@@ -16,6 +16,8 @@ import UIKit
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
+      BackgroundMigrationPreparationManager.shared
+        .cancelPendingRequestForForegroundLaunch()
       BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
@@ -43,7 +45,9 @@ import UIKit
         result(BackgroundMigrationManager.shared.schedule())
       case "startPreparation":
         if #available(iOS 26.0, *) {
-          result(BackgroundMigrationPreparationManager.shared.start())
+          BackgroundMigrationPreparationManager.shared.start {
+            success in DispatchQueue.main.async { result(success) }
+          }
         } else {
           result(false)
         }
@@ -108,11 +112,26 @@ import UIKit
         BackgroundMigrationManager.shared.revokeAccount(
           network: network,
           accountUuid: accountUuid,
-          completion: { success in result(success) }
+          completion: { success in
+            if success {
+              if #available(iOS 26.0, *) {
+                BackgroundMigrationPreparationManager.shared
+                  .cancelIfNoActivePreparation()
+              }
+            }
+            result(success)
+          }
         )
       case "revokeAll":
         BackgroundMigrationManager.shared.revokeAll {
-          success in result(success)
+          success in
+          if success {
+            if #available(iOS 26.0, *) {
+              BackgroundMigrationPreparationManager.shared
+                .cancelIfNoActivePreparation()
+            }
+          }
+          result(success)
         }
       #if DEBUG || targetEnvironment(simulator)
         case "runOnceForTesting":
