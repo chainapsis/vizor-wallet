@@ -18,9 +18,9 @@ const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
   seconds:
       String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest' ||
-              kZcashFastTestnetMigration
-          ? 1
-          : 30,
+          kZcashFastTestnetMigration
+      ? 1
+      : 30,
 );
 
 class IronwoodMigrationCoordinatorState {
@@ -55,6 +55,7 @@ class IronwoodMigrationCoordinator
   bool _foreground = true;
   final Map<String, DateTime> _lastAdvanceAt = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
+  final Map<String, Future<void>> _advanceOperations = {};
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -88,9 +89,29 @@ class IronwoodMigrationCoordinator
   }
 
   Future<void> retry(String accountUuid) async {
-    await _advance(accountUuid);
-    if (!ref.mounted) return;
-    await refreshNow();
+    try {
+      final inFlight = _advanceOperations[accountUuid];
+      if (inFlight != null) {
+        try {
+          await inFlight;
+        } catch (_) {
+          // A manual retry must still run after the automatic attempt fails.
+        }
+      }
+      await _advance(accountUuid);
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+      );
+      await refreshNow();
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<void> refreshNow({bool forceAdvance = false}) async {
@@ -129,6 +150,7 @@ class IronwoodMigrationCoordinator
           if (_shouldAdvance(
             status,
             isHardware: account.isHardware,
+            usesNativeOutbox: service.supportsBackgroundMigrationRetry,
             force: forceAdvance,
             accountUuid: account.uuid,
           )) {
@@ -166,6 +188,7 @@ class IronwoodMigrationCoordinator
   bool _shouldAdvance(
     rust_sync.MigrationStatus status, {
     required bool isHardware,
+    required bool usesNativeOutbox,
     required bool force,
     required String accountUuid,
   }) {
@@ -177,7 +200,8 @@ class IronwoodMigrationCoordinator
             status.phase == kIronwoodMigrationReadyToMigratePhase) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            (_hasDueScheduledBroadcast(status) ||
+            ((usesNativeOutbox && _hasScheduledBroadcast(status)) ||
+                (!usesNativeOutbox && _hasDueScheduledBroadcast(status)) ||
                 _canPrepareNextProof(status))) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
@@ -193,6 +217,14 @@ class IronwoodMigrationCoordinator
     final lastAdvance = _lastAdvanceAt[accountUuid];
     return lastAdvance == null ||
         DateTime.now().difference(lastAdvance) >= _migrationAdvanceInterval;
+  }
+
+  bool _hasScheduledBroadcast(rust_sync.MigrationStatus status) {
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.scheduledHeight > 0,
+    );
   }
 
   bool _hasDueScheduledBroadcast(rust_sync.MigrationStatus status) {
@@ -222,18 +254,31 @@ class IronwoodMigrationCoordinator
 
     final scannedHeight = syncState.scannedHeight;
     final chainTipHeight = syncState.chainTipHeight;
-    final currentHeight =
-        scannedHeight > 0 && chainTipHeight > 0
-            ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
-            : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
+    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
+        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
+        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
     return currentHeight;
   }
 
   Future<void> _advance(
     String accountUuid, {
     rust_sync.MigrationStatus? status,
+  }) {
+    final existing = _advanceOperations[accountUuid];
+    if (existing != null) return existing;
+    final operation = _runAdvance(accountUuid, status: status);
+    _advanceOperations[accountUuid] = operation;
+    return operation.whenComplete(() {
+      if (identical(_advanceOperations[accountUuid], operation)) {
+        _advanceOperations.remove(accountUuid);
+      }
+    });
+  }
+
+  Future<void> _runAdvance(
+    String accountUuid, {
+    rust_sync.MigrationStatus? status,
   }) async {
-    if (state.advancingAccounts.contains(accountUuid)) return;
     state = state.copyWith(
       advancingAccounts: {...state.advancingAccounts, accountUuid},
     );
@@ -290,10 +335,11 @@ class IronwoodMigrationCoordinator
   }
 }
 
-final ironwoodMigrationCoordinatorProvider = NotifierProvider<
-  IronwoodMigrationCoordinator,
-  IronwoodMigrationCoordinatorState
->(IronwoodMigrationCoordinator.new);
+final ironwoodMigrationCoordinatorProvider =
+    NotifierProvider<
+      IronwoodMigrationCoordinator,
+      IronwoodMigrationCoordinatorState
+    >(IronwoodMigrationCoordinator.new);
 
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({required this.child, super.key});
@@ -322,18 +368,15 @@ class _IronwoodMigrationCoordinatorHostState
       );
     });
     _lifecycleListener = AppLifecycleListener(
-      onResume:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(true),
-      onHide:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
-      onPause:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
+      onResume: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(true),
+      onHide: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
+      onPause: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
     );
   }
 

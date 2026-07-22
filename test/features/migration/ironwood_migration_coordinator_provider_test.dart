@@ -69,21 +69,53 @@ void main() {
     );
   });
 
-  test('does not broadcast a scheduled migration before it is due', () async {
+  test(
+    'reconciles a scheduled migration even when local height is behind',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final softwareStarts = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: softwareStarts,
+        broadcasts: broadcasts,
+        syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow(forceAdvance: true);
+
+      expect(broadcasts, [_softwareUuid]);
+      expect(softwareStarts, isEmpty);
+    },
+  );
+
+  test('non-outbox mobile waits until a scheduled migration is due', () async {
     final statuses = {
       _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
       _hardwareUuid: _status('complete', activeRunId: null),
     };
-    final softwareStarts = <String>[];
     final broadcasts = <String>[];
     final container = _container(
       statuses: statuses,
-      softwareStarts: softwareStarts,
+      softwareStarts: [],
       broadcasts: broadcasts,
+      usesNativeOutbox: false,
       syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
     );
     addTearDown(container.dispose);
-
     final subscription = container.listen(
       ironwoodMigrationCoordinatorProvider,
       (_, _) {},
@@ -91,12 +123,12 @@ void main() {
     );
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
+
     await container
         .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow(forceAdvance: true);
+        .refreshNow();
 
     expect(broadcasts, isEmpty);
-    expect(softwareStarts, isEmpty);
   });
 
   test(
@@ -127,6 +159,57 @@ void main() {
           .refreshNow();
 
       expect(broadcasts, [_softwareUuid]);
+    },
+  );
+
+  test(
+    'manual retry runs again after an automatic attempt in flight',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final firstAttemptStarted = Completer<void>();
+      final releaseFirstAttempt = Completer<void>();
+      var attemptCount = 0;
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+        broadcast: (accountUuid) async {
+          attemptCount++;
+          if (attemptCount == 1) {
+            firstAttemptStarted.complete();
+            await releaseFirstAttempt.future;
+          }
+          return _result('broadcast_scheduled');
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final automatic = container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+      await firstAttemptStarted.future;
+      final manual = container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .retry(_softwareUuid);
+      await Future<void>.delayed(Duration.zero);
+      expect(attemptCount, 1);
+
+      releaseFirstAttempt.complete();
+      await automatic;
+      await manual;
+
+      expect(attemptCount, 2);
     },
   );
 
@@ -162,6 +245,38 @@ void main() {
     expect(advances, [_softwareUuid]);
   });
 
+  test('does not prepare the next proof before its anchor height', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'broadcast_scheduled',
+        signedChildPcztCount: 1,
+        nextActionHeight: 1_000,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final advances = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: advances,
+      syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
+
+    expect(advances, isEmpty);
+  });
+
   test(
     'automatically broadcasts a due Keystone migration in foreground',
     () async {
@@ -192,6 +307,46 @@ void main() {
       expect(broadcasts, [_hardwareUuid]);
     },
   );
+
+  test('one account failure does not block another account recovery', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+    };
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: broadcasts,
+      syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
+      broadcast: (accountUuid) async {
+        if (accountUuid == _softwareUuid) {
+          throw StateError('account outbox unavailable');
+        }
+        return _result('waiting_migration_confirmations');
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
+
+    expect(broadcasts, [_softwareUuid, _hardwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      contains('account outbox unavailable'),
+    );
+  });
 
   test(
     'coalesces a refresh requested while status loading is active',
@@ -224,10 +379,9 @@ void main() {
       );
       addTearDown(subscription.close);
 
-      final firstRefresh =
-          container
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .refreshNow();
+      final firstRefresh = container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
       await firstStatusStarted.future;
       await container
           .read(ironwoodMigrationCoordinatorProvider.notifier)
@@ -303,10 +457,9 @@ void main() {
       (_, _) {},
       fireImmediately: true,
     );
-    final refresh =
-        container
-            .read(ironwoodMigrationCoordinatorProvider.notifier)
-            .refreshNow();
+    final refresh = container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
     await statusStarted.future;
 
     subscription.close();
@@ -322,17 +475,17 @@ ProviderContainer _container({
   required List<String> softwareStarts,
   required List<String> broadcasts,
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
+  Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
+  broadcast,
+  bool usesNativeOutbox = true,
   SyncState? syncState,
 }) {
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus: ({
-      required dbPath,
-      required network,
-      required accountUuid,
-    }) async {
-      return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
-    },
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async {
+          return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
+        },
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             null,
@@ -341,37 +494,41 @@ ProviderContainer _container({
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
     isMobile: () => true,
+    supportsBackgroundMigration: () => usesNativeOutbox,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
     scheduleBackgroundMigration: () async => true,
-    broadcastDueMigration: ({
-      required dbPath,
-      required lightwalletdUrl,
-      required network,
-      required accountUuid,
-      required password,
-      required saltBase64,
-    }) async {
-      broadcasts.add(accountUuid);
-      final current = statuses[accountUuid]!;
-      if (current.phase == 'broadcast_scheduled') {
-        statuses[accountUuid] = _status('waiting_migration_confirmations');
-        return _result('waiting_migration_confirmations');
-      }
-      return _result(current.phase);
-    },
-    startMacosSoftwareMigration: ({
-      required dbPath,
-      required lightwalletdUrl,
-      required network,
-      required accountUuid,
-      required password,
-      required saltBase64,
-      required approvedSchedule,
-    }) async {
-      softwareStarts.add(accountUuid);
-      statuses[accountUuid] = _status('broadcast_scheduled');
-      return _result('broadcast_scheduled');
-    },
+    broadcastDueMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          broadcasts.add(accountUuid);
+          if (broadcast != null) return broadcast(accountUuid);
+          final current = statuses[accountUuid]!;
+          if (current.phase == 'broadcast_scheduled') {
+            statuses[accountUuid] = _status('waiting_migration_confirmations');
+            return _result('waiting_migration_confirmations');
+          }
+          return _result(current.phase);
+        },
+    startMacosSoftwareMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) async {
+          softwareStarts.add(accountUuid);
+          statuses[accountUuid] = _status('broadcast_scheduled');
+          return _result('broadcast_scheduled');
+        },
   );
 
   return ProviderContainer(
@@ -445,18 +602,17 @@ rust_sync.MigrationStatus _status(
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     nextActionHeight: nextActionHeight,
-    scheduledBroadcasts:
-        scheduledHeight == null
-            ? const []
-            : [
-              rust_sync.MigrationScheduledBroadcast(
-                txidHex: 'scheduled-tx',
-                valueZatoshi: BigInt.from(100000000),
-                scheduledAtMs: 0,
-                scheduledHeight: scheduledHeight,
-                status: 'scheduled',
-              ),
-            ],
+    scheduledBroadcasts: scheduledHeight == null
+        ? const []
+        : [
+            rust_sync.MigrationScheduledBroadcast(
+              txidHex: 'scheduled-tx',
+              valueZatoshi: BigInt.from(100000000),
+              scheduledAtMs: 0,
+              scheduledHeight: scheduledHeight,
+              status: 'scheduled',
+            ),
+          ],
     parts: const [],
   );
 }
