@@ -707,6 +707,17 @@ final class BackgroundMigrationRunnerTests: XCTestCase {
     )
   }
 
+  func testReschedulePolicyCapsLongSingleAccountWaitToRollingInterval() {
+    XCTAssertEqual(
+      BackgroundMigrationReschedulePolicy.delay(
+        after: .waiting(nextHeight: 1_000, observedHeight: 500),
+        runnableManifestCount: 1,
+        cancelledByExpiration: false
+      ),
+      10 * 60
+    )
+  }
+
   func testReschedulePolicyUsesTheRefreshedHeightAfterSync() {
     XCTAssertEqual(
       BackgroundMigrationReschedulePolicy.delay(

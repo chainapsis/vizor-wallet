@@ -212,6 +212,9 @@ enum BackgroundMigrationRunOutcome: Equatable {
 }
 
 enum BackgroundMigrationReschedulePolicy {
+  private static let singleAccountRollingInterval: TimeInterval = 10 * 60
+  private static let multipleAccountRollingInterval: TimeInterval = 2 * 60
+
   static func delay(
     after outcome: BackgroundMigrationRunOutcome,
     runnableManifestCount: Int,
@@ -233,7 +236,10 @@ enum BackgroundMigrationReschedulePolicy {
         nextHeight: nextHeight,
         observedHeight: observedHeight
       )
-      return runnableManifestCount > 1 ? min(delay, 2 * 60) : delay
+      let rollingInterval = runnableManifestCount > 1
+        ? multipleAccountRollingInterval
+        : singleAccountRollingInterval
+      return min(delay, rollingInterval)
     case .failed:
       return 10 * 60
     case .complete, .needsUserAction:
