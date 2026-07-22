@@ -665,7 +665,7 @@ void main() {
     expect(find.text('Sends independent parts over time'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('mobile_ironwood_immediate_unavailable')),
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
       findsOneWidget,
     );
     expect(find.text('Sends now in one step.'), findsOneWidget);
@@ -722,7 +722,7 @@ void main() {
       const ValueKey('mobile_ironwood_private_option'),
     );
     final immediateOption = find.byKey(
-      const ValueKey('mobile_ironwood_immediate_unavailable'),
+      const ValueKey('mobile_ironwood_immediate_option'),
     );
     await tester.tap(immediateOption);
     await tester.pump();
@@ -743,20 +743,13 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(privateOption);
+    await tester.tap(immediateOption);
     await tester.pump();
-    expect(
-      find.descendant(
-        of: privateOption,
-        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
-      ),
-      findsOneWidget,
-    );
-
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.text('Step 3/3'), findsOneWidget);
+    expect(find.text('Privacy trade-off'), findsOneWidget);
+
   });
 
   testWidgets('renders the private migration review plan', (tester) async {
@@ -1534,15 +1527,8 @@ void main() {
     expect(find.text('~5 mins'), findsOneWidget);
     expect(find.text('Orchard remains'), findsNothing);
     expect(
-      find.text(
-        'I understand that this migration’s amount and timing will be visible '
-        'on the Zcash network.',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('mobile_ironwood_fast_acknowledgement')),
-      findsOneWidget,
+      find.textContaining('will be visible on the Zcash network.'),
+      findsNothing,
     );
     expect(find.text('Continue anyway'), findsOneWidget);
     expect(find.text('Authorise anyway'), findsNothing);

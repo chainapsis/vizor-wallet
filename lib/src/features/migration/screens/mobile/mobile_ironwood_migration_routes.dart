@@ -75,9 +75,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
-      MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-        allowPreviewSelection: previewMode,
-      ),
+      MobileIronwoodMigrationStep.options => const _MobileMigrationOptions(),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
@@ -87,7 +85,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
-        previewMode: previewMode,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,

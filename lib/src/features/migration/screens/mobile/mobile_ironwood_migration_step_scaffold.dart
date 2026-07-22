@@ -174,6 +174,12 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // The approved dark review frame places the plan 9px higher than the
+    // light frame while keeping the bottom actions fixed to the safe area.
+    final topPadding =
+        colors.background.window == AppThemeData.dark.colors.background.window
+        ? 30.0
+        : 39.0;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
@@ -182,17 +188,16 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
           children: [
             Transform.translate(
               offset: const Offset(0, 20),
-              child: MobileTopNav.back(
-                title: 'Step 3/3',
-                titleStyle: AppTypography.headlineSmall,
+              child: MobileTopNav.steps(
+                progress: _migrationProgress,
                 onBack: onBack,
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
+                padding: EdgeInsets.fromLTRB(
                   AppSpacing.sm,
-                  39,
+                  topPadding,
                   AppSpacing.sm,
                   AppSpacing.md,
                 ),

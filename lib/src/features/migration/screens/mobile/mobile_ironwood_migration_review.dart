@@ -498,23 +498,10 @@ String _mobilePrivateMigrationStartErrorMessage(Object error) {
   return "Couldn't start migration. Try again.";
 }
 
-class _MobileMigrationFastReview extends StatefulWidget {
-  const _MobileMigrationFastReview({
-    required this.data,
-    required this.previewMode,
-  });
+class _MobileMigrationFastReview extends StatelessWidget {
+  const _MobileMigrationFastReview({required this.data});
 
   final IronwoodMigrationFlowData data;
-  final bool previewMode;
-
-  @override
-  State<_MobileMigrationFastReview> createState() =>
-      _MobileMigrationFastReviewState();
-}
-
-class _MobileMigrationFastReviewState
-    extends State<_MobileMigrationFastReview> {
-  late bool _acknowledged = widget.previewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -525,19 +512,22 @@ class _MobileMigrationFastReviewState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppButton(
-            variant: AppButtonVariant.ghost,
+            variant: AppButtonVariant.secondary,
             expand: true,
-            height: 44,
+            height: 50,
             onPressed: () => context.go('/migration/options'),
             leading: const AppIcon(AppIcons.chevronBackward, size: 20),
             child: const Text('Consider another option'),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           AppButton(
             variant: AppButtonVariant.destructive,
             expand: true,
             height: 50,
-            onPressed: _acknowledged && widget.previewMode ? () {} : null,
+            // The Immediate migration backend is not available yet. Keep the
+            // reviewed CTA interactive for the approved flow and visual state,
+            // but intentionally make it a no-op until execution is wired.
+            onPressed: () {},
             leading: const AppIcon(AppIcons.warning, size: 20),
             child: const Text('Continue anyway'),
           ),
@@ -556,7 +546,7 @@ class _MobileMigrationFastReviewState
                 children: [
                   _ReviewRow(
                     label: 'Amount',
-                    value: '${widget.data.amountText} ZEC',
+                    value: '${data.amountText} ZEC',
                     height: 32,
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -609,9 +599,11 @@ class _MobileMigrationFastReviewState
                         children: [
                           Text(
                             'Privacy trade-off',
-                            style: AppTypography.labelLarge.copyWith(
+                            style: AppTypography.bodySmall.copyWith(
                               color: colors.text.homeCard,
                               fontWeight: FontWeight.w600,
+                              height: 16 / 14,
+                              letterSpacing: -0.06,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xs),
@@ -619,13 +611,15 @@ class _MobileMigrationFastReviewState
                             TextSpan(
                               style: AppTypography.bodyMedium.copyWith(
                                 color: colors.text.homeCard,
-                                letterSpacing: 0,
+                                fontSize: 15.5,
+                                height: 21 / 14,
+                                letterSpacing: -0.21,
                               ),
                               children: [
                                 TextSpan(
                                   text:
                                       'Crosses in one visible step — your '
-                                      '${widget.data.amountText} ZEC and '
+                                      '${data.amountText} ZEC and '
                                       'timing are ',
                                 ),
                                 const TextSpan(
@@ -647,54 +641,6 @@ class _MobileMigrationFastReviewState
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Semantics(
-            checked: _acknowledged,
-            button: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_ironwood_fast_acknowledgement'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _acknowledged = !_acknowledged),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: _acknowledged
-                          ? colors.button.destructive.bg
-                          : colors.background.ground,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: _acknowledged
-                            ? colors.button.destructive.bg
-                            : colors.border.regular,
-                      ),
-                    ),
-                    child: _acknowledged
-                        ? AppIcon(
-                            AppIcons.check,
-                            size: 14,
-                            color: colors.button.destructive.label,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Text(
-                      'I understand that this migration’s amount and timing '
-                      'will be visible on the Zcash network.',
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

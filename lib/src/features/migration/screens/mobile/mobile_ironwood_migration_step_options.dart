@@ -8,7 +8,6 @@ class _MobileMigrationOptionCard extends StatelessWidget {
     required this.body,
     required this.selected,
     required this.icon,
-    this.enabled = true,
     this.recommended = false,
     this.onTap,
     super.key,
@@ -18,7 +17,6 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   final String body;
   final bool selected;
   final _MigrationChoiceIcon icon;
-  final bool enabled;
   final bool recommended;
   final VoidCallback? onTap;
 
@@ -27,11 +25,11 @@ class _MobileMigrationOptionCard extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       selected: selected,
-      enabled: enabled,
+      enabled: onTap != null,
       button: onTap != null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
+        onTap: onTap,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.background.ground,
