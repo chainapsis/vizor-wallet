@@ -497,6 +497,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(tester.widget<Opacity>(blinkRipple).opacity, closeTo(0.5, 0.001));
     expect(tester.getSize(blinkRipple), const Size.square(32));
+    final rippleDecoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: blinkRipple,
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect((rippleDecoration.border! as Border).top.width, 2);
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.widget<Opacity>(blinkRipple).opacity, 0);
     expect(tester.getSize(blinkRipple), const Size.square(56));

@@ -558,6 +558,56 @@ void main() {
     );
   });
 
+  testWidgets('uses dark semantic colors in the About migration hero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(step: MobileIronwoodMigrationStep.intro, theme: AppThemeData.dark),
+    );
+    await tester.pumpAndSettle();
+
+    BoxDecoration decorationFor(String key) {
+      final keyed = find.byKey(ValueKey(key));
+      final widget = tester.widget(keyed);
+      final container = widget is Container
+          ? widget
+          : tester.widget<Container>(
+              find.descendant(of: keyed, matching: find.byType(Container)),
+            );
+      return container.decoration! as BoxDecoration;
+    }
+
+    expect(
+      decorationFor('mobile_ironwood_legacy_connection_line').color,
+      AppThemeData.dark.colors.border.medium,
+    );
+    expect(
+      decorationFor('mobile_ironwood_target_connection_line').color,
+      AppThemeData.dark.colors.icon.success,
+    );
+
+    final legacyDot = decorationFor('mobile_ironwood_legacy_connection_dot');
+    final targetDot = decorationFor('mobile_ironwood_target_connection_dot');
+    expect(legacyDot.color, AppThemeData.dark.colors.border.medium);
+    expect(targetDot.color, AppThemeData.dark.colors.icon.success);
+    expect(
+      (legacyDot.border! as Border).top.color,
+      AppThemeData.dark.colors.background.ground,
+    );
+    expect(
+      (targetDot.border! as Border).top.color,
+      AppThemeData.dark.colors.background.ground,
+    );
+    expect(
+      tester.widget<Text>(find.text('Migration')).style!.color,
+      AppThemeData.dark.colors.text.inverse,
+    );
+    expect(
+      tester.widget<Text>(find.text('Ironwood Pool')).style!.color,
+      AppThemeData.dark.colors.text.positiveStrong,
+    );
+  });
+
   testWidgets('shows the migration type choice and preview selection', (
     tester,
   ) async {

@@ -34,17 +34,20 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                             children: [
                               Expanded(
                                 child: Container(
+                                  key: const ValueKey(
+                                    'mobile_ironwood_legacy_connection_line',
+                                  ),
                                   height: 3,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFB8B8B8),
+                                    color: colors.border.medium,
                                     borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
                               ),
                               DecoratedBox(
-                                decoration: const ShapeDecoration(
-                                  color: Color(0xFF00A460),
-                                  shape: RoundedRectangleBorder(
+                                decoration: ShapeDecoration(
+                                  color: colors.icon.success,
+                                  shape: const RoundedRectangleBorder(
                                     borderRadius: BorderRadius.all(
                                       Radius.circular(AppRadii.xSmall),
                                     ),
@@ -58,17 +61,17 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const AppIcon(
+                                      AppIcon(
                                         AppIcons.shieldKeyhole,
                                         size: 20,
-                                        color: Color(0xFFFFFFFF),
+                                        color: colors.icon.inverse,
                                       ),
                                       const SizedBox(width: AppSpacing.xxs),
                                       Text(
                                         'Migration',
                                         style: AppTypography.bodyMediumStrong
                                             .copyWith(
-                                              color: const Color(0xFFFFFFFF),
+                                              color: colors.text.inverse,
                                             ),
                                       ),
                                     ],
@@ -77,9 +80,12 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                               ),
                               Expanded(
                                 child: Container(
+                                  key: const ValueKey(
+                                    'mobile_ironwood_target_connection_line',
+                                  ),
                                   height: 3,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF00A460),
+                                    color: colors.icon.success,
                                     borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
@@ -94,20 +100,20 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const Positioned(
+                  Positioned(
                     left: 32,
                     top: 17,
                     child: _MigrationConnectionDot(
                       key: ValueKey('mobile_ironwood_legacy_connection_dot'),
-                      color: Color(0xFFB8B8B8),
+                      color: colors.border.medium,
                     ),
                   ),
-                  const Positioned(
+                  Positioned(
                     right: 32,
                     top: 17,
                     child: _MigrationConnectionDot(
                       key: ValueKey('mobile_ironwood_target_connection_dot'),
-                      color: Color(0xFF00A460),
+                      color: colors.icon.success,
                     ),
                   ),
                 ],
@@ -153,7 +159,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                         Text(
                           'Ironwood Pool',
                           style: AppTypography.labelLarge.copyWith(
-                            color: const Color(0xFF00A460),
+                            color: colors.text.positiveStrong,
                           ),
                         ),
                         Text(
@@ -189,7 +195,7 @@ class _MigrationConnectionDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFFFFFFF), width: 3),
+        border: Border.all(color: context.colors.background.ground, width: 3),
       ),
     );
   }

@@ -1394,11 +1394,6 @@ class _MobileIronwoodMigrationBannerState
                                   (timeline - 0.1) / 0.6,
                                 );
                           final rippleSize = lerpDouble(8, 56, rippleProgress)!;
-                          final rippleStrokeWidth = lerpDouble(
-                            2,
-                            0.1,
-                            rippleProgress,
-                          )!;
                           return SizedBox(
                             key: const ValueKey(
                               'mobile_home_ironwood_migration_blink',
@@ -1424,7 +1419,7 @@ class _MobileIronwoodMigrationBannerState
                                           shape: BoxShape.circle,
                                           border: Border.all(
                                             color: GreenPrimitives.p200Dark,
-                                            width: rippleStrokeWidth,
+                                            width: 2,
                                           ),
                                         ),
                                       ),
