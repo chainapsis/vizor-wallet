@@ -738,7 +738,8 @@ void main() {
         matching: find.byType(Text),
       ),
     );
-    expect(completionText.data, '~37 hrs');
+    expect(completionText.data, contains(':'));
+    expect(completionText.data, isNot('~37 hrs'));
     expect(completionText.data, isNot(contains('blocks')));
     expect(find.text('~3 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
@@ -1472,6 +1473,13 @@ void main() {
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('142.23 ZEC'), findsOneWidget);
     expect(find.text('Migration complete in'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Migration complete in'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('~5 mins'), findsOneWidget);
     expect(find.text('Orchard remains'), findsNothing);
     expect(
@@ -1621,6 +1629,13 @@ void main() {
     await tester.pump();
     expect(listPosition.pixels, greaterThan(0));
     expect(find.text('Currently spendable balance'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Currently spendable balance'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('4.12 ZEC'), findsWidgets);
     expect(
       find.text('You can leave this screen.').hitTestable(),
@@ -2163,6 +2178,13 @@ void main() {
     expect(find.text('Confirming · 2/3'), findsOneWidget);
     expect(find.bySemanticsLabel('Part 2 progress 90%'), findsOneWidget);
     expect(find.text('Currently spendable balance'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Currently spendable balance'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('1.00 ZEC'), findsOneWidget);
   });
 
@@ -2254,7 +2276,8 @@ void main() {
 
     expect(find.text('Queued'), findsNothing);
     expect(find.text('Completed'), findsOneWidget);
-    expect(find.textContaining('~'), findsOneWidget);
+    expect(find.text('Waiting · ~in 25 minutes'), findsOneWidget);
+    expect(find.textContaining('~18:'), findsNothing);
     expect(find.text('Waiting'), findsOneWidget);
     expect(find.bySemanticsLabel('About estimated completion'), findsNothing);
   });

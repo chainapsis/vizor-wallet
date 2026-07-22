@@ -59,31 +59,37 @@ class _ReviewRow extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
-              flex: 2,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+              flex: 3,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
-              flex: 3,
+              flex: 2,
               child: Row(
                 key: ValueKey('mobile_ironwood_review_value_$label'),
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Flexible(
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
                       ),
                     ),
                   ),

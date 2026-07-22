@@ -221,10 +221,14 @@ String _mobileWaitingLabel(
   rust_sync.MigrationStatus status, {
   required int? currentHeight,
 }) {
-  final timing = migrationNextActionTimingLabel(
-    status,
-    currentHeight: currentHeight,
-  );
+  final nextHeight = status.nextActionHeight;
+  final timing =
+      nextHeight == null || currentHeight == null || currentHeight <= 0
+      ? null
+      : migrationHeightRemainingDurationLabel(
+          nextHeight,
+          currentHeight: currentHeight,
+        );
   return timing == null ? 'Waiting' : 'Waiting · $timing';
 }
 
