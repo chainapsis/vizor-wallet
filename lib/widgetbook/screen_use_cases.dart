@@ -32,6 +32,7 @@ import '../src/features/migration/providers/ironwood_migration_announcement_prov
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_complete_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
@@ -983,6 +984,28 @@ Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationKeystoneLoadingUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationKeystoneSigningUseCase(
+    MobileIronwoodKeystoneSigningViewState.loading,
+  );
+}
+
+Widget buildMobileIronwoodMigrationKeystoneReadyUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationKeystoneSigningUseCase(
+    MobileIronwoodKeystoneSigningViewState.ready,
+  );
+}
+
+Widget buildMobileIronwoodMigrationKeystoneScannerUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationKeystoneSigningUseCase(
+    MobileIronwoodKeystoneSigningViewState.scanner,
+  );
+}
+
 Widget buildMobileIronwoodMigrationRecoveryUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.migrating,
@@ -1008,6 +1031,52 @@ Widget buildMobileIronwoodMigrationRecoveryUseCase(BuildContext context) {
       ),
     ],
   );
+}
+
+Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
+  MobileIronwoodKeystoneSigningViewState state,
+) {
+  return SizedBox(
+    width: 393,
+    height: 852,
+    child: MediaQuery(
+      data: const MediaQueryData(
+        size: Size(393, 852),
+        viewPadding: EdgeInsets.only(top: 55),
+      ),
+      child: MobileIronwoodKeystoneSigningView(
+        state: state,
+        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+        qrCode: const _KeystoneMigrationQrPreview(),
+        camera: const _KeystoneMigrationCameraPreview(),
+        onNext: () {},
+        onCancel: () {},
+        onToggleFlashlight: () {},
+        onShowRequestQr: () {},
+      ),
+    ),
+  );
+}
+
+class _KeystoneMigrationQrPreview extends StatelessWidget {
+  const _KeystoneMigrationQrPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFFFFFFF),
+      child: Center(child: AppIcon(AppIcons.qr, size: 128)),
+    );
+  }
+}
+
+class _KeystoneMigrationCameraPreview extends StatelessWidget {
+  const _KeystoneMigrationCameraPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(color: Color(0xFF111111));
+  }
 }
 
 Widget _buildMobileIronwoodMigrationUseCase({
