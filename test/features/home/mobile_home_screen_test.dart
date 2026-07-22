@@ -109,8 +109,7 @@ class _FakeIronwoodCompletionStore implements IronwoodMigrationCompletionStore {
     required String network,
     required String accountUuid,
     required String completionId,
-  }) async =>
-      seen;
+  }) async => seen;
 
   @override
   Future<void> markSeen({
@@ -490,16 +489,20 @@ void main() {
       const Rect.fromLTWH(0, 0, 361, 52),
     );
     expect(maskShader, isA<Shader>());
-    final blinkGlow = find.byKey(
-      const ValueKey('mobile_home_ironwood_migration_blink_glow'),
+    final blinkRipple = find.byKey(
+      const ValueKey('mobile_home_ironwood_migration_blink_ripple'),
     );
-    expect(tester.widget<Opacity>(blinkGlow).opacity, closeTo(0.10, 0.001));
-    await tester.pump(const Duration(milliseconds: 1400));
-    final peakOpacity = tester.widget<Opacity>(blinkGlow).opacity;
-    expect(peakOpacity, closeTo(0.26, 0.001));
-    await tester.pump(const Duration(milliseconds: 1));
-    final reversingOpacity = tester.widget<Opacity>(blinkGlow).opacity;
-    expect((peakOpacity - reversingOpacity).abs(), lessThan(0.001));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 1);
+    expect(tester.getSize(blinkRipple), const Size.square(8));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, closeTo(0.5, 0.001));
+    expect(tester.getSize(blinkRipple), const Size.square(32));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 0);
+    expect(tester.getSize(blinkRipple), const Size.square(56));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 1);
+    expect(tester.getSize(blinkRipple), const Size.square(8));
     expect(find.text('Send'), findsOneWidget);
     expect(
       tester

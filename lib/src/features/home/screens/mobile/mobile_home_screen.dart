@@ -18,6 +18,7 @@ import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -282,7 +283,9 @@ class _IronwoodMigrationCompletionHostState
     final completionId = completion.completionId;
     if (network == null || accountUuid == null || completionId == null) return;
     try {
-      await ref.read(ironwoodMigrationCompletionStoreProvider).markSeen(
+      await ref
+          .read(ironwoodMigrationCompletionStoreProvider)
+          .markSeen(
             network: network,
             accountUuid: accountUuid,
             completionId: completionId,
@@ -1267,7 +1270,7 @@ class _MobileIronwoodMigrationBannerState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1000),
     );
   }
 
@@ -1292,7 +1295,7 @@ class _MobileIronwoodMigrationBannerState
         !widget.actionNeeded &&
         !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     if (animate) {
-      if (!_controller.isAnimating) _controller.repeat(reverse: true);
+      if (!_controller.isAnimating) _controller.repeat();
     } else {
       _controller
         ..stop()
@@ -1382,57 +1385,69 @@ class _MobileIronwoodMigrationBannerState
                       AnimatedBuilder(
                         animation: _controller,
                         builder: (context, _) {
-                          final pulse = Curves.easeInOutSine.transform(
-                            _controller.value,
-                          );
+                          final timeline = _controller.value;
+                          final rippleProgress = timeline <= 0.1
+                              ? 0.0
+                              : timeline >= 0.7
+                              ? 1.0
+                              : Curves.easeInOut.transform(
+                                  (timeline - 0.1) / 0.6,
+                                );
+                          final rippleSize = lerpDouble(8, 56, rippleProgress)!;
+                          final rippleStrokeWidth = lerpDouble(
+                            2,
+                            0.1,
+                            rippleProgress,
+                          )!;
                           return SizedBox(
                             key: const ValueKey(
                               'mobile_home_ironwood_migration_blink',
                             ),
-                            width: 12,
-                            height: 12,
+                            width: 16,
+                            height: 16,
                             child: Stack(
                               clipBehavior: Clip.none,
-                              alignment: Alignment.center,
                               children: [
                                 Positioned(
-                                  left: -14,
-                                  top: -14,
+                                  left: (16 - rippleSize) / 2,
+                                  top: (16 - rippleSize) / 2,
                                   child: Opacity(
                                     key: const ValueKey(
-                                      'mobile_home_ironwood_migration_blink_glow',
+                                      'mobile_home_ironwood_migration_blink_ripple',
                                     ),
-                                    opacity: lerpDouble(0.10, 0.26, pulse)!,
-                                    child: Transform.scale(
-                                      scale: lerpDouble(0.78, 1, pulse),
-                                      child: const SizedBox(
-                                        width: 40,
-                                        height: 40,
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: Color(0xFF00A460),
-                                            shape: BoxShape.circle,
+                                    opacity: 1 - rippleProgress,
+                                    child: SizedBox(
+                                      width: rippleSize,
+                                      height: rippleSize,
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: GreenPrimitives.p200Dark,
+                                            width: rippleStrokeWidth,
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(
+                                const Positioned(
+                                  left: 3,
+                                  top: 3,
                                   width: 10,
                                   height: 10,
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
                                       gradient: RadialGradient(
                                         colors: [
-                                          Color(0xFF56DDA3),
-                                          Color(0xFF00A460),
+                                          GreenPrimitives.p200Light,
+                                          GreenPrimitives.p300Dark,
                                         ],
                                       ),
                                       shape: BoxShape.circle,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Color(0xFF00A460),
+                                          color: GreenPrimitives.p300Dark,
                                           blurRadius: 4,
                                         ),
                                       ],
