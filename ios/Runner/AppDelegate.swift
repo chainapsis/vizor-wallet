@@ -16,14 +16,28 @@ import UIKit
 
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
-      BackgroundMigrationPreparationManager.shared
-        .cancelPendingRequestForForegroundLaunch()
+      // A BGTask cold-launches the app with a background application state.
+      // Cancelling here unconditionally removes the very request iOS is
+      // launching us to service. Only a user-driven foreground launch should
+      // discard a stale pending preparation request.
+      if application.applicationState != .background {
+        BackgroundMigrationPreparationManager.shared
+          .cancelPendingRequestForForegroundLaunch()
+      }
       BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
       )
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationWillEnterForeground(_ application: UIApplication) {
+    if #available(iOS 26.0, *) {
+      BackgroundMigrationPreparationManager.shared
+        .handoffToForeground()
+    }
+    super.applicationWillEnterForeground(application)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -91,10 +105,25 @@ import UIKit
         result(true)
       case "quiesce":
         BackgroundMigrationManager.shared.quiesce {
-          success in result(success)
+          outboxSuccess in
+          guard outboxSuccess else {
+            result(false)
+            return
+          }
+          if #available(iOS 26.0, *) {
+            BackgroundMigrationPreparationManager.shared.quiesce {
+              preparationSuccess in result(preparationSuccess)
+            }
+          } else {
+            result(true)
+          }
         }
       case "resume":
-        result(BackgroundMigrationManager.shared.resumeAfterFailedMutation())
+        let resumed = BackgroundMigrationManager.shared.resumeAfterFailedMutation()
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared.resumeAfterFailedMutation()
+        }
+        result(resumed)
       case "revokeAccount":
         guard let arguments = call.arguments as? [String: Any],
           let network = arguments["network"] as? String,

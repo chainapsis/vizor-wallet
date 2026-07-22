@@ -28,6 +28,8 @@ final class BackgroundMigrationPreparationManager {
   private var expired = false
   private var submissionInFlight = false
   private var taskRunning = false
+  private var mutationQuiesced = false
+  private var foregroundHandoffRequested = false
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
 
@@ -39,6 +41,16 @@ final class BackgroundMigrationPreparationManager {
     )
     recordSchedulingState("cancelled_on_launch")
     cancelWatchdog()
+  }
+
+  func handoffToForeground() {
+    let shouldCancelPreparationSync = stateLock.withPreparationLock {
+      foregroundHandoffRequested = taskRunning
+      return taskRunning
+    }
+    guard shouldCancelPreparationSync else { return }
+    recordSchedulingState("handoff_to_foreground")
+    _ = zcash_cancel_migration_preparation_sync()
   }
 
   func registerBackgroundTask() {
@@ -56,24 +68,33 @@ final class BackgroundMigrationPreparationManager {
 
   func start(completion: @escaping (Bool) -> Void) {
     let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
-      guard !submissionInFlight && !taskRunning else { return false }
+      guard !mutationQuiesced && !submissionInFlight && !taskRunning else {
+        return false
+      }
       submissionInFlight = true
       return true
     }
     guard shouldCheckScheduler else {
-      completion(true)
+      let blockedByMutation = stateLock.withPreparationLock {
+        mutationQuiesced
+      }
+      completion(!blockedByMutation)
       return
     }
-    guard !zcash_is_sync_running() else {
-      stateLock.withPreparationLock { submissionInFlight = false }
-      recordSchedulingState("deferred_for_foreground_sync")
-      completion(true)
-      return
-    }
-
     recordSchedulingState("checking")
     BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
       guard let self else {
+        completion(false)
+        return
+      }
+      let maySubmit = self.stateLock.withPreparationLock { () -> Bool in
+        guard !self.mutationQuiesced else {
+          self.submissionInFlight = false
+          return false
+        }
+        return true
+      }
+      guard maySubmit else {
         completion(false)
         return
       }
@@ -139,21 +160,52 @@ final class BackgroundMigrationPreparationManager {
     cancelWatchdog()
   }
 
+  func quiesce(completion: @escaping (Bool) -> Void) {
+    BGTaskScheduler.shared.cancel(
+      taskRequestWithIdentifier: Self.taskIdentifier
+    )
+    stateLock.withPreparationLock {
+      expired = true
+      submissionInFlight = false
+      mutationQuiesced = true
+    }
+    _ = zcash_cancel_migration_preparation_sync()
+    queue.async {
+      DispatchQueue.main.async { completion(true) }
+    }
+  }
+
+  func resumeAfterFailedMutation() {
+    stateLock.withPreparationLock {
+      expired = false
+      mutationQuiesced = false
+    }
+    start { _ in }
+  }
+
   fileprivate func recordSyncProgress(_ progress: CSyncProgress) {
     guard progress.percentage.isFinite else { return }
-    let syncUnits = Int64((min(max(progress.percentage, 0), 1) * 50).rounded())
-    updateProgress(max(50, syncUnits))
+    let fraction = min(max(progress.percentage, 0), 1)
+    let syncUnits = Int64((25 + fraction * 25).rounded())
+    updateProgress(syncUnits)
     SyncProgressStreamHandler.shared.sendProgress(progress)
   }
 
   private func handle(_ task: BGContinuedProcessingTask) {
-    stateLock.withPreparationLock {
+    let mayRun = stateLock.withPreparationLock { () -> Bool in
+      guard !mutationQuiesced else { return false }
       submissionInFlight = false
       taskRunning = true
       expired = false
+      foregroundHandoffRequested = false
       taskProgress = task.progress
       taskProgress?.totalUnitCount = 1000
       lastCompletedUnitCount = 0
+      return true
+    }
+    guard mayRun else {
+      task.setTaskCompleted(success: false)
+      return
     }
     recordSchedulingState("running")
     updateProgress(25)
@@ -161,10 +213,7 @@ final class BackgroundMigrationPreparationManager {
     task.expirationHandler = { [weak self] in
       guard let self else { return }
       self.stateLock.withPreparationLock { self.expired = true }
-      zcash_cancel_sync()
-      if zcash_get_sync_mode() == 2 {
-        zcash_set_sync_mode(0)
-      }
+      _ = zcash_cancel_migration_preparation_sync()
       self.postNeedsActionNotification()
       self.scheduleWatchdog()
     }
@@ -175,17 +224,26 @@ final class BackgroundMigrationPreparationManager {
         return
       }
       let success = self.runPreparation()
+      let handedOff = self.stateLock.withPreparationLock {
+        self.foregroundHandoffRequested
+      }
       self.stateLock.withPreparationLock {
         self.taskRunning = false
         self.taskProgress = nil
+        self.foregroundHandoffRequested = false
       }
-      if success {
+      if success || handedOff {
         BGTaskScheduler.shared.cancel(
           taskRequestWithIdentifier: Self.taskIdentifier
         )
       }
-      self.recordSchedulingState(success ? "completed" : "failed")
-      task.setTaskCompleted(success: success)
+      if handedOff {
+        self.recordSchedulingState("handed_off_to_foreground")
+        self.scheduleWatchdog()
+      } else {
+        self.recordSchedulingState(success ? "completed" : "failed")
+      }
+      task.setTaskCompleted(success: success || handedOff)
     }
   }
 
@@ -213,13 +271,6 @@ final class BackgroundMigrationPreparationManager {
     guard !preparations.isEmpty else {
       cancelWatchdog()
       return true
-    }
-
-    zcash_set_sync_mode(2)
-    defer {
-      if zcash_get_sync_mode() == 2 {
-        zcash_set_sync_mode(0)
-      }
     }
 
     var pending = Array(preparations.enumerated())
@@ -254,6 +305,9 @@ final class BackgroundMigrationPreparationManager {
           postNeedsActionNotification()
           return false
         case 3:
+          if !isExpired && !isForegroundHandoffRequested {
+            postNeedsActionNotification()
+          }
           return false
         default:
           remaining.append(entry)
@@ -305,7 +359,20 @@ final class BackgroundMigrationPreparationManager {
     }
     guard preparation.state == 0 else { return preparation }
 
+    guard UIApplication.shared.isProtectedDataAvailable else {
+      print("[BGPreparation] protected data unavailable")
+      postNeedsActionNotification()
+      return nil
+    }
+
     if syncedContexts.insert(syncContext).inserted {
+      guard waitForRunningSync() else {
+        if !isExpired {
+          print("[BGPreparation] sync ownership wait failed")
+          postNeedsActionNotification()
+        }
+        return nil
+      }
       var syncCode = runSync(manifest)
       if syncCode == 3 {
         guard waitForRunningSync() else { return nil }
@@ -313,10 +380,14 @@ final class BackgroundMigrationPreparationManager {
       }
       if syncCode != 0 {
         print("[BGPreparation] sync failed: \(syncCode)")
-        postNeedsActionNotification()
+        if !isForegroundHandoffRequested {
+          postNeedsActionNotification()
+        }
         return nil
       }
     }
+
+    guard !isExpired && !isForegroundHandoffRequested else { return nil }
 
     guard UIApplication.shared.isProtectedDataAvailable else {
       print("[BGPreparation] protected data unavailable")
@@ -340,7 +411,9 @@ final class BackgroundMigrationPreparationManager {
     }
     guard advanceCode == 0 else {
       print("[BGPreparation] advance failed: \(advanceCode)")
-      postNeedsActionNotification()
+      if !isForegroundHandoffRequested {
+        postNeedsActionNotification()
+      }
       return nil
     }
     return preparation
@@ -356,11 +429,13 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func waitForRunningSync() -> Bool {
-    for _ in 0..<120 where !isExpired {
-      if !zcash_is_sync_running() { return true }
+    while !isExpired {
+      if !zcash_is_sync_running() {
+        return true
+      }
       Thread.sleep(forTimeInterval: 0.25)
     }
-    return !isExpired && !zcash_is_sync_running()
+    return false
   }
 
   private func waitForNextSyncPass() -> Bool {
@@ -372,6 +447,10 @@ final class BackgroundMigrationPreparationManager {
 
   private var isExpired: Bool {
     stateLock.withPreparationLock { expired }
+  }
+
+  private var isForegroundHandoffRequested: Bool {
+    stateLock.withPreparationLock { foregroundHandoffRequested }
   }
 
   private func preparationFraction(

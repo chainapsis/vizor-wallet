@@ -64,6 +64,9 @@ int32_t zcash_advance_migration_preparation(
 /// Cancel a running sync.
 void zcash_cancel_sync(void);
 
+/// Cancel only if migration preparation owns the running sync.
+bool zcash_cancel_migration_preparation_sync(void);
+
 /// Get the current desired sync mode (0=none, 1=foreground, 2=background).
 uint8_t zcash_get_sync_mode(void);
 

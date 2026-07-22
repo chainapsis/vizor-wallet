@@ -2,10 +2,12 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
 use crate::wallet::{keys, sync, sync_engine};
+
+static MIGRATION_PREPARATION_SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -103,10 +105,11 @@ pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
         log::warn!("ffi: migration preparation sync already running");
         return 3;
     }
-    if DESIRED_SYNC_MODE.load(Ordering::SeqCst) != 2 {
-        SYNC_RUNNING.store(false, Ordering::SeqCst);
-        return 4;
-    }
+    MIGRATION_PREPARATION_SYNC_RUNNING.store(true, Ordering::SeqCst);
+    // Claim the mode only after acquiring the single-sync guard. Setting mode
+    // before this point cancels an in-flight foreground sync and can make that
+    // interrupted run report success without advancing the scan watermark.
+    let previous_mode = DESIRED_SYNC_MODE.swap(2, Ordering::SeqCst);
     let code = run_full_sync_after_acquire(
         db_path,
         lightwalletd_url,
@@ -115,8 +118,23 @@ pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
         true,
         false,
     );
+    let mode_after_sync = DESIRED_SYNC_MODE.load(Ordering::SeqCst);
+    if mode_after_sync == 2 {
+        let _ = DESIRED_SYNC_MODE.compare_exchange(
+            2,
+            previous_mode,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+    }
+    MIGRATION_PREPARATION_SYNC_RUNNING.store(false, Ordering::SeqCst);
     SYNC_RUNNING.store(false, Ordering::SeqCst);
-    code
+    if code == 0 && mode_after_sync != 2 {
+        log::warn!("ffi: migration preparation sync lost mode ownership");
+        4
+    } else {
+        code
+    }
 }
 
 unsafe fn credential_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
@@ -421,6 +439,18 @@ fn run_full_sync_after_acquire(
 #[no_mangle]
 pub extern "C" fn zcash_cancel_sync() {
     SYNC_CANCEL.store(true, Ordering::Relaxed);
+}
+
+/// Cancel only when the active sync is owned by migration preparation.
+/// Returns false while another foreground/background sync owns the shared
+/// engine, so an expiring preparation task cannot interrupt that work.
+#[no_mangle]
+pub extern "C" fn zcash_cancel_migration_preparation_sync() -> bool {
+    if !MIGRATION_PREPARATION_SYNC_RUNNING.load(Ordering::SeqCst) {
+        return false;
+    }
+    SYNC_CANCEL.store(true, Ordering::Relaxed);
+    true
 }
 
 /// Get the current desired sync mode (0=none, 1=foreground, 2=background).
