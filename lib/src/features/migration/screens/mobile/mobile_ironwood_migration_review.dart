@@ -452,10 +452,83 @@ String _mobilePrivateMigrationStartErrorMessage(Object error) {
   return "Couldn't start migration. Try again.";
 }
 
-class _MobileMigrationFastReview extends StatelessWidget {
+class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({required this.data});
 
   final IronwoodMigrationFlowData data;
+
+  @override
+  ConsumerState<_MobileMigrationFastReview> createState() =>
+      _MobileMigrationFastReviewState();
+}
+
+class _MobileMigrationFastReviewState
+    extends ConsumerState<_MobileMigrationFastReview> {
+  bool _isBroadcasting = false;
+  String? _broadcastError;
+
+  Future<void> _startImmediateMigration() async {
+    if (_isBroadcasting) return;
+    setState(() {
+      _isBroadcasting = true;
+      _broadcastError = null;
+    });
+
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+
+      // An Immediate migration still uses the verified Orchard-to-Ironwood
+      // transaction builder. The difference is that the user starts it from
+      // this foreground flow rather than enrolling any background work.
+      // Keep the actual broadcast awaited so the CTA cannot be submitted
+      // twice, then let the home sync observe its pending/confirmed state.
+      final plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      if (plan == null) {
+        throw StateError('Migration plan is not available yet.');
+      }
+
+      if (accountState.activeAccount?.isHardware ?? false) {
+        if (!mounted) return;
+        context.go(
+          '/migration/private/keystone/denominations/sign',
+          extra: plan.scheduledTransfers,
+        );
+        return;
+      }
+
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .startSoftwareImmediateMigration(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
+      if (!mounted) return;
+
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (_) {
+        // The broadcast is already durable. Home will continue normal sync
+        // even when this best-effort immediate refresh cannot complete.
+      }
+      if (!mounted) return;
+      context.go('/home');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _broadcastError = _mobilePrivateMigrationStartErrorMessage(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBroadcasting = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,20 +542,36 @@ class _MobileMigrationFastReview extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             expand: true,
             height: 50,
-            onPressed: () => context.go('/migration/options'),
+            onPressed: _isBroadcasting
+                ? null
+                : () => context.go('/migration/options'),
             leading: const AppIcon(AppIcons.chevronBackward, size: 20),
             child: const Text('Consider another option'),
           ),
           const SizedBox(height: AppSpacing.s),
+          if (_broadcastError != null) ...[
+            Text(
+              _broadcastError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
           AppButton(
+            key: const ValueKey('mobile_ironwood_immediate_broadcast_button'),
             variant: AppButtonVariant.destructive,
             expand: true,
             height: 50,
-            // The Immediate migration backend is not available yet. Keep the
-            // reviewed CTA interactive for the approved flow and visual state,
-            // but intentionally make it a no-op until execution is wired.
-            onPressed: () {},
-            leading: const AppIcon(AppIcons.warning, size: 20),
+            onPressed: _isBroadcasting ? null : _startImmediateMigration,
+            leading: _isBroadcasting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const AppIcon(AppIcons.warning, size: 20),
             child: const Text('Continue anyway'),
           ),
         ],
@@ -500,7 +589,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                 children: [
                   _ReviewRow(
                     label: 'Amount',
-                    value: '${data.amountText} ZEC',
+                    value: '${widget.data.amountText} ZEC',
                     height: 32,
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -573,7 +662,7 @@ class _MobileMigrationFastReview extends StatelessWidget {
                                 TextSpan(
                                   text:
                                       'Crosses in one visible step — your '
-                                      '${data.amountText} ZEC and '
+                                      '${widget.data.amountText} ZEC and '
                                       'timing are ',
                                 ),
                                 const TextSpan(
