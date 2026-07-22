@@ -2294,7 +2294,7 @@ fn confirmation_count_uses_scanned_empty_orchard_blocks() {
 }
 
 #[test]
-fn confirmation_count_requires_scanned_range_to_cover_wallet_birthday() {
+fn confirmation_count_uses_recent_scanned_range_across_historic_gap() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     conn.execute_batch(
         "CREATE TABLE accounts (birthday_height INTEGER NOT NULL);
@@ -2310,14 +2310,21 @@ fn confirmation_count_requires_scanned_range_to_cover_wallet_birthday() {
          INSERT INTO accounts (birthday_height) VALUES (20), (25);
          INSERT INTO scan_queue
              (block_range_start, block_range_end, priority)
-             VALUES (21, 24, 10), (24, 30, 10);
+             VALUES
+               (20, 500, 10),
+               (500, 1000000, 20),
+               (1000000, 1000004, 10);
+         INSERT INTO blocks (height) VALUES (1000003);
          INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (100);",
     )
     .unwrap();
 
-    // A gap after the earliest account birthday means there is no fully
-    // scanned height, regardless of later ranges or tree checkpoints.
-    assert_eq!(synced_orchard_confirmation_count(&conn, 21).unwrap(), 0);
+    // The historical gap does not invalidate the already-scanned transaction
+    // block and its two successors.
+    assert_eq!(
+        synced_orchard_confirmation_count(&conn, 1_000_001).unwrap(),
+        3
+    );
 }
 
 #[test]

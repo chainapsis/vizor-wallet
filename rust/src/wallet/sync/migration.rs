@@ -3878,24 +3878,16 @@ fn synced_orchard_confirmation_count(
     conn: &rusqlite::Connection,
     height: u32,
 ) -> Result<u32, String> {
-    // Match `zcash_client_sqlite::WalletRead::block_fully_scanned`: the
-    // earliest Scanned range that begins at or before the wallet birthday is
-    // contiguous through its end-exclusive upper bound. Tree checkpoints are
-    // not a scan watermark because blocks with no new Orchard commitments do
-    // not need to create one.
+    // Confirmation depth is local to the transaction being checked. A wallet
+    // may have a recent Scanned range around this transaction while an older
+    // Historic gap still exists below it; requiring the wallet-wide scanned
+    // prefix would stall migration progress even though the relevant blocks
+    // have already been validated. Tree checkpoints are not a scan watermark
+    // because blocks with no new Orchard commitments do not create one.
     let has_fully_scanned_schema = table_exists(conn, "accounts")?
         && table_exists(conn, "scan_queue")?
         && table_exists(conn, "blocks")?;
     if has_fully_scanned_schema {
-        let wallet_birthday = conn
-            .query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
-                row.get::<_, Option<u32>>(0)
-            })
-            .map_err(|e| format!("Read wallet birthday for migration confirmations: {e}"))?;
-        let Some(wallet_birthday) = wallet_birthday else {
-            return Ok(0);
-        };
-
         // `10` is the persisted code for `ScanPriority::Scanned` in the
         // pinned zcash_client_sqlite schema.
         let scanned_range = conn
@@ -3903,27 +3895,29 @@ fn synced_orchard_confirmation_count(
                 "SELECT block_range_start, block_range_end
                  FROM scan_queue
                  WHERE priority = 10
-                 ORDER BY block_range_start ASC
+                   AND block_range_start <= ?1
+                   AND block_range_end > ?1
+                 ORDER BY block_range_end DESC
                  LIMIT 1",
-                [],
+                params![height],
                 |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
             )
             .optional()
-            .map_err(|e| format!("Read fully scanned range for migration confirmations: {e}"))?;
+            .map_err(|e| format!("Read transaction scan range for migration confirmations: {e}"))?;
         let Some((range_start, range_end)) = scanned_range else {
             return Ok(0);
         };
-        if range_start > wallet_birthday || range_end <= range_start {
+        if range_start > height || range_end <= height {
             return Ok(0);
         }
-        let fully_scanned_height = range_end - 1;
+        let scanned_through_height = range_end - 1;
 
         // `block_fully_scanned` finally loads metadata for the derived height.
         // Fail closed when a scan range does not retain that terminal block.
         let terminal_block_exists = conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM blocks WHERE height = ?1)",
-                params![fully_scanned_height],
+                params![scanned_through_height],
                 |row| row.get::<_, bool>(0),
             )
             .map_err(|e| format!("Read fully scanned block for migration confirmations: {e}"))?;
@@ -3931,7 +3925,7 @@ fn synced_orchard_confirmation_count(
             return Ok(0);
         }
 
-        return Ok(fully_scanned_height
+        return Ok(scanned_through_height
             .checked_sub(height)
             .map(|depth| depth.saturating_add(1))
             .unwrap_or(0)
