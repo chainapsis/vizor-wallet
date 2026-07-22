@@ -702,8 +702,37 @@ pub(crate) struct MigrationStatus {
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
+    /// Earliest block height at which the wallet can make more progress.
+    pub next_action_height: Option<u32>,
+    /// Projected height at which every migration part reaches trusted depth.
+    pub estimated_completion_height: Option<u32>,
+    /// Part associated with `next_action_height`, when it can be identified.
+    pub next_action_part_index: Option<u32>,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
     pub parts: Vec<MigrationPartStatus>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct MigrationTimingProjection {
+    next_action_height: Option<u32>,
+    estimated_completion_height: Option<u32>,
+    next_action_part_index: Option<u32>,
+}
+
+#[derive(Clone, Debug)]
+struct MigrationTimingPendingPart {
+    part_index: Option<u32>,
+    target_height: u32,
+    schedule_start_height: Option<u32>,
+    scheduled_height: u32,
+    status: String,
+    mined_height: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MigrationTimingSignedChild {
+    part_index: u32,
+    target_height: u32,
 }
 
 pub(crate) fn migration_status(
@@ -782,6 +811,9 @@ pub(crate) fn migration_status(
         )
         .1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
+        next_action_height: None,
+        estimated_completion_height: None,
+        next_action_part_index: None,
         scheduled_broadcasts: Vec::new(),
         parts: Vec::new(),
     })
@@ -2641,6 +2673,234 @@ pub(crate) fn locked_migration_note_refs(
     Ok(locks)
 }
 
+fn migration_timing_projection_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    total_count: u32,
+    confirmation_target: u32,
+) -> Result<MigrationTimingProjection, String> {
+    let (schedule_json, proof_retry_height) = conn
+        .query_row(
+            &format!(
+                "SELECT schedule_json, proof_retry_height
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<u32>>(1)?)),
+        )
+        .map_err(|e| format!("Read migration timing projection: {e}"))?;
+    let schedule = serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json)
+        .map_err(|e| format!("Decode migration timing schedule: {e}"))?;
+    if schedule.is_empty() || total_count == 0 {
+        return Ok(MigrationTimingProjection::default());
+    }
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT part_index, txid_hex, target_height, schedule_start_height,
+                    scheduled_height, status
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY part_index ASC, scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration timing pending query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, Option<u32>>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, Option<u32>>(3)?,
+                row.get::<_, u32>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration timing pending parts: {e}"))?;
+    let mut pending = Vec::new();
+    for row in rows {
+        let (part_index, txid_hex, target_height, schedule_start_height, scheduled_height, status) =
+            row.map_err(|e| format!("Read migration timing pending part: {e}"))?;
+        let mined_height = local_denomination_chain_identity(conn, &txid_hex)?
+            .map(|identity| identity.mined_height);
+        pending.push(MigrationTimingPendingPart {
+            part_index,
+            target_height,
+            schedule_start_height,
+            scheduled_height,
+            status,
+            mined_height,
+        });
+    }
+    drop(stmt);
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT c.child_index, c.target_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )
+             ORDER BY c.child_index ASC, c.message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare migration timing signed-child query: {e}"))?;
+    let signed_children = stmt
+        .query_map(params![run_id], |row| {
+            Ok(MigrationTimingSignedChild {
+                part_index: row.get(0)?,
+                target_height: row.get(1)?,
+            })
+        })
+        .map_err(|e| format!("Query migration timing signed children: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration timing signed child: {e}"))?;
+
+    calculate_migration_timing_projection(
+        &schedule,
+        &pending,
+        &signed_children,
+        proof_retry_height,
+        total_count,
+        confirmation_target,
+    )
+}
+
+fn calculate_migration_timing_projection(
+    schedule: &[MigrationScheduleEntry],
+    pending: &[MigrationTimingPendingPart],
+    signed_children: &[MigrationTimingSignedChild],
+    proof_retry_height: Option<u32>,
+    total_count: u32,
+    confirmation_target: u32,
+) -> Result<MigrationTimingProjection, String> {
+    let scheduled_next = pending
+        .iter()
+        .filter(|part| part.status == "scheduled")
+        .min_by_key(|part| part.scheduled_height)
+        .map(|part| (part.scheduled_height, part.part_index));
+    let proof_next = proof_retry_height
+        .filter(|_| !signed_children.is_empty())
+        .map(|height| {
+            (
+                height,
+                signed_children.iter().map(|child| child.part_index).min(),
+            )
+        });
+    let next_action = match (scheduled_next, proof_next) {
+        (Some(scheduled), Some(proof)) => Some(if scheduled.0 <= proof.0 {
+            scheduled
+        } else {
+            proof
+        }),
+        (Some(scheduled), None) => Some(scheduled),
+        (None, Some(proof)) => Some(proof),
+        (None, None) => None,
+    };
+
+    let projected_signed_broadcast_heights = if signed_children.is_empty() {
+        Vec::new()
+    } else {
+        // Promotion reuses the first persisted schedule origin. Before any
+        // child is promoted it uses the latest signed construction height.
+        let schedule_origin = pending
+            .first()
+            .map(|part| {
+                part.schedule_start_height
+                    .unwrap_or_else(|| part.target_height.saturating_sub(1))
+            })
+            .or_else(|| {
+                signed_children
+                    .iter()
+                    .map(|child| child.target_height.saturating_sub(1))
+                    .max()
+            })
+            .ok_or("Migration timing projection has no schedule origin")?;
+        let indexed_schedule = schedule.iter().all(|entry| entry.part_index.is_some());
+        signed_children
+            .iter()
+            .map(|child| {
+                let offset = if indexed_schedule {
+                    schedule
+                        .iter()
+                        .find(|entry| entry.part_index == Some(child.part_index))
+                        .map(|entry| entry.block_offset)
+                } else {
+                    schedule.iter().map(|entry| entry.block_offset).max()
+                }
+                .ok_or("Migration timing projection is missing a signed-child schedule")?;
+                schedule_origin
+                    .checked_add(offset)
+                    .ok_or("Migration projected broadcast height overflow")
+                    .map(|height| height.max(proof_retry_height.unwrap_or(0)))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    // The send loop broadcasts one overdue transaction, then gives every
+    // other overdue transaction a fresh randomized height. Until those rows
+    // are persisted, an exact completion height would be misleading.
+    let catch_up_schedule_pending = proof_retry_height.is_some_and(|retry_height| {
+        let pending_due = pending
+            .iter()
+            .filter(|part| part.status == "scheduled" && part.scheduled_height <= retry_height)
+            .count();
+        let signed_due = projected_signed_broadcast_heights
+            .iter()
+            .filter(|height| **height <= retry_height)
+            .count();
+        pending_due.saturating_add(signed_due) > 1
+    });
+
+    let accounted_count = pending
+        .len()
+        .checked_add(signed_children.len())
+        .ok_or("Migration timing part count overflow")?;
+    let can_estimate_completion = accounted_count == total_count as usize
+        && !pending.iter().any(|part| part.status == "needs_resign")
+        && !catch_up_schedule_pending;
+    let estimated_completion_height = if can_estimate_completion {
+        let confirmation_lag = confirmation_target.saturating_sub(1);
+        let mut last_height = None;
+        for part in pending {
+            let completion_lag = if part.mined_height.is_some() {
+                confirmation_lag
+            } else {
+                confirmation_target
+            };
+            let completion_height = part
+                .mined_height
+                .unwrap_or(part.scheduled_height)
+                .checked_add(completion_lag)
+                .ok_or("Migration confirmation height overflow")?;
+            last_height = Some(last_height.map_or(completion_height, |height: u32| {
+                height.max(completion_height)
+            }));
+        }
+
+        if let Some(projected_broadcast_height) =
+            projected_signed_broadcast_heights.iter().copied().max()
+        {
+            let projected_completion_height = projected_broadcast_height
+                .checked_add(confirmation_target)
+                .ok_or("Migration projected completion height overflow")?;
+            last_height = Some(
+                last_height.map_or(projected_completion_height, |height: u32| {
+                    height.max(projected_completion_height)
+                }),
+            );
+        }
+        last_height
+    } else {
+        None
+    };
+
+    Ok(MigrationTimingProjection {
+        next_action_height: next_action.map(|value| value.0),
+        next_action_part_index: next_action.and_then(|value| value.1),
+        estimated_completion_height,
+    })
+}
+
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
     let network = conn
         .query_row(
@@ -2707,6 +2967,12 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         &phase,
         denomination_confirmation_target,
     )?;
+    let timing_projection = migration_timing_projection_for_run(
+        conn,
+        &run.run_id,
+        total_count,
+        denomination_confirmation_target,
+    )?;
 
     Ok(MigrationStatus {
         phase,
@@ -2729,6 +2995,9 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
         max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
+        next_action_height: timing_projection.next_action_height,
+        estimated_completion_height: timing_projection.estimated_completion_height,
+        next_action_part_index: timing_projection.next_action_part_index,
         scheduled_broadcasts,
         parts,
     })
@@ -4792,6 +5061,213 @@ mod tests {
                 + orchard_change,
             input
         );
+    }
+
+    #[test]
+    fn timing_projection_includes_proof_retry_schedule_and_trusted_depth() {
+        let schedule = vec![
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 144,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 200,
+                block_offset: 288,
+            },
+        ];
+        let signed_children = vec![
+            MigrationTimingSignedChild {
+                part_index: 0,
+                target_height: 101,
+            },
+            MigrationTimingSignedChild {
+                part_index: 1,
+                target_height: 101,
+            },
+        ];
+
+        let projection = calculate_migration_timing_projection(
+            &schedule,
+            &[],
+            &signed_children,
+            Some(200),
+            2,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(projection.next_action_height, Some(200));
+        assert_eq!(projection.next_action_part_index, Some(0));
+        assert_eq!(projection.estimated_completion_height, Some(391));
+    }
+
+    #[test]
+    fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
+        let schedule = vec![
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 144,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 200,
+                block_offset: 288,
+            },
+        ];
+        let pending = vec![MigrationTimingPendingPart {
+            part_index: Some(0),
+            target_height: 101,
+            schedule_start_height: Some(500),
+            scheduled_height: 600,
+            status: "scheduled".to_string(),
+            mined_height: None,
+        }];
+        let signed_children = vec![MigrationTimingSignedChild {
+            part_index: 1,
+            target_height: 101,
+        }];
+
+        let projection = calculate_migration_timing_projection(
+            &schedule,
+            &pending,
+            &signed_children,
+            Some(550),
+            2,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(projection.next_action_height, Some(550));
+        assert_eq!(projection.next_action_part_index, Some(1));
+        assert_eq!(projection.estimated_completion_height, Some(791));
+    }
+
+    #[test]
+    fn timing_projection_ignores_retained_signed_children_after_promotion() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        let schedule_json = serde_json::to_string(&vec![
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 144,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 200,
+                block_offset: 288,
+            },
+        ])
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json,
+                  schedule_json, proof_retry_height)
+                 VALUES ('run-timing', 'account-1', 'test', 'db', ?1, 1, 1,
+                         '[100,200]', ?2, 550)"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, schedule_json],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  schedule_start_height, scheduled_height, status, metadata_json)
+                 VALUES ('run-timing', ?1, 0, 'raw', 101, 900, 99, 1, ?2,
+                         0, 100, 1, 500, 600, 'scheduled', '{{}}')"
+            ),
+            params!["11".repeat(32), "aa".repeat(32)],
+        )
+        .unwrap();
+        for child_index in [0u32, 1] {
+            conn.execute(
+                &format!(
+                    "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                     (run_id, message_id, child_index, encrypted_base_pczt,
+                      encrypted_compact_sigs, target_height, expiry_height,
+                      value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                     VALUES ('run-timing', ?1, ?2, 'base', 'sigs', 101, 900,
+                             99, 1, '{{}}', '{{}}')"
+                ),
+                params![format!("message-{child_index}"), child_index],
+            )
+            .unwrap();
+        }
+
+        let projection = migration_timing_projection_for_run(&conn, "run-timing", 2, 3).unwrap();
+
+        assert_eq!(projection.next_action_height, Some(550));
+        assert_eq!(projection.next_action_part_index, Some(1));
+        assert_eq!(projection.estimated_completion_height, Some(791));
+    }
+
+    #[test]
+    fn timing_projection_counts_the_mined_block_as_confirmation_one() {
+        let schedule = vec![MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 144,
+        }];
+        let pending = vec![MigrationTimingPendingPart {
+            part_index: Some(0),
+            target_height: 90,
+            schedule_start_height: Some(90),
+            scheduled_height: 100,
+            status: "confirmed".to_string(),
+            mined_height: Some(105),
+        }];
+
+        let projection =
+            calculate_migration_timing_projection(&schedule, &pending, &[], None, 1, 3).unwrap();
+
+        assert_eq!(projection.estimated_completion_height, Some(107));
+    }
+
+    #[test]
+    fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
+        let schedule = vec![
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 50,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 200,
+                block_offset: 80,
+            },
+        ];
+        let signed_children = vec![
+            MigrationTimingSignedChild {
+                part_index: 0,
+                target_height: 101,
+            },
+            MigrationTimingSignedChild {
+                part_index: 1,
+                target_height: 101,
+            },
+        ];
+
+        let projection = calculate_migration_timing_projection(
+            &schedule,
+            &[],
+            &signed_children,
+            Some(200),
+            2,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(projection.next_action_height, Some(200));
+        assert_eq!(projection.estimated_completion_height, None);
     }
 
     #[test]

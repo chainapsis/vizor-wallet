@@ -1246,6 +1246,9 @@ class MigrationStatus {
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
   final int maxPreparedNotesPerRun;
+  final int? nextActionHeight;
+  final int? estimatedCompletionHeight;
+  final int? nextActionPartIndex;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
   final List<MigrationPartStatus> parts;
 
@@ -1270,6 +1273,9 @@ class MigrationStatus {
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     required this.maxPreparedNotesPerRun,
+    this.nextActionHeight,
+    this.estimatedCompletionHeight,
+    this.nextActionPartIndex,
     required this.scheduledBroadcasts,
     required this.parts,
   });
@@ -1296,6 +1302,9 @@ class MigrationStatus {
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       maxPreparedNotesPerRun.hashCode ^
+      nextActionHeight.hashCode ^
+      estimatedCompletionHeight.hashCode ^
+      nextActionPartIndex.hashCode ^
       scheduledBroadcasts.hashCode ^
       parts.hashCode;
 
@@ -1327,6 +1336,9 @@ class MigrationStatus {
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
+          nextActionHeight == other.nextActionHeight &&
+          estimatedCompletionHeight == other.estimatedCompletionHeight &&
+          nextActionPartIndex == other.nextActionPartIndex &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
           parts == other.parts;
 }

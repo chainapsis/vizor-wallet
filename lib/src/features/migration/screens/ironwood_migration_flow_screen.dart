@@ -41,6 +41,7 @@ import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
+import '../models/ironwood_migration_presentation.dart';
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../providers/ironwood_migration_coordinator_provider.dart';
 import '../services/ironwood_migration_service.dart';
@@ -58,7 +59,6 @@ const _scheduledBlockProgressCap = 0.70;
 const _broadcastCommitProgressCap = 0.92;
 const _migrationEstimatedSecondsPerBlock = 75;
 const _migrationPrepareConfirmationBlocks = 3;
-const _migrationPrepareBroadcastBufferBlocks = 1;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
@@ -6634,35 +6634,7 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
 
 String _estimatedMigrationArrivalLabel(
   rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  final estimatedBlocks = _estimatedMigrationCompletionBlocks(plan);
-  if (estimatedBlocks <= 0) return 'Not scheduled';
-  return _formatMigrationBlockDurationEstimate(estimatedBlocks);
-}
-
-int _estimatedMigrationCompletionBlocks(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  final scheduleBlocks = plan.scheduledTransfers.fold<int>(
-    0,
-    (maxOffset, transfer) => math.max(maxOffset, transfer.blockOffset),
-  );
-  final fallbackBatchCount = plan.plannedBatchCount < 1
-      ? 1
-      : plan.plannedBatchCount;
-  final fallbackScheduleBlocks =
-      plan.scheduleMeanDelayBlocks * fallbackBatchCount;
-  final preparedScheduleBlocks = scheduleBlocks > 0
-      ? scheduleBlocks
-      : fallbackScheduleBlocks;
-  if (preparedScheduleBlocks <= 0) return 0;
-
-  final int prepareBlocks = plan.denominationSplitStageCount <= 0
-      ? 0
-      : plan.denominationSplitStageCount * _migrationPrepareConfirmationBlocks +
-            _migrationPrepareBroadcastBufferBlocks;
-  return preparedScheduleBlocks + prepareBlocks;
-}
+) => migrationPlanCompletionDurationLabel(plan);
 
 String _formatMigrationBlockDurationEstimate(int blocks) {
   if (blocks <= 0) return 'Not scheduled';

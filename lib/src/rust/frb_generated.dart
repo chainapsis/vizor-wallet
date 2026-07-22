@@ -8111,8 +8111,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 22)
-      throw Exception('unexpected arr length: expect 22 but see ${arr.length}');
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -8134,10 +8134,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: dco_decode_u_32(arr[17]),
       scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
       maxPreparedNotesPerRun: dco_decode_u_32(arr[19]),
+      nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
+      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[21]),
+      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[22]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[20],
+        arr[23],
       ),
-      parts: dco_decode_list_migration_part_status(arr[21]),
+      parts: dco_decode_list_migration_part_status(arr[24]),
     );
   }
 
@@ -10522,6 +10525,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
     var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
     var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
+    var var_nextActionHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_estimatedCompletionHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_nextActionPartIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_scheduledBroadcasts = sse_decode_list_migration_scheduled_broadcast(
       deserializer,
     );
@@ -10547,6 +10555,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
+      nextActionHeight: var_nextActionHeight,
+      estimatedCompletionHeight: var_estimatedCompletionHeight,
+      nextActionPartIndex: var_nextActionPartIndex,
       scheduledBroadcasts: var_scheduledBroadcasts,
       parts: var_parts,
     );
@@ -12940,6 +12951,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
     sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
     sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextActionPartIndex, serializer);
     sse_encode_list_migration_scheduled_broadcast(
       self.scheduledBroadcasts,
       serializer,

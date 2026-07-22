@@ -746,6 +746,9 @@ pub struct MigrationStatus {
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
+    pub next_action_height: Option<u32>,
+    pub estimated_completion_height: Option<u32>,
+    pub next_action_part_index: Option<u32>,
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
     pub parts: Vec<MigrationPartStatus>,
 }
@@ -1046,6 +1049,9 @@ pub fn get_orchard_migration_status(
             schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
             max_prepared_notes_per_run: status.max_prepared_notes_per_run,
+            next_action_height: status.next_action_height,
+            estimated_completion_height: status.estimated_completion_height,
+            next_action_part_index: status.next_action_part_index,
             scheduled_broadcasts: status
                 .scheduled_broadcasts
                 .into_iter()
