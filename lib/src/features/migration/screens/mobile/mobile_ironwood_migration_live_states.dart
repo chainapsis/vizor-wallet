@@ -247,8 +247,6 @@ class _MobileMigrationMigrating extends ConsumerStatefulWidget {
     required this.data,
     required this.previewPlan,
     required this.previewParts,
-    this.enableRecovery = false,
-    this.forceRecoveryPreview = false,
     this.status,
   });
 
@@ -256,8 +254,6 @@ class _MobileMigrationMigrating extends ConsumerStatefulWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
-  final bool enableRecovery;
-  final bool forceRecoveryPreview;
 
   @override
   ConsumerState<_MobileMigrationMigrating> createState() =>
@@ -266,71 +262,19 @@ class _MobileMigrationMigrating extends ConsumerStatefulWidget {
 
 class _MobileMigrationMigratingState
     extends ConsumerState<_MobileMigrationMigrating> {
-  bool _schedulingBackgroundRetry = false;
-  bool _backgroundRetryScheduled = false;
-  String? _recoveryError;
-
-  Future<void> _sendOneDue(String accountUuid) async {
-    setState(() => _recoveryError = null);
-    try {
-      await ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .sendOneDue(accountUuid);
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _recoveryError = "Couldn't send the transfer. Try again.";
-        });
-      }
-    }
-  }
-
-  Future<void> _retryInBackground(String accountUuid) async {
-    setState(() {
-      _schedulingBackgroundRetry = true;
-      _recoveryError = null;
-    });
-    try {
-      final scheduled = await ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .retryInBackground(accountUuid);
-      if (!mounted) return;
-      setState(() {
-        _backgroundRetryScheduled = scheduled;
-        if (!scheduled) {
-          _recoveryError = "Couldn't schedule a background retry.";
-        }
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _recoveryError = "Couldn't schedule a background retry.";
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _schedulingBackgroundRetry = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final status = widget.status;
     final colors = context.colors;
-    final accountUuid = widget.enableRecovery
-        ? ref.watch(accountProvider).value?.activeAccountUuid
-        : null;
-    final syncState = widget.enableRecovery
-        ? (ref.watch(syncProvider).value ?? SyncState()).scopedToAccount(
-            accountUuid,
-          )
-        : null;
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final syncState = (ref.watch(syncProvider).value ?? SyncState())
+        .scopedToAccount(accountUuid);
     final totalAmount = _mobileMigrationTotalAmountText(
       status,
       previewPlan: widget.previewPlan,
       fallback: widget.data.amountText,
     );
     final etaHeight = _mobileMigrationEtaHeight(syncState);
-    final schedulingHeight = _mobileMigrationSchedulingHeight(syncState);
     final parts = _mobileMigrationPartPresentations(
       status: status,
       previewPlan: widget.previewPlan,
@@ -350,30 +294,11 @@ class _MobileMigrationMigratingState
           );
     final spendable = _mobileSpendableAmountText(
       status,
-      ironwoodBalance: syncState?.hasBalanceData ?? false
-          ? syncState!.ironwoodBalance
+      ironwoodBalance: syncState.hasBalanceData
+          ? syncState.ironwoodBalance
           : null,
     );
     final compact = MediaQuery.sizeOf(context).height < 650;
-    final recoveryRequired =
-        widget.forceRecoveryPreview ||
-        (status != null &&
-            _hasDueMobileMigrationTransfer(
-              status,
-              currentHeight: schedulingHeight,
-            ));
-    final coordinator = widget.enableRecovery
-        ? ref.watch(ironwoodMigrationCoordinatorProvider)
-        : const IronwoodMigrationCoordinatorState();
-    final supportsBackgroundRetry =
-        widget.forceRecoveryPreview ||
-        (widget.enableRecovery &&
-            ref
-                .read(ironwoodMigrationServiceProvider)
-                .supportsBackgroundMigrationRetry);
-    final sending =
-        accountUuid != null &&
-        coordinator.advancingAccounts.contains(accountUuid);
     final partsContent = parts.isEmpty
         ? Center(
             child: Text(
@@ -435,8 +360,8 @@ class _MobileMigrationMigratingState
             child: partsContent,
           )
         else
-          SizedBox(height: recoveryRequired ? 180 : 304, child: partsContent),
-        SizedBox(height: compact || recoveryRequired ? AppSpacing.s : 52),
+          SizedBox(height: 304, child: partsContent),
+        SizedBox(height: compact ? AppSpacing.s : 52),
         _ReviewRow(label: 'Est. completion', value: completion),
         const SizedBox(height: AppSpacing.xs),
         _ReviewRow(
@@ -444,26 +369,10 @@ class _MobileMigrationMigratingState
           value: spendable == '-' ? spendable : '$spendable ZEC',
         ),
         const SizedBox(height: AppSpacing.md),
-        if (recoveryRequired &&
-            (widget.forceRecoveryPreview || accountUuid != null))
-          _MobileMigrationRecoveryCard(
-            sending: sending,
-            schedulingBackground: _schedulingBackgroundRetry,
-            backgroundRetryScheduled: _backgroundRetryScheduled,
-            error: _recoveryError ?? coordinator.errors[accountUuid],
-            supportsBackgroundRetry: supportsBackgroundRetry,
-            onSendOne: widget.forceRecoveryPreview
-                ? () {}
-                : () => unawaited(_sendOneDue(accountUuid!)),
-            onRetryInBackground: widget.forceRecoveryPreview
-                ? () {}
-                : () => unawaited(_retryInBackground(accountUuid!)),
-          )
-        else
-          const _MigrationCanLeaveMessage(),
-        SizedBox(height: compact || recoveryRequired ? AppSpacing.md : 38),
+        const _MigrationCanLeaveMessage(),
+        SizedBox(height: compact ? AppSpacing.md : 38),
         Transform.translate(
-          offset: Offset(0, compact || recoveryRequired ? 0 : 14),
+          offset: Offset(0, compact ? 0 : 14),
           child: _MobileStatusBackHomeButton(
             key: const ValueKey('mobile_ironwood_status_back_home_button'),
             label: 'Go home',
@@ -482,36 +391,13 @@ class _MobileMigrationMigratingState
         AppSpacing.sm,
         AppSpacing.s,
       ),
-      child: compact || recoveryRequired
-          ? SingleChildScrollView(child: body)
-          : body,
+      child: compact ? SingleChildScrollView(child: body) : body,
     );
   }
-}
-
-int _mobileMigrationSchedulingHeight(SyncState? syncState) {
-  if (syncState == null) return 0;
-  if (syncState.scannedHeight > 0 && syncState.chainTipHeight > 0) {
-    return math.min(syncState.scannedHeight, syncState.chainTipHeight);
-  }
-  return math.max(syncState.scannedHeight, syncState.chainTipHeight);
 }
 
 int _mobileMigrationEtaHeight(SyncState? syncState) {
   if (syncState == null) return 0;
   if (syncState.chainTipHeight > 0) return syncState.chainTipHeight;
   return syncState.scannedHeight;
-}
-
-bool _hasDueMobileMigrationTransfer(
-  rust_sync.MigrationStatus status, {
-  required int currentHeight,
-}) {
-  if (currentHeight <= 0) return false;
-  return status.scheduledBroadcasts.any((broadcast) {
-    if (broadcast.status.toLowerCase() != 'scheduled') return false;
-    if (broadcast.scheduledHeight <= 0) return false;
-    return broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks <=
-        currentHeight;
-  });
 }

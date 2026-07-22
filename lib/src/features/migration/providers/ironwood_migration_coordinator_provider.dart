@@ -93,53 +93,6 @@ class IronwoodMigrationCoordinator
     await refreshNow();
   }
 
-  Future<void> sendOneDue(String accountUuid) async {
-    if (state.advancingAccounts.contains(accountUuid)) return;
-    state = state.copyWith(
-      advancingAccounts: {...state.advancingAccounts, accountUuid},
-    );
-    try {
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .sendOneDuePrivateMigration(accountUuid: accountUuid);
-      if (!ref.mounted) return;
-      state = state.copyWith(errors: {...state.errors}..remove(accountUuid));
-    } catch (error) {
-      if (ref.mounted) {
-        state = state.copyWith(
-          errors: {...state.errors, accountUuid: error.toString()},
-        );
-      }
-      rethrow;
-    } finally {
-      if (ref.mounted) {
-        state = state.copyWith(
-          advancingAccounts: {...state.advancingAccounts}..remove(accountUuid),
-        );
-      }
-    }
-    await refreshNow();
-  }
-
-  Future<bool> retryInBackground(String accountUuid) async {
-    try {
-      final scheduled = await ref
-          .read(ironwoodMigrationServiceProvider)
-          .retryPrivateMigrationInBackground(accountUuid: accountUuid);
-      if (ref.mounted) {
-        state = state.copyWith(errors: {...state.errors}..remove(accountUuid));
-      }
-      return scheduled;
-    } catch (error) {
-      if (ref.mounted) {
-        state = state.copyWith(
-          errors: {...state.errors, accountUuid: error.toString()},
-        );
-      }
-      rethrow;
-    }
-  }
-
   Future<void> refreshNow({bool forceAdvance = false}) async {
     if (!ref.mounted) return;
     if (!_foreground) return;
@@ -222,6 +175,9 @@ class IronwoodMigrationCoordinator
             status.pendingSplitStageCount > 0) ||
         (!isHardware &&
             status.phase == kIronwoodMigrationReadyToMigratePhase) ||
+        (kAppFormFactor == AppFormFactor.mobile &&
+            status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+            _hasDueScheduledBroadcast(status)) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -236,6 +192,25 @@ class IronwoodMigrationCoordinator
     final lastAdvance = _lastAdvanceAt[accountUuid];
     return lastAdvance == null ||
         DateTime.now().difference(lastAdvance) >= _migrationAdvanceInterval;
+  }
+
+  bool _hasDueScheduledBroadcast(rust_sync.MigrationStatus status) {
+    final syncState = ref.read(syncProvider).value;
+    if (syncState == null) return false;
+
+    final scannedHeight = syncState.scannedHeight;
+    final chainTipHeight = syncState.chainTipHeight;
+    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
+        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
+        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
+    if (currentHeight <= 0) return false;
+
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.scheduledHeight > 0 &&
+          broadcast.scheduledHeight <= currentHeight,
+    );
   }
 
   Future<void> _advance(

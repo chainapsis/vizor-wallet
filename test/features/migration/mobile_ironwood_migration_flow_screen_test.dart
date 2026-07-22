@@ -399,10 +399,6 @@ IronwoodMigrationService _migrationService({
   onStart,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
   onContinue,
-  Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
-  onSendOne,
-  Future<bool> Function()? onRetryInBackground,
-  bool supportsBackgroundMigration = true,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -418,7 +414,7 @@ IronwoodMigrationService _migrationService({
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
     isMobile: () => true,
-    supportsBackgroundMigration: () => supportsBackgroundMigration,
+    supportsBackgroundMigration: () => true,
     startSoftwareMigration:
         ({
           required dbPath,
@@ -441,16 +437,7 @@ IronwoodMigrationService _migrationService({
           required password,
           required saltBase64,
         }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
-    broadcastOneDueMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) => onSendOne?.call(accountUuid) ?? Future.value(_migrationResult()),
-    scheduleBackgroundMigration: onRetryInBackground ?? () async => true,
+    scheduleBackgroundMigration: () async => true,
   );
 }
 
@@ -2277,100 +2264,5 @@ void main() {
     expect(find.text('Migration in Progress'), findsOneWidget);
     expect(find.text('Migration complete'), findsNothing);
     expect(find.text('Completed'), findsNWidgets(3));
-  });
-
-  testWidgets('offers explicit recovery when a scheduled transfer is due', (
-    tester,
-  ) async {
-    _useMobileViewport(tester);
-    var sentAccountUuid = '';
-    final dueStatus = _status(
-      phase: kIronwoodMigrationBroadcastScheduledPhase,
-      broadcastStatuses: const ['scheduled', 'scheduled', 'scheduled'],
-    );
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(
-          onSendOne: (accountUuid) async {
-            sentAccountUuid = accountUuid;
-            return _migrationResult();
-          },
-        ),
-        status: dueStatus,
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          scannedHeight: 3_000_100,
-          chainTipHeight: 3_000_100,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Transfer ready'), findsOneWidget);
-    expect(find.text('Send one now'), findsOneWidget);
-    expect(find.text('Retry in background'), findsOneWidget);
-    expect(find.textContaining('current app activity'), findsOneWidget);
-
-    await tester.tap(find.text('Send one now'));
-    await tester.pumpAndSettle();
-
-    expect(sentAccountUuid, 'account-1');
-  });
-
-  testWidgets('hides background recovery when the platform cannot run it', (
-    tester,
-  ) async {
-    _useMobileViewport(tester);
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(supportsBackgroundMigration: false),
-        status: _status(
-          phase: kIronwoodMigrationBroadcastScheduledPhase,
-          broadcastStatuses: const ['scheduled', 'scheduled', 'scheduled'],
-        ),
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          scannedHeight: 3_000_100,
-          chainTipHeight: 3_000_100,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Transfer ready'), findsOneWidget);
-    expect(find.text('Send one now'), findsOneWidget);
-    expect(find.text('Retry in background'), findsNothing);
-  });
-
-  testWidgets('keeps overdue recovery usable at 320 by 568', (tester) async {
-    _useMobileViewport(tester, size: const Size(320, 568));
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        status: _status(
-          phase: kIronwoodMigrationBroadcastScheduledPhase,
-          broadcastStatuses: const ['scheduled', 'scheduled', 'scheduled'],
-        ),
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          scannedHeight: 3_000_100,
-          chainTipHeight: 3_000_100,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Transfer ready'), findsOneWidget);
-    await tester.ensureVisible(find.text('Retry in background'));
-    await tester.pumpAndSettle();
-    expect(find.text('Retry in background'), findsOneWidget);
-    expect(tester.takeException(), isNull);
   });
 }

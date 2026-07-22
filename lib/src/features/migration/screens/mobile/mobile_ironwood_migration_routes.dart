@@ -8,7 +8,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewStatus,
     this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
     this.previewParts,
-    this.previewRecoveryRequired = false,
     super.key,
   });
 
@@ -18,7 +17,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final rust_sync.MigrationStatus? previewStatus;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
-  final bool previewRecoveryRequired;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,7 +29,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewPrivatePlan: previewPrivatePlan,
         previewReviewStage: previewReviewStage,
         previewParts: previewParts,
-        previewRecoveryRequired: previewRecoveryRequired,
         status: previewStatus,
       );
     }
@@ -45,7 +42,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewPrivatePlan: previewPrivatePlan,
       previewReviewStage: previewReviewStage,
       previewParts: previewParts,
-      previewRecoveryRequired: false,
       status: null,
     );
   }
@@ -59,7 +55,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewPrivatePlan,
     required this.previewReviewStage,
     required this.previewParts,
-    required this.previewRecoveryRequired,
     this.status,
   });
 
@@ -69,7 +64,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
-  final bool previewRecoveryRequired;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -106,8 +100,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         status: status,
         previewPlan: previewPrivatePlan,
         previewParts: previewParts,
-        enableRecovery: !previewMode,
-        forceRecoveryPreview: previewMode && previewRecoveryRequired,
       ),
     };
   }
@@ -196,7 +188,6 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
       status: status,
       previewPlan: null,
       previewParts: null,
-      enableRecovery: true,
     );
   }
 }

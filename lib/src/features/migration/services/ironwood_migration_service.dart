@@ -71,15 +71,6 @@ typedef IronwoodMigrationDueBroadcaster =
       required String password,
       required String saltBase64,
     });
-typedef IronwoodMigrationSingleDueBroadcaster =
-    Future<rust_sync.IronwoodMigrationResult> Function({
-      required String dbPath,
-      required String lightwalletdUrl,
-      required String network,
-      required String accountUuid,
-      required String password,
-      required String saltBase64,
-    });
 typedef IronwoodMigrationKeystoneDenominationPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
       required String dbPath,
@@ -143,7 +134,6 @@ class IronwoodMigrationService {
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
-    IronwoodMigrationSingleDueBroadcaster? broadcastOneDueMigration,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
     IronwoodMigrationKeystoneDenominationCompleter?
@@ -182,9 +172,6 @@ class IronwoodMigrationService {
        broadcastDueMigration =
            broadcastDueMigration ??
            rust_sync.broadcastDueOrchardMigrationTransactions,
-       broadcastOneDueMigration =
-           broadcastOneDueMigration ??
-           rust_sync.broadcastOneDueOrchardMigrationTransaction,
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
            rust_sync.prepareOrchardMigrationDenominationsPczt,
@@ -225,7 +212,6 @@ class IronwoodMigrationService {
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
-  final IronwoodMigrationSingleDueBroadcaster broadcastOneDueMigration;
   final IronwoodMigrationKeystoneDenominationPreparer
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneDenominationCompleter
@@ -425,31 +411,6 @@ class IronwoodMigrationService {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
       },
-    );
-  }
-
-  Future<rust_sync.IronwoodMigrationResult> sendOneDuePrivateMigration({
-    required String accountUuid,
-  }) async {
-    final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
-      dbPath: dbPath,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-    );
-    return _runCredentialOperation(
-      context: context,
-      mayCreateRun: false,
-      operation: (credential) => broadcastOneDueMigration(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
-      ),
     );
   }
 

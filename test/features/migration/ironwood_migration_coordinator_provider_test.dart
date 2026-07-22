@@ -13,10 +13,12 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
-import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+import '../../fakes/fake_sync_notifier.dart';
 
 const _softwareUuid = 'software-account';
 const _hardwareUuid = 'hardware-account';
@@ -67,102 +69,97 @@ void main() {
     );
   });
 
+  test('does not broadcast a scheduled migration before it is due', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final softwareStarts = <String>[];
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: softwareStarts,
+      broadcasts: broadcasts,
+      syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow(forceAdvance: true);
+
+    expect(broadcasts, isEmpty);
+    expect(softwareStarts, isEmpty);
+  });
+
   test(
-    'does not broadcast a scheduled migration without user action',
+    'automatically broadcasts a due scheduled migration in foreground',
     () async {
       final statuses = {
-        _softwareUuid: _status('complete', activeRunId: null),
-        _hardwareUuid: _status('broadcast_scheduled'),
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
       };
-      final softwareStarts = <String>[];
       final broadcasts = <String>[];
       final container = _container(
         statuses: statuses,
-        softwareStarts: softwareStarts,
+        softwareStarts: [],
         broadcasts: broadcasts,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
       );
       addTearDown(container.dispose);
-
       final subscription = container.listen(
         ironwoodMigrationCoordinatorProvider,
         (_, _) {},
         fireImmediately: true,
       );
       addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
       await container
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow(forceAdvance: true);
+          .refreshNow();
 
-      expect(broadcasts, isEmpty);
-      expect(softwareStarts, isEmpty);
+      expect(broadcasts, [_softwareUuid]);
     },
   );
 
-  test('sends one scheduled transfer only after user action', () async {
-    final statuses = {
-      _softwareUuid: _status('broadcast_scheduled'),
-      _hardwareUuid: _status('complete', activeRunId: null),
-    };
-    final oneBroadcasts = <String>[];
-    final container = _container(
-      statuses: statuses,
-      softwareStarts: [],
-      broadcasts: [],
-      oneBroadcasts: oneBroadcasts,
-    );
-    addTearDown(container.dispose);
-    final subscription = container.listen(
-      ironwoodMigrationCoordinatorProvider,
-      (_, _) {},
-      fireImmediately: true,
-    );
-    addTearDown(subscription.close);
+  test(
+    'automatically broadcasts a due Keystone migration in foreground',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('complete', activeRunId: null),
+        _hardwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      };
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
 
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .sendOneDue(_softwareUuid);
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
 
-    expect(oneBroadcasts, [_softwareUuid]);
-  });
-
-  test('lets the user reschedule background migration work', () async {
-    final statuses = {
-      _softwareUuid: _status('broadcast_scheduled'),
-      _hardwareUuid: _status('complete', activeRunId: null),
-    };
-    final backgroundCredentialStore =
-        IronwoodMigrationBackgroundCredentialStore();
-    await backgroundCredentialStore.prepare(
-      network: _endpoint.networkName,
-      accountUuid: _softwareUuid,
-      dbPath: '/tmp/wallet.db',
-      lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
-    );
-    var scheduleCount = 0;
-    final container = _container(
-      statuses: statuses,
-      softwareStarts: [],
-      broadcasts: [],
-      backgroundCredentialStore: backgroundCredentialStore,
-      scheduleBackgroundMigration: () async {
-        scheduleCount += 1;
-        return true;
-      },
-    );
-    addTearDown(container.dispose);
-    final subscription = container.listen(
-      ironwoodMigrationCoordinatorProvider,
-      (_, _) {},
-      fireImmediately: true,
-    );
-    addTearDown(subscription.close);
-
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .retryInBackground(_softwareUuid);
-
-    expect(scheduleCount, 1);
-  });
+      expect(broadcasts, [_hardwareUuid]);
+    },
+  );
 
   test(
     'coalesces a refresh requested while status loading is active',
@@ -290,10 +287,8 @@ ProviderContainer _container({
   required Map<String, rust_sync.MigrationStatus> statuses,
   required List<String> softwareStarts,
   required List<String> broadcasts,
-  List<String>? oneBroadcasts,
-  IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
-  IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
+  SyncState? syncState,
 }) {
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -305,14 +300,12 @@ ProviderContainer _container({
         ({required dbPath, required network, required accountUuid}) async =>
             null,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
-    backgroundCredentialStore: backgroundCredentialStore,
     getEndpoint: () => _endpoint,
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
     isMobile: () => true,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
-    scheduleBackgroundMigration:
-        scheduleBackgroundMigration ?? () async => true,
+    scheduleBackgroundMigration: () async => true,
     broadcastDueMigration:
         ({
           required dbPath,
@@ -329,18 +322,6 @@ ProviderContainer _container({
             return _result('waiting_migration_confirmations');
           }
           return _result(current.phase);
-        },
-    broadcastOneDueMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) async {
-          oneBroadcasts?.add(accountUuid);
-          return _result('waiting_migration_confirmations');
         },
     startMacosSoftwareMigration:
         ({
@@ -361,6 +342,8 @@ ProviderContainer _container({
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (syncState != null)
+        syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
     ],
   );
@@ -402,6 +385,7 @@ rust_sync.MigrationStatus _status(
   String phase, {
   String? activeRunId = 'run-1',
   int confirmedTxCount = 0,
+  int? scheduledHeight,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -423,7 +407,17 @@ rust_sync.MigrationStatus _status(
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
-    scheduledBroadcasts: const [],
+    scheduledBroadcasts: scheduledHeight == null
+        ? const []
+        : [
+            rust_sync.MigrationScheduledBroadcast(
+              txidHex: 'scheduled-tx',
+              valueZatoshi: BigInt.from(100000000),
+              scheduledAtMs: 0,
+              scheduledHeight: scheduledHeight,
+              status: 'scheduled',
+            ),
+          ],
     parts: const [],
   );
 }
