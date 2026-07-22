@@ -18,9 +18,9 @@ const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
   seconds:
       String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest' ||
-          kZcashFastTestnetMigration
-      ? 1
-      : 30,
+              kZcashFastTestnetMigration
+          ? 1
+          : 30,
 );
 
 class IronwoodMigrationCoordinatorState {
@@ -177,7 +177,8 @@ class IronwoodMigrationCoordinator
             status.phase == kIronwoodMigrationReadyToMigratePhase) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            _hasDueScheduledBroadcast(status)) ||
+            (_hasDueScheduledBroadcast(status) ||
+                _canPrepareNextProof(status))) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -195,14 +196,7 @@ class IronwoodMigrationCoordinator
   }
 
   bool _hasDueScheduledBroadcast(rust_sync.MigrationStatus status) {
-    final syncState = ref.read(syncProvider).value;
-    if (syncState == null) return false;
-
-    final scannedHeight = syncState.scannedHeight;
-    final chainTipHeight = syncState.chainTipHeight;
-    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
-        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
-        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
+    final currentHeight = _safelyObservedHeight();
     if (currentHeight <= 0) return false;
 
     return status.scheduledBroadcasts.any(
@@ -211,6 +205,28 @@ class IronwoodMigrationCoordinator
           broadcast.scheduledHeight > 0 &&
           broadcast.scheduledHeight <= currentHeight,
     );
+  }
+
+  bool _canPrepareNextProof(rust_sync.MigrationStatus status) {
+    final nextActionHeight = status.nextActionHeight;
+    if (status.signedChildPcztCount <= 0 || nextActionHeight == null) {
+      return false;
+    }
+    final currentHeight = _safelyObservedHeight();
+    return currentHeight > 0 && nextActionHeight <= currentHeight;
+  }
+
+  int _safelyObservedHeight() {
+    final syncState = ref.read(syncProvider).value;
+    if (syncState == null) return 0;
+
+    final scannedHeight = syncState.scannedHeight;
+    final chainTipHeight = syncState.chainTipHeight;
+    final currentHeight =
+        scannedHeight > 0 && chainTipHeight > 0
+            ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
+            : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
+    return currentHeight;
   }
 
   Future<void> _advance(
@@ -274,11 +290,10 @@ class IronwoodMigrationCoordinator
   }
 }
 
-final ironwoodMigrationCoordinatorProvider =
-    NotifierProvider<
-      IronwoodMigrationCoordinator,
-      IronwoodMigrationCoordinatorState
-    >(IronwoodMigrationCoordinator.new);
+final ironwoodMigrationCoordinatorProvider = NotifierProvider<
+  IronwoodMigrationCoordinator,
+  IronwoodMigrationCoordinatorState
+>(IronwoodMigrationCoordinator.new);
 
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({required this.child, super.key});
@@ -307,15 +322,18 @@ class _IronwoodMigrationCoordinatorHostState
       );
     });
     _lifecycleListener = AppLifecycleListener(
-      onResume: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(true),
-      onHide: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(false),
-      onPause: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(false),
+      onResume:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(true),
+      onHide:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(false),
+      onPause:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(false),
     );
   }
 

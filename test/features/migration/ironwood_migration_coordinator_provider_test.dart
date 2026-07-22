@@ -130,6 +130,38 @@ void main() {
     },
   );
 
+  test('resumes proof preparation when its anchor height is scanned', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'broadcast_scheduled',
+        signedChildPcztCount: 1,
+        nextActionHeight: 1_000,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final advances = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: advances,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
+
+    expect(advances, [_softwareUuid]);
+  });
+
   test(
     'automatically broadcasts a due Keystone migration in foreground',
     () async {
@@ -192,9 +224,10 @@ void main() {
       );
       addTearDown(subscription.close);
 
-      final firstRefresh = container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow();
+      final firstRefresh =
+          container
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .refreshNow();
       await firstStatusStarted.future;
       await container
           .read(ironwoodMigrationCoordinatorProvider.notifier)
@@ -270,9 +303,10 @@ void main() {
       (_, _) {},
       fireImmediately: true,
     );
-    final refresh = container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow();
+    final refresh =
+        container
+            .read(ironwoodMigrationCoordinatorProvider.notifier)
+            .refreshNow();
     await statusStarted.future;
 
     subscription.close();
@@ -292,10 +326,13 @@ ProviderContainer _container({
 }) {
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
-    getStatus:
-        ({required dbPath, required network, required accountUuid}) async {
-          return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
-        },
+    getStatus: ({
+      required dbPath,
+      required network,
+      required accountUuid,
+    }) async {
+      return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
+    },
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             null,
@@ -306,37 +343,35 @@ ProviderContainer _container({
     isMobile: () => true,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
     scheduleBackgroundMigration: () async => true,
-    broadcastDueMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-        }) async {
-          broadcasts.add(accountUuid);
-          final current = statuses[accountUuid]!;
-          if (current.phase == 'broadcast_scheduled') {
-            statuses[accountUuid] = _status('waiting_migration_confirmations');
-            return _result('waiting_migration_confirmations');
-          }
-          return _result(current.phase);
-        },
-    startMacosSoftwareMigration:
-        ({
-          required dbPath,
-          required lightwalletdUrl,
-          required network,
-          required accountUuid,
-          required password,
-          required saltBase64,
-          required approvedSchedule,
-        }) async {
-          softwareStarts.add(accountUuid);
-          statuses[accountUuid] = _status('broadcast_scheduled');
-          return _result('broadcast_scheduled');
-        },
+    broadcastDueMigration: ({
+      required dbPath,
+      required lightwalletdUrl,
+      required network,
+      required accountUuid,
+      required password,
+      required saltBase64,
+    }) async {
+      broadcasts.add(accountUuid);
+      final current = statuses[accountUuid]!;
+      if (current.phase == 'broadcast_scheduled') {
+        statuses[accountUuid] = _status('waiting_migration_confirmations');
+        return _result('waiting_migration_confirmations');
+      }
+      return _result(current.phase);
+    },
+    startMacosSoftwareMigration: ({
+      required dbPath,
+      required lightwalletdUrl,
+      required network,
+      required accountUuid,
+      required password,
+      required saltBase64,
+      required approvedSchedule,
+    }) async {
+      softwareStarts.add(accountUuid);
+      statuses[accountUuid] = _status('broadcast_scheduled');
+      return _result('broadcast_scheduled');
+    },
   );
 
   return ProviderContainer(
@@ -386,6 +421,8 @@ rust_sync.MigrationStatus _status(
   String? activeRunId = 'run-1',
   int confirmedTxCount = 0,
   int? scheduledHeight,
+  int signedChildPcztCount = 0,
+  int? nextActionHeight,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -400,24 +437,26 @@ rust_sync.MigrationStatus _status(
     broadcastedTxCount: 0,
     confirmedTxCount: confirmedTxCount,
     totalCount: 1,
-    signedChildPcztCount: 0,
+    signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
-    scheduledBroadcasts: scheduledHeight == null
-        ? const []
-        : [
-            rust_sync.MigrationScheduledBroadcast(
-              txidHex: 'scheduled-tx',
-              valueZatoshi: BigInt.from(100000000),
-              scheduledAtMs: 0,
-              scheduledHeight: scheduledHeight,
-              status: 'scheduled',
-            ),
-          ],
+    nextActionHeight: nextActionHeight,
+    scheduledBroadcasts:
+        scheduledHeight == null
+            ? const []
+            : [
+              rust_sync.MigrationScheduledBroadcast(
+                txidHex: 'scheduled-tx',
+                valueZatoshi: BigInt.from(100000000),
+                scheduledAtMs: 0,
+                scheduledHeight: scheduledHeight,
+                status: 'scheduled',
+              ),
+            ],
     parts: const [],
   );
 }

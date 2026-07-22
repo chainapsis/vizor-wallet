@@ -31,12 +31,22 @@ struct BackgroundMigrationOutboxRunnerDependencies {
 }
 
 enum BackgroundMigrationOutboxRunner {
+  private static let runLock = NSLock()
+
   static func runOnce(
     store: BackgroundMigrationOutboxStore = .shared,
     cancellation: BackgroundMigrationCancellation,
     now: Date = Date(),
     dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
   ) -> BackgroundMigrationOutboxRunResult {
+    guard runLock.try() else {
+      return BackgroundMigrationOutboxRunResult(
+        transport: .temporarilyUnavailable,
+        proofReady: nil
+      )
+    }
+    defer { runLock.unlock() }
+
     if cancellation.isCancelled {
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
@@ -108,6 +118,17 @@ enum BackgroundMigrationOutboxRunner {
           endpoint: endpoint,
           at: now
         )
+        if let selected {
+          try snapshot.validateReschedulingAfterAcceptance(
+            itemId: selected.item.itemId,
+            remoteHeight: remoteHeight
+          )
+          try snapshot.beginSubmission(
+            itemId: selected.item.itemId,
+            attemptId: UUID().uuidString,
+            at: now
+          )
+        }
       }
       guard let selected else {
         if snapshot.receipts.contains(where: {
@@ -138,13 +159,11 @@ enum BackgroundMigrationOutboxRunner {
         )
       }
       selection = selected
-      _ = try store.update { snapshot in
-        try snapshot.beginSubmission(
-          itemId: selection.item.itemId,
-          attemptId: UUID().uuidString,
-          at: now
-        )
-      }
+    } catch BackgroundMigrationOutboxError.invalidSchedule {
+      return BackgroundMigrationOutboxRunResult(
+        transport: .needsUserAction,
+        proofReady: nil
+      )
     } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
@@ -225,7 +244,7 @@ enum BackgroundMigrationOutboxRunner {
         }
         return BackgroundMigrationOutboxRunResult(
           transport: .needsUserAction,
-          proofReady: proofReady
+          proofReady: nil
         )
       } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
         return BackgroundMigrationOutboxRunResult(

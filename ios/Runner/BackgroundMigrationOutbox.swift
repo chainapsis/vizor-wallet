@@ -81,7 +81,7 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let network: String
   let accountUuid: String
   let runId: String
-  let lightwalletdUrl: String
+  var lightwalletdUrl: String
   let timingMeanBlocks: UInt64
   let timingMaxBlocks: UInt64
   let createdAt: Date
@@ -180,11 +180,16 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       guard existing.network == batch.network,
         existing.accountUuid == batch.accountUuid,
         existing.runId == batch.runId,
-        existing.lightwalletdUrl == batch.lightwalletdUrl,
         existing.timingMeanBlocks == batch.timingMeanBlocks,
         existing.timingMaxBlocks == batch.timingMaxBlocks
       else {
         throw BackgroundMigrationOutboxError.conflictingBatch
+      }
+      if existing.lightwalletdUrl != batch.lightwalletdUrl {
+        guard !existing.items.contains(where: { $0.status == .submitting }) else {
+          throw BackgroundMigrationOutboxError.conflictingBatch
+        }
+        batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
       }
       for incoming in batch.items {
         if let existingItem = existing.items.first(where: { $0.itemId == incoming.itemId }) {
@@ -427,6 +432,28 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     batches[location.batch].items[location.item].attemptStartedAt = date
   }
 
+  func validateReschedulingAfterAcceptance(
+    itemId: String,
+    remoteHeight: UInt64
+  ) throws {
+    let location = try itemLocation(itemId)
+    let expiryHeights = batches[location.batch].items
+      .filter {
+        $0.itemId != itemId && $0.status == .armed
+          && $0.scheduledHeight <= remoteHeight
+      }
+      .map(\.expiryHeight)
+      .sorted()
+    var nextHeight = remoteHeight
+    for expiryHeight in expiryHeights {
+      let (candidate, overflow) = nextHeight.addingReportingOverflow(1)
+      guard !overflow, candidate < expiryHeight else {
+        throw BackgroundMigrationOutboxError.invalidSchedule
+      }
+      nextHeight = candidate
+    }
+  }
+
   mutating func recordUncertain(itemId: String, error: String, at date: Date) throws {
     let location = try itemLocation(itemId)
     guard batches[location.batch].items[location.item].status == .submitting else {
@@ -573,13 +600,28 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         && item.scheduledHeight <= remoteHeight
     }
     overdueIndexes.shuffle(using: &random)
+    overdueIndexes.sort {
+      batches[batchIndex].items[$0].expiryHeight
+        < batches[batchIndex].items[$1].expiryHeight
+    }
     var elapsed: UInt64 = 0
     var updates: [BackgroundMigrationOutboxScheduleUpdate] = []
-    for itemIndex in overdueIndexes {
+    for (offset, itemIndex) in overdueIndexes.enumerated() {
+      let item = batches[batchIndex].items[itemIndex]
+      let remainingCount = UInt64(overdueIndexes.count - offset - 1)
+      guard item.expiryHeight > remainingCount + 1 else {
+        throw BackgroundMigrationOutboxError.invalidSchedule
+      }
+      let latestHeight = item.expiryHeight - remainingCount - 1
+      let currentHeight = remoteHeight.saturatingAdd(elapsed)
+      guard latestHeight > currentHeight else {
+        throw BackgroundMigrationOutboxError.invalidSchedule
+      }
+      let boundedMax = min(max, latestHeight - currentHeight)
       elapsed = elapsed.saturatingAdd(
         BackgroundMigrationOutboxSchedule.sampleDelay(
           meanBlocks: mean,
-          maxBlocks: max,
+          maxBlocks: boundedMax,
           random: &random
         )
       )
@@ -658,12 +700,11 @@ enum BackgroundMigrationOutboxSchedule {
     random: inout some RandomNumberGenerator
   ) -> UInt64 {
     precondition(meanBlocks > 0 && maxBlocks > 0)
-    while true {
-      let raw = random.next()
-      let uniform = max(Double.leastNonzeroMagnitude, Double(raw) / Double(UInt64.max))
-      let sampled = max(1, UInt64(ceil(-log(uniform) * Double(meanBlocks))))
-      if sampled <= maxBlocks { return sampled }
-    }
+    let unit = Double(random.next()) / Double(UInt64.max)
+    let lowerBound = exp(-Double(maxBlocks) / Double(meanBlocks))
+    let uniform = lowerBound + (1 - lowerBound) * unit
+    let sampled = max(1, UInt64(ceil(-log(uniform) * Double(meanBlocks))))
+    return min(sampled, maxBlocks)
   }
 }
 

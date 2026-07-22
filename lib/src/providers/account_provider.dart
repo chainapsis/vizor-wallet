@@ -508,6 +508,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       await migrationLifecycle.quiesce();
       await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
+      await migrationLifecycle.revokeAccount(
+        network: network,
+        accountUuid: uuid,
+      );
       final rustDeleteWatch = Stopwatch()..start();
       await rust_wallet.deleteAccount(
         dbPath: dbPath,
@@ -530,17 +534,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
       }
       rethrow;
-    }
-    try {
-      await migrationLifecycle.revokeAccount(
-        network: network,
-        accountUuid: uuid,
-      );
-    } catch (e, st) {
-      log(
-        'removeAccount: failed to delete migration credential for '
-        '$uuid after wallet deletion: $e\n$st',
-      );
     }
     try {
       await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
@@ -643,8 +636,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     try {
-      for (final account
-          in state.value?.accounts ?? const <AccountInfo>[]) {
+      for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
         migrationRevocations.add(
           await IronwoodMigrationOperationRegistry.instance.revokeAndWait(
             network: network,
@@ -659,8 +651,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       rethrow;
     }
 
-    // Stop native work before deleting the DB, but retain its credential until
-    // the destructive step succeeds so a failed reset remains resumable.
+    // Stop native work before changing the DB. The signed outbox is revoked
+    // below before the destructive step is allowed to begin.
     try {
       await migrationLifecycle.quiesce();
     } catch (_) {
@@ -672,6 +664,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // any unsigned or partially proved Keystone migration requests first.
     try {
       await rust_sync.discardAllKeystoneMigrationRequests();
+    } catch (_) {
+      await rollbackMigrationPreflight();
+      rethrow;
+    }
+
+    // A signed outbox transaction must not survive deletion of the wallet DB.
+    // Revoke native work first so a failed cleanup leaves the wallet intact.
+    try {
+      await migrationLifecycle.revokeAll();
     } catch (_) {
       await rollbackMigrationPreflight();
       rethrow;
@@ -699,11 +700,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // retryable (deleteAll is idempotent and a regenerated DB name only
     // no-ops the next, already-satisfied DB delete).
     if (dbDeleted) {
-      try {
-        await migrationLifecycle.revokeAll();
-      } catch (e, st) {
-        recordError('migration credential wipe', e, st);
-      }
       try {
         await _storage.deleteAll();
       } catch (e, st) {

@@ -107,6 +107,9 @@ final class BackgroundMigrationManager {
   @discardableResult
   func schedule(earliestBeginDate: Date = Date()) -> Bool {
     guard !isMutationQuiesced else { return false }
+    BGTaskScheduler.shared.cancel(
+      taskRequestWithIdentifier: Self.taskIdentifier
+    )
     let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
     request.requiresNetworkConnectivity = true
     request.requiresExternalPower = false
@@ -153,15 +156,17 @@ final class BackgroundMigrationManager {
     stopActiveWork(quiesceForMutation: true)
     queue.async { [weak self] in
       let batchIds = self?.batchIds(network: network, accountUuid: accountUuid) ?? []
-      IronwoodMigrationBackgroundCredentialStore.delete(
-        network: network,
-        accountUuid: accountUuid
-      )
       let revoked =
         (try? BackgroundMigrationOutboxChannel.revoke(
           network: network,
           accountUuid: accountUuid
         )) != nil
+      if revoked {
+        IronwoodMigrationBackgroundCredentialStore.delete(
+          network: network,
+          accountUuid: accountUuid
+        )
+      }
       let hasRemainingWork = self?.hasRunnableOutboxWork() ?? false
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
@@ -174,16 +179,19 @@ final class BackgroundMigrationManager {
 
   func revokeAll(completion: @escaping (Bool) -> Void) {
     stopActiveWork(quiesceForMutation: true)
-    queue.async {
+    queue.async { [weak self] in
       let batchIds =
         (try? BackgroundMigrationOutboxStore.shared.read().batches.map(\.batchId))
         ?? []
-      IronwoodMigrationBackgroundCredentialStore.deleteAll()
       let removed = (try? BackgroundMigrationOutboxChannel.removeAll()) != nil
+      if removed {
+        IronwoodMigrationBackgroundCredentialStore.deleteAll()
+      }
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
         includeNeedsAction: true
       )
+      self?.endMutationQuiescence()
       DispatchQueue.main.async { completion(removed) }
     }
   }

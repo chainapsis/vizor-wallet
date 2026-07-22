@@ -38,6 +38,57 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testRestagingMovesAnIdleBatchToTheCurrentEndpoint() throws {
+    let original = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    var replacement = original
+    replacement.lightwalletdUrl = "https://replacement.example:443"
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+
+    try snapshot.stage(original)
+    try snapshot.armBatch(
+      batchId: original.batchId,
+      expectedDigests: digests(original),
+      at: now
+    )
+    try snapshot.stage(replacement)
+
+    XCTAssertEqual(
+      snapshot.batches.first?.lightwalletdUrl,
+      replacement.lightwalletdUrl
+    )
+  }
+
+  func testRestagingCannotMoveAnInFlightSubmissionToAnotherEndpoint() throws {
+    let original = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    var replacement = original
+    replacement.lightwalletdUrl = "https://replacement.example:443"
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+
+    try snapshot.stage(original)
+    try snapshot.armBatch(
+      batchId: original.batchId,
+      expectedDigests: digests(original),
+      at: now
+    )
+    try snapshot.beginSubmission(
+      itemId: original.items[0].itemId,
+      attemptId: "attempt",
+      at: now
+    )
+
+    XCTAssertThrowsError(try snapshot.stage(replacement)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
+  }
+
   func testWatchOnlyBatchIsValidButEmptyBatchWithoutWatchIsRejected() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let watchOnly = makeBatch(
@@ -133,6 +184,86 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertGreaterThan(rescheduled.scheduledHeight, 200)
     XCTAssertEqual(rescheduled.scheduleStartHeight, 200)
     XCTAssertEqual(future.scheduledHeight, 500)
+  }
+
+  func testOverduePeersAreRescheduledBeforeTheirExpiry() throws {
+    var batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100, 101, 102]
+    )
+    batch.items = batch.items.enumerated().map { index, item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: UInt64(204 + index)
+      )
+    }
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+    let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: 200, at: now))
+    try snapshot.validateReschedulingAfterAcceptance(
+      itemId: selected.item.itemId,
+      remoteHeight: 200
+    )
+    try snapshot.beginSubmission(itemId: selected.item.itemId, attemptId: "attempt", at: now)
+    var random = SeededOutboxRandom(values: [0, 0])
+
+    try snapshot.recordAccepted(
+      itemId: selected.item.itemId,
+      equivalent: false,
+      remoteHeight: 200,
+      responseCode: 0,
+      responseMessage: "",
+      at: now,
+      random: &random
+    )
+
+    for update in snapshot.receipts[0].scheduleUpdates {
+      let item = try XCTUnwrap(
+        snapshot.batches[0].items.first(where: { $0.itemId == update.itemId })
+      )
+      XCTAssertLessThan(update.scheduledHeight, item.expiryHeight)
+    }
+  }
+
+  func testSubmissionIsRejectedBeforeBroadcastWhenPeersCannotFitBeforeExpiry() throws {
+    var batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100, 101]
+    )
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: 201
+      )
+    }
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+    let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: 200, at: now))
+
+    XCTAssertThrowsError(
+      try snapshot.validateReschedulingAfterAcceptance(
+        itemId: selected.item.itemId,
+        remoteHeight: 200
+      )
+    ) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .invalidSchedule)
+    }
   }
 
   func testUncertainSubmissionRetainsExactBytesAndBacksOff() throws {
