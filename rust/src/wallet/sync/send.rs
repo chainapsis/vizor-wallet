@@ -1108,6 +1108,28 @@ async fn broadcast_due_orchard_migration_transactions_inner(
         return Ok(cancelled_migration_result(&run));
     }
 
+    // Reconcile chain changes before deciding whether an already-scheduled
+    // child is still valid. Independent due children should not miss their
+    // broadcast height while another denomination branch is still advancing.
+    super::migration::reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if super::migration::due_scheduled_pending_count(db_path, &run.run_id, chain_tip_height)? > 0 {
+        return broadcast_due_scheduled_migration_txs(
+            db_path,
+            lightwalletd_url,
+            network,
+            &run.run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+            policy,
+        )
+        .await;
+    }
+
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
@@ -1974,11 +1996,13 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
 
 fn is_orchard_witness_not_ready_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
-    lower.contains("read orchard witnesses")
-        && (lower.contains("anchornotfound")
-            || lower.contains("notcontained")
-            || lower.contains("checkpoint")
-            || lower.contains("commitmenttree"))
+    lower.contains("wallet must sync before finalizing migration")
+        || lower.contains("prepared migration note witness missing")
+        || (lower.contains("read orchard witnesses")
+            && (lower.contains("anchornotfound")
+                || lower.contains("notcontained")
+                || lower.contains("checkpoint")
+                || lower.contains("commitmenttree")))
 }
 
 fn mark_prepared_notes_waiting(db_path: &str, run_id: &str) -> Result<(), String> {
@@ -1988,6 +2012,20 @@ fn mark_prepared_notes_waiting(db_path: &str, run_id: &str) -> Result<(), String
         super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
         Some("Prepared denomination notes are not spendable yet."),
     )
+}
+
+fn current_migration_scanned_height(db_path: &str, network: WalletNetwork) -> Result<u32, String> {
+    u32::try_from(super::get_sync_progress(db_path, network)?.scanned_height)
+        .map_err(|_| "Migration scanned height exceeds u32".to_string())
+}
+
+fn defer_presigned_proof_until(
+    db_path: &str,
+    run_id: &str,
+    retry_height: u32,
+) -> Result<(), String> {
+    super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
+    mark_prepared_notes_waiting(db_path, run_id)
 }
 
 fn prepared_note_spend_metadata_is_available(db_path: &str, run_id: &str) -> Result<bool, String> {
@@ -5394,6 +5432,10 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
+        let retry_height = current_migration_scanned_height(db_path, network)?
+            .checked_add(1)
+            .ok_or("Migration proof retry height overflow")?;
+        super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
         return Ok(0);
     }
 
@@ -5414,8 +5456,14 @@ fn finalize_presigned_migration_children(
     let signed_child_count = signed_children.len();
     let proof_limit = policy.proof_limit(signed_child_count);
     let mut finalized_count = 0usize;
+    let mut deferred_child_seen = false;
+    let mut stopped_at_proof_limit = false;
     for (child_index, child) in signed_children.into_iter().enumerate() {
-        if policy.is_cancelled() || finalized_count >= proof_limit {
+        if policy.is_cancelled() {
+            break;
+        }
+        if finalized_count >= proof_limit {
+            stopped_at_proof_limit = true;
             break;
         }
         if already_pending.contains(&(
@@ -5428,6 +5476,7 @@ fn finalize_presigned_migration_children(
             .iter()
             .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
             .ok_or("Prepared migration notes changed before child finalization")?;
+        let mut candidate_anchor_cohort_counts = anchor_cohort_counts.clone();
         let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
             (match orchard_anchor_and_witness_for_prepared_note(
                 db_path,
@@ -5436,19 +5485,20 @@ fn finalize_presigned_migration_children(
                 current_note,
                 child.anchor_boundary_height,
                 timing_policy,
-                &mut anchor_cohort_counts,
+                &mut candidate_anchor_cohort_counts,
             ) {
                 Ok(result) => result,
                 Err(e) if is_orchard_witness_not_ready_error(&e) => {
-                    mark_prepared_notes_waiting(db_path, run_id)?;
-                    return Ok(finalized_count);
+                    deferred_child_seen = true;
+                    continue;
                 }
                 Err(e) => return Err(e),
             })
         else {
-            mark_prepared_notes_waiting(db_path, run_id)?;
-            return Ok(finalized_count);
+            deferred_child_seen = true;
+            continue;
         };
+        anchor_cohort_counts = candidate_anchor_cohort_counts;
         let current_note_nullifier_hex = current_note
             .nullifier_hex
             .as_deref()
@@ -5511,6 +5561,15 @@ fn finalize_presigned_migration_children(
         finalized_count = finalized_count
             .checked_add(1)
             .ok_or("Finalized migration proof count overflow")?;
+    }
+
+    if deferred_child_seen && !stopped_at_proof_limit && !policy.is_cancelled() {
+        let retry_height = super::migration::next_anchor_retry_height_after(
+            network,
+            timing_policy,
+            current_migration_scanned_height(db_path, network)?,
+        )?;
+        defer_presigned_proof_until(db_path, run_id, retry_height)?;
     }
 
     Ok(finalized_count)
@@ -5795,15 +5854,18 @@ async fn broadcast_due_scheduled_migration_txs(
         pending_salt_base64,
     )?;
     if due.is_empty() {
-        let status = if super::migration::next_scheduled_height(db_path, run_id)?.is_some() {
-            super::migration::PHASE_BROADCAST_SCHEDULED
+        let status = super::migration::run_phase(db_path, run_id)?;
+        let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
+            && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
+        {
+            "Migration is waiting to prepare the next transaction."
         } else {
-            super::migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
+            "Migration transactions are scheduled for delayed broadcast."
         };
         return Ok(migration_result_from_pending_totals(
             totals_before,
-            status,
-            Some("Migration transactions are scheduled for delayed broadcast.".to_string()),
+            &status,
+            Some(message.to_string()),
             fallback_total_count,
             fallback_migrated_zatoshi,
         ));
@@ -5914,19 +5976,17 @@ async fn broadcast_due_scheduled_migration_txs(
 
     let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
     let scheduled_remaining = super::migration::scheduled_pending_count(db_path, run_id)?;
-    let status = if scheduled_remaining > 0 {
-        super::migration::PHASE_BROADCAST_SCHEDULED
-    } else {
-        super::migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
-    };
+    let status = super::migration::run_phase(db_path, run_id)?;
     let message = if scheduled_remaining > 0 {
         "Due migration transactions were submitted. More are scheduled.".to_string()
+    } else if status == super::migration::PHASE_BROADCAST_SCHEDULED {
+        "Due migration transactions were submitted. More proofs remain to prepare.".to_string()
     } else {
         "Migration transactions were broadcast on the saved schedule.".to_string()
     };
     Ok(migration_result_from_pending_totals(
         totals,
-        status,
+        &status,
         Some(message),
         fallback_total_count,
         fallback_migrated_zatoshi,

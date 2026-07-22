@@ -309,6 +309,31 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
     }
 }
 
+pub(crate) fn next_anchor_retry_height_after(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    fully_scanned_height: u32,
+) -> Result<u32, String> {
+    let modulus = anchor_bucket_modulus(network, timing_policy);
+    let confirmation_lag = ConfirmationsPolicy::default()
+        .trusted()
+        .get()
+        .saturating_sub(1);
+    // Standard ZIP 318 selection excludes the newest boundary. Base the next
+    // retry on the trusted anchor height so a boundary that is about to age
+    // into the candidate set is not skipped for a full bucket.
+    let boundary_reference = if anchor_bucket_min_age(network, timing_policy) > 0 {
+        fully_scanned_height.saturating_sub(confirmation_lag)
+    } else {
+        fully_scanned_height
+    };
+    let distance = modulus - (boundary_reference % modulus);
+    boundary_reference
+        .checked_add(distance)
+        .and_then(|boundary| boundary.checked_add(confirmation_lag))
+        .ok_or_else(|| "Migration proof retry height overflow".to_string())
+}
+
 pub(crate) fn zip318_anchor_boundary_at_or_before(
     network: WalletNetwork,
     height: u32,
@@ -1033,6 +1058,17 @@ pub(crate) fn mark_run_phase(
     Ok(())
 }
 
+pub(crate) fn run_phase(db_path: &str, run_id: &str) -> Result<String, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+        params![run_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Read migration run phase: {e}"))
+}
+
 pub(crate) fn prepared_notes_for_run(
     db_path: &str,
     run_id: &str,
@@ -1132,6 +1168,15 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
         .unchecked_transaction()
         .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
     insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET proof_retry_height = NULL, updated_at_ms = ?1
+             WHERE run_id = ?2"
+        ),
+        params![now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Clear migration proof retry height: {e}"))?;
     // Retain the compact signatures and base PCZTs until the run completes.
     // If a trusted denomination transaction is later reorged, the affected
     // children can be re-anchored and proved again without another Keystone
@@ -1710,7 +1755,8 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
         tx.execute(
             &format!(
                 "UPDATE {RUNS_TABLE}
-                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL,
+                     proof_retry_height = NULL
                  WHERE run_id = ?3"
             ),
             params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
@@ -1895,6 +1941,55 @@ pub(crate) fn next_scheduled_height(db_path: &str, run_id: &str) -> Result<Optio
         |row| row.get::<_, Option<u32>>(0),
     )
     .map_err(|e| format!("Read next migration schedule: {e}"))
+}
+
+pub(crate) fn due_scheduled_pending_count(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*)
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2"
+        ),
+        params![run_id, chain_tip_height],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Count due migration transactions: {e}"))
+}
+
+pub(crate) fn proof_retry_height(db_path: &str, run_id: &str) -> Result<Option<u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+        params![run_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Read migration proof retry height: {e}"))
+}
+
+pub(crate) fn set_proof_retry_height(
+    db_path: &str,
+    run_id: &str,
+    retry_height: u32,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET proof_retry_height = ?1, updated_at_ms = ?2
+             WHERE run_id = ?3"
+        ),
+        params![retry_height, now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Set migration proof retry height: {e}"))?;
+    Ok(())
 }
 
 pub(crate) fn expired_unconfirmed_pending_count(
@@ -2359,7 +2454,10 @@ pub(crate) fn mark_pending_broadcasted(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
-    conn.execute(
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin pending migration broadcast update: {e}"))?;
+    tx.execute(
         &format!(
             "UPDATE {PENDING_TXS_TABLE}
              SET status = 'broadcasted'
@@ -2368,13 +2466,18 @@ pub(crate) fn mark_pending_broadcasted(
         params![run_id, txid_hex],
     )
     .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
-    let scheduled_remaining = count_pending_with_status(&conn, run_id, "scheduled")?;
-    let next_phase = if scheduled_remaining > 0 {
+    let scheduled_remaining = count_pending_with_status(&tx, run_id, "scheduled")?;
+    let pending_count = count_for_run(&tx, PENDING_TXS_TABLE, run_id)?;
+    let planned_count = planned_part_count_with_conn(&tx, run_id)?;
+    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(&tx, run_id)?;
+    let fully_materialized =
+        planned_count > 0 && pending_count == planned_count && unpromoted_count == 0;
+    let next_phase = if scheduled_remaining > 0 || !fully_materialized {
         PHASE_BROADCAST_SCHEDULED
     } else {
         PHASE_WAITING_MIGRATION_CONFIRMATIONS
     };
-    conn.execute(
+    tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET phase = ?1, updated_at_ms = ?2, last_error = NULL
@@ -2383,7 +2486,8 @@ pub(crate) fn mark_pending_broadcasted(
         params![next_phase, now, run_id],
     )
     .map_err(|e| format!("Mark migration waiting confirmations: {e}"))?;
-    Ok(())
+    tx.commit()
+        .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
 }
 
 pub(crate) fn scheduled_pending_count(db_path: &str, run_id: &str) -> Result<u32, String> {
@@ -3046,9 +3150,44 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
         .map_err(|e| format!("Mark reorged migration tx broadcast scheduled: {e}"))?;
     }
 
+    let current_phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration phase during confirmation reconciliation: {e}"))?;
+    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(conn, run_id)?;
+    if current_phase == PHASE_WAITING_MIGRATION_CONFIRMATIONS && unpromoted_count > 0 {
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Resume incomplete migration materialization: {e}"))?;
+    }
+
     let total_count = count_for_run(conn, PENDING_TXS_TABLE, run_id)?;
     let confirmed_count = count_pending_with_status(conn, run_id, "confirmed")?;
     if total_count > 0 && confirmed_count >= total_count {
+        let planned_count = planned_part_count_with_conn(conn, run_id)?;
+        if planned_count == 0 || total_count != planned_count || unpromoted_count > 0 {
+            if current_phase == PHASE_WAITING_MIGRATION_CONFIRMATIONS {
+                conn.execute(
+                    &format!(
+                        "UPDATE {RUNS_TABLE}
+                         SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                         WHERE run_id = ?3"
+                    ),
+                    params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+                )
+                .map_err(|e| format!("Keep incomplete migration run materializing: {e}"))?;
+            }
+            return Ok(());
+        }
         let mut stmt = conn
             .prepare_cached(&format!(
                 "SELECT txid_hex FROM {PENDING_TXS_TABLE}
@@ -3595,6 +3734,19 @@ fn count_for_run(conn: &rusqlite::Connection, table: &str, run_id: &str) -> Resu
     u32::try_from(count).map_err(|_| "Migration count overflow".to_string())
 }
 
+fn planned_part_count_with_conn(conn: &rusqlite::Connection, run_id: &str) -> Result<u32, String> {
+    let target_values_json = conn
+        .query_row(
+            &format!("SELECT target_values_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration planned part count: {e}"))?;
+    let target_values = serde_json::from_str::<Vec<u64>>(&target_values_json)
+        .map_err(|e| format!("Decode migration planned part count: {e}"))?;
+    u32::try_from(target_values.len()).map_err(|_| "Migration part count overflow".to_string())
+}
+
 fn count_pending_with_status(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -3917,6 +4069,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             target_values_json TEXT NOT NULL DEFAULT '[]',
             schedule_json TEXT NOT NULL DEFAULT '[]',
             timing_policy TEXT NOT NULL DEFAULT 'standard',
+            proof_retry_height INTEGER,
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_runs_active
@@ -3989,6 +4142,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "timing_policy",
         "TEXT NOT NULL DEFAULT 'standard'",
     )?;
+    add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     backfill_pending_part_indices(conn)?;
@@ -4508,6 +4662,55 @@ mod tests {
     }
 
     #[test]
+    fn proof_retry_waits_until_the_next_boundary_is_trusted() {
+        assert_eq!(
+            next_anchor_retry_height_after(
+                WalletNetwork::Test,
+                MigrationTimingPolicy::Standard,
+                5_700,
+            )
+            .unwrap(),
+            5_762
+        );
+        assert_eq!(
+            next_anchor_retry_height_after(
+                WalletNetwork::Test,
+                MigrationTimingPolicy::Standard,
+                5_760,
+            )
+            .unwrap(),
+            5_762
+        );
+        assert_eq!(
+            next_anchor_retry_height_after(
+                WalletNetwork::Test,
+                MigrationTimingPolicy::Standard,
+                5_761,
+            )
+            .unwrap(),
+            5_762
+        );
+        assert_eq!(
+            next_anchor_retry_height_after(
+                WalletNetwork::Test,
+                MigrationTimingPolicy::Standard,
+                5_762,
+            )
+            .unwrap(),
+            5_906
+        );
+        assert_eq!(
+            next_anchor_retry_height_after(
+                WalletNetwork::Regtest,
+                MigrationTimingPolicy::Standard,
+                10,
+            )
+            .unwrap(),
+            13
+        );
+    }
+
+    #[test]
     fn anchor_bucket_draw_stays_within_candidate_set() {
         let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
         assert!(!candidates.is_empty());
@@ -4962,6 +5165,78 @@ mod tests {
     }
 
     #[test]
+    fn last_broadcast_keeps_run_materializing_while_signed_child_remains() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_string_lossy().to_string();
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        ensure_schema(&conn).unwrap();
+        let run_id = "run-partially-materialized";
+        let pending_note_txid = "11".repeat(32);
+        let remaining_note = PreparedOrchardNoteRef {
+            txid_hex: "22".repeat(32),
+            output_index: 1,
+            value_zatoshi: 200,
+            note_version: 2,
+            nullifier_hex: Some("33".repeat(32)),
+        };
+        let remaining_note_json = serde_json::to_string(&remaining_note).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json)
+                 VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1, '[100,200]')"
+            ),
+            params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value,
+                  scheduled_at_ms, scheduled_height, status, metadata_json)
+                 VALUES (?1, ?2, 'raw', 10, 20, 100, 10, ?3, 0, 110,
+                         1, 10, 'scheduled', '{{}}')"
+            ),
+            params![run_id, "44".repeat(32), pending_note_txid],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                 VALUES (?1, 'remaining-child', 1, 'base', 'sigs', 20, 30,
+                         200, 10, ?2, '{{}}')"
+            ),
+            params![run_id, remaining_note_json],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(due_scheduled_pending_count(&db_path, run_id, 9).unwrap(), 0);
+        assert_eq!(
+            due_scheduled_pending_count(&db_path, run_id, 10).unwrap(),
+            1
+        );
+        mark_pending_broadcasted(&db_path, run_id, &"44".repeat(32)).unwrap();
+
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        let phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, PHASE_BROADCAST_SCHEDULED);
+    }
+
+    #[test]
     fn approved_schedule_supports_incremental_proof_persistence() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -5045,7 +5320,9 @@ mod tests {
             }
         };
 
-        insert_pending_txs(
+        set_proof_retry_height(&db_path, "run-1", 500).unwrap();
+        assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(500));
+        promote_signed_child_pczts_to_pending_txs(
             &db_path,
             "run-1",
             vec![pending(0, 100, 501)],
@@ -5053,6 +5330,7 @@ mod tests {
             TEST_SALT_BASE64,
         )
         .unwrap();
+        assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
         insert_pending_txs(
             &db_path,
             "run-1",
@@ -5926,7 +6204,7 @@ mod tests {
                 "test",
                 "db",
                 PHASE_WAITING_MIGRATION_CONFIRMATIONS,
-                "[100000000]",
+                "[100000000,200000000]",
             ],
         )
         .unwrap();
@@ -5971,6 +6249,81 @@ mod tests {
             .unwrap();
         }
 
+        let remaining_note = PreparedOrchardNoteRef {
+            txid_hex: "22".repeat(32),
+            output_index: 1,
+            value_zatoshi: 200_000_000,
+            note_version: 2,
+            nullifier_hex: Some("33".repeat(32)),
+        };
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                 VALUES (?1, 'remaining-child', 1, 'base', 'sigs', 30, 40,
+                         199990000, 10000, ?2, '{{}}')"
+            ),
+            params![run_id, serde_json::to_string(&remaining_note).unwrap()],
+        )
+        .unwrap();
+
+        reconcile_run_confirmations(&conn, run_id).unwrap();
+        let incomplete_phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let incomplete_lock_state: String = conn
+            .query_row(
+                &format!("SELECT lock_state FROM {PREPARED_NOTES_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let retained_signed_children: u32 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(incomplete_phase, PHASE_BROADCAST_SCHEDULED);
+        assert_eq!(incomplete_lock_state, "locked");
+        assert_eq!(retained_signed_children, 1);
+
+        conn.execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+            params![PHASE_PAUSED, run_id],
+        )
+        .unwrap();
+        reconcile_run_confirmations(&conn, run_id).unwrap();
+        let paused_phase: String = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(paused_phase, PHASE_PAUSED);
+
+        conn.execute(
+            &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET target_values_json = '[100000000]', phase = ?1
+                 WHERE run_id = ?2"
+            ),
+            params![PHASE_WAITING_MIGRATION_CONFIRMATIONS, run_id],
+        )
+        .unwrap();
         reconcile_run_confirmations(&conn, run_id).unwrap();
         let status = status_for_run(
             &conn,
@@ -6796,9 +7149,10 @@ mod tests {
             &format!(
                 "INSERT INTO {RUNS_TABLE}
                  (run_id, account_uuid, network, db_fingerprint, phase,
-                  created_at_ms, updated_at_ms, target_values_json)
+                  created_at_ms, updated_at_ms, target_values_json,
+                  proof_retry_height)
                  VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
-                         '[100000000]')"
+                         '[100000000]', 999)"
             ),
             params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
         )
@@ -6872,21 +7226,27 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        let (phase, nullifier, lock_state): (String, Option<String>, String) = conn
+        let (phase, proof_retry_height, nullifier, lock_state): (
+            String,
+            Option<u32>,
+            Option<String>,
+            String,
+        ) = conn
             .query_row(
                 &format!(
-                    "SELECT r.phase, n.nullifier_hex, n.lock_state
+                    "SELECT r.phase, r.proof_retry_height, n.nullifier_hex, n.lock_state
                      FROM {RUNS_TABLE} r
                      JOIN {PREPARED_NOTES_TABLE} n ON n.run_id = r.run_id
                      WHERE r.run_id = ?1"
                 ),
                 params![run_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
         assert_eq!(retained_signed, 1);
         assert_eq!(pending, 0);
         assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+        assert!(proof_retry_height.is_none());
         assert!(nullifier.is_none());
         assert_eq!(lock_state, "locked");
     }

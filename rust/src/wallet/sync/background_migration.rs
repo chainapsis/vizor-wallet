@@ -40,6 +40,7 @@ pub(crate) struct BackgroundMigrationDecisionInputs<'a> {
     pub scanned_height: u64,
     pub remote_tip_height: u64,
     pub next_scheduled_height: Option<u32>,
+    pub proof_retry_height: Option<u32>,
 }
 
 pub(crate) fn decide_background_migration_action(
@@ -55,6 +56,43 @@ pub(crate) fn decide_background_migration_action(
 
     if inputs.scanned_height > inputs.remote_tip_height {
         return BackgroundMigrationAction::NeedsUserAction;
+    }
+
+    let may_retry_proofs = matches!(
+        inputs.phase,
+        migration::PHASE_WAITING_DENOM_CONFIRMATIONS
+            | migration::PHASE_READY_TO_MIGRATE
+            | migration::PHASE_BROADCAST_SCHEDULED
+            | migration::PHASE_BROADCASTING
+            | migration::PHASE_FAILED_RECOVERABLE
+    );
+    if inputs.has_unpromoted_signed_children && may_retry_proofs {
+        if let Some(proof_retry_height) = inputs.proof_retry_height {
+            if inputs
+                .next_scheduled_height
+                .is_some_and(|height| inputs.scanned_height >= u64::from(height))
+            {
+                return BackgroundMigrationAction::Advance;
+            }
+            // Keep the wallet scan current while a proof waits for a future
+            // anchor boundary. Otherwise the boundary can arrive remotely
+            // while the local wallet remains unable to observe it.
+            if inputs.remote_tip_height > inputs.scanned_height {
+                return BackgroundMigrationAction::Sync;
+            }
+            let next_height = inputs
+                .next_scheduled_height
+                .map(|height| height.min(proof_retry_height))
+                .unwrap_or(proof_retry_height);
+            let next_height = u64::from(next_height);
+            return if inputs.scanned_height >= next_height {
+                BackgroundMigrationAction::Advance
+            } else if inputs.remote_tip_height >= next_height {
+                BackgroundMigrationAction::Sync
+            } else {
+                BackgroundMigrationAction::Wait
+            };
+        }
     }
 
     match inputs.phase {
@@ -116,12 +154,6 @@ pub(crate) fn inspect_background_migration(
     }
     let status = migration::migration_status(db_path, network, account_uuid, 0, 0, 0, 0)?;
     let progress = super::get_sync_progress(db_path, network)?;
-    let next_scheduled_height = status
-        .active_run_id
-        .as_deref()
-        .map(|run_id| migration::next_scheduled_height(db_path, run_id))
-        .transpose()?
-        .flatten();
     let has_unpromoted_signed_children = status
         .active_run_id
         .as_deref()
@@ -129,6 +161,26 @@ pub(crate) fn inspect_background_migration(
         .map(|run_id| migration::signed_child_pczt_count(db_path, run_id))
         .transpose()?
         .is_some_and(|count| count > 0);
+    let next_broadcast_height = status
+        .active_run_id
+        .as_deref()
+        .map(|run_id| migration::next_scheduled_height(db_path, run_id))
+        .transpose()?
+        .flatten();
+    let proof_retry_height = if has_unpromoted_signed_children {
+        status
+            .active_run_id
+            .as_deref()
+            .map(|run_id| migration::proof_retry_height(db_path, run_id))
+            .transpose()?
+            .flatten()
+    } else {
+        None
+    };
+    let next_scheduled_height = next_broadcast_height
+        .into_iter()
+        .chain(proof_retry_height)
+        .min();
     let action = decide_background_migration_action(BackgroundMigrationDecisionInputs {
         phase: &status.phase,
         has_active_run: status.active_run_id.is_some(),
@@ -136,7 +188,8 @@ pub(crate) fn inspect_background_migration(
         has_unpromoted_signed_children,
         scanned_height: progress.scanned_height,
         remote_tip_height: progress.chain_tip_height,
-        next_scheduled_height,
+        next_scheduled_height: next_broadcast_height,
+        proof_retry_height,
     });
 
     Ok(BackgroundMigrationInspection {
@@ -215,6 +268,7 @@ mod tests {
             scanned_height,
             remote_tip_height,
             next_scheduled_height,
+            proof_retry_height: None,
         })
     }
 
@@ -229,6 +283,7 @@ mod tests {
                 scanned_height: 500,
                 remote_tip_height: 500,
                 next_scheduled_height: None,
+                proof_retry_height: None,
             }),
             BackgroundMigrationAction::Complete
         );
@@ -265,6 +320,7 @@ mod tests {
                 scanned_height: 500,
                 remote_tip_height: 504,
                 next_scheduled_height: Some(600),
+                proof_retry_height: None,
             }),
             BackgroundMigrationAction::Advance
         );
@@ -283,6 +339,51 @@ mod tests {
                 501,
                 None,
             ),
+            BackgroundMigrationAction::Advance
+        );
+    }
+
+    #[test]
+    fn blocked_proof_syncs_new_blocks_then_waits_for_the_retry_height() {
+        let decide_retry = |scanned_height, remote_tip_height, next_scheduled_height| {
+            decide_background_migration_action(BackgroundMigrationDecisionInputs {
+                phase: migration::PHASE_READY_TO_MIGRATE,
+                has_active_run: true,
+                expected_run_matches: true,
+                has_unpromoted_signed_children: true,
+                scanned_height,
+                remote_tip_height,
+                next_scheduled_height,
+                proof_retry_height: Some(600),
+            })
+        };
+
+        assert_eq!(
+            decide_retry(500, 550, None),
+            BackgroundMigrationAction::Sync
+        );
+        assert_eq!(
+            decide_retry(550, 550, None),
+            BackgroundMigrationAction::Wait
+        );
+        assert_eq!(
+            decide_retry(500, 550, Some(550)),
+            BackgroundMigrationAction::Sync
+        );
+        assert_eq!(
+            decide_retry(550, 550, Some(550)),
+            BackgroundMigrationAction::Advance
+        );
+        assert_eq!(
+            decide_retry(550, 600, Some(550)),
+            BackgroundMigrationAction::Advance
+        );
+        assert_eq!(
+            decide_retry(500, 600, None),
+            BackgroundMigrationAction::Sync
+        );
+        assert_eq!(
+            decide_retry(600, 600, None),
             BackgroundMigrationAction::Advance
         );
     }
@@ -311,6 +412,20 @@ mod tests {
                 BackgroundMigrationAction::NeedsUserAction
             );
         }
+
+        assert_eq!(
+            decide_background_migration_action(BackgroundMigrationDecisionInputs {
+                phase: migration::PHASE_PAUSED,
+                has_active_run: true,
+                expected_run_matches: true,
+                has_unpromoted_signed_children: true,
+                scanned_height: 500,
+                remote_tip_height: 600,
+                next_scheduled_height: Some(550),
+                proof_retry_height: Some(600),
+            }),
+            BackgroundMigrationAction::NeedsUserAction
+        );
     }
 
     #[test]
@@ -344,6 +459,7 @@ mod tests {
                 scanned_height: 510,
                 remote_tip_height: 510,
                 next_scheduled_height: Some(505),
+                proof_retry_height: None,
             }),
             BackgroundMigrationAction::NeedsUserAction
         );
