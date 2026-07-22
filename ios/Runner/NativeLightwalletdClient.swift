@@ -283,11 +283,11 @@ enum NativeLightwalletdClient {
         try skipField(payload, wireType: wireType, index: &index)
       }
     }
-    guard let errorCode else {
-      throw NativeLightwalletdError.missingSendResponse
-    }
     return NativeLightwalletdSendResponse(
-      errorCode: errorCode,
+      // SendResponse.errorCode is a proto3 scalar. A successful zero value is
+      // omitted from the wire, so an absent field is the canonical success
+      // response rather than a malformed payload.
+      errorCode: errorCode ?? 0,
       errorMessage: errorMessage
     )
   }

@@ -222,6 +222,17 @@ final class NativeLightwalletdClientTests: XCTestCase {
       )
     )
   }
+
+  func testNativeLightwalletdParserTreatsOmittedZeroCodeAsSuccess() throws {
+    let response = Data([
+      0x00, 0x00, 0x00, 0x00, 0x00,
+    ])
+
+    XCTAssertEqual(
+      try NativeLightwalletdClient.parseSendTransactionResponse(response),
+      NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+    )
+  }
 }
 
 private final class FreshInstallCleanerHarness {

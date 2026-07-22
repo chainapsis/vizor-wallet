@@ -678,11 +678,22 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testDuplicateResponseIsAcceptedEquivalent() {
-    XCTAssertTrue(
-      BackgroundMigrationOutboxRunner.isAcceptedEquivalent(
-        "transaction already exists in mempool"
+    for message in [
+      "transaction was committed to the best chain",
+      "already in mempool",
+      "already have transaction",
+      "transaction already in block chain",
+      "transaction is already in state",
+      "transaction already exists",
+      "txn-already-known",
+      "txn-already-in-mempool",
+      "already known",
+    ] {
+      XCTAssertTrue(
+        BackgroundMigrationOutboxRunner.isAcceptedEquivalent(message),
+        message
       )
-    )
+    }
     XCTAssertFalse(
       BackgroundMigrationOutboxRunner.isAcceptedEquivalent(
         "transaction rejected by consensus"

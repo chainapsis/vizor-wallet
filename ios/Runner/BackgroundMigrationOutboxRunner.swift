@@ -262,8 +262,11 @@ enum BackgroundMigrationOutboxRunner {
 
   static func isAcceptedEquivalent(_ message: String) -> Bool {
     let message = message.lowercased()
-    return message.contains("already in mempool")
+    return message.contains("transaction was committed to the best chain")
+      || message.contains("already in mempool")
       || message.contains("already have transaction")
+      || message.contains("transaction already in block chain")
+      || message.contains("transaction is already in state")
       || message.contains("transaction already exists")
       || message.contains("txn-already-known")
       || message.contains("txn-already-in-mempool")
