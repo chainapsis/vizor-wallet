@@ -555,6 +555,62 @@ class IronwoodMigrationService {
     return result;
   }
 
+  /// Starts a user-attended migration broadcast without enrolling the run in
+  /// iOS background preparation or the migration outbox. This is deliberately
+  /// separate from [startSoftwarePrivateMigration]: Immediate migration is a
+  /// foreground action and must not acquire background credentials.
+  Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
+    required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+
+    return operationRegistry.run(
+      network: context.network,
+      accountUuid: context.accountUuid,
+      operation: () async {
+        final credential = await _legacyCredential(context);
+        if (isMacOS()) {
+          return startMacosSoftwareMigration(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            password: credential.password,
+            saltBase64: credential.saltBase64,
+            approvedSchedule: approvedSchedule,
+          );
+        }
+
+        final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw Exception('Mnemonic not found for the migration account.');
+        }
+        try {
+          return await startSoftwareMigration(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            mnemonicBytes: mnemonicBytes,
+            password: credential.password,
+            saltBase64: credential.saltBase64,
+            approvedSchedule: approvedSchedule,
+          );
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
+      },
+    );
+  }
+
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
     required String accountUuid,
   }) async {

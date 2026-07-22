@@ -363,6 +363,12 @@ Widget _productionApp({
         ),
       ),
       GoRoute(
+        path: '/migration/fast/review',
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+        ),
+      ),
+      GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
           approvedPlan: privatePlan,
@@ -749,7 +755,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('Privacy trade-off'), findsOneWidget);
-
   });
 
   testWidgets('renders the private migration review plan', (tester) async {
