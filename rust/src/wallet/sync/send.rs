@@ -1078,6 +1078,125 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     ))
 }
 
+/// Performs the user-selected Immediate migration as one foreground
+/// Orchard-to-Ironwood transaction. Unlike the privacy migration this does
+/// not create denomination stages, a migration run, or scheduled children.
+pub(crate) async fn migrate_orchard_to_ironwood_immediately(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+        return Err("An Ironwood migration is already in progress for this account".to_string());
+    }
+
+    let (base_pczt, orchard_spend_action_indices, fee_zatoshi, migrated_zatoshi) =
+        with_wallet_db_write_lock("send.immediate_migration.build", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let account_id = parse_account_uuid(account_uuid)?;
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| format!("{e}"))?
+                .ok_or("Account not found")?;
+            let ufvk = account.ufvk().ok_or("Account cannot create an Immediate migration")?;
+            let account_derivation = account.source().key_derivation();
+            let orchard_fvk = ufvk
+                .orchard()
+                .cloned()
+                .ok_or("Orchard viewing key not available")?;
+            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+            let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
+            let (target_height, anchor_height) = db
+                .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+                .map_err(|e| format!("Failed to read anchor height: {e}"))?
+                .ok_or("Wallet must sync before migrating")?;
+            let orchard_notes =
+                select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+            if orchard_notes.is_empty() {
+                return Err("No spendable Orchard notes are available for Immediate migration".to_string());
+            }
+            let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
+                &mut db,
+                network,
+                BlockHeight::from(anchor_height),
+                &orchard_notes,
+            )?;
+            let input_total = orchard_notes.iter().try_fold(0u64, |total, note| {
+                total
+                    .checked_add(u64::from(note.note_value().map_err(|e| format!("{e}"))?))
+                    .ok_or_else(|| "Immediate migration input overflow".to_string())
+            })?;
+            let fee_rule = ConservativeZip317FeeRule;
+            let make_builder = |amount: Zatoshis| {
+                let mut builder = migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor.clone())?;
+                for (note, merkle_path) in &orchard_inputs {
+                    builder
+                        .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                            orchard_fvk.clone(),
+                            *note,
+                            merkle_path.clone(),
+                        )
+                        .map_err(|e| format!("Add Immediate Orchard spend failed: {e}"))?;
+                }
+                builder
+                    .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                        internal_ovk.clone(), recipient, amount, MemoBytes::empty(),
+                    )
+                    .map_err(|e| format!("Add Immediate Ironwood output failed: {e}"))?;
+                Ok::<_, String>(builder)
+            };
+            let minimum = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
+                .map_err(|_| "Bad Immediate migration minimum output")?;
+            let fee = make_builder(minimum)?
+                .get_fee(&fee_rule)
+                .map_err(|e| format!("Estimate Immediate migration fee failed: {e}"))?;
+            let input_total = Zatoshis::from_u64(input_total)
+                .map_err(|_| "Bad Immediate migration input total")?;
+            if input_total <= fee {
+                return Err("Immediate migration amount does not cover the transaction fee".to_string());
+            }
+            let amount = (input_total - fee).ok_or("Immediate migration amount underflow")?;
+            let built = pczt_from_build_result(
+                make_builder(amount)?
+                    .build_for_pczt(rand_core::OsRng, &fee_rule)
+                    .map_err(|e| format!("Build Immediate migration PCZT failed: {e}"))?,
+                network,
+                account_derivation,
+                orchard_inputs.len(),
+                0,
+            )?;
+            Ok::<_, String>((
+                built.bytes,
+                built.orchard_spend_action_indices,
+                u64::from(fee),
+                u64::from(amount),
+            ))
+        })?;
+    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+    let signed = sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
+    let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(&base_pczt, &signed)?;
+    super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
+    let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+    let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
+    broadcast_raw_transaction(&mut client, &extracted.raw_tx).await?;
+
+    Ok(IronwoodMigrationResult {
+        txids: extracted.txid.to_string(),
+        status: super::migration::PHASE_BROADCASTING.to_string(),
+        broadcasted_count: 1,
+        total_count: 1,
+        message: None,
+        fee_zatoshi,
+        migrated_zatoshi,
+    })
+}
+
 async fn prepare_orchard_migration_outbox(
     db_path: &str,
     lightwalletd_url: &str,

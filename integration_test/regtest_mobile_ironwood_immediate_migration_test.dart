@@ -6,14 +6,11 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/mobile_regtest_flow.dart';
-
-final _fundedAmount = BigInt.from(1095000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -102,17 +99,6 @@ void main() {
       await waitForHome(tester);
 
       final accountUuid = await accountUuidAtOrder(0);
-      final started = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.activeRunId != null &&
-            status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-            status.pendingSplitStageCount > 0,
-        description: 'Immediate migration broadcast run',
-        timeout: const Duration(minutes: 5),
-      );
-      expect(started.activeRunId, isNotNull);
       await waitForMobileRegtestMempoolSize(
         tester,
         1,
@@ -120,49 +106,36 @@ void main() {
       );
 
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final balance = await _waitForImmediateIronwoodBalance(
         tester,
         accountUuid,
-        (status) => status.scheduledBroadcasts.isNotEmpty,
-        description: 'Immediate migration scheduled transfers',
-        timeout: const Duration(minutes: 10),
-      );
-      expect(scheduled.totalCount, greaterThan(0));
-      final submitted = await advanceMobileRegtestMigrationSchedule(
-        tester,
-        accountUuid,
-      );
-      expect(
-        submitted.broadcastedTxCount + submitted.confirmedTxCount,
-        submitted.totalCount,
-      );
-
-      await postDriver('/mine', const {'blocks': 10});
-      final complete = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationCompletePhase &&
-            status.activeRunId == null,
-        description: 'completed Immediate migration',
-        timeout: const Duration(minutes: 5),
-      );
-      expect(complete.confirmedTxCount, complete.totalCount);
-
-      final balance = await rust_sync.getBalance(
-        dbPath: await getWalletDbPath(),
-        network: mobileE2eNetwork,
-        accountUuid: accountUuid,
       );
       final orchardResidual = balance.orchard + balance.uneconomicValue;
-      expect(balance.ironwood, BigInt.from(1000000));
-      expect(
-        _fundedAmount - balance.ironwood - orchardResidual,
-        BigInt.from(95000),
-      );
+      expect(balance.ironwood, greaterThan(BigInt.zero));
+      expect(orchardResidual, BigInt.zero);
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
+}
+
+Future<rust_sync.WalletBalance> _waitForImmediateIronwoodBalance(
+  WidgetTester tester,
+  String accountUuid,
+) async {
+  final deadline = DateTime.now().add(const Duration(minutes: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    final balance = await rust_sync.getBalance(
+      dbPath: await getWalletDbPath(),
+      network: mobileE2eNetwork,
+      accountUuid: accountUuid,
+    );
+    if (balance.ironwood > BigInt.zero && balance.orchard == BigInt.zero) {
+      return balance;
+    }
+    await tester.pump(const Duration(milliseconds: 250));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+  fail('Timed out waiting for Immediate migration to confirm in Ironwood.');
 }
 
 Future<void> _waitForIdleSync(
