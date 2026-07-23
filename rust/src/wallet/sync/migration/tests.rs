@@ -1621,7 +1621,7 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
-fn preparation_schedule_starts_one_root_immediately_and_spaces_the_rest() {
+fn preparation_schedule_delays_every_root() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -1656,7 +1656,8 @@ fn preparation_schedule_starts_one_root_immediately_and_spaces_the_rest() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(heights[0], 100);
+    assert_ne!(heights[0], 100);
+    assert!(heights[0] <= 100 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
     assert!(heights
         .windows(2)
         .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));

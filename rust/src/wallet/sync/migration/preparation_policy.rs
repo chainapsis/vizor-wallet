@@ -56,7 +56,7 @@ fn preparation_schedule_parameters(
     }
 }
 
-fn preparation_delay_with_rng<R: Rng + ?Sized>(
+fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
     rng: &mut R,
@@ -64,8 +64,8 @@ fn preparation_delay_with_rng<R: Rng + ?Sized>(
     let (mean_delay_blocks, max_delay_blocks) =
         preparation_schedule_parameters(network, timing_policy);
     loop {
-        let uniform = rng.gen_range(f64::MIN_POSITIVE..1.0);
-        let sampled = (-uniform.ln() * f64::from(mean_delay_blocks)).round() as u32;
+        let uniform = draw_unit_left_open(rng);
+        let sampled = round_nonnegative_to_u32(-uniform.ln() * f64::from(mean_delay_blocks));
         if sampled <= max_delay_blocks {
             return sampled;
         }
@@ -108,7 +108,7 @@ pub(crate) fn preparation_timing_policy_for_run(
     preparation_timing_policy_for_run_with_conn(&conn, run_id)
 }
 
-fn initialize_preparation_schedule_with_tx<R: Rng + ?Sized>(
+fn initialize_preparation_schedule_with_tx<R: RngCore + CryptoRng + ?Sized>(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
     network: WalletNetwork,
@@ -146,12 +146,10 @@ fn initialize_preparation_schedule_with_tx<R: Rng + ?Sized>(
         .map(|(_, target_height)| target_height.saturating_sub(1))
         .min()
         .unwrap_or(0);
-    for (position, (stage_index, _)) in roots.into_iter().enumerate() {
-        if position > 0 {
-            scheduled_height = scheduled_height
-                .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-                .ok_or("Migration preparation scheduled height overflow")?;
-        }
+    for (stage_index, _) in roots {
+        scheduled_height = scheduled_height
+            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+            .ok_or("Migration preparation scheduled height overflow")?;
         tx.execute(
             &format!(
                 "UPDATE {STAGES_TABLE}
@@ -165,7 +163,7 @@ fn initialize_preparation_schedule_with_tx<R: Rng + ?Sized>(
     Ok(())
 }
 
-fn reschedule_pending_preparation_stages_with_tx<R: Rng + ?Sized>(
+fn reschedule_pending_preparation_stages_with_tx<R: RngCore + CryptoRng + ?Sized>(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
     network: WalletNetwork,
@@ -216,12 +214,10 @@ fn reschedule_pending_preparation_stages_with_tx<R: Rng + ?Sized>(
             .min()
             .unwrap_or(0)
     });
-    for (position, (stage_index, _)) in pending.into_iter().enumerate() {
-        if position > 0 || previous_scheduled_height.is_some() {
-            scheduled_height = scheduled_height
-                .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-                .ok_or("Migration preparation scheduled height overflow")?;
-        }
+    for (stage_index, _) in pending {
+        scheduled_height = scheduled_height
+            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+            .ok_or("Migration preparation scheduled height overflow")?;
         tx.execute(
             &format!(
                 "UPDATE {STAGES_TABLE}
@@ -235,7 +231,7 @@ fn reschedule_pending_preparation_stages_with_tx<R: Rng + ?Sized>(
     Ok(())
 }
 
-pub(crate) fn next_preparation_scheduled_height<R: Rng + ?Sized>(
+pub(crate) fn next_preparation_scheduled_height<R: RngCore + CryptoRng + ?Sized>(
     conn: &rusqlite::Connection,
     run_id: &str,
     network: WalletNetwork,
@@ -265,7 +261,7 @@ pub(crate) fn next_preparation_scheduled_height<R: Rng + ?Sized>(
         .ok_or_else(|| "Migration preparation scheduled height overflow".to_string())
 }
 
-pub(crate) fn reschedule_remaining_preparation_stages<R: Rng + ?Sized>(
+pub(crate) fn reschedule_remaining_preparation_stages<R: RngCore + CryptoRng + ?Sized>(
     conn: &rusqlite::Connection,
     run_id: &str,
     network: WalletNetwork,
