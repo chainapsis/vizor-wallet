@@ -25,22 +25,54 @@ void main() {
         rust_sync.MigrationScheduledTransfer(
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
-          blockOffset: 144,
+          blockOffset: 0,
         ),
         rust_sync.MigrationScheduledTransfer(
           partIndex: 1,
           valueZatoshi: BigInt.from(2_000_000),
-          blockOffset: 288,
+          blockOffset: 144,
         ),
       ],
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
-    expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
+    expect(migrationPlanCompletionDurationLabel(plan), '~4 hrs');
     expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
-      'Jul 17, 18:03',
+      'Jul 17, 15:11',
+    );
+  });
+
+  test('does not add a mean schedule delay to a single immediate part', () {
+    final plan = rust_sync.OrchardMigrationPrivatePlan(
+      targetValuesZatoshi: frb.Uint64List.fromList([1_000_000]),
+      totalInputZatoshi: BigInt.from(1_030_000),
+      totalMigratableZatoshi: BigInt.from(1_000_000),
+      orchardChangeZatoshi: BigInt.zero,
+      denominationSplitFeeZatoshi: BigInt.zero,
+      migrationFeeZatoshi: BigInt.from(30_000),
+      estimatedTotalFeeZatoshi: BigInt.from(30_000),
+      plannedBatchCount: 1,
+      denominationSplitStageCount: 0,
+      signingBatchLimit: 16,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      proofReadinessDelayBlocks: 146,
+      maxPreparedNotesPerRun: 64,
+      scheduledTransfers: [
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(1_000_000),
+          blockOffset: 0,
+        ),
+      ],
+    );
+
+    expect(migrationPlanCompletionDurationLabel(plan), '~4 mins');
+    expect(
+      migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
+      'Jul 17, 12:03',
     );
   });
 

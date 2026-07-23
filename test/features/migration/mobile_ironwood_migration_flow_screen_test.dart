@@ -106,7 +106,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
         valueZatoshi: BigInt.from(
           i == plannedBatchCount - 1 ? 3_220_000_000 : 1_000_000_000,
         ),
-        blockOffset: (i + 1) * 144 + blockOffsetAdjustment,
+        blockOffset: i == 0 ? 0 : i * 144 + blockOffsetAdjustment,
       ),
   ],
 );
@@ -780,7 +780,13 @@ void main() {
     expect(completionText.data, contains(':'));
     expect(completionText.data, isNot('~37 hrs'));
     expect(completionText.data, isNot(contains('blocks')));
-    expect(find.text('~4 hrs'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_status_cell_0')),
+        matching: find.text('~4 hrs'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('0.1442 ZEC'), findsOneWidget);
     expect(find.text('Start migration'), findsOneWidget);
@@ -1244,7 +1250,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.text('~4 hrs'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_status_cell_0')),
+        matching: find.text('~4 hrs'),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('Migration plan updated'), findsNothing);
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
@@ -2506,9 +2518,7 @@ void main() {
     expect(find.bySemanticsLabel('About estimated completion'), findsNothing);
   });
 
-  testWidgets('shows safe-block timing without a proof label', (
-    tester,
-  ) async {
+  testWidgets('shows safe-block timing without a proof label', (tester) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(

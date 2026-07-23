@@ -1073,6 +1073,39 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
+fn planned_schedule_starts_immediately_and_delays_later_transfers() {
+    let values = (1..=32).collect::<Vec<_>>();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    let schedule = planned_transfer_schedule(values.iter().copied(), WalletNetwork::Test, &mut rng);
+
+    assert_eq!(schedule.len(), values.len());
+    assert_eq!(schedule[0].block_offset, 0);
+    assert!(schedule.windows(2).all(|entries| {
+        let gap = entries[1].block_offset - entries[0].block_offset;
+        (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+    }));
+    validate_schedule(&schedule, &values, WalletNetwork::Test).unwrap();
+}
+
+#[test]
+fn schedule_validation_keeps_legacy_positive_first_offsets_compatible() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 144,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 288,
+        },
+    ];
+
+    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test).unwrap();
+}
+
+#[test]
 fn regtest_schedule_is_short_but_still_requires_blocks() {
     assert_eq!(
         schedule_parameters(WalletNetwork::Regtest),

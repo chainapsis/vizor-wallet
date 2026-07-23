@@ -79,12 +79,14 @@ where
     parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
-    let offsets = random_schedule_block_offsets_with_rng(
-        parts.len(),
-        mean_delay_blocks,
-        max_delay_blocks,
-        rng,
-    );
+    let offsets = std::iter::once(0)
+        .chain(random_schedule_block_offsets_with_rng(
+            parts.len().saturating_sub(1),
+            mean_delay_blocks,
+            max_delay_blocks,
+            rng,
+        ))
+        .take(parts.len());
     parts
         .into_iter()
         .zip(offsets)
@@ -135,12 +137,17 @@ fn validate_schedule_with_policy(
 
     let (_, max_delay_blocks) = schedule_parameters_with_policy(network, timing_policy);
     let mut previous_offset = 0;
-    for entry in schedule {
+    for (index, entry) in schedule.iter().enumerate() {
         let gap = entry
             .block_offset
             .checked_sub(previous_offset)
             .ok_or("Approved migration schedule is not ordered")?;
-        if !(1..=max_delay_blocks).contains(&gap) {
+        let valid_gap = if index == 0 {
+            gap <= max_delay_blocks
+        } else {
+            (1..=max_delay_blocks).contains(&gap)
+        };
+        if !valid_gap {
             return Err("Approved migration schedule delay is outside policy".to_string());
         }
         previous_offset = entry.block_offset;

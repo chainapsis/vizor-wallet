@@ -84,11 +84,10 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
       scheduledBlocks = transfer.blockOffset;
     }
   }
-  if (scheduledBlocks <= 0) {
+  if (plan.scheduledTransfers.isEmpty) {
     final batchCount = plan.plannedBatchCount < 1 ? 1 : plan.plannedBatchCount;
     scheduledBlocks = plan.scheduleMeanDelayBlocks * batchCount;
   }
-  if (scheduledBlocks <= 0) return 0;
 
   return migrationPlanPartDelayBlocks(
         preparationDelayBlocks: migrationPlanPreparationDelayBlocks(plan),
