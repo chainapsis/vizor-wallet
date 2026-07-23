@@ -1539,6 +1539,7 @@ class OrchardMigrationPrivatePlan {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
+  final int proofReadinessDelayBlocks;
   final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
@@ -1555,6 +1556,7 @@ class OrchardMigrationPrivatePlan {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
+    required this.proofReadinessDelayBlocks,
     required this.maxPreparedNotesPerRun,
     required this.scheduledTransfers,
   });
@@ -1573,6 +1575,7 @@ class OrchardMigrationPrivatePlan {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
+      proofReadinessDelayBlocks.hashCode ^
       maxPreparedNotesPerRun.hashCode ^
       scheduledTransfers.hashCode;
 
@@ -1593,6 +1596,7 @@ class OrchardMigrationPrivatePlan {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledTransfers == other.scheduledTransfers;
 }

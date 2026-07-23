@@ -70,6 +70,7 @@ void main() {
         signingBatchLimit: 50,
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,
+        proofReadinessDelayBlocks: 146,
         scheduledTransfers: const [],
         maxPreparedNotesPerRun: 64,
       );

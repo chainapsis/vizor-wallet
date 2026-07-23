@@ -19,6 +19,7 @@ void main() {
       signingBatchLimit: 16,
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
+      proofReadinessDelayBlocks: 146,
       maxPreparedNotesPerRun: 64,
       scheduledTransfers: [
         rust_sync.MigrationScheduledTransfer(
@@ -34,11 +35,12 @@ void main() {
       ],
     );
 
-    expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
+    expect(migrationPlanPreparationDelayBlocks(plan), 150);
+    expect(migrationPlanCompletionDurationLabel(plan), '~10 hrs');
     expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
-      'Jul 17, 18:05',
+      'Jul 17, 21:07',
     );
   });
 

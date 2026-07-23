@@ -613,6 +613,45 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 }
 
 #[test]
+fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
+    assert_eq!(
+        proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
+        146
+    );
+    assert_eq!(
+        proof_readiness_delay_blocks(WalletNetwork::Regtest, 10).unwrap(),
+        0
+    );
+    assert_eq!(
+        proof_ready_height_for_note_mined_height(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            4_194_451,
+        )
+        .unwrap(),
+        4_194_722
+    );
+    assert_eq!(
+        proof_ready_height_for_note_mined_height(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            4_194_576,
+        )
+        .unwrap(),
+        4_194_722
+    );
+    assert_eq!(
+        proof_ready_height_for_note_mined_height(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::Standard,
+            10,
+        )
+        .unwrap(),
+        12
+    );
+}
+
+#[test]
 fn anchor_bucket_draw_stays_within_candidate_set() {
     let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
     assert!(!candidates.is_empty());
@@ -1004,15 +1043,15 @@ fn timing_projection_failure_does_not_block_migration_status() {
     assert_eq!(status.estimated_completion_height, None);
     drop(conn);
 
-    let export_error = export_scheduled_migration_outbox(
+    let export = export_scheduled_migration_outbox(
         &db_path,
         "account-1",
         WalletNetwork::Test,
         b"password",
         TEST_SALT_BASE64,
     )
-    .unwrap_err();
-    assert!(export_error.contains("Decode migration timing schedule"));
+    .unwrap();
+    assert!(export.is_none());
 }
 
 #[test]
@@ -4491,7 +4530,7 @@ fn migration_outbox_export_fails_closed_without_anchor() {
 }
 
 #[test]
-fn migration_outbox_export_reports_next_proof_height_without_items() {
+fn migration_outbox_export_omits_unverified_next_proof_height() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
         .path()
@@ -4538,11 +4577,9 @@ fn migration_outbox_export_reports_next_proof_height_without_items() {
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
-    .unwrap()
     .unwrap();
 
-    assert!(batch.items.is_empty());
-    assert_eq!(batch.next_proof_height, Some(321));
+    assert!(batch.is_none());
 }
 
 #[test]

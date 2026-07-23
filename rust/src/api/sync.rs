@@ -793,6 +793,9 @@ pub struct OrchardMigrationPrivatePlan {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
+    /// Estimated blocks after preparation confirmation, derived from the
+    /// projected final prepared-note height rather than a fixed bucket count.
+    pub proof_readiness_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
 }
@@ -1163,6 +1166,7 @@ pub fn get_orchard_migration_private_plan(
                     signing_batch_limit: plan.signing_batch_limit,
                     schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
                     schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
+                    proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
                     max_prepared_notes_per_run: plan.max_prepared_notes_per_run,
                     scheduled_transfers: plan
                         .scheduled_transfers

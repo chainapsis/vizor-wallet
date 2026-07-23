@@ -90,12 +90,16 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
   }
   if (scheduledBlocks <= 0) return 0;
 
-  final preparationBlocks = plan.denominationSplitStageCount <= 0
-      ? 0
-      : plan.denominationSplitStageCount * _preparationConfirmationBlocks +
-            _preparationBroadcastBufferBlocks;
-  return scheduledBlocks + preparationBlocks;
+  return scheduledBlocks + migrationPlanPreparationDelayBlocks(plan);
 }
+
+int migrationPlanPreparationDelayBlocks(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => plan.denominationSplitStageCount <= 0
+    ? 0
+    : plan.denominationSplitStageCount * _preparationConfirmationBlocks +
+          _preparationBroadcastBufferBlocks +
+          plan.proofReadinessDelayBlocks;
 
 String _formatMigrationDuration(int blocks) {
   final seconds = blocks * _estimatedSecondsPerBlock;

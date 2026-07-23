@@ -142,11 +142,13 @@ class _MobileMigrationPartList extends StatelessWidget {
   const _MobileMigrationPartList({
     required this.transfers,
     required this.totalZatoshi,
+    required this.initialDelayBlocks,
     required this.reveal,
   });
 
   final List<rust_sync.MigrationScheduledTransfer> transfers;
   final BigInt totalZatoshi;
+  final int initialDelayBlocks;
   final Animation<double> reveal;
 
   @override
@@ -271,7 +273,7 @@ class _MobileMigrationPartList extends StatelessWidget {
                                 width: statusWidth,
                                 child: Text(
                                   migrationBlockOffsetDurationLabel(
-                                    transfer.blockOffset,
+                                    initialDelayBlocks + transfer.blockOffset,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

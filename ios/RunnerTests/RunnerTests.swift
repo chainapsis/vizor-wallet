@@ -7,6 +7,49 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testMigrationPreparationResubmitsOnlyExpiredActiveWork() {
+    XCTAssertTrue(
+      shouldResubmitMigrationPreparationTask(
+        success: false,
+        handedOff: false,
+        expired: true,
+        hasActivePreparation: true
+      )
+    )
+    XCTAssertFalse(
+      shouldResubmitMigrationPreparationTask(
+        success: false,
+        handedOff: false,
+        expired: false,
+        hasActivePreparation: true
+      )
+    )
+    XCTAssertFalse(
+      shouldResubmitMigrationPreparationTask(
+        success: false,
+        handedOff: false,
+        expired: true,
+        hasActivePreparation: false
+      )
+    )
+    XCTAssertFalse(
+      shouldResubmitMigrationPreparationTask(
+        success: true,
+        handedOff: false,
+        expired: true,
+        hasActivePreparation: true
+      )
+    )
+    XCTAssertFalse(
+      shouldResubmitMigrationPreparationTask(
+        success: false,
+        handedOff: true,
+        expired: true,
+        hasActivePreparation: true
+      )
+    )
+  }
+
   func testFreshInstallCleanerMarksInstallWhenNoWalletKeychainExists() {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .missing

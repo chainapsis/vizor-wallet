@@ -297,6 +297,9 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
+    /// Estimated blocks from trusted preparation confirmation until the
+    /// boundary containing the final prepared note becomes usable.
+    pub proof_readiness_delay_blocks: u32,
     pub max_prepared_notes_per_run: u32,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
 }
@@ -1309,15 +1312,27 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
     .await?
     {
         StagedDenominationAdvance::Waiting(result) => Ok(result),
-        StagedDenominationAdvance::Ready => Ok(IronwoodMigrationResult {
-            txids: String::new(),
-            status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
-            broadcasted_count: 0,
-            total_count: run.target_values_zatoshi.len() as u32,
-            message: None,
-            fee_zatoshi: 0,
-            migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
-        }),
+        StagedDenominationAdvance::Ready => {
+            let timing_policy =
+                super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
+            let proof_ready_height = super::migration::prepared_notes_proof_ready_height(
+                db_path,
+                &run.run_id,
+                network,
+                timing_policy,
+            )?
+            .ok_or("Prepared denomination notes are missing their mined height")?;
+            super::migration::set_proof_retry_height(db_path, &run.run_id, proof_ready_height)?;
+            Ok(IronwoodMigrationResult {
+                txids: String::new(),
+                status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
+                broadcasted_count: 0,
+                total_count: run.target_values_zatoshi.len() as u32,
+                message: None,
+                fee_zatoshi: 0,
+                migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+            })
+        }
     }
 }
 
@@ -2828,10 +2843,15 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
-        let retry_height = current_migration_scanned_height(db_path, network)?
-            .checked_add(1)
-            .ok_or("Migration proof retry height overflow")?;
-        super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
+        let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+        if let Some(retry_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
+        }
         return Ok(0);
     }
 
@@ -2960,11 +2980,19 @@ fn finalize_presigned_migration_children(
     }
 
     if deferred_child_seen && !stopped_at_proof_limit && !policy.is_cancelled() {
-        let retry_height = super::migration::next_anchor_retry_height_after(
+        let mut retry_height = super::migration::next_anchor_retry_height_after(
             network,
             timing_policy,
             current_migration_scanned_height(db_path, network)?,
         )?;
+        if let Some(ready_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            retry_height = retry_height.max(ready_height);
+        }
         defer_presigned_proof_until(db_path, run_id, retry_height)?;
     }
 

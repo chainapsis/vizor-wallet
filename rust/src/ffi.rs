@@ -11,8 +11,9 @@ static MIGRATION_PREPARATION_SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
-    /// 0 waiting, 1 ready for migration, 2 needs user action, 3 cancelled,
-    /// 4 no matching active preparation.
+    /// 0 waiting for denomination preparation, 1 proof can be created,
+    /// 2 needs user action, 3 cancelled, 4 no matching active preparation,
+    /// 5 waiting for the prepared-note anchor to become usable.
     pub state: u8,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
@@ -147,6 +148,7 @@ unsafe fn credential_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
 fn fill_migration_preparation_progress(
     output: &mut CMigrationPreparationProgress,
     status: &sync::MigrationStatus,
+    scanned_height: u32,
 ) {
     if status.active_run_id.is_none() {
         output.state = 4;
@@ -158,11 +160,16 @@ fn fill_migration_preparation_progress(
     }
     output.state = match status.phase.as_str() {
         "waiting_denom_confirmations" => 0,
-        "ready_to_migrate"
-        | "broadcast_scheduled"
-        | "broadcasting"
-        | "waiting_migration_confirmations"
-        | "complete" => 1,
+        "ready_to_migrate" if status.signed_child_pczt_count > 0 => {
+            match status.next_action_height {
+                Some(height) if height <= scanned_height => 1,
+                Some(_) => 5,
+                None => 2,
+            }
+        }
+        "broadcast_scheduled" | "broadcasting" | "waiting_migration_confirmations" | "complete" => {
+            4
+        }
         _ => 2,
     };
     output.confirmation_count = status.denomination_confirmation_count;
@@ -220,7 +227,17 @@ pub extern "C" fn zcash_inspect_migration_preparation(
             output.total_stage_count = 0;
             return 0;
         }
-        fill_migration_preparation_progress(output, &status);
+        let scanned_height = match sync::get_sync_progress(db_path, network).and_then(|progress| {
+            u32::try_from(progress.scanned_height)
+                .map_err(|_| "Migration scanned height exceeds u32".to_string())
+        }) {
+            Ok(height) => height,
+            Err(error) => {
+                log::error!("ffi: inspect migration preparation height: {error}");
+                return 1;
+            }
+        };
+        fill_migration_preparation_progress(output, &status, scanned_height);
         0
     });
     match result {
@@ -317,7 +334,17 @@ pub extern "C" fn zcash_advance_migration_preparation(
         {
             return 1;
         }
-        fill_migration_preparation_progress(output, &status);
+        let scanned_height = match sync::get_sync_progress(db_path, network).and_then(|progress| {
+            u32::try_from(progress.scanned_height)
+                .map_err(|_| "Migration scanned height exceeds u32".to_string())
+        }) {
+            Ok(height) => height,
+            Err(error) => {
+                log::error!("ffi: inspect migration preparation height: {error}");
+                return 1;
+            }
+        };
+        fill_migration_preparation_progress(output, &status, scanned_height);
         if SYNC_CANCEL.load(Ordering::SeqCst) {
             output.state = 3;
         }

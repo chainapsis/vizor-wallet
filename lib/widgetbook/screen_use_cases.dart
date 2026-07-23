@@ -2668,6 +2668,7 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    proofReadinessDelayBlocks: 146,
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
@@ -2725,6 +2726,7 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
+    proofReadinessDelayBlocks: 146,
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
@@ -2786,6 +2788,7 @@ _previewMobilePrivateMigrationManyPartsPlan() {
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
+    proofReadinessDelayBlocks: 146,
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       for (var index = 0; index < values.length; index++)

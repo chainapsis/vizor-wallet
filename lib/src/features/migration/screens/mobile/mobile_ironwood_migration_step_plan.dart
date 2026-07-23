@@ -99,6 +99,9 @@ class _MobilePrivatePlanState extends State<_MobilePrivatePlan>
                 child: _MobileMigrationPartList(
                   transfers: transfers,
                   totalZatoshi: total,
+                  initialDelayBlocks: migrationPlanPreparationDelayBlocks(
+                    widget.plan,
+                  ),
                   reveal: _revealController,
                 ),
               ),

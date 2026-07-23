@@ -2572,6 +2572,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    proofReadinessDelayBlocks: 146,
     maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(

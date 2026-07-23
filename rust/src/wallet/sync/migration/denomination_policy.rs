@@ -127,6 +127,50 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
     }
 }
 
+pub(crate) fn proof_readiness_delay_blocks(
+    network: WalletNetwork,
+    estimated_mined_height: u32,
+) -> Result<u32, String> {
+    let timing_policy = configured_timing_policy(network);
+    let confirmation_lag = ConfirmationsPolicy::default()
+        .trusted()
+        .get()
+        .saturating_sub(1);
+    let trusted_height = estimated_mined_height
+        .checked_add(confirmation_lag)
+        .ok_or("Migration proof readiness delay overflow")?;
+    proof_ready_height_for_note_mined_height(network, timing_policy, estimated_mined_height)?
+        .checked_sub(trusted_height)
+        .ok_or_else(|| "Migration proof readiness delay underflow".to_string())
+}
+
+pub(crate) fn proof_ready_height_for_note_mined_height(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    mined_height: u32,
+) -> Result<u32, String> {
+    let modulus = anchor_bucket_modulus(network, timing_policy);
+    let confirmation_lag = ConfirmationsPolicy::default()
+        .trusted()
+        .get()
+        .saturating_sub(1);
+    let remainder = mined_height % modulus;
+    let containing_boundary = if remainder == 0 {
+        mined_height
+    } else {
+        mined_height
+            .checked_add(modulus - remainder)
+            .ok_or("Migration proof readiness height overflow")?
+    };
+    let aging_blocks = modulus
+        .checked_mul(anchor_bucket_min_age(network, timing_policy))
+        .ok_or("Migration proof readiness height overflow")?;
+    containing_boundary
+        .checked_add(aging_blocks)
+        .and_then(|height| height.checked_add(confirmation_lag))
+        .ok_or_else(|| "Migration proof readiness height overflow".to_string())
+}
+
 pub(crate) fn next_anchor_retry_height_after(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,

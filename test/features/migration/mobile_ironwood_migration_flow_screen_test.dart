@@ -97,6 +97,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   signingBatchLimit: signingBatchLimit,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
+  proofReadinessDelayBlocks: 146,
   maxPreparedNotesPerRun: 12,
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
@@ -121,6 +122,8 @@ rust_sync.MigrationStatus _status({
   int? nextActionHeight,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
+  int pendingTxCount = 2,
+  int signedChildPcztCount = 0,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -131,11 +134,11 @@ rust_sync.MigrationStatus _status({
     denominationConfirmationTarget: 3,
     denominationSplitCompletedCount: 1,
     denominationSplitTotalCount: 3,
-    pendingTxCount: 2,
+    pendingTxCount: pendingTxCount,
     broadcastedTxCount: 1,
     confirmedTxCount: 1,
     totalCount: 3,
-    signedChildPcztCount: 0,
+    signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: 2,
     canAbandon: false,
     signingBatchLimit: 12,
@@ -777,7 +780,7 @@ void main() {
     expect(completionText.data, contains(':'));
     expect(completionText.data, isNot('~37 hrs'));
     expect(completionText.data, isNot(contains('blocks')));
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.text('~7 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('0.1442 ZEC'), findsOneWidget);
     expect(find.text('Start migration'), findsOneWidget);
@@ -1241,7 +1244,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.text('~7 hrs'), findsOneWidget);
     expect(find.textContaining('Migration plan updated'), findsNothing);
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
@@ -2501,6 +2504,36 @@ void main() {
       findsNWidgets(2),
     );
     expect(find.bySemanticsLabel('About estimated completion'), findsNothing);
+  });
+
+  testWidgets('labels proof readiness separately from transaction timing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          nextActionHeight: 3_000_020,
+          nextActionPartIndex: 1,
+          pendingTxCount: 0,
+          signedChildPcztCount: 3,
+        ),
+        privatePlan: _planWith(plannedBatchCount: 3),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 2_999_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Proof ~25 minutes'), findsOneWidget);
+    expect(find.text('Waiting for a safe block to continue.'), findsOneWidget);
   });
 
   testWidgets('shows projected timing for every prepared migration part', (

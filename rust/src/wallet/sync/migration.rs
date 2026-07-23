@@ -1546,17 +1546,8 @@ pub(crate) fn export_scheduled_migration_outbox(
                 |row| row.get::<_, Option<u32>>(0),
             )
             .map_err(|e| format!("Read migration outbox proof retry height: {e}"))?;
-        if persisted.is_some() {
-            persisted
-        } else {
-            migration_timing_projection_for_run(
-                &conn,
-                &run.run_id,
-                run.target_values_zatoshi.len() as u32,
-                denomination_confirmations_required(),
-            )?
-            .next_action_height
-        }
+        prepared_notes_proof_ready_height(db_path, &run.run_id, network, timing_policy)?
+            .map(|ready_height| persisted.unwrap_or(ready_height).max(ready_height))
     };
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
     let mut stmt = conn
@@ -1624,6 +1615,9 @@ pub(crate) fn export_scheduled_migration_outbox(
             schedule_start_height,
             expiry_height,
         });
+    }
+    if items.is_empty() && next_proof_height.is_none() {
+        return Ok(None);
     }
     Ok(Some(MigrationOutboxBatch {
         run_id: run.run_id,
@@ -2514,6 +2508,45 @@ pub(crate) fn prepared_note_spend_metadata_available(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     prepared_note_spend_metadata_available_for_run(&conn, run_id)
+}
+
+pub(crate) fn prepared_notes_proof_ready_height(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+) -> Result<Option<u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT DISTINCT txid_hex
+             FROM {PREPARED_NOTES_TABLE}
+             WHERE run_id = ?1
+             ORDER BY txid_hex"
+        ))
+        .map_err(|e| format!("Prepare migration proof readiness query: {e}"))?;
+    let txids = stmt
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Query migration proof readiness notes: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration proof readiness notes: {e}"))?;
+    if txids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut ready_height = 0u32;
+    for txid in txids {
+        let Some(identity) = local_denomination_chain_identity(&conn, &txid)? else {
+            return Ok(None);
+        };
+        ready_height = ready_height.max(proof_ready_height_for_note_mined_height(
+            network,
+            timing_policy,
+            identity.mined_height,
+        )?);
+    }
+    Ok(Some(ready_height))
 }
 
 pub(crate) fn pending_totals_for_run(
@@ -3705,7 +3738,7 @@ fn reconcile_denomination_confirmations(
     Ok(())
 }
 
-fn denomination_confirmations_required() -> u32 {
+pub(crate) fn denomination_confirmations_required() -> u32 {
     ConfirmationsPolicy::default().trusted().get()
 }
 

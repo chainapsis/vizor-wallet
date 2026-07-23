@@ -3,6 +3,15 @@ import Foundation
 import UIKit
 import UserNotifications
 
+func shouldResubmitMigrationPreparationTask(
+  success: Bool,
+  handedOff: Bool,
+  expired: Bool,
+  hasActivePreparation: Bool
+) -> Bool {
+  !success && !handedOff && expired && hasActivePreparation
+}
+
 @available(iOS 26.0, *)
 final class BackgroundMigrationPreparationManager {
   static let shared = BackgroundMigrationPreparationManager()
@@ -12,6 +21,8 @@ final class BackgroundMigrationPreparationManager {
     "com.keplr.vizor.ironwood-preparation.watchdog"
   private static let needsActionIdentifier =
     "com.keplr.vizor.ironwood-preparation.needs-action"
+  private static let proofReadyIdentifier =
+    "com.keplr.vizor.ironwood-preparation.proof-ready"
   private static let watchdogDelay: TimeInterval = 15 * 60
   private static let schedulingStateKey =
     "ironwoodMigrationPreparationSchedulingState"
@@ -150,7 +161,7 @@ final class BackgroundMigrationPreparationManager {
         runId,
         &preparation
       )
-      return code != 0 || preparation.state == 0
+      return code != 0 || preparation.state == 0 || preparation.state == 5
     }
     guard !hasPreparation else { return }
     BGTaskScheduler.shared.cancel(
@@ -214,7 +225,6 @@ final class BackgroundMigrationPreparationManager {
       guard let self else { return }
       self.stateLock.withPreparationLock { self.expired = true }
       _ = zcash_cancel_migration_preparation_sync()
-      self.postNeedsActionNotification()
       self.scheduleWatchdog()
     }
 
@@ -224,14 +234,20 @@ final class BackgroundMigrationPreparationManager {
         return
       }
       let success = self.runPreparation()
-      let handedOff = self.stateLock.withPreparationLock {
-        self.foregroundHandoffRequested
+      let (handedOff, didExpire) = self.stateLock.withPreparationLock {
+        (self.foregroundHandoffRequested, self.expired)
       }
       self.stateLock.withPreparationLock {
         self.taskRunning = false
         self.taskProgress = nil
         self.foregroundHandoffRequested = false
       }
+      let shouldResubmit = shouldResubmitMigrationPreparationTask(
+        success: success,
+        handedOff: handedOff,
+        expired: didExpire,
+        hasActivePreparation: didExpire && self.hasResumablePreparation()
+      )
       if success || handedOff {
         BGTaskScheduler.shared.cancel(
           taskRequestWithIdentifier: Self.taskIdentifier
@@ -240,10 +256,38 @@ final class BackgroundMigrationPreparationManager {
       if handedOff {
         self.recordSchedulingState("handed_off_to_foreground")
         self.scheduleWatchdog()
+      } else if shouldResubmit {
+        self.recordSchedulingState("expired_resubmitting")
       } else {
         self.recordSchedulingState(success ? "completed" : "failed")
       }
       task.setTaskCompleted(success: success || handedOff)
+      if shouldResubmit {
+        self.start { _ in }
+      }
+    }
+  }
+
+  private func hasResumablePreparation() -> Bool {
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return false }
+    return manifests.contains { manifest in
+      guard let runId = manifest.expectedRunId else { return false }
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let code = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      return code == 0 && (preparation.state == 0 || preparation.state == 5)
     }
   }
 
@@ -298,7 +342,11 @@ final class BackgroundMigrationPreparationManager {
         updateProgress(aggregatePreparationUnits(accountProgress))
 
         switch preparation.state {
-        case 1, 4:
+        case 1:
+          postProofReadyNotification()
+          accountProgress[entry.offset] = 1
+          updateProgress(aggregatePreparationUnits(accountProgress))
+        case 4:
           accountProgress[entry.offset] = 1
           updateProgress(aggregatePreparationUnits(accountProgress))
         case 2:
@@ -357,7 +405,10 @@ final class BackgroundMigrationPreparationManager {
       postNeedsActionNotification()
       return nil
     }
-    guard preparation.state == 0 else { return preparation }
+    let waitingForProofAnchor = preparation.state == 5
+    guard preparation.state == 0 || waitingForProofAnchor else {
+      return preparation
+    }
 
     guard UIApplication.shared.isProtectedDataAvailable else {
       print("[BGPreparation] protected data unavailable")
@@ -380,7 +431,7 @@ final class BackgroundMigrationPreparationManager {
       }
       if syncCode != 0 {
         print("[BGPreparation] sync failed: \(syncCode)")
-        if !isForegroundHandoffRequested {
+        if !isExpired && !isForegroundHandoffRequested {
           postNeedsActionNotification()
         }
         return nil
@@ -388,6 +439,22 @@ final class BackgroundMigrationPreparationManager {
     }
 
     guard !isExpired && !isForegroundHandoffRequested else { return nil }
+
+    if waitingForProofAnchor {
+      let inspectCode = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      guard inspectCode == 0 else {
+        print("[BGPreparation] proof readiness inspection failed: \(inspectCode)")
+        postNeedsActionNotification()
+        return nil
+      }
+      return preparation
+    }
 
     guard UIApplication.shared.isProtectedDataAvailable else {
       print("[BGPreparation] protected data unavailable")
@@ -411,7 +478,7 @@ final class BackgroundMigrationPreparationManager {
     }
     guard advanceCode == 0 else {
       print("[BGPreparation] advance failed: \(advanceCode)")
-      if !isForegroundHandoffRequested {
+      if !isExpired && !isForegroundHandoffRequested {
         postNeedsActionNotification()
       }
       return nil
@@ -533,6 +600,20 @@ final class BackgroundMigrationPreparationManager {
     )
   }
 
+  private func postProofReadyNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Migration proof is ready"
+    content.body = "Open Vizor to continue your migration."
+    content.sound = .default
+    UNUserNotificationCenter.current().add(
+      UNNotificationRequest(
+        identifier: Self.proofReadyIdentifier,
+        content: content,
+        trigger: nil
+      )
+    )
+  }
+
 }
 
 @available(iOS 26.0, *)
@@ -542,8 +623,8 @@ private func migrationPreparationSyncProgressCallback(
   BackgroundMigrationPreparationManager.shared.recordSyncProgress(progress)
 }
 
-private extension NSLock {
-  func withPreparationLock<T>(_ body: () -> T) -> T {
+extension NSLock {
+  fileprivate func withPreparationLock<T>(_ body: () -> T) -> T {
     lock()
     defer { unlock() }
     return body()
