@@ -36,11 +36,11 @@ void main() {
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
-    expect(migrationPlanCompletionDurationLabel(plan), '~4 hrs');
+    expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
     expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
-      'Jul 17, 15:11',
+      'Jul 17, 18:11',
     );
   });
 
@@ -73,6 +73,30 @@ void main() {
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
       'Jul 17, 12:03',
+    );
+  });
+
+  test('adds later schedule offsets after migration preparation', () {
+    expect(
+      migrationPlanPartDelayBlocks(
+        preparationDelayBlocks: 288,
+        scheduleOffsetBlocks: 0,
+      ),
+      288,
+    );
+    expect(
+      migrationPlanPartDelayBlocks(
+        preparationDelayBlocks: 288,
+        scheduleOffsetBlocks: 144,
+      ),
+      432,
+    );
+    expect(
+      migrationPlanPartDelayBlocks(
+        preparationDelayBlocks: 288,
+        scheduleOffsetBlocks: 288,
+      ),
+      576,
     );
   });
 

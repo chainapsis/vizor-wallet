@@ -107,9 +107,7 @@ int migrationPlanPreparationDelayBlocks(
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,
   required int scheduleOffsetBlocks,
-}) => preparationDelayBlocks > scheduleOffsetBlocks
-    ? preparationDelayBlocks
-    : scheduleOffsetBlocks;
+}) => preparationDelayBlocks + scheduleOffsetBlocks;
 
 String _formatMigrationDuration(int blocks) {
   final seconds = blocks * _estimatedSecondsPerBlock;
