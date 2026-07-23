@@ -51,9 +51,6 @@ int32_t zcash_advance_migration_preparation(
     const char* network,
     const char* account_uuid,
     const char* expected_run_id,
-    const uint8_t* credential,
-    uintptr_t credential_len,
-    const char* salt_base64,
     CMigrationPreparationProgress* output
 );
 

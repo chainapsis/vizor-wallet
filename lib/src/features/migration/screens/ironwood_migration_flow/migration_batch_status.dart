@@ -658,26 +658,4 @@ String _migrationSpendableBalanceLabel({
 
 List<rust_sync.MigrationPartStatus> _displayMigrationParts(
   rust_sync.MigrationStatus status,
-) {
-  final parts = [...status.parts];
-  if (status.phase != kIronwoodMigrationReadyToMigratePhase) {
-    return parts;
-  }
-
-  final hasTransferProgress =
-      status.pendingTxCount > 0 ||
-      status.broadcastedTxCount > 0 ||
-      status.confirmedTxCount > 0 ||
-      status.scheduledBroadcasts.isNotEmpty ||
-      parts.any(
-        (part) =>
-            part.state == rust_sync.MigrationPartState.scheduled ||
-            part.state == rust_sync.MigrationPartState.migrating ||
-            part.state == rust_sync.MigrationPartState.confirming ||
-            part.state == rust_sync.MigrationPartState.needsInput ||
-            part.scheduleStartHeight != null ||
-            part.scheduledHeight != null,
-      );
-  if (hasTransferProgress) return parts;
-  return const <rust_sync.MigrationPartStatus>[];
-}
+) => [...status.parts];

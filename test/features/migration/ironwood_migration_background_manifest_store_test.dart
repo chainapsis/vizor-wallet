@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_manifest_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -13,10 +13,8 @@ void main() {
   });
 
   test('manifest round-trips through scoped secure storage', () async {
-    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+    final store = IronwoodMigrationBackgroundManifestStore.testing(
       storage: const FlutterSecureStorage(),
-      randomBytes: (length) =>
-          Uint8List.fromList(List<int>.generate(length, (index) => index)),
     );
 
     final prepared = await store.prepare(
@@ -27,19 +25,13 @@ void main() {
     );
 
     expect(
-      IronwoodMigrationBackgroundCredentialStore.storageKey(
+      IronwoodMigrationBackgroundManifestStore.storageKey(
         network: 'test',
         accountUuid: 'account-1',
       ),
       'test:account-1',
     );
     expect(prepared.version, 1);
-    expect(
-      prepared.credentialHex,
-      '000102030405060708090a0b0c0d0e0f'
-      '101112131415161718191a1b1c1d1e1f',
-    );
-    expect(prepared.saltBase64, base64Encode(List<int>.generate(16, (i) => i)));
     expect(prepared.expectedRunId, isNull);
     expect(
       await store.read(network: 'test', accountUuid: 'account-1'),
@@ -77,8 +69,6 @@ void main() {
       dbPath: '/new-container/wallet.db',
     );
     expect(relocated.dbPath, '/new-container/wallet.db');
-    expect(relocated.credentialHex, prepared.credentialHex);
-    expect(relocated.saltBase64, prepared.saltBase64);
     expect(relocated.expectedRunId, 'run-1');
   });
 
@@ -89,15 +79,11 @@ void main() {
       'accountUuid': 'account-1',
       'dbPath': '/tmp/wallet.db',
       'lightwalletdUrl': 'https://lwd.example:443',
-      'credentialHex': List.filled(32, 'ab').join(),
-      'saltBase64': base64Encode(List<int>.filled(16, 7)),
       'expectedRunId': null,
     };
 
     expect(
-      IronwoodMigrationBackgroundCredentialManifest.decode(
-        jsonEncode(valid),
-      ).encode(),
+      IronwoodMigrationBackgroundManifest.decode(jsonEncode(valid)).encode(),
       jsonEncode(valid),
     );
 
@@ -107,10 +93,6 @@ void main() {
       {...valid, 'version': '1'},
       {...valid, 'network': 'unknown'},
       {...valid, 'accountUuid': ''},
-      {...valid, 'credentialHex': List.filled(32, 'AB').join()},
-      {...valid, 'credentialHex': List.filled(31, 'ab').join()},
-      {...valid, 'saltBase64': base64Encode(List<int>.filled(15, 7))},
-      {...valid, 'saltBase64': 'not-base64'},
       {...valid, 'expectedRunId': ''},
       {...valid, 'expectedRunId': 7},
       const <Object?>[],
@@ -118,9 +100,7 @@ void main() {
 
     for (final invalid in invalidManifests) {
       expect(
-        () => IronwoodMigrationBackgroundCredentialManifest.decode(
-          jsonEncode(invalid),
-        ),
+        () => IronwoodMigrationBackgroundManifest.decode(jsonEncode(invalid)),
         throwsFormatException,
         reason: '$invalid',
       );
@@ -128,20 +108,17 @@ void main() {
   });
 
   test('stored manifest must match its network and account scope', () async {
-    final raw = IronwoodMigrationBackgroundCredentialManifest(
+    final raw = IronwoodMigrationBackgroundManifest(
       version: 1,
       network: 'main',
       accountUuid: 'account-2',
       dbPath: '/tmp/wallet.db',
       lightwalletdUrl: 'https://lwd.example:443',
-      credentialHex: List.filled(32, 'ab').join(),
-      saltBase64: base64Encode(List<int>.filled(16, 7)),
       expectedRunId: null,
     ).encode();
     FlutterSecureStorage.setMockInitialValues({'test:account-1': raw});
-    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+    final store = IronwoodMigrationBackgroundManifestStore.testing(
       storage: const FlutterSecureStorage(),
-      randomBytes: (length) => Uint8List(length),
     );
 
     expect(
@@ -151,9 +128,8 @@ void main() {
   });
 
   test('binding a different run id fails closed', () async {
-    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+    final store = IronwoodMigrationBackgroundManifestStore.testing(
       storage: const FlutterSecureStorage(),
-      randomBytes: (length) => Uint8List(length),
     );
     await store.prepare(
       network: 'main',
@@ -173,7 +149,7 @@ void main() {
         accountUuid: 'account-1',
         expectedRunId: 'run-2',
       ),
-      throwsA(isA<IronwoodMigrationBackgroundCredentialRunMismatchException>()),
+      throwsA(isA<IronwoodMigrationBackgroundManifestRunMismatchException>()),
     );
   });
 
@@ -276,15 +252,14 @@ void main() {
   });
 
   test(
-    'Android quiesce retains the credential until revocation commits',
+    'Android quiesce retains the manifest until revocation commits',
     () async {
       final storage = FlutterSecureStorage();
-      final store = IronwoodMigrationBackgroundCredentialStore.testing(
+      final store = IronwoodMigrationBackgroundManifestStore.testing(
         storage: storage,
-        randomBytes: (length) => Uint8List(length),
       );
       final lifecycle = IronwoodMigrationBackgroundLifecycle(
-        credentialStore: store,
+        manifestStore: store,
         isIOS: false,
         isAndroid: true,
       );

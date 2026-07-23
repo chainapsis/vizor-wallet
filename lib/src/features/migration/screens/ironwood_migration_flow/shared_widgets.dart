@@ -63,141 +63,6 @@ String _formatZecAmountCompact(BigInt zatoshi) {
   ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
 }
 
-double _transferProgress(rust_sync.MigrationStatus status) {
-  final partProgress = _migrationPartProgress(status);
-  if (partProgress != null) return partProgress;
-
-  if (status.totalCount > 0) {
-    final transferredCount = _transferCompletedCountForPhase(status);
-    final progress = (transferredCount / status.totalCount)
-        .clamp(0, 1)
-        .toDouble();
-    if (_isWaitingForTrustedMigrationComplete(status)) {
-      return math.min(progress, 0.99);
-    }
-    return progress;
-  }
-
-  final explicitProgress = _statusProgress(status);
-  if (explicitProgress != null) return explicitProgress.clamp(0, 1);
-
-  return switch (status.phase) {
-    kIronwoodMigrationBroadcastScheduledPhase => 0.45,
-    kIronwoodMigrationBroadcastingPhase => 0.65,
-    kIronwoodMigrationWaitingConfirmationsPhase => 0.85,
-    _ => 0,
-  };
-}
-
-bool _isWaitingForTrustedMigrationComplete(rust_sync.MigrationStatus status) {
-  if (status.parts.isNotEmpty) {
-    return status.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
-        status.parts.every(
-          (part) =>
-              part.state == rust_sync.MigrationPartState.confirming ||
-              part.state == rust_sync.MigrationPartState.completed,
-        ) &&
-        status.parts.any(
-          (part) => part.state == rust_sync.MigrationPartState.confirming,
-        );
-  }
-  return status.phase == kIronwoodMigrationWaitingConfirmationsPhase &&
-      status.totalCount > 0 &&
-      status.confirmedTxCount >= status.totalCount;
-}
-
-int _transferCompletedCountForPhase(rust_sync.MigrationStatus status) {
-  if (status.parts.isNotEmpty) {
-    return status.parts
-        .where(
-          (part) =>
-              part.state == rust_sync.MigrationPartState.confirming ||
-              part.state == rust_sync.MigrationPartState.completed,
-        )
-        .length;
-  }
-  return switch (status.phase) {
-    kIronwoodMigrationWaitingConfirmationsPhase => status.confirmedTxCount,
-    kIronwoodMigrationBroadcastingPhase => status.broadcastedTxCount,
-    _ => math.max(status.confirmedTxCount, status.broadcastedTxCount),
-  };
-}
-
-_TransferAmount _leftToTransferAmount(
-  rust_sync.MigrationStatus status, {
-  required double progress,
-}) {
-  final total = _sumTargetValues(status);
-  if (total <= BigInt.zero) {
-    return _TransferAmount(value: BigInt.zero, isEstimated: false);
-  }
-
-  if (status.totalCount > 0) {
-    if (_isWaitingForTrustedMigrationComplete(status)) {
-      return _leftToTransferAmountFromProgress(total, progress);
-    }
-    final completedCount = math.min(
-      status.totalCount,
-      _transferCompletedCountForPhase(status),
-    );
-    final transferred =
-        (total * BigInt.from(completedCount)) ~/ BigInt.from(status.totalCount);
-    final left = total - transferred;
-    return _TransferAmount(
-      value: left > BigInt.zero ? left : BigInt.zero,
-      isEstimated: completedCount > 0 && completedCount < status.totalCount,
-    );
-  }
-
-  return _leftToTransferAmountFromProgress(total, progress);
-}
-
-_TransferAmount _leftToTransferAmountFromProgress(
-  BigInt total,
-  double progress,
-) {
-  final scaledProgress = BigInt.from((progress.clamp(0, 1) * 10000).round());
-  final transferred = (total * scaledProgress) ~/ BigInt.from(10000);
-  final left = total - transferred;
-  return _TransferAmount(
-    value: left > BigInt.zero ? left : BigInt.zero,
-    isEstimated:
-        scaledProgress > BigInt.zero && scaledProgress < BigInt.from(10000),
-  );
-}
-
-int _plannedTransferBatchCount(rust_sync.MigrationStatus status) {
-  if (status.parts.isNotEmpty) return status.parts.length;
-  if (status.totalCount > 0) return status.totalCount;
-
-  final progressedCount = status.broadcastedTxCount > status.confirmedTxCount
-      ? status.broadcastedTxCount
-      : status.confirmedTxCount;
-  final countFromProgress = status.pendingTxCount + progressedCount;
-  if (countFromProgress > 0) return countFromProgress;
-  if (status.scheduledBroadcasts.isNotEmpty) {
-    return status.scheduledBroadcasts.length;
-  }
-
-  return math.max(1, status.denominationSplitTotalCount);
-}
-
-int _currentTransferBatchIndex(rust_sync.MigrationStatus status) {
-  final planned = _plannedTransferBatchCount(status);
-  if (status.parts.isNotEmpty) {
-    final firstIncomplete = status.parts.indexWhere(
-      (part) => part.state != rust_sync.MigrationPartState.completed,
-    );
-    return firstIncomplete < 0 ? planned : firstIncomplete + 1;
-  }
-  final completedOrSubmitted = switch (status.phase) {
-    kIronwoodMigrationWaitingConfirmationsPhase => status.confirmedTxCount,
-    kIronwoodMigrationBroadcastingPhase => status.broadcastedTxCount,
-    _ => math.max(status.confirmedTxCount, status.broadcastedTxCount),
-  };
-  return math.min(planned, math.max(1, completedOrSubmitted + 1));
-}
-
 double? _migrationPartProgress(rust_sync.MigrationStatus status) {
   if (status.parts.isEmpty) return null;
   var progress = 0.0;
@@ -211,53 +76,6 @@ double? _migrationPartProgress(rust_sync.MigrationStatus status) {
     };
   }
   return (progress / status.parts.length).clamp(0, 1);
-}
-
-class _TransferAmount {
-  const _TransferAmount({required this.value, required this.isEstimated});
-
-  final BigInt value;
-  final bool isEstimated;
-}
-
-_TransferAmount _currentTransferBatchAmount(
-  rust_sync.MigrationStatus status, {
-  required int plannedBatchCount,
-}) {
-  final total = _sumTargetValues(status);
-  if (total <= BigInt.zero) {
-    return _TransferAmount(value: BigInt.zero, isEstimated: false);
-  }
-  return _TransferAmount(
-    value: total ~/ BigInt.from(math.max(1, plannedBatchCount)),
-    isEstimated: true,
-  );
-}
-
-String _currentTransferBatchStatus(rust_sync.MigrationStatus status) {
-  return switch (status.phase) {
-    kIronwoodMigrationBroadcastScheduledPhase => 'Scheduled',
-    kIronwoodMigrationBroadcastingPhase => 'Broadcasting...',
-    kIronwoodMigrationWaitingConfirmationsPhase => 'Confirming...',
-    _ => 'In progress',
-  };
-}
-
-String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
-  if (status.phase == kIronwoodMigrationCompletePhase) {
-    return 'Completed';
-  }
-
-  final nextScheduledBroadcast = _nextScheduledBroadcast(status);
-  if (nextScheduledBroadcast != null) {
-    return 'Block ${nextScheduledBroadcast.scheduledHeight}';
-  }
-
-  if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    return 'Confirming';
-  }
-
-  return '~${status.scheduleMeanDelayBlocks} blocks';
 }
 
 String _transferEstimatedCompletion(
@@ -280,9 +98,7 @@ String _transferEstimatedCompletion(
     parts: displayParts,
   );
   if (remainingBlocks == null) {
-    return _formatMigrationBlockDurationEstimate(
-      _fallbackRemainingMigrationBlocks(status),
-    );
+    return 'Schedule pending';
   }
   return _formatMigrationBlockDurationEstimate(math.max(1, remainingBlocks));
 }
@@ -303,51 +119,19 @@ int? _remainingMigrationCompletionBlocks(
   List<rust_sync.MigrationPartStatus>? parts,
 }) {
   final displayParts = parts ?? _displayMigrationParts(status);
-  if (displayParts.isNotEmpty) {
-    var remainingBlocks = 0;
-    for (final part in displayParts) {
-      final partRemaining = _remainingMigrationPartCompletionBlocks(
-        part,
-        currentHeight: currentHeight,
-        fallbackDelayBlocks: status.scheduleMeanDelayBlocks,
-      );
-      if (partRemaining == null) return null;
-      remainingBlocks = math.max(remainingBlocks, partRemaining);
-    }
-    return remainingBlocks;
-  }
+  if (displayParts.isEmpty) return null;
 
-  final scheduledBroadcasts = status.scheduledBroadcasts
-      .where((broadcast) => broadcast.status == 'scheduled')
-      .toList();
-  if (scheduledBroadcasts.isNotEmpty) {
-    final confirmationTarget = _legacyMigrationConfirmationTarget(status);
-    var remainingBlocks = 0;
-    for (final broadcast in scheduledBroadcasts) {
-      final scheduledBlocks = _remainingScheduledMigrationBlocks(
-        scheduledHeight: broadcast.scheduledHeight,
-        scheduleStartHeight: broadcast.scheduleStartHeight,
-        currentHeight: currentHeight,
-        fallbackDelayBlocks: status.scheduleMeanDelayBlocks,
-      );
-      remainingBlocks = math.max(
-        remainingBlocks,
-        scheduledBlocks + confirmationTarget,
-      );
-    }
-    return remainingBlocks;
-  }
-
-  if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    final target = _legacyMigrationConfirmationTarget(status);
-    final remainingConfirmations = math.max(
-      0,
-      target - status.confirmedTxCount,
+  var remainingBlocks = 0;
+  for (final part in displayParts) {
+    final partRemaining = _remainingMigrationPartCompletionBlocks(
+      part,
+      currentHeight: currentHeight,
+      fallbackDelayBlocks: status.scheduleMeanDelayBlocks,
     );
-    return remainingConfirmations;
+    if (partRemaining == null) return null;
+    remainingBlocks = math.max(remainingBlocks, partRemaining);
   }
-
-  return null;
+  return remainingBlocks;
 }
 
 int? _remainingMigrationPartCompletionBlocks(
@@ -392,45 +176,6 @@ int _remainingScheduledMigrationBlocks({
 
 int _migrationPartConfirmationTarget(rust_sync.MigrationPartStatus part) {
   return math.max(1, part.confirmationTarget);
-}
-
-int _legacyMigrationConfirmationTarget(rust_sync.MigrationStatus status) {
-  if (status.parts.isNotEmpty) {
-    return status.parts.fold<int>(
-      1,
-      (maxTarget, part) =>
-          math.max(maxTarget, _migrationPartConfirmationTarget(part)),
-    );
-  }
-  if (status.totalCount > 0) return status.totalCount;
-  return _migrationPrepareConfirmationBlocks;
-}
-
-int _fallbackRemainingMigrationBlocks(rust_sync.MigrationStatus status) {
-  final totalCount = status.totalCount > 0
-      ? status.totalCount
-      : math.max(1, status.targetValuesZatoshi.length);
-  final completedCount = status.parts.isNotEmpty
-      ? status.parts
-            .where(
-              (part) => part.state == rust_sync.MigrationPartState.completed,
-            )
-            .length
-      : math.max(status.confirmedTxCount, status.broadcastedTxCount);
-  final remainingCount = math.max(1, totalCount - completedCount);
-  return math.max(1, status.scheduleMeanDelayBlocks) * remainingCount +
-      _migrationPrepareConfirmationBlocks;
-}
-
-rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
-  rust_sync.MigrationStatus status,
-) {
-  rust_sync.MigrationScheduledBroadcast? fallbackScheduled;
-  for (final broadcast in status.scheduledBroadcasts) {
-    if (broadcast.status != 'scheduled') continue;
-    fallbackScheduled ??= broadcast;
-  }
-  return fallbackScheduled;
 }
 
 String _estimatedMigrationArrivalLabel(

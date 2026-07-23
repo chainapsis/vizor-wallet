@@ -158,13 +158,6 @@ pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
     code
 }
 
-unsafe fn credential_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
-    if ptr.is_null() || len == 0 {
-        return None;
-    }
-    Some(std::slice::from_raw_parts(ptr, len))
-}
-
 fn fill_migration_preparation_progress(
     output: &mut CMigrationPreparationProgress,
     status: &sync::MigrationStatus,
@@ -275,9 +268,6 @@ pub extern "C" fn zcash_advance_migration_preparation(
     network: *const c_char,
     account_uuid: *const c_char,
     expected_run_id: *const c_char,
-    credential: *const u8,
-    credential_len: usize,
-    salt_base64: *const c_char,
     output: *mut CMigrationPreparationProgress,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
@@ -300,16 +290,6 @@ pub extern "C" fn zcash_advance_migration_preparation(
         let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
             return 1;
         };
-        let Some(salt_base64) = (unsafe { c_str_to_str(salt_base64) }) else {
-            return 1;
-        };
-        let Some(credential) = (unsafe { credential_bytes(credential, credential_len) }) else {
-            return 1;
-        };
-        if credential.len() != 64 || !credential.iter().all(u8::is_ascii_hexdigit) {
-            log::error!("ffi: migration preparation credential must be 64 hexadecimal bytes");
-            return 1;
-        }
         let Some(output) = (unsafe { output.as_mut() }) else {
             return 1;
         };
@@ -336,8 +316,6 @@ pub extern "C" fn zcash_advance_migration_preparation(
             network,
             account_uuid,
             expected_run_id,
-            zeroize::Zeroizing::new(credential.to_vec()),
-            salt_base64,
             control.cancel.as_ref(),
         ));
         if let Err(error) = advance {

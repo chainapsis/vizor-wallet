@@ -389,11 +389,6 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Migration type - Migrating',
                       builder: buildMobileIronwoodMigrationMigratingUseCase,
                     ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Recovery required',
-                      builder:
-                          buildMobileIronwoodMigrationRecoveryRequiredUseCase,
-                    ),
                   ],
                 ),
               ],

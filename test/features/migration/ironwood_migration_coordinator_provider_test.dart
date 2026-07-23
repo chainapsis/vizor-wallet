@@ -11,9 +11,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
-import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_manifest_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -508,7 +507,7 @@ void main() {
   testWidgets(
     'initial recovery starts bound preparation once and refreshes stay read-only',
     (tester) async {
-      final store = IronwoodMigrationBackgroundCredentialStore();
+      final store = IronwoodMigrationBackgroundManifestStore();
       await _bindBackgroundPreparationManifest(store);
       final preparationStarts = <String>[];
       final container = _container(
@@ -520,7 +519,7 @@ void main() {
         broadcasts: [],
         syncState: SyncState(),
         isIOS: true,
-        backgroundCredentialStore: store,
+        backgroundManifestStore: store,
         backgroundPreparationStarts: preparationStarts,
         mutableAccounts: true,
       );
@@ -551,7 +550,7 @@ void main() {
   testWidgets('initial recovery includes a bound Keystone preparation', (
     tester,
   ) async {
-    final store = IronwoodMigrationBackgroundCredentialStore();
+    final store = IronwoodMigrationBackgroundManifestStore();
     await _bindBackgroundPreparationManifest(store, accountUuid: _hardwareUuid);
     final preparationStarts = <String>[];
     final container = _container(
@@ -563,7 +562,7 @@ void main() {
       broadcasts: [],
       syncState: SyncState(),
       isIOS: true,
-      backgroundCredentialStore: store,
+      backgroundManifestStore: store,
       backgroundPreparationStarts: preparationStarts,
     );
     addTearDown(container.dispose);
@@ -582,7 +581,7 @@ void main() {
   testWidgets(
     'unlock and foreground resume each recover bound preparation once',
     (tester) async {
-      final store = IronwoodMigrationBackgroundCredentialStore();
+      final store = IronwoodMigrationBackgroundManifestStore();
       await _bindBackgroundPreparationManifest(store);
       final preparationStarts = <String>[];
       final container = _container(
@@ -594,7 +593,7 @@ void main() {
         broadcasts: [],
         syncState: SyncState(),
         isIOS: true,
-        backgroundCredentialStore: store,
+        backgroundManifestStore: store,
         backgroundPreparationStarts: preparationStarts,
         initialSecurityState: const AppSecurityState(
           isPasswordConfigured: true,
@@ -674,7 +673,7 @@ ProviderContainer _container({
   bool usesNativeOutbox = true,
   SyncState? syncState,
   bool isIOS = false,
-  IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
+  IronwoodMigrationBackgroundManifestStore? backgroundManifestStore,
   List<String>? backgroundPreparationStarts,
   bool mutableAccounts = false,
   AppSecurityState? initialSecurityState,
@@ -688,7 +687,6 @@ ProviderContainer _container({
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             null,
-    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => _endpoint,
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
@@ -696,8 +694,7 @@ ProviderContainer _container({
     isIOS: () => isIOS,
     supportsBackgroundMigration: () => usesNativeOutbox,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
-    backgroundCredentialStore:
-        backgroundCredentialStore ?? _BoundCredentialStore(),
+    backgroundManifestStore: backgroundManifestStore ?? _BoundManifestStore(),
     startBackgroundPreparation: backgroundPreparationStarts == null
         ? null
         : () async {
@@ -711,8 +708,6 @@ ProviderContainer _container({
           required lightwalletdUrl,
           required network,
           required accountUuid,
-          required password,
-          required saltBase64,
         }) async {
           broadcasts.add(accountUuid);
           if (broadcast != null) return broadcast(accountUuid);
@@ -730,7 +725,6 @@ ProviderContainer _container({
           required network,
           required accountUuid,
           required password,
-          required saltBase64,
           required approvedSchedule,
         }) async {
           softwareStarts.add(accountUuid);
@@ -756,7 +750,7 @@ ProviderContainer _container({
 }
 
 Future<void> _bindBackgroundPreparationManifest(
-  IronwoodMigrationBackgroundCredentialStore store, {
+  IronwoodMigrationBackgroundManifestStore store, {
   String accountUuid = _softwareUuid,
 }) async {
   await store.prepare(
@@ -804,21 +798,18 @@ class _MutableSecurityNotifier extends AppSecurityNotifier {
   }
 }
 
-class _BoundCredentialStore extends IronwoodMigrationBackgroundCredentialStore {
+class _BoundManifestStore extends IronwoodMigrationBackgroundManifestStore {
   @override
-  Future<IronwoodMigrationBackgroundCredentialManifest?> read({
+  Future<IronwoodMigrationBackgroundManifest?> read({
     required String network,
     required String accountUuid,
   }) async {
-    return IronwoodMigrationBackgroundCredentialManifest(
+    return IronwoodMigrationBackgroundManifest(
       version: 1,
       network: network,
       accountUuid: accountUuid,
       dbPath: '/tmp/wallet.db',
       lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
-      credentialHex:
-          '0000000000000000000000000000000000000000000000000000000000000000',
-      saltBase64: 'AAAAAAAAAAAAAAAAAAAAAA==',
       expectedRunId: 'run-1',
     );
   }

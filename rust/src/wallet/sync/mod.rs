@@ -27,6 +27,7 @@ mod broadcast;
 mod migration;
 mod pczt;
 mod send;
+mod shared_migration;
 mod transactions;
 
 // Re-export the split submodules at the `wallet::sync` path so every
@@ -39,8 +40,8 @@ mod transactions;
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
 pub(crate) use migration::{
-    configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    MigrationPartState, MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
+    delete_account_migration_rows_with_tx, MigrationPartState, MigrationScheduleEntry,
+    MigrationStatus,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
@@ -48,25 +49,40 @@ pub use pczt::{
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::get_orchard_migration_immediate_plan;
 pub(crate) use send::{
-    advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
-    complete_orchard_migration_denominations_pczt, complete_orchard_migration_single_qr_pczt,
-    discard_all_keystone_migration_requests, discard_keystone_migration_request,
-    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
-    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
-    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
-    prepare_orchard_migration_single_qr_pczt, retire_unbroadcast_orchard_migration,
-    KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
+    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
 pub use send::{
-    broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
     estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
     ExecuteProposalResult, IronwoodMigrationResult,
 };
 pub(crate) use send::{
-    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
+    migrate_orchard_to_ironwood_immediately, KeystoneSignedMigrationMessage,
+    OrchardMigrationImmediatePlan,
 };
-pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
+pub(crate) use shared_migration::{
+    advance_preparation as advance_orchard_migration_preparation_for_run,
+    complete_batch_pczt as complete_orchard_migration_batch_pczt,
+    complete_denominations_pczt as complete_orchard_migration_denominations_pczt,
+    complete_single_qr_pczt as complete_orchard_migration_single_qr_pczt,
+    discard_all_keystone_requests as discard_all_keystone_migration_requests,
+    discard_keystone_request as discard_keystone_migration_request,
+    discard_keystone_requests_for_account as discard_keystone_migration_requests_for_account,
+    export_outbox as export_orchard_migration_outbox,
+    get_private_plan as get_orchard_migration_private_plan,
+    keystone_proof_status as keystone_migration_proof_status,
+    migrate_software as migrate_orchard_to_ironwood, migration_status,
+    prepare_batch_pczt as prepare_orchard_migration_batch_pczt,
+    prepare_denominations_pczt as prepare_orchard_migration_denominations_pczt,
+    prepare_outbox as prepare_orchard_migration_outbox,
+    prepare_single_qr_pczt as prepare_orchard_migration_single_qr_pczt,
+    reconcile_outbox_receipt as reconcile_orchard_migration_outbox_receipt,
+};
+pub use shared_migration::{
+    broadcast_due as broadcast_due_orchard_migration_transactions,
+    broadcast_one as broadcast_one_due_orchard_migration_transaction,
+};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::resubmit_pending_transactions;

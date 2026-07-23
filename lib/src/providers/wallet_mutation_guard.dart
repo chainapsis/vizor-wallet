@@ -3,7 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../features/migration/services/ironwood_migration_background_manifest_store.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
 

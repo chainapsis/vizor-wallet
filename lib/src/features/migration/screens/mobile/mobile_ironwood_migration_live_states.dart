@@ -290,12 +290,6 @@ class _MobileMigrationMigratingState
     final coordinatorError = accountUuid == null
         ? null
         : migrationCoordinator.errors[accountUuid];
-    final needsCredentialRecovery =
-        accountUuid != null &&
-        ironwoodMigrationNeedsCredentialRecovery(coordinatorError);
-    final recoveryInProgress =
-        accountUuid != null &&
-        migrationCoordinator.advancingAccounts.contains(accountUuid);
     final syncState = (ref.watch(syncProvider).value ?? SyncState())
         .scopedToAccount(accountUuid);
     final totalAmount = _mobileMigrationTotalAmountText(
@@ -412,18 +406,14 @@ class _MobileMigrationMigratingState
         ),
         const SizedBox(height: AppSpacing.md),
         _MigrationCanLeaveMessage(
-          primary: needsCredentialRecovery
-              ? 'Migration recovery required.'
-              : coordinatorError != null
+          primary: coordinatorError != null
               ? "Couldn't continue migration. Try again."
               : needsAttention
               ? 'Keep Vizor open & unlocked.'
               : waitingForSafeBlock
               ? 'Waiting for a safe block to continue.'
               : null,
-          secondary: needsCredentialRecovery
-              ? "Two saved transactions couldn't be reopened."
-              : coordinatorError != null || needsAttention
+          secondary: coordinatorError != null || needsAttention
               ? 'Vizor will retry automatically.'
               : waitingForSafeBlock
               ? 'You can leave this screen.'
@@ -435,17 +425,6 @@ class _MobileMigrationMigratingState
     final actions = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (needsCredentialRecovery) ...[
-          AppButton(
-            key: const ValueKey('mobile_ironwood_credential_recovery_button'),
-            expand: true,
-            onPressed: recoveryInProgress
-                ? null
-                : () => unawaited(_confirmRecovery(accountUuid)),
-            child: Text(recoveryInProgress ? 'Recovering...' : 'Recover'),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
         _MobileStatusBackHomeButton(
           key: const ValueKey('mobile_ironwood_status_back_home_button'),
           label: 'Go home',
@@ -488,84 +467,6 @@ class _MobileMigrationMigratingState
       // The coordinator retains the account-scoped error for presentation and
       // the next automatic retry.
     }
-  }
-
-  Future<void> _confirmRecovery(String accountUuid) async {
-    final appTheme = AppTheme.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AppTheme(
-        data: appTheme,
-        child: const _MobileMigrationRecoveryDialog(),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .recover(accountUuid);
-    } catch (_) {
-      // The coordinator retains the account-scoped error for presentation.
-    }
-  }
-}
-
-class _MobileMigrationRecoveryDialog extends StatelessWidget {
-  const _MobileMigrationRecoveryDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Dialog(
-      backgroundColor: colors.background.ground,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Rebuild migration?',
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Vizor will first check that the pending transactions were '
-                  'not sent. It will then rebuild the migration for only your '
-                  'remaining balance. Any confirmed transfers will stay '
-                  'unchanged.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  key: const ValueKey(
-                    'mobile_ironwood_confirm_credential_recovery',
-                  ),
-                  expand: true,
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Rebuild'),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                AppButton(
-                  expand: true,
-                  variant: AppButtonVariant.ghost,
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

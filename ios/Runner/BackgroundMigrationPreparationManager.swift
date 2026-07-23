@@ -185,7 +185,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func cancelIfNoActivePreparation() {
-    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    guard let manifests = IronwoodMigrationBackgroundManifestStore.loadAll()
     else { return }
     let hasPreparation = manifests.contains { manifest in
       guard let runId = manifest.expectedRunId else { return false }
@@ -424,7 +424,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func hasResumablePreparation() -> Bool {
-    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    guard let manifests = IronwoodMigrationBackgroundManifestStore.loadAll()
     else { return false }
     return manifests.contains { manifest in
       guard let runId = manifest.expectedRunId else { return false }
@@ -472,7 +472,7 @@ final class BackgroundMigrationPreparationManager {
     defer { zcash_end_migration_preparation_operation() }
     guard !isStopRequested else { return .cancelled }
 
-    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    guard let manifests = IronwoodMigrationBackgroundManifestStore.loadAll()
     else {
       postNeedsActionNotification()
       return .needsAction
@@ -542,9 +542,7 @@ final class BackgroundMigrationPreparationManager {
     syncContext: String,
     syncedContexts: inout Set<String>
   ) -> BackgroundMigrationPreparationStepResult {
-    guard let runId = manifest.expectedRunId,
-      manifest.credentialHex.count == 64
-    else {
+    guard let runId = manifest.expectedRunId else {
       return .needsAction
     }
     guard !isStopRequested else { return .cancelled }
@@ -622,20 +620,14 @@ final class BackgroundMigrationPreparationManager {
       return .retry(Self.transientRetryDelay)
     }
 
-    let credential = Data(manifest.credentialHex.utf8)
-    let advanceCode = credential.withUnsafeBytes { bytes in
-      zcash_advance_migration_preparation(
-        manifest.dbPath,
-        manifest.lightwalletdUrl,
-        manifest.network,
-        manifest.accountUuid,
-        runId,
-        bytes.bindMemory(to: UInt8.self).baseAddress,
-        UInt(bytes.count),
-        manifest.saltBase64,
-        &preparation
-      )
-    }
+    let advanceCode = zcash_advance_migration_preparation(
+      manifest.dbPath,
+      manifest.lightwalletdUrl,
+      manifest.network,
+      manifest.accountUuid,
+      runId,
+      &preparation
+    )
     guard advanceCode == 0 else {
       print("[BGPreparation] advance failed: \(advanceCode)")
       if isStopRequested { return .cancelled }

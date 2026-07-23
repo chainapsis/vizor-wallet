@@ -90,23 +90,14 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     _syncProgressRun(runId);
 
     final parts = _displayMigrationParts(status);
-    var values = parts.isNotEmpty
-        ? [for (final part in parts) part.valueZatoshi]
-        : [for (final value in status.targetValuesZatoshi) value];
-    if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
-      values = [BigInt.zero];
-    }
-    final partNumbers = parts.isNotEmpty
-        ? [for (final part in parts) part.partIndex + 1]
-        : [for (var i = 0; i < values.length; i++) i + 1];
+    final values = [for (final part in parts) part.valueZatoshi];
+    final partNumbers = [for (final part in parts) part.partIndex + 1];
     final statuses = status.phase == kIronwoodMigrationCompletePhase
         ? List<_MigrationBatchStatus>.filled(
             values.length,
             _MigrationBatchStatus.complete,
           )
-        : parts.isNotEmpty
-        ? [for (final part in parts) _migrationBatchStatus(part.state)]
-        : _legacyMigrationBatchStatuses(status, values.length);
+        : [for (final part in parts) _migrationBatchStatus(part.state)];
     if (widget.action == _StatusAction.needsInput &&
         !statuses.contains(_MigrationBatchStatus.needsInput)) {
       final inputIndex = statuses.indexWhere(
@@ -698,36 +689,6 @@ _MigrationBatchStatus _migrationBatchStatus(
   rust_sync.MigrationPartState.needsInput => _MigrationBatchStatus.needsInput,
 };
 
-List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
-  rust_sync.MigrationStatus status,
-  int count,
-) {
-  if (status.phase == kIronwoodMigrationCompletePhase) {
-    return List<_MigrationBatchStatus>.filled(
-      count,
-      _MigrationBatchStatus.complete,
-    );
-  }
-
-  final hasBroadcastSchedule =
-      status.scheduledBroadcasts.isNotEmpty ||
-      status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
-      status.phase == kIronwoodMigrationBroadcastingPhase ||
-      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
-  final submittedCount = status.confirmedTxCount + status.broadcastedTxCount;
-  return [
-    for (var i = 0; i < count; i++)
-      if (i < status.confirmedTxCount)
-        _MigrationBatchStatus.confirming
-      else if (i < submittedCount)
-        _MigrationBatchStatus.migrating
-      else if (hasBroadcastSchedule)
-        _MigrationBatchStatus.scheduled
-      else
-        _MigrationBatchStatus.preparing,
-  ];
-}
-
 int _currentMigrationHeight(SyncState? syncState) {
   if (syncState == null) return 0;
   final scannedHeight = syncState.scannedHeight;
@@ -779,26 +740,13 @@ List<double> _migrationBatchProgresses({
     return List<double>.filled(statuses.length, progress);
   }
 
-  if (parts.isNotEmpty) {
-    return [
-      for (var i = 0; i < parts.length; i++)
-        _migrationPartStatusProgress(
-          part: parts[i],
-          visualStatus: i < statuses.length
-              ? statuses[i]
-              : _migrationBatchStatus(parts[i].state),
-          currentHeight: currentHeight,
-          isAdvancing: isAdvancing,
-        ),
-    ];
-  }
-
   return [
-    for (var i = 0; i < statuses.length; i++)
-      _legacyMigrationBatchProgress(
-        status: status,
-        visualStatus: statuses[i],
-        index: i,
+    for (var i = 0; i < parts.length; i++)
+      _migrationPartStatusProgress(
+        part: parts[i],
+        visualStatus: i < statuses.length
+            ? statuses[i]
+            : _migrationBatchStatus(parts[i].state),
         currentHeight: currentHeight,
         isAdvancing: isAdvancing,
       ),
@@ -889,51 +837,6 @@ double _migrationPartStatusProgress({
   };
 }
 
-double _legacyMigrationBatchProgress({
-  required rust_sync.MigrationStatus status,
-  required _MigrationBatchStatus visualStatus,
-  required int index,
-  required int currentHeight,
-  required bool isAdvancing,
-}) {
-  return switch (visualStatus) {
-    _MigrationBatchStatus.none => 1,
-    _MigrationBatchStatus.preparing => isAdvancing ? 0.18 : 0.12,
-    _MigrationBatchStatus.scheduled => _legacyScheduledProgress(
-      status,
-      index,
-      currentHeight: currentHeight,
-    ),
-    _MigrationBatchStatus.migrating =>
-      isAdvancing ? _broadcastCommitProgressCap : _scheduledBlockProgressCap,
-    _MigrationBatchStatus.confirming =>
-      status.totalCount > 0
-          ? _confirmationProgress(
-              confirmationCount: status.confirmedTxCount,
-              confirmationTarget: status.totalCount,
-            )
-          : _broadcastCommitProgressCap,
-    _MigrationBatchStatus.complete => 1,
-    _MigrationBatchStatus.needsInput => _scheduledBlockProgressCap,
-  };
-}
-
-double _legacyScheduledProgress(
-  rust_sync.MigrationStatus status,
-  int index, {
-  required int currentHeight,
-}) {
-  final scheduled = [...status.scheduledBroadcasts]
-    ..sort((a, b) => a.scheduledHeight.compareTo(b.scheduledHeight));
-  if (index >= scheduled.length) return 0;
-  final broadcast = scheduled[index];
-  return _scheduledBlockProgress(
-    startHeight: broadcast.scheduleStartHeight,
-    targetHeight: broadcast.scheduledHeight,
-    currentHeight: currentHeight,
-  );
-}
-
 double _scheduledBlockProgress({
   required int? startHeight,
   required int? targetHeight,
@@ -997,6 +900,3 @@ String _privateMigrationContinueErrorMessage(Object error) {
   }
   return "Couldn't continue migration. Try again.";
 }
-
-// Kept for the unavailable-state fallback used by older deep links.
-// ignore: unused_element

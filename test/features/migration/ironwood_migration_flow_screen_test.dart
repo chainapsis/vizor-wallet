@@ -13,7 +13,6 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -167,7 +166,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.text('~4 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
@@ -194,9 +193,6 @@ void main() {
           ({required dbPath, required network, required accountUuid}) {
             return Future.value(_privatePlan());
           },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
       getEndpoint: () => defaultRpcEndpointConfig('main'),
       getSessionPassword: () => 'test-password',
       getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
@@ -209,8 +205,6 @@ void main() {
             required accountUuid,
             required approvedSchedule,
             required mnemonicBytes,
-            required password,
-            required saltBase64,
           }) {
             startedAccountUuid = accountUuid;
             startedSchedule = approvedSchedule;
@@ -403,9 +397,6 @@ void main() {
             ({required dbPath, required network, required accountUuid}) {
               return Future.value(_privatePlan());
             },
-        secureStore: AppSecureStore.testing(
-          storage: const FlutterSecureStorage(),
-        ),
         getEndpoint: () => defaultRpcEndpointConfig('main'),
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
@@ -418,8 +409,6 @@ void main() {
               required accountUuid,
               required approvedSchedule,
               required mnemonicBytes,
-              required password,
-              required saltBase64,
             }) {
               softwareStarted = true;
               return Future.value(_migrationResult());
@@ -446,23 +435,6 @@ void main() {
       );
     },
   );
-
-  testWidgets('legacy review route redirects to private review', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1440, 900);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      _migrationOptionsHarness(initialLocation: '/migration/review'),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Review migration plan'), findsOneWidget);
-    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-  });
 
   testWidgets('private status shows resume progress state', (tester) async {
     tester.view.devicePixelRatio = 1;
@@ -538,6 +510,21 @@ void main() {
             denominationSplitCompletedCount: 0,
             denominationSplitTotalCount: 6,
             totalCount: 6,
+            parts: [
+              for (var index = 0; index < 6; index++)
+                _migrationPart(
+                  index,
+                  const [
+                    1_000_000_000,
+                    200_000_000,
+                    50_000_000,
+                    20_000_000,
+                    10_000_000,
+                    2_000_000,
+                  ][index],
+                  rust_sync.MigrationPartState.preparing,
+                ),
+            ],
           ),
         ),
       );
@@ -629,52 +616,6 @@ void main() {
     expect(find.text('Preparing'), findsOneWidget);
     expect(find.text('Confirming...'), findsOneWidget);
   });
-
-  testWidgets(
-    'private ready-to-migrate status does not treat prepared denominations as completed transfers',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(1440, 900);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await tester.pumpWidget(
-        _privateStatusHarness(
-          status: _migrationStatus(
-            phase: kIronwoodMigrationReadyToMigratePhase,
-            activeRunId: 'run-1',
-            targetValuesZatoshi: const [1_000_000_000, 200_000_000],
-            totalCount: 2,
-            denominationConfirmationCount: 3,
-            denominationConfirmationTarget: 3,
-            denominationSplitCompletedCount: 2,
-            denominationSplitTotalCount: 2,
-            parts: [
-              _migrationPart(
-                0,
-                1_000_000_000,
-                rust_sync.MigrationPartState.completed,
-              ),
-              _migrationPart(
-                1,
-                200_000_000,
-                rust_sync.MigrationPartState.completed,
-              ),
-            ],
-          ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.text('Note split'), findsNothing);
-      expect(find.text('Completed'), findsNothing);
-      expect(find.text('Preparing'), findsNWidgets(2));
-      expect(find.text('Currently Spendable Balance'), findsOneWidget);
-      expect(find.text('0 ZEC'), findsOneWidget);
-      expect(find.text('~2 mins'), findsNothing);
-    },
-  );
 
   testWidgets('private status keeps scheduled batches on the transfer UI', (
     tester,
@@ -1073,6 +1014,26 @@ void main() {
               status: 'scheduled',
             ),
           ],
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+              scheduledHeight: 800,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduledHeight: 900,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduledHeight: 900,
+            ),
+          ],
         ),
         syncState: SyncState(
           accountUuid: 'account-1',
@@ -1337,9 +1298,6 @@ void main() {
           ({required dbPath, required network, required accountUuid}) {
             return Future.value(_privatePlan());
           },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
       getEndpoint: () => defaultRpcEndpointConfig('main'),
       getSessionPassword: () => 'test-password',
       broadcastDueMigration:
@@ -1348,8 +1306,6 @@ void main() {
             required lightwalletdUrl,
             required network,
             required accountUuid,
-            required password,
-            required saltBase64,
           }) {
             softwareContinued = true;
             return Future.value(_migrationResult());
@@ -1364,6 +1320,15 @@ void main() {
           status: _migrationStatus(
             phase: kIronwoodMigrationReadyToMigratePhase,
             activeRunId: 'run-1',
+            targetValuesZatoshi: const [10_000_000],
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.needsInput,
+              ),
+            ],
           ),
         ),
         initialLocation: '/migration/private/status',
@@ -1473,6 +1438,13 @@ void main() {
           broadcastedTxCount: 1,
           confirmedTxCount: 0,
           totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.confirming,
+            ),
+          ],
         ),
         initialLocation: '/migration/private/status',
         realStatusRoute: true,
@@ -1482,7 +1454,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('intro-route'), findsNothing);
-    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Confirming...'), findsOneWidget);
   });
 
   testWidgets('migration entry routes every resume phase to private status', (
@@ -1687,9 +1659,6 @@ void main() {
                     seenAccountUuid = accountUuid;
                     return Future.value(expected);
                   },
-              secureStore: AppSecureStore.testing(
-                storage: const FlutterSecureStorage(),
-              ),
             ),
           ),
         ],
@@ -1732,9 +1701,6 @@ void main() {
                     planCallCount += 1;
                     return Future.value(expected);
                   },
-              secureStore: AppSecureStore.testing(
-                storage: const FlutterSecureStorage(),
-              ),
             ),
           ),
         ],
@@ -1848,10 +1814,6 @@ Widget _migrationOptionsHarness({
             profilePictureId: kDefaultProfilePictureId,
           ),
         ),
-      ),
-      GoRoute(
-        path: '/migration/review',
-        redirect: (_, _) => '/migration/private/review',
       ),
       GoRoute(
         path: '/migration/private/review',
@@ -2429,7 +2391,6 @@ IronwoodMigrationService _migrationServiceForStart({
         ({required dbPath, required network, required accountUuid}) {
           return Future.value(_privatePlan());
         },
-    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
@@ -2442,8 +2403,6 @@ IronwoodMigrationService _migrationServiceForStart({
           required accountUuid,
           required approvedSchedule,
           required mnemonicBytes,
-          required password,
-          required saltBase64,
         }) {
           return onStart(accountUuid: accountUuid);
         },
@@ -2462,7 +2421,6 @@ IronwoodMigrationService _migrationServiceForContinue({
         ({required dbPath, required network, required accountUuid}) {
           return Future.value(_privatePlan());
         },
-    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     broadcastDueMigration:
@@ -2471,8 +2429,6 @@ IronwoodMigrationService _migrationServiceForContinue({
           required lightwalletdUrl,
           required network,
           required accountUuid,
-          required password,
-          required saltBase64,
         }) {
           return onContinue(accountUuid: accountUuid);
         },
@@ -2665,7 +2621,9 @@ rust_sync.MigrationStatus _status() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.preparing),
+    ],
   );
 }
 

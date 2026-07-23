@@ -94,45 +94,6 @@ void main() {
   });
 
   test(
-    'Ironwood migration pending tx salt is account and network scoped',
-    () async {
-      final first = await store.getOrCreateIronwoodMigrationPendingTxSaltBase64(
-        network: 'test',
-        accountUuid: 'account-1',
-      );
-      final second = await store
-          .getOrCreateIronwoodMigrationPendingTxSaltBase64(
-            network: 'test',
-            accountUuid: 'account-1',
-          );
-      final otherAccount = await store
-          .getOrCreateIronwoodMigrationPendingTxSaltBase64(
-            network: 'test',
-            accountUuid: 'account-2',
-          );
-      final otherNetwork = await store
-          .getOrCreateIronwoodMigrationPendingTxSaltBase64(
-            network: 'main',
-            accountUuid: 'account-1',
-          );
-
-      expect(second, first);
-      expect(base64Decode(first), hasLength(16));
-      expect(otherAccount, isNot(first));
-      expect(otherNetwork, isNot(first));
-      expect(
-        await store.readPlain(
-          AppSecureStore.ironwoodMigrationPendingTxSaltKey(
-            network: 'test',
-            accountUuid: 'account-1',
-          ),
-        ),
-        first,
-      );
-    },
-  );
-
-  test(
     'voting hotkey round-trips, requires unlock, and deletes idempotently',
     () async {
       await store.configurePassword(_oldPassword);

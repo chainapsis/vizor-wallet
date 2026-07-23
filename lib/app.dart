@@ -98,9 +98,6 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
-  await rust_simple.configureFastTestnetMigration(
-    enabled: kZcashFastTestnetMigration,
-  );
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
       kZcashRegtestIronwoodActivationHeight > 1) {
     await rust_simple.configureRegtestIronwoodActivationHeight(
@@ -747,10 +744,6 @@ List<RouteBase> _desktopRoutes() => [
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.options,
     ),
-  ),
-  GoRoute(
-    path: '/migration/review',
-    redirect: (_, _) => '/migration/private/review',
   ),
   GoRoute(
     path: '/migration/private/review',

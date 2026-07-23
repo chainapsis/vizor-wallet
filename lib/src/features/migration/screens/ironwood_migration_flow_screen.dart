@@ -55,5 +55,4 @@ part 'ironwood_migration_flow/migration_progress_segments.dart';
 part 'ironwood_migration_flow/migration_batch_status.dart';
 part 'ironwood_migration_flow/transfer_status.dart';
 part 'ironwood_migration_flow/review_plan.dart';
-part 'ironwood_migration_flow/legacy_status.dart';
 part 'ironwood_migration_flow/shared_widgets.dart';

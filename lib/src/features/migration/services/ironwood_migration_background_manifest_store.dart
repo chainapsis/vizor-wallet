@@ -1,19 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-const kIronwoodMigrationBackgroundCredentialService =
+const kIronwoodMigrationBackgroundManifestService =
     'com.keplr.vizor.ironwood-migration-background.v1';
 
-typedef IronwoodMigrationSecureRandomBytes = Uint8List Function(int length);
-
-class IronwoodMigrationBackgroundCredentialRunMismatchException
+class IronwoodMigrationBackgroundManifestRunMismatchException
     implements Exception {
-  const IronwoodMigrationBackgroundCredentialRunMismatchException({
+  const IronwoodMigrationBackgroundManifestRunMismatchException({
     required this.expectedRunId,
     required this.activeRunId,
   });
@@ -23,19 +20,17 @@ class IronwoodMigrationBackgroundCredentialRunMismatchException
 
   @override
   String toString() =>
-      'Ironwood migration credential belongs to run $expectedRunId, '
+      'Ironwood migration manifest belongs to run $expectedRunId, '
       'not $activeRunId.';
 }
 
-class IronwoodMigrationBackgroundCredentialManifest {
-  factory IronwoodMigrationBackgroundCredentialManifest({
+class IronwoodMigrationBackgroundManifest {
+  factory IronwoodMigrationBackgroundManifest({
     required int version,
     required String network,
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
-    required String credentialHex,
-    required String saltBase64,
     required String? expectedRunId,
   }) {
     _validateManifestValues(
@@ -44,34 +39,28 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      credentialHex: credentialHex,
-      saltBase64: saltBase64,
       expectedRunId: expectedRunId,
     );
-    return IronwoodMigrationBackgroundCredentialManifest._(
+    return IronwoodMigrationBackgroundManifest._(
       version: version,
       network: network,
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      credentialHex: credentialHex,
-      saltBase64: saltBase64,
       expectedRunId: expectedRunId,
     );
   }
 
-  const IronwoodMigrationBackgroundCredentialManifest._({
+  const IronwoodMigrationBackgroundManifest._({
     required this.version,
     required this.network,
     required this.accountUuid,
     required this.dbPath,
     required this.lightwalletdUrl,
-    required this.credentialHex,
-    required this.saltBase64,
     required this.expectedRunId,
   });
 
-  factory IronwoodMigrationBackgroundCredentialManifest.decode(String raw) {
+  factory IronwoodMigrationBackgroundManifest.decode(String raw) {
     final Object? decoded;
     try {
       decoded = jsonDecode(raw);
@@ -95,16 +84,12 @@ class IronwoodMigrationBackgroundCredentialManifest {
     final accountUuid = decoded['accountUuid'];
     final dbPath = decoded['dbPath'];
     final lightwalletdUrl = decoded['lightwalletdUrl'];
-    final credentialHex = decoded['credentialHex'];
-    final saltBase64 = decoded['saltBase64'];
     final expectedRunId = decoded['expectedRunId'];
     if (version is! int ||
         network is! String ||
         accountUuid is! String ||
         dbPath is! String ||
         lightwalletdUrl is! String ||
-        credentialHex is! String ||
-        saltBase64 is! String ||
         (expectedRunId != null && expectedRunId is! String)) {
       throw const FormatException(
         'Ironwood migration manifest contains an invalid field type.',
@@ -112,14 +97,12 @@ class IronwoodMigrationBackgroundCredentialManifest {
     }
 
     try {
-      return IronwoodMigrationBackgroundCredentialManifest(
+      return IronwoodMigrationBackgroundManifest(
         version: version,
         network: network,
         accountUuid: accountUuid,
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,
-        credentialHex: credentialHex,
-        saltBase64: saltBase64,
         expectedRunId: expectedRunId as String?,
       );
     } on ArgumentError catch (error) {
@@ -132,8 +115,6 @@ class IronwoodMigrationBackgroundCredentialManifest {
   final String accountUuid;
   final String dbPath;
   final String lightwalletdUrl;
-  final String credentialHex;
-  final String saltBase64;
   final String? expectedRunId;
 
   String encode() => jsonEncode(<String, Object?>{
@@ -142,39 +123,33 @@ class IronwoodMigrationBackgroundCredentialManifest {
     'accountUuid': accountUuid,
     'dbPath': dbPath,
     'lightwalletdUrl': lightwalletdUrl,
-    'credentialHex': credentialHex,
-    'saltBase64': saltBase64,
     'expectedRunId': expectedRunId,
   });
 
-  IronwoodMigrationBackgroundCredentialManifest bindToRun(String runId) {
+  IronwoodMigrationBackgroundManifest bindToRun(String runId) {
     if (expectedRunId != null && expectedRunId != runId) {
-      throw IronwoodMigrationBackgroundCredentialRunMismatchException(
+      throw IronwoodMigrationBackgroundManifestRunMismatchException(
         expectedRunId: expectedRunId!,
         activeRunId: runId,
       );
     }
-    return IronwoodMigrationBackgroundCredentialManifest(
+    return IronwoodMigrationBackgroundManifest(
       version: version,
       network: network,
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      credentialHex: credentialHex,
-      saltBase64: saltBase64,
       expectedRunId: runId,
     );
   }
 
-  IronwoodMigrationBackgroundCredentialManifest replaceDbPath(String value) {
-    return IronwoodMigrationBackgroundCredentialManifest(
+  IronwoodMigrationBackgroundManifest replaceDbPath(String value) {
+    return IronwoodMigrationBackgroundManifest(
       version: version,
       network: network,
       accountUuid: accountUuid,
       dbPath: value,
       lightwalletdUrl: lightwalletdUrl,
-      credentialHex: credentialHex,
-      saltBase64: saltBase64,
       expectedRunId: expectedRunId,
     );
   }
@@ -182,14 +157,12 @@ class IronwoodMigrationBackgroundCredentialManifest {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is IronwoodMigrationBackgroundCredentialManifest &&
+      other is IronwoodMigrationBackgroundManifest &&
           version == other.version &&
           network == other.network &&
           accountUuid == other.accountUuid &&
           dbPath == other.dbPath &&
           lightwalletdUrl == other.lightwalletdUrl &&
-          credentialHex == other.credentialHex &&
-          saltBase64 == other.saltBase64 &&
           expectedRunId == other.expectedRunId;
 
   @override
@@ -199,36 +172,28 @@ class IronwoodMigrationBackgroundCredentialManifest {
     accountUuid,
     dbPath,
     lightwalletdUrl,
-    credentialHex,
-    saltBase64,
     expectedRunId,
   );
 }
 
-class IronwoodMigrationBackgroundCredentialStore {
-  IronwoodMigrationBackgroundCredentialStore({
-    FlutterSecureStorage? storage,
-    IronwoodMigrationSecureRandomBytes? randomBytes,
-  }) : _storage = storage ?? _defaultStorage(),
-       _randomBytes = randomBytes ?? _defaultRandomBytes;
+class IronwoodMigrationBackgroundManifestStore {
+  IronwoodMigrationBackgroundManifestStore({FlutterSecureStorage? storage})
+    : _storage = storage ?? _defaultStorage();
 
-  IronwoodMigrationBackgroundCredentialStore.testing({
+  IronwoodMigrationBackgroundManifestStore.testing({
     required FlutterSecureStorage storage,
-    required IronwoodMigrationSecureRandomBytes randomBytes,
-  }) : _storage = storage,
-       _randomBytes = randomBytes;
+  }) : _storage = storage;
 
-  static final instance = IronwoodMigrationBackgroundCredentialStore();
+  static final instance = IronwoodMigrationBackgroundManifestStore();
 
   final FlutterSecureStorage _storage;
-  final IronwoodMigrationSecureRandomBytes _randomBytes;
 
   static String storageKey({
     required String network,
     required String accountUuid,
   }) => '$network:$accountUuid';
 
-  Future<IronwoodMigrationBackgroundCredentialManifest?> read({
+  Future<IronwoodMigrationBackgroundManifest?> read({
     required String network,
     required String accountUuid,
   }) async {
@@ -236,7 +201,7 @@ class IronwoodMigrationBackgroundCredentialStore {
       key: storageKey(network: network, accountUuid: accountUuid),
     );
     if (raw == null) return null;
-    final manifest = IronwoodMigrationBackgroundCredentialManifest.decode(raw);
+    final manifest = IronwoodMigrationBackgroundManifest.decode(raw);
     if (manifest.network != network || manifest.accountUuid != accountUuid) {
       throw const FormatException(
         'Ironwood migration manifest does not match its storage scope.',
@@ -245,29 +210,18 @@ class IronwoodMigrationBackgroundCredentialStore {
     return manifest;
   }
 
-  Future<IronwoodMigrationBackgroundCredentialManifest> prepare({
+  Future<IronwoodMigrationBackgroundManifest> prepare({
     required String network,
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
   }) async {
-    final credentialBytes = _randomBytes(32);
-    final saltBytes = _randomBytes(16);
-    if (credentialBytes.length != 32 || saltBytes.length != 16) {
-      throw StateError(
-        'Ironwood migration secure random source returned the wrong length.',
-      );
-    }
-    final manifest = IronwoodMigrationBackgroundCredentialManifest(
+    final manifest = IronwoodMigrationBackgroundManifest(
       version: 1,
       network: network,
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      credentialHex: credentialBytes
-          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-          .join(),
-      saltBase64: base64Encode(saltBytes),
       expectedRunId: null,
     );
     await _write(manifest);
@@ -281,7 +235,7 @@ class IronwoodMigrationBackgroundCredentialStore {
   }) async {
     final manifest = await read(network: network, accountUuid: accountUuid);
     if (manifest == null) {
-      throw StateError('Ironwood migration credential manifest is missing.');
+      throw StateError('Ironwood migration background manifest is missing.');
     }
     final bound = manifest.bindToRun(expectedRunId);
     if (manifest.expectedRunId == expectedRunId) return false;
@@ -289,7 +243,7 @@ class IronwoodMigrationBackgroundCredentialStore {
     return true;
   }
 
-  Future<IronwoodMigrationBackgroundCredentialManifest> replaceDbPath({
+  Future<IronwoodMigrationBackgroundManifest> replaceDbPath({
     required String network,
     required String accountUuid,
     required String expectedDbPath,
@@ -297,11 +251,11 @@ class IronwoodMigrationBackgroundCredentialStore {
   }) async {
     final manifest = await read(network: network, accountUuid: accountUuid);
     if (manifest == null) {
-      throw StateError('Ironwood migration credential manifest is missing.');
+      throw StateError('Ironwood migration background manifest is missing.');
     }
     if (manifest.dbPath != expectedDbPath) {
       throw StateError(
-        'Ironwood migration credential manifest changed while it was being '
+        'Ironwood migration background manifest changed while it was being '
         'updated.',
       );
     }
@@ -320,7 +274,7 @@ class IronwoodMigrationBackgroundCredentialStore {
 
   Future<void> deleteAll() => _storage.deleteAll();
 
-  Future<void> _write(IronwoodMigrationBackgroundCredentialManifest manifest) {
+  Future<void> _write(IronwoodMigrationBackgroundManifest manifest) {
     return _storage.write(
       key: storageKey(
         network: manifest.network,
@@ -333,34 +287,26 @@ class IronwoodMigrationBackgroundCredentialStore {
   static FlutterSecureStorage _defaultStorage() {
     return const FlutterSecureStorage(
       iOptions: IOSOptions(
-        accountName: kIronwoodMigrationBackgroundCredentialService,
+        accountName: kIronwoodMigrationBackgroundManifestService,
         accessibility: KeychainAccessibility.first_unlock_this_device,
         synchronizable: false,
       ),
       aOptions: AndroidOptions(
-        sharedPreferencesName: kIronwoodMigrationBackgroundCredentialService,
+        sharedPreferencesName: kIronwoodMigrationBackgroundManifestService,
       ),
-    );
-  }
-
-  static Uint8List _defaultRandomBytes(int length) {
-    final random = Random.secure();
-    return Uint8List.fromList(
-      List<int>.generate(length, (_) => random.nextInt(256)),
     );
   }
 }
 
 class IronwoodMigrationBackgroundLifecycle {
   IronwoodMigrationBackgroundLifecycle({
-    IronwoodMigrationBackgroundCredentialStore? credentialStore,
+    IronwoodMigrationBackgroundManifestStore? manifestStore,
     MethodChannel? channel,
     bool? isIOS,
     bool? isAndroid,
     List<Duration>? resumeRetryDelays,
-  }) : _credentialStore =
-           credentialStore ??
-           IronwoodMigrationBackgroundCredentialStore.instance,
+  }) : _manifestStore =
+           manifestStore ?? IronwoodMigrationBackgroundManifestStore.instance,
        _channel =
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
@@ -377,7 +323,7 @@ class IronwoodMigrationBackgroundLifecycle {
   static final instance = IronwoodMigrationBackgroundLifecycle();
   static final Object _callerManagedQuiescenceZoneKey = Object();
 
-  final IronwoodMigrationBackgroundCredentialStore _credentialStore;
+  final IronwoodMigrationBackgroundManifestStore _manifestStore;
   final MethodChannel _channel;
   final bool _isIOS;
   final bool _isAndroid;
@@ -441,7 +387,7 @@ class IronwoodMigrationBackgroundLifecycle {
       return;
     }
     if (_isAndroid) {
-      await _credentialStore.delete(network: network, accountUuid: accountUuid);
+      await _manifestStore.delete(network: network, accountUuid: accountUuid);
     }
   }
 
@@ -456,7 +402,7 @@ class IronwoodMigrationBackgroundLifecycle {
       return;
     }
     if (_isAndroid) {
-      await _credentialStore.deleteAll();
+      await _manifestStore.deleteAll();
     }
   }
 }
@@ -467,13 +413,9 @@ const _manifestKeys = <String>{
   'accountUuid',
   'dbPath',
   'lightwalletdUrl',
-  'credentialHex',
-  'saltBase64',
   'expectedRunId',
 };
 const _supportedNetworks = <String>{'main', 'test', 'regtest'};
-final _lowercaseCredentialPattern = RegExp(r'^[0-9a-f]{64}$');
-final _canonicalSaltPattern = RegExp(r'^[A-Za-z0-9+/]{22}==$');
 
 void _validateManifestValues({
   required int version,
@@ -481,8 +423,6 @@ void _validateManifestValues({
   required String accountUuid,
   required String dbPath,
   required String lightwalletdUrl,
-  required String credentialHex,
-  required String saltBase64,
   required String? expectedRunId,
 }) {
   if (version != 1) {
@@ -494,33 +434,6 @@ void _validateManifestValues({
   _requireNonEmpty(accountUuid, 'accountUuid');
   _requireNonEmpty(dbPath, 'dbPath');
   _requireNonEmpty(lightwalletdUrl, 'lightwalletdUrl');
-  if (!_lowercaseCredentialPattern.hasMatch(credentialHex)) {
-    throw ArgumentError.value(
-      credentialHex,
-      'credentialHex',
-      'must be 64 lowercase hexadecimal characters',
-    );
-  }
-  if (!_canonicalSaltPattern.hasMatch(saltBase64)) {
-    throw ArgumentError.value(
-      saltBase64,
-      'saltBase64',
-      'must be canonical base64 for 16 bytes',
-    );
-  }
-  final List<int> salt;
-  try {
-    salt = base64Decode(saltBase64);
-  } on FormatException {
-    throw ArgumentError.value(saltBase64, 'saltBase64', 'must be valid base64');
-  }
-  if (salt.length != 16 || base64Encode(salt) != saltBase64) {
-    throw ArgumentError.value(
-      saltBase64,
-      'saltBase64',
-      'must encode exactly 16 bytes',
-    );
-  }
   if (expectedRunId != null) {
     _requireNonEmpty(expectedRunId, 'expectedRunId');
   }

@@ -7,23 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 
 import '../../../core/config/rpc_endpoint_config.dart';
-import '../../../core/layout/app_form_factor.dart';
-import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/ironwood_migration_phases.dart';
-import 'ironwood_migration_background_credential_store.dart';
+import 'ironwood_migration_background_manifest_store.dart';
 import 'ironwood_migration_operation_registry.dart';
-
-const _credentialRecoveryRequiredError =
-    'Ironwood migration credential is missing for the active run.';
-
-bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
-  return error?.contains(_credentialRecoveryRequiredError) ?? false;
-}
 
 typedef IronwoodMigrationStatusGetter =
     Future<rust_sync.MigrationStatus> Function({
@@ -54,11 +45,6 @@ typedef IronwoodMigrationMnemonicBytesGetter =
 typedef IronwoodMigrationPlatformCheck = bool Function();
 typedef IronwoodMigrationBackgroundScheduler = Future<bool> Function();
 typedef IronwoodMigrationBackgroundCanceler = Future<void> Function();
-typedef IronwoodMigrationAccountRevoker =
-    Future<void> Function({
-      required String network,
-      required String accountUuid,
-    });
 typedef IronwoodMigrationNotificationAuthorizationRequester =
     Future<bool> Function();
 typedef IronwoodMigrationHardwareAccountCheck =
@@ -70,8 +56,6 @@ typedef IronwoodMigrationSoftwareStarter =
       required String network,
       required String accountUuid,
       required List<int> mnemonicBytes,
-      required String password,
-      required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationImmediateStarter =
@@ -86,14 +70,6 @@ typedef IronwoodMigrationImmediateStarter =
       required BigInt approvedMigratedZatoshi,
       required int approvedInputNoteCount,
     });
-typedef IronwoodMigrationUnbroadcastRetirer =
-    Future<void> Function({
-      required String dbPath,
-      required String lightwalletdUrl,
-      required String network,
-      required String accountUuid,
-      required String expectedRunId,
-    });
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -101,7 +77,6 @@ typedef IronwoodMigrationMacosSoftwareStarter =
       required String network,
       required String accountUuid,
       required String password,
-      required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationDueBroadcaster =
@@ -110,8 +85,6 @@ typedef IronwoodMigrationDueBroadcaster =
       required String lightwalletdUrl,
       required String network,
       required String accountUuid,
-      required String password,
-      required String saltBase64,
     });
 typedef IronwoodMigrationOutboxPreparer = IronwoodMigrationDueBroadcaster;
 typedef IronwoodMigrationOutboxExporter =
@@ -119,8 +92,6 @@ typedef IronwoodMigrationOutboxExporter =
       required String dbPath,
       required String network,
       required String accountUuid,
-      required String password,
-      required String saltBase64,
     });
 typedef IronwoodMigrationOutboxReceiptReconciler =
     Future<void> Function({
@@ -215,8 +186,6 @@ typedef IronwoodMigrationKeystoneDenominationCompleter =
       required String accountUuid,
       required String requestId,
       required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
-      required String password,
-      required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationKeystoneBatchPreparer =
@@ -232,8 +201,6 @@ typedef IronwoodMigrationKeystoneBatchCompleter =
       required String accountUuid,
       required String requestId,
       required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
-      required String password,
-      required String saltBase64,
     });
 typedef IronwoodMigrationKeystoneProofStatusGetter =
     Future<rust_sync.KeystoneMigrationProofStatus> Function({
@@ -248,8 +215,6 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
-  required String password,
-  required String saltBase64,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
 }) => rust_sync.migrateOrchardToIronwood(
   dbPath: dbPath,
@@ -257,10 +222,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
-  password: password,
-  saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
 Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
@@ -269,7 +231,6 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   required String network,
   required String accountUuid,
   required String password,
-  required String saltBase64,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
 }) => rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic(
   dbPath: dbPath,
@@ -277,9 +238,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   network: network,
   accountUuid: accountUuid,
   password: password,
-  saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
 Future<rust_sync.IronwoodMigrationResult>
@@ -290,8 +249,6 @@ _defaultCompleteKeystoneDenominationMigration({
   required String accountUuid,
   required String requestId,
   required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
-  required String password,
-  required String saltBase64,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
 }) => rust_sync.completeOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
@@ -300,10 +257,7 @@ _defaultCompleteKeystoneDenominationMigration({
   accountUuid: accountUuid,
   requestId: requestId,
   signedMessages: signedMessages,
-  password: password,
-  saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
 class IronwoodMigrationService {
@@ -311,8 +265,7 @@ class IronwoodMigrationService {
     required this.getWalletDbPath,
     required this.getStatus,
     required this.getPrivatePlan,
-    required this.secureStore,
-    IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
+    IronwoodMigrationBackgroundManifestStore? backgroundManifestStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
@@ -324,13 +277,11 @@ class IronwoodMigrationService {
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
-    IronwoodMigrationAccountRevoker? revokeMigrationAccount,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
-    IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
     IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
@@ -352,9 +303,9 @@ class IronwoodMigrationService {
     IronwoodMigrationKeystoneProofStatusGetter? getKeystoneProofStatus,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
     IronwoodMigrationOperationRegistry? operationRegistry,
-  }) : backgroundCredentialStore =
-           backgroundCredentialStore ??
-           IronwoodMigrationBackgroundCredentialStore.instance,
+  }) : backgroundManifestStore =
+           backgroundManifestStore ??
+           IronwoodMigrationBackgroundManifestStore.instance,
        getEndpoint = getEndpoint ?? _missingEndpoint,
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
        getMnemonicBytesForAccount =
@@ -372,9 +323,6 @@ class IronwoodMigrationService {
            startBackgroundPreparation ?? _defaultStartBackgroundPreparation,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
-       revokeMigrationAccount =
-           revokeMigrationAccount ??
-           IronwoodMigrationBackgroundLifecycle.instance.revokeAccount,
        requestNotificationAuthorization =
            requestNotificationAuthorization ??
            _defaultRequestNotificationAuthorization,
@@ -385,9 +333,6 @@ class IronwoodMigrationService {
        startImmediateMigration =
            startImmediateMigration ??
            rust_sync.migrateOrchardToIronwoodImmediately,
-       retireUnbroadcastMigration =
-           retireUnbroadcastMigration ??
-           rust_sync.retireUnbroadcastOrchardMigration,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ?? _defaultStartMacosSoftwareMigration,
        broadcastDueMigration =
@@ -437,8 +382,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationStatusGetter getStatus;
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
   final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
-  final AppSecureStore secureStore;
-  final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
+  final IronwoodMigrationBackgroundManifestStore backgroundManifestStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
@@ -450,12 +394,10 @@ class IronwoodMigrationService {
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
-  final IronwoodMigrationAccountRevoker revokeMigrationAccount;
   final IronwoodMigrationNotificationAuthorizationRequester
   requestNotificationAuthorization;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
-  final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
   final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
@@ -480,8 +422,7 @@ class IronwoodMigrationService {
   discardKeystoneMigrationRequest;
   final IronwoodMigrationOperationRegistry operationRegistry;
 
-  final Map<String, Future<void>> _credentialOperationTails = {};
-  final Set<String> _scheduledBackgroundMigrations = {};
+  final Map<String, Future<void>> _migrationOperationTails = {};
 
   bool get supportsBackgroundMigrationRetry =>
       isMobile() && supportsBackgroundMigration();
@@ -495,31 +436,33 @@ class IronwoodMigrationService {
       accountUuid: accountUuid,
       operation: () async {
         final dbPath = await getWalletDbPath();
-        final context = _MigrationCredentialContext(
+        final context = _MigrationContext(
           dbPath: dbPath,
           network: network,
           accountUuid: accountUuid,
         );
         if (!isMobile()) return _getStatusForContext(context);
 
-        return _serializeCredentialState(context, () async {
+        return _serializeMigrationState(context, () async {
+          final resolvedContext = _contextWithCurrentEndpoint(context);
           var status = await _getStatusForContext(context);
           if (isIOS() && status.activeRunId != null) {
-            final manifest = await backgroundCredentialStore.read(
+            final manifest = await backgroundManifestStore.read(
               network: context.network,
               accountUuid: context.accountUuid,
             );
             if (manifest == null &&
                 await _recoverPersistedMigrationOutbox(
-                  context: _contextWithCurrentEndpoint(context),
+                  context: resolvedContext,
                   status: status,
                 )) {
               status = await _getStatusForContext(context);
             }
           }
-          await _reconcileBackgroundCredential(
-            context: context,
+          await _ensureMobileManifest(
+            context: resolvedContext,
             status: status,
+            mayCreateRun: false,
           );
           return status;
         });
@@ -540,17 +483,23 @@ class IronwoodMigrationService {
     if (!isIOS() || !isMobile()) return;
 
     final dbPath = await getWalletDbPath();
-    final context = _MigrationCredentialContext(
-      dbPath: dbPath,
-      network: network,
-      accountUuid: accountUuid,
+    final context = _contextWithCurrentEndpoint(
+      _MigrationContext(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      ),
     );
     await operationRegistry.run(
       network: context.network,
       accountUuid: context.accountUuid,
-      operation: () => _serializeCredentialState(context, () async {
+      operation: () => _serializeMigrationState(context, () async {
         final status = await _getStatusForContext(context);
-        await _reconcileBackgroundCredential(context: context, status: status);
+        await _ensureMobileManifest(
+          context: context,
+          status: status,
+          mayCreateRun: false,
+        );
         await _resumeBoundBackgroundPreparationIfNeeded(
           context: context,
           status: status,
@@ -595,23 +544,13 @@ class IronwoodMigrationService {
     );
   }
 
-  Future<String> pendingTxSaltBase64({
-    required String network,
-    required String accountUuid,
-  }) {
-    return secureStore.getOrCreateIronwoodMigrationPendingTxSaltBase64(
-      network: network,
-      accountUuid: accountUuid,
-    );
-  }
-
   Future<rust_sync.IronwoodMigrationResult> startSoftwarePrivateMigration({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -619,27 +558,26 @@ class IronwoodMigrationService {
     );
 
     if (isMacOS()) {
-      return _runCredentialOperation(
+      return _runMigrationOperation(
         context: context,
         mayCreateRun: true,
-        operation: (credential) => startMacosSoftwareMigration(
+        operation: () => startMacosSoftwareMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
+          password: getSessionPassword(),
           approvedSchedule: approvedSchedule,
         ),
       );
     }
 
-    final result = await _runCredentialOperation(
+    final result = await _runMigrationOperation(
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
-      operation: (credential) async {
+      operation: () async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           throw Exception('Mnemonic not found for the migration account.');
@@ -653,8 +591,6 @@ class IronwoodMigrationService {
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
             approvedSchedule: approvedSchedule,
           );
         } finally {
@@ -668,14 +604,14 @@ class IronwoodMigrationService {
 
   /// Directly moves spendable Orchard notes to Ironwood in one foreground
   /// transaction. Immediate migration has no denomination stages, schedule,
-  /// background credential, or migration outbox.
+  /// background state, or migration outbox.
   Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -724,7 +660,7 @@ class IronwoodMigrationService {
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -733,33 +669,29 @@ class IronwoodMigrationService {
 
     final rust_sync.IronwoodMigrationResult broadcastResult;
     if (isIOS() && isMobile()) {
-      broadcastResult = await _runCredentialOperation(
+      broadcastResult = await _runMigrationOperation(
         context: context,
         mayCreateRun: false,
         prepareOutboxAfterOperation: false,
         onCurrentStatus: isHardwareAccount(accountUuid)
             ? null
             : _reconcileBackgroundPreparationBestEffort,
-        operation: (credential) => prepareMigrationOutbox(
+        operation: () => prepareMigrationOutbox(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
         ),
       );
     } else {
-      broadcastResult = await _runCredentialOperation(
+      broadcastResult = await _runMigrationOperation(
         context: context,
         mayCreateRun: false,
-        operation: (credential) => broadcastDueMigration(
+        operation: () => broadcastDueMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
         ),
       );
     }
@@ -769,25 +701,24 @@ class IronwoodMigrationService {
     }
 
     if (isMacOS()) {
-      return _runCredentialOperation(
+      return _runMigrationOperation(
         context: context,
         mayCreateRun: true,
-        operation: (credential) => startMacosSoftwareMigration(
+        operation: () => startMacosSoftwareMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
+          password: getSessionPassword(),
           approvedSchedule: const [],
         ),
       );
     }
 
-    return _runCredentialOperation(
+    return _runMigrationOperation(
       context: context,
       mayCreateRun: true,
-      operation: (credential) async {
+      operation: () async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           throw Exception('Mnemonic not found for the migration account.');
@@ -799,8 +730,6 @@ class IronwoodMigrationService {
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
             approvedSchedule: const [],
           );
         } finally {
@@ -817,7 +746,7 @@ class IronwoodMigrationService {
 
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -826,37 +755,19 @@ class IronwoodMigrationService {
     return operationRegistry.run(
       network: context.network,
       accountUuid: context.accountUuid,
-      operation: () => _serializeCredentialState(context, () async {
+      operation: () => _serializeMigrationState(context, () async {
         final status = await _getStatusForContext(context);
-        final activeRunId = status.activeRunId;
-        if (activeRunId == null) return false;
-
-        final manifest = await backgroundCredentialStore.read(
-          network: context.network,
-          accountUuid: context.accountUuid,
-        );
-        if (manifest == null) {
-          return _recoverPersistedMigrationOutbox(
-            context: context,
-            status: status,
-          );
-        }
-        await _resolveManifestContext(manifest, context);
-        await backgroundCredentialStore.bindExpectedRunId(
-          network: context.network,
-          accountUuid: context.accountUuid,
-          expectedRunId: activeRunId,
+        if (status.activeRunId == null) return false;
+        await _ensureMobileManifest(
+          context: context,
+          status: status,
+          mayCreateRun: false,
         );
 
         if (isIOS()) {
-          final credential = _MigrationCredential(
-            password: manifest.credentialHex,
-            saltBase64: manifest.saltBase64,
-          );
           await _reconcileMigrationOutboxReceipts(context: context);
           final refresh = await _refreshMigrationOutbox(
             context: context,
-            credential: credential,
             prepare: true,
           );
           if (refresh.staged) {
@@ -867,132 +778,9 @@ class IronwoodMigrationService {
 
         final scheduled = await scheduleBackgroundMigration();
         if (scheduled) {
-          _scheduledBackgroundMigrations.add(_credentialKey(context));
           await _requestNotificationAuthorizationBestEffort();
         }
         return scheduled;
-      }),
-    );
-  }
-
-  Future<void> recoverSoftwarePrivateMigration({
-    required String accountUuid,
-  }) async {
-    if (!isIOS() || !isMobile() || isHardwareAccount(accountUuid)) {
-      throw StateError(
-        'Ironwood migration credential recovery is only available for '
-        'software accounts on iOS.',
-      );
-    }
-
-    final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
-      dbPath: dbPath,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-    );
-
-    await operationRegistry.run(
-      network: context.network,
-      accountUuid: context.accountUuid,
-      operation: () => _serializeCredentialState(context, () async {
-        final oldStatus = await _getStatusForContext(context);
-        final oldRunId = oldStatus.activeRunId;
-        if (oldRunId == null) {
-          throw StateError('There is no active Ironwood migration to recover.');
-        }
-        final existingManifest = await backgroundCredentialStore.read(
-          network: context.network,
-          accountUuid: context.accountUuid,
-        );
-        if (existingManifest != null) {
-          throw StateError(
-            'The active Ironwood migration still has a usable credential.',
-          );
-        }
-        if (await _recoverPersistedMigrationOutbox(
-          context: context,
-          status: oldStatus,
-        )) {
-          return;
-        }
-
-        final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw StateError('Mnemonic not found for the migration account.');
-        }
-
-        try {
-          // Revocation stops native delivery first. Rust then checks every
-          // remaining scheduled transaction against lightwalletd before it
-          // unlocks the old run for a rebuild.
-          await revokeMigrationAccount(
-            network: context.network,
-            accountUuid: context.accountUuid,
-          );
-          await retireUnbroadcastMigration(
-            dbPath: context.dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: context.network,
-            accountUuid: context.accountUuid,
-            expectedRunId: oldRunId,
-          );
-
-          final manifest = await backgroundCredentialStore.prepare(
-            network: context.network,
-            accountUuid: context.accountUuid,
-            dbPath: context.dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          );
-          final credential = _MigrationCredential(
-            password: manifest.credentialHex,
-            saltBase64: manifest.saltBase64,
-          );
-
-          Object? startError;
-          StackTrace? startStackTrace;
-          try {
-            await startSoftwareMigration(
-              dbPath: context.dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: context.network,
-              accountUuid: context.accountUuid,
-              mnemonicBytes: mnemonicBytes,
-              password: credential.password,
-              saltBase64: credential.saltBase64,
-              approvedSchedule: const [],
-            );
-          } catch (error, stackTrace) {
-            startError = error;
-            startStackTrace = stackTrace;
-          }
-
-          final currentStatus = await _getStatusForContext(context);
-          await _reconcileBackgroundCredential(
-            context: context,
-            status: currentStatus,
-          );
-          await _reconcileBackgroundPreparationBestEffort(currentStatus);
-          if (currentStatus.activeRunId != null &&
-              currentStatus.phase !=
-                  kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-            await _refreshMigrationOutbox(
-              context: context,
-              credential: credential,
-              prepare: true,
-            );
-          }
-          if (currentStatus.activeRunId != null) {
-            await _requestNotificationAuthorizationBestEffort();
-          }
-          if (startError != null) {
-            Error.throwWithStackTrace(startError, startStackTrace!);
-          }
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
-        }
       }),
     );
   }
@@ -1023,27 +811,25 @@ class IronwoodMigrationService {
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
 
-    return _runCredentialOperation(
+    return _runMigrationOperation(
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
-      operation: (credential) => completeKeystoneDenominationMigration(
+      operation: () => completeKeystoneDenominationMigration(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,
         signedMessages: signedMessages,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
         approvedSchedule: approvedSchedule,
       ),
     );
@@ -1072,33 +858,31 @@ class IronwoodMigrationService {
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
+    final context = _MigrationContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
 
-    return _runCredentialOperation(
+    return _runMigrationOperation(
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
-      operation: (credential) => completeKeystoneBatchMigration(
+      operation: () => completeKeystoneBatchMigration(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,
         signedMessages: signedMessages,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
       ),
     );
   }
 
-  Future<T> _runCredentialOperation<T>({
-    required _MigrationCredentialContext context,
+  Future<T> _runMigrationOperation<T>({
+    required _MigrationContext context,
     required bool mayCreateRun,
-    required Future<T> Function(_MigrationCredential credential) operation,
+    required Future<T> Function() operation,
     bool enrollNotificationsOnActiveRun = false,
     bool prepareOutboxAfterOperation = true,
     Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
@@ -1108,12 +892,12 @@ class IronwoodMigrationService {
       accountUuid: context.accountUuid,
       operation: () async {
         if (!isMobile()) {
-          return operation(await _legacyCredential(context));
+          return operation();
         }
 
-        return _serializeCredentialState(context, () async {
+        return _serializeMigrationState(context, () async {
           final initialStatus = await _getStatusForContext(context);
-          final credential = await _selectMobileCredential(
+          await _ensureMobileManifest(
             context: context,
             status: initialStatus,
             mayCreateRun: mayCreateRun,
@@ -1126,7 +910,7 @@ class IronwoodMigrationService {
           Object? operationError;
           StackTrace? operationStackTrace;
           try {
-            result = await operation(credential);
+            result = await operation();
           } catch (error, stackTrace) {
             operationError = error;
             operationStackTrace = stackTrace;
@@ -1157,7 +941,7 @@ class IronwoodMigrationService {
             }
             rethrow;
           }
-          await _reconcileBackgroundCredential(
+          await _reconcileBackgroundManifest(
             context: context,
             status: currentStatus,
           );
@@ -1174,13 +958,12 @@ class IronwoodMigrationService {
             try {
               final outboxRefresh = await _refreshMigrationOutbox(
                 context: context,
-                credential: credential,
                 prepare: prepareOutboxAfterOperation,
               );
               if ((prepareOutboxAfterOperation && onCurrentStatus != null) ||
                   outboxRefresh.reconciledReceipt) {
                 currentStatus = await _getStatusForContext(context);
-                await _reconcileBackgroundCredential(
+                await _reconcileBackgroundManifest(
                   context: context,
                   status: currentStatus,
                 );
@@ -1207,58 +990,52 @@ class IronwoodMigrationService {
     );
   }
 
-  Future<_MigrationCredential> _selectMobileCredential({
-    required _MigrationCredentialContext context,
+  Future<void> _ensureMobileManifest({
+    required _MigrationContext context,
     required rust_sync.MigrationStatus status,
     required bool mayCreateRun,
   }) async {
     final activeRunId = status.activeRunId;
     if (activeRunId != null) {
-      final manifest = await backgroundCredentialStore.read(
+      var manifest = await backgroundManifestStore.read(
         network: context.network,
         accountUuid: context.accountUuid,
       );
       if (manifest == null) {
-        if (isIOS()) {
-          await _recoverPersistedMigrationOutbox(
-            context: context,
-            status: status,
+        final lightwalletdUrl = context.lightwalletdUrl;
+        if (lightwalletdUrl == null) {
+          throw StateError(
+            'Ironwood migration endpoint is unavailable for background setup.',
           );
         }
-        throw StateError(
-          '$_credentialRecoveryRequiredError '
-          'Vizor will only continue transactions preserved in the verified '
-          'iOS outbox.',
+        manifest = await backgroundManifestStore.prepare(
+          network: context.network,
+          accountUuid: context.accountUuid,
+          dbPath: context.dbPath,
+          lightwalletdUrl: lightwalletdUrl,
         );
       }
-      final resolvedManifest = await _resolveManifestContext(manifest, context);
-      await backgroundCredentialStore.bindExpectedRunId(
+      await _resolveManifestContext(manifest, context);
+      await backgroundManifestStore.bindExpectedRunId(
         network: context.network,
         accountUuid: context.accountUuid,
         expectedRunId: activeRunId,
       );
-      return _MigrationCredential(
-        password: resolvedManifest.credentialHex,
-        saltBase64: resolvedManifest.saltBase64,
-      );
+      return;
     }
 
-    await _reconcileBackgroundCredential(context: context, status: status);
-    if (!mayCreateRun) return _legacyCredential(context);
-    final manifest = await backgroundCredentialStore.prepare(
+    await _reconcileBackgroundManifest(context: context, status: status);
+    if (!mayCreateRun) return;
+    await backgroundManifestStore.prepare(
       network: context.network,
       accountUuid: context.accountUuid,
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl!,
     );
-    return _MigrationCredential(
-      password: manifest.credentialHex,
-      saltBase64: manifest.saltBase64,
-    );
   }
 
   Future<bool> _recoverPersistedMigrationOutbox({
-    required _MigrationCredentialContext context,
+    required _MigrationContext context,
     required rust_sync.MigrationStatus status,
   }) async {
     final runId = status.activeRunId;
@@ -1284,21 +1061,18 @@ class IronwoodMigrationService {
     );
     if (!recovered) return false;
 
-    _scheduledBackgroundMigrations.add(_credentialKey(context));
     await runMigrationOutboxOnceNow();
     await _reconcileMigrationOutboxReceipts(context: context);
     await _requestNotificationAuthorizationBestEffort();
     return true;
   }
 
-  _MigrationCredentialContext _contextWithCurrentEndpoint(
-    _MigrationCredentialContext context,
-  ) {
+  _MigrationContext _contextWithCurrentEndpoint(_MigrationContext context) {
     if (context.lightwalletdUrl != null) return context;
     try {
       final endpoint = getEndpoint();
       if (endpoint.networkName != context.network) return context;
-      return _MigrationCredentialContext(
+      return _MigrationContext(
         dbPath: context.dbPath,
         network: context.network,
         accountUuid: context.accountUuid,
@@ -1309,20 +1083,8 @@ class IronwoodMigrationService {
     }
   }
 
-  Future<_MigrationCredential> _legacyCredential(
-    _MigrationCredentialContext context,
-  ) async {
-    return _MigrationCredential(
-      password: getSessionPassword(),
-      saltBase64: await pendingTxSaltBase64(
-        network: context.network,
-        accountUuid: context.accountUuid,
-      ),
-    );
-  }
-
   Future<rust_sync.MigrationStatus> _getStatusForContext(
-    _MigrationCredentialContext context,
+    _MigrationContext context,
   ) {
     return getStatus(
       dbPath: context.dbPath,
@@ -1331,22 +1093,21 @@ class IronwoodMigrationService {
     );
   }
 
-  Future<void> _reconcileBackgroundCredential({
-    required _MigrationCredentialContext context,
+  Future<void> _reconcileBackgroundManifest({
+    required _MigrationContext context,
     required rust_sync.MigrationStatus status,
   }) async {
     final activeRunId = status.activeRunId;
     if (activeRunId != null) {
-      final manifest = await backgroundCredentialStore.read(
+      final manifest = await backgroundManifestStore.read(
         network: context.network,
         accountUuid: context.accountUuid,
       );
       if (manifest == null) {
-        _scheduledBackgroundMigrations.remove(_credentialKey(context));
         return;
       }
       await _resolveManifestContext(manifest, context);
-      await backgroundCredentialStore.bindExpectedRunId(
+      await backgroundManifestStore.bindExpectedRunId(
         network: context.network,
         accountUuid: context.accountUuid,
         expectedRunId: activeRunId,
@@ -1354,40 +1115,37 @@ class IronwoodMigrationService {
       return;
     }
 
-    final credentialKey = _credentialKey(context);
-    _scheduledBackgroundMigrations.remove(credentialKey);
-
-    IronwoodMigrationBackgroundCredentialManifest? manifest;
+    IronwoodMigrationBackgroundManifest? manifest;
     try {
-      manifest = await backgroundCredentialStore.read(
+      manifest = await backgroundManifestStore.read(
         network: context.network,
         accountUuid: context.accountUuid,
       );
     } on FormatException {
-      await backgroundCredentialStore.delete(
+      await backgroundManifestStore.delete(
         network: context.network,
         accountUuid: context.accountUuid,
       );
-      if (_isTerminalCredentialCleanupPhase(status.phase)) {
+      if (_isTerminalManifestCleanupPhase(status.phase)) {
         await _cancelBackgroundMigrationBestEffort();
       }
       return;
     }
     if (manifest == null) return;
 
-    await backgroundCredentialStore.delete(
+    await backgroundManifestStore.delete(
       network: context.network,
       accountUuid: context.accountUuid,
     );
     if (manifest.expectedRunId != null ||
-        _isTerminalCredentialCleanupPhase(status.phase)) {
+        _isTerminalManifestCleanupPhase(status.phase)) {
       await _cancelBackgroundMigrationBestEffort();
     }
   }
 
-  Future<IronwoodMigrationBackgroundCredentialManifest> _resolveManifestContext(
-    IronwoodMigrationBackgroundCredentialManifest manifest,
-    _MigrationCredentialContext context,
+  Future<IronwoodMigrationBackgroundManifest> _resolveManifestContext(
+    IronwoodMigrationBackgroundManifest manifest,
+    _MigrationContext context,
   ) async {
     if (manifest.network == context.network &&
         manifest.accountUuid == context.accountUuid) {
@@ -1396,7 +1154,7 @@ class IronwoodMigrationService {
       final storedDbName = _fileName(manifest.dbPath);
       final currentDbName = _fileName(context.dbPath);
       if (isIOS() && storedDbName != null && storedDbName == currentDbName) {
-        return backgroundCredentialStore.replaceDbPath(
+        return backgroundManifestStore.replaceDbPath(
           network: context.network,
           accountUuid: context.accountUuid,
           expectedDbPath: manifest.dbPath,
@@ -1406,14 +1164,13 @@ class IronwoodMigrationService {
     }
 
     throw StateError(
-      'Ironwood migration credential manifest does not match the active '
+      'Ironwood migration background manifest does not match the active '
       'wallet context.',
     );
   }
 
   Future<_MigrationOutboxRefreshResult> _refreshMigrationOutbox({
-    required _MigrationCredentialContext context,
-    required _MigrationCredential credential,
+    required _MigrationContext context,
     required bool prepare,
   }) async {
     final lightwalletdUrl = context.lightwalletdUrl;
@@ -1427,8 +1184,6 @@ class IronwoodMigrationService {
         lightwalletdUrl: lightwalletdUrl,
         network: context.network,
         accountUuid: context.accountUuid,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
       );
     }
 
@@ -1436,8 +1191,6 @@ class IronwoodMigrationService {
       dbPath: context.dbPath,
       network: context.network,
       accountUuid: context.accountUuid,
-      password: credential.password,
-      saltBase64: credential.saltBase64,
     );
     if (batch == null) return const _MigrationOutboxRefreshResult();
 
@@ -1474,8 +1227,6 @@ class IronwoodMigrationService {
     if (!armedAndScheduled) {
       throw StateError('Failed to schedule the Ironwood migration outbox.');
     }
-    _scheduledBackgroundMigrations.add(_credentialKey(context));
-
     final foregroundRun = await runMigrationOutboxOnceNow();
     final reconciledTxids = await _reconcileMigrationOutboxReceipts(
       context: context,
@@ -1534,7 +1285,7 @@ class IronwoodMigrationService {
   }
 
   Future<Set<String>> _reconcileMigrationOutboxReceipts({
-    required _MigrationCredentialContext context,
+    required _MigrationContext context,
   }) async {
     final rawReceipts = await listMigrationOutboxReceipts();
     final acknowledgedReceiptIds = <String>[];
@@ -1582,29 +1333,29 @@ class IronwoodMigrationService {
     return reconciledTxids;
   }
 
-  Future<T> _serializeCredentialState<T>(
-    _MigrationCredentialContext context,
+  Future<T> _serializeMigrationState<T>(
+    _MigrationContext context,
     Future<T> Function() operation,
   ) async {
-    final credentialKey = _credentialKey(context);
+    final migrationKey = _migrationKey(context);
     final previous =
-        _credentialOperationTails[credentialKey] ?? Future<void>.value();
+        _migrationOperationTails[migrationKey] ?? Future<void>.value();
     final release = Completer<void>();
     final current = previous.then((_) => release.future);
-    _credentialOperationTails[credentialKey] = current;
+    _migrationOperationTails[migrationKey] = current;
 
     await previous;
     try {
       return await operation();
     } finally {
       release.complete();
-      if (identical(_credentialOperationTails[credentialKey], current)) {
-        _credentialOperationTails.remove(credentialKey);
+      if (identical(_migrationOperationTails[migrationKey], current)) {
+        _migrationOperationTails.remove(migrationKey);
       }
     }
   }
 
-  String _credentialKey(_MigrationCredentialContext context) =>
+  String _migrationKey(_MigrationContext context) =>
       '${context.network}:${context.accountUuid}';
 
   Future<void> _cancelBackgroundMigrationBestEffort() async {
@@ -1645,14 +1396,14 @@ class IronwoodMigrationService {
   }
 
   Future<void> _resumeBoundBackgroundPreparationIfNeeded({
-    required _MigrationCredentialContext context,
+    required _MigrationContext context,
     required rust_sync.MigrationStatus status,
   }) async {
     if (status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase ||
         status.activeRunId == null) {
       return;
     }
-    final manifest = await backgroundCredentialStore.read(
+    final manifest = await backgroundManifestStore.read(
       network: context.network,
       accountUuid: context.accountUuid,
     );
@@ -1689,7 +1440,6 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     getWalletDbPath: getWalletDbPath,
     getStatus: rust_sync.getOrchardMigrationStatus,
     getPrivatePlan: rust_sync.getOrchardMigrationPrivatePlan,
-    secureStore: AppSecureStore.instance,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)
@@ -1826,11 +1576,11 @@ _defaultRunMigrationOutboxOnceNow() async {
   return IronwoodMigrationOutboxRunResult.fromMap(result);
 }
 
-bool _isTerminalCredentialCleanupPhase(String phase) =>
+bool _isTerminalManifestCleanupPhase(String phase) =>
     phase == 'complete' || phase == 'abandoned';
 
-class _MigrationCredentialContext {
-  const _MigrationCredentialContext({
+class _MigrationContext {
+  const _MigrationContext({
     required this.dbPath,
     required this.network,
     required this.accountUuid,
@@ -1848,16 +1598,6 @@ String? _fileName(String path) {
     path,
   ).pathSegments.where((segment) => segment.isNotEmpty);
   return segments.isEmpty ? null : segments.last;
-}
-
-class _MigrationCredential {
-  const _MigrationCredential({
-    required this.password,
-    required this.saltBase64,
-  });
-
-  final String password;
-  final String saltBase64;
 }
 
 class _MigrationOutboxRefreshResult {
@@ -1933,10 +1673,8 @@ class _MigrationOutboxReceipt {
   final Uint8List? acceptedRawTransaction;
 }
 
-String _migrationOutboxBatchId(
-  _MigrationCredentialContext context,
-  String runId,
-) => '${context.network}:${context.accountUuid}:$runId';
+String _migrationOutboxBatchId(_MigrationContext context, String runId) =>
+    '${context.network}:${context.accountUuid}:$runId';
 
 String _requiredOutboxString(Map<Object?, Object?> values, String key) {
   final value = values[key];

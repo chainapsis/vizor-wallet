@@ -14,7 +14,7 @@ import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
-import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../features/migration/services/ironwood_migration_background_manifest_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
@@ -271,10 +271,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final network =
-          (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
-              ? endpoint.networkName
-              : await _getNetwork();
+      final network = (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
+          ? endpoint.networkName
+          : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
       final isFirstWalletAccount = accounts.isEmpty;
@@ -287,8 +286,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
         mnemonic: mnemonic,
-        birthdayHeight:
-            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
         network: network,
         dbPath: dbPath,
         firstAccountName: accountName,
@@ -318,14 +318,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      final activeAccountUuid =
-          result.didImportPrimaryAccount
-              ? result.accounts.first.accountUuid
-              : previousActiveAccountUuid;
-      final activeAddress =
-          result.didImportPrimaryAccount
-              ? result.accounts.first.unifiedAddress
-              : previousActiveAddress;
+      final activeAccountUuid = result.didImportPrimaryAccount
+          ? result.accounts.first.accountUuid
+          : previousActiveAccountUuid;
+      final activeAddress = result.didImportPrimaryAccount
+          ? result.accounts.first.unifiedAddress
+          : previousActiveAddress;
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
       } else if (result.didImportPrimaryAccount) {
@@ -360,13 +358,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network =
-          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
 
       return rust_wallet.discoverSoftwareWalletImportAccounts(
         mnemonic: mnemonic,
-        birthdayHeight:
-            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
         network: network,
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -386,8 +386,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network =
-          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
 
       return rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
@@ -440,10 +441,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     validateAccountName(newName);
     final normalizedName = normalizeAccountName(newName);
     final prev = state.value ?? const AccountState();
-    final updated =
-        prev.accounts
-            .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
-            .toList();
+    final updated = prev.accounts
+        .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
+        .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
@@ -466,15 +466,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final prev = state.value ?? const AccountState();
-    final updated =
-        prev.accounts
-            .map(
-              (a) =>
-                  a.uuid == uuid
-                      ? a.copyWith(profilePictureId: normalizedProfilePictureId)
-                      : a,
-            )
-            .toList();
+    final updated = prev.accounts
+        .map(
+          (a) => a.uuid == uuid
+              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
+              : a,
+        )
+        .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
@@ -1017,10 +1015,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final updated = [...prev.accounts, ...importedAccounts];
       final activeAccountUuid = prev.activeAccountUuid ?? firstImportedUuid;
-      final activeAddress =
-          prev.activeAccountUuid == null
-              ? firstImportedAddress
-              : prev.activeAddress;
+      final activeAddress = prev.activeAccountUuid == null
+          ? firstImportedAddress
+          : prev.activeAddress;
       await _saveAccounts(updated);
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
@@ -1283,8 +1280,9 @@ String? resolveNextActiveAccountUuidAfterRemoval({
       remainingAccounts.any((a) => a.uuid == previousState.activeAccountUuid)) {
     return previousState.activeAccountUuid;
   }
-  final nextIndex =
-      removedAccount.order.clamp(0, remainingAccounts.length - 1).toInt();
+  final nextIndex = removedAccount.order
+      .clamp(0, remainingAccounts.length - 1)
+      .toInt();
   return remainingAccounts[nextIndex].uuid;
 }
 

@@ -948,20 +948,6 @@ Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileIronwoodMigrationRecoveryRequiredUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.migrating,
-    previewStatus: _previewMobileMigrationStatus(),
-    previewParts: _previewMobileMigrationParts,
-    previewCoordinatorError:
-        'Bad state: Ironwood migration credential is missing for the active '
-        'run. Vizor will only continue transactions preserved in the '
-        'verified iOS outbox.',
-  );
-}
-
 const _previewMobileMigrationParts = [
   MobileIronwoodMigrationPartPresentation(
     label: 'Part 1',
@@ -1075,7 +1061,6 @@ Widget _buildMobileIronwoodMigrationUseCase({
   List<MobileIronwoodMigrationPartPresentation>? previewParts,
   MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
       MobileIronwoodMigrationReviewPreviewStage.review,
-  String? previewCoordinatorError,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
@@ -1092,20 +1077,6 @@ Widget _buildMobileIronwoodMigrationUseCase({
     _ => 'Username',
   };
   return ProviderScope(
-    overrides: [
-      if (previewCoordinatorError != null) ...[
-        accountProvider.overrideWith(
-          () => _PreviewAccountNotifier(_ironwoodMigrationAccountState()),
-        ),
-        ironwoodMigrationCoordinatorProvider.overrideWith(
-          () => _PreviewMigrationCoordinator(
-            accountUuid: _accountsDesignState.activeAccountUuid,
-            status: previewStatus,
-            error: previewCoordinatorError,
-          ),
-        ),
-      ],
-    ],
     child: _MobilePreviewFrame(
       child: MobileIronwoodMigrationFlowScreen(
         step: step,
@@ -2067,10 +2038,6 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           ),
         ),
         GoRoute(
-          path: '/migration/review',
-          redirect: (_, _) => '/migration/private/review',
-        ),
-        GoRoute(
           path: '/migration/private/review',
           builder: (_, _) => IronwoodMigrationFlowScreen(
             step: IronwoodMigrationFlowStep.review,
@@ -2802,17 +2769,18 @@ _previewMobilePrivateMigrationManyPartsPlan() {
 }
 
 rust_sync.MigrationStatus _previewMobilePreparingStatus() {
+  const values = [
+    4_000_000_000,
+    500_000_000,
+    8_000_000_000,
+    100_000_000,
+    500_000_000,
+    1_000_000_000,
+  ];
   return rust_sync.MigrationStatus(
     phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     activeRunId: 'preview-mobile-preparing-run',
-    targetValuesZatoshi: frb.Uint64List.fromList([
-      4_000_000_000,
-      500_000_000,
-      8_000_000_000,
-      100_000_000,
-      500_000_000,
-      1_000_000_000,
-    ]),
+    targetValuesZatoshi: frb.Uint64List.fromList(values),
     preparedNoteCount: 6,
     denominationConfirmationCount: 1,
     denominationConfirmationTarget: 3,
@@ -2830,7 +2798,14 @@ rust_sync.MigrationStatus _previewMobilePreparingStatus() {
     scheduleMaxDelayBlocks: 960,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      for (var i = 0; i < values.length; i++)
+        _previewMigrationPart(
+          i,
+          values[i],
+          rust_sync.MigrationPartState.preparing,
+        ),
+    ],
   );
 }
 
@@ -2851,6 +2826,14 @@ rust_sync.MigrationStatus _previewMobileMigrationStatus() {
     'scheduled',
     'scheduled',
     'scheduled',
+  ];
+  const partStates = [
+    rust_sync.MigrationPartState.completed,
+    rust_sync.MigrationPartState.needsInput,
+    rust_sync.MigrationPartState.migrating,
+    rust_sync.MigrationPartState.scheduled,
+    rust_sync.MigrationPartState.scheduled,
+    rust_sync.MigrationPartState.scheduled,
   ];
   return rust_sync.MigrationStatus(
     phase: kIronwoodMigrationWaitingConfirmationsPhase,
@@ -2882,7 +2865,10 @@ rust_sync.MigrationStatus _previewMobileMigrationStatus() {
           status: statuses[i],
         ),
     ],
-    parts: const [],
+    parts: [
+      for (var i = 0; i < values.length; i++)
+        _previewMigrationPart(i, values[i], partStates[i]),
+    ],
   );
 }
 
@@ -2926,22 +2912,32 @@ rust_sync.MigrationStatus _previewMobileHomeMigrationStatus() {
           status: i == 0 ? 'confirmed' : 'scheduled',
         ),
     ],
-    parts: const [],
+    parts: [
+      for (var i = 0; i < values.length; i++)
+        _previewMigrationPart(
+          i,
+          values[i],
+          i == 0
+              ? rust_sync.MigrationPartState.completed
+              : rust_sync.MigrationPartState.scheduled,
+        ),
+    ],
   );
 }
 
 rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
+  const values = [
+    8_000_000_000,
+    4_000_000_000,
+    1_000_000_000,
+    500_000_000,
+    500_000_000,
+    220_000_000,
+  ];
   return rust_sync.MigrationStatus(
     phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     activeRunId: 'preview-run',
-    targetValuesZatoshi: frb.Uint64List.fromList([
-      8_000_000_000,
-      4_000_000_000,
-      1_000_000_000,
-      500_000_000,
-      500_000_000,
-      220_000_000,
-    ]),
+    targetValuesZatoshi: frb.Uint64List.fromList(values),
     preparedNoteCount: 6,
     denominationConfirmationCount: 2,
     denominationConfirmationTarget: 3,
@@ -2959,7 +2955,14 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: [
+      for (var i = 0; i < values.length; i++)
+        _previewMigrationPart(
+          i,
+          values[i],
+          rust_sync.MigrationPartState.preparing,
+        ),
+    ],
   );
 }
 
@@ -3179,15 +3182,10 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
-  _PreviewMigrationCoordinator({
-    required this.accountUuid,
-    this.status,
-    this.error,
-  });
+  _PreviewMigrationCoordinator({required this.accountUuid, this.status});
 
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;
-  final String? error;
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -3197,14 +3195,7 @@ class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
       statuses: uuid == null || previewStatus == null
           ? const {}
           : {uuid: previewStatus},
-      errors: uuid == null || error == null ? const {} : {uuid: error!},
-    );
-  }
-
-  @override
-  Future<void> recover(String accountUuid) async {
-    state = state.copyWith(
-      errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+      errors: const {},
     );
   }
 }

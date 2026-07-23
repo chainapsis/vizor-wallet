@@ -4,7 +4,7 @@ import Foundation
 import Security
 import UserNotifications
 
-let ironwoodMigrationBackgroundCredentialService =
+let ironwoodMigrationBackgroundManifestService =
   "com.keplr.vizor.ironwood-migration-background.v1"
 
 struct IronwoodMigrationBackgroundManifest: Decodable {
@@ -13,16 +13,14 @@ struct IronwoodMigrationBackgroundManifest: Decodable {
   let accountUuid: String
   let dbPath: String
   let lightwalletdUrl: String
-  let credentialHex: String
-  let saltBase64: String
   let expectedRunId: String?
 }
 
-enum IronwoodMigrationBackgroundCredentialStore {
+enum IronwoodMigrationBackgroundManifestStore {
   static func loadAll() -> [IronwoodMigrationBackgroundManifest]? {
     let query: [CFString: Any] = [
       kSecClass: kSecClassGenericPassword,
-      kSecAttrService: ironwoodMigrationBackgroundCredentialService,
+      kSecAttrService: ironwoodMigrationBackgroundManifestService,
       kSecReturnData: true,
       kSecMatchLimit: kSecMatchLimitAll,
     ]
@@ -64,7 +62,7 @@ enum IronwoodMigrationBackgroundCredentialStore {
   static func deleteAll() {
     let query: [CFString: Any] = [
       kSecClass: kSecClassGenericPassword,
-      kSecAttrService: ironwoodMigrationBackgroundCredentialService,
+      kSecAttrService: ironwoodMigrationBackgroundManifestService,
     ]
     let status = SecItemDelete(query as CFDictionary)
     if status != errSecSuccess && status != errSecItemNotFound {
@@ -75,7 +73,7 @@ enum IronwoodMigrationBackgroundCredentialStore {
   private static func delete(account: String) {
     let query: [CFString: Any] = [
       kSecClass: kSecClassGenericPassword,
-      kSecAttrService: ironwoodMigrationBackgroundCredentialService,
+      kSecAttrService: ironwoodMigrationBackgroundManifestService,
       kSecAttrAccount: account,
     ]
     let status = SecItemDelete(query as CFDictionary)
@@ -228,7 +226,7 @@ final class BackgroundMigrationManager {
           accountUuid: accountUuid
         )) != nil
       if revoked {
-        IronwoodMigrationBackgroundCredentialStore.delete(
+        IronwoodMigrationBackgroundManifestStore.delete(
           network: network,
           accountUuid: accountUuid
         )
@@ -251,7 +249,7 @@ final class BackgroundMigrationManager {
         ?? []
       let removed = (try? BackgroundMigrationOutboxChannel.removeAll()) != nil
       if removed {
-        IronwoodMigrationBackgroundCredentialStore.deleteAll()
+        IronwoodMigrationBackgroundManifestStore.deleteAll()
       }
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,

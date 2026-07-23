@@ -34,15 +34,11 @@ class _ReviewRow extends StatelessWidget {
   const _ReviewRow({
     required this.label,
     required this.value,
-    this.showInfo = false,
-    this.onInfoPressed,
     this.height = 25,
   });
 
   final String label;
   final String value;
-  final bool showInfo;
-  final VoidCallback? onInfoPressed;
   final double height;
 
   @override
@@ -93,27 +89,6 @@ class _ReviewRow extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (showInfo) ...[
-                    const SizedBox(width: AppSpacing.xxs),
-                    Semantics(
-                      button: onInfoPressed != null,
-                      label: 'About estimated completion',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onInfoPressed,
-                        child: SizedBox.square(
-                          dimension: onInfoPressed == null ? 20 : 44,
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.help,
-                              size: 16,
-                              color: colors.icon.regular,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

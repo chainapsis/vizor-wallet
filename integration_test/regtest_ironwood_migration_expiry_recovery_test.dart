@@ -153,10 +153,15 @@ void main() {
       final dbPath = await getWalletDbPath();
       await _runSqlite(
         dbPath,
-        "UPDATE vizor_migration_pending_txs "
+        "UPDATE orchard_ironwood_migration_transactions "
         "SET expiry_height = $chainHeight "
-        "WHERE run_id = '${_sqlLiteral(originalRunId!)}' "
-        "AND txid_hex = '${_sqlLiteral(expiringTxid)}';"
+        "WHERE kind = 'transfer' "
+        "AND txid = '${_walletDbTxidHex(expiringTxid)}' "
+        "AND migration_id = ("
+        "SELECT m.id FROM orchard_ironwood_migrations m "
+        "JOIN accounts a ON a.id = m.account_id "
+        "WHERE lower(hex(a.uuid)) = '${_walletDbAccountUuidHex(accountUuid)}'"
+        ");"
         "UPDATE transactions SET expiry_height = $chainHeight "
         "WHERE lower(hex(txid)) = '${_walletDbTxidHex(expiringTxid)}';",
       );
@@ -194,20 +199,16 @@ void main() {
 
       final recovered = await _runSqlite(
         dbPath,
-        "SELECT phase || ':' || "
-        "(SELECT COUNT(*) FROM vizor_migration_prepared_notes "
-        " WHERE run_id = '${_sqlLiteral(originalRunId)}' "
-        " AND lock_state = 'locked') || ':' || "
-        "(SELECT COUNT(*) FROM vizor_migration_pending_txs "
-        " WHERE run_id = '${_sqlLiteral(originalRunId)}' "
-        " AND status = 'needs_resign') "
-        "FROM vizor_migration_runs "
-        "WHERE run_id = '${_sqlLiteral(originalRunId)}';",
+        "SELECT m.status || ':' || "
+        "(SELECT COUNT(*) FROM orchard_ironwood_migration_transactions t "
+        " WHERE t.migration_id = m.id AND t.kind = 'transfer') || ':' || "
+        "(SELECT COUNT(*) FROM orchard_ironwood_migration_transactions t "
+        " WHERE t.migration_id = m.id AND t.state = 'awaiting_signature') "
+        "FROM orchard_ironwood_migrations m "
+        "JOIN accounts a ON a.id = m.account_id "
+        "WHERE lower(hex(a.uuid)) = '${_walletDbAccountUuidHex(accountUuid)}';",
       );
-      expect(
-        recovered.trim(),
-        'broadcast_scheduled:${originalTargets.length}:0',
-      );
+      expect(recovered.trim(), 'in_progress:${originalTargets.length}:0');
 
       await ironwoodDriverPost(
         _driverUrl,
@@ -250,11 +251,12 @@ Future<String> _runSqlite(String dbPath, String sql) async {
   return result.stdout as String;
 }
 
-String _sqlLiteral(String value) => value.replaceAll("'", "''");
-
 String _walletDbTxidHex(String displayTxid) {
   final bytePairs = RegExp(
     '..',
   ).allMatches(displayTxid).map((match) => match.group(0)!).toList();
   return bytePairs.reversed.join();
 }
+
+String _walletDbAccountUuidHex(String accountUuid) =>
+    accountUuid.replaceAll('-', '').toLowerCase();

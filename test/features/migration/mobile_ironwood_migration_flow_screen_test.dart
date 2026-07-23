@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
-import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -52,31 +51,6 @@ class _HardwareAccountNotifier extends AccountNotifier {
   @override
   Future<AccountState> build() async =>
       _bootstrap(hardware: true).initialAccountState;
-}
-
-class _RecoveryScreenTestMigrationCoordinator
-    extends IronwoodMigrationCoordinator {
-  int recoveryCount = 0;
-
-  @override
-  IronwoodMigrationCoordinatorState build() {
-    return const IronwoodMigrationCoordinatorState(
-      errors: {
-        'account-1':
-            'Bad state: Ironwood migration credential is missing for the '
-            'active run. Vizor will only continue transactions preserved in '
-            'the verified iOS outbox.',
-      },
-    );
-  }
-
-  @override
-  Future<void> recover(String accountUuid) async {
-    recoveryCount++;
-    state = state.copyWith(
-      errors: Map<String, String>.from(state.errors)..remove(accountUuid),
-    );
-  }
 }
 
 final _data = IronwoodMigrationFlowData(
@@ -478,14 +452,12 @@ IronwoodMigrationService _migrationService({
     getImmediatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             _immediatePlan,
-    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
     // These screen tests exercise routing and presentation, not the native
-    // iOS outbox credential contract. Credential behavior has dedicated
-    // service tests.
+    // iOS migration outbox.
     isMobile: () => false,
     supportsBackgroundMigration: () => true,
     startSoftwareMigration:
@@ -495,8 +467,6 @@ IronwoodMigrationService _migrationService({
           required network,
           required accountUuid,
           required mnemonicBytes,
-          required password,
-          required saltBase64,
           required approvedSchedule,
         }) =>
             onStart?.call(accountUuid, approvedSchedule) ??
@@ -507,8 +477,6 @@ IronwoodMigrationService _migrationService({
           required lightwalletdUrl,
           required network,
           required accountUuid,
-          required password,
-          required saltBase64,
         }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
     scheduleBackgroundMigration: () async => true,
   );
@@ -2070,9 +2038,6 @@ void main() {
         getPrivatePlan:
             ({required dbPath, required network, required accountUuid}) async =>
                 _plan,
-        secureStore: AppSecureStore.testing(
-          storage: const FlutterSecureStorage(),
-        ),
         getEndpoint: () => defaultRpcEndpointConfig('main'),
         prepareKeystoneDenominationMigration:
             ({required dbPath, required network, required accountUuid}) async {
@@ -2411,52 +2376,6 @@ void main() {
     expect(find.textContaining('4.12 ZEC'), findsNWidgets(3));
     expect(find.text('Part 1'), findsOneWidget);
     expect(find.text('Part 3'), findsOneWidget);
-  });
-
-  testWidgets('requires confirmation before rebuilding a missing credential', (
-    tester,
-  ) async {
-    _useMobileViewport(tester, size: const Size(320, 568));
-    final coordinator = _RecoveryScreenTestMigrationCoordinator();
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        migrationCoordinator: () => coordinator,
-        status: _status(
-          phase: kIronwoodMigrationBroadcastScheduledPhase,
-          activeRunId: 'old-run',
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Migration recovery required.'), findsOneWidget);
-    expect(find.text('Recover'), findsOneWidget);
-    expect(coordinator.recoveryCount, 0);
-
-    final recoveryButton = find.byKey(
-      const ValueKey('mobile_ironwood_credential_recovery_button'),
-    );
-    final buttonTopBeforeScroll = tester.getTopLeft(recoveryButton).dy;
-    await tester.drag(
-      find.byKey(const ValueKey('mobile_ironwood_migration_content_scroll')),
-      const Offset(0, -120),
-    );
-    await tester.pump();
-    expect(tester.getTopLeft(recoveryButton).dy, buttonTopBeforeScroll);
-
-    await tester.tap(find.text('Recover'));
-    await tester.pumpAndSettle();
-    expect(find.text('Rebuild migration?'), findsOneWidget);
-    expect(find.text('Rebuild'), findsOneWidget);
-    expect(coordinator.recoveryCount, 0);
-
-    await tester.ensureVisible(find.text('Rebuild'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Rebuild'));
-    await tester.pumpAndSettle();
-    expect(coordinator.recoveryCount, 1);
   });
 
   testWidgets('uses per-part state and confirmation progress from Rust', (

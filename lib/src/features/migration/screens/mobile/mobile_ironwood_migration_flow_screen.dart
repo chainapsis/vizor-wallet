@@ -3,13 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart'
-    show
-        CircularProgressIndicator,
-        Dialog,
-        Divider,
-        Scaffold,
-        VerticalDivider,
-        showDialog;
+    show CircularProgressIndicator, Divider, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -19,7 +13,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/formatting/zec_amount.dart';
-import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
