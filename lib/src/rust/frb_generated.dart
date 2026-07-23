@@ -8786,8 +8786,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 17)
+      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
     return OrchardMigrationPrivatePlan(
       targetValuesZatoshi: dco_decode_list_prim_u_64_strict(arr[0]),
       totalInputZatoshi: dco_decode_u_64(arr[1]),
@@ -8798,13 +8798,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       estimatedTotalFeeZatoshi: dco_decode_u_64(arr[6]),
       plannedBatchCount: dco_decode_u_32(arr[7]),
       denominationSplitStageCount: dco_decode_u_32(arr[8]),
-      signingBatchLimit: dco_decode_u_32(arr[9]),
-      scheduleMeanDelayBlocks: dco_decode_u_32(arr[10]),
-      scheduleMaxDelayBlocks: dco_decode_u_32(arr[11]),
-      proofReadinessDelayBlocks: dco_decode_u_32(arr[12]),
-      estimatedProofReadyHeight: dco_decode_opt_box_autoadd_u_32(arr[13]),
-      maxPreparedNotesPerRun: dco_decode_u_32(arr[14]),
-      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[15]),
+      denominationSplitLayerCount: dco_decode_u_32(arr[9]),
+      signingBatchLimit: dco_decode_u_32(arr[10]),
+      scheduleMeanDelayBlocks: dco_decode_u_32(arr[11]),
+      scheduleMaxDelayBlocks: dco_decode_u_32(arr[12]),
+      proofReadinessDelayBlocks: dco_decode_u_32(arr[13]),
+      estimatedProofReadyHeight: dco_decode_opt_box_autoadd_u_32(arr[14]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[15]),
+      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[16]),
     );
   }
 
@@ -11428,6 +11429,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_estimatedTotalFeeZatoshi = sse_decode_u_64(deserializer);
     var var_plannedBatchCount = sse_decode_u_32(deserializer);
     var var_denominationSplitStageCount = sse_decode_u_32(deserializer);
+    var var_denominationSplitLayerCount = sse_decode_u_32(deserializer);
     var var_signingBatchLimit = sse_decode_u_32(deserializer);
     var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
     var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
@@ -11449,6 +11451,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       estimatedTotalFeeZatoshi: var_estimatedTotalFeeZatoshi,
       plannedBatchCount: var_plannedBatchCount,
       denominationSplitStageCount: var_denominationSplitStageCount,
+      denominationSplitLayerCount: var_denominationSplitLayerCount,
       signingBatchLimit: var_signingBatchLimit,
       scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
@@ -13931,6 +13934,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.estimatedTotalFeeZatoshi, serializer);
     sse_encode_u_32(self.plannedBatchCount, serializer);
     sse_encode_u_32(self.denominationSplitStageCount, serializer);
+    sse_encode_u_32(self.denominationSplitLayerCount, serializer);
     sse_encode_u_32(self.signingBatchLimit, serializer);
     sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
     sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);

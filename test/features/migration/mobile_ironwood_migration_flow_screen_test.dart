@@ -252,6 +252,7 @@ final _data = IronwoodMigrationFlowData(
 rust_sync.OrchardMigrationPrivatePlan _planWith({
   int plannedBatchCount = 12,
   int denominationSplitStageCount = 1,
+  int? denominationSplitLayerCount,
   int signingBatchLimit = 12,
   int blockOffsetAdjustment = 0,
   int proofReadinessDelayBlocks = 146,
@@ -266,6 +267,8 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
   plannedBatchCount: plannedBatchCount,
   denominationSplitStageCount: denominationSplitStageCount,
+  denominationSplitLayerCount:
+      denominationSplitLayerCount ?? denominationSplitStageCount,
   signingBatchLimit: signingBatchLimit,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
@@ -539,6 +542,7 @@ Widget _productionApp({
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   IronwoodMigrationCompletionStore? completionStore,
+  bool realKeystoneDenominationRoute = false,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -591,7 +595,9 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, _) => const Text('keystone denomination sign route'),
+        builder: (_, _) => realKeystoneDenominationRoute
+            ? const MobileIronwoodMigrationKeystoneDenominationSignScreen()
+            : const Text('keystone denomination sign route'),
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
@@ -2548,8 +2554,7 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
-          onGetPrivatePlan: () async =>
-              _planWith(blockOffsetAdjustment: 75),
+          onGetPrivatePlan: () async => _planWith(blockOffsetAdjustment: 75),
           onStart: (accountUuid, approvedSchedule) async {
             startedAccountUuid = accountUuid;
             startedSchedule = approvedSchedule;
@@ -2665,6 +2670,73 @@ void main() {
     expect(find.text('Confirm with Keystone'), findsOneWidget);
     expect(find.textContaining('Scan the QR code'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('completes a direct-note split without opening a QR round', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    var completionCount = 0;
+    List<rust_sync.KeystoneSignedMigrationMessage>? completedMessages;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _status(phase: kIronwoodMigrationReadyPhase),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _plan,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      isMobile: () => false,
+      prepareKeystoneDenominationMigration:
+          ({required dbPath, required network, required accountUuid}) async =>
+              const rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'direct-note-request',
+                messages: [],
+                signingBatchLimit: 50,
+              ),
+      completeKeystoneDenominationMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required requestId,
+            required signedMessages,
+            required password,
+            required saltBase64,
+            required approvedSchedule,
+          }) async {
+            completionCount += 1;
+            completedMessages = signedMessages;
+            return _migrationResult();
+          },
+    );
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/keystone/denominations/sign',
+        migrationService: service,
+        hardware: true,
+        realKeystoneDenominationRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(completionCount, 1);
+    expect(completedMessages, isEmpty);
+    expect(
+      find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsNothing,
+    );
   });
 
   testWidgets('blocks an oversized Keystone signing plan before QR', (

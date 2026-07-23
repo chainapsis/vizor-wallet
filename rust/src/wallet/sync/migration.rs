@@ -15,10 +15,12 @@ use crate::wallet::secret_payload;
 
 use super::READ_DB_BUSY_TIMEOUT;
 
+#[allow(dead_code)]
+mod preparation_plan;
 mod split_plan;
 mod stages;
 pub(crate) use split_plan::{
-    plan_padded_denominations, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
+    plan_padded_denominations, SplitStageInput, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
 };
 #[allow(unused_imports)]
 pub(crate) use stages::{
@@ -479,7 +481,7 @@ pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<
     }
 
     let progress = denomination_split_progress_for_run(&conn, run_id)?;
-    Ok(progress.total_count > 0 && progress.completed_count == progress.total_count)
+    Ok(progress.total_count == 0 || progress.completed_count == progress.total_count)
 }
 
 fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
@@ -625,8 +627,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
-    if denomination_stages.is_empty() {
-        return Err("Staged migration has no denomination transactions".to_string());
+    if denomination_stages.is_empty() && prepared_notes.is_empty() {
+        return Err("Migration run has no prepared funding notes".to_string());
     }
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -639,6 +641,11 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
+    let initial_phase = if denomination_stages.is_empty() {
+        PHASE_READY_TO_MIGRATE
+    } else {
+        PHASE_WAITING_DENOM_CONFIRMATIONS
+    };
     let schedule_json = match approved_schedule {
         Some(schedule) => {
             validate_schedule_with_policy(
@@ -668,7 +675,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             account_uuid,
             network_name(network),
             db_path,
-            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            initial_phase,
             now,
             target_values_json,
             timing_policy.as_str(),
@@ -679,13 +686,15 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     .map_err(|e| format!("Create staged migration run: {e}"))?;
     insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
-    initialize_preparation_schedule_with_tx(
-        &tx,
-        &run_id,
-        network,
-        preparation_timing_policy,
-        &mut OsRng,
-    )?;
+    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        initialize_preparation_schedule_with_tx(
+            &tx,
+            &run_id,
+            network,
+            preparation_timing_policy,
+            &mut OsRng,
+        )?;
+    }
     insert_signed_child_pczts_with_tx(
         &tx,
         &run_id,
@@ -4229,9 +4238,7 @@ fn denomination_split_progress_for_run(
 ) -> Result<DenominationSplitProgress, String> {
     let stages = denomination_stage_chain_records(conn, run_id)?;
     if stages.is_empty() {
-        return Err(format!(
-            "Migration run {run_id} has no staged denomination transactions"
-        ));
+        return Ok(DenominationSplitProgress::default());
     }
 
     let total_count = u32::try_from(stages.len())

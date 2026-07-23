@@ -326,11 +326,15 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         await _discardRequest(accountUuid, request.requestId);
         return;
       }
-      if (request.messages.isEmpty) {
-        throw StateError('Keystone migration request has no messages.');
-      }
       _request = request;
       _accountUuid = accountUuid;
+      if (request.messages.isEmpty) {
+        if (widget.step != _KeystonePrivateSignStep.denominations) {
+          throw StateError('Keystone migration request has no messages.');
+        }
+        await _completeSignedMessages(const []);
+        return;
+      }
       _startProofPolling(request.requestId);
 
       final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
@@ -460,7 +464,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _pendingSignedMessages = null;
           _error = ironwoodMigrationKeystoneProofFailureMessage(status);
           if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
-            _stage = _KeystoneDenominationSignStage.scanning;
+            _stage = (_request?.messages.isEmpty ?? true)
+                ? _KeystoneDenominationSignStage.failed
+                : _KeystoneDenominationSignStage.scanning;
           }
         } else if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
           _error = status.isReady
@@ -545,7 +551,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         return;
       }
       setState(() {
-        _stage = _KeystoneDenominationSignStage.scanning;
+        _stage = request.messages.isEmpty
+            ? _KeystoneDenominationSignStage.failed
+            : _KeystoneDenominationSignStage.scanning;
         _pendingSignedMessages = null;
         _decoding = false;
         _error = _keystoneMigrationSigningErrorMessage(e);
