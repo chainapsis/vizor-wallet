@@ -929,6 +929,13 @@ fn insert_pending_txs_with_tx(
         )
         .optional()
         .map_err(|e| format!("Read migration schedule origin: {e}"))?;
+    let proof_retry_height = tx
+        .query_row(
+            &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .map_err(|e| format!("Read migration proof-ready schedule origin: {e}"))?;
     let (construction_height, scheduled_start_ms) =
         if let Some((scheduled_at_ms, schedule_start_height, scheduled_height)) =
             existing_schedule_origin
@@ -955,7 +962,8 @@ fn insert_pending_txs_with_tx(
                 .map(|pending| pending.target_height.saturating_sub(1))
                 .chain(signed_child_construction_height)
                 .max()
-                .ok_or("Migration schedule has no transactions")?;
+                .ok_or("Migration schedule has no transactions")?
+                .max(proof_retry_height.unwrap_or(0));
             (construction_height, now_ms()?)
         };
     let mut scheduled_pending = Vec::with_capacity(pending_txs.len());
@@ -2832,17 +2840,17 @@ fn calculate_migration_timing_projection(
     } else {
         // Promotion reuses the first persisted schedule origin. Before any
         // child is promoted it uses the latest signed construction height.
-        let schedule_origin = pending
-            .first()
-            .map(|part| {
-                part.schedule_start_height
-                    .unwrap_or_else(|| part.target_height.saturating_sub(1))
-            })
+        let persisted_schedule_origin = pending.first().map(|part| {
+            part.schedule_start_height
+                .unwrap_or_else(|| part.target_height.saturating_sub(1))
+        });
+        let schedule_origin = persisted_schedule_origin
             .or_else(|| {
                 signed_children
                     .iter()
                     .map(|child| child.target_height.saturating_sub(1))
                     .max()
+                    .map(|height| height.max(proof_retry_height.unwrap_or(0)))
             })
             .ok_or("Migration timing projection has no schedule origin")?;
         let indexed_schedule = schedule.iter().all(|entry| entry.part_index.is_some());
@@ -2861,10 +2869,17 @@ fn calculate_migration_timing_projection(
                 schedule_origin
                     .checked_add(offset)
                     .ok_or("Migration projected broadcast height overflow")
-                    .map(|height| MigrationTimingProjectedSignedPart {
-                        part_index: child.part_index,
-                        schedule_start_height: schedule_origin,
-                        scheduled_height: height.max(proof_retry_height.unwrap_or(0)),
+                    .map(|height| {
+                        let scheduled_height = if persisted_schedule_origin.is_some() {
+                            height.max(proof_retry_height.unwrap_or(0))
+                        } else {
+                            height
+                        };
+                        MigrationTimingProjectedSignedPart {
+                            part_index: child.part_index,
+                            schedule_start_height: schedule_origin,
+                            scheduled_height,
+                        }
                     })
             })
             .collect::<Result<Vec<_>, _>>()?

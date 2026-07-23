@@ -766,17 +766,22 @@ fn planner_chunks_more_than_max_prepared_outputs_into_follow_up_run() {
 }
 
 #[test]
-fn timing_projection_includes_proof_retry_schedule_and_trusted_depth() {
+fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
     let schedule = vec![
         MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 100,
-            block_offset: 144,
+            block_offset: 0,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
-            block_offset: 288,
+            block_offset: 48,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(2),
+            value_zatoshi: 300,
+            block_offset: 96,
         },
     ];
     let signed_children = vec![
@@ -788,31 +793,40 @@ fn timing_projection_includes_proof_retry_schedule_and_trusted_depth() {
             part_index: 1,
             target_height: 101,
         },
+        MigrationTimingSignedChild {
+            part_index: 2,
+            target_height: 101,
+        },
     ];
 
     let projection =
-        calculate_migration_timing_projection(&schedule, &[], &signed_children, Some(200), 2, 3)
+        calculate_migration_timing_projection(&schedule, &[], &signed_children, Some(200), 3, 3)
             .unwrap();
 
     assert_eq!(projection.next_action_height, Some(200));
     assert_eq!(projection.next_action_part_index, Some(0));
-    assert_eq!(projection.estimated_completion_height, Some(391));
+    assert_eq!(projection.estimated_completion_height, Some(299));
     assert_eq!(
         projection.schedule_order_by_part,
-        BTreeMap::from([(0, 0), (1, 1)])
+        BTreeMap::from([(0, 0), (1, 1), (2, 2)])
     );
     assert_eq!(
         projection.projected_signed_parts,
         vec![
             MigrationTimingProjectedSignedPart {
                 part_index: 0,
-                schedule_start_height: 100,
-                scheduled_height: 244,
+                schedule_start_height: 200,
+                scheduled_height: 200,
             },
             MigrationTimingProjectedSignedPart {
                 part_index: 1,
-                schedule_start_height: 100,
-                scheduled_height: 388,
+                schedule_start_height: 200,
+                scheduled_height: 248,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 2,
+                schedule_start_height: 200,
+                scheduled_height: 296,
             },
         ]
     );
@@ -968,22 +982,30 @@ fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
             block_offset: 80,
         },
     ];
-    let signed_children = vec![
-        MigrationTimingSignedChild {
-            part_index: 0,
-            target_height: 101,
-        },
-        MigrationTimingSignedChild {
-            part_index: 1,
-            target_height: 101,
-        },
-    ];
+    let signed_children = vec![MigrationTimingSignedChild {
+        part_index: 1,
+        target_height: 101,
+    }];
+    let pending = vec![MigrationTimingPendingPart {
+        part_index: Some(0),
+        target_height: 101,
+        schedule_start_height: Some(100),
+        scheduled_height: 150,
+        status: "scheduled".to_string(),
+        mined_height: None,
+    }];
 
-    let projection =
-        calculate_migration_timing_projection(&schedule, &[], &signed_children, Some(200), 2, 3)
-            .unwrap();
+    let projection = calculate_migration_timing_projection(
+        &schedule,
+        &pending,
+        &signed_children,
+        Some(200),
+        2,
+        3,
+    )
+    .unwrap();
 
-    assert_eq!(projection.next_action_height, Some(200));
+    assert_eq!(projection.next_action_height, Some(150));
     assert_eq!(projection.estimated_completion_height, None);
 }
 
@@ -1605,8 +1627,8 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         }
     };
 
-    set_proof_retry_height(&db_path, "run-1", 500).unwrap();
-    assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(500));
+    set_proof_retry_height(&db_path, "run-1", 1_200).unwrap();
+    assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
     promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
@@ -1644,7 +1666,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(stored, vec![(1, 998, 999), (0, 998, 1_000)]);
+    assert_eq!(stored, vec![(1, 1_200, 1_201), (0, 1_200, 1_202)]);
 }
 
 #[test]
