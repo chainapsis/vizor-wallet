@@ -32,23 +32,23 @@
   </tr>
   <tr>
     <td>C callback context</td>
-    <td>C function pointer는 context를 capture할 수 없다. iOS background sync에서 task.progress를 업데이트하려면 NSProgress 참조를 shared 변수에 저장하고 C callback에서 접근해야 한다.</td>
+    <td>C function pointer는 context를 capture할 수 없다. iOS migration preparation에서 task.progress를 업데이트하려면 NSProgress 참조를 manager가 보관하고 C callback에서 접근해야 한다.</td>
   </tr>
   <tr>
     <td>ffi.rs 위치</td>
     <td><code>ffi.rs</code>는 <code>api/</code> 밖에 위치해야 함. FRB codegen이 <code>api/</code> 하위의 <code>extern "C"</code> 함수를 처리하려다 실패.</td>
   </tr>
   <tr>
-    <td>Sync mode 전환 timing</td>
-    <td>iOS에서 mode 전환 시 이전 sync가 종료될 때까지 대기해야 한다. Swift BGTask handler는 <code>while(mode!=2 || is_running) sleep(2s)</code>. Dart <code>disableBackgroundSync</code>는 <code>while(isSyncRunning()) await 200ms</code>.</td>
+    <td>Sync ownership 전환 timing</td>
+    <td>Migration preparation은 foreground sync가 <code>SYNC_RUNNING</code>을 놓은 뒤에만 sync pass를 시작한다. Account mutation은 native preparation queue를 먼저 drain한 뒤 foreground sync를 중지해야 한다.</td>
   </tr>
   <tr>
-    <td>SYNC_CANCEL 통일</td>
-    <td>FRB와 C FFI가 같은 <code>SYNC_CANCEL</code> AtomicBool을 공유한다. Dart <code>cancelFullSync()</code>와 Swift <code>zcash_cancel_sync()</code> 모두 동일한 flag를 설정.</td>
+    <td>Preparation cancel 격리</td>
+    <td>FRB foreground sync와 migration C FFI가 cancel token을 공유하면 계정 import가 preparation을 실패 처리할 수 있다. Preparation operation은 sync와 advance 전체에서 전용 cancel/mode를 소유한다.</td>
   </tr>
   <tr>
     <td>BGTask expiration</td>
-    <td><code>expirationHandler</code>에서 mode=0으로 설정하여 resubmit 방지. 앱이 foreground로 돌아오면 <code>onResume</code>에서 mode==0 감지 후 foreground sync 재시작.</td>
+    <td>Migration preparation의 <code>expirationHandler</code>는 전용 operation을 취소한다. 실제 resumable preparation이 남아 있을 때만 task를 다시 제출한다.</td>
   </tr>
   <tr>
     <td>BATCH_SIZE 100</td>
