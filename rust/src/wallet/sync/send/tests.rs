@@ -75,7 +75,7 @@ fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
 }
 
 #[test]
-fn keystone_migration_signing_rejects_more_than_thirty_five_messages() {
+fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
     let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
@@ -83,10 +83,7 @@ fn keystone_migration_signing_rejects_more_than_thirty_five_messages() {
         })
         .collect::<Vec<_>>();
 
-    let error = validate_keystone_migration_messages(&messages).unwrap_err();
-
-    assert!(error.contains("at most 35 PCZTs per round"));
-    assert!(error.contains("needs 36"));
+    validate_keystone_migration_messages(&messages).unwrap();
 }
 
 #[test]
