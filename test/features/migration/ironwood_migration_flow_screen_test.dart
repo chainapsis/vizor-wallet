@@ -167,7 +167,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.text('~4 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);

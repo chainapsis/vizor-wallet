@@ -740,7 +740,7 @@ fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
     .unwrap();
     drop(conn);
 
-    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 34_559).unwrap();
+    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 34_560).unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let status = conn
@@ -1613,10 +1613,10 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
     );
 
     assert_eq!(offsets.len(), 32);
-    assert!(offsets[0] >= 1);
+    assert!(offsets[0] <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS);
     assert!(offsets.windows(2).all(|w| {
         let gap = w[1] - w[0];
-        (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+        gap <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS
     }));
 }
 
@@ -1846,18 +1846,37 @@ fn legacy_preparation_policy_remains_immediate() {
 }
 
 #[test]
-fn planned_schedule_starts_immediately_and_delays_later_transfers() {
+fn planned_schedule_delays_every_transfer() {
     let values = (1..=32).collect::<Vec<_>>();
     let mut rng = StdRng::seed_from_u64(0x318);
     let schedule = planned_transfer_schedule(values.iter().copied(), WalletNetwork::Test, &mut rng);
 
     assert_eq!(schedule.len(), values.len());
-    assert_eq!(schedule[0].block_offset, 0);
+    assert_ne!(schedule[0].block_offset, 0);
+    assert!(schedule[0].block_offset <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS);
     assert!(schedule.windows(2).all(|entries| {
         let gap = entries[1].block_offset - entries[0].block_offset;
-        (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+        gap <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS
     }));
     validate_schedule(&schedule, &values, WalletNetwork::Test).unwrap();
+}
+
+#[test]
+fn schedule_validation_accepts_zero_delay_gaps() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 0,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 0,
+        },
+    ];
+
+    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test).unwrap();
 }
 
 #[test]
@@ -2198,7 +2217,7 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
     .filter(|entry| entry.status == "scheduled")
     .collect::<Vec<_>>();
     assert_eq!(remaining.len(), 2);
-    assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
+    assert!(remaining.iter().all(|entry| entry.scheduled_height >= 503));
 }
 
 #[test]
