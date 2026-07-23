@@ -89,6 +89,8 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   var nextProofHeight: UInt64?
   var proofReadyNotificationPendingAt: Date?
   var proofReadyNotifiedAt: Date?
+  var broadcastCompleteNotificationPendingAt: Date? = nil
+  var broadcastCompleteNotifiedAt: Date? = nil
   var items: [BackgroundMigrationOutboxItem]
 
   var scopeKey: String { "\(network):\(accountUuid)" }
@@ -128,6 +130,10 @@ struct BackgroundMigrationProofReadyMetadata: Equatable {
   let observedHeight: UInt64
 }
 
+struct BackgroundMigrationBroadcastCompleteMetadata: Equatable {
+  let batchId: String
+}
+
 enum BackgroundMigrationTransportOutcome: Equatable {
   case noWork
   case waiting(nextHeight: UInt64?, observedHeight: UInt64, delay: TimeInterval?)
@@ -140,6 +146,17 @@ enum BackgroundMigrationTransportOutcome: Equatable {
 struct BackgroundMigrationOutboxRunResult: Equatable {
   let transport: BackgroundMigrationTransportOutcome
   let proofReady: BackgroundMigrationProofReadyMetadata?
+  let broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
+
+  init(
+    transport: BackgroundMigrationTransportOutcome,
+    proofReady: BackgroundMigrationProofReadyMetadata?,
+    broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata? = nil
+  ) {
+    self.transport = transport
+    self.proofReady = proofReady
+    self.broadcastComplete = broadcastComplete
+  }
 }
 
 struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
@@ -163,6 +180,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       !batch.items.isEmpty || batch.nextProofHeight != nil,
       batch.proofReadyNotificationPendingAt == nil,
       batch.proofReadyNotifiedAt == nil,
+      batch.broadcastCompleteNotificationPendingAt == nil,
+      batch.broadcastCompleteNotifiedAt == nil,
       Set(batch.items.map(\.itemId)).count == batch.items.count,
       Set(batch.items.map(\.txidHex)).count == batch.items.count,
       batch.items.allSatisfy({
@@ -191,6 +210,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         }
         batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
       }
+      var addedItem = false
       for incoming in batch.items {
         if let existingItem = existing.items.first(where: { $0.itemId == incoming.itemId }) {
           guard existingItem.partIndex == incoming.partIndex,
@@ -209,11 +229,16 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
           throw BackgroundMigrationOutboxError.conflictingBatch
         }
         batches[batchIndex].items.append(incoming)
+        addedItem = true
       }
       if existing.nextProofHeight != batch.nextProofHeight {
         batches[batchIndex].nextProofHeight = batch.nextProofHeight
         batches[batchIndex].proofReadyNotificationPendingAt = nil
         batches[batchIndex].proofReadyNotifiedAt = nil
+      }
+      if addedItem || existing.nextProofHeight != batch.nextProofHeight {
+        batches[batchIndex].broadcastCompleteNotificationPendingAt = nil
+        batches[batchIndex].broadcastCompleteNotifiedAt = nil
       }
       return
     }
@@ -391,6 +416,59 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
     batches[batchIndex].proofReadyNotificationPendingAt = nil
     batches[batchIndex].proofReadyNotifiedAt = date
+  }
+
+  func pendingBroadcastCompleteNotification()
+    -> BackgroundMigrationBroadcastCompleteMetadata?
+  {
+    batches
+      .filter {
+        $0.broadcastCompleteNotificationPendingAt != nil
+          && $0.broadcastCompleteNotifiedAt == nil
+      }
+      .sorted { $0.batchId < $1.batchId }
+      .first
+      .map { BackgroundMigrationBroadcastCompleteMetadata(batchId: $0.batchId) }
+  }
+
+  mutating func markBroadcastCompleteIfNeeded(
+    batchId: String,
+    at date: Date
+  ) -> BackgroundMigrationBroadcastCompleteMetadata? {
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId }) else {
+      return nil
+    }
+    let batch = batches[batchIndex]
+    guard batch.nextProofHeight == nil,
+      batch.broadcastCompleteNotifiedAt == nil,
+      !batch.items.isEmpty,
+      batch.items.allSatisfy({ $0.status == .acceptedAwaitingReconciliation })
+    else {
+      return nil
+    }
+    if batches[batchIndex].broadcastCompleteNotificationPendingAt == nil {
+      batches[batchIndex].broadcastCompleteNotificationPendingAt = date
+    }
+    return BackgroundMigrationBroadcastCompleteMetadata(batchId: batchId)
+  }
+
+  mutating func acknowledgeBroadcastCompleteNotification(
+    batchId: String,
+    at date: Date
+  ) throws {
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId }) else {
+      throw BackgroundMigrationOutboxError.batchNotFound
+    }
+    guard batches[batchIndex].broadcastCompleteNotificationPendingAt != nil else {
+      throw BackgroundMigrationOutboxError.invalidTransition
+    }
+    batches[batchIndex].broadcastCompleteNotificationPendingAt = nil
+    batches[batchIndex].broadcastCompleteNotifiedAt = date
+    if batches[batchIndex].items.isEmpty
+      && batches[batchIndex].nextProofHeight == nil
+    {
+      batches.remove(at: batchIndex)
+    }
   }
 
   mutating func expireItems(remoteHeight: UInt64, endpoint: String, at date: Date) {
@@ -609,7 +687,10 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     for batchIndex in batches.indices {
       batches[batchIndex].items.removeAll { acknowledgedItemIds.contains($0.itemId) }
     }
-    batches.removeAll { $0.items.isEmpty && $0.nextProofHeight == nil }
+    batches.removeAll {
+      $0.items.isEmpty && $0.nextProofHeight == nil
+        && $0.broadcastCompleteNotificationPendingAt == nil
+    }
   }
 
   mutating func revoke(network: String, accountUuid: String) {

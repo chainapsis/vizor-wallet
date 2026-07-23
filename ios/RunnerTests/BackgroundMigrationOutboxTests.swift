@@ -1,5 +1,5 @@
-import Foundation
 import Flutter
+import Foundation
 import XCTest
 
 @testable import Runner
@@ -462,6 +462,124 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testRunnerReportsBroadcastCompleteAfterLastAcceptedEquivalentItem() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { _, _, _ in
+        .success(
+          NativeLightwalletdSendResponse(
+            errorCode: 1,
+            errorMessage: "already in mempool"
+          )
+        )
+      }
+    )
+
+    let result = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(
+      result.broadcastComplete,
+      BackgroundMigrationBroadcastCompleteMetadata(batchId: batch.batchId)
+    )
+    XCTAssertEqual(try harness.store.read().receipts.first?.outcome, .acceptedEquivalent)
+  }
+
+  func testRunnerDoesNotReportBroadcastCompleteWhileBatchHasMoreWork() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100, 300]
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { _, _, _ in
+        .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let result = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertNil(result.broadcastComplete)
+  }
+
+  func testRunnerRetriesBroadcastCompleteUntilNotificationIsAcknowledged() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { _, _, _ in
+        .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let first = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+    let receiptIds = Set(try harness.store.read().receipts.map(\.receiptId))
+    _ = try harness.store.update { snapshot in
+      snapshot.acknowledgeReceipts(receiptIds)
+    }
+    let second = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(60),
+      dependencies: dependencies
+    )
+    _ = try harness.store.update { snapshot in
+      try snapshot.acknowledgeBroadcastCompleteNotification(
+        batchId: batch.batchId,
+        at: now.addingTimeInterval(61)
+      )
+    }
+    let third = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(120),
+      dependencies: dependencies
+    )
+
+    let expected = BackgroundMigrationBroadcastCompleteMetadata(
+      batchId: batch.batchId
+    )
+    XCTAssertEqual(first.broadcastComplete, expected)
+    XCTAssertEqual(second.broadcastComplete, expected)
+    XCTAssertNil(third.broadcastComplete)
+  }
+
   func testRunnerBroadcastsDueTransactionAndReturnsProofReadyInSameWake() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
@@ -508,6 +626,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         observedHeight: 200
       )
     )
+    XCTAssertNil(result.broadcastComplete)
   }
 
   func testRunnerDoesNotSubmitBeforeScheduledHeight() throws {

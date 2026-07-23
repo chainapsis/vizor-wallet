@@ -54,29 +54,34 @@ enum BackgroundMigrationOutboxRunner {
       )
     }
 
+    var broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
     let endpoint: String
     do {
       var selectedEndpoint: String?
       _ = try store.update { snapshot in
         snapshot.recoverInterruptedSubmissions(at: now)
+        broadcastComplete = snapshot.pendingBroadcastCompleteNotification()
         selectedEndpoint = snapshot.nextEndpointForInspection()
       }
       guard let selectedEndpoint else {
         return BackgroundMigrationOutboxRunResult(
           transport: .noWork,
-          proofReady: nil
+          proofReady: nil,
+          broadcastComplete: broadcastComplete
         )
       }
       endpoint = selectedEndpoint
     } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     } catch {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     }
 
@@ -87,18 +92,21 @@ enum BackgroundMigrationOutboxRunner {
     case .failure(.cancelled):
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     case .failure:
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     }
     if cancellation.isCancelled {
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     }
 
@@ -136,7 +144,8 @@ enum BackgroundMigrationOutboxRunner {
         }) {
           return BackgroundMigrationOutboxRunResult(
             transport: .needsUserAction,
-            proofReady: proofReady
+            proofReady: proofReady,
+            broadcastComplete: broadcastComplete
           )
         }
         let nextHeight = snapshot.nextActionHeight(endpoint: endpoint)
@@ -155,24 +164,28 @@ enum BackgroundMigrationOutboxRunner {
         }
         return BackgroundMigrationOutboxRunResult(
           transport: transport,
-          proofReady: proofReady
+          proofReady: proofReady,
+          broadcastComplete: broadcastComplete
         )
       }
       selection = selected
     } catch BackgroundMigrationOutboxError.invalidSchedule {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
-        proofReady: nil
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
       )
     } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
-        proofReady: proofReady
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete
       )
     } catch {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
-        proofReady: proofReady
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete
       )
     }
 
@@ -185,7 +198,8 @@ enum BackgroundMigrationOutboxRunner {
       )
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
-        proofReady: proofReady
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete
       )
     }
 
@@ -203,7 +217,8 @@ enum BackgroundMigrationOutboxRunner {
       )
       return BackgroundMigrationOutboxRunResult(
         transport: error == .cancelled ? .cancelled : .temporarilyUnavailable,
-        proofReady: proofReady
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete
       )
     case .success(let response):
       do {
@@ -219,6 +234,11 @@ enum BackgroundMigrationOutboxRunner {
               at: now,
               random: &random
             )
+            broadcastComplete =
+              snapshot.markBroadcastCompleteIfNeeded(
+                batchId: selection.batchId,
+                at: now
+              ) ?? broadcastComplete
           }
           let nextHeight = snapshot.nextActionHeight(endpoint: endpoint)
           return BackgroundMigrationOutboxRunResult(
@@ -230,7 +250,8 @@ enum BackgroundMigrationOutboxRunner {
                 nextScheduledHeight: nextHeight
               )
             ),
-            proofReady: proofReady
+            proofReady: proofReady,
+            broadcastComplete: broadcastComplete
           )
         }
         _ = try store.update { snapshot in
@@ -244,17 +265,20 @@ enum BackgroundMigrationOutboxRunner {
         }
         return BackgroundMigrationOutboxRunResult(
           transport: .needsUserAction,
-          proofReady: nil
+          proofReady: nil,
+          broadcastComplete: broadcastComplete
         )
       } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
         return BackgroundMigrationOutboxRunResult(
           transport: .temporarilyUnavailable,
-          proofReady: proofReady
+          proofReady: proofReady,
+          broadcastComplete: broadcastComplete
         )
       } catch {
         return BackgroundMigrationOutboxRunResult(
           transport: .needsUserAction,
-          proofReady: proofReady
+          proofReady: proofReady,
+          broadcastComplete: broadcastComplete
         )
       }
     }

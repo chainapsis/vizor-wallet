@@ -97,8 +97,18 @@ private enum BackgroundMigrationNotification {
     return "com.keplr.vizor.ironwood-migration.proof-ready.\(digest)"
   }
 
+  static func broadcastCompleteIdentifier(batchId: String) -> String {
+    let digest = SHA256.hash(data: Data(batchId.utf8))
+      .prefix(16)
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "com.keplr.vizor.ironwood-migration.sent.\(digest)"
+  }
+
   static func remove(batchIds: [String], includeNeedsAction: Bool) {
-    var identifiers = batchIds.map(proofReadyIdentifier)
+    var identifiers = batchIds.flatMap {
+      [proofReadyIdentifier(batchId: $0), broadcastCompleteIdentifier(batchId: $0)]
+    }
     if includeNeedsAction {
       identifiers.append(needsActionIdentifier)
     }
@@ -373,43 +383,31 @@ final class BackgroundMigrationManager {
     preparationResult: BackgroundMigrationPreparationPassResult,
     completion: @escaping (Bool) -> Void
   ) {
-    guard let proofReady = runResult.proofReady else {
-      reschedule(
-        after: runResult.transport,
-        retryProofNotification: false,
-        preparationResult: preparationResult,
-        completion: completion
-      )
-      return
-    }
-
-    postProofReadyNotification(batchId: proofReady.batchId) { [weak self] delivered in
+    deliverBroadcastCompleteNotification(
+      runResult.broadcastComplete
+    ) { [weak self] broadcastCompleteAcknowledged in
       guard let self else {
         completion(false)
         return
       }
-      var acknowledged = false
-      if delivered {
-        acknowledged =
-          (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
-            try snapshot.acknowledgeProofReadyNotification(
-              batchId: proofReady.batchId,
-              at: Date()
-            )
-          }) != nil
+      self.deliverProofReadyNotification(
+        runResult.proofReady
+      ) { proofReadyAcknowledged in
+        self.reschedule(
+          after: runResult.transport,
+          retryProofNotification: !proofReadyAcknowledged,
+          retryBroadcastCompleteNotification: !broadcastCompleteAcknowledged,
+          preparationResult: preparationResult,
+          completion: completion
+        )
       }
-      self.reschedule(
-        after: runResult.transport,
-        retryProofNotification: !delivered || !acknowledged,
-        preparationResult: preparationResult,
-        completion: completion
-      )
     }
   }
 
   private func reschedule(
     after transport: BackgroundMigrationTransportOutcome,
     retryProofNotification: Bool,
+    retryBroadcastCompleteNotification: Bool,
     preparationResult: BackgroundMigrationPreparationPassResult,
     completion: @escaping (Bool) -> Void
   ) {
@@ -429,7 +427,7 @@ final class BackgroundMigrationManager {
     case .noWork, .needsUserAction:
       delay = nil
     }
-    if retryProofNotification {
+    if retryProofNotification || retryBroadcastCompleteNotification {
       delay = min(delay ?? 10 * 60, 10 * 60)
     }
     if preparationResult == .waitingForConfirmations {
@@ -473,6 +471,8 @@ final class BackgroundMigrationManager {
         && batch.items.contains { item in
           item.status == .armed || item.status == .submitting
         }) || (batch.nextProofHeight != nil && batch.proofReadyNotifiedAt == nil)
+        || (batch.broadcastCompleteNotificationPendingAt != nil
+          && batch.broadcastCompleteNotifiedAt == nil)
     }
   }
 
@@ -510,6 +510,74 @@ final class BackgroundMigrationManager {
         trigger: nil
       )
     )
+  }
+
+  private func deliverBroadcastCompleteNotification(
+    _ broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?,
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard let broadcastComplete else {
+      completion(true)
+      return
+    }
+    postBroadcastCompleteNotification(
+      batchId: broadcastComplete.batchId
+    ) { delivered in
+      var acknowledged = false
+      if delivered {
+        acknowledged =
+          (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+            try snapshot.acknowledgeBroadcastCompleteNotification(
+              batchId: broadcastComplete.batchId,
+              at: Date()
+            )
+          }) != nil
+      }
+      completion(delivered && acknowledged)
+    }
+  }
+
+  private func deliverProofReadyNotification(
+    _ proofReady: BackgroundMigrationProofReadyMetadata?,
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard let proofReady else {
+      completion(true)
+      return
+    }
+    postProofReadyNotification(batchId: proofReady.batchId) { delivered in
+      var acknowledged = false
+      if delivered {
+        acknowledged =
+          (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+            try snapshot.acknowledgeProofReadyNotification(
+              batchId: proofReady.batchId,
+              at: Date()
+            )
+          }) != nil
+      }
+      completion(delivered && acknowledged)
+    }
+  }
+
+  private func postBroadcastCompleteNotification(
+    batchId: String,
+    completion: @escaping (Bool) -> Void
+  ) {
+    let content = UNMutableNotificationContent()
+    content.title = "Migration transfers sent"
+    content.body =
+      "All scheduled transfers were submitted. Open Vizor to check the status."
+    content.sound = .default
+    UNUserNotificationCenter.current().add(
+      UNNotificationRequest(
+        identifier: BackgroundMigrationNotification.broadcastCompleteIdentifier(
+          batchId: batchId
+        ),
+        content: content,
+        trigger: nil
+      )
+    ) { error in completion(error == nil) }
   }
 
   private func postProofReadyNotification(
