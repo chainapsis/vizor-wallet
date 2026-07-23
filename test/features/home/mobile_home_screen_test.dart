@@ -265,6 +265,7 @@ SyncState _syncedState({
   BigInt? ironwoodBalance,
   BigInt? ironwoodPendingBalance,
   BigInt? transparentBalance,
+  int chainTipHeight = 0,
   bool canShieldTransparentBalance = false,
 }) => SyncState(
   accountUuid: 'account-1',
@@ -275,6 +276,7 @@ SyncState _syncedState({
   ironwoodBalance: ironwoodBalance ?? BigInt.zero,
   ironwoodPendingBalance: ironwoodPendingBalance ?? BigInt.zero,
   transparentBalance: transparentBalance ?? BigInt.zero,
+  chainTipHeight: chainTipHeight,
   canShieldTransparentBalance: canShieldTransparentBalance,
 );
 
@@ -570,7 +572,7 @@ void main() {
     );
   });
 
-  testWidgets('shows migrated balance and remaining amount while migrating', (
+  testWidgets('shows total balance and remaining amount while migrating', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -640,7 +642,7 @@ void main() {
           )
           .textSpan
           ?.toPlainText(),
-      '2 ZEC',
+      '4 ZEC',
     );
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
     expect(
@@ -654,6 +656,59 @@ void main() {
       isNotNull,
     );
   });
+
+  testWidgets(
+    'keeps the Orchard balance visible before any Ironwood funds arrive',
+    (tester) async {
+      final status = rust_sync.MigrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: frb.Uint64List.fromList([200000000]),
+        preparedNoteCount: 1,
+        denominationConfirmationCount: 1,
+        denominationConfirmationTarget: 3,
+        denominationSplitCompletedCount: 0,
+        denominationSplitTotalCount: 1,
+        pendingTxCount: 0,
+        broadcastedTxCount: 0,
+        confirmedTxCount: 0,
+        totalCount: 1,
+        signedChildPcztCount: 0,
+        pendingSplitStageCount: 1,
+        canAbandon: false,
+        signingBatchLimit: 50,
+        scheduleMeanDelayBlocks: 144,
+        scheduleMaxDelayBlocks: 576,
+        maxPreparedNotesPerRun: 64,
+        scheduledBroadcasts: const [],
+        parts: const [],
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(orchardBalance: BigInt.from(200000000)),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('mobile_home_shielded_balance')),
+            )
+            .textSpan
+            ?.toPlainText(),
+        '2 ZEC',
+      );
+      expect(find.text('Receive your first ZEC'), findsNothing);
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
 
   testWidgets('does not infer an exact remaining amount without broadcasts', (
     tester,
@@ -740,7 +795,10 @@ void main() {
 
     await tester.pumpWidget(
       _app(
-        _syncedState(orchardBalance: BigInt.from(100000000)),
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          chainTipHeight: 3000096,
+        ),
         migrationCta: IronwoodHomeMigrationCtaState.resume(
           network: 'main',
           accountUuid: 'account-1',
