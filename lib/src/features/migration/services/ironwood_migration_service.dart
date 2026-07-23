@@ -527,8 +527,8 @@ class IronwoodMigrationService {
     );
   }
 
-  /// Restores native denomination preparation for an already-bound software
-  /// migration after an explicit lifecycle recovery point.
+  /// Restores native denomination preparation for an already-bound migration
+  /// after an explicit lifecycle recovery point.
   ///
   /// Ordinary status reads intentionally do not schedule native work. Keeping
   /// this separate prevents account-list/status refreshes from unexpectedly
@@ -537,7 +537,7 @@ class IronwoodMigrationService {
     required String network,
     required String accountUuid,
   }) async {
-    if (!isIOS() || !isMobile() || isHardwareAccount(accountUuid)) return;
+    if (!isIOS() || !isMobile()) return;
 
     final dbPath = await getWalletDbPath();
     final context = _MigrationCredentialContext(
@@ -1034,6 +1034,7 @@ class IronwoodMigrationService {
       context: context,
       mayCreateRun: true,
       enrollNotificationsOnActiveRun: true,
+      onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) => completeKeystoneDenominationMigration(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

@@ -120,7 +120,6 @@ class IronwoodMigrationCoordinator
     final service = ref.read(ironwoodMigrationServiceProvider);
     final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
     for (final account in accountState.accounts) {
-      if (account.isHardware) continue;
       try {
         await service.resumeBackgroundPreparationIfNeeded(
           network: network,

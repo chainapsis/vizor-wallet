@@ -251,6 +251,64 @@ void main() {
   );
 
   test(
+    'iOS Keystone completion hands confirmation waiting to background preparation',
+    () async {
+      var preparationStartCount = 0;
+      final statuses = [
+        _migrationStatus(),
+        _migrationStatus(
+          phase: 'waiting_denom_confirmations',
+          activeRunId: 'run-1',
+        ),
+      ];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        isHardwareAccount: (_) => true,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        requestNotificationAuthorization: () async => true,
+        listMigrationOutboxReceipts: () async => const [],
+        completeKeystoneDenominationMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async => _migrationResult(status: 'waiting_denom_confirmations'),
+      );
+
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: [_signedMigrationMessage()],
+        approvedSchedule: const [],
+      );
+
+      expect(preparationStartCount, 1);
+    },
+  );
+
+  test(
     'iOS software start does not start preparation after denomination is ready',
     () async {
       var preparationStartCount = 0;
@@ -627,7 +685,7 @@ void main() {
     );
   });
 
-  test('iOS hardware status does not restore preparation', () async {
+  test('iOS hardware lifecycle recovery restores preparation', () async {
     final store = _backgroundCredentialStore();
     await store.prepare(
       network: 'test',
@@ -670,7 +728,7 @@ void main() {
       accountUuid: 'account-1',
     );
 
-    expect(preparationStartCount, 0);
+    expect(preparationStartCount, 1);
   });
 
   test('account revocation waits for an in-flight migration start', () async {
@@ -2144,9 +2202,18 @@ void main() {
     () async {
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
-        _migrationStatus(activeRunId: 'keystone-run'),
-        _migrationStatus(activeRunId: 'keystone-run'),
-        _migrationStatus(activeRunId: 'keystone-run'),
+        _migrationStatus(
+          phase: 'waiting_denom_confirmations',
+          activeRunId: 'keystone-run',
+        ),
+        _migrationStatus(
+          phase: 'ready_to_migrate',
+          activeRunId: 'keystone-run',
+        ),
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'keystone-run',
+        ),
       ];
       final store = _backgroundCredentialStore();
       final credentials = <String>[];
@@ -2169,6 +2236,7 @@ void main() {
         getSessionPassword: () => throw StateError('session password used'),
         isMobile: () => true,
         isIOS: () => true,
+        startBackgroundPreparation: () async => true,
         requestNotificationAuthorization: () async {
           notificationAuthorizationRequestCount++;
           return true;

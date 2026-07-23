@@ -513,6 +513,37 @@ void main() {
     },
   );
 
+  testWidgets('initial recovery includes a bound Keystone preparation', (
+    tester,
+  ) async {
+    final store = IronwoodMigrationBackgroundCredentialStore();
+    await _bindBackgroundPreparationManifest(store, accountUuid: _hardwareUuid);
+    final preparationStarts = <String>[];
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status('complete', activeRunId: null),
+        _hardwareUuid: _status('waiting_denom_confirmations'),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      syncState: SyncState(),
+      isIOS: true,
+      backgroundCredentialStore: store,
+      backgroundPreparationStarts: preparationStarts,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const IronwoodMigrationCoordinatorHost(child: SizedBox.shrink()),
+      ),
+    );
+    await _pumpUntil(tester, () => preparationStarts.length == 1);
+
+    expect(preparationStarts, hasLength(1));
+  });
+
   testWidgets(
     'unlock and foreground resume each recover bound preparation once',
     (tester) async {
@@ -690,17 +721,18 @@ ProviderContainer _container({
 }
 
 Future<void> _bindBackgroundPreparationManifest(
-  IronwoodMigrationBackgroundCredentialStore store,
-) async {
+  IronwoodMigrationBackgroundCredentialStore store, {
+  String accountUuid = _softwareUuid,
+}) async {
   await store.prepare(
     network: _endpoint.networkName,
-    accountUuid: _softwareUuid,
+    accountUuid: accountUuid,
     dbPath: '/tmp/wallet.db',
     lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
   );
   await store.bindExpectedRunId(
     network: _endpoint.networkName,
-    accountUuid: _softwareUuid,
+    accountUuid: accountUuid,
     expectedRunId: 'run-1',
   );
 }

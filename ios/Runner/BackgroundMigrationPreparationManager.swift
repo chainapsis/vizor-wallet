@@ -795,7 +795,7 @@ final class BackgroundMigrationPreparationManager {
 
   private func postProofReadyNotification() {
     let content = UNMutableNotificationContent()
-    content.title = "Migration proof is ready"
+    content.title = "Continue your Ironwood migration"
     content.body = "Open Vizor to continue your migration."
     content.sound = .default
     UNUserNotificationCenter.current().add(
