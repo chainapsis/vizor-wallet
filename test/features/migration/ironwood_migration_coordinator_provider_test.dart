@@ -437,6 +437,39 @@ void main() {
     );
   });
 
+  test('mobile coordinator pauses process work while hidden', () async {
+    final statusCalls = <String>[];
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      loadStatus: (accountUuid) async {
+        statusCalls.add(accountUuid);
+        return accountUuid == _softwareUuid
+            ? _status('waiting_denom_confirmations')
+            : _status('complete', activeRunId: null);
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    coordinator.setForeground(false);
+    await coordinator.refreshNow(forceAdvance: true);
+
+    expect(statusCalls, isEmpty);
+  });
+
   testWidgets(
     'initial recovery starts bound preparation once and refreshes stay read-only',
     (tester) async {

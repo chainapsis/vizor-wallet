@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/app_process_work_policy.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -107,7 +108,9 @@ class IronwoodMigrationCoordinator
   }
 
   Future<void> _resumeBackgroundPreparations() async {
-    if (!ref.mounted || !_foreground) return;
+    if (!ref.mounted || !canRunAppProcessWork(isInForeground: _foreground)) {
+      return;
+    }
     if (ref.read(appSecurityProvider).requiresUnlock) return;
 
     final accountState = ref.read(accountProvider).value;
@@ -221,7 +224,7 @@ class IronwoodMigrationCoordinator
 
   Future<void> refreshNow({bool forceAdvance = false}) async {
     if (!ref.mounted) return;
-    if (!_foreground) return;
+    if (!canRunAppProcessWork(isInForeground: _foreground)) return;
     if (ref.read(appSecurityProvider).requiresUnlock) return;
 
     if (_refreshing) {

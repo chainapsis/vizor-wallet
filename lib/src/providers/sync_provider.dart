@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
+import '../core/layout/app_process_work_policy.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
@@ -501,7 +502,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       },
       onHide: () {
         _isInForeground = false;
-        _stopPolling();
+        if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+          _stopPolling();
+        }
       },
     );
 
@@ -1236,7 +1239,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground) return;
+    if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
         await _checkAndSync();
@@ -1258,7 +1261,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_pollCheckInFlight ||
         _isSyncing ||
         _requiresUnlock ||
-        !_isInForeground ||
+        !canRunAppProcessWork(isInForeground: _isInForeground) ||
         !hasAccounts) {
       return;
     }
