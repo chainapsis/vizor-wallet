@@ -1038,6 +1038,26 @@ pub fn migrate_orchard_to_ironwood(
     })
 }
 
+pub fn retire_unbroadcast_orchard_migration(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    expected_run_id: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(wallet_sync::retire_unbroadcast_orchard_migration(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &expected_run_id,
+        ))
+    })
+}
+
 pub fn get_orchard_migration_status(
     db_path: String,
     network: String,

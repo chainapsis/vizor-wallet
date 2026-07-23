@@ -56,7 +56,7 @@ pub(crate) use send::{
     discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
     migrate_orchard_to_ironwood, prepare_orchard_migration_batch_pczt,
     prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
-    KeystoneSignedMigrationMessage,
+    retire_unbroadcast_orchard_migration, KeystoneSignedMigrationMessage,
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,

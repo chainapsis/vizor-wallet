@@ -367,6 +367,39 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
 }
 
 #[test]
+fn unbroadcast_recovery_requires_scheduled_transactions_past_the_safety_window() {
+    let scheduled = migration::UnbroadcastMigrationRecoveryCandidate {
+        txid_hex: "10".repeat(32),
+        status: "scheduled".to_string(),
+        scheduled_height: 100,
+    };
+
+    assert_eq!(
+        validate_unbroadcast_migration_recovery_candidates(std::slice::from_ref(&scheduled), 109,)
+            .unwrap_err(),
+        "Migration recovery must wait until block 110"
+    );
+    validate_unbroadcast_migration_recovery_candidates(&[scheduled], 110).unwrap();
+}
+
+#[test]
+fn unbroadcast_recovery_rejects_a_transaction_marked_as_broadcasted() {
+    let broadcasted = migration::UnbroadcastMigrationRecoveryCandidate {
+        txid_hex: "20".repeat(32),
+        status: "broadcasted".to_string(),
+        scheduled_height: 100,
+    };
+
+    assert_eq!(
+        validate_unbroadcast_migration_recovery_candidates(&[broadcasted], 200).unwrap_err(),
+        format!(
+            "Migration transaction {} was already marked as broadcasted",
+            "20".repeat(32)
+        )
+    );
+}
+
+#[test]
 fn rejected_outbox_receipt_retires_run_idempotently() {
     let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
 

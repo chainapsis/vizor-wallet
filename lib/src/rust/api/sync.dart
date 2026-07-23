@@ -319,6 +319,20 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   approvedSchedule: approvedSchedule,
 );
 
+Future<void> retireUnbroadcastOrchardMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String expectedRunId,
+}) => RustLib.instance.api.crateApiSyncRetireUnbroadcastOrchardMigration(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedRunId: expectedRunId,
+);
+
 Future<MigrationStatus> getOrchardMigrationStatus({
   required String dbPath,
   required String network,

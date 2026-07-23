@@ -222,6 +222,13 @@ pub(crate) struct MigrationOutboxTxState {
     pub expiry_height: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct UnbroadcastMigrationRecoveryCandidate {
+    pub txid_hex: String,
+    pub status: String,
+    pub scheduled_height: u32,
+}
+
 pub(crate) struct PendingMigrationTotals {
     pub txids: Vec<String>,
     pub value_zatoshi: u64,
@@ -1675,6 +1682,49 @@ pub(crate) fn migration_outbox_tx_state(
         status,
         expiry_height,
     })
+}
+
+pub(crate) fn unbroadcast_migration_recovery_candidates(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Vec<UnbroadcastMigrationRecoveryCandidate>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run = active_run(&conn, account_uuid, network)?
+        .ok_or("No active migration run is available for recovery")?;
+    if run.run_id != expected_run_id {
+        return Err(format!(
+            "Migration recovery run changed: expected {expected_run_id}, got {}",
+            run.run_id
+        ));
+    }
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, status, scheduled_height
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted')
+             ORDER BY part_index ASC, scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare migration recovery candidates: {e}"))?;
+    let rows = stmt
+        .query_map(params![expected_run_id], |row| {
+            Ok(UnbroadcastMigrationRecoveryCandidate {
+                txid_hex: row.get(0)?,
+                status: row.get(1)?,
+                scheduled_height: row.get(2)?,
+            })
+        })
+        .map_err(|e| format!("Query migration recovery candidates: {e}"))?;
+    let candidates = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration recovery candidate: {e}"))?;
+    if candidates.is_empty() {
+        return Err("Migration recovery has no unconfirmed transactions".to_string());
+    }
+    Ok(candidates)
 }
 
 pub(crate) fn due_pending_txs(

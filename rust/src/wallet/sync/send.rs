@@ -50,6 +50,7 @@ use shardtree::{
     error::{QueryError, ShardTreeError},
     store::ShardStore,
 };
+use tonic::Code;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
     GreedyInputSelector, InputSelector, SpendPolicy,
@@ -99,12 +100,15 @@ use crate::wallet::db::{
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine;
 
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
+
+const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
 
 #[derive(Clone, Copy)]
 struct MigrationBroadcastPolicy<'a> {
@@ -1077,6 +1081,80 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         fee_zatoshi,
         total_migratable_zatoshi,
     ))
+}
+
+fn validate_unbroadcast_migration_recovery_candidates(
+    candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
+    chain_tip_height: u32,
+) -> Result<(), String> {
+    for candidate in candidates {
+        if candidate.status != "scheduled" {
+            return Err(format!(
+                "Migration transaction {} was already marked as broadcasted",
+                candidate.txid_hex
+            ));
+        }
+        let safe_recovery_height = candidate
+            .scheduled_height
+            .checked_add(UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS)
+            .ok_or("Migration recovery safety height overflow")?;
+        if chain_tip_height < safe_recovery_height {
+            return Err(format!(
+                "Migration recovery must wait until block {safe_recovery_height}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn retire_unbroadcast_orchard_migration(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let candidates = super::migration::unbroadcast_migration_recovery_candidates(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?;
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
+    let chain_tip_height =
+        u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
+    validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
+
+    for candidate in &candidates {
+        let txid = parse_txid_hex(&candidate.txid_hex)?;
+        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+            Ok(_) => {
+                return Err(format!(
+                    "Migration transaction {} is present in the mempool or chain",
+                    candidate.txid_hex
+                ));
+            }
+            Err(status) if status.code() == Code::NotFound => {}
+            Err(status) => {
+                return Err(format!(
+                    "Could not verify migration transaction {}: {status}",
+                    candidate.txid_hex
+                ));
+            }
+        }
+    }
+
+    super::migration::retire_run_for_rebuild(
+        db_path,
+        expected_run_id,
+        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
+    )
 }
 
 async fn prepare_orchard_migration_outbox(

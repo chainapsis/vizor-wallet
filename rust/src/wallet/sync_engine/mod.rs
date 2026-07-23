@@ -56,8 +56,8 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
-    get_latest_block, get_taddress_txids, next_stream_message, open_lwd_channel, send_transaction,
-    send_transaction_with_status,
+    get_latest_block, get_taddress_txids, get_transaction, next_stream_message, open_lwd_channel,
+    send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
