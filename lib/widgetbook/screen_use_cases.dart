@@ -944,45 +944,61 @@ Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.migrating,
     previewStatus: _previewMobileMigrationStatus(),
-    previewParts: const [
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 1',
-        status: MobileIronwoodMigrationPartStatus.complete,
-        detail: '40 ZEC',
-      ),
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 2',
-        status: MobileIronwoodMigrationPartStatus.needsInput,
-        detail: '5 ZEC',
-        progress: 0.55,
-      ),
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 3',
-        status: MobileIronwoodMigrationPartStatus.active,
-        detail: '80 ZEC',
-        progress: 0.35,
-      ),
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 4',
-        status: MobileIronwoodMigrationPartStatus.pending,
-        detail: '1 ZEC',
-        eta: '~20 hrs',
-      ),
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 5',
-        status: MobileIronwoodMigrationPartStatus.pending,
-        detail: '5 ZEC',
-        eta: '~20 hrs',
-      ),
-      MobileIronwoodMigrationPartPresentation(
-        label: 'Part 6',
-        status: MobileIronwoodMigrationPartStatus.pending,
-        detail: '10 ZEC',
-        eta: '~20 hrs',
-      ),
-    ],
+    previewParts: _previewMobileMigrationParts,
   );
 }
+
+Widget buildMobileIronwoodMigrationRecoveryRequiredUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.migrating,
+    previewStatus: _previewMobileMigrationStatus(),
+    previewParts: _previewMobileMigrationParts,
+    previewCoordinatorError:
+        'Bad state: Ironwood migration credential is missing for the active '
+        'run. Vizor will only continue transactions preserved in the '
+        'verified iOS outbox.',
+  );
+}
+
+const _previewMobileMigrationParts = [
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 1',
+    status: MobileIronwoodMigrationPartStatus.complete,
+    detail: '40 ZEC',
+  ),
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 2',
+    status: MobileIronwoodMigrationPartStatus.needsInput,
+    detail: '5 ZEC',
+    progress: 0.55,
+  ),
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 3',
+    status: MobileIronwoodMigrationPartStatus.active,
+    detail: '80 ZEC',
+    progress: 0.35,
+  ),
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 4',
+    status: MobileIronwoodMigrationPartStatus.pending,
+    detail: '1 ZEC',
+    eta: '~20 hrs',
+  ),
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 5',
+    status: MobileIronwoodMigrationPartStatus.pending,
+    detail: '5 ZEC',
+    eta: '~20 hrs',
+  ),
+  MobileIronwoodMigrationPartPresentation(
+    label: 'Part 6',
+    status: MobileIronwoodMigrationPartStatus.pending,
+    detail: '10 ZEC',
+    eta: '~20 hrs',
+  ),
+];
 
 Widget buildMobileIronwoodMigrationKeystoneLoadingUseCase(
   BuildContext context,
@@ -1059,6 +1075,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
   List<MobileIronwoodMigrationPartPresentation>? previewParts,
   MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
       MobileIronwoodMigrationReviewPreviewStage.review,
+  String? previewCoordinatorError,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
@@ -1075,6 +1092,20 @@ Widget _buildMobileIronwoodMigrationUseCase({
     _ => 'Username',
   };
   return ProviderScope(
+    overrides: [
+      if (previewCoordinatorError != null) ...[
+        accountProvider.overrideWith(
+          () => _PreviewAccountNotifier(_ironwoodMigrationAccountState()),
+        ),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _PreviewMigrationCoordinator(
+            accountUuid: _accountsDesignState.activeAccountUuid,
+            status: previewStatus,
+            error: previewCoordinatorError,
+          ),
+        ),
+      ],
+    ],
     child: _MobilePreviewFrame(
       child: MobileIronwoodMigrationFlowScreen(
         step: step,
@@ -3145,10 +3176,15 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
-  _PreviewMigrationCoordinator({required this.accountUuid, this.status});
+  _PreviewMigrationCoordinator({
+    required this.accountUuid,
+    this.status,
+    this.error,
+  });
 
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;
+  final String? error;
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -3158,6 +3194,14 @@ class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
       statuses: uuid == null || previewStatus == null
           ? const {}
           : {uuid: previewStatus},
+      errors: uuid == null || error == null ? const {} : {uuid: error!},
+    );
+  }
+
+  @override
+  Future<void> recover(String accountUuid) async {
+    state = state.copyWith(
+      errors: Map<String, String>.from(state.errors)..remove(accountUuid),
     );
   }
 }
