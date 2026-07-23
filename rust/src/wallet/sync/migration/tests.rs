@@ -1162,43 +1162,6 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
 }
 
 #[test]
-fn anchor_bucket_draw_skips_full_wallet_cohorts() {
-    assert_eq!(ZIP318_MAX_PARTS_PER_ANCHOR_COHORT, 8);
-    let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
-    let available = *candidates.last().unwrap();
-    let mut cohort_counts = candidates
-        .iter()
-        .map(|boundary| (*boundary, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT))
-        .collect::<BTreeMap<_, _>>();
-    cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT - 1);
-
-    for _ in 0..16 {
-        assert_eq!(
-            zip318_draw_anchor_boundary_for_note_with_cohorts(
-                WalletNetwork::Test,
-                5700,
-                5000,
-                5000,
-                &cohort_counts,
-            ),
-            Some(available)
-        );
-    }
-
-    cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT);
-    assert_eq!(
-        zip318_draw_anchor_boundary_for_note_with_cohorts(
-            WalletNetwork::Test,
-            5700,
-            5000,
-            5000,
-            &cohort_counts,
-        ),
-        None
-    );
-}
-
-#[test]
 fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
     let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
     let available = vec![candidates[1], candidates[3]];
@@ -1209,7 +1172,6 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
             MigrationTimingPolicy::Standard,
             5700,
             &available,
-            &BTreeMap::new(),
         )
         .unwrap();
         assert!(available.contains(&boundary));
@@ -1221,7 +1183,6 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
             MigrationTimingPolicy::Standard,
             5700,
             &[],
-            &BTreeMap::new(),
         ),
         None
     );

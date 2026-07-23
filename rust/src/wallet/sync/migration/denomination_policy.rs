@@ -331,39 +331,21 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note(
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> Option<u32> {
-    zip318_draw_anchor_boundary_for_note_with_cohorts(
-        network,
-        observed_anchor_height,
-        note_mined_height,
-        nu6_3_activation_height,
-        &BTreeMap::new(),
-    )
-}
-
-pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts(
-    network: WalletNetwork,
-    observed_anchor_height: u32,
-    note_mined_height: u32,
-    nu6_3_activation_height: u32,
-    cohort_counts: &BTreeMap<u32, u32>,
-) -> Option<u32> {
-    zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+    zip318_draw_anchor_boundary_for_note_with_policy(
         network,
         configured_timing_policy(network),
         observed_anchor_height,
         note_mined_height,
         nu6_3_activation_height,
-        cohort_counts,
     )
 }
 
-pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+pub(crate) fn zip318_draw_anchor_boundary_for_note_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
     observed_anchor_height: u32,
     note_mined_height: u32,
     nu6_3_activation_height: u32,
-    cohort_counts: &BTreeMap<u32, u32>,
 ) -> Option<u32> {
     let candidates = zip318_anchor_candidate_boundaries_with_policy(
         network,
@@ -377,7 +359,6 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
         timing_policy,
         observed_anchor_height,
         &candidates,
-        cohort_counts,
     )
 }
 
@@ -386,7 +367,6 @@ pub(crate) fn zip318_draw_anchor_boundary_from_available_with_policy(
     timing_policy: MigrationTimingPolicy,
     observed_anchor_height: u32,
     available_candidates: &[u32],
-    cohort_counts: &BTreeMap<u32, u32>,
 ) -> Option<u32> {
     let latest_boundary = zip318_anchor_boundary_at_or_before_with_policy(
         network,
@@ -400,11 +380,6 @@ pub(crate) fn zip318_draw_anchor_boundary_from_available_with_policy(
     let mut weighted = Vec::with_capacity(available_candidates.len());
     let mut total_weight = 0u32;
     for boundary in available_candidates.iter().copied() {
-        if cohort_counts.get(&boundary).copied().unwrap_or_default()
-            >= ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
-        {
-            continue;
-        }
         let age = zip318_anchor_boundary_age(network, timing_policy, latest_boundary, boundary)?;
         let weight = 1u32 << (ZIP318_ANCHOR_AGE_CAP - age);
         total_weight = total_weight.checked_add(weight)?;

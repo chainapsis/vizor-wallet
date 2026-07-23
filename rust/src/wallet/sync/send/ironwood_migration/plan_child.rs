@@ -452,7 +452,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
     migration_index: u32,
     schedule_block_offset: u32,
     timing_policy: super::migration::MigrationTimingPolicy,
-    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
     allow_replacing_local_spend: bool,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     if note_ref.note_version != 2 {
@@ -550,20 +549,16 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let Some(anchor_boundary_height) =
-        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+        super::migration::zip318_draw_anchor_boundary_for_note_with_policy(
             network,
             timing_policy,
             anchor_height_u32,
             u32::from(mined_height),
             nu6_3_activation_height,
-            anchor_cohort_counts,
         )
     else {
         return Ok(None);
     };
-    *anchor_cohort_counts
-        .entry(anchor_boundary_height)
-        .or_default() += 1;
 
     let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
         &mut db,
