@@ -1,4 +1,5 @@
 import Foundation
+import Flutter
 import XCTest
 
 @testable import Runner
@@ -36,6 +37,47 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         at: now
       )
     )
+  }
+
+  func testRecoverBatchArmsOnlyItemsFromTheExpectedRun() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a")
+    try snapshot.stage(batch)
+
+    let recovered = try snapshot.recoverBatch(
+      batchId: batch.batchId,
+      network: batch.network,
+      accountUuid: batch.accountUuid,
+      runId: batch.runId,
+      expectedTxids: Set(batch.items.map(\.txidHex)),
+      lightwalletdUrl: "https://updated.example:443",
+      at: now
+    )
+
+    XCTAssertTrue(recovered)
+    XCTAssertEqual(snapshot.batches[0].lightwalletdUrl, "https://updated.example:443")
+    XCTAssertEqual(snapshot.batches[0].armedAt, now)
+    XCTAssertTrue(snapshot.batches[0].items.allSatisfy { $0.status == .armed })
+  }
+
+  func testRecoverBatchRejectsAnUnknownPersistedTransaction() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a")
+    try snapshot.stage(batch)
+
+    XCTAssertThrowsError(
+      try snapshot.recoverBatch(
+        batchId: batch.batchId,
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        expectedTxids: [batch.items[0].txidHex],
+        lightwalletdUrl: batch.lightwalletdUrl,
+        at: now
+      )
+    ) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
   }
 
   func testRestagingMovesAnIdleBatchToTheCurrentEndpoint() throws {
@@ -411,6 +453,13 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertEqual(observedHeight, 200)
     XCTAssertNil(outcome.proofReady)
     XCTAssertEqual(try harness.store.read().receipts.count, 1)
+    let receipt = try XCTUnwrap(
+      BackgroundMigrationOutboxChannel.listReceipts(store: harness.store).first
+    )
+    XCTAssertEqual(
+      (receipt["rawTransaction"] as? FlutterStandardTypedData)?.data,
+      batch.items[0].rawTransaction
+    )
   }
 
   func testRunnerBroadcastsDueTransactionAndReturnsProofReadyInSameWake() throws {

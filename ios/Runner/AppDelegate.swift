@@ -78,6 +78,16 @@ import UIKit
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
+      case "recoverOutboxBatch":
+        do {
+          let recovered = try BackgroundMigrationOutboxChannel.recoverBatch(
+            arguments: call.arguments
+          )
+          if recovered { _ = BackgroundMigrationManager.shared.schedule() }
+          result(recovered)
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
       case "listOutboxReceipts":
         do {
           result(try BackgroundMigrationOutboxChannel.listReceipts())

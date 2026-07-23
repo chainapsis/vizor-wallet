@@ -233,8 +233,7 @@ impl IronwoodMigrationResult {
         remote_height: u32,
         response_message: Option<&str>,
         schedule_updates: Vec<(String, u32, u32)>,
-        pending_password: &[u8],
-        pending_salt_base64: &str,
+        accepted_raw_transaction: Option<Vec<u8>>,
     ) -> Result<(), String> {
         reconcile_orchard_migration_outbox_receipt(
             db_path,
@@ -246,8 +245,7 @@ impl IronwoodMigrationResult {
             remote_height,
             response_message,
             schedule_updates,
-            pending_password,
-            pending_salt_base64,
+            accepted_raw_transaction,
         )
     }
 }
@@ -3336,8 +3334,7 @@ fn reconcile_orchard_migration_outbox_receipt(
     remote_height: u32,
     response_message: Option<&str>,
     schedule_updates: Vec<(String, u32, u32)>,
-    pending_password: &[u8],
-    pending_salt_base64: &str,
+    accepted_raw_transaction: Option<Vec<u8>>,
 ) -> Result<(), String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let state = super::migration::migration_outbox_tx_state(
@@ -3356,15 +3353,22 @@ fn reconcile_orchard_migration_outbox_receipt(
                     "Migration outbox receipt cannot accept a retired migration run".to_string(),
                 );
             }
-            let raw_tx = super::migration::migration_outbox_raw_tx(
-                db_path,
-                account_uuid,
-                network,
-                run_id,
-                txid_hex,
-                pending_password,
-                pending_salt_base64,
-            )?;
+            let raw_tx = accepted_raw_transaction.ok_or_else(|| {
+                "Accepted migration outbox receipt is missing its raw transaction".to_string()
+            })?;
+            let actual_txid = {
+                use zcash_primitives::transaction::Transaction;
+                use zcash_protocol::consensus::BranchId;
+
+                let tx = Transaction::read(&raw_tx[..], BranchId::Sapling)
+                    .map_err(|e| format!("Failed to read accepted migration transaction: {e}"))?;
+                tx.txid().to_string()
+            };
+            if !actual_txid.eq_ignore_ascii_case(txid_hex) {
+                return Err(format!(
+                    "Accepted migration outbox transaction ID mismatch: expected {txid_hex}, got {actual_txid}"
+                ));
+            }
             decrypt_and_store_migration_tx(db_path, network, &raw_tx)?;
             let schedule_updates = schedule_updates
                 .into_iter()

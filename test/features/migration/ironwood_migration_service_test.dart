@@ -324,6 +324,7 @@ void main() {
     'iOS software continuation resumes background denomination preparation',
     () async {
       var preparationStartCount = 0;
+      final store = await _boundBackgroundCredentialStore();
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -340,7 +341,7 @@ void main() {
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        backgroundCredentialStore: _backgroundCredentialStore(),
+        backgroundCredentialStore: store,
         getEndpoint: _testEndpoint,
         getSessionPassword: () => 'test-password',
         isHardwareAccount: (_) => false,
@@ -1129,53 +1130,124 @@ void main() {
     expect(seenRequestId, 'request-1');
   });
 
-  test('mobile existing run without manifest uses legacy credential', () async {
-    String? seenPassword;
-    String? seenSalt;
-    final service = IronwoodMigrationService(
-      getWalletDbPath: () async => '/tmp/wallet.db',
-      getStatus: ({required dbPath, required network, required accountUuid}) {
-        return Future.value(_migrationStatus(activeRunId: 'legacy-run'));
-      },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
-      backgroundCredentialStore: _backgroundCredentialStore(),
-      getEndpoint: _testEndpoint,
-      getSessionPassword: () => 'session-password',
-      isMobile: () => true,
-      isHardwareAccount: (_) => true,
-      broadcastDueMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) {
-            seenPassword = password;
-            seenSalt = saltBase64;
-            return Future.value(_migrationResult());
-          },
-    );
+  test(
+    'iOS status recovers a verified outbox when manifest is missing',
+    () async {
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(
+          activeRunId: 'legacy-run',
+          parts: [_migrationPart(txidHex: 'persisted-tx')],
+        ),
+        _migrationStatus(phase: 'complete'),
+      ];
+      Map<String, Object?>? recovery;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => throw StateError('session password used'),
+        isMobile: () => true,
+        isIOS: () => true,
+        isHardwareAccount: (_) => true,
+        recoverMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required lightwalletdUrl,
+              required expectedTxids,
+            }) async {
+              recovery = {
+                'batchId': batchId,
+                'network': network,
+                'accountUuid': accountUuid,
+                'runId': runId,
+                'lightwalletdUrl': lightwalletdUrl,
+                'expectedTxids': expectedTxids,
+              };
+              return true;
+            },
+        runMigrationOutboxOnceNow: () async =>
+            const IronwoodMigrationOutboxRunResult(
+              outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+            ),
+        listMigrationOutboxReceipts: () async => const [],
+        requestNotificationAuthorization: () async => true,
+      );
 
-    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
-
-    expect(seenPassword, 'session-password');
-    expect(seenSalt, isNotEmpty);
-    expect(
-      await service.backgroundCredentialStore.read(
+      final status = await service.status(
         network: 'test',
         accountUuid: 'account-1',
-      ),
-      isNull,
-    );
-  });
+      );
+
+      expect(status.phase, 'complete');
+      expect(recovery, {
+        'batchId': 'test:account-1:legacy-run',
+        'network': 'test',
+        'accountUuid': 'account-1',
+        'runId': 'legacy-run',
+        'lightwalletdUrl': 'https://lwd.example:443',
+        'expectedTxids': ['persisted-tx'],
+      });
+    },
+  );
+
+  test(
+    'active mobile run never falls back to the session credential',
+    () async {
+      var sessionCredentialRead = false;
+      var broadcastCalled = false;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () {
+          sessionCredentialRead = true;
+          return 'session-password';
+        },
+        isMobile: () => true,
+        broadcastDueMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              broadcastCalled = true;
+              return _migrationResult();
+            },
+      );
+
+      await expectLater(
+        service.continueSoftwarePrivateMigration(accountUuid: 'account-1'),
+        throwsA(isA<StateError>()),
+      );
+      expect(sessionCredentialRead, isFalse);
+      expect(broadcastCalled, isFalse);
+    },
+  );
 
   test(
     'mobile new run stores random credential and binds before outbox staging',
@@ -2074,6 +2146,7 @@ void main() {
   );
 
   test('iOS surfaces a due outbox transfer that did not submit', () async {
+    final store = await _boundBackgroundCredentialStore();
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -2085,6 +2158,7 @@ void main() {
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
+      backgroundCredentialStore: store,
       getEndpoint: _testEndpoint,
       getSessionPassword: () => 'session-password',
       isMobile: () => true,
@@ -2138,6 +2212,7 @@ void main() {
       List<String>? acknowledgedReceiptIds;
       var receiptsAvailable = true;
       var prepareCount = 0;
+      final store = await _boundBackgroundCredentialStore();
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -2149,6 +2224,7 @@ void main() {
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
+        backgroundCredentialStore: store,
         getEndpoint: _testEndpoint,
         getSessionPassword: () => 'session-password',
         isMobile: () => true,
@@ -2171,8 +2247,7 @@ void main() {
               required remoteHeight,
               responseMessage,
               required scheduleUpdates,
-              required password,
-              required saltBase64,
+              acceptedRawTransaction,
             }) async {
               events.add('rust:$txidHex');
               if (txidHex == 'tx-bad') {
@@ -2222,6 +2297,7 @@ void main() {
   test('iOS continuation never calls the Rust due broadcaster', () async {
     var prepareCount = 0;
     var dueBroadcastCount = 0;
+    final store = await _boundBackgroundCredentialStore();
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -2233,6 +2309,7 @@ void main() {
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
+      backgroundCredentialStore: store,
       getEndpoint: _testEndpoint,
       getSessionPassword: () => 'session-password',
       isMobile: () => true,
@@ -2325,6 +2402,7 @@ void main() {
 rust_sync.MigrationStatus _migrationStatus({
   String phase = 'ready_to_prepare',
   String? activeRunId,
+  List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -2347,7 +2425,18 @@ rust_sync.MigrationStatus _migrationStatus({
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
-    parts: const [],
+    parts: parts,
+  );
+}
+
+rust_sync.MigrationPartStatus _migrationPart({required String txidHex}) {
+  return rust_sync.MigrationPartStatus(
+    partIndex: 0,
+    valueZatoshi: BigInt.from(100000),
+    state: rust_sync.MigrationPartState.scheduled,
+    txidHex: txidHex,
+    confirmationCount: 0,
+    confirmationTarget: 1,
   );
 }
 
@@ -2418,6 +2507,23 @@ IronwoodMigrationBackgroundCredentialStore _backgroundCredentialStore() {
   );
 }
 
+Future<IronwoodMigrationBackgroundCredentialStore>
+_boundBackgroundCredentialStore({String runId = 'run-1'}) async {
+  final store = _backgroundCredentialStore();
+  await store.prepare(
+    network: 'test',
+    accountUuid: 'account-1',
+    dbPath: '/tmp/wallet.db',
+    lightwalletdUrl: 'https://lwd.example:443',
+  );
+  await store.bindExpectedRunId(
+    network: 'test',
+    accountUuid: 'account-1',
+    expectedRunId: runId,
+  );
+  return store;
+}
+
 rust_sync.IronwoodMigrationResult _migrationResult({
   String status = 'broadcasted',
 }) {
@@ -2468,6 +2574,7 @@ Map<Object?, Object?> _outboxReceipt({
     'remoteHeight': 300,
     'responseCode': 0,
     'responseMessage': null,
+    'rawTransaction': Uint8List.fromList([1, 2, 3]),
     'recordedAtMs': 1,
     'scheduleUpdates': <Object?>[],
   };

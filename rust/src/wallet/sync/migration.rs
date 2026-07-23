@@ -1677,37 +1677,6 @@ pub(crate) fn migration_outbox_tx_state(
     })
 }
 
-pub(crate) fn migration_outbox_raw_tx(
-    db_path: &str,
-    account_uuid: &str,
-    network: WalletNetwork,
-    run_id: &str,
-    txid_hex: &str,
-    password: &[u8],
-    salt_base64: &str,
-) -> Result<Vec<u8>, String> {
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    migration_outbox_run_phase_with_conn(&conn, account_uuid, network, run_id)?;
-    let encrypted_raw_tx = conn
-        .query_row(
-            &format!(
-                "SELECT encrypted_raw_tx FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = ?1 AND lower(txid_hex) = lower(?2)"
-            ),
-            params![run_id, txid_hex],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|e| format!("Read migration outbox transaction payload: {e}"))?
-        .ok_or_else(|| {
-            "Migration outbox receipt transaction was not found in this run".to_string()
-        })?;
-    secret_payload::decrypt_payload(encrypted_raw_tx.as_bytes(), password, salt.as_slice())
-        .map(|raw_tx| raw_tx.to_vec())
-}
-
 pub(crate) fn due_pending_txs(
     db_path: &str,
     run_id: &str,

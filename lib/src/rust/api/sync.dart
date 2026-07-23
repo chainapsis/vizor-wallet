@@ -382,8 +382,7 @@ Future<void> reconcileOrchardMigrationOutboxReceipt({
   required int remoteHeight,
   String? responseMessage,
   required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
-  required String password,
-  required String saltBase64,
+  Uint8List? acceptedRawTransaction,
 }) => RustLib.instance.api.crateApiSyncReconcileOrchardMigrationOutboxReceipt(
   dbPath: dbPath,
   network: network,
@@ -394,8 +393,7 @@ Future<void> reconcileOrchardMigrationOutboxReceipt({
   remoteHeight: remoteHeight,
   responseMessage: responseMessage,
   scheduleUpdates: scheduleUpdates,
-  password: password,
-  saltBase64: saltBase64,
+  acceptedRawTransaction: acceptedRawTransaction,
 );
 
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({

@@ -381,8 +381,7 @@ fn rejected_outbox_receipt_retires_run_idempotently() {
             100,
             Some("policy reject"),
             Vec::new(),
-            MIGRATION_TEST_PASSWORD,
-            MIGRATION_TEST_SALT,
+            None,
         )
         .unwrap();
     }
@@ -418,8 +417,7 @@ fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
             120,
             None,
             Vec::new(),
-            MIGRATION_TEST_PASSWORD,
-            MIGRATION_TEST_SALT,
+            None,
         )
         .unwrap();
     }
@@ -440,6 +438,30 @@ fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
 }
 
 #[test]
+fn accepted_outbox_receipt_requires_the_native_raw_transaction() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+
+    let error = reconcile_orchard_migration_outbox_receipt(
+        &db_path,
+        WalletNetwork::Test,
+        MIGRATION_TEST_ACCOUNT,
+        &run_id,
+        &pending_txid,
+        "accepted",
+        100,
+        None,
+        Vec::new(),
+        None,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        "Accepted migration outbox receipt is missing its raw transaction"
+    );
+}
+
+#[test]
 fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
     let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
 
@@ -453,8 +475,7 @@ fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
         120,
         None,
         Vec::new(),
-        MIGRATION_TEST_PASSWORD,
-        MIGRATION_TEST_SALT,
+        None,
     )
     .unwrap();
 

@@ -827,8 +827,7 @@ abstract class RustLibApi extends BaseApi {
     required int remoteHeight,
     String? responseMessage,
     required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
-    required String password,
-    required String saltBase64,
+    Uint8List? acceptedRawTransaction,
   });
 
   Future<void> crateApiVotingRecordShareDelegation({
@@ -5766,8 +5765,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int remoteHeight,
     String? responseMessage,
     required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
-    required String password,
-    required String saltBase64,
+    Uint8List? acceptedRawTransaction,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5785,8 +5783,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             scheduleUpdates,
             serializer,
           );
-          sse_encode_String(password, serializer);
-          sse_encode_String(saltBase64, serializer);
+          sse_encode_opt_list_prim_u_8_strict(
+            acceptedRawTransaction,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5809,8 +5809,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           remoteHeight,
           responseMessage,
           scheduleUpdates,
-          password,
-          saltBase64,
+          acceptedRawTransaction,
         ],
         apiImpl: this,
       ),
@@ -5831,8 +5830,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "remoteHeight",
           "responseMessage",
           "scheduleUpdates",
-          "password",
-          "saltBase64",
+          "acceptedRawTransaction",
         ],
       );
 

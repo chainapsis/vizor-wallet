@@ -248,6 +248,56 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
   }
 
+  mutating func recoverBatch(
+    batchId: String,
+    network: String,
+    accountUuid: String,
+    runId: String,
+    expectedTxids: Set<String>,
+    lightwalletdUrl: String,
+    at date: Date
+  ) throws -> Bool {
+    guard !expectedTxids.isEmpty, !lightwalletdUrl.isEmpty else {
+      throw BackgroundMigrationOutboxError.invalidArmRequest
+    }
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId }) else {
+      return false
+    }
+
+    let normalizedExpectedTxids = Set(expectedTxids.map { $0.lowercased() })
+    let batch = batches[batchIndex]
+    guard batch.network == network,
+      batch.accountUuid == accountUuid,
+      batch.runId == runId,
+      !batch.items.isEmpty,
+      batch.items.allSatisfy({ normalizedExpectedTxids.contains($0.txidHex) })
+    else {
+      throw BackgroundMigrationOutboxError.conflictingBatch
+    }
+
+    for itemIndex in batches[batchIndex].items.indices {
+      var item = batches[batchIndex].items[itemIndex]
+      if item.status == .submitting {
+        item.status = .armed
+        item.attemptCount += 1
+        item.nextAttemptAt = date.addingTimeInterval(
+          BackgroundMigrationOutboxCadence.retryDelay(attemptCount: item.attemptCount)
+        )
+        item.lastError = "The previous submission outcome is unknown."
+        item.attemptId = nil
+        item.attemptStartedAt = nil
+      } else if item.status == .staged {
+        item.status = .armed
+      }
+      batches[batchIndex].items[itemIndex] = item
+    }
+    batches[batchIndex].lightwalletdUrl = lightwalletdUrl
+    if batches[batchIndex].items.contains(where: { $0.status == .armed }) {
+      batches[batchIndex].armedAt = batches[batchIndex].armedAt ?? date
+    }
+    return true
+  }
+
   mutating func recoverInterruptedSubmissions(at date: Date) {
     for batchIndex in batches.indices {
       for itemIndex in batches[batchIndex].items.indices

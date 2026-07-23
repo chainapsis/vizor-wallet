@@ -93,8 +93,7 @@ typedef IronwoodMigrationOutboxReceiptReconciler =
       required int remoteHeight,
       String? responseMessage,
       required List<rust_sync.MigrationOutboxScheduleUpdate> scheduleUpdates,
-      required String password,
-      required String saltBase64,
+      Uint8List? acceptedRawTransaction,
     });
 typedef IronwoodMigrationOutboxBatchStager =
     Future<Map<String, String>> Function(Map<String, Object?> payload);
@@ -102,6 +101,15 @@ typedef IronwoodMigrationOutboxBatchArmer =
     Future<bool> Function({
       required String batchId,
       required Map<String, String> expectedDigests,
+    });
+typedef IronwoodMigrationOutboxBatchRecoverer =
+    Future<bool> Function({
+      required String batchId,
+      required String network,
+      required String accountUuid,
+      required String runId,
+      required String lightwalletdUrl,
+      required List<String> expectedTxids,
     });
 typedef IronwoodMigrationOutboxReceiptLister =
     Future<List<Map<Object?, Object?>>> Function();
@@ -222,6 +230,7 @@ class IronwoodMigrationService {
     IronwoodMigrationOutboxReceiptReconciler? reconcileMigrationOutboxReceipt,
     IronwoodMigrationOutboxBatchStager? stageMigrationOutboxBatch,
     IronwoodMigrationOutboxBatchArmer? armMigrationOutboxBatch,
+    IronwoodMigrationOutboxBatchRecoverer? recoverMigrationOutboxBatch,
     IronwoodMigrationOutboxReceiptLister? listMigrationOutboxReceipts,
     IronwoodMigrationOutboxReceiptAcknowledger?
     acknowledgeMigrationOutboxReceipts,
@@ -277,6 +286,8 @@ class IronwoodMigrationService {
            stageMigrationOutboxBatch ?? _defaultStageMigrationOutboxBatch,
        armMigrationOutboxBatch =
            armMigrationOutboxBatch ?? _defaultArmMigrationOutboxBatch,
+       recoverMigrationOutboxBatch =
+           recoverMigrationOutboxBatch ?? _defaultRecoverMigrationOutboxBatch,
        listMigrationOutboxReceipts =
            listMigrationOutboxReceipts ?? _defaultListMigrationOutboxReceipts,
        acknowledgeMigrationOutboxReceipts =
@@ -331,6 +342,7 @@ class IronwoodMigrationService {
   reconcileMigrationOutboxReceipt;
   final IronwoodMigrationOutboxBatchStager stageMigrationOutboxBatch;
   final IronwoodMigrationOutboxBatchArmer armMigrationOutboxBatch;
+  final IronwoodMigrationOutboxBatchRecoverer recoverMigrationOutboxBatch;
   final IronwoodMigrationOutboxReceiptLister listMigrationOutboxReceipts;
   final IronwoodMigrationOutboxReceiptAcknowledger
   acknowledgeMigrationOutboxReceipts;
@@ -368,7 +380,20 @@ class IronwoodMigrationService {
         if (!isMobile()) return _getStatusForContext(context);
 
         return _serializeCredentialState(context, () async {
-          final status = await _getStatusForContext(context);
+          var status = await _getStatusForContext(context);
+          if (isIOS() && status.activeRunId != null) {
+            final manifest = await backgroundCredentialStore.read(
+              network: context.network,
+              accountUuid: context.accountUuid,
+            );
+            if (manifest == null &&
+                await _recoverPersistedMigrationOutbox(
+                  context: _contextWithCurrentEndpoint(context),
+                  status: status,
+                )) {
+              status = await _getStatusForContext(context);
+            }
+          }
           await _reconcileBackgroundCredential(
             context: context,
             status: status,
@@ -590,7 +615,12 @@ class IronwoodMigrationService {
           network: context.network,
           accountUuid: context.accountUuid,
         );
-        if (manifest == null) return false;
+        if (manifest == null) {
+          return _recoverPersistedMigrationOutbox(
+            context: context,
+            status: status,
+          );
+        }
         await _resolveManifestContext(manifest, context);
         await backgroundCredentialStore.bindExpectedRunId(
           network: context.network,
@@ -603,10 +633,7 @@ class IronwoodMigrationService {
             password: manifest.credentialHex,
             saltBase64: manifest.saltBase64,
           );
-          await _reconcileMigrationOutboxReceipts(
-            context: context,
-            credential: credential,
-          );
+          await _reconcileMigrationOutboxReceipts(context: context);
           final refresh = await _refreshMigrationOutbox(
             context: context,
             credential: credential,
@@ -749,10 +776,7 @@ class IronwoodMigrationService {
             mayCreateRun: mayCreateRun,
           );
           if (isIOS()) {
-            await _reconcileMigrationOutboxReceipts(
-              context: context,
-              credential: credential,
-            );
+            await _reconcileMigrationOutboxReceipts(context: context);
           }
 
           late T result;
@@ -767,10 +791,7 @@ class IronwoodMigrationService {
 
           if (isIOS()) {
             try {
-              await _reconcileMigrationOutboxReceipts(
-                context: context,
-                credential: credential,
-              );
+              await _reconcileMigrationOutboxReceipts(context: context);
             } catch (error, stackTrace) {
               if (operationError == null) {
                 operationError = error;
@@ -854,7 +875,19 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
       );
-      if (manifest == null) return _legacyCredential(context);
+      if (manifest == null) {
+        if (isIOS()) {
+          await _recoverPersistedMigrationOutbox(
+            context: context,
+            status: status,
+          );
+        }
+        throw StateError(
+          'Ironwood migration credential is missing for the active run. '
+          'Vizor will only continue transactions preserved in the verified '
+          'iOS outbox.',
+        );
+      }
       final resolvedManifest = await _resolveManifestContext(manifest, context);
       await backgroundCredentialStore.bindExpectedRunId(
         network: context.network,
@@ -879,6 +912,58 @@ class IronwoodMigrationService {
       password: manifest.credentialHex,
       saltBase64: manifest.saltBase64,
     );
+  }
+
+  Future<bool> _recoverPersistedMigrationOutbox({
+    required _MigrationCredentialContext context,
+    required rust_sync.MigrationStatus status,
+  }) async {
+    final runId = status.activeRunId;
+    final lightwalletdUrl = context.lightwalletdUrl;
+    if (!isIOS() || runId == null || lightwalletdUrl == null) return false;
+
+    final expectedTxids = <String>{
+      for (final part in status.parts)
+        if (part.txidHex case final txid? when txid.isNotEmpty)
+          txid.toLowerCase(),
+      for (final scheduled in status.scheduledBroadcasts)
+        if (scheduled.txidHex.isNotEmpty) scheduled.txidHex.toLowerCase(),
+    }.toList(growable: false);
+    if (expectedTxids.isEmpty) return false;
+
+    final recovered = await recoverMigrationOutboxBatch(
+      batchId: _migrationOutboxBatchId(context, runId),
+      network: context.network,
+      accountUuid: context.accountUuid,
+      runId: runId,
+      lightwalletdUrl: lightwalletdUrl,
+      expectedTxids: expectedTxids,
+    );
+    if (!recovered) return false;
+
+    _scheduledBackgroundMigrations.add(_credentialKey(context));
+    await runMigrationOutboxOnceNow();
+    await _reconcileMigrationOutboxReceipts(context: context);
+    await _requestNotificationAuthorizationBestEffort();
+    return true;
+  }
+
+  _MigrationCredentialContext _contextWithCurrentEndpoint(
+    _MigrationCredentialContext context,
+  ) {
+    if (context.lightwalletdUrl != null) return context;
+    try {
+      final endpoint = getEndpoint();
+      if (endpoint.networkName != context.network) return context;
+      return _MigrationCredentialContext(
+        dbPath: context.dbPath,
+        network: context.network,
+        accountUuid: context.accountUuid,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      );
+    } catch (_) {
+      return context;
+    }
   }
 
   Future<_MigrationCredential> _legacyCredential(
@@ -1051,7 +1136,6 @@ class IronwoodMigrationService {
     final foregroundRun = await runMigrationOutboxOnceNow();
     final reconciledTxids = await _reconcileMigrationOutboxReceipts(
       context: context,
-      credential: credential,
     );
     _validateForegroundOutboxRun(
       batch: batch,
@@ -1108,7 +1192,6 @@ class IronwoodMigrationService {
 
   Future<Set<String>> _reconcileMigrationOutboxReceipts({
     required _MigrationCredentialContext context,
-    required _MigrationCredential credential,
   }) async {
     final rawReceipts = await listMigrationOutboxReceipts();
     final acknowledgedReceiptIds = <String>[];
@@ -1132,8 +1215,7 @@ class IronwoodMigrationService {
           remoteHeight: receipt.remoteHeight,
           responseMessage: receipt.responseMessage,
           scheduleUpdates: receipt.scheduleUpdates,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
+          acceptedRawTransaction: receipt.acceptedRawTransaction,
         );
         acknowledgedReceiptIds.add(receipt.receiptId);
         reconciledTxids.add(receipt.txidHex.toLowerCase());
@@ -1350,6 +1432,26 @@ Future<bool> _defaultArmMigrationOutboxBatch({
       false;
 }
 
+Future<bool> _defaultRecoverMigrationOutboxBatch({
+  required String batchId,
+  required String network,
+  required String accountUuid,
+  required String runId,
+  required String lightwalletdUrl,
+  required List<String> expectedTxids,
+}) async {
+  return await _backgroundMigrationChannel
+          .invokeMethod<bool>('recoverOutboxBatch', {
+            'batchId': batchId,
+            'network': network,
+            'accountUuid': accountUuid,
+            'runId': runId,
+            'lightwalletdUrl': lightwalletdUrl,
+            'expectedTxids': expectedTxids,
+          }) ??
+      false;
+}
+
 Future<List<Map<Object?, Object?>>>
 _defaultListMigrationOutboxReceipts() async {
   final result = await _backgroundMigrationChannel.invokeMethod<List<Object?>>(
@@ -1436,6 +1538,7 @@ class _MigrationOutboxReceipt {
     required this.remoteHeight,
     required this.responseMessage,
     required this.scheduleUpdates,
+    required this.acceptedRawTransaction,
   });
 
   factory _MigrationOutboxReceipt.fromMap(Map<Object?, Object?> values) {
@@ -1454,6 +1557,7 @@ class _MigrationOutboxReceipt {
       outcome: _requiredOutboxString(values, 'outcome'),
       remoteHeight: _requiredOutboxInt(values, 'remoteHeight'),
       responseMessage: values['responseMessage'] as String?,
+      acceptedRawTransaction: values['rawTransaction'] as Uint8List?,
       scheduleUpdates: rawUpdates
           .map((rawUpdate) {
             if (rawUpdate is! Map<Object?, Object?>) {
@@ -1483,6 +1587,7 @@ class _MigrationOutboxReceipt {
   final int remoteHeight;
   final String? responseMessage;
   final List<rust_sync.MigrationOutboxScheduleUpdate> scheduleUpdates;
+  final Uint8List? acceptedRawTransaction;
 }
 
 String _migrationOutboxBatchId(

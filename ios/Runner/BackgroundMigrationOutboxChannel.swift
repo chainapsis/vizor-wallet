@@ -36,11 +36,41 @@ enum BackgroundMigrationOutboxChannel {
     }
   }
 
+  static func recoverBatch(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    guard let expectedTxids = arguments["expectedTxids"] as? [String] else {
+      throw BackgroundMigrationOutboxChannelError.invalidArguments("expectedTxids")
+    }
+    var recovered = false
+    _ = try store.update { snapshot in
+      recovered = try snapshot.recoverBatch(
+        batchId: string(arguments, "batchId"),
+        network: string(arguments, "network"),
+        accountUuid: string(arguments, "accountUuid"),
+        runId: string(arguments, "runId"),
+        expectedTxids: Set(expectedTxids),
+        lightwalletdUrl: string(arguments, "lightwalletdUrl"),
+        at: Date()
+      )
+    }
+    return recovered
+  }
+
   static func listReceipts(
     store: BackgroundMigrationOutboxStore = .shared
   ) throws -> [[String: Any]] {
-    try store.read().receipts.map { receipt in
-      [
+    let snapshot = try store.read()
+    return snapshot.receipts.map { receipt in
+      let rawTransaction = snapshot.batches
+        .first(where: { $0.batchId == receipt.batchId })?.items
+        .first(where: { $0.itemId == receipt.itemId })?.rawTransaction
+      let encodedRawTransaction: Any = rawTransaction.map {
+        FlutterStandardTypedData(bytes: $0) as Any
+      } ?? NSNull()
+      return [
         "receiptId": receipt.receiptId,
         "batchId": receipt.batchId,
         "itemId": receipt.itemId,
@@ -52,6 +82,7 @@ enum BackgroundMigrationOutboxChannel {
         "remoteHeight": receipt.remoteHeight,
         "responseCode": receipt.responseCode as Any,
         "responseMessage": receipt.responseMessage as Any,
+        "rawTransaction": encodedRawTransaction,
         "recordedAtMs": Int64(receipt.recordedAt.timeIntervalSince1970 * 1000),
         "scheduleUpdates": receipt.scheduleUpdates.map { update in
           [

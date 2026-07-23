@@ -4514,8 +4514,7 @@ fn wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(
                 <Vec<crate::api::sync::MigrationOutboxScheduleUpdate>>::sse_decode(
                     &mut deserializer,
                 );
-            let api_password = <String>::sse_decode(&mut deserializer);
-            let api_salt_base64 = <String>::sse_decode(&mut deserializer);
+            let api_accepted_raw_transaction = <Option<Vec<u8>>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4529,8 +4528,7 @@ fn wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(
                         api_remote_height,
                         api_response_message,
                         api_schedule_updates,
-                        api_password,
-                        api_salt_base64,
+                        api_accepted_raw_transaction,
                     )?;
                     Ok(output_ok)
                 })())

@@ -1247,12 +1247,10 @@ pub fn reconcile_orchard_migration_outbox_receipt(
     remote_height: u32,
     response_message: Option<String>,
     schedule_updates: Vec<MigrationOutboxScheduleUpdate>,
-    password: String,
-    salt_base64: String,
+    accepted_raw_transaction: Option<Vec<u8>>,
 ) -> Result<(), String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let password = Zeroizing::new(password.into_bytes());
         let schedule_updates = schedule_updates
             .into_iter()
             .map(|update| {
@@ -1273,8 +1271,7 @@ pub fn reconcile_orchard_migration_outbox_receipt(
             remote_height,
             response_message.as_deref(),
             schedule_updates,
-            password.as_slice(),
-            &salt_base64,
+            accepted_raw_transaction,
         )
     })
 }
