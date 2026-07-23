@@ -53,14 +53,30 @@ class IronwoodMigrationCoordinator
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
+  bool _hasObservedInitialAccountList = false;
+  Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
   final Map<String, Future<void>> _advanceOperations = {};
 
   @override
   IronwoodMigrationCoordinatorState build() {
-    ref.listen(accountProvider, (_, _) => unawaited(refreshNow()));
-    ref.listen(appSecurityProvider, (_, _) => unawaited(refreshNow()));
+    ref.listen(accountProvider, (_, next) {
+      final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
+      if (!_hasObservedInitialAccountList && hasAccounts) {
+        _hasObservedInitialAccountList = true;
+        unawaited(_resumeBackgroundPreparationsAndRefresh());
+      } else {
+        unawaited(refreshNow());
+      }
+    });
+    ref.listen(appSecurityProvider, (previous, next) {
+      if (previous?.requiresUnlock == true && !next.requiresUnlock) {
+        unawaited(_resumeBackgroundPreparationsAndRefresh());
+      } else {
+        unawaited(refreshNow());
+      }
+    });
     ref.listen(rpcEndpointFailoverProvider, (_, _) => unawaited(refreshNow()));
     return const IronwoodMigrationCoordinatorState();
   }
@@ -69,9 +85,59 @@ class IronwoodMigrationCoordinator
     _foreground = foreground;
     if (foreground) {
       unawaited(
-        refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
+        _resumeBackgroundPreparationsAndRefresh(
+          forceAdvance: kAppFormFactor == AppFormFactor.desktop,
+        ),
       );
     }
+  }
+
+  Future<void> resumeBackgroundPreparations() {
+    final inFlight = _backgroundPreparationRecovery;
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> tracked;
+    tracked = _resumeBackgroundPreparations().whenComplete(() {
+      if (identical(_backgroundPreparationRecovery, tracked)) {
+        _backgroundPreparationRecovery = null;
+      }
+    });
+    _backgroundPreparationRecovery = tracked;
+    return tracked;
+  }
+
+  Future<void> _resumeBackgroundPreparations() async {
+    if (!ref.mounted || !_foreground) return;
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
+
+    final accountState = ref.read(accountProvider).value;
+    if (accountState == null || accountState.accounts.isEmpty) return;
+    _hasObservedInitialAccountList = true;
+
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
+    for (final account in accountState.accounts) {
+      if (account.isHardware) continue;
+      try {
+        await service.resumeBackgroundPreparationIfNeeded(
+          network: network,
+          accountUuid: account.uuid,
+        );
+      } catch (error) {
+        log(
+          'Ironwood migration preparation recovery failed for '
+          '${account.uuid}: $error',
+        );
+      }
+      if (!ref.mounted) return;
+    }
+  }
+
+  Future<void> _resumeBackgroundPreparationsAndRefresh({
+    bool forceAdvance = false,
+  }) async {
+    await resumeBackgroundPreparations();
+    await refreshNow(forceAdvance: forceAdvance);
   }
 
   Future<void> startSoftwareMigration({
@@ -399,7 +465,9 @@ class _IronwoodMigrationCoordinatorHostState
   void initState() {
     super.initState();
     unawaited(
-      ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
+      ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          ._resumeBackgroundPreparationsAndRefresh(),
     );
     _pollTimer = Timer.periodic(_migrationStatusPollInterval, (_) {
       unawaited(

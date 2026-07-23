@@ -428,15 +428,41 @@ class IronwoodMigrationService {
             context: context,
             status: status,
           );
-          if (!isHardwareAccount(accountUuid)) {
-            await _resumeBackgroundPreparationIfNeeded(
-              context: context,
-              status: status,
-            );
-          }
           return status;
         });
       },
+    );
+  }
+
+  /// Restores native denomination preparation for an already-bound software
+  /// migration after an explicit lifecycle recovery point.
+  ///
+  /// Ordinary status reads intentionally do not schedule native work. Keeping
+  /// this separate prevents account-list/status refreshes from unexpectedly
+  /// restarting preparation while the wallet DB is being mutated.
+  Future<void> resumeBackgroundPreparationIfNeeded({
+    required String network,
+    required String accountUuid,
+  }) async {
+    if (!isIOS() || !isMobile() || isHardwareAccount(accountUuid)) return;
+
+    final dbPath = await getWalletDbPath();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+    );
+    await operationRegistry.run(
+      network: context.network,
+      accountUuid: context.accountUuid,
+      operation: () => _serializeCredentialState(context, () async {
+        final status = await _getStatusForContext(context);
+        await _reconcileBackgroundCredential(context: context, status: status);
+        await _resumeBoundBackgroundPreparationIfNeeded(
+          context: context,
+          status: status,
+        );
+      }),
     );
   }
 
@@ -1453,7 +1479,7 @@ class IronwoodMigrationService {
     }
   }
 
-  Future<void> _resumeBackgroundPreparationIfNeeded({
+  Future<void> _resumeBoundBackgroundPreparationIfNeeded({
     required _MigrationCredentialContext context,
     required rust_sync.MigrationStatus status,
   }) async {

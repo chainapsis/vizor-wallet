@@ -529,7 +529,7 @@ void main() {
   });
 
   test(
-    'iOS software status restores preparation only for a bound waiting run',
+    'iOS software status stays read-only and explicit recovery restores preparation',
     () async {
       final store = _backgroundCredentialStore();
       await store.prepare(
@@ -569,10 +569,63 @@ void main() {
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
+      expect(preparationStartCount, 0);
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
 
       expect(preparationStartCount, 1);
     },
   );
+
+  test('explicit recovery binds a provisional preparation manifest', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    var preparationStartCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(
+                phase: 'waiting_denom_confirmations',
+                activeRunId: 'run-1',
+              ),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      isMobile: () => true,
+      isIOS: () => true,
+      isHardwareAccount: (_) => false,
+      startBackgroundPreparation: () async {
+        preparationStartCount++;
+        return true;
+      },
+    );
+
+    await service.resumeBackgroundPreparationIfNeeded(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
+
+    expect(preparationStartCount, 1);
+    expect(
+      (await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      ))?.expectedRunId,
+      'run-1',
+    );
+  });
 
   test('iOS hardware status does not restore preparation', () async {
     final store = _backgroundCredentialStore();
@@ -612,7 +665,10 @@ void main() {
       },
     );
 
-    await service.status(network: 'test', accountUuid: 'account-1');
+    await service.resumeBackgroundPreparationIfNeeded(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
 
     expect(preparationStartCount, 0);
   });

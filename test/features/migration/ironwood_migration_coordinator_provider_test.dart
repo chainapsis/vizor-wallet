@@ -13,8 +13,10 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -435,6 +437,99 @@ void main() {
     );
   });
 
+  testWidgets(
+    'initial recovery starts bound preparation once and refreshes stay read-only',
+    (tester) async {
+      final store = IronwoodMigrationBackgroundCredentialStore();
+      await _bindBackgroundPreparationManifest(store);
+      final preparationStarts = <String>[];
+      final container = _container(
+        statuses: {
+          _softwareUuid: _status('waiting_denom_confirmations'),
+          _hardwareUuid: _status('complete', activeRunId: null),
+        },
+        softwareStarts: [],
+        broadcasts: [],
+        syncState: SyncState(),
+        isIOS: true,
+        backgroundCredentialStore: store,
+        backgroundPreparationStarts: preparationStarts,
+        mutableAccounts: true,
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const IronwoodMigrationCoordinatorHost(
+            child: SizedBox.shrink(),
+          ),
+        ),
+      );
+      await _pumpUntil(tester, () => preparationStarts.length == 1);
+
+      (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
+        SyncState(scannedHeight: 1, chainTipHeight: 1),
+      );
+      (container.read(accountProvider.notifier) as _MutableAccountNotifier)
+          .emitSameAccounts();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(preparationStarts, [_softwareUuid]);
+    },
+  );
+
+  testWidgets(
+    'unlock and foreground resume each recover bound preparation once',
+    (tester) async {
+      final store = IronwoodMigrationBackgroundCredentialStore();
+      await _bindBackgroundPreparationManifest(store);
+      final preparationStarts = <String>[];
+      final container = _container(
+        statuses: {
+          _softwareUuid: _status('waiting_denom_confirmations'),
+          _hardwareUuid: _status('complete', activeRunId: null),
+        },
+        softwareStarts: [],
+        broadcasts: [],
+        syncState: SyncState(),
+        isIOS: true,
+        backgroundCredentialStore: store,
+        backgroundPreparationStarts: preparationStarts,
+        initialSecurityState: const AppSecurityState(
+          isPasswordConfigured: true,
+          isUnlocked: false,
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const IronwoodMigrationCoordinatorHost(
+            child: SizedBox.shrink(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(preparationStarts, isEmpty);
+
+      (container.read(appSecurityProvider.notifier) as _MutableSecurityNotifier)
+          .setUnlocked(true);
+      await _pumpUntil(tester, () => preparationStarts.length == 1);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.setForeground(false);
+      coordinator.setForeground(true);
+      await _pumpUntil(tester, () => preparationStarts.length == 2);
+
+      expect(preparationStarts, [_softwareUuid, _softwareUuid]);
+    },
+  );
+
   test('ignores a status result that completes after disposal', () async {
     final statuses = {
       _softwareUuid: _status('complete', activeRunId: null),
@@ -479,6 +574,11 @@ ProviderContainer _container({
   broadcast,
   bool usesNativeOutbox = true,
   SyncState? syncState,
+  bool isIOS = false,
+  IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
+  List<String>? backgroundPreparationStarts,
+  bool mutableAccounts = false,
+  AppSecurityState? initialSecurityState,
 }) {
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -494,8 +594,17 @@ ProviderContainer _container({
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
     isMobile: () => true,
+    isIOS: () => isIOS,
     supportsBackgroundMigration: () => usesNativeOutbox,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,
+    backgroundCredentialStore:
+        backgroundCredentialStore ?? _BoundCredentialStore(),
+    startBackgroundPreparation: backgroundPreparationStarts == null
+        ? null
+        : () async {
+            backgroundPreparationStarts.add(_softwareUuid);
+            return true;
+          },
     scheduleBackgroundMigration: () async => true,
     broadcastDueMigration:
         ({
@@ -534,11 +643,100 @@ ProviderContainer _container({
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (mutableAccounts)
+        accountProvider.overrideWith(_MutableAccountNotifier.new),
+      if (initialSecurityState != null)
+        appSecurityProvider.overrideWith(
+          () => _MutableSecurityNotifier(initialSecurityState),
+        ),
       if (syncState != null)
         syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
     ],
   );
+}
+
+Future<void> _bindBackgroundPreparationManifest(
+  IronwoodMigrationBackgroundCredentialStore store,
+) async {
+  await store.prepare(
+    network: _endpoint.networkName,
+    accountUuid: _softwareUuid,
+    dbPath: '/tmp/wallet.db',
+    lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
+  );
+  await store.bindExpectedRunId(
+    network: _endpoint.networkName,
+    accountUuid: _softwareUuid,
+    expectedRunId: 'run-1',
+  );
+}
+
+Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
+  for (var attempt = 0; attempt < 30 && !condition(); attempt++) {
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+  expect(condition(), isTrue);
+}
+
+class _MutableAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => _bootstrap().initialAccountState;
+
+  void emitSameAccounts() {
+    final current = state.requireValue;
+    state = AsyncData(
+      current.copyWith(accounts: List<AccountInfo>.of(current.accounts)),
+    );
+  }
+}
+
+class _MutableSecurityNotifier extends AppSecurityNotifier {
+  _MutableSecurityNotifier(this.initialState);
+
+  final AppSecurityState initialState;
+
+  @override
+  AppSecurityState build() => initialState;
+
+  void setUnlocked(bool value) {
+    state = state.copyWith(isUnlocked: value);
+  }
+}
+
+class _BoundCredentialStore extends IronwoodMigrationBackgroundCredentialStore {
+  @override
+  Future<IronwoodMigrationBackgroundCredentialManifest?> read({
+    required String network,
+    required String accountUuid,
+  }) async {
+    return IronwoodMigrationBackgroundCredentialManifest(
+      version: 1,
+      network: network,
+      accountUuid: accountUuid,
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: _endpoint.normalizedLightwalletdUrl,
+      credentialHex:
+          '0000000000000000000000000000000000000000000000000000000000000000',
+      saltBase64: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      expectedRunId: 'run-1',
+    );
+  }
+
+  @override
+  Future<bool> bindExpectedRunId({
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  }) async {
+    return false;
+  }
+
+  @override
+  Future<void> delete({
+    required String network,
+    required String accountUuid,
+  }) async {}
 }
 
 AppBootstrapState _bootstrap() {
