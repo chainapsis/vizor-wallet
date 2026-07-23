@@ -36,11 +36,11 @@ void main() {
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
-    expect(migrationPlanCompletionDurationLabel(plan), '~10 hrs');
+    expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
     expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
       migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
-      'Jul 17, 21:07',
+      'Jul 17, 18:03',
     );
   });
 

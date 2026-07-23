@@ -271,7 +271,7 @@ String _mobileWaitingLabel(
   if (timing != null &&
       status.signedChildPcztCount > 0 &&
       status.pendingTxCount == 0) {
-    return 'Proof ${timing.replaceFirst('~in ', '~')}';
+    return timing.replaceFirst('~in ', '~');
   }
   return timing ?? 'Queued';
 }

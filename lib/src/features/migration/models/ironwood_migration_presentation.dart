@@ -90,7 +90,11 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
   }
   if (scheduledBlocks <= 0) return 0;
 
-  return scheduledBlocks + migrationPlanPreparationDelayBlocks(plan);
+  return migrationPlanPartDelayBlocks(
+        preparationDelayBlocks: migrationPlanPreparationDelayBlocks(plan),
+        scheduleOffsetBlocks: scheduledBlocks,
+      ) +
+      _preparationConfirmationBlocks;
 }
 
 int migrationPlanPreparationDelayBlocks(
@@ -100,6 +104,13 @@ int migrationPlanPreparationDelayBlocks(
     : plan.denominationSplitStageCount * _preparationConfirmationBlocks +
           _preparationBroadcastBufferBlocks +
           plan.proofReadinessDelayBlocks;
+
+int migrationPlanPartDelayBlocks({
+  required int preparationDelayBlocks,
+  required int scheduleOffsetBlocks,
+}) => preparationDelayBlocks > scheduleOffsetBlocks
+    ? preparationDelayBlocks
+    : scheduleOffsetBlocks;
 
 String _formatMigrationDuration(int blocks) {
   final seconds = blocks * _estimatedSecondsPerBlock;

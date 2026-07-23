@@ -2921,7 +2921,11 @@ fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() 
     let parts =
         migration_parts_for_run(&conn, run_id, &[100_000_000], PHASE_READY_TO_MIGRATE, 3).unwrap();
 
-    assert!(parts.is_empty());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].part_index, 0);
+    assert_eq!(parts[0].value_zatoshi, 100_000_000);
+    assert_eq!(parts[0].state, MigrationPartState::Preparing);
+    assert_eq!(parts[0].txid_hex, None);
 }
 
 #[test]
@@ -3189,6 +3193,10 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.next_action_height, Some(290));
+    assert_eq!(status.estimated_completion_height, Some(293));
+    assert_eq!(status.parts.len(), 1);
+    assert_eq!(status.parts[0].state, MigrationPartState::Preparing);
+    assert_eq!(status.parts[0].scheduled_height, Some(290));
 
     // Upgrade recovery: older builds could persist ready_to_migrate before
     // persisting the proof height, which made iOS classify the run as state 2.

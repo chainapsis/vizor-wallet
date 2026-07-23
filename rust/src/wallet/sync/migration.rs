@@ -3161,10 +3161,6 @@ fn migration_parts_for_run(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read migration part statuses: {e}"))?;
 
-    if phase == PHASE_READY_TO_MIGRATE && rows.is_empty() {
-        return Ok(Vec::new());
-    }
-
     let mut assigned = BTreeSet::new();
     for (
         stored_index,

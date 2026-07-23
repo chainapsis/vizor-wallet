@@ -273,7 +273,12 @@ class _MobileMigrationPartList extends StatelessWidget {
                                 width: statusWidth,
                                 child: Text(
                                   migrationBlockOffsetDurationLabel(
-                                    initialDelayBlocks + transfer.blockOffset,
+                                    migrationPlanPartDelayBlocks(
+                                      preparationDelayBlocks:
+                                          initialDelayBlocks,
+                                      scheduleOffsetBlocks:
+                                          transfer.blockOffset,
+                                    ),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
