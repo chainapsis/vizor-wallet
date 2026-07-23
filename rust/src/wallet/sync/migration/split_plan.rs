@@ -62,9 +62,21 @@ pub(crate) fn plan_padded_denominations(
     minimum_output_zatoshi: u64,
     max_stages: usize,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
-    if input_values.is_empty() {
+    // Orchard padding actions can decrypt as wallet-owned zero-value notes.
+    // Leaving them unspent preserves value while preventing padding artifacts
+    // from inflating the number of chained denomination transactions.
+    let positive_input_indices = input_values
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| (*value > 0).then_some(index))
+        .collect::<Vec<_>>();
+    if positive_input_indices.is_empty() {
         return Ok(None);
     }
+    let positive_input_values = positive_input_indices
+        .iter()
+        .map(|index| input_values[*index])
+        .collect::<Vec<_>>();
     if fee_per_stage_zatoshi == 0 {
         return Err("Padded denomination stage fee must be positive".to_string());
     }
@@ -75,7 +87,7 @@ pub(crate) fn plan_padded_denominations(
         );
     }
 
-    let total_input = input_values.iter().try_fold(0u64, |acc, value| {
+    let total_input = positive_input_values.iter().try_fold(0u64, |acc, value| {
         acc.checked_add(*value)
             .ok_or_else(|| "Selected Orchard value overflow".to_string())
     })?;
@@ -110,9 +122,17 @@ pub(crate) fn plan_padded_denominations(
             ));
         }
 
-        if let Some(stages) =
-            plan_exact_stage_count(input_values, &terminals, stage_count, fee_per_stage_zatoshi)?
-        {
+        if let Some(mut stages) = plan_exact_stage_count(
+            &positive_input_values,
+            &terminals,
+            stage_count,
+            fee_per_stage_zatoshi,
+        )? {
+            for stage in &mut stages {
+                for input_index in &mut stage.original_input_indices {
+                    *input_index = positive_input_indices[*input_index];
+                }
+            }
             return Ok(Some(PaddedDenominationPlan {
                 denominations,
                 stages,
@@ -1066,7 +1086,14 @@ mod tests {
             carry = remainder;
         }
         assert_eq!(carry, 0);
-        assert_eq!(used_inputs.len(), input_values.len());
+        assert_eq!(
+            used_inputs.len(),
+            input_values.iter().filter(|value| **value > 0).count()
+        );
+        assert!(input_values
+            .iter()
+            .enumerate()
+            .all(|(index, value)| { (*value > 0) == used_inputs.contains(&index) }));
         assert_eq!(used_outputs.len(), outputs.len());
     }
 
@@ -1128,6 +1155,38 @@ mod tests {
         assert_eq!(plan.denominations.total_migratable_zatoshi, 1_000_000);
         assert_plan_balances(
             &[minimum_input],
+            &terminal_outputs(&plan.denominations).unwrap(),
+            &plan.stages,
+        );
+    }
+
+    #[test]
+    fn zero_value_orchard_notes_do_not_create_extra_split_stages() {
+        let positive_inputs = [
+            100_015_000,
+            20_015_000,
+            20_015_000,
+            10_015_000,
+            5_015_000,
+            2_015_000,
+            800_000,
+        ];
+        let mut inputs = vec![0; 50];
+        for (offset, value) in positive_inputs.into_iter().enumerate() {
+            inputs.insert(offset * 7, value);
+        }
+
+        let plan = plan_padded_denominations(&inputs, FEE, 15_000, 1, 64)
+            .unwrap()
+            .expect("positive Orchard value should remain migratable");
+
+        assert_eq!(plan.stages.len(), 1);
+        assert!(plan.stages[0]
+            .original_input_indices
+            .iter()
+            .all(|index| inputs[*index] > 0));
+        assert_plan_balances(
+            &inputs,
             &terminal_outputs(&plan.denominations).unwrap(),
             &plan.stages,
         );
