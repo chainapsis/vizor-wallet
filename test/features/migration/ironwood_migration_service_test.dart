@@ -100,7 +100,7 @@ void main() {
         plannedBatchCount: 1,
         denominationSplitStageCount: 1,
         denominationSplitLayerCount: 1,
-        signingBatchLimit: 50,
+        signingBatchLimit: 35,
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,
         proofReadinessDelayBlocks: 146,
@@ -2816,7 +2816,7 @@ rust_sync.MigrationStatus _migrationStatus({
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
@@ -2996,7 +2996,7 @@ rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {
         redactedPczt: Uint8List.fromList([1, 2, 3]),
       ),
     ],
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
   );
 }
 
