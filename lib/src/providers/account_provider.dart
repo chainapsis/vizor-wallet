@@ -505,8 +505,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         .instance
         .revokeAndWait(network: network, accountUuid: uuid);
     final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
+    final migrationQuiescenceManagedByCaller =
+        migrationLifecycle.isQuiescenceManagedByCaller;
     try {
-      await migrationLifecycle.quiesce();
+      if (!migrationQuiescenceManagedByCaller) {
+        await migrationLifecycle.quiesce();
+      }
       await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
       await migrationLifecycle.revokeAccount(
         network: network,
@@ -525,13 +529,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     } catch (_) {
       migrationRevocation.rollback();
-      try {
-        await migrationLifecycle.resumeAfterFailedMutation();
-      } catch (e, st) {
-        log(
-          'removeAccount: failed to resume migration after keeping '
-          '$uuid: $e\n$st',
-        );
+      if (!migrationQuiescenceManagedByCaller) {
+        try {
+          await migrationLifecycle.resumeAfterFailedMutation();
+        } catch (e, st) {
+          log(
+            'removeAccount: failed to resume migration after keeping '
+            '$uuid: $e\n$st',
+          );
+        }
       }
       rethrow;
     }
@@ -594,6 +600,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAddress: nextActiveAddress,
       ),
     );
+    if (!migrationQuiescenceManagedByCaller) {
+      try {
+        await migrationLifecycle.resumeAfterMutation();
+      } catch (e, st) {
+        log(
+          'removeAccount: failed to resume migration for remaining '
+          'accounts: $e\n$st',
+        );
+      }
+    }
     log('removeAccount: $uuid');
   }
 
@@ -624,10 +640,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final network = await _getNetwork();
     final migrationRevocations = <IronwoodMigrationAccountRevocation>[];
     final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
+    final migrationQuiescenceManagedByCaller =
+        migrationLifecycle.isQuiescenceManagedByCaller;
     Future<void> rollbackMigrationPreflight() async {
       for (final revocation in migrationRevocations) {
         revocation.rollback();
       }
+      if (migrationQuiescenceManagedByCaller) return;
       try {
         await migrationLifecycle.resumeAfterFailedMutation();
       } catch (e, st) {
@@ -654,7 +673,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // Stop native work before changing the DB. The signed outbox is revoked
     // below before the destructive step is allowed to begin.
     try {
-      await migrationLifecycle.quiesce();
+      if (!migrationQuiescenceManagedByCaller) {
+        await migrationLifecycle.quiesce();
+      }
     } catch (_) {
       await rollbackMigrationPreflight();
       rethrow;
@@ -723,6 +744,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ref.read(appSecurityProvider.notifier).reset();
     } catch (e, st) {
       log('resetWallet: app security reset failed: $e\n$st');
+    }
+    if (!migrationQuiescenceManagedByCaller) {
+      try {
+        await migrationLifecycle.resumeAfterMutation();
+      } catch (e, st) {
+        log('resetWallet: failed to leave migration quiescence: $e\n$st');
+      }
     }
     log('resetWallet: all data cleared');
   }

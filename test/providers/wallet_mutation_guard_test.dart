@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_mutation_guard.dart';
@@ -99,6 +100,297 @@ void main() {
     expect(events, ['pause', 'action', 'resume']);
   });
 
+  testWidgets(
+    'quiesces migration work before sync and resumes it after account addition',
+    (tester) async {
+      final events = <String>[];
+      late WidgetRef capturedRef;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_ExistingAccountNotifier.new),
+            syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await runWithSyncPausedForAccountMutation(
+        capturedRef,
+        () async => events.add('action'),
+        quiesceMigrationWork: true,
+        migrationLifecycle: _RecordingMigrationLifecycle(events),
+      );
+
+      expect(events, [
+        'migration-quiesce',
+        'pause',
+        'action',
+        'resume',
+        'migration-resume',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'resumes quiesced migration work after non-destructive account failure',
+    (tester) async {
+      final events = <String>[];
+      late WidgetRef capturedRef;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_ExistingAccountNotifier.new),
+            syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await expectLater(
+        runWithSyncPausedForAccountMutation(
+          capturedRef,
+          () async {
+            events.add('action');
+            throw StateError('import failed');
+          },
+          quiesceMigrationWork: true,
+          migrationLifecycle: _RecordingMigrationLifecycle(events),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(events, [
+        'migration-quiesce',
+        'pause',
+        'action',
+        'resume',
+        'migration-resume',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'rolls back an ambiguous migration quiesce before skipping the mutation',
+    (tester) async {
+      final events = <String>[];
+      late WidgetRef capturedRef;
+      final quiesceError = StateError('quiesce response lost');
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_ExistingAccountNotifier.new),
+            syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await expectLater(
+        runWithSyncPausedForAccountMutation(
+          capturedRef,
+          () async => events.add('action'),
+          migrationLifecycle: _RecordingMigrationLifecycle(
+            events,
+            quiesceError: quiesceError,
+          ),
+        ),
+        throwsA(same(quiesceError)),
+      );
+
+      expect(events, ['migration-quiesce', 'migration-resume']);
+    },
+  );
+
+  testWidgets(
+    'does not mask a committed mutation when migration resume fails',
+    (tester) async {
+      final events = <String>[];
+      late WidgetRef capturedRef;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWith(_ExistingAccountNotifier.new),
+            syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final result = await runWithSyncPausedForAccountMutation(
+        capturedRef,
+        () async {
+          events.add('action');
+          return 7;
+        },
+        quiesceMigrationWork: true,
+        migrationLifecycle: _RecordingMigrationLifecycle(
+          events,
+          resumeError: StateError('resume failed'),
+        ),
+      );
+
+      expect(result, 7);
+      expect(events, [
+        'migration-quiesce',
+        'pause',
+        'action',
+        'resume',
+        'migration-resume',
+      ]);
+    },
+  );
+
+  testWidgets('preserves the mutation error when migration resume also fails', (
+    tester,
+  ) async {
+    final events = <String>[];
+    late WidgetRef capturedRef;
+    final mutationError = StateError('import failed');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+        ],
+        child: Consumer(
+          builder: (context, ref, child) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await expectLater(
+      runWithSyncPausedForAccountMutation(
+        capturedRef,
+        () async {
+          events.add('action');
+          throw mutationError;
+        },
+        quiesceMigrationWork: true,
+        migrationLifecycle: _RecordingMigrationLifecycle(
+          events,
+          resumeError: StateError('resume failed'),
+        ),
+      ),
+      throwsA(same(mutationError)),
+    );
+
+    expect(events, [
+      'migration-quiesce',
+      'pause',
+      'action',
+      'resume',
+      'migration-resume',
+    ]);
+  });
+
+  testWidgets('quiesces migration before sync for destructive wrappers', (
+    tester,
+  ) async {
+    final events = <String>[];
+    late WidgetRef capturedRef;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+        ],
+        child: Consumer(
+          builder: (context, ref, child) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await runWithSyncPausedForAccountMutation(
+      capturedRef,
+      () async => events.add('action'),
+      migrationLifecycle: _RecordingMigrationLifecycle(events),
+    );
+
+    expect(events, [
+      'migration-quiesce',
+      'pause',
+      'action',
+      'resume',
+      'migration-resume',
+    ]);
+  });
+
+  testWidgets('wallet reset quiesces migration before foreground sync', (
+    tester,
+  ) async {
+    final events = <String>[];
+    late WidgetRef capturedRef;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+        ],
+        child: Consumer(
+          builder: (context, ref, child) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await runWithSyncPausedForWalletReset(capturedRef, () async {
+      events.add('clearSensitiveState');
+      events.add('resetWallet');
+    }, migrationLifecycle: _RecordingMigrationLifecycle(events));
+
+    expect(events, [
+      'migration-quiesce',
+      'pause',
+      'clearSensitiveState',
+      'resetWallet',
+      'clearCachedWalletDbPath',
+      'migration-resume',
+    ]);
+  });
+
   testWidgets('wallet reset resumes after pre-delete failure', (tester) async {
     final events = <String>[];
     late WidgetRef capturedRef;
@@ -175,6 +467,48 @@ void main() {
 class _EmptyAccountNotifier extends AccountNotifier {
   @override
   Future<AccountState> build() async => const AccountState();
+}
+
+class _ExistingAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Account 1',
+        order: 0,
+        isSeedAnchor: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+  );
+}
+
+class _RecordingMigrationLifecycle
+    extends IronwoodMigrationBackgroundLifecycle {
+  _RecordingMigrationLifecycle(
+    this.events, {
+    this.quiesceError,
+    this.resumeError,
+  }) : super(isIOS: false, isAndroid: false);
+
+  final List<String> events;
+  final Object? quiesceError;
+  final Object? resumeError;
+
+  @override
+  Future<void> quiesce() async {
+    events.add('migration-quiesce');
+    final error = quiesceError;
+    if (error != null) throw error;
+  }
+
+  @override
+  Future<void> resumeAfterMutation() async {
+    events.add('migration-resume');
+    final error = resumeError;
+    if (error != null) throw error;
+  }
 }
 
 class _StaleSyncNotifier extends SyncNotifier {
