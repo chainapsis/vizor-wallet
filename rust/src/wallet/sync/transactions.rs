@@ -435,7 +435,7 @@ struct ActivitySummary {
     sent: ActivityAmounts,
     received: ActivityAmounts,
     shielded: ActivityAmounts,
-    migration: ActivityAmounts,
+    internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
     has_own_transparent_output: bool,
     has_external_transparent_send: bool,
@@ -1171,7 +1171,7 @@ fn summarize_activity_outputs(
         }
 
         if from_own && to_own && base.spent_orchard_note && is_ironwood_output(output) {
-            summary.migration.add_output(output);
+            summary.internal_ironwood_transition.add_output(output);
             continue;
         }
 
@@ -1217,7 +1217,6 @@ fn detail_includes_output(
         "received" | "receiving" => {
             !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
         }
-        "migration" => false,
         _ => false,
     }
 }
@@ -1413,15 +1412,8 @@ fn classify_history_tx(
         )];
     }
 
-    if is_ironwood_migration_candidate(base, summary) {
-        return vec![build_classified_tx(
-            base,
-            "migration",
-            summary.migration.amount,
-            "ironwood",
-            false,
-            1,
-        )];
+    if is_internal_ironwood_transition(base, summary) {
+        return Vec::new();
     }
 
     let mut rows = Vec::new();
@@ -1485,11 +1477,11 @@ fn classify_history_tx(
     rows
 }
 
-fn is_ironwood_migration_candidate(base: &TxBase, summary: &ActivitySummary) -> bool {
+fn is_internal_ironwood_transition(base: &TxBase, summary: &ActivitySummary) -> bool {
     !base.is_shielding
         && base.spent_orchard_note
         && base.total_spent > 0
-        && summary.migration.amount > 0
+        && summary.internal_ironwood_transition.amount > 0
         && summary.sent.amount == 0
         && summary.received.amount == 0
 }
@@ -1754,34 +1746,27 @@ mod tests {
     }
 
     #[test]
-    fn classify_orchard_to_ironwood_migration_shows_moved_amount() {
+    fn classify_internal_ironwood_transition_omits_activity() {
         let mut summary = ActivitySummary::default();
-        summary.migration.amount = 624_980_000;
+        summary.internal_ironwood_transition.amount = 624_980_000;
 
         let rows = classify_history_tx(&tx_base_for_history(), &summary, 0);
 
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].info.tx_kind, "migration");
-        assert_eq!(rows[0].info.display_amount, 624_980_000);
-        assert_eq!(rows[0].info.display_pool, "ironwood");
+        assert!(rows.is_empty());
     }
 
     #[test]
-    fn classify_expired_orchard_to_ironwood_migration_keeps_failed_row() {
+    fn classify_expired_internal_ironwood_transition_omits_activity() {
         let mut base = tx_base_for_history();
         base.mined_height = None;
         base.expired_unmined = true;
 
         let mut summary = ActivitySummary::default();
-        summary.migration.amount = 624_980_000;
+        summary.internal_ironwood_transition.amount = 624_980_000;
 
         let rows = classify_history_tx(&base, &summary, 0);
 
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].info.tx_kind, "migration");
-        assert!(rows[0].info.expired_unmined);
-        assert_eq!(rows[0].info.display_amount, 624_980_000);
-        assert_eq!(rows[0].info.display_pool, "ironwood");
+        assert!(rows.is_empty());
     }
 
     fn fake_raw() -> Vec<u8> {
@@ -2930,7 +2915,7 @@ mod tests {
     }
 
     #[test]
-    fn history_classifies_orchard_to_ironwood_self_output_as_migration() {
+    fn history_omits_orchard_to_ironwood_internal_transition() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let migration_tx = fake_txid(0xB5);
@@ -2971,15 +2956,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].txid_hex, hex::encode(migration_tx));
-        assert_eq!(got[0].tx_kind, "migration");
-        assert_eq!(got[0].display_amount, 624_980_000);
-        assert_eq!(got[0].display_pool, "ironwood");
+        assert!(got.is_empty());
     }
 
     #[test]
-    fn history_classifies_pool_4_self_output_as_migration() {
+    fn history_omits_pool_4_internal_transition() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let migration_tx = fake_txid(0xB6);
@@ -3019,11 +3000,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].txid_hex, hex::encode(migration_tx));
-        assert_eq!(got[0].tx_kind, "migration");
-        assert_eq!(got[0].display_amount, 624_980_000);
-        assert_eq!(got[0].display_pool, "ironwood");
+        assert!(got.is_empty());
     }
 
     #[test]
