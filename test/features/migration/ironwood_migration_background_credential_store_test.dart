@@ -227,9 +227,52 @@ void main() {
     );
 
     await lifecycle.quiesce();
-    await lifecycle.resumeAfterFailedMutation();
+    await lifecycle.resumeAfterMutation();
 
     expect(calls.map((call) => call.method), ['quiesce', 'resume']);
+  });
+
+  test('iOS migration resume retries a transient channel failure', () async {
+    const channel = MethodChannel('test/background_migration/resume_retry');
+    var resumeCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method != 'resume') return true;
+          resumeCalls += 1;
+          if (resumeCalls == 1) {
+            throw PlatformException(code: 'temporarily_unavailable');
+          }
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: true,
+      isAndroid: false,
+      resumeRetryDelays: const [Duration.zero, Duration.zero],
+    );
+
+    await lifecycle.resumeAfterMutation();
+
+    expect(resumeCalls, 2);
+  });
+
+  test('caller-managed quiescence stays scoped to its async action', () async {
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      isIOS: false,
+      isAndroid: false,
+    );
+
+    expect(lifecycle.isQuiescenceManagedByCaller, isFalse);
+    await lifecycle.runWithCallerManagedQuiescence(() async {
+      expect(lifecycle.isQuiescenceManagedByCaller, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(lifecycle.isQuiescenceManagedByCaller, isTrue);
+    });
+    expect(lifecycle.isQuiescenceManagedByCaller, isFalse);
   });
 
   test(

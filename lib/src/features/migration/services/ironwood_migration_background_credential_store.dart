@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -356,6 +357,7 @@ class IronwoodMigrationBackgroundLifecycle {
     MethodChannel? channel,
     bool? isIOS,
     bool? isAndroid,
+    List<Duration>? resumeRetryDelays,
   }) : _credentialStore =
            credentialStore ??
            IronwoodMigrationBackgroundCredentialStore.instance,
@@ -363,14 +365,33 @@ class IronwoodMigrationBackgroundLifecycle {
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
        _isIOS = isIOS ?? Platform.isIOS,
-       _isAndroid = isAndroid ?? Platform.isAndroid;
+       _isAndroid = isAndroid ?? Platform.isAndroid,
+       _resumeRetryDelays =
+           resumeRetryDelays ??
+           const [
+             Duration.zero,
+             Duration(milliseconds: 100),
+             Duration(milliseconds: 300),
+           ];
 
   static final instance = IronwoodMigrationBackgroundLifecycle();
+  static final Object _callerManagedQuiescenceZoneKey = Object();
 
   final IronwoodMigrationBackgroundCredentialStore _credentialStore;
   final MethodChannel _channel;
   final bool _isIOS;
   final bool _isAndroid;
+  final List<Duration> _resumeRetryDelays;
+
+  bool get isQuiescenceManagedByCaller =>
+      Zone.current[_callerManagedQuiescenceZoneKey] == true;
+
+  Future<T> runWithCallerManagedQuiescence<T>(Future<T> Function() action) {
+    return runZoned(
+      action,
+      zoneValues: {_callerManagedQuiescenceZoneKey: true},
+    );
+  }
 
   Future<void> quiesce() async {
     if (!_isIOS) return;
@@ -382,15 +403,26 @@ class IronwoodMigrationBackgroundLifecycle {
     }
   }
 
-  Future<void> resumeAfterFailedMutation() async {
+  Future<void> resumeAfterMutation() async {
     if (!_isIOS) return;
-    final resumed = await _channel.invokeMethod<bool>('resume');
-    if (resumed != true) {
-      throw StateError(
-        'Failed to resume Ironwood migration after wallet data was kept.',
-      );
+    Object? lastError;
+    for (final delay in _resumeRetryDelays) {
+      if (delay != Duration.zero) await Future<void>.delayed(delay);
+      try {
+        final resumed = await _channel.invokeMethod<bool>('resume');
+        if (resumed == true) return;
+        lastError = StateError('Native migration resume returned false.');
+      } catch (error) {
+        lastError = error;
+      }
     }
+    throw StateError(
+      'Failed to resume Ironwood migration after wallet data changed'
+      '${lastError == null ? '.' : ': $lastError'}',
+    );
   }
+
+  Future<void> resumeAfterFailedMutation() => resumeAfterMutation();
 
   Future<void> revokeAccount({
     required String network,
