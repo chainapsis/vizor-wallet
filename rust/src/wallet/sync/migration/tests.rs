@@ -61,7 +61,8 @@ fn create_outbox_test_run(
                 raw_tx: vec![index as u8, 0xaa, 0x55],
                 target_height: 101,
                 anchor_boundary_height: anchors[index],
-                expiry_height: 1_000,
+                expiry_height: 69_120,
+                scheduled_height: 100 + schedule[index].block_offset,
                 value_zatoshi: *value_zatoshi,
                 fee_zatoshi: 10,
                 selected_note: selected_note.clone(),
@@ -119,6 +120,178 @@ fn pending_test_stage_for_part(
     stage.outputs[0].value_zatoshi = value_zatoshi;
     stage.outputs[0].part_index = part_index;
     stage
+}
+
+#[test]
+fn legacy_signed_schedule_backfill_uses_approved_offsets_and_discards_wrong_bucket() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    let selected_note = serde_json::to_string(&PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    })
+    .unwrap();
+    for (run_id, offset) in [("legacy-valid", 1u32), ("legacy-invalid", 2u32)] {
+        let schedule = serde_json::to_string(&[MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: offset,
+        }])
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json, schedule_json)
+                 VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1, '[100]', ?3)"
+            ),
+            params![run_id, PHASE_BROADCAST_SCHEDULED, schedule],
+        )
+        .unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  scheduled_height, value_zatoshi, fee_zatoshi,
+                  selected_note_json, metadata_json)
+                 VALUES (?1, ?2, 0, 'base', 'sigs', 34559, 69120,
+                         NULL, 100, 10, ?3, '{{}}')"
+            ),
+            params![run_id, format!("{run_id}-child"), selected_note],
+        )
+        .unwrap();
+    }
+
+    ensure_schema(&conn).unwrap();
+
+    let (scheduled_height, origin): (u32, u32) = conn
+        .query_row(
+            &format!(
+                "SELECT c.scheduled_height, r.signed_schedule_origin_height
+                 FROM {SIGNED_CHILD_PCZTS_TABLE} c
+                 JOIN {RUNS_TABLE} r ON r.run_id = c.run_id
+                 WHERE c.run_id = 'legacy-valid'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(scheduled_height, 34_559);
+    assert_eq!(origin, 34_558);
+
+    let invalid_count: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE}
+                 WHERE run_id = 'legacy-invalid'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(invalid_count, 0);
+    let (phase, last_error): (String, Option<String>) = conn
+        .query_row(
+            &format!(
+                "SELECT phase, last_error FROM {RUNS_TABLE}
+                 WHERE run_id = 'legacy-invalid'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_READY_TO_MIGRATE);
+    assert!(last_error.unwrap().contains("must be recreated"));
+}
+
+#[test]
+fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "legacy-pending-recovery";
+    let schedule = serde_json::to_string(&[MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 2,
+    }])
+    .unwrap();
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    };
+    let selected_note_json = serde_json::to_string(&selected_note).unwrap();
+    let metadata_json = serde_json::to_string(&PendingMigrationTxMetadata {
+        tx_kind: "migration".to_string(),
+        funding_account_uuid: "account-1".to_string(),
+        selected_note: selected_note.clone(),
+    })
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1, '[100]', ?3)"
+        ),
+        params![run_id, PHASE_BROADCAST_SCHEDULED, schedule],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+             (run_id, message_id, child_index, encrypted_base_pczt,
+              encrypted_compact_sigs, target_height, expiry_height,
+              scheduled_height, value_zatoshi, fee_zatoshi,
+              selected_note_json, metadata_json)
+             VALUES (?1, 'retained-child', 0, 'base', 'sigs', 34559, 69120,
+                     NULL, 100, 10, ?2, ?3)"
+        ),
+        params![run_id, selected_note_json, metadata_json],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES (?1, ?2, 0, 'raw', 34559, 69120, 100, 10, ?3, 0, 110,
+                     1, 34558, 34559, 'scheduled', ?4)"
+        ),
+        params![
+            run_id,
+            "33".repeat(32),
+            selected_note.txid_hex,
+            metadata_json
+        ],
+    )
+    .unwrap();
+
+    ensure_schema(&conn).unwrap();
+
+    let (message_id, status): (String, String) = conn
+        .query_row(
+            &format!(
+                "SELECT c.message_id, p.status
+                 FROM {SIGNED_CHILD_PCZTS_TABLE} c
+                 JOIN {PENDING_TXS_TABLE} p
+                   ON p.run_id = c.run_id AND p.part_index = c.child_index
+                 WHERE c.run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(message_id, "retained-child");
+    assert_eq!(status, "needs_resign");
 }
 
 #[test]
@@ -481,6 +654,281 @@ fn canonical_migration_expiry_uses_zip318_window_boundaries() {
         3_525_120
     );
     assert_eq!(zip318_canonical_migration_expiry_height(0).unwrap(), 69_120);
+}
+
+#[test]
+fn pending_insert_rejects_expiry_from_a_different_schedule_bucket() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    drop(conn);
+    let schedule = [MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 1,
+    }];
+    set_run_approved_schedule(&db_path, "run-1", WalletNetwork::Regtest, &schedule, &[100])
+        .unwrap();
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    let error = insert_pending_txs(
+        &db_path,
+        "run-1",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: "22".repeat(32),
+            raw_tx: vec![1],
+            target_height: 34_560,
+            anchor_boundary_height: Some(30_000),
+            expiry_height: 69_120,
+            scheduled_height: 34_560,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap_err();
+    assert!(error.contains("not canonical for scheduled height"));
+}
+
+#[test]
+fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(&db_path, "run-1", &[100], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 34_559).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let status = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {PENDING_TXS_TABLE}
+                 WHERE txid_hex = ?1"
+            ),
+            params![txids[0]],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(status, "needs_resign");
+    assert_eq!(
+        run_phase(&db_path, "run-1").unwrap(),
+        PHASE_READY_TO_MIGRATE
+    );
+}
+
+#[test]
+fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert_eq!(
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign(&db_path, "run-1", 34_560,)
+            .unwrap(),
+        1
+    );
+    assert!(
+        due_pending_txs(&db_path, "run-1", 34_560, TEST_PASSWORD, TEST_SALT_BASE64,)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "incremental-origin",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+        params![txids[1]],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 500, scheduled_height = 501
+             WHERE txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    drop(conn);
+
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: format!("{:064x}", 101),
+        output_index: 0,
+        value_zatoshi: 210,
+        note_version: 2,
+        nullifier_hex: Some(format!("{:064x}", 201)),
+    };
+    insert_pending_txs(
+        &db_path,
+        "incremental-origin",
+        vec![PendingMigrationTxInsert {
+            part_index: 1,
+            txid_hex: txids[1].clone(),
+            raw_tx: vec![1, 0xaa, 0x55],
+            target_height: 101,
+            anchor_boundary_height: Some(90),
+            expiry_height: 69_120,
+            scheduled_height: 102,
+            value_zatoshi: 200,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let origin: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT signed_schedule_origin_height FROM {RUNS_TABLE}
+                 WHERE run_id = 'incremental-origin'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(origin, 100);
+}
+
+#[test]
+fn accepted_receipt_keeps_re_sign_phase_when_peer_crosses_expiry_bucket() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "outbox-boundary",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'outbox-boundary'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    apply_accepted_migration_outbox_receipt(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "outbox-boundary",
+        &txids[0],
+        34_559,
+        &[MigrationOutboxScheduleUpdate {
+            item_id: txids[1].clone(),
+            scheduled_height: 34_560,
+            schedule_start_height: 34_559,
+        }],
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (phase, last_error, peer_status): (String, Option<String>, String) = conn
+        .query_row(
+            &format!(
+                "SELECT r.phase, r.last_error, p.status
+                 FROM {RUNS_TABLE} r
+                 JOIN {PENDING_TXS_TABLE} p ON p.run_id = r.run_id
+                 WHERE r.run_id = 'outbox-boundary' AND p.txid_hex = ?1"
+            ),
+            params![txids[1]],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_READY_TO_MIGRATE);
+    assert_eq!(peer_status, "needs_resign");
+    assert!(last_error.unwrap().contains("ZIP 318 expiry boundary"));
 }
 
 #[test]
@@ -1660,7 +2108,13 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
                 raw_tx: vec![index as u8],
                 target_height: 501,
                 anchor_boundary_height: None,
-                expiry_height: 1_000,
+                expiry_height: 69_120,
+                scheduled_height: 500
+                    + schedule
+                        .iter()
+                        .find(|entry| entry.part_index == Some(index as u32))
+                        .unwrap()
+                        .block_offset,
                 value_zatoshi,
                 fee_zatoshi: 10,
                 selected_note: selected_note.clone(),
@@ -1763,7 +2217,13 @@ fn approved_schedule_part_index_disambiguates_equal_values() {
                 raw_tx: vec![part_index as u8],
                 target_height: 501,
                 anchor_boundary_height: None,
-                expiry_height: 1_000,
+                expiry_height: 69_120,
+                scheduled_height: 500
+                    + schedule
+                        .iter()
+                        .find(|entry| entry.part_index == Some(part_index))
+                        .unwrap()
+                        .block_offset,
                 value_zatoshi: 100,
                 fee_zatoshi: 10,
                 selected_note: selected_note.clone(),
@@ -1938,7 +2398,8 @@ fn approved_schedule_supports_incremental_proof_persistence() {
             raw_tx: vec![part_index as u8],
             target_height,
             anchor_boundary_height: None,
-            expiry_height: 1_000,
+            expiry_height: 69_120,
+            scheduled_height: 500 + if part_index == 0 { 2 } else { 1 },
             value_zatoshi,
             fee_zatoshi: 10,
             selected_note: selected_note.clone(),
@@ -1989,7 +2450,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(stored, vec![(1, 1_200, 1_201), (0, 1_200, 1_202)]);
+    assert_eq!(stored, vec![(1, 500, 501), (0, 500, 502)]);
 }
 
 #[test]
@@ -2012,7 +2473,8 @@ fn legacy_equal_value_schedule_maps_incremental_parts_by_rank() {
         raw_tx: vec![],
         target_height: 1,
         anchor_boundary_height: None,
-        expiry_height: 2,
+        expiry_height: 69_120,
+        scheduled_height: part_index + 1,
         value_zatoshi: 100,
         fee_zatoshi: 0,
         selected_note: PreparedOrchardNoteRef {
@@ -2072,8 +2534,11 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
-              created_at_ms, updated_at_ms, target_values_json)
-             VALUES ('expired-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]')"
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              signed_schedule_origin_height)
+             VALUES ('expired-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]',
+                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":1}}]',
+                     90)"
         ),
         params![db_path, PHASE_BROADCAST_SCHEDULED],
     )
@@ -2150,14 +2615,32 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
                 raw_tx: vec![1, 2, 3],
                 target_height: 101,
                 anchor_boundary_height: Some(90),
-                expiry_height: 200,
+                expiry_height: 69_120,
+                scheduled_height: 101,
                 value_zatoshi: 100,
                 fee_zatoshi: 10,
                 selected_note: selected_note.clone(),
                 metadata,
             },
         }],
-        Vec::new(),
+        vec![SignedMigrationPcztInsert {
+            message_id: "replacement-child".to_string(),
+            child_index: 0,
+            base_pczt: vec![4, 5, 6],
+            sigs: Vec::new(),
+            target_height: 101,
+            anchor_boundary_height: Some(90),
+            expiry_height: 69_120,
+            scheduled_height: 101,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note: selected_note.clone(),
+            },
+        }],
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -2180,6 +2663,60 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
             )
             .unwrap();
     assert_eq!(replacement_part_index, 0);
+    let (signed_origin, replacement_scheduled_height): (u32, u32) =
+        open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+            .unwrap()
+            .query_row(
+                &format!(
+                    "SELECT r.signed_schedule_origin_height, c.scheduled_height
+                     FROM {RUNS_TABLE} r
+                     JOIN {SIGNED_CHILD_PCZTS_TABLE} c ON c.run_id = r.run_id
+                     WHERE r.run_id = 'expired-run'"
+                ),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+    assert_eq!(signed_origin, 90);
+    assert_eq!(replacement_scheduled_height, 101);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    insert_pending_txs(
+        &db_path,
+        "expired-run",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: "44".repeat(32),
+            raw_tx: vec![7, 8, 9],
+            target_height: 101,
+            anchor_boundary_height: Some(90),
+            expiry_height: 69_120,
+            scheduled_height: 101,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note: selected_note.clone(),
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    assert_eq!(
+        pending_totals_for_run(&db_path, "expired-run")
+            .unwrap()
+            .txids,
+        vec!["44".repeat(32)]
+    );
     assert_eq!(
         due_pending_txs(
             &db_path,

@@ -69,9 +69,9 @@ pub(crate) fn is_zip318_canonical_denomination(value_zatoshi: u64) -> bool {
 }
 
 pub(crate) fn zip318_canonical_migration_expiry_height(
-    construction_height: u32,
+    scheduled_height: u32,
 ) -> Result<u32, String> {
-    let boundary = construction_height - (construction_height % ZIP318_EXPIRY_MODULUS);
+    let boundary = scheduled_height - (scheduled_height % ZIP318_EXPIRY_MODULUS);
     let window = ZIP318_EXPIRY_MODULUS
         .checked_mul(2)
         .ok_or_else(|| "ZIP 318 expiry window overflow".to_string())?;

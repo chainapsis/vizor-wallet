@@ -79,6 +79,7 @@ struct CreatedMigrationPczt {
     target_height: u32,
     anchor_boundary_height: Option<u32>,
     expiry_height: u32,
+    scheduled_height: u32,
     fee_zatoshi: u64,
     migrated_zatoshi: u64,
     selected_note: super::migration::PreparedOrchardNoteRef,
@@ -113,6 +114,7 @@ struct StoredSingleQrMigrationPczt {
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 }
 
 struct StoredSingleQrMigrationCompletion {
@@ -120,6 +122,7 @@ struct StoredSingleQrMigrationCompletion {
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 }
 
 fn new_keystone_migration_request_id(label: &str) -> String {

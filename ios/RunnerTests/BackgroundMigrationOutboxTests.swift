@@ -365,13 +365,70 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try snapshot.stage(batch)
     try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
 
-    snapshot.expireItems(remoteHeight: 10_000, endpoint: batch.lightwalletdUrl, at: now)
+    snapshot.expireItems(remoteHeight: 69_120, endpoint: batch.lightwalletdUrl, at: now)
 
     XCTAssertNil(snapshot.batches.first?.armedAt)
-    XCTAssertNil(snapshot.selectDue(remoteHeight: 10_000, at: now))
+    XCTAssertNil(snapshot.selectDue(remoteHeight: 69_120, at: now))
     XCTAssertEqual(snapshot.receipts.count, 2)
     snapshot.acknowledgeReceipts(Set(snapshot.receipts.map(\.receiptId)))
     XCTAssertTrue(snapshot.batches.isEmpty)
+  }
+
+  func testNeedsResignAcknowledgementPreservesAnUnreconciledAcceptedReceipt() throws {
+    var batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [34_559, 34_560]
+    )
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: 69_120
+      )
+    }
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+    let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: 34_559, at: now))
+    try snapshot.beginSubmission(itemId: selected.item.itemId, attemptId: "attempt", at: now)
+    var random = SeededOutboxRandom(values: [0])
+    try snapshot.recordAccepted(
+      itemId: selected.item.itemId,
+      equivalent: false,
+      remoteHeight: 34_559,
+      responseCode: 0,
+      responseMessage: "",
+      at: now,
+      random: &random
+    )
+    snapshot.markDueItemsNeedingResign(
+      remoteHeight: 34_560,
+      endpoint: batch.lightwalletdUrl,
+      at: now
+    )
+
+    let needsResignReceipt = try XCTUnwrap(
+      snapshot.receipts.first(where: { $0.outcome == .needsResign })
+    )
+    snapshot.acknowledgeReceipts([needsResignReceipt.receiptId])
+
+    XCTAssertEqual(snapshot.receipts.map(\.outcome), [.accepted])
+    let retainedBatch = try XCTUnwrap(snapshot.batches.first)
+    let acceptedItem = try XCTUnwrap(
+      retainedBatch.items.first(where: { $0.itemId == selected.item.itemId })
+    )
+    XCTAssertEqual(acceptedItem.rawTransaction, selected.item.rawTransaction)
+    XCTAssertEqual(acceptedItem.status, .acceptedAwaitingReconciliation)
+
+    snapshot.acknowledgeReceipts(Set(snapshot.receipts.map(\.receiptId)))
+    XCTAssertTrue(snapshot.batches.isEmpty)
+    XCTAssertTrue(snapshot.receipts.isEmpty)
   }
 
   func testEncryptedStoreRoundTripsWithoutPlaintextAndRejectsTampering() throws {
@@ -664,6 +721,57 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(outcome.proofReady)
   }
 
+  func testRunnerRequiresFreshSignatureWhenWakeCrossesExpiryBucket() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    var batch = makeBatch(
+      batchId: "boundary-batch",
+      account: "account-a",
+      heights: [34_559]
+    )
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: 69_120
+      )
+    }
+    try stageAndArm(batch, in: harness.store)
+    var sendCount = 0
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(34_560) },
+      sendTransaction: { _, _, _ in
+        sendCount += 1
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(sendCount, 0)
+    XCTAssertEqual(outcome.transport, .needsUserAction)
+    let snapshot = try harness.store.read()
+    XCTAssertNil(snapshot.batches.first?.armedAt)
+    XCTAssertEqual(
+      snapshot.batches.first?.items.first?.status,
+      .needsResignAwaitingReconciliation
+    )
+    XCTAssertEqual(snapshot.receipts.first?.outcome, .needsResign)
+    XCTAssertEqual(snapshot.receipts.first?.remoteHeight, 34_560)
+  }
+
   func testRunnerReturnsStableProofReadyUntilNotificationIsAcknowledged() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
@@ -897,7 +1005,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
           anchorBoundaryHeight: 144,
           scheduledHeight: height,
           scheduleStartHeight: 99,
-          expiryHeight: 10_000
+          expiryHeight: 69_120
         )
       }
     )

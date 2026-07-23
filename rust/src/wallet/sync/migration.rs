@@ -130,6 +130,9 @@ pub(crate) struct PendingMigrationTxInsert {
     pub target_height: u32,
     pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
+    /// Absolute ZIP 318 broadcast height committed before this transaction is
+    /// signed. Its canonical expiry is derived from this height.
+    pub scheduled_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
     pub selected_note: PreparedOrchardNoteRef,
@@ -162,6 +165,7 @@ pub(crate) struct SignedMigrationPcztInsert {
     pub target_height: u32,
     pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
+    pub scheduled_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
     pub selected_note: PreparedOrchardNoteRef,
@@ -178,6 +182,7 @@ pub(crate) struct SignedMigrationPczt {
     pub target_height: u32,
     pub anchor_boundary_height: Option<u32>,
     pub expiry_height: u32,
+    pub scheduled_height: u32,
     pub value_zatoshi: u64,
     pub fee_zatoshi: u64,
     pub selected_note: PreparedOrchardNoteRef,
@@ -681,7 +686,14 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         preparation_timing_policy,
         &mut OsRng,
     )?;
-    insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
+    insert_signed_child_pczts_with_tx(
+        &tx,
+        &run_id,
+        signed_children,
+        password,
+        salt_base64,
+        SignedChildInsertMode::Initial,
+    )?;
     tx.commit()
         .map_err(|e| format!("Commit staged migration run: {e}"))?;
     Ok(run_id)
@@ -866,6 +878,68 @@ pub(crate) fn set_run_approved_schedule(
     Ok(())
 }
 
+pub(crate) fn approved_schedule_for_run(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<MigrationScheduleEntry>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let schedule_json = conn
+        .query_row(
+            &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read approved migration schedule: {e}"))?;
+    serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode approved migration schedule: {e}"))
+}
+
+pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u64>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let target_values_json = conn
+        .query_row(
+            &format!("SELECT target_values_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration target values: {e}"))?;
+    serde_json::from_str(&target_values_json)
+        .map_err(|e| format!("Decode migration target values: {e}"))
+}
+
+pub(crate) fn schedule_block_offset_for_part(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+    part_index: u32,
+    value_zatoshi: u64,
+) -> Option<u32> {
+    if schedule.iter().all(|entry| entry.part_index.is_some()) {
+        return schedule
+            .iter()
+            .find(|entry| {
+                entry.part_index == Some(part_index) && entry.value_zatoshi == value_zatoshi
+            })
+            .map(|entry| entry.block_offset);
+    }
+
+    let part_index = usize::try_from(part_index).ok()?;
+    if target_values.get(part_index) != Some(&value_zatoshi) {
+        return None;
+    }
+    let equal_value_rank = target_values
+        .iter()
+        .take(part_index)
+        .filter(|value| **value == value_zatoshi)
+        .count();
+    schedule
+        .iter()
+        .filter(|entry| entry.value_zatoshi == value_zatoshi)
+        .nth(equal_value_rank)
+        .map(|entry| entry.block_offset)
+}
+
 fn insert_pending_txs_with_tx(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
@@ -923,78 +997,115 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Save generated migration schedule: {e}"))?;
     }
     validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
-    let existing_schedule_origin = tx
+    let persisted_signed_schedule_origin = tx
         .query_row(
             &format!(
-                "SELECT scheduled_at_ms,
-                        COALESCE(schedule_start_height, target_height - 1),
-                        scheduled_height
-                 FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = ?1
-                 ORDER BY part_index ASC
-                 LIMIT 1"
+                "SELECT signed_schedule_origin_height
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
             ),
-            params![run_id],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, u32>(1)?,
-                    row.get::<_, u32>(2)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(|e| format!("Read migration schedule origin: {e}"))?;
-    let proof_retry_height = tx
-        .query_row(
-            &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
             params![run_id],
             |row| row.get::<_, Option<u32>>(0),
         )
-        .map_err(|e| format!("Read migration proof-ready schedule origin: {e}"))?;
-    let (construction_height, scheduled_start_ms) =
-        if let Some((scheduled_at_ms, schedule_start_height, scheduled_height)) =
-            existing_schedule_origin
-        {
-            let existing_offset = scheduled_height.saturating_sub(schedule_start_height);
-            let scheduled_start_ms = scheduled_at_ms
-                .checked_sub(i64::from(existing_offset).saturating_mul(1000))
-                .ok_or("Migration scheduled time underflow")?;
-            (schedule_start_height, scheduled_start_ms)
-        } else {
-            let signed_child_construction_height = tx
-                .query_row(
-                    &format!(
-                        "SELECT MAX(target_height - 1)
-                         FROM {SIGNED_CHILD_PCZTS_TABLE}
-                         WHERE run_id = ?1"
-                    ),
-                    params![run_id],
-                    |row| row.get::<_, Option<u32>>(0),
-                )
-                .map_err(|e| format!("Read signed migration construction height: {e}"))?;
-            let construction_height = pending_txs
-                .iter()
-                .map(|pending| pending.target_height.saturating_sub(1))
-                .chain(signed_child_construction_height)
-                .max()
-                .ok_or("Migration schedule has no transactions")?
-                .max(proof_retry_height.unwrap_or(0));
-            (construction_height, now_ms()?)
-        };
+        .map_err(|e| format!("Read signed migration schedule origin: {e}"))?;
+    let scheduled_start_ms = now_ms()?;
     let mut scheduled_pending = Vec::with_capacity(pending_txs.len());
     let mut pending_part_indexes = BTreeSet::new();
-    for pending in pending_txs {
+    let mut incoming_initial_schedule_origin = None;
+    for mut pending in pending_txs {
         if !pending_part_indexes.insert(pending.part_index) {
             return Err("Migration pending part index is duplicated".to_string());
         }
         let entry = schedule_entry_for_pending(&schedule, &target_values, &pending)
             .ok_or("Approved migration schedule no longer matches prepared values")?;
-        scheduled_pending.push((pending, entry.block_offset));
+        // Rows created before signed children persisted their absolute
+        // schedule used target_height as the compatibility marker. Recover
+        // the original shared schedule origin when doing so does not change
+        // the already-signed canonical expiry bucket.
+        if pending.scheduled_height == pending.target_height
+            && pending.expiry_height
+                == zip318_canonical_migration_expiry_height(pending.target_height)?
+        {
+            let legacy_scheduled_height = pending
+                .target_height
+                .saturating_sub(1)
+                .checked_add(entry.block_offset)
+                .ok_or("Legacy migration scheduled height overflow")?;
+            if pending.expiry_height
+                == zip318_canonical_migration_expiry_height(legacy_scheduled_height)?
+            {
+                pending.scheduled_height = legacy_scheduled_height;
+            }
+        }
+        let schedule_origin = pending
+            .scheduled_height
+            .checked_sub(entry.block_offset)
+            .ok_or("Migration signed schedule starts below zero")?;
+        if let Some(persisted_origin) = persisted_signed_schedule_origin {
+            if schedule_origin != persisted_origin {
+                let matches_retained_replacement = tx
+                    .query_row(
+                        &format!(
+                            "SELECT 1 FROM {SIGNED_CHILD_PCZTS_TABLE}
+                             WHERE run_id = ?1 AND child_index = ?2
+                               AND scheduled_height = ?3 AND expiry_height = ?4
+                               AND value_zatoshi = ?5
+                             LIMIT 1"
+                        ),
+                        params![
+                            run_id,
+                            pending.part_index,
+                            pending.scheduled_height,
+                            pending.expiry_height,
+                            pending.value_zatoshi,
+                        ],
+                        |_| Ok(()),
+                    )
+                    .optional()
+                    .map_err(|e| format!("Check retained replacement migration child: {e}"))?
+                    .is_some();
+                if !matches_retained_replacement {
+                    return Err(
+                        "Signed migration child no longer matches the immutable signed schedule origin"
+                            .to_string(),
+                    );
+                }
+            }
+        } else if let Some(incoming_origin) = incoming_initial_schedule_origin {
+            if schedule_origin != incoming_origin {
+                return Err(
+                    "Initial signed migration children do not share one absolute schedule origin"
+                        .to_string(),
+                );
+            }
+        } else {
+            incoming_initial_schedule_origin = Some(schedule_origin);
+        }
+        let canonical_expiry = zip318_canonical_migration_expiry_height(pending.scheduled_height)?;
+        if pending.expiry_height != canonical_expiry {
+            return Err(format!(
+                "Migration transaction {} expiry is not canonical for scheduled height {}",
+                pending.txid_hex, pending.scheduled_height
+            ));
+        }
+        scheduled_pending.push((pending, entry.block_offset, schedule_origin));
+    }
+    if persisted_signed_schedule_origin.is_none() {
+        if let Some(origin) = incoming_initial_schedule_origin {
+            tx.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET signed_schedule_origin_height = ?1
+                     WHERE run_id = ?2 AND signed_schedule_origin_height IS NULL"
+                ),
+                params![origin, run_id],
+            )
+            .map_err(|e| format!("Save signed migration schedule origin: {e}"))?;
+        }
     }
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
 
-    for (pending, block_offset) in scheduled_pending {
+    for (pending, block_offset, schedule_origin) in scheduled_pending {
         let encrypted_raw_tx = secret_payload::encrypt_payload(
             Zeroizing::new(pending.raw_tx),
             password,
@@ -1005,9 +1116,7 @@ fn insert_pending_txs_with_tx(
         let scheduled_at_ms = scheduled_start_ms
             .checked_add(i64::from(block_offset).saturating_mul(1000))
             .ok_or("Migration scheduled time overflow")?;
-        let scheduled_height = construction_height
-            .checked_add(block_offset)
-            .ok_or("Migration scheduled height overflow")?;
+        let scheduled_height = pending.scheduled_height;
 
         let inserted = tx
             .execute(
@@ -1033,7 +1142,7 @@ fn insert_pending_txs_with_tx(
                     pending.selected_note.output_index,
                     pending.selected_note.value_zatoshi,
                     scheduled_at_ms,
-                    construction_height,
+                    schedule_origin,
                     scheduled_height,
                     metadata_json,
                 ],
@@ -1087,19 +1196,80 @@ fn schedule_entry_for_pending<'a>(
         .nth(equal_value_rank)
 }
 
+#[derive(Clone, Copy)]
+enum SignedChildInsertMode {
+    Initial,
+    Replacement,
+}
+
 fn insert_signed_child_pczts_with_tx(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
     signed_children: Vec<SignedMigrationPcztInsert>,
     password: &[u8],
     salt_base64: &str,
+    mode: SignedChildInsertMode,
 ) -> Result<(), String> {
     if signed_children.is_empty() {
         return Ok(());
     }
 
+    let (schedule_json, target_values_json, persisted_signed_schedule_origin) = tx
+        .query_row(
+            &format!(
+                "SELECT schedule_json, target_values_json, signed_schedule_origin_height
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("Read signed migration schedule: {e}"))?;
+    let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode signed migration schedule: {e}"))?;
+    let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
+        .map_err(|e| format!("Decode signed migration target values: {e}"))?;
+    let mut signed_schedule_origin = match mode {
+        SignedChildInsertMode::Initial => persisted_signed_schedule_origin,
+        SignedChildInsertMode::Replacement => None,
+    };
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
     for child in signed_children {
+        let canonical_expiry = zip318_canonical_migration_expiry_height(child.scheduled_height)?;
+        if child.expiry_height != canonical_expiry {
+            return Err(format!(
+                "Signed migration child {} expiry {} is not canonical for scheduled height {}",
+                child.message_id, child.expiry_height, child.scheduled_height
+            ));
+        }
+        if !schedule.is_empty() {
+            let block_offset = schedule_block_offset_for_part(
+                &schedule,
+                &target_values,
+                child.child_index,
+                child.value_zatoshi,
+            )
+            .ok_or("Approved migration schedule is missing a signed child")?;
+            let child_schedule_origin = child
+                .scheduled_height
+                .checked_sub(block_offset)
+                .ok_or("Signed migration schedule starts below zero")?;
+            if let Some(origin) = signed_schedule_origin {
+                if origin != child_schedule_origin {
+                    return Err(
+                        "Signed migration children do not share one absolute schedule origin"
+                            .to_string(),
+                    );
+                }
+            } else {
+                signed_schedule_origin = Some(child_schedule_origin);
+            }
+        }
         let encrypted_base_pczt = secret_payload::encrypt_payload(
             Zeroizing::new(child.base_pczt),
             password,
@@ -1121,10 +1291,10 @@ fn insert_signed_child_pczts_with_tx(
             &format!(
                 "INSERT OR REPLACE INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
-                  encrypted_compact_sigs, target_height, expiry_height,
+                  encrypted_compact_sigs, target_height, expiry_height, scheduled_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_json,
                   metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"
             ),
             params![
                 run_id,
@@ -1134,6 +1304,7 @@ fn insert_signed_child_pczts_with_tx(
                 encrypted_compact_sigs,
                 child.target_height,
                 child.expiry_height,
+                child.scheduled_height,
                 child.anchor_boundary_height,
                 child.value_zatoshi,
                 child.fee_zatoshi,
@@ -1142,6 +1313,20 @@ fn insert_signed_child_pczts_with_tx(
             ],
         )
         .map_err(|e| format!("Insert signed migration PCZT: {e}"))?;
+    }
+    if matches!(mode, SignedChildInsertMode::Initial) && persisted_signed_schedule_origin.is_none()
+    {
+        if let Some(origin) = signed_schedule_origin {
+            tx.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET signed_schedule_origin_height = ?1
+                     WHERE run_id = ?2 AND signed_schedule_origin_height IS NULL"
+                ),
+                params![origin, run_id],
+            )
+            .map_err(|e| format!("Save signed migration schedule origin: {e}"))?;
+        }
     }
     Ok(())
 }
@@ -1157,13 +1342,17 @@ pub(crate) fn signed_child_pczts_for_run(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT message_id, child_index, encrypted_base_pczt,
-                    encrypted_compact_sigs, target_height, expiry_height,
+            "SELECT c.message_id, c.child_index, c.encrypted_base_pczt,
+                    encrypted_compact_sigs, target_height, expiry_height, scheduled_height,
                     anchor_boundary_height, value_zatoshi, fee_zatoshi,
                     selected_note_json, metadata_json
-             FROM {SIGNED_CHILD_PCZTS_TABLE}
-             WHERE run_id = ?1
-             ORDER BY child_index ASC, message_id ASC"
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )
+             ORDER BY c.child_index ASC, c.message_id ASC"
         ))
         .map_err(|e| format!("Prepare signed migration PCZT query: {e}"))?;
     let rows = stmt
@@ -1176,10 +1365,11 @@ pub(crate) fn signed_child_pczts_for_run(
                 row.get::<_, u32>(4)?,
                 row.get::<_, u32>(5)?,
                 row.get::<_, Option<u32>>(6)?,
-                row.get::<_, u64>(7)?,
+                row.get::<_, Option<u32>>(7)?,
                 row.get::<_, u64>(8)?,
-                row.get::<_, String>(9)?,
+                row.get::<_, u64>(9)?,
                 row.get::<_, String>(10)?,
+                row.get::<_, String>(11)?,
             ))
         })
         .map_err(|e| format!("Query signed migration PCZTs: {e}"))?;
@@ -1193,12 +1383,21 @@ pub(crate) fn signed_child_pczts_for_run(
             encrypted_compact_sigs,
             target_height,
             expiry_height,
+            scheduled_height,
             anchor_boundary_height,
             value_zatoshi,
             fee_zatoshi,
             selected_note_json,
             metadata_json,
         ) = row.map_err(|e| format!("Read signed migration PCZT: {e}"))?;
+        let scheduled_height = scheduled_height.ok_or_else(|| {
+            format!("Signed migration child {message_id} requires fresh signatures")
+        })?;
+        if expiry_height != zip318_canonical_migration_expiry_height(scheduled_height)? {
+            return Err(format!(
+                "Signed migration child {message_id} expiry is not canonical for scheduled height {scheduled_height}"
+            ));
+        }
         let base_pczt = secret_payload::decrypt_payload(
             encrypted_base_pczt.as_bytes(),
             password,
@@ -1223,6 +1422,7 @@ pub(crate) fn signed_child_pczts_for_run(
             target_height,
             anchor_boundary_height,
             expiry_height,
+            scheduled_height,
             value_zatoshi,
             fee_zatoshi,
             selected_note,
@@ -1231,6 +1431,38 @@ pub(crate) fn signed_child_pczts_for_run(
     }
 
     Ok(signed)
+}
+
+pub(crate) fn signed_child_message_ids_by_part(
+    db_path: &str,
+    run_id: &str,
+) -> Result<BTreeMap<u32, String>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT child_index, message_id
+             FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY child_index ASC, message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare signed migration child identities: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("Query signed migration child identities: {e}"))?;
+    let mut identities = BTreeMap::new();
+    for row in rows {
+        let (part_index, message_id) =
+            row.map_err(|e| format!("Read signed migration child identity: {e}"))?;
+        if identities.insert(part_index, message_id).is_some() {
+            return Err(format!(
+                "Migration part {part_index} has duplicate retained signature records"
+            ));
+        }
+    }
+    Ok(identities)
 }
 
 pub(crate) fn signed_child_pczt_count(db_path: &str, run_id: &str) -> Result<u32, String> {
@@ -1551,6 +1783,17 @@ pub(crate) fn export_scheduled_migration_outbox(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<Option<MigrationOutboxBatch>, String> {
+    if let Ok(progress) = super::get_sync_progress(db_path, network) {
+        if let Ok(chain_tip_height) = u32::try_from(progress.chain_tip_height) {
+            if let Some(run) = active_migration_run(db_path, account_uuid, network)? {
+                mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                    db_path,
+                    &run.run_id,
+                    chain_tip_height,
+                )?;
+            }
+        }
+    }
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let Some(run) = active_run(&conn, account_uuid, network)? else {
@@ -1621,6 +1864,12 @@ pub(crate) fn export_scheduled_migration_outbox(
         if scheduled_height >= expiry_height {
             return Err(format!(
                 "Migration outbox transaction {txid_hex} is scheduled at or after expiry"
+            ));
+        }
+        let canonical_expiry = zip318_canonical_migration_expiry_height(scheduled_height)?;
+        if expiry_height != canonical_expiry {
+            return Err(format!(
+                "Migration outbox transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
             ));
         }
         let raw_tx = secret_payload::decrypt_payload(
@@ -1757,7 +2006,7 @@ pub(crate) fn due_pending_txs(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, encrypted_raw_tx
+            "SELECT txid_hex, encrypted_raw_tx, scheduled_height, expiry_height
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2
              ORDER BY scheduled_height ASC, txid_hex ASC
@@ -1766,14 +2015,24 @@ pub(crate) fn due_pending_txs(
         .map_err(|e| format!("Prepare due migration tx query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id, chain_tip_height], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u32>(3)?,
+            ))
         })
         .map_err(|e| format!("Query due migration txs: {e}"))?;
 
     let mut due = Vec::new();
     for row in rows {
-        let (txid_hex, encrypted_raw_tx) =
+        let (txid_hex, encrypted_raw_tx, scheduled_height, expiry_height) =
             row.map_err(|e| format!("Read due migration tx: {e}"))?;
+        if expiry_height != zip318_canonical_migration_expiry_height(scheduled_height)? {
+            return Err(format!(
+                "Due migration transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
+            ));
+        }
         let raw_tx = secret_payload::decrypt_payload(
             encrypted_raw_tx.as_bytes(),
             password,
@@ -1785,6 +2044,45 @@ pub(crate) fn due_pending_txs(
         });
     }
     Ok(due)
+}
+
+pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration broadcast-height validation: {e}"))?;
+    let affected = tx
+        .execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET status = 'needs_resign'
+                 WHERE run_id = ?1 AND status = 'scheduled'
+                   AND scheduled_height <= ?2 AND expiry_height != ?3"
+            ),
+            params![run_id, chain_tip_height, canonical_expiry],
+        )
+        .map_err(|e| format!("Mark migration broadcast-height mismatch for signing: {e}"))?;
+    if affected > 0 {
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2,
+                     last_error = 'Migration broadcast height crossed a ZIP 318 expiry boundary'
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
+        )
+        .map_err(|e| format!("Mark migration broadcast-height recovery: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit migration broadcast-height validation: {e}"))?;
+    u32::try_from(affected).map_err(|_| "Migration recovery count exceeds u32".to_string())
 }
 
 pub(crate) fn next_scheduled_height(db_path: &str, run_id: &str) -> Result<Option<u32>, String> {
@@ -1963,7 +2261,7 @@ pub(crate) fn pending_parts_needing_resign(
 pub(crate) fn replace_resigned_pending_parts(
     db_path: &str,
     run_id: &str,
-    network: WalletNetwork,
+    _network: WalletNetwork,
     mut replacements: Vec<PendingMigrationTxReplacement>,
     signed_children: Vec<SignedMigrationPcztInsert>,
     password: &[u8],
@@ -1974,23 +2272,15 @@ pub(crate) fn replace_resigned_pending_parts(
     }
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    let schedule = planned_transfer_schedule_for_parts_with_policy(
-        replacements.iter().map(|replacement| {
-            (
-                replacement.replacement.part_index,
-                replacement.replacement.value_zatoshi,
-            )
-        }),
-        network,
-        timing_policy,
-        &mut OsRng,
-    );
-    let construction_height = replacements
-        .iter()
-        .map(|replacement| replacement.replacement.target_height.saturating_sub(1))
-        .max()
-        .ok_or("Migration recovery has no transactions")?;
+    let schedule_json = conn
+        .query_row(
+            &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read replacement migration schedule: {e}"))?;
+    let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode replacement migration schedule: {e}"))?;
     let scheduled_start_ms = now_ms()?;
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
     let tx = conn
@@ -1999,17 +2289,23 @@ pub(crate) fn replace_resigned_pending_parts(
 
     let mut scheduled_replacements = Vec::with_capacity(replacements.len());
     for schedule_entry in schedule {
-        let replacement_index = replacements
-            .iter()
-            .position(|replacement| match schedule_entry.part_index {
-                Some(part_index) => {
-                    replacement.replacement.part_index == part_index
-                        && replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
-                }
-                None => replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi,
-            })
-            .ok_or("Replacement migration schedule does not match its denominations")?;
+        let replacement_index =
+            replacements
+                .iter()
+                .position(|replacement| match schedule_entry.part_index {
+                    Some(part_index) => {
+                        replacement.replacement.part_index == part_index
+                            && replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi
+                    }
+                    None => replacement.replacement.value_zatoshi == schedule_entry.value_zatoshi,
+                });
+        let Some(replacement_index) = replacement_index else {
+            continue;
+        };
         scheduled_replacements.push((replacements.swap_remove(replacement_index), schedule_entry));
+    }
+    if !replacements.is_empty() {
+        return Err("Replacement migration schedule does not match its denominations".to_string());
     }
 
     for (replacement, schedule_entry) in scheduled_replacements {
@@ -2046,6 +2342,17 @@ pub(crate) fn replace_resigned_pending_parts(
         }
 
         let pending = replacement.replacement;
+        let canonical_expiry = zip318_canonical_migration_expiry_height(pending.scheduled_height)?;
+        if pending.expiry_height != canonical_expiry {
+            return Err(
+                "Replacement migration expiry is not canonical for its scheduled height"
+                    .to_string(),
+            );
+        }
+        let schedule_start_height = pending
+            .scheduled_height
+            .checked_sub(schedule_entry.block_offset)
+            .ok_or("Replacement migration schedule starts below zero")?;
         let encrypted_raw_tx = secret_payload::encrypt_payload(
             Zeroizing::new(pending.raw_tx),
             password,
@@ -2056,9 +2363,7 @@ pub(crate) fn replace_resigned_pending_parts(
         let scheduled_at_ms = scheduled_start_ms
             .checked_add(i64::from(schedule_entry.block_offset).saturating_mul(1000))
             .ok_or("Replacement migration time overflow")?;
-        let scheduled_height = construction_height
-            .checked_add(schedule_entry.block_offset)
-            .ok_or("Replacement migration height overflow")?;
+        let scheduled_height = pending.scheduled_height;
 
         tx.execute(
             &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = ?1 AND txid_hex = ?2"),
@@ -2089,7 +2394,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 pending.selected_note.output_index,
                 pending.selected_note.value_zatoshi,
                 scheduled_at_ms,
-                construction_height,
+                schedule_start_height,
                 scheduled_height,
                 metadata_json,
             ],
@@ -2097,7 +2402,14 @@ pub(crate) fn replace_resigned_pending_parts(
         .map_err(|e| format!("Insert replacement migration part: {e}"))?;
     }
 
-    insert_signed_child_pczts_with_tx(&tx, run_id, signed_children, password, salt_base64)?;
+    insert_signed_child_pczts_with_tx(
+        &tx,
+        run_id,
+        signed_children,
+        password,
+        salt_base64,
+        SignedChildInsertMode::Replacement,
+    )?;
     let now = now_ms()?;
     tx.execute(
         &format!(
@@ -2257,13 +2569,13 @@ pub(crate) fn reschedule_overdue_pending_txs(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex FROM {PENDING_TXS_TABLE}
+            "SELECT txid_hex, expiry_height FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2"
         ))
         .map_err(|e| format!("Prepare overdue migration query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id, chain_tip_height], |row| {
-            row.get::<_, String>(0)
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
         })
         .map_err(|e| format!("Query overdue migration transactions: {e}"))?;
     let mut txids = rows
@@ -2287,10 +2599,24 @@ pub(crate) fn reschedule_overdue_pending_txs(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin overdue migration reschedule: {e}"))?;
-    for (txid, offset) in txids.into_iter().zip(offsets) {
+    let mut needs_resign = false;
+    for ((txid, expiry_height), offset) in txids.into_iter().zip(offsets) {
         let scheduled_height = chain_tip_height
             .checked_add(offset)
             .ok_or("Migration rescheduled height overflow")?;
+        if zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height {
+            tx.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET status = 'needs_resign'
+                     WHERE run_id = ?1 AND txid_hex = ?2 AND status = 'scheduled'"
+                ),
+                params![run_id, txid],
+            )
+            .map_err(|e| format!("Mark noncanonical migration reschedule for signing: {e}"))?;
+            needs_resign = true;
+            continue;
+        }
         tx.execute(
             &format!(
                 "UPDATE {PENDING_TXS_TABLE}
@@ -2300,6 +2626,18 @@ pub(crate) fn reschedule_overdue_pending_txs(
             params![scheduled_height, chain_tip_height, run_id, txid],
         )
         .map_err(|e| format!("Reschedule overdue migration transaction: {e}"))?;
+    }
+    if needs_resign {
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2,
+                     last_error = 'Migration schedule crossed a ZIP 318 expiry boundary'
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
+        )
+        .map_err(|e| format!("Mark migration reschedule for signing: {e}"))?;
     }
     tx.commit()
         .map_err(|e| format!("Commit overdue migration reschedule: {e}"))
@@ -2335,26 +2673,41 @@ fn update_run_after_pending_broadcast(
     run_id: &str,
     now: i64,
 ) -> Result<(), String> {
+    let needs_resign_remaining = count_pending_with_status(&tx, run_id, "needs_resign")?;
     let scheduled_remaining = count_pending_with_status(&tx, run_id, "scheduled")?;
     let pending_count = count_for_run(&tx, PENDING_TXS_TABLE, run_id)?;
     let planned_count = planned_part_count_with_conn(&tx, run_id)?;
     let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(&tx, run_id)?;
     let fully_materialized =
         planned_count > 0 && pending_count == planned_count && unpromoted_count == 0;
-    let next_phase = if scheduled_remaining > 0 || !fully_materialized {
+    let next_phase = if needs_resign_remaining > 0 {
+        PHASE_READY_TO_MIGRATE
+    } else if scheduled_remaining > 0 || !fully_materialized {
         PHASE_BROADCAST_SCHEDULED
     } else {
         PHASE_WAITING_MIGRATION_CONFIRMATIONS
     };
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![next_phase, now, run_id],
-    )
-    .map_err(|e| format!("Mark migration waiting confirmations: {e}"))?;
+    if needs_resign_remaining > 0 {
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2
+                 WHERE run_id = ?3"
+            ),
+            params![next_phase, now, run_id],
+        )
+        .map_err(|e| format!("Keep migration ready for re-signing: {e}"))?;
+    } else {
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3"
+            ),
+            params![next_phase, now, run_id],
+        )
+        .map_err(|e| format!("Mark migration waiting confirmations: {e}"))?;
+    }
     Ok(())
 }
 
@@ -2453,6 +2806,7 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
         }
     }
 
+    let mut schedule_crossed_expiry_boundary = false;
     for (item_id, update) in supplied {
         let (status, current_scheduled_height, current_schedule_start_height, expiry_height) = tx
             .query_row(
@@ -2474,12 +2828,22 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
             .optional()
             .map_err(|e| format!("Read migration outbox schedule target: {e}"))?
             .ok_or_else(|| format!("Migration outbox schedule item {item_id} was not found"))?;
-        if update.scheduled_height >= expiry_height {
-            return Err(format!(
-                "Migration outbox schedule update {item_id} reaches transaction expiry"
-            ));
-        }
+        let canonical_expiry = zip318_canonical_migration_expiry_height(update.scheduled_height)?;
         if status == "scheduled" {
+            if canonical_expiry != expiry_height {
+                tx.execute(
+                    &format!(
+                        "UPDATE {PENDING_TXS_TABLE}
+                         SET status = 'needs_resign'
+                         WHERE run_id = ?1 AND lower(txid_hex) = ?2
+                           AND status = 'scheduled'"
+                    ),
+                    params![run_id, item_id],
+                )
+                .map_err(|e| format!("Mark outbox schedule update for signing: {e}"))?;
+                schedule_crossed_expiry_boundary = true;
+                continue;
+            }
             tx.execute(
                 &format!(
                     "UPDATE {PENDING_TXS_TABLE}
@@ -2501,6 +2865,18 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
                 "Migration outbox schedule item {item_id} is no longer scheduled"
             ));
         }
+    }
+    if schedule_crossed_expiry_boundary {
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2,
+                     last_error = 'Migration schedule crossed a ZIP 318 expiry boundary'
+                 WHERE run_id = ?3"
+            ),
+            params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
+        )
+        .map_err(|e| format!("Mark outbox migration reschedule for signing: {e}"))?;
     }
 
     if matches!(accepted_status.as_str(), "scheduled" | "needs_resign") {

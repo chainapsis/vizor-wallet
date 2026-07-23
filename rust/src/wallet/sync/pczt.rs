@@ -1275,6 +1275,7 @@ mod tests {
             let mut builder = crate::wallet::sync::send::migration_child_builder(
                 Nu6_3Network,
                 10_000_000.into(),
+                10_000_000.into(),
                 anchor,
             )
             .unwrap();

@@ -109,6 +109,314 @@ fn backfill_pending_part_indices(conn: &rusqlite::Connection) -> Result<(), Stri
     Ok(())
 }
 
+fn backfill_legacy_signed_schedule_metadata(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let mut run_stmt = conn
+        .prepare_cached(&format!(
+            "SELECT run_id, target_values_json, schedule_json,
+                    signed_schedule_origin_height
+             FROM {RUNS_TABLE}"
+        ))
+        .map_err(|e| format!("Prepare legacy signed schedule runs: {e}"))?;
+    let runs = run_stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<u32>>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query legacy signed schedule runs: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read legacy signed schedule runs: {e}"))?;
+    drop(run_stmt);
+
+    for (run_id, target_values_json, schedule_json, persisted_origin) in runs {
+        let Ok(target_values) = serde_json::from_str::<Vec<u64>>(&target_values_json) else {
+            continue;
+        };
+        let Ok(schedule) =
+            serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json)
+        else {
+            continue;
+        };
+        if schedule.is_empty() {
+            continue;
+        }
+
+        let mut child_stmt = conn
+            .prepare_cached(&format!(
+                "SELECT message_id, child_index, target_height, expiry_height,
+                        scheduled_height, value_zatoshi
+                 FROM {SIGNED_CHILD_PCZTS_TABLE}
+                 WHERE run_id = ?1
+                   AND (scheduled_height IS NULL OR scheduled_height = 0
+                        OR scheduled_height = target_height)
+                 ORDER BY child_index ASC, message_id ASC"
+            ))
+            .map_err(|e| format!("Prepare legacy signed children: {e}"))?;
+        let children = child_stmt
+            .query_map(params![run_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
+                    row.get::<_, Option<u32>>(4)?,
+                    row.get::<_, u64>(5)?,
+                ))
+            })
+            .map_err(|e| format!("Query legacy signed children: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read legacy signed children: {e}"))?;
+        drop(child_stmt);
+
+        let mut recovered_origin = persisted_origin;
+        let mut invalid_children = Vec::new();
+        for (
+            message_id,
+            child_index,
+            target_height,
+            expiry_height,
+            stored_scheduled_height,
+            value_zatoshi,
+        ) in children
+        {
+            if persisted_origin.is_some()
+                && stored_scheduled_height.is_some_and(|height| height != 0)
+            {
+                continue;
+            }
+            let Some(block_offset) = schedule_block_offset_for_part(
+                &schedule,
+                &target_values,
+                child_index,
+                value_zatoshi,
+            ) else {
+                invalid_children.push((message_id, child_index));
+                continue;
+            };
+            let origin = target_height.saturating_sub(1);
+            let Some(scheduled_height) = origin.checked_add(block_offset) else {
+                invalid_children.push((message_id, child_index));
+                continue;
+            };
+            if recovered_origin.is_some_and(|existing| existing != origin)
+                || zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height
+            {
+                invalid_children.push((message_id, child_index));
+                continue;
+            }
+            recovered_origin = Some(origin);
+            conn.execute(
+                &format!(
+                    "UPDATE {SIGNED_CHILD_PCZTS_TABLE}
+                     SET scheduled_height = ?1
+                     WHERE run_id = ?2 AND message_id = ?3
+                       AND (scheduled_height IS NULL OR scheduled_height = 0
+                            OR scheduled_height = target_height)"
+                ),
+                params![scheduled_height, run_id, message_id],
+            )
+            .map_err(|e| format!("Backfill signed migration scheduled height: {e}"))?;
+        }
+
+        if let Some(origin) = recovered_origin {
+            conn.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET signed_schedule_origin_height = COALESCE(
+                         signed_schedule_origin_height, ?1
+                     )
+                     WHERE run_id = ?2"
+                ),
+                params![origin, run_id],
+            )
+            .map_err(|e| format!("Backfill signed migration schedule origin: {e}"))?;
+        }
+        if !invalid_children.is_empty() {
+            for (message_id, child_index) in invalid_children {
+                let has_pending_recovery = conn
+                    .query_row(
+                        &format!(
+                            "SELECT 1 FROM {PENDING_TXS_TABLE}
+                             WHERE run_id = ?1 AND part_index = ?2
+                             LIMIT 1"
+                        ),
+                        params![run_id, child_index],
+                        |_| Ok(()),
+                    )
+                    .optional()
+                    .map_err(|e| format!("Check legacy signed child recovery row: {e}"))?
+                    .is_some();
+                if has_pending_recovery {
+                    // The software recovery path needs the original message
+                    // identity in order to replace this retained signature
+                    // record after rebuilding the pending transaction.
+                    continue;
+                }
+                conn.execute(
+                    &format!(
+                        "DELETE FROM {SIGNED_CHILD_PCZTS_TABLE}
+                         WHERE run_id = ?1 AND message_id = ?2"
+                    ),
+                    params![run_id, message_id],
+                )
+                .map_err(|e| format!("Discard noncanonical legacy signed child: {e}"))?;
+            }
+            conn.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET phase = ?1,
+                         last_error = 'Legacy migration signatures crossed a ZIP 318 expiry boundary and must be recreated'
+                     WHERE run_id = ?2"
+                ),
+                params![PHASE_READY_TO_MIGRATE, run_id],
+            )
+            .map_err(|e| format!("Mark legacy signed children for recreation: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn backfill_legacy_pending_schedule_metadata(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT p.run_id, p.txid_hex, p.part_index, p.target_height,
+                    p.expiry_height, p.scheduled_height, p.value_zatoshi,
+                    r.target_values_json, r.schedule_json
+             FROM {PENDING_TXS_TABLE} p
+             JOIN {RUNS_TABLE} r ON r.run_id = p.run_id
+             WHERE p.scheduled_height IS NULL OR p.scheduled_height = 0
+                OR (p.scheduled_height = p.target_height
+                    AND r.signed_schedule_origin_height IS NULL
+                    AND p.status != 'needs_resign')
+             ORDER BY p.run_id ASC, p.part_index ASC, p.txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare legacy pending schedules: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+                row.get::<_, u32>(3)?,
+                row.get::<_, u32>(4)?,
+                row.get::<_, Option<u32>>(5)?,
+                row.get::<_, u64>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+            ))
+        })
+        .map_err(|e| format!("Query legacy pending schedules: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read legacy pending schedules: {e}"))?;
+    drop(stmt);
+
+    for (
+        run_id,
+        txid_hex,
+        part_index,
+        target_height,
+        expiry_height,
+        _,
+        value_zatoshi,
+        target_values_json,
+        schedule_json,
+    ) in rows
+    {
+        let (Ok(target_values), Ok(schedule)) = (
+            serde_json::from_str::<Vec<u64>>(&target_values_json),
+            serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json),
+        ) else {
+            continue;
+        };
+        if schedule.is_empty() {
+            continue;
+        }
+        let recovered = part_index
+            .and_then(|part_index| {
+                schedule_block_offset_for_part(
+                    &schedule,
+                    &target_values,
+                    part_index,
+                    value_zatoshi,
+                )
+            })
+            .and_then(|offset| target_height.saturating_sub(1).checked_add(offset));
+        let origin = target_height.saturating_sub(1);
+        let persisted_origin = conn
+            .query_row(
+                &format!(
+                    "SELECT signed_schedule_origin_height FROM {RUNS_TABLE}
+                     WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .map_err(|e| format!("Read pending migration schedule origin: {e}"))?;
+        let canonical = persisted_origin.is_none_or(|existing| existing == origin)
+            && recovered
+                .map(zip318_canonical_migration_expiry_height)
+                .transpose()?
+                == Some(expiry_height);
+        if canonical {
+            let scheduled_height = recovered.expect("canonical recovery has a height");
+            conn.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET scheduled_height = ?1,
+                         schedule_start_height = COALESCE(schedule_start_height, ?2)
+                     WHERE run_id = ?3 AND txid_hex = ?4"
+                ),
+                params![
+                    scheduled_height,
+                    target_height.saturating_sub(1),
+                    run_id,
+                    txid_hex
+                ],
+            )
+            .map_err(|e| format!("Backfill pending migration schedule: {e}"))?;
+            conn.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET signed_schedule_origin_height = COALESCE(
+                         signed_schedule_origin_height, ?1
+                     )
+                     WHERE run_id = ?2"
+                ),
+                params![origin, run_id],
+            )
+            .map_err(|e| format!("Backfill pending migration schedule origin: {e}"))?;
+        } else {
+            conn.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET scheduled_height = target_height, status = 'needs_resign'
+                     WHERE run_id = ?1 AND txid_hex = ?2"
+                ),
+                params![run_id, txid_hex],
+            )
+            .map_err(|e| format!("Mark legacy pending migration for re-signing: {e}"))?;
+            conn.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET phase = ?1,
+                         last_error = 'Legacy migration schedule crossed a ZIP 318 expiry boundary and must be recreated'
+                     WHERE run_id = ?2"
+                ),
+                params![PHASE_READY_TO_MIGRATE, run_id],
+            )
+            .map_err(|e| format!("Mark legacy pending run for re-signing: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
 fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(&format!(
         "
@@ -125,6 +433,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             timing_policy TEXT NOT NULL DEFAULT 'standard',
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
             proof_retry_height INTEGER,
+            signed_schedule_origin_height INTEGER,
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_runs_active
@@ -171,6 +480,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             target_height INTEGER NOT NULL,
             anchor_boundary_height INTEGER,
             expiry_height INTEGER NOT NULL,
+            scheduled_height INTEGER,
             value_zatoshi INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
             selected_note_json TEXT NOT NULL,
@@ -204,9 +514,23 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "TEXT NOT NULL DEFAULT 'immediate'",
     )?;
     add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
+    add_column_if_missing(
+        conn,
+        RUNS_TABLE,
+        "signed_schedule_origin_height",
+        "INTEGER",
+    )?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
+    add_column_if_missing(
+        conn,
+        SIGNED_CHILD_PCZTS_TABLE,
+        "scheduled_height",
+        "INTEGER",
+    )?;
     backfill_pending_part_indices(conn)?;
+    backfill_legacy_signed_schedule_metadata(conn)?;
+    backfill_legacy_pending_schedule_metadata(conn)?;
     conn.execute(
         &format!(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_vizor_migration_pending_part
@@ -216,15 +540,6 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| format!("Create migration pending part index: {e}"))?;
-    conn.execute(
-        &format!(
-            "UPDATE {PENDING_TXS_TABLE}
-             SET scheduled_height = target_height
-             WHERE scheduled_height IS NULL"
-        ),
-        [],
-    )
-    .map_err(|e| format!("Backfill migration scheduled heights: {e}"))?;
     conn.execute(
         &format!(
             "UPDATE {PENDING_TXS_TABLE}

@@ -116,6 +116,11 @@ enum BackgroundMigrationOutboxRunner {
       var selected: BackgroundMigrationOutboxSelection?
       let snapshot = try store.update { snapshot in
         snapshot.expireItems(remoteHeight: remoteHeight, endpoint: endpoint, at: now)
+        snapshot.markDueItemsNeedingResign(
+          remoteHeight: remoteHeight,
+          endpoint: endpoint,
+          at: now
+        )
         proofReady = snapshot.markProofReadyIfNeeded(
           remoteHeight: remoteHeight,
           endpoint: endpoint,
@@ -140,7 +145,8 @@ enum BackgroundMigrationOutboxRunner {
       }
       guard let selected else {
         if snapshot.receipts.contains(where: {
-          $0.outcome == .expired && $0.remoteHeight == remoteHeight
+          ($0.outcome == .expired || $0.outcome == .needsResign)
+            && $0.remoteHeight == remoteHeight
         }) {
           return BackgroundMigrationOutboxRunResult(
             transport: .needsUserAction,

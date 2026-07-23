@@ -215,11 +215,12 @@ fn dummy_orchard_merkle_path() -> Result<orchard::tree::MerklePath, String> {
 pub(super) fn migration_child_builder<P: consensus::Parameters>(
     network: P,
     target_height: BlockHeight,
+    scheduled_height: BlockHeight,
     orchard_anchor: orchard::Anchor,
 ) -> Result<Builder<P, ()>, String> {
-    let target_height_u32: u32 = target_height.into();
+    let scheduled_height_u32: u32 = scheduled_height.into();
     let expiry_height =
-        super::migration::zip318_canonical_migration_expiry_height(target_height_u32)?;
+        super::migration::zip318_canonical_migration_expiry_height(scheduled_height_u32)?;
 
     Ok(Builder::new(
         network,
@@ -241,6 +242,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     account_uuid: &str,
     predicted: &PredictedMigrationNote,
     migration_index: u32,
+    schedule_block_offset: u32,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -261,6 +263,10 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read target height: {e}"))?
         .ok_or("Wallet must sync before preparing migration")?;
+    let scheduled_height = u32::from(target_height)
+        .saturating_sub(1)
+        .checked_add(schedule_block_offset)
+        .ok_or("Migration scheduled height overflow")?;
     let selected_value: Zatoshis = predicted
         .value_zatoshi
         .try_into()
@@ -277,7 +283,12 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), dummy_anchor)?;
+            migration_child_builder(
+                network,
+                BlockHeight::from(target_height),
+                BlockHeight::from(scheduled_height),
+                dummy_anchor,
+            )?;
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -340,6 +351,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         target_height: target_height_u32,
         anchor_boundary_height: None,
         expiry_height,
+        scheduled_height,
         fee_zatoshi: u64::from(fee_amount),
         migrated_zatoshi: u64::from(migrated_amount),
         selected_note: super::migration::PreparedOrchardNoteRef {
@@ -383,6 +395,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
+    schedule_block_offset: u32,
     timing_policy: super::migration::MigrationTimingPolicy,
     anchor_cohort_counts: &mut BTreeMap<u32, u32>,
     allow_replacing_local_spend: bool,
@@ -472,6 +485,10 @@ fn create_orchard_to_ironwood_pczt_from_note(
         return Err("Prepared note value changed during revalidation".to_string());
     }
     let target_height_u32: u32 = target_height.into();
+    let scheduled_height = target_height_u32
+        .saturating_sub(1)
+        .checked_add(schedule_block_offset)
+        .ok_or("Migration scheduled height overflow")?;
     let anchor_height_u32 = u32::from(anchor_height);
     let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
     let mined_height = orchard_selected
@@ -502,7 +519,12 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
-            migration_child_builder(network, BlockHeight::from(target_height), orchard_anchor)?;
+            migration_child_builder(
+                network,
+                BlockHeight::from(target_height),
+                BlockHeight::from(scheduled_height),
+                orchard_anchor,
+            )?;
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder
@@ -571,6 +593,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         target_height: target_height_u32,
         anchor_boundary_height: Some(anchor_boundary_height),
         expiry_height,
+        scheduled_height,
         fee_zatoshi: u64::from(fee_amount),
         migrated_zatoshi: u64::from(migrated_amount),
         selected_note: note_ref.clone(),

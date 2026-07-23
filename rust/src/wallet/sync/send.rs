@@ -1036,8 +1036,9 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         }
     }
 
+    let signing_schedule = approved_schedule.clone();
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
-        prepare_software_migration_run(db_path, network, account_uuid, seed)
+        prepare_software_migration_run(db_path, network, account_uuid, seed, &signing_schedule)
     })?;
 
     let Some(prepared) = prepared else {
@@ -1179,6 +1180,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
             let make_builder = |amount: Zatoshis| {
                 let mut builder = migration_child_builder(
                     network,
+                    BlockHeight::from(target_height),
                     BlockHeight::from(target_height),
                     orchard_anchor.clone(),
                 )?;
@@ -2941,24 +2943,29 @@ fn rebuild_expired_software_migration_parts(
     pending_password: &[u8],
     pending_salt_base64: &str,
 ) -> Result<(), String> {
-    let retained_children = super::migration::signed_child_pczts_for_run(
-        db_path,
-        run_id,
-        pending_password,
-        pending_salt_base64,
-    )?;
+    let retained_message_ids = super::migration::signed_child_message_ids_by_part(db_path, run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    let approved_schedule = super::migration::approved_schedule_for_run(db_path, run_id)?;
+    let target_values = super::migration::target_values_for_run(db_path, run_id)?;
     let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut replacements = Vec::with_capacity(recoveries.len());
     let mut replacement_children = Vec::with_capacity(recoveries.len());
 
     for (index, recovery) in recoveries.into_iter().enumerate() {
+        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
+            &approved_schedule,
+            &target_values,
+            recovery.part_index,
+            recovery.value_zatoshi,
+        )
+        .ok_or("Approved migration schedule is missing a recovery child")?;
         let created = create_orchard_to_ironwood_pczt_from_note(
             db_path,
             network,
             account_uuid,
             &recovery.selected_note,
             (index + 1) as u32,
+            schedule_block_offset,
             timing_policy,
             &mut anchor_cohort_counts,
             true,
@@ -2985,11 +2992,8 @@ fn rebuild_expired_software_migration_parts(
         super::pczt::preflight_orchard_spend_auth_signatures(&created.base_pczt, &sigs)?;
         let proofed = super::pczt::add_proofs_to_pczt(&created.base_pczt, None, None)?;
         let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
-        let retained = retained_children
-            .iter()
-            .find(|child| {
-                same_prepared_note_without_nullifier(&child.selected_note, &recovery.selected_note)
-            })
+        let retained_message_id = retained_message_ids
+            .get(&recovery.part_index)
             .ok_or("Retained migration signature record is missing for expired part")?;
         let metadata = super::migration::PendingMigrationTxMetadata {
             tx_kind: "migration".to_string(),
@@ -3006,6 +3010,7 @@ fn rebuild_expired_software_migration_parts(
                 target_height: created.target_height,
                 anchor_boundary_height: created.anchor_boundary_height,
                 expiry_height: created.expiry_height,
+                scheduled_height: created.scheduled_height,
                 value_zatoshi: created.migrated_zatoshi,
                 fee_zatoshi: created.fee_zatoshi,
                 selected_note: recovery.selected_note.clone(),
@@ -3013,13 +3018,14 @@ fn rebuild_expired_software_migration_parts(
             },
         });
         replacement_children.push(super::migration::SignedMigrationPcztInsert {
-            message_id: retained.message_id.clone(),
-            child_index: retained.child_index,
+            message_id: retained_message_id.clone(),
+            child_index: recovery.part_index,
             base_pczt: created.base_pczt,
             sigs,
             target_height: created.target_height,
             anchor_boundary_height: created.anchor_boundary_height,
             expiry_height: created.expiry_height,
+            scheduled_height: created.scheduled_height,
             value_zatoshi: created.migrated_zatoshi,
             fee_zatoshi: created.fee_zatoshi,
             selected_note: recovery.selected_note,
@@ -3164,6 +3170,7 @@ fn finalize_presigned_migration_children(
             target_height: child.target_height,
             anchor_boundary_height: Some(anchor_boundary_height),
             expiry_height: child.expiry_height,
+            scheduled_height: child.scheduled_height,
             value_zatoshi: child.value_zatoshi,
             fee_zatoshi: child.fee_zatoshi,
             selected_note: current_note.clone(),
@@ -3521,6 +3528,24 @@ async fn broadcast_due_scheduled_migration_txs(
             fallback_migrated_zatoshi,
         ));
     }
+    let noncanonical_due_count =
+        super::migration::mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+            db_path,
+            run_id,
+            chain_tip_height,
+        )?;
+    if noncanonical_due_count > 0 {
+        let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some(format!(
+                "{noncanonical_due_count} migration transaction(s) crossed a ZIP 318 expiry boundary and need fresh signatures."
+            )),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
     let due = super::migration::due_pending_txs(
         db_path,
         run_id,
@@ -3791,6 +3816,41 @@ fn reconcile_orchard_migration_outbox_receipt(
             if updated == 0 {
                 return Err(
                     "Migration outbox expiry receipt did not find an expired transaction"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }
+        "needsResign" => {
+            if !schedule_updates.is_empty() {
+                return Err("Migration outbox re-sign receipt cannot update schedules".to_string());
+            }
+            let canonical_expiry =
+                super::migration::zip318_canonical_migration_expiry_height(remote_height)?;
+            if state.expiry_height == canonical_expiry {
+                return Err(
+                    "Migration outbox re-sign receipt still has canonical expiry at the broadcast height"
+                        .to_string(),
+                );
+            }
+            if state.status == "needs_resign" {
+                return Ok(());
+            }
+            if state.status != "scheduled" {
+                return Err(format!(
+                    "Migration outbox receipt cannot re-sign a transaction in status {}",
+                    state.status
+                ));
+            }
+            let updated =
+                super::migration::mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                    db_path,
+                    run_id,
+                    remote_height,
+                )?;
+            if updated == 0 {
+                return Err(
+                    "Migration outbox re-sign receipt did not find a due noncanonical transaction"
                         .to_string(),
                 );
             }

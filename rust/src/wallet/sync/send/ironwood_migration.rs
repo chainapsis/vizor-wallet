@@ -252,14 +252,28 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         ));
     }
 
+    let approved_schedule = super::migration::planned_transfer_schedule(
+        split.plan.migration_outputs.iter().copied(),
+        network,
+        &mut OsRng,
+    );
     let mut child_messages = Vec::with_capacity(split.predicted_notes.len());
     for (index, predicted) in split.predicted_notes.iter().enumerate() {
+        let part_index = index as u32;
+        let block_offset = super::migration::schedule_block_offset_for_part(
+            &approved_schedule,
+            &split.plan.migration_outputs,
+            part_index,
+            split.plan.migration_outputs[part_index as usize],
+        )
+        .ok_or("Generated migration schedule is missing a child")?;
         let pczt = create_orchard_to_ironwood_pczt_from_predicted_note(
             db_path,
             network,
             account_uuid,
             predicted,
             (index + 1) as u32,
+            block_offset,
         )?
         .ok_or("Predicted migration note is below the migration fee threshold")?;
         child_messages.push(pczt);
@@ -304,6 +318,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             total_migratable_zatoshi: split.total_migratable_zatoshi,
             plan: split.plan,
             child_messages,
+            approved_schedule,
         },
     );
     drop(request_store);
@@ -386,6 +401,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
             plan: stored.plan.clone(),
             child_messages: stored.child_messages.clone(),
+            approved_schedule: stored.approved_schedule.clone(),
         }
     };
 
@@ -425,6 +441,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                     target_height: child.target_height,
                     anchor_boundary_height: child.anchor_boundary_height,
                     expiry_height: child.expiry_height,
+                    scheduled_height: child.scheduled_height,
                     value_zatoshi: child.migrated_zatoshi,
                     fee_zatoshi: child.fee_zatoshi,
                     selected_note: selected_note.clone(),
@@ -444,7 +461,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             &prepared_refs,
             signed_children,
             denomination_stages,
-            None,
+            Some(&stored.approved_schedule),
             preparation_timing_policy,
             pending_password,
             pending_salt_base64,
@@ -544,7 +561,22 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let mut anchor_cohort_counts =
         super::migration::pending_anchor_cohort_counts(db_path, &run.run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
+    let approved_schedule =
+        super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     for (index, note_ref) in prepared_notes.iter().enumerate() {
+        let part_index = recoveries
+            .get(index)
+            .map(|recovery| recovery.part_index)
+            .unwrap_or(index as u32);
+        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
+            &approved_schedule,
+            &run.target_values_zatoshi,
+            part_index,
+            *run.target_values_zatoshi
+                .get(part_index as usize)
+                .ok_or("Migration part is outside the approved target list")?,
+        )
+        .ok_or("Approved migration schedule is missing a child")?;
         let pczt = match with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
             create_orchard_to_ironwood_pczt_from_note(
                 db_path,
@@ -555,6 +587,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     .get(index)
                     .map(|recovery| recovery.part_index + 1)
                     .unwrap_or((index + 1) as u32),
+                schedule_block_offset,
                 timing_policy,
                 &mut anchor_cohort_counts,
                 !recoveries.is_empty(),
@@ -748,6 +781,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                 target_height: message.target_height,
                 anchor_boundary_height: message.anchor_boundary_height,
                 expiry_height: message.expiry_height,
+                scheduled_height: message.scheduled_height,
                 value_zatoshi: message.migrated_zatoshi,
                 fee_zatoshi: message.fee_zatoshi,
                 selected_note: message.selected_note.clone(),

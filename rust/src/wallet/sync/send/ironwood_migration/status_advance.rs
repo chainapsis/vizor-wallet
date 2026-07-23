@@ -305,6 +305,7 @@ fn prepare_software_migration_run(
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
+    approved_schedule: &[super::migration::MigrationScheduleEntry],
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
     let Some(mut split) = create_padded_orchard_denomination_pczts(db_path, network, account_uuid)?
@@ -341,12 +342,21 @@ fn prepare_software_migration_run(
         .iter()
         .enumerate()
         .map(|(index, predicted)| {
+            let part_index = index as u32;
+            let block_offset = super::migration::schedule_block_offset_for_part(
+                approved_schedule,
+                &split.plan.migration_outputs,
+                part_index,
+                predicted.value_zatoshi.saturating_sub(split.plan.migration_fee_zatoshi),
+            )
+            .ok_or("Approved migration schedule is missing a child")?;
             create_orchard_to_ironwood_pczt_from_predicted_note(
                 db_path,
                 network,
                 account_uuid,
                 predicted,
                 (index + 1) as u32,
+                block_offset,
             )?
             .ok_or("Predicted migration note is below the migration fee threshold".to_string())
         })
@@ -377,6 +387,7 @@ fn prepare_software_migration_run(
                 target_height: child.target_height,
                 anchor_boundary_height: child.anchor_boundary_height,
                 expiry_height: child.expiry_height,
+                scheduled_height: child.scheduled_height,
                 value_zatoshi: child.migrated_zatoshi,
                 fee_zatoshi: child.fee_zatoshi,
                 selected_note: selected_note.clone(),

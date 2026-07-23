@@ -18,6 +18,7 @@ enum BackgroundMigrationOutboxItemStatus: String, Codable, Equatable {
   case acceptedAwaitingReconciliation
   case rejectedAwaitingReconciliation
   case expiredAwaitingReconciliation
+  case needsResignAwaitingReconciliation
 }
 
 enum BackgroundMigrationOutboxReceiptOutcome: String, Codable, Equatable {
@@ -25,6 +26,7 @@ enum BackgroundMigrationOutboxReceiptOutcome: String, Codable, Equatable {
   case acceptedEquivalent
   case rejected
   case expired
+  case needsResign
 }
 
 struct BackgroundMigrationOutboxItem: Codable, Equatable {
@@ -500,6 +502,45 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
   }
 
+  mutating func markDueItemsNeedingResign(
+    remoteHeight: UInt64,
+    endpoint: String,
+    at date: Date
+  ) {
+    guard let canonicalExpiryHeight = Self.canonicalExpiryHeight(for: remoteHeight) else {
+      return
+    }
+    for batchIndex in batches.indices {
+      guard batches[batchIndex].lightwalletdUrl == endpoint else { continue }
+      var foundNoncanonicalItem = false
+      for itemIndex in batches[batchIndex].items.indices {
+        let item = batches[batchIndex].items[itemIndex]
+        guard item.status == .armed,
+          item.scheduledHeight <= remoteHeight,
+          item.expiryHeight != canonicalExpiryHeight
+        else { continue }
+        foundNoncanonicalItem = true
+        batches[batchIndex].items[itemIndex].status = .needsResignAwaitingReconciliation
+        receipts.append(
+          makeReceipt(
+            batch: batches[batchIndex],
+            item: batches[batchIndex].items[itemIndex],
+            outcome: .needsResign,
+            remoteHeight: remoteHeight,
+            responseCode: nil,
+            responseMessage: "Broadcast height crossed a ZIP 318 expiry boundary.",
+            scheduleUpdates: [],
+            at: date
+          )
+        )
+      }
+      if foundNoncanonicalItem {
+        batches[batchIndex].armedAt = nil
+        batches[batchIndex].nextProofHeight = nil
+      }
+    }
+  }
+
   mutating func selectDue(
     remoteHeight: UInt64,
     endpoint: String? = nil,
@@ -676,14 +717,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     let acknowledgedItemIds = Set(acknowledged.map(\.itemId))
     let terminalBatchIds = Set(
       acknowledged.filter {
-        $0.outcome == .rejected || $0.outcome == .expired
+        $0.outcome == .rejected || $0.outcome == .expired || $0.outcome == .needsResign
       }.map(\.batchId)
     )
     receipts.removeAll { receiptIds.contains($0.receiptId) }
-    if !terminalBatchIds.isEmpty {
-      batches.removeAll { terminalBatchIds.contains($0.batchId) }
-      receipts.removeAll { terminalBatchIds.contains($0.batchId) }
+    let removableTerminalBatchIds = terminalBatchIds.filter { batchId in
+      !receipts.contains(where: { $0.batchId == batchId })
     }
+    batches.removeAll { removableTerminalBatchIds.contains($0.batchId) }
     for batchIndex in batches.indices {
       batches[batchIndex].items.removeAll { acknowledgedItemIds.contains($0.itemId) }
     }
@@ -821,6 +862,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       recordedAt: date,
       scheduleUpdates: scheduleUpdates
     )
+  }
+
+  private static func canonicalExpiryHeight(for height: UInt64) -> UInt64? {
+    let modulus: UInt64 = 34_560
+    let boundary = height - (height % modulus)
+    let window = modulus * 2
+    let (expiryHeight, expiryOverflow) = boundary.addingReportingOverflow(window)
+    return expiryOverflow ? nil : expiryHeight
   }
 }
 

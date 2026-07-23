@@ -149,6 +149,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                     total_migratable_zatoshi: plan.total_migratable_zatoshi,
                     plan: plan.clone(),
                     child_messages: vec![],
+                    approved_schedule: vec![],
                 },
             );
     }
@@ -345,6 +346,7 @@ fn create_outbox_receipt_test_run(
             target_height: 100,
             anchor_boundary_height: Some(90),
             expiry_height,
+            scheduled_height: 100,
             value_zatoshi: 100_000,
             fee_zatoshi: 10_000,
             selected_note: selected_note.clone(),
@@ -434,7 +436,7 @@ fn unbroadcast_recovery_rejects_a_transaction_marked_as_broadcasted() {
 
 #[test]
 fn rejected_outbox_receipt_retires_run_idempotently() {
-    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
 
     for _ in 0..2 {
         reconcile_orchard_migration_outbox_receipt(
@@ -470,7 +472,7 @@ fn rejected_outbox_receipt_retires_run_idempotently() {
 
 #[test]
 fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
-    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
 
     for _ in 0..2 {
         reconcile_orchard_migration_outbox_receipt(
@@ -480,7 +482,7 @@ fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
             &run_id,
             &pending_txid,
             "expired",
-            120,
+            69_120,
             None,
             Vec::new(),
             None,
@@ -505,7 +507,7 @@ fn expired_outbox_receipt_marks_parts_for_resign_at_remote_height() {
 
 #[test]
 fn accepted_outbox_receipt_requires_the_native_raw_transaction() {
-    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
 
     let error = reconcile_orchard_migration_outbox_receipt(
         &db_path,
@@ -529,7 +531,7 @@ fn accepted_outbox_receipt_requires_the_native_raw_transaction() {
 
 #[test]
 fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
-    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(120);
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
 
     reconcile_orchard_migration_outbox_receipt(
         &db_path,
@@ -538,7 +540,7 @@ fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
         &run_id,
         &pending_txid,
         "expired",
-        120,
+        69_120,
         None,
         Vec::new(),
         None,
@@ -551,7 +553,7 @@ fn accepted_outbox_receipt_recovers_a_part_marked_for_resign() {
         WalletNetwork::Test,
         &run_id,
         &pending_txid,
-        121,
+        69_121,
         &[],
     )
     .unwrap();
@@ -1109,7 +1111,8 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
             raw_tx: vec![5, 6, 7, 8],
             target_height: 100,
             anchor_boundary_height: None,
-            expiry_height: 120,
+            expiry_height: 69_120,
+            scheduled_height: 100,
             value_zatoshi: 100_000,
             fee_zatoshi: 10_000,
             selected_note: selected_note.clone(),
