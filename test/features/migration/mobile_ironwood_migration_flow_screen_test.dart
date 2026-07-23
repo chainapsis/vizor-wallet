@@ -925,7 +925,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         step: MobileIronwoodMigrationStep.privateReview,
-        previewPlan: _planWith(plannedBatchCount: 50, signingBatchLimit: 50),
+        previewPlan: _planWith(plannedBatchCount: 35, signingBatchLimit: 35),
       ),
     );
     await tester.pumpAndSettle();
@@ -1915,7 +1915,7 @@ void main() {
           redactedPczt: Uint8List.fromList([2]),
         ),
       ],
-      signingBatchLimit: 50,
+      signingBatchLimit: 35,
     );
 
     await tester.pumpWidget(
@@ -1981,7 +1981,7 @@ void main() {
               const rust_sync.KeystoneMigrationSigningRequest(
                 requestId: 'direct-note-request',
                 messages: [],
-                signingBatchLimit: 50,
+                signingBatchLimit: 35,
               ),
       completeKeystoneDenominationMigration:
           ({
@@ -2058,7 +2058,7 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('accepts exactly 50 transactions in each Keystone round', (
+  testWidgets('accepts exactly 35 transactions in each Keystone round', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -2068,9 +2068,9 @@ void main() {
         migrationService: _migrationService(),
         hardware: true,
         privatePlan: _planWith(
-          denominationSplitStageCount: 50,
-          plannedBatchCount: 50,
-          signingBatchLimit: 50,
+          denominationSplitStageCount: 35,
+          plannedBatchCount: 35,
+          signingBatchLimit: 35,
         ),
       ),
     );
@@ -2087,20 +2087,20 @@ void main() {
     expect(button.onPressed, isNotNull);
   });
 
-  testWidgets('blocks 51 transactions in either Keystone round', (
+  testWidgets('blocks 36 transactions in either Keystone round', (
     tester,
   ) async {
     _useMobileViewport(tester);
     for (final plan in [
       _planWith(
-        denominationSplitStageCount: 51,
-        plannedBatchCount: 50,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 36,
+        plannedBatchCount: 35,
+        signingBatchLimit: 35,
       ),
       _planWith(
-        denominationSplitStageCount: 50,
-        plannedBatchCount: 51,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 35,
+        plannedBatchCount: 36,
+        signingBatchLimit: 35,
       ),
     ]) {
       await tester.pumpWidget(
@@ -2158,7 +2158,7 @@ void main() {
                     redactedPczt: Uint8List.fromList([prepareCount]),
                   ),
                 ],
-                signingBatchLimit: 50,
+                signingBatchLimit: 35,
               );
             },
         getKeystoneProofStatus: ({required requestId}) async =>
