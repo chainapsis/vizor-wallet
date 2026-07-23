@@ -3251,6 +3251,67 @@ fn create_staged_run_persists_pending_split_atomically() {
 }
 
 #[test]
+fn create_run_with_direct_funding_notes_starts_ready_without_split_stages() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let plan = DenominationPlan {
+        migration_outputs: vec![100_000_000],
+        orchard_change: None,
+        split_fee_zatoshi: 0,
+        migration_fee_zatoshi: 15_000,
+        total_input_zatoshi: 100_015_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 100_015_000,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    }];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000_000,
+        block_offset: 1,
+    }];
+
+    let run_id = create_run_with_staged_denominations_and_signed_children(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &plan,
+        &prepared_notes,
+        Vec::new(),
+        Vec::new(),
+        Some(&approved_schedule),
+        PreparationTimingPolicy::Zip318Spaced,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    assert_eq!(
+        run_phase(&db_path, &run_id).unwrap(),
+        PHASE_READY_TO_MIGRATE
+    );
+    assert!(
+        denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64,)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        denomination_split_progress_for_run(&conn, &run_id).unwrap(),
+        DenominationSplitProgress::default()
+    );
+    assert_eq!(
+        prepared_notes_for_run(&db_path, &run_id).unwrap(),
+        prepared_notes
+    );
+}
+
+#[test]
 fn create_staged_run_rolls_back_on_encrypt_failure() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

@@ -8021,6 +8021,7 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
         let mut var_estimatedTotalFeeZatoshi = <u64>::sse_decode(deserializer);
         let mut var_plannedBatchCount = <u32>::sse_decode(deserializer);
         let mut var_denominationSplitStageCount = <u32>::sse_decode(deserializer);
+        let mut var_denominationSplitLayerCount = <u32>::sse_decode(deserializer);
         let mut var_signingBatchLimit = <u32>::sse_decode(deserializer);
         let mut var_scheduleMeanDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
@@ -8038,6 +8039,7 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
             estimated_total_fee_zatoshi: var_estimatedTotalFeeZatoshi,
             planned_batch_count: var_plannedBatchCount,
             denomination_split_stage_count: var_denominationSplitStageCount,
+            denomination_split_layer_count: var_denominationSplitLayerCount,
             signing_batch_limit: var_signingBatchLimit,
             schedule_mean_delay_blocks: var_scheduleMeanDelayBlocks,
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
@@ -10358,6 +10360,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::OrchardMigrationPrivate
                 .into_dart(),
             self.planned_batch_count.into_into_dart().into_dart(),
             self.denomination_split_stage_count
+                .into_into_dart()
+                .into_dart(),
+            self.denomination_split_layer_count
                 .into_into_dart()
                 .into_dart(),
             self.signing_batch_limit.into_into_dart().into_dart(),
@@ -12778,6 +12783,7 @@ impl SseEncode for crate::api::sync::OrchardMigrationPrivatePlan {
         <u64>::sse_encode(self.estimated_total_fee_zatoshi, serializer);
         <u32>::sse_encode(self.planned_batch_count, serializer);
         <u32>::sse_encode(self.denomination_split_stage_count, serializer);
+        <u32>::sse_encode(self.denomination_split_layer_count, serializer);
         <u32>::sse_encode(self.signing_batch_limit, serializer);
         <u32>::sse_encode(self.schedule_mean_delay_blocks, serializer);
         <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);

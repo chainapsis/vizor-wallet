@@ -48,6 +48,7 @@ struct CreatedDenominationStagePczt {
 struct CreatedPaddedDenominationPczts {
     stages: Vec<CreatedDenominationStagePczt>,
     predicted_notes: Vec<PredictedMigrationNote>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -58,12 +59,14 @@ struct StoredDenominationPczt {
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
 
 struct StoredDenominationCompletion {
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -111,6 +114,7 @@ struct StoredSingleQrMigrationPczt {
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
@@ -119,6 +123,7 @@ struct StoredSingleQrMigrationPczt {
 
 struct StoredSingleQrMigrationCompletion {
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,

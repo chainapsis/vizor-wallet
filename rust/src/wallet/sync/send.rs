@@ -302,6 +302,7 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     pub estimated_total_fee_zatoshi: u64,
     pub planned_batch_count: u32,
     pub denomination_split_stage_count: u32,
+    pub denomination_split_layer_count: u32,
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
@@ -1058,6 +1059,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     } = prepared;
     let prepared_count = u32::try_from(prepared_refs.len())
         .map_err(|_| "Migration output count exceeds u32".to_string())?;
+    let has_denomination_stages = !denomination_stages.is_empty();
     let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
         db_path,
         account_uuid,
@@ -1071,6 +1073,39 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         pending_password.as_slice(),
         pending_salt_base64,
     )?;
+
+    if !has_denomination_stages {
+        let finalized = finalize_presigned_migration_children(
+            db_path,
+            network,
+            account_uuid,
+            &run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )?;
+        if finalized == 0 {
+            drop(migration_guard);
+            return Ok(prepared_notes_not_spendable_result(
+                prepared_count,
+                total_migratable_zatoshi,
+            ));
+        }
+        let result = broadcast_due_scheduled_migration_txs(
+            db_path,
+            lightwalletd_url,
+            network,
+            &run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            prepared_count,
+            total_migratable_zatoshi,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )
+        .await;
+        drop(migration_guard);
+        return result;
+    }
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,

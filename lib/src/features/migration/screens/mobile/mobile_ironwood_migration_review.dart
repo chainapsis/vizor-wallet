@@ -464,6 +464,7 @@ String _mobilePrivatePlanFingerprint(
     plan.estimatedTotalFeeZatoshi,
     plan.plannedBatchCount,
     plan.denominationSplitStageCount,
+    plan.denominationSplitLayerCount,
     plan.signingBatchLimit,
     plan.maxPreparedNotesPerRun,
     targetValues.join(','),

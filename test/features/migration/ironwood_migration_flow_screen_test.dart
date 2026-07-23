@@ -2569,6 +2569,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     estimatedTotalFeeZatoshi: BigInt.from(10_000),
     plannedBatchCount: 1,
     denominationSplitStageCount: 0,
+    denominationSplitLayerCount: 0,
     signingBatchLimit: 50,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,

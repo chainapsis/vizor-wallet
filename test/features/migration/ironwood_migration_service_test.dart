@@ -67,6 +67,7 @@ void main() {
         estimatedTotalFeeZatoshi: BigInt.from(20000),
         plannedBatchCount: 1,
         denominationSplitStageCount: 1,
+        denominationSplitLayerCount: 1,
         signingBatchLimit: 50,
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,

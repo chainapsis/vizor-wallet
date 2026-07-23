@@ -73,15 +73,17 @@ pub(crate) fn get_orchard_migration_private_plan(
         .map_err(|_| "Migration batch count exceeds u32".to_string())?;
     let denomination_split_stage_count = u32::try_from(padded_plan.stages.len())
         .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
+    let denomination_split_layer_count = u32::try_from(padded_plan.layer_count)
+        .map_err(|_| "Denomination split layer count exceeds u32".to_string())?;
     let estimated_final_preparation_mined_height = u32::from(target_height)
         .checked_add(
-            denomination_split_stage_count
+            denomination_split_layer_count
                 .saturating_sub(1)
                 .checked_mul(super::migration::denomination_confirmations_required())
                 .ok_or("Migration preparation height overflow")?,
         )
         .ok_or("Migration preparation height overflow")?;
-    let proof_readiness_delay_blocks = if denomination_split_stage_count == 0 {
+    let proof_readiness_delay_blocks = if denomination_split_layer_count == 0 {
         0
     } else {
         super::migration::proof_readiness_delay_blocks(
@@ -113,6 +115,7 @@ pub(crate) fn get_orchard_migration_private_plan(
         estimated_total_fee_zatoshi,
         planned_batch_count,
         denomination_split_stage_count,
+        denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
         schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
         schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
