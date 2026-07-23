@@ -1331,6 +1331,46 @@ fn insert_signed_child_pczts_with_tx(
     Ok(())
 }
 
+pub(crate) fn persist_signed_child_pczts_for_run(
+    db_path: &str,
+    run_id: &str,
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    if signed_children.is_empty() {
+        return Err("Keystone migration returned no signed children".to_string());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin signed migration handoff: {e}"))?;
+    insert_signed_child_pczts_with_tx(
+        &tx,
+        run_id,
+        signed_children,
+        password,
+        salt_base64,
+        SignedChildInsertMode::Initial,
+    )?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+             SET updated_at_ms = ?1, last_error = NULL
+             WHERE run_id = ?2 AND phase = ?3"
+            ),
+            params![now_ms()?, run_id, PHASE_READY_TO_MIGRATE],
+        )
+        .map_err(|e| format!("Update presigned migration run: {e}"))?;
+    if updated != 1 {
+        return Err("Migration run is no longer ready for Keystone signatures".to_string());
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit signed migration handoff: {e}"))
+}
+
 pub(crate) fn signed_child_pczts_for_run(
     db_path: &str,
     run_id: &str,

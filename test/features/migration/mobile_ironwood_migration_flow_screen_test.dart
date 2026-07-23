@@ -2632,6 +2632,7 @@ void main() {
           pendingTxCount: 0,
           signedChildPcztCount: 3,
         ),
+        hardware: true,
         privatePlan: _planWith(plannedBatchCount: 3),
         syncState: SyncState(
           accountUuid: 'account-1',
@@ -2646,6 +2647,7 @@ void main() {
     expect(find.text('~25 minutes'), findsOneWidget);
     expect(find.textContaining('Proof'), findsNothing);
     expect(find.text('Waiting for a safe block to continue.'), findsOneWidget);
+    expect(find.text('Ready for Keystone'), findsNothing);
   });
 
   testWidgets('shows projected timing for every prepared migration part', (

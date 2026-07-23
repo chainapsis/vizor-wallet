@@ -247,6 +247,41 @@ void main() {
     expect(advances, [_softwareUuid]);
   });
 
+  test(
+    'resumes presigned Keystone proof preparation at its anchor height',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('complete', activeRunId: null),
+        _hardwareUuid: _status(
+          'ready_to_migrate',
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+        ),
+      };
+      final advances = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: advances,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(advances, [_hardwareUuid]);
+    },
+  );
+
   test('does not prepare the next proof before its anchor height', () async {
     final statuses = {
       _softwareUuid: _status(

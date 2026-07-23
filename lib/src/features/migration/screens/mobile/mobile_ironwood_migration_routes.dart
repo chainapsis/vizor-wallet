@@ -195,7 +195,9 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
         isHardware: isHardware,
       );
     }
-    if (status.phase == kIronwoodMigrationReadyToMigratePhase && isHardware) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        isHardware &&
+        status.signedChildPcztCount == 0) {
       return _MobileKeystoneMigrationReady(data: data, status: status);
     }
     return _MobileMigrationMigrating(

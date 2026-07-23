@@ -1319,6 +1319,85 @@ fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
 }
 
 #[test]
+fn persisting_presigned_children_keeps_ready_phase_and_proof_height() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let schedule = serde_json::to_string(&[MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000,
+        block_offset: 10,
+    }])
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              proof_retry_height)
+             VALUES ('run-presigned-handoff', 'account-1', 'test', ?1, ?2,
+                     1, 1, '[100000]', ?3, 200)"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE, schedule],
+    )
+    .unwrap();
+    drop(conn);
+
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110_000,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    };
+    persist_signed_child_pczts_for_run(
+        &db_path,
+        "run-presigned-handoff",
+        vec![SignedMigrationPcztInsert {
+            message_id: "migration-1".to_string(),
+            child_index: 0,
+            base_pczt: vec![1, 2, 3],
+            sigs: Vec::new(),
+            target_height: 100,
+            anchor_boundary_height: None,
+            expiry_height: 69_120,
+            scheduled_height: 110,
+            value_zatoshi: 100_000,
+            fee_zatoshi: 10_000,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (phase, proof_retry_height, signed_count): (String, Option<u32>, u32) = conn
+        .query_row(
+            &format!(
+                "SELECT phase, proof_retry_height,
+                        (SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE}
+                         WHERE run_id = r.run_id)
+                 FROM {RUNS_TABLE} r
+                 WHERE run_id = 'run-presigned-handoff'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_READY_TO_MIGRATE);
+    assert_eq!(proof_retry_height, Some(200));
+    assert_eq!(signed_count, 1);
+}
+
+#[test]
 fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
     let schedule = vec![
         MigrationScheduleEntry {

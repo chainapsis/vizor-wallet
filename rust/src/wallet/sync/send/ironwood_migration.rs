@@ -529,8 +529,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         chain_tip_height,
     )?;
     let recoveries = super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
+    let initial_signing = recoveries.is_empty();
     let all_prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
-    let prepared_notes = if recoveries.is_empty() {
+    let prepared_notes = if initial_signing {
         all_prepared_notes
     } else {
         recoveries
@@ -542,10 +543,13 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         return Err("Migration run has no prepared denomination notes".to_string());
     }
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    if recoveries.is_empty() && pending_totals.total_count > 0 {
+    if initial_signing
+        && (pending_totals.total_count > 0
+            || super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0)
+    {
         return Err("Migration transactions are already signed and scheduled".to_string());
     }
-    if !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
+    if !initial_signing && !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
         return Err(
             "Prepared denomination notes are not spendable yet. Sync and try again.".to_string(),
         );
@@ -577,22 +581,35 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 .ok_or("Migration part is outside the approved target list")?,
         )
         .ok_or("Approved migration schedule is missing a child")?;
-        let pczt = match with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
-            create_orchard_to_ironwood_pczt_from_note(
+        let migration_index = recoveries
+            .get(index)
+            .map(|recovery| recovery.part_index + 1)
+            .unwrap_or((index + 1) as u32);
+        let pczt_result = if initial_signing {
+            create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
                 db_path,
                 network,
                 account_uuid,
                 note_ref,
-                recoveries
-                    .get(index)
-                    .map(|recovery| recovery.part_index + 1)
-                    .unwrap_or((index + 1) as u32),
+                migration_index,
                 schedule_block_offset,
-                timing_policy,
-                &mut anchor_cohort_counts,
-                !recoveries.is_empty(),
             )
-        }) {
+        } else {
+            with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
+                create_orchard_to_ironwood_pczt_from_note(
+                    db_path,
+                    network,
+                    account_uuid,
+                    note_ref,
+                    migration_index,
+                    schedule_block_offset,
+                    timing_policy,
+                    &mut anchor_cohort_counts,
+                    true,
+                )
+            })
+        };
+        let pczt = match pczt_result {
             Ok(pczt) => pczt,
             Err(e) if is_orchard_witness_not_ready_error(&e) => {
                 mark_prepared_notes_waiting(db_path, &run.run_id)?;
@@ -604,11 +621,18 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
             Err(e) => return Err(e),
         };
         let Some(pczt) = pczt else {
-            mark_prepared_notes_waiting(db_path, &run.run_id)?;
-            return Err(
-                "Prepared denomination notes are not spendable yet. Sync and try again."
-                    .to_string(),
-            );
+            if initial_signing {
+                return Err(
+                    "Prepared denomination note is not available for Keystone signing. Sync and try again."
+                        .to_string(),
+                );
+            } else {
+                mark_prepared_notes_waiting(db_path, &run.run_id)?;
+                return Err(
+                    "Prepared denomination notes are not spendable yet. Sync and try again."
+                        .to_string(),
+                );
+            }
         };
         if let Some(recovery) = recoveries.get(index) {
             if pczt.migrated_zatoshi != recovery.value_zatoshi {
@@ -651,13 +675,19 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 .iter()
                 .map(|recovery| recovery.old_txid_hex.clone())
                 .collect(),
-            state: KeystoneMigrationRequestState::Proofing,
+            state: if initial_signing {
+                KeystoneMigrationRequestState::ProofReady
+            } else {
+                KeystoneMigrationRequestState::Proofing
+            },
             proof_error: None,
             messages: created,
         },
     );
     drop(request_store);
-    spawn_migration_proof_worker(request_id.clone(), proof_worker_messages);
+    if !initial_signing {
+        spawn_migration_proof_worker(request_id.clone(), proof_worker_messages);
+    }
 
     Ok(KeystoneMigrationSigningRequest {
         request_id,
@@ -710,10 +740,11 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
             }
             KeystoneMigrationRequestState::ProofReady => {}
         }
-        if stored
-            .messages
-            .iter()
-            .any(|message| message.pczt_with_proofs.is_none())
+        if !stored.recovery_old_txids.is_empty()
+            && stored
+                .messages
+                .iter()
+                .any(|message| message.pczt_with_proofs.is_none())
         {
             return Err("Keystone migration proofs are not ready".to_string());
         }
@@ -757,6 +788,84 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
     {
         reset_migration_request_after_failed_completion(request_id);
         return Err("Migration transactions are already signed and scheduled".to_string());
+    }
+
+    if stored.recovery_old_txids.is_empty() {
+        let completion_result = (|| -> Result<u64, String> {
+            if stored
+                .messages
+                .iter()
+                .any(|message| message.pczt_with_proofs.is_some())
+            {
+                return Err(
+                    "Initial Keystone migration request unexpectedly contains proofs".to_string(),
+                );
+            }
+            let mut total_fee_zatoshi = 0u64;
+            let signed_children = stored
+                .messages
+                .clone()
+                .into_iter()
+                .map(|message| {
+                    let sigs = signed_by_id
+                        .get(&message.id)
+                        .ok_or_else(|| format!("Keystone result missing {}", message.id))?
+                        .clone();
+                    super::pczt::preflight_orchard_spend_auth_signatures(
+                        &message.base_pczt,
+                        &sigs,
+                    )?;
+                    total_fee_zatoshi = total_fee_zatoshi
+                        .checked_add(message.fee_zatoshi)
+                        .ok_or("Migration fee total overflow")?;
+                    Ok(super::migration::SignedMigrationPcztInsert {
+                        message_id: message.id,
+                        child_index: message.part_index,
+                        base_pczt: message.base_pczt,
+                        sigs,
+                        target_height: message.target_height,
+                        anchor_boundary_height: None,
+                        expiry_height: message.expiry_height,
+                        scheduled_height: message.scheduled_height,
+                        value_zatoshi: message.migrated_zatoshi,
+                        fee_zatoshi: message.fee_zatoshi,
+                        selected_note: message.selected_note.clone(),
+                        metadata: super::migration::PendingMigrationTxMetadata {
+                            tx_kind: "migration".to_string(),
+                            funding_account_uuid: account_uuid.to_string(),
+                            selected_note: message.selected_note,
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            super::migration::persist_signed_child_pczts_for_run(
+                db_path,
+                &stored.run_id,
+                signed_children,
+                pending_password,
+                pending_salt_base64,
+            )?;
+            Ok(total_fee_zatoshi)
+        })();
+        if completion_result.is_err() {
+            reset_migration_request_after_failed_completion(request_id);
+        }
+        let total_fee_zatoshi = completion_result?;
+        if let Ok(mut store) = keystone_migration_requests().lock() {
+            store.remove(request_id);
+        }
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
+            broadcasted_count: 0,
+            total_count: stored.fallback_total_count,
+            message: Some(
+                "Migration transactions were signed and will continue when the safe anchor is ready."
+                    .to_string(),
+            ),
+            fee_zatoshi: total_fee_zatoshi,
+            migrated_zatoshi: stored.fallback_migrated_zatoshi,
+        });
     }
 
     let completion_result = (|| -> Result<super::migration::PendingMigrationTotals, String> {

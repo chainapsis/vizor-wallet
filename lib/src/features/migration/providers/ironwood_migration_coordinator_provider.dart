@@ -303,8 +303,8 @@ class IronwoodMigrationCoordinator
     final phaseCanAdvance =
         (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0) ||
-        (!isHardware &&
-            status.phase == kIronwoodMigrationReadyToMigratePhase) ||
+        (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+            (!isHardware || _canPrepareNextProof(status))) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
             ((usesNativeOutbox && _hasScheduledBroadcast(status)) ||

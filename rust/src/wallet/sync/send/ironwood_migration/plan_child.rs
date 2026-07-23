@@ -364,6 +364,61 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     }))
 }
 
+fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    note_ref: &super::migration::PreparedOrchardNoteRef,
+    migration_index: u32,
+    schedule_block_offset: u32,
+) -> Result<Option<CreatedMigrationPczt>, String> {
+    if note_ref.note_version != 2 {
+        return Err("Prepared migration note is not an Orchard V2 note".to_string());
+    }
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let scanned_height = u32::try_from(super::get_sync_progress(db_path, network)?.scanned_height)
+        .map_err(|_| "Migration scanned height exceeds u32".to_string())?;
+    if scanned_height == 0 {
+        return Err("Wallet must sync before preparing migration signatures".to_string());
+    }
+    let notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(scanned_height))?;
+    let Some(note) = notes.iter().find(|note| {
+        format!("{}", note.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
+            && note.output_index() as u32 == note_ref.output_index
+    }) else {
+        return Ok(None);
+    };
+    let note_value = note
+        .note_value()
+        .map(u64::from)
+        .map_err(|e| format!("Prepared note value invalid: {e}"))?;
+    if note_value != note_ref.value_zatoshi {
+        return Err("Prepared note value changed before Keystone signing".to_string());
+    }
+    let predicted = PredictedMigrationNote {
+        txid_hex: note_ref.txid_hex.clone(),
+        output_index: note_ref.output_index,
+        value_zatoshi: note_ref.value_zatoshi,
+        note: *note.note(),
+    };
+    drop(db);
+
+    let mut created = create_orchard_to_ironwood_pczt_from_predicted_note(
+        db_path,
+        network,
+        account_uuid,
+        &predicted,
+        migration_index,
+        schedule_block_offset,
+    )?;
+    if let Some(message) = created.as_mut() {
+        message.selected_note = note_ref.clone();
+    }
+    Ok(created)
+}
+
 fn sign_orchard_migration_pczt_with_usk(
     pczt_bytes: &[u8],
     orchard_spend_action_indices: &[usize],
