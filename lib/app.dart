@@ -365,10 +365,12 @@ String? appRedirect({
   if (hasWallet && state.matchedLocation == '/welcome') {
     return requiresUnlock ? '/unlock' : '/home';
   }
-  final ironwoodPostMigrationState = ref
-      .read(ironwoodPostMigrationStateProvider)
-      .value;
-  if (ironwoodPostMigrationState?.locksNavigation == true &&
+  final locksIronwoodNavigation = kAppFormFactor == AppFormFactor.mobile
+      ? ref.read(ironwoodHomeMigrationPresentationProvider).mode ==
+            IronwoodHomeMigrationCtaMode.start
+      : ref.read(ironwoodPostMigrationStateProvider).value?.locksNavigation ==
+            true;
+  if (locksIronwoodNavigation &&
       _isIronwoodMigrationRestrictedRoute(state.matchedLocation)) {
     return '/migration';
   }

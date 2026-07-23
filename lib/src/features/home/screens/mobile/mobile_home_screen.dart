@@ -63,9 +63,9 @@ class MobileHomeScreen extends ConsumerWidget {
       activeAccountUuid,
     );
     final privacyModeEnabled = ref.watch(privacyModeProvider);
-    final ironwoodMigrationCta =
-        ref.watch(ironwoodHomeMigrationCtaProvider).value ??
-        const IronwoodHomeMigrationCtaState.hidden();
+    final ironwoodMigrationCta = ref.watch(
+      ironwoodHomeMigrationPresentationProvider,
+    );
 
     final isImporting =
         activeAccountUuid != null &&

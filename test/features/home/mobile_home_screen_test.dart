@@ -177,6 +177,7 @@ Widget _app(
   PayIntroductionBadgeStore? badgeStore,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodHomeMigrationCtaState? migrationPresentationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   IronwoodMigrationCompletionState completion =
@@ -235,6 +236,9 @@ Widget _app(
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       ironwoodHomeMigrationCtaProvider.overrideWith(
         (ref) async => migrationCta,
+      ),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        migrationPresentationCta ?? migrationCta,
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
         (ref) async => announcement,
@@ -538,6 +542,30 @@ void main() {
     await tester.tap(find.text('Migration required'));
     await tester.pumpAndSettle();
     expect(find.text('migration intro route'), findsOneWidget);
+  });
+
+  testWidgets('keeps the required migration lock while the raw CTA is hidden', (
+    tester,
+  ) async {
+    const requiredCta = IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: 'account-1',
+    );
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)),
+        migrationPresentationCta: requiredCta,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migration required'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('shows migrated balance and remaining amount while migrating', (

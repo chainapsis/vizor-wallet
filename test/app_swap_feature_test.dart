@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -73,6 +74,31 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'mobile migration presentation lock survives unavailable raw state',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/send',
+          ironwoodPostMigrationState:
+              const IronwoodPostMigrationState.unavailable(),
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          ironwoodMigrationFlowData: _migrationFlowData,
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsOneWidget);
+      expect(find.byType(SendScreen), findsNothing);
+    },
+    tags: 'mobile',
+  );
 
   testWidgets('completed Ironwood migration leaves swap route accessible', (
     tester,
