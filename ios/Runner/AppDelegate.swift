@@ -33,13 +33,16 @@ import UIKit
         taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
       )
     }
+    if application.applicationState != .background {
+      IronwoodMigrationNotificationGate.shared.enforceOnForeground()
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   override func applicationWillEnterForeground(_ application: UIApplication) {
+    IronwoodMigrationNotificationGate.shared.enforceOnForeground()
     if #available(iOS 26.0, *) {
-      BackgroundMigrationPreparationManager.shared
-        .handoffToForeground()
+      BackgroundMigrationManager.shared.handoffToForeground()
     }
     super.applicationWillEnterForeground(application)
   }
@@ -55,12 +58,26 @@ import UIKit
     )
     backgroundMigrationChannel.setMethodCallHandler { call, result in
       switch call.method {
+      case "getNotificationAuthorizationStatus":
+        IronwoodMigrationNotificationGate.shared.status { status in
+          DispatchQueue.main.async { result(status.rawValue) }
+        }
       case "requestNotificationAuthorization":
-        BackgroundMigrationManager.shared.requestNotificationAuthorization {
-          granted in result(granted)
+        IronwoodMigrationNotificationGate.shared.requestAuthorization {
+          status in
+          if !status.allowsBackgroundMigration {
+            IronwoodMigrationNotificationGate.shared.hardDisable()
+          }
+          DispatchQueue.main.async { result(status.rawValue) }
+        }
+      case "openNotificationSettings":
+        IronwoodMigrationNotificationGate.shared.openSettings {
+          opened in result(opened)
         }
       case "schedule":
-        result(BackgroundMigrationManager.shared.schedule())
+        BackgroundMigrationManager.shared.schedule { scheduled in
+          DispatchQueue.main.async { result(scheduled) }
+        }
       case "startPreparation":
         if #available(iOS 26.0, *) {
           BackgroundMigrationPreparationManager.shared.start {
@@ -69,6 +86,58 @@ import UIKit
         } else {
           result(false)
         }
+      case "getPreparationRuntimeState":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String,
+          let runId = arguments["runId"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood preparation scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared.runtimeState(
+            network: network,
+            accountUuid: accountUuid,
+            runId: runId
+          ) { state in
+            DispatchQueue.main.async { result(state.rawValue) }
+          }
+        } else {
+          result(BackgroundMigrationPreparationRuntimeState.idle.rawValue)
+        }
+      case "ackPreparationForegroundContinuation":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String,
+          let runId = arguments["runId"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood preparation scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .acknowledgeForegroundContinuation(
+              network: network,
+              accountUuid: accountUuid,
+              runId: runId
+            )
+        }
+        result(true)
       case "stageOutboxBatch":
         do {
           result(try BackgroundMigrationOutboxChannel.stageBatch(arguments: call.arguments))
@@ -78,7 +147,7 @@ import UIKit
       case "armOutboxBatch":
         do {
           try BackgroundMigrationOutboxChannel.armBatch(arguments: call.arguments)
-          result(BackgroundMigrationManager.shared.schedule())
+          self.completeOutboxArmWithBackgroundSchedule(result: result)
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
@@ -87,8 +156,11 @@ import UIKit
           let recovered = try BackgroundMigrationOutboxChannel.recoverBatch(
             arguments: call.arguments
           )
-          if recovered { _ = BackgroundMigrationManager.shared.schedule() }
-          result(recovered)
+          if recovered {
+            self.completeOutboxArmWithBackgroundSchedule(result: result)
+          } else {
+            result(false)
+          }
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
@@ -133,11 +205,13 @@ import UIKit
           }
         }
       case "resume":
-        let resumed = BackgroundMigrationManager.shared.resumeAfterFailedMutation()
-        if #available(iOS 26.0, *) {
-          BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
+        BackgroundMigrationManager.shared.resumeAfterFailedMutation {
+          resumed in
+          if #available(iOS 26.0, *) {
+            BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
+          }
+          DispatchQueue.main.async { result(resumed) }
         }
-        result(resumed)
       case "revokeAccount":
         guard let arguments = call.arguments as? [String: Any],
           let network = arguments["network"] as? String,
@@ -328,6 +402,35 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+
+  private func completeOutboxArmWithBackgroundSchedule(
+    result: @escaping FlutterResult
+  ) {
+    IronwoodMigrationNotificationGate.shared.status { status in
+      guard status.allowsBackgroundMigration else {
+        // The durable outbox remains intentionally usable from the foreground
+        // when the user declines notifications. Only the background lane is
+        // disabled in this mode.
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        let success = IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+          authorization: status,
+          submitted: false
+        )
+        DispatchQueue.main.async { result(success) }
+        return
+      }
+      BackgroundMigrationManager.shared.schedule { submitted in
+        // With authorization granted, a scheduler submission failure must be
+        // surfaced so Dart does not mistake an unscheduled outbox for a
+        // background-tracked one.
+        let success = IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+          authorization: status,
+          submitted: submitted
+        )
+        DispatchQueue.main.async { result(success) }
+      }
+    }
   }
 
   private func backgroundMigrationFlutterError(_ error: Error) -> FlutterError {

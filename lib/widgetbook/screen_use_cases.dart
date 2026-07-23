@@ -930,6 +930,123 @@ Widget buildMobileIronwoodMigrationAnalyzingMotionUseCase(
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.fastReview,
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  );
+}
+
+Widget buildMobileIronwoodMigrationNotificationsPromptUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.notificationsPrompt,
+  );
+}
+
+Widget buildMobileIronwoodMigrationNotificationsConfirmationUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.notificationsConfirmation,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationActiveUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.preparationActive,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationPausedUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.preparationPaused,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationPausedKeystoneUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.preparationPausedKeystone,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationSyncingUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.preparationSyncing,
+  );
+}
+
+Widget buildMobileIronwoodMigrationSyncingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.syncing,
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationCompleteUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.preparationCompleteModal,
+  );
+}
+
+Widget buildMobileIronwoodMigrationWaitingNotificationsOnUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationWaitingNotificationsOn,
+  );
+}
+
+Widget buildMobileIronwoodMigrationWaitingNotificationsOffUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationWaitingNotificationsOff,
+  );
+}
+
+Widget buildMobileIronwoodMigrationNeedsInputUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationNeedsInput,
+  );
+}
+
+Widget buildMobileIronwoodMigrationBroadcastingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationBroadcasting,
+  );
+}
+
+Widget buildMobileIronwoodMigrationCompleteUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationComplete,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeAttentionUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttention,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeAttentionModalUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttentionModal,
+  );
+}
+
+Widget buildMobileIronwoodMigrationKeystoneHelpUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.keystoneScanHelp,
   );
 }
 
@@ -1071,8 +1188,10 @@ class _KeystoneMigrationCameraPreview extends StatelessWidget {
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
+  rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   rust_sync.MigrationStatus? previewStatus,
   List<MobileIronwoodMigrationPartPresentation>? previewParts,
+  MobileIronwoodMigrationPreviewSurface? previewSurface,
   MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
       MobileIronwoodMigrationReviewPreviewStage.review,
   String? previewCoordinatorError,
@@ -1081,8 +1200,9 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.howItWorks ||
     MobileIronwoodMigrationStep.options => BigInt.from(14_223_000_000),
+    MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
     MobileIronwoodMigrationStep.privateReview ||
-    MobileIronwoodMigrationStep.fastReview ||
+    MobileIronwoodMigrationStep.notifications ||
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating => BigInt.from(14_220_000_000),
   };
@@ -1115,11 +1235,22 @@ Widget _buildMobileIronwoodMigrationUseCase({
         ),
         previewPrivatePlan:
             previewPrivatePlan ?? _previewMobilePrivateMigrationPlan(),
+        previewImmediatePlan: previewImmediatePlan,
         previewStatus: previewStatus,
         previewReviewStage: reviewPreviewStage,
         previewParts: previewParts,
+        previewSurface: previewSurface,
       ),
     ),
+  );
+}
+
+Widget _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+  MobileIronwoodMigrationPreviewSurface surface,
+) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.migrating,
+    previewSurface: surface,
   );
 }
 
@@ -1202,6 +1333,7 @@ Widget _buildMobileHomeUseCase({
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
@@ -2702,6 +2834,15 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
         blockOffset: 864,
       ),
     ],
+  );
+}
+
+rust_sync.OrchardMigrationImmediatePlan _previewMobileImmediateMigrationPlan() {
+  return rust_sync.OrchardMigrationImmediatePlan(
+    totalInputZatoshi: BigInt.from(14_223_060_000),
+    feeZatoshi: BigInt.from(60_000),
+    migratedZatoshi: BigInt.from(14_223_000_000),
+    inputNoteCount: 12,
   );
 }
 

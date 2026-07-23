@@ -18,6 +18,36 @@ private enum BackgroundMigrationPreparationStepResult {
   case cancelled
 }
 
+enum BackgroundMigrationPreparationRuntimeState: String, Equatable {
+  case idle
+  case disabled
+  case scheduled
+  case running
+  case handoffRequested
+  case foregroundContinuationPending
+}
+
+func migrationPreparationRuntimeState(
+  hasMatchingManifest: Bool,
+  notificationsDisabled: Bool,
+  submissionInFlight: Bool,
+  taskRunning: Bool,
+  deferredPassRunning: Bool,
+  foregroundHandoffRequested: Bool,
+  foregroundContinuationPending: Bool,
+  pendingRequest: Bool
+) -> BackgroundMigrationPreparationRuntimeState {
+  guard hasMatchingManifest else { return .idle }
+  if notificationsDisabled { return .disabled }
+  if foregroundContinuationPending {
+    return .foregroundContinuationPending
+  }
+  if foregroundHandoffRequested { return .handoffRequested }
+  if taskRunning || deferredPassRunning { return .running }
+  if submissionInFlight || pendingRequest { return .scheduled }
+  return .idle
+}
+
 func migrationPreparationPassResult(
   states: [UInt8]
 ) -> BackgroundMigrationPreparationPassResult {
@@ -70,9 +100,14 @@ final class BackgroundMigrationPreparationManager {
   private var taskRunning = false
   private var deferredPassRunning = false
   private var mutationQuiesced = false
+  private var notificationAuthorization =
+    IronwoodMigrationNotificationAuthorizationEpochState()
   private var foregroundHandoffRequested = false
+  private var foregroundContinuationScopes = Set<String>()
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
+  private var authorizationMonitor:
+    IronwoodMigrationNotificationAuthorizationMonitor?
 
   private init() {}
 
@@ -94,6 +129,89 @@ final class BackgroundMigrationPreparationManager {
     _ = zcash_cancel_migration_preparation_sync()
   }
 
+  func runtimeState(
+    network: String,
+    accountUuid: String,
+    runId: String,
+    completion: @escaping (BackgroundMigrationPreparationRuntimeState) -> Void
+  ) {
+    let scope = Self.foregroundContinuationScope(
+      network: network,
+      accountUuid: accountUuid,
+      runId: runId
+    )
+    let evaluate = { [weak self] in
+      guard let self else {
+        completion(.idle)
+        return
+      }
+      BGTaskScheduler.shared.getPendingTaskRequests { requests in
+        let hasPendingRequest = requests.contains {
+          $0.identifier == Self.taskIdentifier
+        }
+        let shouldClaimPendingRequest = self.stateLock.withPreparationLock {
+          hasPendingRequest
+            && !self.taskRunning
+            && !self.deferredPassRunning
+            && !self.mutationQuiesced
+            && !self.notificationAuthorization.isDisabled
+        }
+        if shouldClaimPendingRequest {
+          BGTaskScheduler.shared.cancel(
+            taskRequestWithIdentifier: Self.taskIdentifier
+          )
+          self.markForegroundContinuationsReady()
+          self.recordSchedulingState("pending_handed_off_to_foreground")
+        }
+        let hasMatchingManifest =
+          IronwoodMigrationBackgroundCredentialStore.loadAll()?.contains {
+            $0.network == network
+              && $0.accountUuid == accountUuid
+              && $0.expectedRunId == runId
+          } ?? false
+        let state = self.stateLock.withPreparationLock {
+          migrationPreparationRuntimeState(
+            hasMatchingManifest: hasMatchingManifest,
+            notificationsDisabled:
+              self.notificationAuthorization.isDisabled,
+            submissionInFlight: self.submissionInFlight,
+            taskRunning: self.taskRunning,
+            deferredPassRunning: self.deferredPassRunning,
+            foregroundHandoffRequested:
+              self.foregroundHandoffRequested,
+            foregroundContinuationPending:
+              self.foregroundContinuationScopes.contains(scope),
+            pendingRequest: hasPendingRequest && !shouldClaimPendingRequest
+          )
+        }
+        completion(state)
+      }
+    }
+    let waitForHandoff = stateLock.withPreparationLock {
+      foregroundHandoffRequested && taskRunning
+    }
+    if waitForHandoff {
+      waitForForegroundHandoffCompletion(completion: evaluate)
+    } else {
+      evaluate()
+    }
+  }
+
+  func acknowledgeForegroundContinuation(
+    network: String,
+    accountUuid: String,
+    runId: String
+  ) {
+    let scope = Self.foregroundContinuationScope(
+      network: network,
+      accountUuid: accountUuid,
+      runId: runId
+    )
+    _ = stateLock.withPreparationLock {
+      foregroundContinuationScopes.remove(scope)
+    }
+  }
+
   func registerBackgroundTask() {
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: Self.taskIdentifier,
@@ -108,18 +226,61 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func start(completion: @escaping (Bool) -> Void) {
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        completion(false)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        completion(false)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        completion(false)
+        return
+      }
+      self.startAuthorized(
+        authorizationEpoch: authorizationEpoch,
+        completion: completion
+      )
+    }
+  }
+
+  private func startAuthorized(
+    authorizationEpoch: UInt64,
+    completion: @escaping (Bool) -> Void
+  ) {
     let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
       guard !mutationQuiesced && !submissionInFlight && !taskRunning else {
         return false
       }
+      guard !notificationAuthorization.isDisabled else { return false }
       submissionInFlight = true
       return true
     }
     guard shouldCheckScheduler else {
-      let blockedByMutation = stateLock.withPreparationLock {
-        mutationQuiesced
+      let (blockedByMutation, disabledForNotifications) =
+        stateLock.withPreparationLock {
+          (
+            mutationQuiesced,
+            notificationAuthorization.isDisabled
+          )
+        }
+      completion(
+        !blockedByMutation && !disabledForNotifications
+      )
+      return
+    }
+    guard stateLock.withPreparationLock({
+      notificationAuthorization.generation == authorizationEpoch
+        && !notificationAuthorization.isDisabled
+    }) else {
+      stateLock.withPreparationLock {
+        submissionInFlight = false
       }
-      completion(!blockedByMutation)
+      completion(false)
       return
     }
     recordSchedulingState("checking")
@@ -140,47 +301,133 @@ final class BackgroundMigrationPreparationManager {
         return
       }
       if requests.contains(where: { $0.identifier == Self.taskIdentifier }) {
-        self.stateLock.withPreparationLock { self.submissionInFlight = false }
-        self.recordSchedulingState("pending")
-        completion(true)
+        IronwoodMigrationNotificationGate.shared.status { status in
+          self.stateLock.withPreparationLock {
+            self.submissionInFlight = false
+          }
+          guard status.allowsBackgroundMigration else {
+            IronwoodMigrationNotificationGate.shared.hardDisable()
+            completion(false)
+            return
+          }
+          guard self.enableNotificationWork(
+            ifCurrent: authorizationEpoch
+          ) else {
+            self.stateLock.withPreparationLock {
+              self.submissionInFlight = false
+            }
+            completion(false)
+            return
+          }
+          self.recordSchedulingState("pending")
+          completion(true)
+        }
         return
       }
 
-      self.scheduleWatchdog()
-      let request = BGContinuedProcessingTaskRequest(
-        identifier: Self.taskIdentifier,
-        title: "Preparing migration",
-        subtitle: "You can continue using your device"
-      )
-      request.strategy = .fail
-      do {
-        try BGTaskScheduler.shared.submit(request)
-        self.stateLock.withPreparationLock {
-          self.submissionInFlight = false
+      IronwoodMigrationNotificationGate.shared.status { status in
+        guard status.allowsBackgroundMigration else {
+          self.stateLock.withPreparationLock {
+            self.submissionInFlight = false
+          }
+          IronwoodMigrationNotificationGate.shared.hardDisable()
+          completion(false)
+          return
         }
-        self.recordSchedulingState("submitted")
-        print("[BGPreparation] submitted")
-        completion(true)
-      } catch {
-        self.stateLock.withPreparationLock {
-          self.submissionInFlight = false
+        guard self.enableNotificationWork(
+          ifCurrent: authorizationEpoch
+        ) else {
+          self.stateLock.withPreparationLock {
+            self.submissionInFlight = false
+          }
+          completion(false)
+          return
         }
-        print("[BGPreparation] submit failed: \(error)")
-        let deferred = BackgroundMigrationManager.shared
-          .schedulePreparationHandoff(after: 60)
-        if deferred {
-          self.recordSchedulingState(
-            "deferred_after_submit_failure",
-            error: error
-          )
-          self.cancelWatchdog()
+        self.scheduleWatchdog()
+        let request = BGContinuedProcessingTaskRequest(
+          identifier: Self.taskIdentifier,
+          title: "Preparing migration",
+          subtitle: "You can continue using your device"
+        )
+        request.strategy = .fail
+        let submission = self.stateLock.withPreparationLock {
+          () -> (submitted: Bool, error: Error?) in
+          guard !self.mutationQuiesced,
+            !self.notificationAuthorization.isDisabled,
+            self.notificationAuthorization.generation == authorizationEpoch,
+            self.submissionInFlight
+          else {
+            self.submissionInFlight = false
+            return (false, nil)
+          }
+          do {
+            try BGTaskScheduler.shared.submit(request)
+            self.submissionInFlight = false
+            return (true, nil)
+          } catch {
+            self.submissionInFlight = false
+            return (false, error)
+          }
+        }
+        if submission.submitted {
+          self.recordSchedulingState("submitted")
+          print("[BGPreparation] submitted")
           completion(true)
           return
         }
-        self.recordSchedulingState("failed", error: error)
-        self.postNeedsActionNotification()
-        completion(false)
+        guard let error = submission.error else {
+          self.cancelWatchdog()
+          completion(false)
+          return
+        }
+        print("[BGPreparation] submit failed: \(error)")
+        BackgroundMigrationManager.shared.schedulePreparationHandoff(
+          after: 60
+        ) { deferred in
+          if deferred {
+            self.recordSchedulingState(
+              "deferred_after_submit_failure",
+              error: error
+            )
+            self.cancelWatchdog()
+            completion(true)
+            return
+          }
+          self.recordSchedulingState("failed", error: error)
+          self.postNeedsActionNotification()
+          completion(false)
+        }
       }
+    }
+  }
+
+  func disableForUnauthorizedNotifications() {
+    let monitor = stateLock.withPreparationLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      expired = true
+      submissionInFlight = false
+      notificationAuthorization.disable()
+      foregroundContinuationScopes.removeAll()
+      defer { authorizationMonitor = nil }
+      return authorizationMonitor
+    }
+    monitor?.cancel()
+    BGTaskScheduler.shared.cancel(
+      taskRequestWithIdentifier: Self.taskIdentifier
+    )
+    _ = zcash_cancel_migration_preparation_sync()
+    cancelWatchdog()
+  }
+
+  private func captureNotificationAuthorizationEpoch() -> UInt64 {
+    stateLock.withPreparationLock {
+      notificationAuthorization.generation
+    }
+  }
+
+  private func enableNotificationWork(ifCurrent epoch: UInt64) -> Bool {
+    stateLock.withPreparationLock {
+      notificationAuthorization.authorize(ifCurrent: epoch)
     }
   }
 
@@ -221,6 +468,7 @@ final class BackgroundMigrationPreparationManager {
       expired = true
       submissionInFlight = false
       mutationQuiesced = true
+      foregroundContinuationScopes.removeAll()
     }
     _ = zcash_cancel_migration_preparation_sync()
     queue.async {
@@ -251,9 +499,38 @@ final class BackgroundMigrationPreparationManager {
     updateProgress(syncUnits)
   }
 
-  func runDeferredPass() -> BackgroundMigrationPreparationPassResult {
+  func runDeferredPass(
+    completion: @escaping (BackgroundMigrationPreparationPassResult) -> Void
+  ) {
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        completion(.cancelled)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        completion(.cancelled)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        completion(.cancelled)
+        return
+      }
+      self.queue.async {
+        completion(self.runDeferredPassAuthorized())
+      }
+    }
+  }
+
+  private func runDeferredPassAuthorized()
+    -> BackgroundMigrationPreparationPassResult
+  {
     let mayRun = stateLock.withPreparationLock { () -> Bool in
-      guard !mutationQuiesced && !taskRunning else { return false }
+      guard !mutationQuiesced
+        && !notificationAuthorization.isDisabled
+        && !taskRunning
+      else { return false }
       taskRunning = true
       deferredPassRunning = true
       expired = false
@@ -268,16 +545,25 @@ final class BackgroundMigrationPreparationManager {
       return blockedByMutation ? .cancelled : .deferred(60)
     }
 
+    startAuthorizationMonitoring()
     recordSchedulingState("processing")
     let passResult = runPreparationPass()
     let result =
       passResult == .waitingForConfirmations
       ? .deferred(Self.busyRetryDelay)
       : passResult
-    stateLock.withPreparationLock {
+    let handedOff = stateLock.withPreparationLock { () -> Bool in
+      let handedOff = foregroundHandoffRequested
       taskRunning = false
       deferredPassRunning = false
       foregroundHandoffRequested = false
+      return handedOff
+    }
+    stopAuthorizationMonitoring()
+    if handedOff {
+      markForegroundContinuationsReady()
+      recordSchedulingState("processing_handed_off_to_foreground")
+      return .cancelled
     }
     switch result {
     case .completed:
@@ -321,9 +607,32 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func handle(_ task: BGContinuedProcessingTask) {
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        task.setTaskCompleted(success: true)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        task.setTaskCompleted(success: true)
+        return
+      }
+      self.handleAuthorized(task)
+    }
+  }
+
+  private func handleAuthorized(_ task: BGContinuedProcessingTask) {
     let mayRun = stateLock.withPreparationLock { () -> Bool in
         submissionInFlight = false
-        guard !mutationQuiesced && !taskRunning else { return false }
+        guard !mutationQuiesced
+          && !notificationAuthorization.isDisabled
+          && !taskRunning
+        else { return false }
         taskRunning = true
         expired = false
         foregroundHandoffRequested = false
@@ -336,6 +645,7 @@ final class BackgroundMigrationPreparationManager {
       task.setTaskCompleted(success: true)
       return
     }
+    startAuthorizationMonitoring()
     recordSchedulingState("running")
     updateProgress(25)
 
@@ -361,66 +671,132 @@ final class BackgroundMigrationPreparationManager {
         }
         passResult = self.runPreparationPass()
       }
-      var deferredToProcessing = false
       if case .deferred(let retryDelay) = passResult {
-        deferredToProcessing = BackgroundMigrationManager.shared
-          .schedulePreparationHandoff(after: retryDelay)
-        if !deferredToProcessing {
-          self.postNeedsActionNotification()
-        }
-      }
-      let passCompleted = passResult == .completed
-      if passCompleted || deferredToProcessing {
-        self.updateProgress(1000)
-      }
-      let (handedOff, didExpire, quiescedForMutation) =
-        self.stateLock.withPreparationLock {
-          (
-            self.foregroundHandoffRequested,
-            self.expired,
-            self.mutationQuiesced
+        BackgroundMigrationManager.shared.schedulePreparationHandoff(
+          after: retryDelay
+        ) { deferredToProcessing in
+          if !deferredToProcessing {
+            self.postNeedsActionNotification()
+          }
+          self.finishAuthorizedTask(
+            task,
+            passResult: passResult,
+            deferredToProcessing: deferredToProcessing
           )
         }
-      self.stateLock.withPreparationLock {
-        self.taskRunning = false
-        self.taskProgress = nil
-        self.foregroundHandoffRequested = false
+        return
       }
-      let shouldRecoverInProcessing =
-        didExpire && !handedOff && !quiescedForMutation
-        && self.hasResumablePreparation()
-      let recoveredInProcessing =
-        shouldRecoverInProcessing
-        && BackgroundMigrationManager.shared
-          .schedulePreparationHandoff(after: 60)
-      let success =
-        passCompleted || deferredToProcessing || recoveredInProcessing
-        || handedOff || quiescedForMutation
-      if success {
-        BGTaskScheduler.shared.cancel(
-          taskRequestWithIdentifier: Self.taskIdentifier
+      self.finishAuthorizedTask(
+        task,
+        passResult: passResult,
+        deferredToProcessing: false
+      )
+    }
+  }
+
+  private func finishAuthorizedTask(
+    _ task: BGContinuedProcessingTask,
+    passResult: BackgroundMigrationPreparationPassResult,
+    deferredToProcessing: Bool
+  ) {
+    stopAuthorizationMonitoring()
+    let passCompleted = passResult == .completed
+    if passCompleted || deferredToProcessing {
+      updateProgress(1000)
+    }
+    let (
+      handedOff,
+      didExpire,
+      quiescedForMutation,
+      disabledForNotifications
+    ) =
+      stateLock.withPreparationLock {
+        (
+          foregroundHandoffRequested,
+          expired,
+          mutationQuiesced,
+          notificationAuthorization.isDisabled
         )
       }
-      if quiescedForMutation {
-        self.recordSchedulingState("quiesced_for_mutation")
-        self.cancelWatchdog()
-      } else if handedOff {
-        self.recordSchedulingState("handed_off_to_foreground")
-        self.scheduleWatchdog()
-      } else if deferredToProcessing {
-        self.recordSchedulingState("handed_off_to_processing")
-        self.cancelWatchdog()
-      } else if recoveredInProcessing {
-        self.recordSchedulingState("expired_handed_off_to_processing")
-        self.cancelWatchdog()
-      } else {
-        self.recordSchedulingState(success ? "completed" : "failed")
-        if success {
-          self.cancelWatchdog()
-        }
-      }
-      task.setTaskCompleted(success: success)
+    if handedOff {
+      // Publish the continuation before clearing the running flag so a
+      // foreground state read cannot observe an idle gap between the two.
+      markForegroundContinuationsReady()
     }
+    stateLock.withPreparationLock {
+      taskRunning = false
+      taskProgress = nil
+      foregroundHandoffRequested = false
+    }
+    let shouldRecoverInProcessing =
+      didExpire && !handedOff && !quiescedForMutation
+      && !disabledForNotifications
+      && hasResumablePreparation()
+    if shouldRecoverInProcessing {
+      BackgroundMigrationManager.shared.schedulePreparationHandoff(after: 60) {
+        recoveredInProcessing in
+        self.completeAuthorizedTask(
+          task,
+          passCompleted: passCompleted,
+          deferredToProcessing: deferredToProcessing,
+          recoveredInProcessing: recoveredInProcessing,
+          handedOff: handedOff,
+          quiescedForMutation: quiescedForMutation,
+          disabledForNotifications: disabledForNotifications
+        )
+      }
+      return
+    }
+    completeAuthorizedTask(
+      task,
+      passCompleted: passCompleted,
+      deferredToProcessing: deferredToProcessing,
+      recoveredInProcessing: false,
+      handedOff: handedOff,
+      quiescedForMutation: quiescedForMutation,
+      disabledForNotifications: disabledForNotifications
+    )
+  }
+
+  private func completeAuthorizedTask(
+    _ task: BGContinuedProcessingTask,
+    passCompleted: Bool,
+    deferredToProcessing: Bool,
+    recoveredInProcessing: Bool,
+    handedOff: Bool,
+    quiescedForMutation: Bool,
+    disabledForNotifications: Bool
+  ) {
+    let success =
+      passCompleted || deferredToProcessing || recoveredInProcessing
+      || handedOff || quiescedForMutation || disabledForNotifications
+    if success {
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+    }
+    if disabledForNotifications {
+      recordSchedulingState("disabled_for_notifications")
+      cancelWatchdog()
+    } else if quiescedForMutation {
+      recordSchedulingState("quiesced_for_mutation")
+      cancelWatchdog()
+    } else if handedOff {
+      recordSchedulingState("handed_off_to_foreground")
+      scheduleWatchdog()
+    } else if deferredToProcessing {
+      recordSchedulingState("handed_off_to_processing")
+      cancelWatchdog()
+    } else if recoveredInProcessing {
+      recordSchedulingState("expired_handed_off_to_processing")
+      cancelWatchdog()
+    } else {
+      recordSchedulingState(success ? "completed" : "failed")
+      if success {
+        cancelWatchdog()
+      }
+    }
+    task.setTaskCompleted(success: success)
   }
 
   func hasResumablePreparation() -> Bool {
@@ -459,6 +835,53 @@ final class BackgroundMigrationPreparationManager {
       defaults.set(String(describing: error), forKey: Self.schedulingErrorKey)
     } else {
       defaults.removeObject(forKey: Self.schedulingErrorKey)
+    }
+  }
+
+  private static func foregroundContinuationScope(
+    network: String,
+    accountUuid: String,
+    runId: String
+  ) -> String {
+    "\(network):\(accountUuid):\(runId)"
+  }
+
+  private func waitForForegroundHandoffCompletion(
+    remainingAttempts: Int = 200,
+    completion: @escaping () -> Void
+  ) {
+    let stillHandingOff = stateLock.withPreparationLock {
+      foregroundHandoffRequested && taskRunning
+    }
+    guard stillHandingOff && remainingAttempts > 0 else {
+      completion()
+      return
+    }
+    queue.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+      guard let self else {
+        completion()
+        return
+      }
+      self.waitForForegroundHandoffCompletion(
+        remainingAttempts: remainingAttempts - 1,
+        completion: completion
+      )
+    }
+  }
+
+  private func markForegroundContinuationsReady() {
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return }
+    let scopes = manifests.compactMap { manifest -> String? in
+      guard let runId = manifest.expectedRunId else { return nil }
+      return Self.foregroundContinuationScope(
+        network: manifest.network,
+        accountUuid: manifest.accountUuid,
+        runId: runId
+      )
+    }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes.formUnion(scopes)
     }
   }
 
@@ -583,6 +1006,7 @@ final class BackgroundMigrationPreparationManager {
           ? .cancelled
           : .retry(Self.busyRetryDelay)
       }
+      guard !isStopRequested else { return .cancelled }
       var syncCode = runSync(manifest)
       if syncCode == 3 {
         guard waitForRunningSync() else {
@@ -590,6 +1014,7 @@ final class BackgroundMigrationPreparationManager {
             ? .cancelled
             : .retry(Self.busyRetryDelay)
         }
+        guard !isStopRequested else { return .cancelled }
         syncCode = runSync(manifest)
       }
       if syncCode != 0 {
@@ -621,6 +1046,7 @@ final class BackgroundMigrationPreparationManager {
       print("[BGPreparation] protected data unavailable")
       return .retry(Self.transientRetryDelay)
     }
+    guard !isStopRequested else { return .cancelled }
 
     let credential = Data(manifest.credentialHex.utf8)
     let advanceCode = credential.withUnsafeBytes { bytes in
@@ -682,6 +1108,28 @@ final class BackgroundMigrationPreparationManager {
     return !isStopRequested
   }
 
+  private func startAuthorizationMonitoring() {
+    let monitor = IronwoodMigrationNotificationAuthorizationMonitor()
+    let previous = stateLock.withPreparationLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = monitor }
+      return authorizationMonitor
+    }
+    previous?.cancel()
+    monitor.start {
+      IronwoodMigrationNotificationGate.shared.hardDisable()
+    }
+  }
+
+  private func stopAuthorizationMonitoring() {
+    let monitor = stateLock.withPreparationLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = nil }
+      return authorizationMonitor
+    }
+    monitor?.cancel()
+  }
+
   private func advanceWaitingHeartbeat() {
     let didAdvance = stateLock.withPreparationLock { () -> Bool in
       guard let taskProgress,
@@ -709,6 +1157,7 @@ final class BackgroundMigrationPreparationManager {
   private var isStopRequested: Bool {
     stateLock.withPreparationLock {
       expired || foregroundHandoffRequested
+        || notificationAuthorization.isDisabled
     }
   }
 
@@ -750,6 +1199,11 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func scheduleWatchdog() {
+    guard !stateLock.withPreparationLock({
+      notificationAuthorization.isDisabled
+    }) else {
+      return
+    }
     let content = UNMutableNotificationContent()
     content.title = "Migration preparation paused"
     content.body = "Open Vizor to continue preparing your migration."
@@ -766,7 +1220,7 @@ final class BackgroundMigrationPreparationManager {
     center.removePendingNotificationRequests(
       withIdentifiers: [Self.watchdogIdentifier]
     )
-    center.add(request)
+    addNotificationIfEnabled(request)
   }
 
   private func cancelWatchdog() {
@@ -780,11 +1234,16 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func postNeedsActionNotification() {
+    guard !stateLock.withPreparationLock({
+      notificationAuthorization.isDisabled
+    }) else {
+      return
+    }
     let content = UNMutableNotificationContent()
     content.title = "Continue preparing your migration"
     content.body = "Open and unlock Vizor to continue."
     content.sound = .default
-    UNUserNotificationCenter.current().add(
+    addNotificationIfEnabled(
       UNNotificationRequest(
         identifier: Self.needsActionIdentifier,
         content: content,
@@ -794,17 +1253,43 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func postProofReadyNotification() {
+    guard !stateLock.withPreparationLock({
+      notificationAuthorization.isDisabled
+    }) else {
+      return
+    }
     let content = UNMutableNotificationContent()
     content.title = "Continue your Ironwood migration"
     content.body = "Open Vizor to continue your migration."
     content.sound = .default
-    UNUserNotificationCenter.current().add(
+    addNotificationIfEnabled(
       UNNotificationRequest(
         identifier: Self.proofReadyIdentifier,
         content: content,
         trigger: nil
       )
     )
+  }
+
+  private func addNotificationIfEnabled(_ request: UNNotificationRequest) {
+    guard !stateLock.withPreparationLock({
+      notificationAuthorization.isDisabled
+    }) else {
+      return
+    }
+    let center = UNUserNotificationCenter.current()
+    center.add(request) { _ in
+      let disabled = self.stateLock.withPreparationLock {
+        self.notificationAuthorization.isDisabled
+      }
+      guard disabled else { return }
+      center.removePendingNotificationRequests(
+        withIdentifiers: [request.identifier]
+      )
+      center.removeDeliveredNotifications(
+        withIdentifiers: [request.identifier]
+      )
+    }
   }
 
 }

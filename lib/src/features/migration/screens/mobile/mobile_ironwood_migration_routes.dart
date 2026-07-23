@@ -9,6 +9,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewStatus,
     this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
     this.previewParts,
+    this.previewSurface,
     super.key,
   });
 
@@ -19,11 +20,19 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final rust_sync.MigrationStatus? previewStatus;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
+  final MobileIronwoodMigrationPreviewSurface? previewSurface;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = previewData;
     if (preview != null) {
+      final surface = previewSurface;
+      if (surface != null) {
+        return _MobileIronwoodMigrationPreviewSurface(
+          surface: surface,
+          data: preview,
+        );
+      }
       return _MobileIronwoodMigrationContent(
         step: step,
         data: preview,
@@ -84,6 +93,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         immediateEnabled: !isHardware,
       ),
+      MobileIronwoodMigrationStep.notifications =>
+        const _MobileMigrationNotificationPermissionScreen(),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
@@ -115,10 +126,12 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   const MobileIronwoodMigrationPrivateStatusScreen({
     this.approvedPlan,
+    this.synchronizeOnEntry = true,
     super.key,
   });
 
   final rust_sync.OrchardMigrationPrivatePlan? approvedPlan;
+  final bool synchronizeOnEntry;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -149,7 +162,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
-          approvedPlan: approvedPlan,
+          synchronizeOnEntry: synchronizeOnEntry,
           isHardware:
               ref.watch(accountProvider).value?.activeAccount?.isHardware ??
               false,
@@ -170,41 +183,30 @@ bool _hasMobileMigrationStatusDesign(String phase) {
       phase == kIronwoodMigrationReadyToMigratePhase ||
       phase == kIronwoodMigrationBroadcastScheduledPhase ||
       phase == kIronwoodMigrationBroadcastingPhase ||
-      phase == kIronwoodMigrationWaitingConfirmationsPhase;
+      phase == kIronwoodMigrationWaitingConfirmationsPhase ||
+      phase == kIronwoodMigrationCompletePhase;
 }
 
 class _MobileMigrationLiveStatus extends StatelessWidget {
   const _MobileMigrationLiveStatus({
     required this.data,
     required this.status,
-    required this.approvedPlan,
+    required this.synchronizeOnEntry,
     required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus status;
-  final rust_sync.OrchardMigrationPrivatePlan? approvedPlan;
+  final bool synchronizeOnEntry;
   final bool isHardware;
 
   @override
   Widget build(BuildContext context) {
-    if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      return _MobileMigrationPreparing(
-        data: data,
-        status: status,
-        isHardware: isHardware,
-      );
-    }
-    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
-        isHardware &&
-        status.signedChildPcztCount == 0) {
-      return _MobileKeystoneMigrationReady(data: data, status: status);
-    }
-    return _MobileMigrationMigrating(
+    return _MobileMigrationRedesignedStatus(
       data: data,
       status: status,
-      previewPlan: approvedPlan,
-      previewParts: null,
+      isHardware: isHardware,
+      synchronizeOnEntry: synchronizeOnEntry,
     );
   }
 }

@@ -54,6 +54,18 @@ typedef IronwoodMigrationMnemonicBytesGetter =
 typedef IronwoodMigrationPlatformCheck = bool Function();
 typedef IronwoodMigrationBackgroundScheduler = Future<bool> Function();
 typedef IronwoodMigrationBackgroundCanceler = Future<void> Function();
+typedef IronwoodMigrationPreparationRuntimeStateGetter =
+    Future<IronwoodMigrationPreparationRuntimeState> Function({
+      required String network,
+      required String accountUuid,
+      required String runId,
+    });
+typedef IronwoodMigrationPreparationForegroundContinuationAcknowledger =
+    Future<void> Function({
+      required String network,
+      required String accountUuid,
+      required String runId,
+    });
 typedef IronwoodMigrationAccountRevoker =
     Future<void> Function({
       required String network,
@@ -61,8 +73,54 @@ typedef IronwoodMigrationAccountRevoker =
     });
 typedef IronwoodMigrationNotificationAuthorizationRequester =
     Future<bool> Function();
+typedef IronwoodMigrationNotificationAuthorizationStatusGetter =
+    Future<IronwoodMigrationNotificationAuthorizationStatus> Function();
+typedef IronwoodMigrationNotificationSettingsOpener = Future<bool> Function();
 typedef IronwoodMigrationHardwareAccountCheck =
     bool Function(String accountUuid);
+
+enum IronwoodMigrationNotificationAuthorizationStatus {
+  notDetermined,
+  denied,
+  authorized;
+
+  static IronwoodMigrationNotificationAuthorizationStatus fromNative(
+    Object? value,
+  ) {
+    return switch (value) {
+      'notDetermined' => notDetermined,
+      'denied' => denied,
+      'authorized' => authorized,
+      _ => denied,
+    };
+  }
+
+  bool get allowsBackgroundMigration => this == authorized;
+}
+
+enum IronwoodMigrationPreparationRuntimeState {
+  idle,
+  disabled,
+  scheduled,
+  running,
+  handoffRequested,
+  foregroundContinuationPending;
+
+  static IronwoodMigrationPreparationRuntimeState fromNative(Object? value) {
+    return switch (value) {
+      'disabled' => disabled,
+      'scheduled' => scheduled,
+      'running' => running,
+      'handoffRequested' => handoffRequested,
+      'foregroundContinuationPending' => foregroundContinuationPending,
+      _ => idle,
+    };
+  }
+
+  bool get hasAutomaticBackgroundWork =>
+      this == scheduled || this == running || this == handoffRequested;
+}
+
 typedef IronwoodMigrationSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -324,9 +382,15 @@ class IronwoodMigrationService {
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
+    IronwoodMigrationPreparationRuntimeStateGetter? getPreparationRuntimeState,
+    IronwoodMigrationPreparationForegroundContinuationAcknowledger?
+    acknowledgePreparationForegroundContinuation,
     IronwoodMigrationAccountRevoker? revokeMigrationAccount,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
+    IronwoodMigrationNotificationAuthorizationStatusGetter?
+    getNotificationAuthorizationStatus,
+    IronwoodMigrationNotificationSettingsOpener? openNotificationSettings,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
@@ -372,12 +436,22 @@ class IronwoodMigrationService {
            startBackgroundPreparation ?? _defaultStartBackgroundPreparation,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
+       getPreparationRuntimeState =
+           getPreparationRuntimeState ?? _defaultGetPreparationRuntimeState,
+       acknowledgePreparationForegroundContinuation =
+           acknowledgePreparationForegroundContinuation ??
+           _defaultAcknowledgePreparationForegroundContinuation,
        revokeMigrationAccount =
            revokeMigrationAccount ??
            IronwoodMigrationBackgroundLifecycle.instance.revokeAccount,
-       requestNotificationAuthorization =
+       _requestNotificationAuthorization =
            requestNotificationAuthorization ??
            _defaultRequestNotificationAuthorization,
+       _getNotificationAuthorizationStatus =
+           getNotificationAuthorizationStatus ??
+           _defaultGetNotificationAuthorizationStatus,
+       _openNotificationSettings =
+           openNotificationSettings ?? _defaultOpenNotificationSettings,
        startSoftwareMigration =
            startSoftwareMigration ?? _defaultStartSoftwareMigration,
        getImmediatePlan =
@@ -450,9 +524,16 @@ class IronwoodMigrationService {
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
+  final IronwoodMigrationPreparationRuntimeStateGetter
+  getPreparationRuntimeState;
+  final IronwoodMigrationPreparationForegroundContinuationAcknowledger
+  acknowledgePreparationForegroundContinuation;
   final IronwoodMigrationAccountRevoker revokeMigrationAccount;
   final IronwoodMigrationNotificationAuthorizationRequester
-  requestNotificationAuthorization;
+  _requestNotificationAuthorization;
+  final IronwoodMigrationNotificationAuthorizationStatusGetter
+  _getNotificationAuthorizationStatus;
+  final IronwoodMigrationNotificationSettingsOpener _openNotificationSettings;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
@@ -485,6 +566,56 @@ class IronwoodMigrationService {
 
   bool get supportsBackgroundMigrationRetry =>
       isMobile() && supportsBackgroundMigration();
+
+  Future<IronwoodMigrationNotificationAuthorizationStatus>
+  notificationAuthorizationStatus() {
+    if (!isIOS()) {
+      return Future.value(
+        IronwoodMigrationNotificationAuthorizationStatus.denied,
+      );
+    }
+    return _getNotificationAuthorizationStatus();
+  }
+
+  Future<IronwoodMigrationNotificationAuthorizationStatus>
+  requestNotificationPermission() async {
+    if (!isIOS()) {
+      return IronwoodMigrationNotificationAuthorizationStatus.denied;
+    }
+    await _requestNotificationAuthorization();
+    return _getNotificationAuthorizationStatus();
+  }
+
+  Future<bool> openNotificationSystemSettings() async {
+    if (!isIOS()) return false;
+    return _openNotificationSettings();
+  }
+
+  Future<IronwoodMigrationPreparationRuntimeState> preparationRuntimeState({
+    required String accountUuid,
+    required String runId,
+  }) {
+    if (!isIOS()) {
+      return Future.value(IronwoodMigrationPreparationRuntimeState.idle);
+    }
+    return getPreparationRuntimeState(
+      network: getEndpoint().networkName,
+      accountUuid: accountUuid,
+      runId: runId,
+    );
+  }
+
+  Future<void> acknowledgePreparationContinuation({
+    required String accountUuid,
+    required String runId,
+  }) {
+    if (!isIOS()) return Future.value();
+    return acknowledgePreparationForegroundContinuation(
+      network: getEndpoint().networkName,
+      accountUuid: accountUuid,
+      runId: runId,
+    );
+  }
 
   Future<rust_sync.MigrationStatus> status({
     required String network,
@@ -637,7 +768,6 @@ class IronwoodMigrationService {
     final result = await _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      enrollNotificationsOnActiveRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
@@ -859,16 +989,12 @@ class IronwoodMigrationService {
             credential: credential,
             prepare: true,
           );
-          if (refresh.staged) {
-            await _requestNotificationAuthorizationBestEffort();
-          }
           return refresh.staged;
         }
 
         final scheduled = await scheduleBackgroundMigration();
         if (scheduled) {
           _scheduledBackgroundMigrations.add(_credentialKey(context));
-          await _requestNotificationAuthorizationBestEffort();
         }
         return scheduled;
       }),
@@ -984,9 +1110,6 @@ class IronwoodMigrationService {
               prepare: true,
             );
           }
-          if (currentStatus.activeRunId != null) {
-            await _requestNotificationAuthorizationBestEffort();
-          }
           if (startError != null) {
             Error.throwWithStackTrace(startError, startStackTrace!);
           }
@@ -1033,7 +1156,6 @@ class IronwoodMigrationService {
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      enrollNotificationsOnActiveRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) => completeKeystoneDenominationMigration(
         dbPath: dbPath,
@@ -1082,7 +1204,6 @@ class IronwoodMigrationService {
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      enrollNotificationsOnActiveRun: true,
       operation: (credential) => completeKeystoneBatchMigration(
         dbPath: dbPath,
         network: endpoint.networkName,
@@ -1099,7 +1220,6 @@ class IronwoodMigrationService {
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
     required Future<T> Function(_MigrationCredential credential) operation,
-    bool enrollNotificationsOnActiveRun = false,
     bool prepareOutboxAfterOperation = true,
     Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
   }) async {
@@ -1193,11 +1313,6 @@ class IronwoodMigrationService {
               );
             }
           }
-          if (enrollNotificationsOnActiveRun &&
-              currentStatus.activeRunId != null) {
-            await _requestNotificationAuthorizationBestEffort();
-          }
-
           if (operationError != null) {
             Error.throwWithStackTrace(operationError, operationStackTrace!);
           }
@@ -1287,7 +1402,6 @@ class IronwoodMigrationService {
     _scheduledBackgroundMigrations.add(_credentialKey(context));
     await runMigrationOutboxOnceNow();
     await _reconcileMigrationOutboxReceipts(context: context);
-    await _requestNotificationAuthorizationBestEffort();
     return true;
   }
 
@@ -1615,18 +1729,6 @@ class IronwoodMigrationService {
     }
   }
 
-  Future<void> _requestNotificationAuthorizationBestEffort() async {
-    if (!isIOS()) return;
-    try {
-      await requestNotificationAuthorization();
-    } catch (error) {
-      debugPrint(
-        'Failed to request Ironwood migration notification authorization: '
-        '$error',
-      );
-    }
-  }
-
   Future<void> _reconcileBackgroundPreparationBestEffort(
     rust_sync.MigrationStatus status,
   ) async {
@@ -1635,6 +1737,8 @@ class IronwoodMigrationService {
       return;
     }
     try {
+      final authorization = await _getNotificationAuthorizationStatus();
+      if (!authorization.allowsBackgroundMigration) return;
       await startBackgroundPreparation();
     } catch (error) {
       debugPrint(
@@ -1748,11 +1852,54 @@ Future<void> _defaultCancelBackgroundMigration() async {
   await _backgroundMigrationChannel.invokeMethod<void>('cancel');
 }
 
+Future<IronwoodMigrationPreparationRuntimeState>
+_defaultGetPreparationRuntimeState({
+  required String network,
+  required String accountUuid,
+  required String runId,
+}) async {
+  if (!Platform.isIOS) return IronwoodMigrationPreparationRuntimeState.idle;
+  final value = await _backgroundMigrationChannel.invokeMethod<String>(
+    'getPreparationRuntimeState',
+    {'network': network, 'accountUuid': accountUuid, 'runId': runId},
+  );
+  return IronwoodMigrationPreparationRuntimeState.fromNative(value);
+}
+
+Future<void> _defaultAcknowledgePreparationForegroundContinuation({
+  required String network,
+  required String accountUuid,
+  required String runId,
+}) async {
+  if (!Platform.isIOS) return;
+  await _backgroundMigrationChannel.invokeMethod<bool>(
+    'ackPreparationForegroundContinuation',
+    {'network': network, 'accountUuid': accountUuid, 'runId': runId},
+  );
+}
+
 Future<bool> _defaultRequestNotificationAuthorization() async {
-  final authorized = await _backgroundMigrationChannel.invokeMethod<bool>(
+  final status = await _backgroundMigrationChannel.invokeMethod<String>(
     'requestNotificationAuthorization',
   );
-  return authorized ?? false;
+  return IronwoodMigrationNotificationAuthorizationStatus.fromNative(
+    status,
+  ).allowsBackgroundMigration;
+}
+
+Future<IronwoodMigrationNotificationAuthorizationStatus>
+_defaultGetNotificationAuthorizationStatus() async {
+  final status = await _backgroundMigrationChannel.invokeMethod<String>(
+    'getNotificationAuthorizationStatus',
+  );
+  return IronwoodMigrationNotificationAuthorizationStatus.fromNative(status);
+}
+
+Future<bool> _defaultOpenNotificationSettings() async {
+  return await _backgroundMigrationChannel.invokeMethod<bool>(
+        'openNotificationSettings',
+      ) ??
+      false;
 }
 
 Future<Map<String, String>> _defaultStageMigrationOutboxBatch(

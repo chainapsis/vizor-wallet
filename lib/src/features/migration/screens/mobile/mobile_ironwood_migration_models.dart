@@ -4,6 +4,7 @@ enum MobileIronwoodMigrationStep {
   intro,
   howItWorks,
   options,
+  notifications,
   privateReview,
   fastReview,
   preparing,
@@ -16,57 +17,34 @@ enum MobileIronwoodMigrationReviewPreviewStage {
   review,
 }
 
+/// Static-first states for reviewing the mobile migration redesign without
+/// coupling Widgetbook to notification permissions, native background work,
+/// wallet sync, or Rust migration state.
+enum MobileIronwoodMigrationPreviewSurface {
+  notificationsPrompt,
+  notificationsConfirmation,
+  preparationActive,
+  preparationPaused,
+  preparationPausedKeystone,
+  preparationSyncing,
+  syncing,
+  preparationCompleteModal,
+  migrationWaitingNotificationsOn,
+  migrationWaitingNotificationsOff,
+  migrationNeedsInput,
+  migrationBroadcasting,
+  migrationComplete,
+  homeAttention,
+  homeAttentionModal,
+  keystoneScanHelp,
+}
+
 const _migrationProgress = 60 / 196;
 const _migrationAnalysisPreviewProgress = 72 / 196;
 const _migrationAnalysisProgressDuration = Duration(milliseconds: 2745);
 const _migrationAnalysisCompletionDuration = Duration(milliseconds: 575);
 const _migrationAnalysisTransitionDuration = Duration(milliseconds: 420);
 const _migrationAnalysisEaseOut = Cubic(0.23, 1, 0.32, 1);
-
-Future<void> _showMobileMigrationTimingSheet(BuildContext context) {
-  return showAppMobileSheet<void>(
-    context: context,
-    builder: (sheetContext) {
-      final colors = sheetContext.colors;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          AppSpacing.base,
-          AppSpacing.sm,
-          AppSpacing.base,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'About migration timing',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Vizor spaces private transfers across privacy checkpoints. '
-              'The estimate updates as blocks arrive and transactions are '
-              'confirmed.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppButton(
-              variant: AppButtonVariant.secondary,
-              expand: true,
-              onPressed: () => Navigator.of(sheetContext).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
 
 class _MigrationAnalysisProgressStep {
   const _MigrationAnalysisProgressStep({

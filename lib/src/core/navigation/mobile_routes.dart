@@ -8,6 +8,7 @@ import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
 import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
         MobileIronwoodMigrationKeystoneBatchSignScreen,
@@ -315,16 +316,31 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       ),
     ),
     GoRoute(
+      path: '/migration/private/notifications',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.notifications,
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/migration/private/status',
       pageBuilder: (context, state) {
-        final approvedPlan = switch (state.extra) {
-          rust_sync.OrchardMigrationPrivatePlan plan => plan,
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationStatusEntry value => value,
+          rust_sync.OrchardMigrationPrivatePlan plan =>
+            MobileIronwoodMigrationStatusEntry(
+              approvedPlan: plan,
+              synchronizeOnEntry: false,
+            ),
           _ => null,
         };
         return CupertinoPage(
           key: state.pageKey,
           child: MobileIronwoodMigrationPrivateStatusScreen(
-            approvedPlan: approvedPlan,
+            approvedPlan: entry?.approvedPlan,
+            synchronizeOnEntry: entry?.synchronizeOnEntry ?? true,
           ),
         );
       },
@@ -351,9 +367,8 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
       ),
     ),
-    // The Immediate path is intentionally not linked from the production
-    // option picker until its migration backend exists. Keeping the supplied
-    // review UI routable lets deterministic previews validate the design.
+    // Immediate migration skips notification setup and opens its review
+    // directly from the production option picker.
     GoRoute(
       path: '/migration/fast/review',
       pageBuilder: (context, state) => CupertinoPage(

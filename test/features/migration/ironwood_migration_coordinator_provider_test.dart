@@ -36,7 +36,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
-  test('advances software signing without a migration screen', () async {
+  test('same-session permit advances software signing', () async {
     final statuses = {
       _softwareUuid: _status('ready_to_migrate'),
       _hardwareUuid: _status('ready_to_migrate'),
@@ -56,9 +56,11 @@ void main() {
       fireImmediately: true,
     );
     addTearDown(subscription.close);
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow(forceAdvance: true);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    await coordinator.refreshNow(forceAdvance: true);
 
     expect(softwareStarts, [_softwareUuid]);
     expect(broadcasts, [_softwareUuid]);
@@ -95,9 +97,11 @@ void main() {
       );
       addTearDown(subscription.close);
       await container.read(syncProvider.future);
-      await container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow(forceAdvance: true);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      await coordinator.refreshNow(forceAdvance: true);
 
       expect(broadcasts, [_softwareUuid]);
       expect(softwareStarts, isEmpty);
@@ -133,36 +137,67 @@ void main() {
     expect(broadcasts, isEmpty);
   });
 
-  test(
-    'automatically broadcasts a due scheduled migration in foreground',
-    () async {
-      final statuses = {
-        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
-        _hardwareUuid: _status('complete', activeRunId: null),
-      };
-      final broadcasts = <String>[];
-      final container = _container(
-        statuses: statuses,
-        softwareStarts: [],
-        broadcasts: broadcasts,
-        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        ironwoodMigrationCoordinatorProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
+  test('reentry refresh is read-only without a foreground permit', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'broadcast_scheduled',
+        signedChildPcztCount: 1,
+        nextActionHeight: 1_000,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final advances = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: advances,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
 
-      await container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow();
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow(forceAdvance: true);
 
-      expect(broadcasts, [_softwareUuid]);
-    },
-  );
+    expect(advances, isEmpty);
+  });
+
+  test('same-session permit broadcasts a due scheduled migration', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: broadcasts,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    await coordinator.refreshNow();
+
+    expect(broadcasts, [_softwareUuid]);
+  });
 
   test(
     'manual retry runs again after an automatic attempt in flight',
@@ -197,13 +232,13 @@ void main() {
       addTearDown(subscription.close);
       await container.read(syncProvider.future);
 
-      final automatic = container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow();
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      final automatic = coordinator.refreshNow();
       await firstAttemptStarted.future;
-      final manual = container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .retry(_softwareUuid);
+      final manual = coordinator.retry(_softwareUuid);
       await Future<void>.delayed(Duration.zero);
       expect(attemptCount, 1);
 
@@ -240,9 +275,11 @@ void main() {
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
 
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    await coordinator.refreshNow();
 
     expect(advances, [_softwareUuid]);
   });
@@ -274,9 +311,11 @@ void main() {
       addTearDown(subscription.close);
       await container.read(syncProvider.future);
 
-      await container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow();
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_hardwareUuid);
+      await coordinator.refreshNow();
 
       expect(advances, [_hardwareUuid]);
     },
@@ -307,43 +346,44 @@ void main() {
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
 
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    await coordinator.refreshNow();
 
     expect(advances, isEmpty);
   });
 
-  test(
-    'automatically broadcasts a due Keystone migration in foreground',
-    () async {
-      final statuses = {
-        _softwareUuid: _status('complete', activeRunId: null),
-        _hardwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
-      };
-      final broadcasts = <String>[];
-      final container = _container(
-        statuses: statuses,
-        softwareStarts: [],
-        broadcasts: broadcasts,
-        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        ironwoodMigrationCoordinatorProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
+  test('explicit Keystone permit broadcasts a due migration', () async {
+    final statuses = {
+      _softwareUuid: _status('complete', activeRunId: null),
+      _hardwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+    };
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: broadcasts,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
 
-      await container
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_hardwareUuid);
+    await coordinator.refreshNow();
 
-      expect(broadcasts, [_hardwareUuid]);
-    },
-  );
+    expect(broadcasts, [_hardwareUuid]);
+  });
 
   test('one account failure does not block another account recovery', () async {
     final statuses = {
@@ -372,9 +412,12 @@ void main() {
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
 
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantForegroundProgressPermit(_hardwareUuid);
+    await coordinator.refreshNow();
 
     expect(broadcasts, [_softwareUuid, _hardwareUuid]);
     expect(
@@ -499,14 +542,21 @@ void main() {
       ironwoodMigrationCoordinatorProvider.notifier,
     );
 
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
     coordinator.setForeground(false);
     await coordinator.refreshNow(forceAdvance: true);
 
     expect(statusCalls, isEmpty);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .foregroundProgressPermits,
+      isEmpty,
+    );
   });
 
   testWidgets(
-    'initial recovery starts bound preparation once and refreshes stay read-only',
+    'initial status refresh does not restart bound background preparation',
     (tester) async {
       final store = IronwoodMigrationBackgroundCredentialStore();
       await _bindBackgroundPreparationManifest(store);
@@ -534,7 +584,7 @@ void main() {
           ),
         ),
       );
-      await _pumpUntil(tester, () => preparationStarts.length == 1);
+      await tester.pump();
 
       (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
         SyncState(scannedHeight: 1, chainTipHeight: 1),
@@ -544,11 +594,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(preparationStarts, [_softwareUuid]);
+      expect(preparationStarts, isEmpty);
     },
   );
 
-  testWidgets('initial recovery includes a bound Keystone preparation', (
+  testWidgets('initial status refresh does not restart Keystone preparation', (
     tester,
   ) async {
     final store = IronwoodMigrationBackgroundCredentialStore();
@@ -574,13 +624,13 @@ void main() {
         child: const IronwoodMigrationCoordinatorHost(child: SizedBox.shrink()),
       ),
     );
-    await _pumpUntil(tester, () => preparationStarts.length == 1);
+    await tester.pump(const Duration(milliseconds: 50));
 
-    expect(preparationStarts, hasLength(1));
+    expect(preparationStarts, isEmpty);
   });
 
   testWidgets(
-    'unlock and foreground resume each recover bound preparation once',
+    'unlock and foreground resume keep preparation paused for user action',
     (tester) async {
       final store = IronwoodMigrationBackgroundCredentialStore();
       await _bindBackgroundPreparationManifest(store);
@@ -616,16 +666,16 @@ void main() {
 
       (container.read(appSecurityProvider.notifier) as _MutableSecurityNotifier)
           .setUnlocked(true);
-      await _pumpUntil(tester, () => preparationStarts.length == 1);
+      await tester.pump(const Duration(milliseconds: 50));
 
       final coordinator = container.read(
         ironwoodMigrationCoordinatorProvider.notifier,
       );
       coordinator.setForeground(false);
       coordinator.setForeground(true);
-      await _pumpUntil(tester, () => preparationStarts.length == 2);
+      await tester.pump(const Duration(milliseconds: 50));
 
-      expect(preparationStarts, [_softwareUuid, _softwareUuid]);
+      expect(preparationStarts, isEmpty);
     },
   );
 
@@ -770,13 +820,6 @@ Future<void> _bindBackgroundPreparationManifest(
     accountUuid: accountUuid,
     expectedRunId: 'run-1',
   );
-}
-
-Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
-  for (var attempt = 0; attempt < 30 && !condition(); attempt++) {
-    await tester.pump(const Duration(milliseconds: 10));
-  }
-  expect(condition(), isTrue);
 }
 
 class _MutableAccountNotifier extends AccountNotifier {

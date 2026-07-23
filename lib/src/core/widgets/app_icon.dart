@@ -73,6 +73,7 @@ abstract final class AppIcons {
   static const migrationSplit = 'migration_split';
   static const migrationTimer = 'migration_timer';
   static const night = 'night';
+  static const notificationBell = 'notification_bell';
   static const options = 'options';
   static const paid = 'paid';
   static const paste = 'paste';

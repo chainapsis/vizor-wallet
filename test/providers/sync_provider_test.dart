@@ -6,6 +6,42 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 void main() {
+  test('migration entry restarts a sync from an older foreground epoch', () {
+    expect(
+      shouldRestartSyncForMigrationEntry(
+        hasAttachedSync: true,
+        activeSyncStartedInForeground: true,
+        activeSyncForegroundEpoch: 2,
+        currentForegroundEpoch: 3,
+      ),
+      isTrue,
+    );
+  });
+
+  test('migration entry joins a sync started in the current foreground', () {
+    expect(
+      shouldRestartSyncForMigrationEntry(
+        hasAttachedSync: true,
+        activeSyncStartedInForeground: true,
+        activeSyncForegroundEpoch: 3,
+        currentForegroundEpoch: 3,
+      ),
+      isFalse,
+    );
+  });
+
+  test('migration entry restarts a sync that began in background', () {
+    expect(
+      shouldRestartSyncForMigrationEntry(
+        hasAttachedSync: true,
+        activeSyncStartedInForeground: false,
+        activeSyncForegroundEpoch: 3,
+        currentForegroundEpoch: 3,
+      ),
+      isTrue,
+    );
+  });
+
   test(
     'clearCachedWalletDbPath forces the next DB path lookup to refresh',
     () async {

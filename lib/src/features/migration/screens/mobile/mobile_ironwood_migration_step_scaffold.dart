@@ -3,7 +3,7 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 class _MobileMigrationStepScaffold extends StatelessWidget {
   const _MobileMigrationStepScaffold({
     required this.onBack,
-    required this.stepLabel,
+    required this.navTitle,
     required this.title,
     required this.child,
     required this.bottom,
@@ -13,7 +13,7 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
   });
 
   final VoidCallback onBack;
-  final String stepLabel;
+  final String navTitle;
   final String title;
   final String? subtitle;
   final Widget child;
@@ -33,7 +33,7 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
             Transform.translate(
               offset: const Offset(0, 20),
               child: MobileTopNav.back(
-                title: stepLabel,
+                title: navTitle,
                 titleStyle: AppTypography.headlineSmall,
                 onBack: onBack,
               ),
@@ -114,7 +114,7 @@ class _MobilePrivateReviewScaffold extends StatelessWidget {
                 Transform.translate(
                   offset: const Offset(0, 20),
                   child: MobileTopNav.back(
-                    title: 'Step 3/3',
+                    title: 'Private Migration',
                     titleStyle: AppTypography.headlineSmall,
                     onBack: onBack,
                   ),
@@ -170,7 +170,6 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
   final VoidCallback onBack;
   final Widget child;
   final Widget bottom;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -189,7 +188,7 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
             Transform.translate(
               offset: const Offset(0, 20),
               child: MobileTopNav.back(
-                title: 'Step 3/3',
+                title: 'Fast Migration',
                 titleStyle: AppTypography.headlineSmall,
                 onBack: onBack,
               ),

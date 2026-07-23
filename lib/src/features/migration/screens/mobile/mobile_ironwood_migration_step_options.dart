@@ -85,26 +85,31 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                               ),
                               if (recommended) ...[
                                 const SizedBox(width: AppSpacing.xs),
-                                DecoratedBox(
-                                  key: const ValueKey(
-                                    'mobile_ironwood_recommended_badge',
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF00A460),
-                                    borderRadius: BorderRadius.circular(
-                                      AppRadii.xSmall,
+                                Flexible(
+                                  child: DecoratedBox(
+                                    key: const ValueKey(
+                                      'mobile_ironwood_recommended_badge',
                                     ),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppSpacing.xs,
-                                      vertical: AppSpacing.xxs,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF00A460),
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadii.xSmall,
+                                      ),
                                     ),
-                                    child: Text(
-                                      'Recommended',
-                                      style: AppTypography.labelLarge.copyWith(
-                                        color: const Color(0xFFD3FFE4),
-                                        fontWeight: FontWeight.w600,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.xs,
+                                        vertical: AppSpacing.xxs,
+                                      ),
+                                      child: Text(
+                                        'Recommended',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTypography.labelLarge
+                                            .copyWith(
+                                              color: const Color(0xFFD3FFE4),
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                       ),
                                     ),
                                   ),

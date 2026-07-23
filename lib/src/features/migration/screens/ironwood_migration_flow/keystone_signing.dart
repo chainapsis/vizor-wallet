@@ -99,6 +99,65 @@ class _IronwoodMigrationKeystonePrivateSignScreen
 
 enum _KeystonePrivateSignStep { denominations, batch }
 
+class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
+  const MobileIronwoodKeystoneScanHelpBody({
+    required this.onConfirm,
+    super.key,
+  });
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF98F0E),
+            shape: BoxShape.circle,
+          ),
+          child: SizedBox.square(
+            dimension: 48,
+            child: Center(
+              child: AppIcon(
+                AppIcons.keystoneScan,
+                size: 28,
+                color: colors.icon.inverse,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'Having issues scanning the QR code?',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'There may be a newer version of Keystone’s Cypherpunk firmware '
+          'available. Check that you have the latest version.',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        AppButton(
+          expand: true,
+          height: 50,
+          onPressed: onConfirm,
+          child: const Text('OK, I’ll check'),
+        ),
+      ],
+    );
+  }
+}
+
 extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get logName => switch (this) {
     _KeystonePrivateSignStep.denominations => 'denominations',
@@ -452,6 +511,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         approvedSchedule: widget.approvedSchedule,
       );
       if (!mounted) return;
+      ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .grantForegroundProgressPermit(accountUuid);
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;
@@ -462,7 +524,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           accountUuid: accountUuid,
         ),
       );
-      context.go('/migration/private/status');
+      context.go(
+        '/migration/private/status',
+        extra: const MobileIronwoodMigrationStatusEntry(
+          synchronizeOnEntry: false,
+        ),
+      );
     } catch (e, st) {
       log(
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
@@ -645,6 +712,26 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               });
             },
       onCancel: () => unawaited(_returnToReview()),
+      onShowScanHelp: () => unawaited(_showKeystoneScanHelp()),
+    );
+  }
+
+  Future<void> _showKeystoneScanHelp() {
+    return showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.base,
+            AppSpacing.base,
+            AppSpacing.base,
+            AppSpacing.s,
+          ),
+          child: MobileIronwoodKeystoneScanHelpBody(
+            onConfirm: () => Navigator.of(sheetContext).pop(),
+          ),
+        );
+      },
     );
   }
 

@@ -85,7 +85,223 @@ enum IronwoodMigrationBackgroundCredentialStore {
   }
 }
 
+enum IronwoodMigrationNotificationAuthorizationStatus: String, Equatable {
+  case notDetermined
+  case denied
+  case authorized
+
+  init(_ status: UNAuthorizationStatus) {
+    switch status {
+    case .notDetermined:
+      self = .notDetermined
+    case .denied:
+      self = .denied
+    case .authorized, .provisional, .ephemeral:
+      self = .authorized
+    @unknown default:
+      self = .denied
+    }
+  }
+
+  var allowsBackgroundMigration: Bool {
+    self == .authorized
+  }
+}
+
+enum IronwoodMigrationOutboxArmSchedulePolicy {
+  static func reportsSuccess(
+    authorization: IronwoodMigrationNotificationAuthorizationStatus,
+    submitted: Bool
+  ) -> Bool {
+    !authorization.allowsBackgroundMigration || submitted
+  }
+}
+
+struct IronwoodMigrationNotificationAuthorizationEpochState {
+  private(set) var generation: UInt64 = 0
+  private(set) var isDisabled = false
+
+  mutating func disable() {
+    generation &+= 1
+    isDisabled = true
+  }
+
+  mutating func authorize(ifCurrent expectedGeneration: UInt64) -> Bool {
+    guard generation == expectedGeneration else { return false }
+    isDisabled = false
+    return true
+  }
+}
+
+enum IronwoodMigrationOutboxWakeDisposition: Equatable {
+  case continueBackgroundWork
+  case finishForegroundOnly
+
+  var shouldDeliverNotifications: Bool {
+    self == .continueBackgroundWork
+  }
+
+  var shouldReschedule: Bool {
+    self == .continueBackgroundWork
+  }
+
+  var taskCompletionIsSuccessful: Bool {
+    self == .finishForegroundOnly
+  }
+}
+
+final class IronwoodMigrationNotificationAuthorizationMonitor {
+  typealias StatusProvider =
+    (@escaping (IronwoodMigrationNotificationAuthorizationStatus) -> Void) -> Void
+
+  private let pollInterval: TimeInterval
+  private let queue: DispatchQueue
+  private let statusProvider: StatusProvider
+  private let lock = NSLock()
+  private var timer: DispatchSourceTimer?
+  private var checkInFlight = false
+  private var isStopped = true
+  private var unauthorizedHandler: (() -> Void)?
+
+  init(
+    pollInterval: TimeInterval = 1,
+    queue: DispatchQueue = DispatchQueue(
+      label: "com.keplr.vizor.ironwood-notification-authorization",
+      qos: .utility
+    ),
+    statusProvider: @escaping StatusProvider =
+      IronwoodMigrationNotificationGate.shared.status
+  ) {
+    self.pollInterval = pollInterval
+    self.queue = queue
+    self.statusProvider = statusProvider
+  }
+
+  func start(onUnauthorized: @escaping () -> Void) {
+    let source = DispatchSource.makeTimerSource(queue: queue)
+    let shouldStart = lock.vizorWithLock { () -> Bool in
+      guard timer == nil else { return false }
+      isStopped = false
+      unauthorizedHandler = onUnauthorized
+      timer = source
+      return true
+    }
+    guard shouldStart else { return }
+    source.schedule(deadline: .now(), repeating: pollInterval)
+    source.setEventHandler { [weak self] in
+      self?.checkAuthorization()
+    }
+    source.resume()
+  }
+
+  func cancel() {
+    let source = lock.vizorWithLock { () -> DispatchSourceTimer? in
+      guard !isStopped || timer != nil else { return nil }
+      isStopped = true
+      checkInFlight = false
+      unauthorizedHandler = nil
+      defer { timer = nil }
+      return timer
+    }
+    source?.setEventHandler {}
+    source?.cancel()
+  }
+
+  private func checkAuthorization() {
+    let shouldCheck = lock.vizorWithLock { () -> Bool in
+      guard !isStopped && !checkInFlight else { return false }
+      checkInFlight = true
+      return true
+    }
+    guard shouldCheck else { return }
+
+    statusProvider { [weak self] status in
+      guard let self else { return }
+      guard !status.allowsBackgroundMigration else {
+        self.lock.vizorWithLock {
+          self.checkInFlight = false
+        }
+        return
+      }
+
+      let stopped = self.lock.vizorWithLock {
+        () -> (DispatchSourceTimer?, (() -> Void)?) in
+        guard !self.isStopped else {
+          self.checkInFlight = false
+          return (nil, nil)
+        }
+        self.isStopped = true
+        self.checkInFlight = false
+        let source = self.timer
+        let handler = self.unauthorizedHandler
+        self.timer = nil
+        self.unauthorizedHandler = nil
+        return (source, handler)
+      }
+      stopped.0?.setEventHandler {}
+      stopped.0?.cancel()
+      stopped.1?()
+    }
+  }
+}
+
+final class IronwoodMigrationNotificationGate {
+  static let shared = IronwoodMigrationNotificationGate()
+
+  private init() {}
+
+  func status(
+    completion: @escaping (IronwoodMigrationNotificationAuthorizationStatus) -> Void
+  ) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      completion(
+        IronwoodMigrationNotificationAuthorizationStatus(
+          settings.authorizationStatus
+        )
+      )
+    }
+  }
+
+  func requestAuthorization(
+    completion: @escaping (IronwoodMigrationNotificationAuthorizationStatus) -> Void
+  ) {
+    UNUserNotificationCenter.current().requestAuthorization(
+      options: [.alert, .sound, .badge]
+    ) { _, _ in
+      self.status(completion: completion)
+    }
+  }
+
+  func openSettings(completion: @escaping (Bool) -> Void) {
+    DispatchQueue.main.async {
+      guard let url = URL(string: UIApplication.openSettingsURLString) else {
+        completion(false)
+        return
+      }
+      UIApplication.shared.open(url, options: [:], completionHandler: completion)
+    }
+  }
+
+  func enforceOnForeground() {
+    status { status in
+      guard !status.allowsBackgroundMigration else { return }
+      self.hardDisable()
+    }
+  }
+
+  func hardDisable() {
+    BackgroundMigrationManager.shared.disableForUnauthorizedNotifications()
+    if #available(iOS 26.0, *) {
+      BackgroundMigrationPreparationManager.shared
+        .disableForUnauthorizedNotifications()
+    }
+    BackgroundMigrationNotification.removeAll()
+  }
+}
+
 private enum BackgroundMigrationNotification {
+  private static let identifierPrefix =
+    "com.keplr.vizor.ironwood-"
   static let needsActionIdentifier =
     "com.keplr.vizor.ironwood-migration.needs-action"
 
@@ -117,6 +333,24 @@ private enum BackgroundMigrationNotification {
     center.removePendingNotificationRequests(withIdentifiers: identifiers)
     center.removeDeliveredNotifications(withIdentifiers: identifiers)
   }
+
+  static func removeAll() {
+    let center = UNUserNotificationCenter.current()
+    center.getPendingNotificationRequests { requests in
+      center.removePendingNotificationRequests(
+        withIdentifiers: requests
+          .map(\.identifier)
+          .filter { $0.hasPrefix(identifierPrefix) }
+      )
+    }
+    center.getDeliveredNotifications { notifications in
+      center.removeDeliveredNotifications(
+        withIdentifiers: notifications
+          .map(\.request.identifier)
+          .filter { $0.hasPrefix(identifierPrefix) }
+      )
+    }
+  }
 }
 
 final class BackgroundMigrationManager {
@@ -130,7 +364,12 @@ final class BackgroundMigrationManager {
   private let stateLock = NSLock()
   private var expired = false
   private var mutationQuiesced = false
+  private var foregroundHandoffRequested = false
+  private var notificationAuthorization =
+    IronwoodMigrationNotificationAuthorizationEpochState()
   private var activeCancellation: BackgroundMigrationCancellation?
+  private var authorizationMonitor:
+    IronwoodMigrationNotificationAuthorizationMonitor?
 
   private init() {}
 
@@ -140,6 +379,30 @@ final class BackgroundMigrationManager {
 
   private var isMutationQuiesced: Bool {
     stateLock.vizorWithLock { mutationQuiesced }
+  }
+
+  private var isNotificationWorkDisabled: Bool {
+    stateLock.vizorWithLock { notificationAuthorization.isDisabled }
+  }
+
+  private var wakeDisposition: IronwoodMigrationOutboxWakeDisposition {
+    isNotificationWorkDisabled || isForegroundHandoffRequested
+      ? .finishForegroundOnly
+      : .continueBackgroundWork
+  }
+
+  private var isForegroundHandoffRequested: Bool {
+    stateLock.vizorWithLock { foregroundHandoffRequested }
+  }
+
+  func handoffToForeground() {
+    stateLock.vizorWithLock {
+      foregroundHandoffRequested = true
+      activeCancellation?.cancel()
+    }
+    if #available(iOS 26.0, *) {
+      BackgroundMigrationPreparationManager.shared.handoffToForeground()
+    }
   }
 
   func registerBackgroundTask() {
@@ -155,37 +418,63 @@ final class BackgroundMigrationManager {
     }
   }
 
-  func requestNotificationAuthorization(
+  func schedule(
+    earliestBeginDate: Date = Date(),
     completion: @escaping (Bool) -> Void
   ) {
-    UNUserNotificationCenter.current().requestAuthorization(
-      options: [.alert, .sound, .badge]
-    ) { granted, _ in completion(granted) }
-  }
-
-  @discardableResult
-  func schedule(earliestBeginDate: Date = Date()) -> Bool {
-    guard !isMutationQuiesced else { return false }
-    BGTaskScheduler.shared.cancel(
-      taskRequestWithIdentifier: Self.taskIdentifier
-    )
-    let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
-    request.requiresNetworkConnectivity = true
-    request.requiresExternalPower = false
-    request.earliestBeginDate = earliestBeginDate
-    do {
-      try BGTaskScheduler.shared.submit(request)
-      return true
-    } catch {
-      print("[BGMigration] schedule failed: \(error)")
-      return false
+    guard !isMutationQuiesced else {
+      completion(false)
+      return
+    }
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        completion(false)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        completion(false)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        completion(false)
+        return
+      }
+      completion(self.submitAuthorized(earliestBeginDate: earliestBeginDate))
     }
   }
 
-  func schedulePreparationHandoff(after delay: TimeInterval) -> Bool {
+  private func submitAuthorized(earliestBeginDate: Date) -> Bool {
+    stateLock.vizorWithLock {
+      guard !mutationQuiesced && !notificationAuthorization.isDisabled else {
+        return false
+      }
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
+      request.requiresNetworkConnectivity = true
+      request.requiresExternalPower = false
+      request.earliestBeginDate = earliestBeginDate
+      do {
+        try BGTaskScheduler.shared.submit(request)
+        return true
+      } catch {
+        print("[BGMigration] schedule failed: \(error)")
+        return false
+      }
+    }
+  }
+
+  func schedulePreparationHandoff(
+    after delay: TimeInterval,
+    completion: @escaping (Bool) -> Void
+  ) {
     let effectiveDelay = hasRunnableOutboxWork() ? min(delay, 60) : delay
-    return schedule(
-      earliestBeginDate: Date().addingTimeInterval(effectiveDelay)
+    schedule(
+      earliestBeginDate: Date().addingTimeInterval(effectiveDelay),
+      completion: completion
     )
   }
 
@@ -195,7 +484,7 @@ final class BackgroundMigrationManager {
 
   func cancelIfNoRunnableWork() {
     if hasRunnableOutboxWork() || hasResumablePreparationWork() {
-      _ = schedule(earliestBeginDate: Date().addingTimeInterval(60))
+      schedule(earliestBeginDate: Date().addingTimeInterval(60)) { _ in }
     } else {
       cancel()
     }
@@ -208,10 +497,44 @@ final class BackgroundMigrationManager {
     }
   }
 
-  func resumeAfterFailedMutation() -> Bool {
+  func resumeAfterFailedMutation(completion: @escaping (Bool) -> Void) {
     endMutationQuiescence()
-    guard hasRunnableOutboxWork() else { return true }
-    return schedule(earliestBeginDate: Date().addingTimeInterval(60))
+    guard hasRunnableOutboxWork() else {
+      completion(true)
+      return
+    }
+    schedule(
+      earliestBeginDate: Date().addingTimeInterval(60),
+      completion: completion
+    )
+  }
+
+  func disableForUnauthorizedNotifications() {
+    let monitor = stateLock.vizorWithLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      notificationAuthorization.disable()
+      expired = false
+      activeCancellation?.cancel()
+      activeCancellation = nil
+      defer { authorizationMonitor = nil }
+      return authorizationMonitor
+    }
+    monitor?.cancel()
+    BGTaskScheduler.shared.cancel(
+      taskRequestWithIdentifier: Self.taskIdentifier
+    )
+  }
+
+  private func captureNotificationAuthorizationEpoch() -> UInt64 {
+    stateLock.vizorWithLock {
+      notificationAuthorization.generation
+    }
+  }
+
+  private func enableNotificationWork(ifCurrent epoch: UInt64) -> Bool {
+    stateLock.vizorWithLock {
+      notificationAuthorization.authorize(ifCurrent: epoch)
+    }
   }
 
   func revokeAccount(
@@ -283,10 +606,31 @@ final class BackgroundMigrationManager {
   #endif
 
   private func handle(_ task: BGProcessingTask) {
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        task.setTaskCompleted(success: true)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        task.setTaskCompleted(success: true)
+        return
+      }
+      self.handleAuthorized(task)
+    }
+  }
+
+  private func handleAuthorized(_ task: BGProcessingTask) {
     guard prepareForBackgroundWake() else {
       task.setTaskCompleted(success: true)
       return
     }
+    startAuthorizationMonitoring()
     task.expirationHandler = { [weak self] in
       self?.expire()
     }
@@ -299,49 +643,137 @@ final class BackgroundMigrationManager {
       self.stateLock.vizorWithLock {
         self.activeCancellation = cancellation
       }
-      let preparationResult: BackgroundMigrationPreparationPassResult
       if #available(iOS 26.0, *) {
-        preparationResult =
-          BackgroundMigrationPreparationManager.shared.runDeferredPass()
-      } else {
-        preparationResult = .completed
-      }
-      let runResult = BackgroundMigrationOutboxRunner.runOnce(
-        cancellation: cancellation
-      )
-      self.stateLock.vizorWithLock {
-        self.activeCancellation = nil
-      }
-      self.finishWake(
-        runResult,
-        preparationResult: preparationResult
-      ) { rescheduled in
-        let preparationSucceeded: Bool
-        switch preparationResult {
-        case .completed, .waitingForConfirmations, .deferred:
-          preparationSucceeded = true
-        case .needsAction, .cancelled:
-          preparationSucceeded = false
+        BackgroundMigrationPreparationManager.shared.runDeferredPass {
+          preparationResult in
+          self.runOutbox(
+            task: task,
+            cancellation: cancellation,
+            preparationResult: preparationResult
+          )
         }
-        task.setTaskCompleted(
-          success: runResult.transport != .temporarilyUnavailable
-            && runResult.transport != .cancelled
-            && preparationSucceeded
-            && rescheduled
+      } else {
+        self.runOutbox(
+          task: task,
+          cancellation: cancellation,
+          preparationResult: .completed
         )
       }
     }
   }
 
-  private func stopActiveWork(quiesceForMutation: Bool) {
+  private func runOutbox(
+    task: BGProcessingTask,
+    cancellation: BackgroundMigrationCancellation,
+    preparationResult: BackgroundMigrationPreparationPassResult
+  ) {
+    let authorizationEpoch = captureNotificationAuthorizationEpoch()
+    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
+      guard let self else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      guard status.allowsBackgroundMigration else {
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        task.setTaskCompleted(success: true)
+        return
+      }
+      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
+        self.finishForegroundOnly(task)
+        return
+      }
+      self.queue.async {
+        guard self.wakeDisposition == .continueBackgroundWork else {
+          self.finishForegroundOnly(task)
+          return
+        }
+        let runResult = BackgroundMigrationOutboxRunner.runOnce(
+          cancellation: cancellation
+        )
+        self.clearActiveCancellation()
+        guard self.wakeDisposition == .continueBackgroundWork else {
+          self.finishForegroundOnly(task)
+          return
+        }
+        self.finishWake(
+          runResult,
+          preparationResult: preparationResult
+        ) { rescheduled in
+          let preparationSucceeded: Bool
+          switch preparationResult {
+          case .completed, .waitingForConfirmations, .deferred:
+            preparationSucceeded = true
+          case .needsAction, .cancelled:
+            preparationSucceeded = false
+          }
+          self.stopAuthorizationMonitoring()
+          if self.wakeDisposition == .finishForegroundOnly {
+            task.setTaskCompleted(
+              success: self.wakeDisposition.taskCompletionIsSuccessful
+            )
+            return
+          }
+          task.setTaskCompleted(
+            success: runResult.transport != .temporarilyUnavailable
+              && runResult.transport != .cancelled
+              && preparationSucceeded
+              && rescheduled
+          )
+        }
+      }
+    }
+  }
+
+  private func clearActiveCancellation() {
     stateLock.vizorWithLock {
+      activeCancellation = nil
+    }
+  }
+
+  private func finishForegroundOnly(_ task: BGProcessingTask) {
+    let disposition = wakeDisposition
+    clearActiveCancellation()
+    stopAuthorizationMonitoring()
+    task.setTaskCompleted(
+      success: disposition.taskCompletionIsSuccessful
+    )
+  }
+
+  private func startAuthorizationMonitoring() {
+    let monitor = IronwoodMigrationNotificationAuthorizationMonitor()
+    let previous = stateLock.vizorWithLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = monitor }
+      return authorizationMonitor
+    }
+    previous?.cancel()
+    monitor.start {
+      IronwoodMigrationNotificationGate.shared.hardDisable()
+    }
+  }
+
+  private func stopAuthorizationMonitoring() {
+    let monitor = stateLock.vizorWithLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = nil }
+      return authorizationMonitor
+    }
+    monitor?.cancel()
+  }
+
+  private func stopActiveWork(quiesceForMutation: Bool) {
+    let monitor = stateLock.vizorWithLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
       expired = false
       activeCancellation?.cancel()
       activeCancellation = nil
+      defer { authorizationMonitor = nil }
       if quiesceForMutation {
         mutationQuiesced = true
       }
+      return authorizationMonitor
     }
+    monitor?.cancel()
     if #available(iOS 26.0, *), quiesceForMutation {
       BackgroundMigrationPreparationManager.shared
         .cancelDeferredPass()
@@ -353,8 +785,11 @@ final class BackgroundMigrationManager {
 
   private func prepareForBackgroundWake() -> Bool {
     stateLock.vizorWithLock {
-      guard !mutationQuiesced else { return false }
+      guard !mutationQuiesced && !notificationAuthorization.isDisabled else {
+        return false
+      }
       expired = false
+      foregroundHandoffRequested = false
       activeCancellation = nil
       return true
     }
@@ -383,6 +818,10 @@ final class BackgroundMigrationManager {
     preparationResult: BackgroundMigrationPreparationPassResult,
     completion: @escaping (Bool) -> Void
   ) {
+    guard wakeDisposition.shouldDeliverNotifications else {
+      completion(true)
+      return
+    }
     deliverBroadcastCompleteNotification(
       runResult.broadcastComplete
     ) { [weak self] broadcastCompleteAcknowledged in
@@ -390,9 +829,17 @@ final class BackgroundMigrationManager {
         completion(false)
         return
       }
+      guard self.wakeDisposition.shouldDeliverNotifications else {
+        completion(true)
+        return
+      }
       self.deliverProofReadyNotification(
         runResult.proofReady
       ) { proofReadyAcknowledged in
+        guard self.wakeDisposition.shouldReschedule else {
+          completion(true)
+          return
+        }
         self.reschedule(
           after: runResult.transport,
           retryProofNotification: !proofReadyAcknowledged,
@@ -411,6 +858,10 @@ final class BackgroundMigrationManager {
     preparationResult: BackgroundMigrationPreparationPassResult,
     completion: @escaping (Bool) -> Void
   ) {
+    guard wakeDisposition.shouldReschedule else {
+      completion(true)
+      return
+    }
     if transport == .needsUserAction {
       postNeedsUserActionNotification()
     }
@@ -440,11 +891,38 @@ final class BackgroundMigrationManager {
     }
     let rescheduled: Bool
     if let delay {
-      rescheduled = schedule(
+      schedule(
         earliestBeginDate: Date().addingTimeInterval(delay)
-      )
+      ) { rescheduled in
+        guard self.wakeDisposition.shouldReschedule else {
+          completion(true)
+          return
+        }
+        self.finishReschedule(
+          rescheduled,
+          preparationResult: preparationResult,
+          completion: completion
+        )
+      }
+      return
     } else {
       rescheduled = true
+    }
+    finishReschedule(
+      rescheduled,
+      preparationResult: preparationResult,
+      completion: completion
+    )
+  }
+
+  private func finishReschedule(
+    _ rescheduled: Bool,
+    preparationResult: BackgroundMigrationPreparationPassResult,
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard wakeDisposition.shouldReschedule else {
+      completion(true)
+      return
     }
     if !rescheduled {
       let preparationWasDeferred: Bool
@@ -494,21 +972,23 @@ final class BackgroundMigrationManager {
   private func scheduleRemainingWork() {
     endMutationQuiescence()
     if hasRunnableOutboxWork() || hasResumablePreparationWork() {
-      _ = schedule(earliestBeginDate: Date().addingTimeInterval(60))
+      schedule(earliestBeginDate: Date().addingTimeInterval(60)) { _ in }
     }
   }
 
   private func postNeedsUserActionNotification() {
+    guard !isNotificationWorkDisabled else { return }
     let content = UNMutableNotificationContent()
     content.title = "Ironwood migration needs attention"
     content.body = "Open Vizor to review and continue your migration."
     content.sound = .default
-    UNUserNotificationCenter.current().add(
+    addNotificationIfEnabled(
       UNNotificationRequest(
         identifier: BackgroundMigrationNotification.needsActionIdentifier,
         content: content,
         trigger: nil
-      )
+      ),
+      completion: nil
     )
   }
 
@@ -516,6 +996,10 @@ final class BackgroundMigrationManager {
     _ broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?,
     completion: @escaping (Bool) -> Void
   ) {
+    guard !isNotificationWorkDisabled else {
+      completion(true)
+      return
+    }
     guard let broadcastComplete else {
       completion(true)
       return
@@ -541,6 +1025,10 @@ final class BackgroundMigrationManager {
     _ proofReady: BackgroundMigrationProofReadyMetadata?,
     completion: @escaping (Bool) -> Void
   ) {
+    guard !isNotificationWorkDisabled else {
+      completion(true)
+      return
+    }
     guard let proofReady else {
       completion(true)
       return
@@ -569,15 +1057,16 @@ final class BackgroundMigrationManager {
     content.body =
       "All scheduled transfers were submitted. Open Vizor to check the status."
     content.sound = .default
-    UNUserNotificationCenter.current().add(
+    addNotificationIfEnabled(
       UNNotificationRequest(
         identifier: BackgroundMigrationNotification.broadcastCompleteIdentifier(
           batchId: batchId
         ),
         content: content,
         trigger: nil
-      )
-    ) { error in completion(error == nil) }
+      ),
+      completion: completion
+    )
   }
 
   private func postProofReadyNotification(
@@ -588,15 +1077,40 @@ final class BackgroundMigrationManager {
     content.title = "Continue your Ironwood migration"
     content.body = "Open Vizor to prepare the next migration transfer."
     content.sound = .default
-    UNUserNotificationCenter.current().add(
+    addNotificationIfEnabled(
       UNNotificationRequest(
         identifier: BackgroundMigrationNotification.proofReadyIdentifier(
           batchId: batchId
         ),
         content: content,
         trigger: nil
-      )
-    ) { error in completion(error == nil) }
+      ),
+      completion: completion
+    )
+  }
+
+  private func addNotificationIfEnabled(
+    _ request: UNNotificationRequest,
+    completion: ((Bool) -> Void)?
+  ) {
+    guard !isNotificationWorkDisabled else {
+      completion?(true)
+      return
+    }
+    let center = UNUserNotificationCenter.current()
+    center.add(request) { error in
+      if self.isNotificationWorkDisabled {
+        center.removePendingNotificationRequests(
+          withIdentifiers: [request.identifier]
+        )
+        center.removeDeliveredNotifications(
+          withIdentifiers: [request.identifier]
+        )
+        completion?(true)
+        return
+      }
+      completion?(error == nil)
+    }
   }
 }
 

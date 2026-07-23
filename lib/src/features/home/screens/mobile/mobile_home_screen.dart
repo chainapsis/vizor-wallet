@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show lerpDouble;
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +20,6 @@ import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -38,7 +37,10 @@ import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
+import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_complete_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
@@ -113,9 +115,141 @@ class MobileHomeScreen extends ConsumerWidget {
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
           const _IronwoodMigrationCompletionHost(),
+          const _IronwoodMigrationAttentionHost(),
         ],
       ),
     );
+  }
+}
+
+enum _IronwoodAttentionAction { openMigration, later }
+
+class _IronwoodMigrationAttentionHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationAttentionHost();
+
+  @override
+  ConsumerState<_IronwoodMigrationAttentionHost> createState() =>
+      _IronwoodMigrationAttentionHostState();
+}
+
+class _IronwoodMigrationAttentionHostState
+    extends ConsumerState<_IronwoodMigrationAttentionHost> {
+  AppLifecycleListener? _lifecycleListener;
+  bool _showing = false;
+  bool _wasBackgrounded = false;
+  bool _resumeRefreshInProgress = false;
+  String? _shownFingerprint;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onHide: _markBackgrounded,
+      onPause: _markBackgrounded,
+      onResume: _resumeIfNeeded,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _evaluate());
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(
+      ironwoodHomeMigrationPresentationProvider,
+      (_, _) => _evaluate(),
+    );
+    ref.listen(syncProvider, (_, _) => _evaluate());
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate() {
+    if (!mounted || _showing || _resumeRefreshInProgress) return;
+    final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final accountUuid = cta.accountUuid;
+    final runId = cta.status?.activeRunId;
+    final sync = ref.read(syncProvider).value;
+    if (accountUuid == null || runId == null) return;
+    final attention = _mobileIronwoodMigrationAttention(
+      cta.status,
+      currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      isHardware: ref
+          .read(accountProvider.notifier)
+          .isHardwareAccount(accountUuid),
+    );
+    if (attention == null) return;
+    final fingerprint =
+        '$accountUuid:$runId:${cta.status?.phase}:'
+        '${attention.kind.name}:${attention.count}';
+    if (_shownFingerprint == fingerprint) return;
+    _shownFingerprint = fingerprint;
+    unawaited(_show(attention));
+  }
+
+  void _markBackgrounded() {
+    _wasBackgrounded = true;
+  }
+
+  void _resumeIfNeeded() {
+    if (!_wasBackgrounded) return;
+    _wasBackgrounded = false;
+    unawaited(_refreshAfterResume());
+  }
+
+  Future<void> _refreshAfterResume() async {
+    if (_resumeRefreshInProgress) return;
+    _resumeRefreshInProgress = true;
+    var refreshed = false;
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .synchronizeAndReconcileAfterReentry();
+      refreshed = true;
+    } catch (_) {
+      // Fail closed: do not re-present an attention modal from the status
+      // snapshot that existed before the app was backgrounded.
+    } finally {
+      _resumeRefreshInProgress = false;
+    }
+    if (!mounted || !refreshed) return;
+    _shownFingerprint = null;
+    _evaluate();
+  }
+
+  Future<void> _show(_MobileIronwoodMigrationAttention attention) async {
+    _showing = true;
+    try {
+      final action = await showAppMobileSheet<_IronwoodAttentionAction>(
+        context: context,
+        builder: (sheetContext) {
+          return MobileIronwoodMigrationAttentionSheetBody(
+            kind: attention.kind,
+            count: attention.count,
+            onOpenMigration: () => Navigator.of(
+              sheetContext,
+            ).pop(_IronwoodAttentionAction.openMigration),
+            onLater: () =>
+                Navigator.of(sheetContext).pop(_IronwoodAttentionAction.later),
+          );
+        },
+      );
+      if (!mounted) return;
+      if (action == _IronwoodAttentionAction.openMigration) {
+        context.push(
+          '/migration/private/status',
+          extra: const MobileIronwoodMigrationStatusEntry(
+            synchronizeOnEntry: true,
+          ),
+        );
+      }
+    } finally {
+      _showing = false;
+    }
   }
 }
 
@@ -622,10 +756,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     } catch (e, st) {
       log('MobileHome: transaction detail load failed: $e\n$st');
     }
-    if (!mounted ||
-        accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+    if (!mounted) return;
+    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
       return;
     }
+    if (!context.mounted) return;
 
     context.push(
       Uri(
@@ -763,6 +898,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         .watch(payIntroductionBadgeClickedProvider)
         .value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
+    final migrationAttention = _mobileIronwoodMigrationAttention(
+      widget.ironwoodMigrationCta.status,
+      currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      isHardware:
+          activeAccountUuid != null &&
+          ref
+              .read(accountProvider.notifier)
+              .isHardwareAccount(activeAccountUuid),
+    );
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
@@ -947,12 +1091,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ),
                 if (widget.ironwoodMigrationCta.visible) ...[
                   const SizedBox(height: AppSpacing.s),
-                  _MobileIronwoodMigrationBanner(
+                  MobileIronwoodMigrationBanner(
                     inProgress: migrationInProgress,
-                    actionNeeded: _mobileIronwoodMigrationNeedsAttention(
-                      widget.ironwoodMigrationCta.status,
-                      currentHeight: sync.chainTipHeight,
-                    ),
+                    attentionKind: migrationAttention?.kind,
+                    actionNeededCount: migrationAttention?.count ?? 0,
                     remainingText: _mobileIronwoodRemainingAmountText(
                       widget.ironwoodMigrationCta.status,
                     ),
@@ -1250,271 +1392,85 @@ class _BalanceCard extends StatelessWidget {
 
 String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
   if (status == null) return null;
-  final broadcasts = status.scheduledBroadcasts;
-  if (broadcasts.isEmpty) return null;
-  final remaining = broadcasts
-      .where((item) => item.status.toLowerCase() != 'confirmed')
-      .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
+  final remaining = status.parts.isNotEmpty
+      ? status.parts
+            .where(
+              (part) => part.state != rust_sync.MigrationPartState.completed,
+            )
+            .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi)
+      : status.scheduledBroadcasts
+            .where((item) => item.status.toLowerCase() != 'confirmed')
+            .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
   if (remaining == BigInt.zero) return null;
   return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
 }
 
-bool _mobileIronwoodMigrationNeedsAttention(
+class _MobileIronwoodMigrationAttention {
+  const _MobileIronwoodMigrationAttention({
+    required this.kind,
+    required this.count,
+  });
+
+  final MobileIronwoodMigrationAttentionKind kind;
+  final int count;
+}
+
+_MobileIronwoodMigrationAttention? _mobileIronwoodMigrationAttention(
   rust_sync.MigrationStatus? status, {
   required int currentHeight,
+  required bool isHardware,
 }) {
-  if (status == null || currentHeight <= 0) return false;
-  return status.scheduledBroadcasts.any(
+  if (status == null) return null;
+  final needsInputCount = status.parts
+      .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
+      .length;
+  if (needsInputCount > 0) {
+    return _MobileIronwoodMigrationAttention(
+      kind: isHardware
+          ? MobileIronwoodMigrationAttentionKind.signature
+          : MobileIronwoodMigrationAttentionKind.continueMigration,
+      count: needsInputCount,
+    );
+  }
+  if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
+    final nextActionHeight = status.nextActionHeight;
+    if (nextActionHeight == null ||
+        currentHeight <= 0 ||
+        nextActionHeight <= currentHeight) {
+      if (isHardware && status.signedChildPcztCount <= 0) {
+        return _MobileIronwoodMigrationAttention(
+          kind: MobileIronwoodMigrationAttentionKind.signature,
+          count: math.max(1, status.totalCount),
+        );
+      }
+      return const _MobileIronwoodMigrationAttention(
+        kind: MobileIronwoodMigrationAttentionKind.proof,
+        count: 1,
+      );
+    }
+  }
+  if (currentHeight <= 0) return null;
+  final hasLateBroadcast = status.scheduledBroadcasts.any(
     (item) =>
         item.status.toLowerCase() == 'scheduled' &&
         item.scheduledHeight > 0 &&
         currentHeight >=
             item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
   );
+  return hasLateBroadcast
+      ? const _MobileIronwoodMigrationAttention(
+          kind: MobileIronwoodMigrationAttentionKind.lateBroadcast,
+          count: 1,
+        )
+      : null;
 }
 
-class _MobileIronwoodMigrationBanner extends StatefulWidget {
-  const _MobileIronwoodMigrationBanner({
-    required this.inProgress,
-    required this.actionNeeded,
-    required this.remainingText,
-    required this.onTap,
-  });
-
-  final bool inProgress;
-  final bool actionNeeded;
-  final String? remainingText;
-  final VoidCallback onTap;
-
-  @override
-  State<_MobileIronwoodMigrationBanner> createState() =>
-      _MobileIronwoodMigrationBannerState();
-}
-
-class _MobileIronwoodMigrationBannerState
-    extends State<_MobileIronwoodMigrationBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
+int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {
+  if (sync == null) return 0;
+  if (sync.scannedHeight > 0 && sync.chainTipHeight > 0) {
+    return math.min(sync.scannedHeight, sync.chainTipHeight);
   }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncAnimation();
-  }
-
-  @override
-  void didUpdateWidget(covariant _MobileIronwoodMigrationBanner oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.inProgress != widget.inProgress ||
-        oldWidget.actionNeeded != widget.actionNeeded) {
-      _syncAnimation();
-    }
-  }
-
-  void _syncAnimation() {
-    final animate =
-        !widget.inProgress &&
-        !widget.actionNeeded &&
-        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
-    if (animate) {
-      if (!_controller.isAnimating) _controller.repeat();
-    } else {
-      _controller
-        ..stop()
-        ..value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final label = widget.actionNeeded
-        ? 'Migration needs attention'
-        : widget.inProgress
-        ? widget.remainingText == null
-              ? 'Migration in progress'
-              : '${widget.remainingText} ZEC still migrating'
-        : 'Migrate to Ironwood';
-    final contentColor = colors.text.homeCard;
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        key: const ValueKey('mobile_home_ironwood_migration_banner'),
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: Container(
-          height: 52,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: colors.background.homeCard,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
-            ),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: ShaderMask(
-                  key: const ValueKey(
-                    'mobile_home_ironwood_migration_banner_image_mask',
-                  ),
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Color(0x0DFFFFFF), Color(0x8CFFFFFF)],
-                  ).createShader(bounds),
-                  child: Image.asset(
-                    'assets/illustrations/'
-                    'ironwood_migration_home_card_background.png',
-                    key: const ValueKey(
-                      'mobile_home_ironwood_migration_banner_background',
-                    ),
-                    fit: BoxFit.fill,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    if (widget.actionNeeded)
-                      AppIcon(
-                        AppIcons.warning,
-                        key: const ValueKey(
-                          'mobile_home_ironwood_migration_attention',
-                        ),
-                        size: 20,
-                        color: colors.icon.warning,
-                      )
-                    else if (widget.inProgress)
-                      AppIcon(
-                        AppIcons.loader,
-                        key: const ValueKey(
-                          'mobile_home_ironwood_migration_loader',
-                        ),
-                        size: 20,
-                        color: contentColor,
-                      )
-                    else
-                      AnimatedBuilder(
-                        animation: _controller,
-                        builder: (context, _) {
-                          final timeline = _controller.value;
-                          final rippleProgress = timeline <= 0.1
-                              ? 0.0
-                              : timeline >= 0.7
-                              ? 1.0
-                              : Curves.easeInOut.transform(
-                                  (timeline - 0.1) / 0.6,
-                                );
-                          final rippleSize = lerpDouble(8, 56, rippleProgress)!;
-                          return SizedBox(
-                            key: const ValueKey(
-                              'mobile_home_ironwood_migration_blink',
-                            ),
-                            width: 16,
-                            height: 16,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned(
-                                  left: (16 - rippleSize) / 2,
-                                  top: (16 - rippleSize) / 2,
-                                  child: Opacity(
-                                    key: const ValueKey(
-                                      'mobile_home_ironwood_migration_blink_ripple',
-                                    ),
-                                    opacity: 1 - rippleProgress,
-                                    child: SizedBox(
-                                      width: rippleSize,
-                                      height: rippleSize,
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: GreenPrimitives.p200Dark,
-                                            width: 2,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const Positioned(
-                                  left: 3,
-                                  top: 3,
-                                  width: 10,
-                                  height: 10,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: RadialGradient(
-                                        colors: [
-                                          GreenPrimitives.p200Light,
-                                          GreenPrimitives.p300Dark,
-                                        ],
-                                      ),
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: GreenPrimitives.p300Dark,
-                                          blurRadius: 4,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    SizedBox(
-                      width: widget.inProgress || widget.actionNeeded
-                          ? AppSpacing.xxs
-                          : AppSpacing.sm,
-                    ),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: contentColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    AppIcon(
-                      AppIcons.chevronForward,
-                      size: 20,
-                      color: contentColor,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  return math.max(sync.scannedHeight, sync.chainTipHeight);
 }
 
 class _MobileIronwoodMigrationPill extends StatelessWidget {

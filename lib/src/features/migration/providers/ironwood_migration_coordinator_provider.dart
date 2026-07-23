@@ -29,21 +29,30 @@ class IronwoodMigrationCoordinatorState {
     this.statuses = const {},
     this.errors = const {},
     this.advancingAccounts = const {},
+    this.foregroundProgressPermits = const {},
   });
 
   final Map<String, rust_sync.MigrationStatus> statuses;
   final Map<String, String> errors;
   final Set<String> advancingAccounts;
 
+  /// Accounts whose migration may continue automatically for the current
+  /// foreground session. Mobile grants this only after an explicit user
+  /// action; it is cleared whenever the app backgrounds.
+  final Set<String> foregroundProgressPermits;
+
   IronwoodMigrationCoordinatorState copyWith({
     Map<String, rust_sync.MigrationStatus>? statuses,
     Map<String, String>? errors,
     Set<String>? advancingAccounts,
+    Set<String>? foregroundProgressPermits,
   }) {
     return IronwoodMigrationCoordinatorState(
       statuses: statuses ?? this.statuses,
       errors: errors ?? this.errors,
       advancingAccounts: advancingAccounts ?? this.advancingAccounts,
+      foregroundProgressPermits:
+          foregroundProgressPermits ?? this.foregroundProgressPermits,
     );
   }
 }
@@ -66,14 +75,14 @@ class IronwoodMigrationCoordinator
       final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
       if (!_hasObservedInitialAccountList && hasAccounts) {
         _hasObservedInitialAccountList = true;
-        unawaited(_resumeBackgroundPreparationsAndRefresh());
+        unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
       }
     });
     ref.listen(appSecurityProvider, (previous, next) {
       if (previous?.requiresUnlock == true && !next.requiresUnlock) {
-        unawaited(_resumeBackgroundPreparationsAndRefresh());
+        unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
       }
@@ -86,11 +95,47 @@ class IronwoodMigrationCoordinator
     _foreground = foreground;
     if (foreground) {
       unawaited(
-        _resumeBackgroundPreparationsAndRefresh(
-          forceAdvance: kAppFormFactor == AppFormFactor.desktop,
-        ),
+        refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
+    } else if (kAppFormFactor == AppFormFactor.mobile &&
+        state.foregroundProgressPermits.isNotEmpty) {
+      state = state.copyWith(foregroundProgressPermits: const {});
     }
+  }
+
+  /// Allows automatic progression for [accountUuid] until the app backgrounds.
+  ///
+  /// The mobile UI should call this after an explicit signing/resume action.
+  /// Software migration start and [retry] grant it automatically.
+  void grantForegroundProgressPermit(String accountUuid) {
+    if (kAppFormFactor != AppFormFactor.mobile ||
+        state.foregroundProgressPermits.contains(accountUuid)) {
+      return;
+    }
+    state = state.copyWith(
+      foregroundProgressPermits: {
+        ...state.foregroundProgressPermits,
+        accountUuid,
+      },
+    );
+  }
+
+  /// Performs the one foreground sync required when a migration status flow is
+  /// entered from a cold launch or after returning from background, then
+  /// reconciles status without advancing migration work.
+  ///
+  /// The route owns whether this is an actual entry/resume event. Periodic sync
+  /// must not call this API or use its Future as a full-screen loading signal.
+  Future<void> synchronizeAndReconcileAfterReentry() async {
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        state.foregroundProgressPermits.isNotEmpty) {
+      state = state.copyWith(foregroundProgressPermits: const {});
+    }
+    await ref.read(syncProvider.future);
+    if (!ref.mounted) return;
+    await ref.read(syncProvider.notifier).synchronizeForMigrationEntry();
+    if (!ref.mounted) return;
+    await refreshNow();
   }
 
   Future<void> resumeBackgroundPreparations() {
@@ -135,13 +180,6 @@ class IronwoodMigrationCoordinator
     }
   }
 
-  Future<void> _resumeBackgroundPreparationsAndRefresh({
-    bool forceAdvance = false,
-  }) async {
-    await resumeBackgroundPreparations();
-    await refreshNow(forceAdvance: forceAdvance);
-  }
-
   Future<void> startSoftwareMigration({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
@@ -153,10 +191,12 @@ class IronwoodMigrationCoordinator
           approvedSchedule: approvedSchedule,
         );
     if (!ref.mounted) return;
+    grantForegroundProgressPermit(accountUuid);
     await refreshNow(forceAdvance: true);
   }
 
   Future<void> retry(String accountUuid) async {
+    grantForegroundProgressPermit(accountUuid);
     try {
       final inFlight = _advanceOperations[accountUuid];
       if (inFlight != null) {
@@ -183,6 +223,7 @@ class IronwoodMigrationCoordinator
   }
 
   Future<void> recover(String accountUuid) async {
+    grantForegroundProgressPermit(accountUuid);
     final inFlight = _advanceOperations[accountUuid];
     if (inFlight != null) {
       try {
@@ -300,6 +341,10 @@ class IronwoodMigrationCoordinator
     required String accountUuid,
   }) {
     if (status.activeRunId == null) return false;
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        !state.foregroundProgressPermits.contains(accountUuid)) {
+      return false;
+    }
     final phaseCanAdvance =
         (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0) ||
@@ -467,9 +512,7 @@ class _IronwoodMigrationCoordinatorHostState
   void initState() {
     super.initState();
     unawaited(
-      ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          ._resumeBackgroundPreparationsAndRefresh(),
+      ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
     );
     _pollTimer = Timer.periodic(_migrationStatusPollInterval, (_) {
       unawaited(
@@ -499,11 +542,8 @@ class _IronwoodMigrationCoordinatorHostState
   @override
   Widget build(BuildContext context) {
     ref.listen(syncProvider, (_, next) {
-      final syncedToTip = next.value?.isSyncedToTip ?? false;
       unawaited(
-        ref
-            .read(ironwoodMigrationCoordinatorProvider.notifier)
-            .refreshNow(forceAdvance: syncedToTip),
+        ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
       );
     });
     ref.watch(ironwoodMigrationCoordinatorProvider);

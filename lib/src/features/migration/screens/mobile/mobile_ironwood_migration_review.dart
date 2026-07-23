@@ -220,8 +220,8 @@ class _MobileMigrationPrivateReviewState
       softwareAccountUuid = accountUuid;
       softwareStartAttempted = true;
       await ref
-          .read(ironwoodMigrationServiceProvider)
-          .startSoftwarePrivateMigration(
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .startSoftwareMigration(
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
           );
@@ -289,7 +289,13 @@ class _MobileMigrationPrivateReviewState
     ref.invalidate(ironwoodHomeMigrationCtaProvider);
     ref.invalidate(ironwoodMigrationFlowDataProvider);
     ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-    context.go('/migration/private/status', extra: plan);
+    context.go(
+      '/migration/private/status',
+      extra: MobileIronwoodMigrationStatusEntry(
+        approvedPlan: plan,
+        synchronizeOnEntry: false,
+      ),
+    );
   }
 
   @override
@@ -524,7 +530,6 @@ class _MobileMigrationFastReview extends ConsumerStatefulWidget {
 
 class _MobileMigrationFastReviewState
     extends ConsumerState<_MobileMigrationFastReview> {
-  bool _acknowledged = false;
   bool _isBroadcasting = false;
   String? _broadcastError;
 
@@ -572,7 +577,6 @@ class _MobileMigrationFastReviewState
         ref.invalidate(ironwoodMigrationImmediatePlanProvider);
       }
       setState(() {
-        _acknowledged = false;
         _broadcastError = _mobileImmediateMigrationStartErrorMessage(error);
       });
     } finally {
@@ -594,17 +598,13 @@ class _MobileMigrationFastReviewState
         : ref.watch(ironwoodMigrationImmediatePlanProvider);
     final plan = planAsync.asData?.value;
     final planUnavailable = planAsync.asData != null && plan == null;
-    final canBroadcast =
-        !widget.isHardware && plan != null && _acknowledged && !_isBroadcasting;
-    final totalInputText = plan == null
-        ? (planUnavailable ? 'Unavailable' : 'Calculating…')
-        : '${ZecAmount.fromZatoshi(plan.totalInputZatoshi).balance.amountText} ZEC';
-    final feeText = plan == null
-        ? (planUnavailable ? 'Unavailable' : 'Calculating…')
-        : '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC';
+    final canBroadcast = !widget.isHardware && plan != null && !_isBroadcasting;
     final migratedText = plan == null
         ? (planUnavailable ? 'Unavailable' : 'Calculating…')
-        : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).balance.amountText} ZEC';
+        : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).pretty(
+            minFractionDigits: 2,
+            maxFractionDigits: 2,
+          ).amountText} ZEC';
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
       bottom: Column(
@@ -653,7 +653,7 @@ class _MobileMigrationFastReviewState
       child: Column(
         children: [
           SizedBox(
-            height: 153,
+            height: 120,
             child: _MobileReviewCard(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,
@@ -661,17 +661,13 @@ class _MobileMigrationFastReviewState
               ),
               child: Column(
                 children: [
-                  _ReviewRow(
-                    label: 'Orchard amount',
-                    value: totalInputText,
-                    height: 32,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  _ReviewRow(label: 'Network fee', value: feeText),
+                  _ReviewRow(label: 'Amount', value: migratedText, height: 32),
                   const SizedBox(height: AppSpacing.xs),
                   _ReviewRow(
-                    label: 'Ironwood received',
-                    value: migratedText,
+                    label: 'Migration complete in',
+                    value: widget.previewPlan != null
+                        ? '~5 mins'
+                        : 'A few minutes',
                     height: 32,
                   ),
                 ],
@@ -754,58 +750,6 @@ class _MobileMigrationFastReviewState
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Semantics(
-            checked: _acknowledged,
-            button: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_ironwood_fast_acknowledgement'),
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.isHardware
-                  ? null
-                  : () => setState(() => _acknowledged = !_acknowledged),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: _acknowledged
-                          ? colors.button.destructive.bg
-                          : colors.background.ground,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: _acknowledged
-                            ? colors.button.destructive.bg
-                            : colors.border.regular,
-                      ),
-                    ),
-                    child: _acknowledged
-                        ? AppIcon(
-                            AppIcons.check,
-                            size: 14,
-                            color: colors.button.destructive.label,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Text(
-                      widget.isHardware
-                          ? 'Immediate migration is not available with Keystone.'
-                          : 'I understand that this migration’s amount and '
-                                'timing will be visible on the Zcash network.',
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

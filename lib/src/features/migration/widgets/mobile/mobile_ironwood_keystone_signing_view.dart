@@ -41,6 +41,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
     this.onCancel,
     this.onToggleFlashlight,
     this.onShowRequestQr,
+    this.onShowScanHelp,
     this.scannerMessage,
     this.scannerMessageIsError = false,
     super.key,
@@ -59,6 +60,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onToggleFlashlight;
   final VoidCallback? onShowRequestQr;
+  final VoidCallback? onShowScanHelp;
   final String? scannerMessage;
   final bool scannerMessageIsError;
 
@@ -74,6 +76,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             round: round,
             onNext: onNext,
             onCancel: onCancel,
+            onShowScanHelp: onShowScanHelp,
           ),
         ),
         MobileIronwoodKeystoneSigningViewState.ready => SafeArea(
@@ -83,6 +86,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             round: round,
             onNext: onNext,
             onCancel: onCancel,
+            onShowScanHelp: onShowScanHelp,
           ),
         ),
         MobileIronwoodKeystoneSigningViewState.scanner => _ScannerContent(
@@ -106,6 +110,7 @@ class _StepOneContent extends StatelessWidget {
     required this.round,
     required this.onNext,
     required this.onCancel,
+    required this.onShowScanHelp,
   });
 
   final bool loading;
@@ -113,6 +118,7 @@ class _StepOneContent extends StatelessWidget {
   final MobileIronwoodKeystoneSigningRound round;
   final VoidCallback? onNext;
   final VoidCallback? onCancel;
+  final VoidCallback? onShowScanHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -135,9 +141,7 @@ class _StepOneContent extends StatelessWidget {
               child: IntrinsicHeight(
                 child: Column(
                   children: [
-                    const Offstage(
-                      child: AppIcon(AppIcons.qr, size: 26),
-                    ),
+                    const Offstage(child: AppIcon(AppIcons.qr, size: 26)),
                     MobileTopNav.steps(
                       progress: _stepOneProgress,
                       onBack: onCancel,
@@ -189,6 +193,19 @@ class _StepOneContent extends StatelessWidget {
                       )
                     else
                       _KeystoneScanPrompt(color: colors.text.secondary),
+                    if (!loading && onShowScanHelp != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      AppButton(
+                        key: const ValueKey(
+                          'mobile_ironwood_keystone_scan_help',
+                        ),
+                        variant: AppButtonVariant.ghost,
+                        expand: true,
+                        constrainContent: true,
+                        onPressed: onShowScanHelp,
+                        child: const Text('Having issues scanning?'),
+                      ),
+                    ],
                     const Spacer(),
                     Padding(
                       padding: const EdgeInsets.symmetric(

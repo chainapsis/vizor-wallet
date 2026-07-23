@@ -443,6 +443,18 @@ bool shouldStartSyncForPolledTip(SyncState? current, int latestTipHeight) {
       latestTipHeight > (current?.chainTipHeight ?? 0);
 }
 
+@visibleForTesting
+bool shouldRestartSyncForMigrationEntry({
+  required bool hasAttachedSync,
+  required bool activeSyncStartedInForeground,
+  required int activeSyncForegroundEpoch,
+  required int currentForegroundEpoch,
+}) {
+  return hasAttachedSync &&
+      (!activeSyncStartedInForeground ||
+          activeSyncForegroundEpoch != currentForegroundEpoch);
+}
+
 class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({Future<String> Function()? walletDbPathResolver})
     : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
@@ -460,9 +472,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   final Future<String> Function() _walletDbPathResolver;
   bool _isSyncing = false;
   bool _isInForeground = true;
+  int _foregroundEpoch = 0;
+  int _activeSyncForegroundEpoch = 0;
+  bool _activeSyncStartedInForeground = true;
   int _lastLoggedHeight = 0;
   SyncProgressEvent? _lastForegroundSyncProgress;
   Future<void>? _lastForegroundProgressHandling;
+  Future<void>? _foregroundSyncRecovery;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -502,6 +518,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       },
       onHide: () {
         _isInForeground = false;
+        _foregroundEpoch++;
         if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
           _stopPolling();
         }
@@ -714,6 +731,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     _isSyncing = true;
+    _activeSyncForegroundEpoch = _foregroundEpoch;
+    _activeSyncStartedInForeground = _isInForeground;
     _lastLoggedHeight = 0;
     _lastForegroundSyncProgress = null;
     _lastForegroundProgressHandling = null;
@@ -873,7 +892,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // a lightwalletd stream that keeps firing
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
-              unawaited(
+              _trackForegroundSyncRecovery(
                 _recoverSyncOnFallbackOrRecordFailure(
                   e,
                   gen,
@@ -895,8 +914,120 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // `_stopMempoolObserver()` here; it is idempotent when
           // nothing is running.
           _stopMempoolObserver();
-          unawaited(_recoverSyncOnFallbackOrRecordFailure(e, gen));
+          _trackForegroundSyncRecovery(
+            _recoverSyncOnFallbackOrRecordFailure(e, gen),
+          );
         });
+  }
+
+  void _trackForegroundSyncRecovery(Future<void> recovery) {
+    _foregroundSyncRecovery = recovery;
+    unawaited(
+      recovery.whenComplete(() {
+        if (identical(_foregroundSyncRecovery, recovery)) {
+          _foregroundSyncRecovery = null;
+        }
+      }),
+    );
+  }
+
+  /// Starts (or joins) one foreground sync and resolves only after its
+  /// successful completion event has been applied to [state].
+  ///
+  /// Migration entry screens use this instead of observing [SyncState.isSyncing]
+  /// directly. That lets the route show a one-time entry/resume syncing surface
+  /// without turning later polling syncs into full-screen transitions.
+  ///
+  /// On iOS, `applicationWillEnterForeground` first asks native denomination
+  /// preparation to hand its sync ownership back. If that native operation is
+  /// still unwinding, wait for the shared Rust sync lane before attaching the
+  /// Dart foreground stream.
+  Future<SyncState> synchronizeForMigrationEntry() async {
+    if (_requiresUnlock) {
+      throw StateError('Wallet is locked.');
+    }
+
+    // This method is called only from a visible migration entry surface. Mark
+    // foreground eagerly because AppLifecycleListener callback ordering is not
+    // guaranteed across the status screen and this provider.
+    _isInForeground = true;
+    if (shouldRestartSyncForMigrationEntry(
+      hasAttachedSync: _isSyncing || _syncSub != null,
+      activeSyncStartedInForeground: _activeSyncStartedInForeground,
+      activeSyncForegroundEpoch: _activeSyncForegroundEpoch,
+      currentForegroundEpoch: _foregroundEpoch,
+    )) {
+      await restartSync();
+      if (!_isSyncing) {
+        throw StateError('Unable to restart wallet sync after app resume.');
+      }
+    }
+
+    if (!_isSyncing && _syncSub == null) {
+      const handoffPollInterval = Duration(milliseconds: 100);
+      const handoffTimeout = Duration(minutes: 2);
+      final handoffDeadline = DateTime.now().add(handoffTimeout);
+      while (rust_sync.isSyncRunning()) {
+        if (!ref.mounted || _requiresUnlock) {
+          throw StateError('Wallet sync was interrupted.');
+        }
+        if (DateTime.now().isAfter(handoffDeadline)) {
+          throw StateError(
+            'Background migration preparation is still finishing. Try again.',
+          );
+        }
+        await Future<void>.delayed(handoffPollInterval);
+      }
+
+      startSync();
+      if (!_isSyncing) {
+        if (_syncStartDeferred) {
+          throw StateError(
+            'Wallet sync is waiting for another wallet operation to finish.',
+          );
+        }
+        throw StateError('Unable to start wallet sync.');
+      }
+    }
+
+    var observedGeneration = _syncGen;
+    const completionPollInterval = Duration(milliseconds: 50);
+    while (true) {
+      if (!ref.mounted || _requiresUnlock) {
+        throw StateError('Wallet sync was interrupted.');
+      }
+
+      if (_syncGen != observedGeneration) {
+        // Endpoint fallback starts a replacement foreground run. Treat it as
+        // the same entry sync rather than completing the entry surface early.
+        if (_isSyncing) {
+          observedGeneration = _syncGen;
+        } else {
+          throw StateError('Wallet sync was interrupted.');
+        }
+      }
+
+      final current = state.value;
+      if (!_isSyncing) {
+        final recovery = _foregroundSyncRecovery;
+        if (recovery != null) {
+          await recovery;
+          continue;
+        }
+        if (current?.isSyncComplete == true &&
+            current?.failure == null &&
+            current?.error == null) {
+          return current!;
+        }
+        final message =
+            current?.failure?.rawMessage ??
+            current?.error ??
+            'Wallet sync ended before completion.';
+        throw StateError(message);
+      }
+
+      await Future<void>.delayed(completionPollInterval);
+    }
   }
 
   Future<void> _recoverSyncOnFallbackOrRecordFailure(

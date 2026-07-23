@@ -118,7 +118,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/intro'),
-      stepLabel: 'Step 1/3',
+      navTitle: 'About',
       topGap: 31,
       childGap: 32,
       title: 'How Migration Works',
@@ -134,18 +134,20 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 
 enum _MobileMigrationOption { private, immediate }
 
-class _MobileMigrationOptions extends StatefulWidget {
+class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({required this.immediateEnabled});
 
   final bool immediateEnabled;
 
   @override
-  State<_MobileMigrationOptions> createState() =>
+  ConsumerState<_MobileMigrationOptions> createState() =>
       _MobileMigrationOptionsState();
 }
 
-class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
+class _MobileMigrationOptionsState
+    extends ConsumerState<_MobileMigrationOptions> {
   var _selectedOption = _MobileMigrationOption.private;
+  var _isContinuing = false;
 
   void _select(_MobileMigrationOption option) {
     if (option == _MobileMigrationOption.immediate &&
@@ -156,6 +158,34 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
     setState(() => _selectedOption = option);
   }
 
+  Future<void> _continue() async {
+    if (_isContinuing) return;
+    if (_selectedOption == _MobileMigrationOption.immediate) {
+      context.go('/migration/fast/review');
+      return;
+    }
+
+    setState(() => _isContinuing = true);
+    try {
+      final authorization = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .notificationAuthorizationStatus();
+      if (!mounted) return;
+      context.go(
+        authorization.allowsBackgroundMigration
+            ? '/migration/private/review'
+            : '/migration/private/notifications',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      // Permission status is fail-closed: if native status cannot be read,
+      // show the explanation screen and keep background work disabled.
+      context.go('/migration/private/notifications');
+    } finally {
+      if (mounted) setState(() => _isContinuing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
@@ -163,7 +193,7 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
         _selectedOption == _MobileMigrationOption.immediate;
     return _MobileMigrationStepScaffold(
       onBack: () => context.go('/migration/how-it-works'),
-      stepLabel: 'Step 2/3',
+      navTitle: 'How to Migrate',
       topGap: 91,
       childGap: 24,
       title: 'Choose How to Migrate',
@@ -172,19 +202,17 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
           'You can review the details before anything moves.',
       bottom: _MobileMigrationPrimaryButton(
         key: const ValueKey('mobile_ironwood_options_continue_button'),
-        label: 'Continue',
-        onPressed: () => context.go(
-          privateSelected
-              ? '/migration/private/review'
-              : '/migration/fast/review',
-        ),
+        label: _isContinuing ? 'Checking notifications...' : 'Continue',
+        onPressed: _isContinuing ? null : _continue,
       ),
       child: Column(
         children: [
           _MobileMigrationOptionCard(
             key: const ValueKey('mobile_ironwood_private_option'),
             title: 'Private',
-            body: 'Sends independent parts over time',
+            body:
+                'Splits transactions into multiple parts to minimize '
+                'traceability, but takes longer.',
             selected: privateSelected,
             icon: _MigrationChoiceIcon.private,
             recommended: true,
@@ -195,7 +223,8 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
             key: const ValueKey('mobile_ironwood_immediate_option'),
             title: 'Immediate',
             body: widget.immediateEnabled
-                ? 'Sends now in one step.'
+                ? 'Migrates your entire balance in one batch. '
+                      'Fast, but less private.'
                 : 'Not available with Keystone.',
             selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,

@@ -1,11 +1,253 @@
 import Flutter
 import Security
 import UIKit
+import UserNotifications
 import XCTest
 
 @testable import Runner
 
 class RunnerTests: XCTestCase {
+
+  func testMigrationNotificationAuthorizationStatusIsFailClosed() {
+    XCTAssertEqual(
+      IronwoodMigrationNotificationAuthorizationStatus(.notDetermined),
+      .notDetermined
+    )
+    XCTAssertEqual(
+      IronwoodMigrationNotificationAuthorizationStatus(.denied),
+      .denied
+    )
+    XCTAssertEqual(
+      IronwoodMigrationNotificationAuthorizationStatus(.authorized),
+      .authorized
+    )
+    XCTAssertEqual(
+      IronwoodMigrationNotificationAuthorizationStatus(.provisional),
+      .authorized
+    )
+    XCTAssertEqual(
+      IronwoodMigrationNotificationAuthorizationStatus(.ephemeral),
+      .authorized
+    )
+    XCTAssertFalse(
+      IronwoodMigrationNotificationAuthorizationStatus.denied
+        .allowsBackgroundMigration
+    )
+    XCTAssertTrue(
+      IronwoodMigrationNotificationAuthorizationStatus.authorized
+        .allowsBackgroundMigration
+    )
+  }
+
+  func testMigrationAuthorizationMonitorStopsDeniedEntryBeforeWork() {
+    let denied = expectation(description: "denied entry stops background work")
+    var checks = 0
+    let monitor = IronwoodMigrationNotificationAuthorizationMonitor(
+      pollInterval: 0.01,
+      queue: DispatchQueue(label: "test.ironwood.authorization.denied"),
+      statusProvider: { completion in
+        checks += 1
+        completion(.denied)
+      }
+    )
+
+    monitor.start {
+      denied.fulfill()
+    }
+
+    wait(for: [denied], timeout: 1)
+    monitor.cancel()
+    XCTAssertEqual(checks, 1)
+  }
+
+  func testMigrationAuthorizationMonitorStopsWorkAfterMidRunRevoke() {
+    let revoked = expectation(description: "mid-run revoke stops background work")
+    var checks = 0
+    let monitor = IronwoodMigrationNotificationAuthorizationMonitor(
+      pollInterval: 0.01,
+      queue: DispatchQueue(label: "test.ironwood.authorization.revoke"),
+      statusProvider: { completion in
+        checks += 1
+        completion(checks == 1 ? .authorized : .denied)
+      }
+    )
+
+    monitor.start {
+      revoked.fulfill()
+    }
+
+    wait(for: [revoked], timeout: 1)
+    monitor.cancel()
+    XCTAssertGreaterThanOrEqual(checks, 2)
+  }
+
+  func testMigrationAuthorizationEpochRejectsHeldAuthorizedCallbackAfterDisable() {
+    var authorization = IronwoodMigrationNotificationAuthorizationEpochState()
+    let heldEpoch = authorization.generation
+    var heldCallbackWasAccepted: Bool?
+    let heldAuthorizedCallback = {
+      (status: IronwoodMigrationNotificationAuthorizationStatus) in
+      guard status.allowsBackgroundMigration else { return }
+      heldCallbackWasAccepted = authorization.authorize(
+        ifCurrent: heldEpoch
+      )
+    }
+
+    authorization.disable()
+    heldAuthorizedCallback(.authorized)
+
+    XCTAssertEqual(heldCallbackWasAccepted, false)
+    XCTAssertTrue(authorization.isDisabled)
+  }
+
+  func testMigrationAuthorizationEpochsAreIndependentPerManager() {
+    var outboxAuthorization =
+      IronwoodMigrationNotificationAuthorizationEpochState()
+    var preparationAuthorization =
+      IronwoodMigrationNotificationAuthorizationEpochState()
+    let outboxEpoch = outboxAuthorization.generation
+    let preparationEpoch = preparationAuthorization.generation
+
+    outboxAuthorization.disable()
+
+    XCTAssertFalse(
+      outboxAuthorization.authorize(ifCurrent: outboxEpoch)
+    )
+    XCTAssertTrue(
+      preparationAuthorization.authorize(ifCurrent: preparationEpoch)
+    )
+    XCTAssertTrue(outboxAuthorization.isDisabled)
+    XCTAssertFalse(preparationAuthorization.isDisabled)
+  }
+
+  func testMigrationOutboxRevocationFinishesWithoutNotificationOrReregistration() {
+    let disposition =
+      IronwoodMigrationOutboxWakeDisposition.finishForegroundOnly
+
+    XCTAssertFalse(disposition.shouldDeliverNotifications)
+    XCTAssertFalse(disposition.shouldReschedule)
+    XCTAssertTrue(disposition.taskCompletionIsSuccessful)
+  }
+
+  func testMigrationOutboxArmSchedulePolicySupportsForegroundOnlyMode() {
+    XCTAssertTrue(
+      IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+        authorization: .denied,
+        submitted: false
+      )
+    )
+    XCTAssertTrue(
+      IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+        authorization: .notDetermined,
+        submitted: false
+      )
+    )
+  }
+
+  func testMigrationOutboxArmSchedulePolicySurfacesAuthorizedSubmitFailure() {
+    XCTAssertFalse(
+      IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+        authorization: .authorized,
+        submitted: false
+      )
+    )
+    XCTAssertTrue(
+      IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+        authorization: .authorized,
+        submitted: true
+      )
+    )
+  }
+
+  func testMigrationPreparationRuntimeStateIsScopedToMatchingRun() {
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: false,
+        notificationsDisabled: false,
+        submissionInFlight: false,
+        taskRunning: true,
+        deferredPassRunning: false,
+        foregroundHandoffRequested: false,
+        foregroundContinuationPending: false,
+        pendingRequest: false
+      ),
+      .idle
+    )
+  }
+
+  func testMigrationPreparationRuntimeStateIsFailClosedWhenDisabled() {
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: true,
+        notificationsDisabled: true,
+        submissionInFlight: false,
+        taskRunning: true,
+        deferredPassRunning: false,
+        foregroundHandoffRequested: false,
+        foregroundContinuationPending: true,
+        pendingRequest: true
+      ),
+      .disabled
+    )
+  }
+
+  func testMigrationPreparationRuntimeStateTracksAutomaticWork() {
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: true,
+        notificationsDisabled: false,
+        submissionInFlight: false,
+        taskRunning: false,
+        deferredPassRunning: false,
+        foregroundHandoffRequested: false,
+        foregroundContinuationPending: false,
+        pendingRequest: true
+      ),
+      .scheduled
+    )
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: true,
+        notificationsDisabled: false,
+        submissionInFlight: false,
+        taskRunning: false,
+        deferredPassRunning: true,
+        foregroundHandoffRequested: false,
+        foregroundContinuationPending: false,
+        pendingRequest: false
+      ),
+      .running
+    )
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: true,
+        notificationsDisabled: false,
+        submissionInFlight: false,
+        taskRunning: true,
+        deferredPassRunning: false,
+        foregroundHandoffRequested: true,
+        foregroundContinuationPending: false,
+        pendingRequest: false
+      ),
+      .handoffRequested
+    )
+  }
+
+  func testMigrationPreparationRuntimeStatePrioritizesForegroundContinuation() {
+    XCTAssertEqual(
+      migrationPreparationRuntimeState(
+        hasMatchingManifest: true,
+        notificationsDisabled: false,
+        submissionInFlight: false,
+        taskRunning: false,
+        deferredPassRunning: false,
+        foregroundHandoffRequested: false,
+        foregroundContinuationPending: true,
+        pendingRequest: false
+      ),
+      .foregroundContinuationPending
+    )
+  }
 
   func testMigrationPreparationDefersChainWaitsToProcessingTask() {
     XCTAssertEqual(

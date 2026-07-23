@@ -22,6 +22,38 @@ void main() {
   });
 
   test(
+    'preparation runtime state parses native handoff states fail-closed',
+    () {
+      expect(
+        IronwoodMigrationPreparationRuntimeState.fromNative('running'),
+        IronwoodMigrationPreparationRuntimeState.running,
+      );
+      expect(
+        IronwoodMigrationPreparationRuntimeState.fromNative(
+          'foregroundContinuationPending',
+        ),
+        IronwoodMigrationPreparationRuntimeState.foregroundContinuationPending,
+      );
+      expect(
+        IronwoodMigrationPreparationRuntimeState.fromNative('unknown'),
+        IronwoodMigrationPreparationRuntimeState.idle,
+      );
+      expect(
+        IronwoodMigrationPreparationRuntimeState
+            .running
+            .hasAutomaticBackgroundWork,
+        isTrue,
+      );
+      expect(
+        IronwoodMigrationPreparationRuntimeState
+            .disabled
+            .hasAutomaticBackgroundWork,
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'status resolves wallet db path before calling Rust status API',
     () async {
       String? seenDbPath;
@@ -205,6 +237,8 @@ void main() {
           events.add('startBackgroundPreparation');
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
@@ -281,6 +315,8 @@ void main() {
           preparationStartCount++;
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
         completeKeystoneDenominationMigration:
@@ -338,6 +374,8 @@ void main() {
           preparationStartCount++;
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
@@ -411,6 +449,8 @@ void main() {
           preparationStartCount++;
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
             ({
@@ -438,7 +478,7 @@ void main() {
   );
 
   test(
-    'explicit iOS software migration start requests notification authorization',
+    'iOS software migration start never requests notification authorization',
     () async {
       const channel = MethodChannel('com.zcash.wallet/background_migration');
       final methodCalls = <MethodCall>[];
@@ -466,52 +506,38 @@ void main() {
       );
 
       expect(result.status, 'broadcasted');
-      expect(methodCalls, hasLength(1));
-      expect(methodCalls.single.method, 'requestNotificationAuthorization');
+      expect(methodCalls, isEmpty);
     },
   );
 
   test(
-    'notification authorization refusal does not fail software migration',
+    'notification authorization denial keeps migration foreground-only',
     () async {
       var requestCount = 0;
+      var preparationStartCount = 0;
+      var scheduleCount = 0;
       final service = _notificationAuthorizationService(
         isIOS: true,
         statuses: [
           _migrationStatus(),
-          _migrationStatus(activeRunId: 'run-1'),
-          _migrationStatus(activeRunId: 'run-1'),
+          _migrationStatus(
+            phase: 'waiting_denom_confirmations',
+            activeRunId: 'run-1',
+          ),
         ],
         requestNotificationAuthorization: () async {
           requestCount++;
           return false;
         },
-      );
-
-      final result = await service.startSoftwarePrivateMigration(
-        accountUuid: 'account-1',
-        approvedSchedule: const [],
-      );
-
-      expect(result.status, 'broadcasted');
-      expect(requestCount, 1);
-    },
-  );
-
-  test(
-    'notification authorization failure is best effort for software migration',
-    () async {
-      var requestCount = 0;
-      final service = _notificationAuthorizationService(
-        isIOS: true,
-        statuses: [
-          _migrationStatus(),
-          _migrationStatus(activeRunId: 'run-1'),
-          _migrationStatus(activeRunId: 'run-1'),
-        ],
-        requestNotificationAuthorization: () async {
-          requestCount++;
-          throw StateError('authorization unavailable');
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.denied,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        scheduleBackgroundMigration: () async {
+          scheduleCount++;
+          return true;
         },
       );
 
@@ -521,7 +547,48 @@ void main() {
       );
 
       expect(result.status, 'broadcasted');
+      expect(requestCount, 0);
+      expect(preparationStartCount, 0);
+      expect(scheduleCount, 0);
+    },
+  );
+
+  test(
+    'notification APIs are invoked only by explicit service calls',
+    () async {
+      var requestCount = 0;
+      var statusCount = 0;
+      var openSettingsCount = 0;
+      final service = _notificationAuthorizationService(
+        isIOS: true,
+        statuses: const [],
+        requestNotificationAuthorization: () async {
+          requestCount++;
+          return true;
+        },
+        getNotificationAuthorizationStatus: () async {
+          statusCount++;
+          return IronwoodMigrationNotificationAuthorizationStatus.authorized;
+        },
+        openNotificationSettings: () async {
+          openSettingsCount++;
+          return true;
+        },
+      );
+
+      expect(
+        await service.notificationAuthorizationStatus(),
+        IronwoodMigrationNotificationAuthorizationStatus.authorized,
+      );
+      expect(
+        await service.requestNotificationPermission(),
+        IronwoodMigrationNotificationAuthorizationStatus.authorized,
+      );
+      expect(await service.openNotificationSystemSettings(), isTrue);
+
       expect(requestCount, 1);
+      expect(statusCount, 2);
+      expect(openSettingsCount, 1);
     },
   );
 
@@ -624,6 +691,8 @@ void main() {
           preparationStartCount++;
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
@@ -668,6 +737,8 @@ void main() {
         preparationStartCount++;
         return true;
       },
+      getNotificationAuthorizationStatus: () async =>
+          IronwoodMigrationNotificationAuthorizationStatus.authorized,
     );
 
     await service.resumeBackgroundPreparationIfNeeded(
@@ -721,6 +792,8 @@ void main() {
         preparationStartCount++;
         return true;
       },
+      getNotificationAuthorizationStatus: () async =>
+          IronwoodMigrationNotificationAuthorizationStatus.authorized,
     );
 
     await service.resumeBackgroundPreparationIfNeeded(
@@ -1446,6 +1519,8 @@ void main() {
           events.add('prepare-background');
           return true;
         },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
       );
 
@@ -1844,81 +1919,97 @@ void main() {
     expect(scheduleCalls, 0);
   });
 
-  test('background retry stages and arms the bound manifest outbox', () async {
-    final store = _backgroundCredentialStore();
-    await store.prepare(
-      network: 'test',
-      accountUuid: 'account-1',
-      dbPath: '/tmp/wallet.db',
-      lightwalletdUrl: 'https://lwd.example:443',
-    );
-    var armCalls = 0;
-    var notificationAuthorizationRequestCount = 0;
-    final service = IronwoodMigrationService(
-      getWalletDbPath: () async => '/tmp/wallet.db',
-      getStatus: ({required dbPath, required network, required accountUuid}) {
-        return Future.value(_migrationStatus(activeRunId: 'run-1'));
-      },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
-      backgroundCredentialStore: store,
-      getEndpoint: _testEndpoint,
-      isMobile: () => true,
-      isIOS: () => true,
-      supportsBackgroundMigration: () => true,
-      requestNotificationAuthorization: () async {
-        notificationAuthorizationRequestCount++;
-        return true;
-      },
-      listMigrationOutboxReceipts: () async => const [],
-      prepareMigrationOutbox:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) async => _migrationResult(),
-      exportMigrationOutbox:
-          ({
-            required dbPath,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) async => _outboxBatch(),
-      stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
-      armMigrationOutboxBatch:
-          ({required batchId, required expectedDigests}) async {
-            armCalls++;
-            return true;
-          },
-      runMigrationOutboxOnceNow: () async =>
-          const IronwoodMigrationOutboxRunResult(
-            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
-          ),
-    );
-
-    expect(
-      await service.retryPrivateMigrationInBackground(accountUuid: 'account-1'),
-      isTrue,
-    );
-    expect(armCalls, 1);
-    expect(notificationAuthorizationRequestCount, 1);
-    expect(
-      (await store.read(
+  test(
+    'notification denial still stages arms and runs the outbox in foreground',
+    () async {
+      final store = _backgroundCredentialStore();
+      await store.prepare(
         network: 'test',
         accountUuid: 'account-1',
-      ))?.expectedRunId,
-      'run-1',
-    );
-  });
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      var armCalls = 0;
+      var stageCalls = 0;
+      var foregroundRunCalls = 0;
+      var notificationAuthorizationRequestCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        supportsBackgroundMigration: () => true,
+        requestNotificationAuthorization: () async {
+          notificationAuthorizationRequestCount++;
+          return true;
+        },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.denied,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async {
+          stageCalls++;
+          return const {'txid-1': 'digest-1'};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              armCalls++;
+              return true;
+            },
+        runMigrationOutboxOnceNow: () async {
+          foregroundRunCalls++;
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          );
+        },
+      );
+
+      expect(
+        await service.retryPrivateMigrationInBackground(
+          accountUuid: 'account-1',
+        ),
+        isTrue,
+      );
+      expect(stageCalls, 1);
+      expect(armCalls, 1);
+      expect(foregroundRunCalls, 1);
+      expect(notificationAuthorizationRequestCount, 0);
+      expect(
+        (await store.read(
+          network: 'test',
+          accountUuid: 'account-1',
+        ))?.expectedRunId,
+        'run-1',
+      );
+    },
+  );
 
   test(
     'mobile ambiguous failed start retains and binds its credential',
@@ -2003,7 +2094,7 @@ void main() {
         'run-after-error',
       );
       expect(scheduledCount, 0);
-      expect(notificationAuthorizationRequestCount, 1);
+      expect(notificationAuthorizationRequestCount, 0);
     },
   );
 
@@ -2198,7 +2289,7 @@ void main() {
   );
 
   test(
-    'Keystone prepare stays silent and completions enroll notifications',
+    'Keystone preparation and completion never request notifications',
     () async {
       final statuses = <rust_sync.MigrationStatus>[
         _migrationStatus(),
@@ -2237,6 +2328,8 @@ void main() {
         isMobile: () => true,
         isIOS: () => true,
         startBackgroundPreparation: () async => true,
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async {
           notificationAuthorizationRequestCount++;
           return true;
@@ -2324,7 +2417,7 @@ void main() {
       expect(credentials, hasLength(2));
       expect(credentials[1], credentials[0]);
       expect(scheduledCount, 0);
-      expect(notificationAuthorizationRequestCount, 2);
+      expect(notificationAuthorizationRequestCount, 0);
     },
   );
 
@@ -2346,8 +2439,6 @@ void main() {
                 return <String, String>{'txid-1': 'digest-1'};
               case 'armOutboxBatch':
                 armedPayload = call.arguments as Map<Object?, Object?>;
-                return true;
-              case 'requestNotificationAuthorization':
                 return true;
               case 'runOutboxOnceNow':
                 return <String, Object?>{'outcome': 'waiting'};
@@ -2435,7 +2526,6 @@ void main() {
         'armOutboxBatch',
         'runOutboxOnceNow',
         'listOutboxReceipts',
-        'requestNotificationAuthorization',
       ]);
       expect(stagedPayload?['batchId'], 'test:account-1:run-1');
       expect(stagedPayload?['nextProofHeight'], 576);
@@ -2754,6 +2844,11 @@ IronwoodMigrationService _notificationAuthorizationService({
   required bool isIOS,
   required List<rust_sync.MigrationStatus> statuses,
   Future<bool> Function()? requestNotificationAuthorization,
+  Future<IronwoodMigrationNotificationAuthorizationStatus> Function()?
+  getNotificationAuthorizationStatus,
+  Future<bool> Function()? openNotificationSettings,
+  Future<bool> Function()? startBackgroundPreparation,
+  Future<bool> Function()? scheduleBackgroundMigration,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -2772,7 +2867,13 @@ IronwoodMigrationService _notificationAuthorizationService({
     isMobile: () => true,
     isIOS: () => isIOS,
     requestNotificationAuthorization: requestNotificationAuthorization,
-    scheduleBackgroundMigration: () async => true,
+    getNotificationAuthorizationStatus:
+        getNotificationAuthorizationStatus ??
+        () async => IronwoodMigrationNotificationAuthorizationStatus.authorized,
+    openNotificationSettings: openNotificationSettings,
+    startBackgroundPreparation: startBackgroundPreparation,
+    scheduleBackgroundMigration:
+        scheduleBackgroundMigration ?? () async => true,
     listMigrationOutboxReceipts: () async => const [],
     prepareMigrationOutbox:
         ({

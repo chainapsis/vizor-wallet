@@ -382,6 +382,80 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationFastReviewUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Notifications - Enable',
+                      builder:
+                          buildMobileIronwoodMigrationNotificationsPromptUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notifications - Confirm skip',
+                      builder:
+                          buildMobileIronwoodMigrationNotificationsConfirmationUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Active',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Continue',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationPausedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Continue with Keystone',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationPausedKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Syncing',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Syncing',
+                      builder: buildMobileIronwoodMigrationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Preparation done',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Waiting (notifications on)',
+                      builder:
+                          buildMobileIronwoodMigrationWaitingNotificationsOnUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Waiting (notifications off)',
+                      builder:
+                          buildMobileIronwoodMigrationWaitingNotificationsOffUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Needs input',
+                      builder: buildMobileIronwoodMigrationNeedsInputUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Broadcasting',
+                      builder: buildMobileIronwoodMigrationBroadcastingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Complete',
+                      builder: buildMobileIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration needs input',
+                      builder: buildMobileIronwoodMigrationHomeAttentionUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration needs input modal',
+                      builder:
+                          buildMobileIronwoodMigrationHomeAttentionModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - QR scan help',
+                      builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration type - Preparing',
                       builder: buildMobileIronwoodMigrationPreparingUseCase,
                     ),
