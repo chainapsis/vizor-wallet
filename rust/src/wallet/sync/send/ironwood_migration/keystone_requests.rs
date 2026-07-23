@@ -246,12 +246,6 @@ fn validate_keystone_migration_messages(
     if messages.is_empty() {
         return Err("Keystone migration request has no messages".to_string());
     }
-    if messages.len() > ZCASH_SIGN_BATCH_MAX_MESSAGES {
-        return Err(format!(
-            "Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs per round, but this round needs {}.",
-            messages.len()
-        ));
-    }
     let mut ids = HashSet::with_capacity(messages.len());
     let mut payloads = HashSet::with_capacity(messages.len());
     for message in messages {

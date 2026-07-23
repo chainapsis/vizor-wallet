@@ -276,14 +276,6 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .len()
         .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
-    if total_messages > ZCASH_SIGN_BATCH_MAX_MESSAGES {
-        return Err(format!(
-            "Single Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs, but this plan needs {} split transactions plus {} migration transactions. Reduce the migration amount or use the staged flow.",
-            split.stages.len(),
-            split.predicted_notes.len(),
-        ));
-    }
-
     let approved_schedule = super::migration::planned_transfer_schedule(
         split.plan.migration_outputs.iter().copied(),
         network,
