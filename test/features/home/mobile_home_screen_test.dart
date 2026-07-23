@@ -263,6 +263,7 @@ Widget _app(
 SyncState _syncedState({
   BigInt? orchardBalance,
   BigInt? ironwoodBalance,
+  BigInt? ironwoodPendingBalance,
   BigInt? transparentBalance,
   bool canShieldTransparentBalance = false,
 }) => SyncState(
@@ -272,6 +273,7 @@ SyncState _syncedState({
   displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
   ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+  ironwoodPendingBalance: ironwoodPendingBalance ?? BigInt.zero,
   transparentBalance: transparentBalance ?? BigInt.zero,
   canShieldTransparentBalance: canShieldTransparentBalance,
 );
@@ -619,6 +621,7 @@ void main() {
         _syncedState(
           orchardBalance: BigInt.from(200000000),
           ironwoodBalance: BigInt.from(150000000),
+          ironwoodPendingBalance: BigInt.from(50000000),
         ),
         migrationCta: IronwoodHomeMigrationCtaState.resume(
           network: 'main',
@@ -630,7 +633,15 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.textContaining('1.50 ZEC', findRichText: true), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_home_shielded_balance')),
+          )
+          .textSpan
+          ?.toPlainText(),
+      '2 ZEC',
+    );
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
