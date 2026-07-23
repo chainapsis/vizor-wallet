@@ -111,19 +111,19 @@ Pre-launch wallet databases with older schema versions are reset when opened by
 this branch; callers that need to preserve test data should export it before
 upgrading the crate.
 
-The workspace uses the published `voting-circuits 0.9.0-rc.2` release.
+The workspace uses the published `voting-circuits 0.9.0-rc.3` release.
 
 ## Dependency Strategy
 
 The root manifest selects one upstream Ironwood dependency stack for every
 workspace member:
 
-- **`orchard 0.15.0`** from [zcash/orchard](https://github.com/zcash/orchard),
+- **`orchard 0.15`** from [zcash/orchard](https://github.com/zcash/orchard),
   with `unstable-voting-circuits` enabled for the governance proof paths.
 - **`pczt`, `zcash_client_backend`, `zcash_client_sqlite`, `zcash_keys`,
   `zcash_primitives`, and `zcash_protocol`** from a pinned upstream
   librustzcash revision containing Ironwood historical note selection.
-- **`voting-circuits 0.9.0-rc.2`** from
+- **`voting-circuits 0.9.0-rc.3`** from
   [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
 

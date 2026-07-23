@@ -11,8 +11,8 @@ resolver = "2"
 # orchard, voting-circuits, and librustzcash all resolve to the same Orchard
 # release, keeping the dependency graph type-compatible across PCZT construction
 # and vote proofs.
-orchard = { version = "=0.15.0", features = ["unstable-voting-circuits"] }
-voting-circuits = "=0.9.0-rc.2"
+orchard = { version = "0.15", features = ["unstable-voting-circuits"] }
+voting-circuits = "=0.9.0-rc.3"
 
 # These resolve to a librustzcash git rev (see `[patch.crates-io]` below) until
 # librustzcash releases the merged Ironwood historical selector. The pin is expressed

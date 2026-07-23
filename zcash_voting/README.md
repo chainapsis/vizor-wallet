@@ -189,9 +189,9 @@ feature requirements, and `Cargo.lock` records the exact package sources and
 versions used by this branch.
 This release line requires Rust 1.88 or newer.
 
-- **`orchard 0.15.0`** from [zcash/orchard](https://github.com/zcash/orchard),
+- **`orchard 0.15`** from [zcash/orchard](https://github.com/zcash/orchard),
   with `unstable-voting-circuits` enabled for the governance proof paths.
-- **`voting-circuits 0.9.0-rc.2`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+- **`voting-circuits 0.9.0-rc.3`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
 - **`vote-commitment-tree 0.3`** and **`vote-commitment-tree-client 0.5`** for
   vote commitment tree state and optional HTTP sync.
