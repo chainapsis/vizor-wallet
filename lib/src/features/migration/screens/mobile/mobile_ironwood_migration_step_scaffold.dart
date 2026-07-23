@@ -188,8 +188,9 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
           children: [
             Transform.translate(
               offset: const Offset(0, 20),
-              child: MobileTopNav.steps(
-                progress: _migrationProgress,
+              child: MobileTopNav.back(
+                title: 'Step 3/3',
+                titleStyle: AppTypography.headlineSmall,
                 onBack: onBack,
               ),
             ),

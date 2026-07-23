@@ -1562,6 +1562,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Step 3/3'), findsOneWidget);
     final warning = tester.widget<Text>(find.text('Privacy trade-off'));
     expect(warning.style?.color, AppThemeData.dark.colors.text.homeCard);
     final privacyIcon = tester.widget<AppIcon>(
