@@ -140,7 +140,13 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final batchCount = _mobilePlannedBatchCount(status);
+    final resignCount = status.parts
+        .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
+        .length;
+    final needsResign = resignCount > 0;
+    final batchCount = needsResign
+        ? resignCount
+        : _mobilePlannedBatchCount(status);
     final transactionLabel = batchCount == 1
         ? '1 migration transaction'
         : '$batchCount migration transactions';
@@ -157,7 +163,7 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                 const AppIcon(AppIcons.qr, size: 40),
                 const SizedBox(height: AppSpacing.s),
                 Text(
-                  'Ready for Keystone',
+                  needsResign ? 'Needs input' : 'Ready for Keystone',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -165,8 +171,17 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.s),
                 Text(
-                  'The split transactions are confirmed. Use Keystone again to '
-                  'approve the Ironwood migration transactions.',
+                  needsResign
+                      ? batchCount == 1
+                            ? 'This migration transaction needs a fresh '
+                                  'Keystone signature before it can be '
+                                  'broadcast.'
+                            : 'These migration transactions need fresh '
+                                  'Keystone signatures before they can be '
+                                  'broadcast.'
+                      : 'The split transactions are confirmed. Use Keystone '
+                            'again to approve the Ironwood migration '
+                            'transactions.',
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
@@ -211,7 +226,9 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        '$transactionLabel ready to sign',
+                        needsResign
+                            ? '$transactionLabel ${batchCount == 1 ? 'needs' : 'need'} to be signed again'
+                            : '$transactionLabel ready to sign',
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -227,7 +244,7 @@ class _MobileKeystoneMigrationReady extends StatelessWidget {
                   expand: true,
                   onPressed: () =>
                       context.go('/migration/private/keystone/batch/sign'),
-                  child: const Text('Continue'),
+                  child: Text(needsResign ? 'Sign again' : 'Continue'),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 _MobileStatusBackHomeButton(

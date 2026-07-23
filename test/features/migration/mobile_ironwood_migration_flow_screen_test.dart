@@ -2170,6 +2170,50 @@ void main() {
     expect(find.text('keystone batch sign route'), findsOneWidget);
   });
 
+  testWidgets('routes a Keystone re-sign state from Needs input', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: [
+            rust_sync.MigrationPartStatus(
+              partIndex: 1,
+              valueZatoshi: BigInt.from(412_000_000),
+              state: rust_sync.MigrationPartState.needsInput,
+              txidHex: 'expired-tx',
+              scheduledHeight: 3_000_000,
+              confirmationCount: 0,
+              confirmationTarget: 3,
+            ),
+          ],
+        ),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(
+      find.text(
+        'This migration transaction needs a fresh Keystone signature before '
+        'it can be broadcast.',
+      ),
+      findsOneWidget,
+    );
+    final signButton = find.widgetWithText(AppButton, 'Sign again');
+    await tester.ensureVisible(signButton);
+    await tester.pumpAndSettle();
+    await tester.tap(signButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('keystone batch sign route'), findsOneWidget);
+  });
+
   testWidgets('keeps review visible when start has no durable run', (
     tester,
   ) async {
