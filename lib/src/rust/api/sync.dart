@@ -319,6 +319,22 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   approvedSchedule: approvedSchedule,
 );
 
+/// User-attended Immediate migration. This directly spends Orchard notes into
+/// Ironwood and intentionally does not create a staged migration run.
+Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+}) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodImmediately(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+);
+
 Future<void> retireUnbroadcastOrchardMigration({
   required String dbPath,
   required String lightwalletdUrl,
@@ -1539,6 +1555,9 @@ class OrchardMigrationPrivatePlan {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
+
+  /// Estimated blocks after preparation confirmation, derived from the
+  /// projected final prepared-note height rather than a fixed bucket count.
   final int proofReadinessDelayBlocks;
   final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
