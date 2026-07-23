@@ -1992,7 +1992,6 @@ fn fetch_block_time(lightwalletd_url: &str, block_height: u64) -> Result<u64, St
     })
 }
 
-#[frb(sync)]
 pub fn get_transaction_detail(
     db_path: String,
     network: String,

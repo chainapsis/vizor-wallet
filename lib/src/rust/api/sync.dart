@@ -728,7 +728,7 @@ Future<BigInt> getBlockTime({
   height: height,
 );
 
-TransactionDetail getTransactionDetail({
+Future<TransactionDetail> getTransactionDetail({
   required String dbPath,
   required String network,
   required String accountUuid,

@@ -37,10 +37,9 @@ ActivityRowData buildTransactionActivityRow({
   final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';
   final isShielded = kind == 'shielded';
-  final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isInbound || isSent || isMigration
+  final subtitle = isInbound || isSent
       ? _poolLabel(transaction.displayPool)
       : null;
 
@@ -66,7 +65,7 @@ ActivityRowData buildTransactionActivityRow({
         amount: amount,
         signedAmount: signedAmount,
         isFailed: isFailed,
-        isUnsignedAmount: isShielded || isMigration,
+        isUnsignedAmount: isShielded,
         kind: kind,
         privacyModeEnabled: privacyModeEnabled,
       ),
@@ -158,7 +157,6 @@ String _txTitle(String kind) {
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
-    'migration' => 'Migration',
     _ => 'Transaction',
   };
 }
@@ -175,7 +173,6 @@ String _txIcon(String kind, {required bool isPending}) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldKeyholeOutline,
-    'migration' => AppIcons.renew,
     _ => AppIcons.history,
   };
 }

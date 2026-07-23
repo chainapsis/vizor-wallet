@@ -105,6 +105,7 @@ Widget _app(
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
 }) {
+  final resolvedDetail = detail ?? _detail(kind: tx.txKind);
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
@@ -126,9 +127,10 @@ Widget _app(
             txidHex: tx.txidHex,
             txKind: tx.txKind,
             initialTransaction: tx,
+            initialDetail: resolvedDetail,
           ),
           historyLoader: (_) async => [tx],
-          detailLoader: (_, _) async => detail ?? _detail(kind: tx.txKind),
+          detailLoader: (_, _) async => resolvedDetail,
         ),
       ),
     ),
@@ -137,6 +139,16 @@ Widget _app(
 
 void main() {
   setUpAll(_loadAppFonts);
+
+  testWidgets('renders the complete receipt on the first frame', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_tx()));
+    await tester.pump();
+
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+  });
 
   testWidgets('mined sent tx shows success title, chip, fee, and address', (
     tester,

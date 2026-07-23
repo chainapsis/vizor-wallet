@@ -39,11 +39,13 @@ class MobileTransactionStatusArgs {
     required this.txidHex,
     this.txKind,
     this.initialTransaction,
+    this.initialDetail,
   });
 
   final String txidHex;
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
+  final rust_sync.TransactionDetail? initialDetail;
 }
 
 /// Loads the transaction history; injectable so widget tests can avoid
@@ -98,6 +100,7 @@ class _MobileTransactionStatusScreenState
   void initState() {
     super.initState();
     _transaction = widget.args.initialTransaction;
+    _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     unawaited(_loadTransaction());
   }

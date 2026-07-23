@@ -84,18 +84,6 @@ void main() {
     expect(received.leadingIconName, AppIcons.arrowDownCircle);
   });
 
-  testWidgets('migration rows expose the Ironwood pool', (tester) async {
-    final row = await mapRow(
-      tester,
-      _transaction(txKind: 'migration', displayPool: 'ironwood'),
-    );
-
-    expect(row.title, 'Migration');
-    expect(row.leadingIconName, AppIcons.renew);
-    expect(row.subtitle, 'Ironwood');
-    expect(row.subtitleIconName, AppIcons.shieldKeyholeOutline);
-  });
-
   testWidgets('expired send stays a failed row, not an in-flight one', (
     tester,
   ) async {

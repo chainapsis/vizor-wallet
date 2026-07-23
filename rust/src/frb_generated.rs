@@ -3040,15 +3040,16 @@ fn wire__crate__api__sync__get_transaction_data_requests_impl(
     )
 }
 fn wire__crate__api__sync__get_transaction_detail_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "get_transaction_detail",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -3066,16 +3067,18 @@ fn wire__crate__api__sync__get_transaction_detail_impl(
             let api_txid_hex = <String>::sse_decode(&mut deserializer);
             let api_tx_kind = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::api::sync::get_transaction_detail(
-                    api_db_path,
-                    api_network,
-                    api_account_uuid,
-                    api_txid_hex,
-                    api_tx_kind,
-                )?;
-                Ok(output_ok)
-            })())
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::sync::get_transaction_detail(
+                        api_db_path,
+                        api_network,
+                        api_account_uuid,
+                        api_txid_hex,
+                        api_tx_kind,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -8942,6 +8945,7 @@ fn pde_ffi_dispatcher_primary_impl(
 74 => wire__crate__api__sync__get_shield_transparent_status_impl(port, ptr, rust_vec_len, data_len),
 76 => wire__crate__api__sync__get_sync_status_impl(port, ptr, rust_vec_len, data_len),
 77 => wire__crate__api__sync__get_transaction_data_requests_impl(port, ptr, rust_vec_len, data_len),
+78 => wire__crate__api__sync__get_transaction_detail_impl(port, ptr, rust_vec_len, data_len),
 79 => wire__crate__api__sync__get_transaction_history_impl(port, ptr, rust_vec_len, data_len),
 80 => wire__crate__api__wallet__get_transparent_receive_address_impl(port, ptr, rust_vec_len, data_len),
 81 => wire__crate__api__wallet__get_unified_address_impl(port, ptr, rust_vec_len, data_len),
@@ -9017,7 +9021,6 @@ fn pde_ffi_dispatcher_sync_impl(
         53 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),
         59 => wire__crate__api__sync__get_blocks_dir_impl(ptr, rust_vec_len, data_len),
         75 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__sync__get_transaction_detail_impl(ptr, rust_vec_len, data_len),
         82 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         88 => wire__crate__api__voting__is_last_moment_impl(ptr, rust_vec_len, data_len),
         89 => wire__crate__api__sync__is_mempool_observer_running_impl(ptr, rust_vec_len, data_len),

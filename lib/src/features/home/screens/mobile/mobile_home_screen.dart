@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../../main.dart' show log;
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
@@ -17,6 +18,7 @@ import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
+import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -24,6 +26,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
+import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -597,6 +600,47 @@ class _HomeContent extends ConsumerStatefulWidget {
 class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
 
+  Future<void> _openTransactionStatus(
+    BuildContext context,
+    WidgetRef ref,
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    rust_sync.TransactionDetail? detail;
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      detail = await rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('MobileHome: transaction detail load failed: $e\n$st');
+    }
+    if (!mounted ||
+        accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
+
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+        initialDetail: detail,
+      ),
+    );
+  }
+
   Future<void> _openPay() async {
     final accountUuid = ref
         .read(accountProvider)
@@ -736,17 +780,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             transaction: tx,
             privacyModeEnabled: privacyModeEnabled,
             dateOnlyTimestamp: true,
-            onTap: () => context.push(
-              Uri(
-                path: '/activity/tx/${tx.txidHex}',
-                queryParameters: {'kind': tx.txKind},
-              ).toString(),
-              extra: MobileTransactionStatusArgs(
-                txidHex: tx.txidHex,
-                txKind: tx.txKind,
-                initialTransaction: tx,
-              ),
-            ),
+            onTap: () => unawaited(_openTransactionStatus(context, ref, tx)),
           ),
         ),
       for (final item in swapItems)
