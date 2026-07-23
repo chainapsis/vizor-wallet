@@ -562,8 +562,6 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     }
 
     let mut created = Vec::with_capacity(prepared_notes.len());
-    let mut anchor_cohort_counts =
-        super::migration::pending_anchor_cohort_counts(db_path, &run.run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
     let approved_schedule =
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
@@ -604,7 +602,6 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     migration_index,
                     schedule_block_offset,
                     timing_policy,
-                    &mut anchor_cohort_counts,
                     true,
                 )
             })

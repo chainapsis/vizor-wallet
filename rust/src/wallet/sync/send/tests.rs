@@ -174,31 +174,11 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
 }
 
 #[test]
-fn child_migration_policy_caps_each_proof_batch_at_k_max() {
+fn foreground_migration_policy_keeps_existing_batch_behavior() {
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(0), 0);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(7), 7);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(9), 9);
-
-    let child_policy = MigrationBroadcastPolicy::FOREGROUND.child_proof_batch();
-    assert_eq!(child_policy.proof_limit(0), 0);
-    assert_eq!(child_policy.proof_limit(7), 7);
-    assert_eq!(child_policy.proof_limit(8), 8);
-    assert_eq!(
-        child_policy.proof_limit(9),
-        ZIP318_MAX_PARTS_PER_ANCHOR_COHORT as usize
-    );
+    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
     assert!(!MigrationBroadcastPolicy::FOREGROUND.should_defer_broadcast(500));
     assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
-}
-
-#[test]
-fn child_proof_batches_follow_persistent_part_indexes() {
-    assert_eq!(child_proof_batch_index(0), 0);
-    assert_eq!(child_proof_batch_index(7), 0);
-    assert_eq!(child_proof_batch_index(8), 1);
-    assert_eq!(child_proof_batch_index(15), 1);
-    assert_eq!(child_proof_batch_index(16), 2);
 }
 
 #[test]

@@ -102,7 +102,7 @@ use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 
-use super::migration::{MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT};
+use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
@@ -153,13 +153,6 @@ impl MigrationBroadcastPolicy<'_> {
 
     fn proof_limit(self, total: usize) -> usize {
         self.max_proofs_per_step.unwrap_or(total).min(total)
-    }
-
-    fn child_proof_batch(self) -> Self {
-        Self {
-            max_proofs_per_step: Some(ZIP318_MAX_PARTS_PER_ANCHOR_COHORT as usize),
-            ..self
-        }
     }
 
     fn should_defer_broadcast(self, proofs_created: usize) -> bool {
@@ -1017,7 +1010,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                         &run.run_id,
                         pending_password.as_slice(),
                         pending_salt_base64,
-                        MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
+                        MigrationBroadcastPolicy::FOREGROUND,
                     )?;
                     if finalized == 0 {
                         let result = prepared_notes_not_spendable_result(
@@ -1461,7 +1454,7 @@ async fn prepare_orchard_migration_outbox(
             &run.run_id,
             pending_password,
             pending_salt_base64,
-            MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
+            MigrationBroadcastPolicy::FOREGROUND,
         )?;
     }
 
@@ -1674,7 +1667,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             &run.run_id,
             pending_password.as_slice(),
             pending_salt_base64,
-            policy.child_proof_batch(),
+            policy,
         )?;
         if finalized == 0 || policy.should_defer_broadcast(finalized) {
             return Ok(prepared_notes_not_spendable_result(
@@ -2780,7 +2773,6 @@ fn orchard_anchor_and_witness_for_prepared_note(
     note_ref: &super::migration::PreparedOrchardNoteRef,
     preferred_anchor_boundary_height: Option<u32>,
     timing_policy: super::migration::MigrationTimingPolicy,
-    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
 ) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
@@ -2852,50 +2844,16 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .iter()
         .map(|(boundary, _)| *boundary)
         .collect::<Vec<_>>();
-    let mut checkpoint_cohort_counts = BTreeMap::<u32, u32>::new();
-    for (boundary, count) in anchor_cohort_counts.iter() {
-        if let Some(checkpoint) =
-            representative_orchard_checkpoint(&checkpoint_heights, *boundary, mined_height)
-        {
-            let cohort_count = checkpoint_cohort_counts.entry(checkpoint).or_default();
-            *cohort_count = cohort_count
-                .checked_add(*count)
-                .ok_or("Migration anchor cohort count overflow")?;
-        }
-    }
-    let draw_cohort_counts = available_anchor_candidates
-        .iter()
-        .map(|(boundary, checkpoint)| {
-            (
-                *boundary,
-                checkpoint_cohort_counts
-                    .get(checkpoint)
-                    .copied()
-                    .unwrap_or_default(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
     let anchor_boundary_height = preferred_anchor_boundary_height
         .filter(|boundary| {
-            available_anchor_candidates
-                .iter()
-                .find(|(candidate, _)| candidate == boundary)
-                .is_some_and(|(_, checkpoint)| {
-                    checkpoint_cohort_counts
-                        .get(checkpoint)
-                        .copied()
-                        .unwrap_or_default()
-                        < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
-                })
-                && super::migration::zip318_anchor_boundary_is_candidate_with_policy(
-                    network,
-                    timing_policy,
-                    *boundary,
-                    anchor_height_u32,
-                    mined_height,
-                    nu6_3_activation_height,
-                )
-                && available_candidates.contains(boundary)
+            super::migration::zip318_anchor_boundary_is_candidate_with_policy(
+                network,
+                timing_policy,
+                *boundary,
+                anchor_height_u32,
+                mined_height,
+                nu6_3_activation_height,
+            ) && available_candidates.contains(boundary)
         })
         .or_else(|| {
             super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
@@ -2903,7 +2861,6 @@ fn orchard_anchor_and_witness_for_prepared_note(
                 timing_policy,
                 anchor_height_u32,
                 &available_candidates,
-                &draw_cohort_counts,
             )
         });
     let Some(anchor_boundary_height) = anchor_boundary_height else {
@@ -2916,9 +2873,6 @@ fn orchard_anchor_and_witness_for_prepared_note(
         })
         .ok_or("Orchard migration checkpoint disappeared during anchor selection")?;
     retain_orchard_checkpoint(&mut db, checkpoint_height)?;
-    *anchor_cohort_counts
-        .entry(anchor_boundary_height)
-        .or_default() += 1;
 
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
@@ -2957,7 +2911,6 @@ fn rebuild_expired_software_migration_parts(
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let approved_schedule = super::migration::approved_schedule_for_run(db_path, run_id)?;
     let target_values = super::migration::target_values_for_run(db_path, run_id)?;
-    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let mut replacements = Vec::with_capacity(recoveries.len());
     let mut replacement_children = Vec::with_capacity(recoveries.len());
 
@@ -2977,7 +2930,6 @@ fn rebuild_expired_software_migration_parts(
             (index + 1) as u32,
             schedule_block_offset,
             timing_policy,
-            &mut anchor_cohort_counts,
             true,
         )?
         .ok_or("Expired migration funding note is not spendable at a canonical anchor")?;
@@ -3079,7 +3031,7 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
 
-    let mut signed_children = super::migration::signed_child_pczts_for_run(
+    let signed_children = super::migration::signed_child_pczts_for_run(
         db_path,
         run_id,
         pending_password,
@@ -3088,14 +3040,9 @@ fn finalize_presigned_migration_children(
     if signed_children.is_empty() {
         return Ok(0);
     }
-    let current_batch_index = child_proof_batch_index(signed_children[0].child_index);
-    signed_children
-        .retain(|child| child_proof_batch_index(child.child_index) == current_batch_index);
-
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
-    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
     let signed_child_count = signed_children.len();
     let proof_limit = policy.proof_limit(signed_child_count);
     let mut finalized_count = 0usize;
@@ -3119,7 +3066,6 @@ fn finalize_presigned_migration_children(
             .iter()
             .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
             .ok_or("Prepared migration notes changed before child finalization")?;
-        let mut candidate_anchor_cohort_counts = anchor_cohort_counts.clone();
         let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
             (match orchard_anchor_and_witness_for_prepared_note(
                 db_path,
@@ -3128,7 +3074,6 @@ fn finalize_presigned_migration_children(
                 current_note,
                 child.anchor_boundary_height,
                 timing_policy,
-                &mut candidate_anchor_cohort_counts,
             ) {
                 Ok(result) => result,
                 Err(e) if is_orchard_witness_not_ready_error(&e) => {
@@ -3141,7 +3086,6 @@ fn finalize_presigned_migration_children(
             deferred_child_seen = true;
             continue;
         };
-        anchor_cohort_counts = candidate_anchor_cohort_counts;
         let current_note_nullifier_hex = current_note
             .nullifier_hex
             .as_deref()
@@ -3225,10 +3169,6 @@ fn finalize_presigned_migration_children(
     }
 
     Ok(finalized_count)
-}
-
-fn child_proof_batch_index(part_index: u32) -> u32 {
-    part_index / ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
 }
 
 fn finalize_ready_denomination_stages(

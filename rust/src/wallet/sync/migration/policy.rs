@@ -4,10 +4,6 @@ pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOS
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const REGTEST_ANCHOR_BUCKET_MODULUS: u32 = 1;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
-/// Provisional per-wallet contribution limit for a single anchor cohort.
-/// ZIP 318 leaves this value open; eight lets the current 64-part run fit
-/// across eight or more candidate boundaries while retaining a cohort cap.
-pub(crate) const ZIP318_MAX_PARTS_PER_ANCHOR_COHORT: u32 = 8;
 pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;

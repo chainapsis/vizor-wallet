@@ -1550,30 +1550,6 @@ pub(crate) fn pending_migration_note_outpoints(
     pending_migration_note_outpoints_with_conn(&conn, run_id)
 }
 
-pub(crate) fn pending_anchor_cohort_counts(
-    db_path: &str,
-    run_id: &str,
-) -> Result<BTreeMap<u32, u32>, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let mut stmt = conn
-        .prepare_cached(&format!(
-            "SELECT anchor_boundary_height, COUNT(*)
-             FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND anchor_boundary_height IS NOT NULL
-               AND status != 'needs_resign'
-             GROUP BY anchor_boundary_height"
-        ))
-        .map_err(|e| format!("Prepare migration anchor cohort query: {e}"))?;
-    let rows = stmt
-        .query_map(params![run_id], |row| {
-            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-        })
-        .map_err(|e| format!("Query migration anchor cohorts: {e}"))?;
-    rows.collect::<Result<BTreeMap<_, _>, _>>()
-        .map_err(|e| format!("Read migration anchor cohorts: {e}"))
-}
-
 fn pending_migration_note_outpoints_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
