@@ -38,6 +38,13 @@ typedef IronwoodMigrationPrivatePlanGetter =
       required String accountUuid,
     });
 
+typedef IronwoodMigrationImmediatePlanGetter =
+    Future<rust_sync.OrchardMigrationImmediatePlan?> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+    });
+
 typedef IronwoodMigrationWalletDbPathGetter = Future<String> Function();
 typedef IronwoodMigrationEndpointGetter = RpcEndpointConfig Function();
 typedef IronwoodMigrationPasswordGetter = String Function();
@@ -65,6 +72,18 @@ typedef IronwoodMigrationSoftwareStarter =
       required String password,
       required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    });
+typedef IronwoodMigrationImmediateStarter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required List<int> mnemonicBytes,
+      required BigInt approvedTotalInputZatoshi,
+      required BigInt approvedFeeZatoshi,
+      required BigInt approvedMigratedZatoshi,
+      required int approvedInputNoteCount,
     });
 typedef IronwoodMigrationUnbroadcastRetirer =
     Future<void> Function({
@@ -244,6 +263,8 @@ class IronwoodMigrationService {
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
+    IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
+    IronwoodMigrationImmediateStarter? startImmediateMigration,
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
@@ -294,6 +315,11 @@ class IronwoodMigrationService {
            _defaultRequestNotificationAuthorization,
        startSoftwareMigration =
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
+       getImmediatePlan =
+           getImmediatePlan ?? rust_sync.getOrchardMigrationImmediatePlan,
+       startImmediateMigration =
+           startImmediateMigration ??
+           rust_sync.migrateOrchardToIronwoodImmediately,
        retireUnbroadcastMigration =
            retireUnbroadcastMigration ??
            rust_sync.retireUnbroadcastOrchardMigration,
@@ -346,6 +372,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationWalletDbPathGetter getWalletDbPath;
   final IronwoodMigrationStatusGetter getStatus;
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
+  final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
@@ -363,6 +390,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationNotificationAuthorizationRequester
   requestNotificationAuthorization;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
+  final IronwoodMigrationImmediateStarter startImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
@@ -387,16 +415,6 @@ class IronwoodMigrationService {
   final IronwoodMigrationKeystoneRequestDiscarder
   discardKeystoneMigrationRequest;
   final IronwoodMigrationOperationRegistry operationRegistry;
-  final Set<String> _foregroundImmediateAccounts = <String>{};
-
-  /// Whether an active migration must stay on the user-attended, foreground
-  /// path. Immediate migration deliberately never uses the iOS outbox.
-  bool isForegroundImmediateMigration(String accountUuid) =>
-      _foregroundImmediateAccounts.contains(accountUuid);
-
-  void clearForegroundImmediateMigration(String accountUuid) {
-    _foregroundImmediateAccounts.remove(accountUuid);
-  }
 
   final Map<String, Future<void>> _credentialOperationTails = {};
   final Set<String> _scheduledBackgroundMigrations = {};
@@ -495,6 +513,24 @@ class IronwoodMigrationService {
     );
   }
 
+  Future<rust_sync.OrchardMigrationImmediatePlan?> immediatePlan({
+    required String network,
+    required String accountUuid,
+  }) async {
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () async {
+        final dbPath = await getWalletDbPath();
+        return getImmediatePlan(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+      },
+    );
+  }
+
   Future<String> pendingTxSaltBase64({
     required String network,
     required String accountUuid,
@@ -571,6 +607,7 @@ class IronwoodMigrationService {
   /// background credential, or migration outbox.
   Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
     required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -597,12 +634,16 @@ class IronwoodMigrationService {
             throw Exception('Mnemonic not found for the migration account.');
           }
           try {
-            return await rust_sync.migrateOrchardToIronwoodImmediately(
+            return await startImmediateMigration(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: endpoint.networkName,
               accountUuid: accountUuid,
               mnemonicBytes: mnemonicBytes,
+              approvedTotalInputZatoshi: approvedPlan.totalInputZatoshi,
+              approvedFeeZatoshi: approvedPlan.feeZatoshi,
+              approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
+              approvedInputNoteCount: approvedPlan.inputNoteCount,
             );
           } finally {
             mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
@@ -612,39 +653,6 @@ class IronwoodMigrationService {
     } catch (_) {
       rethrow;
     }
-  }
-
-  /// Broadcasts a due Immediate migration transaction in the foreground.
-  ///
-  /// Unlike Private migration, this has no Swift outbox or background
-  /// credential enrollment. The app coordinator invokes it while foregrounded.
-  Future<rust_sync.IronwoodMigrationResult> continueSoftwareImmediateMigration({
-    required String accountUuid,
-  }) async {
-    final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
-    final context = _MigrationCredentialContext(
-      dbPath: dbPath,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-    );
-
-    return operationRegistry.run(
-      network: context.network,
-      accountUuid: context.accountUuid,
-      operation: () async {
-        final credential = await _legacyCredential(context);
-        return broadcastDueMigration(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
-        );
-      },
-    );
   }
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({

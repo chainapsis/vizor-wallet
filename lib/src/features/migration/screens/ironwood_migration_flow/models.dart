@@ -98,6 +98,25 @@ final ironwoodMigrationPrivatePlanProvider =
           );
     });
 
+final ironwoodMigrationImmediatePlanProvider =
+    FutureProvider.autoDispose<rust_sync.OrchardMigrationImmediatePlan?>((
+      ref,
+    ) async {
+      final request = ref.watch(
+        ironwoodMigrationInputsProvider.select(
+          (inputs) => inputs.statusRequest,
+        ),
+      );
+      if (request == null) return null;
+
+      return ref
+          .watch(ironwoodMigrationServiceProvider)
+          .immediatePlan(
+            network: request.network,
+            accountUuid: request.accountUuid,
+          );
+    });
+
 BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
   if (status == null) return BigInt.zero;
   BigInt total = BigInt.zero;

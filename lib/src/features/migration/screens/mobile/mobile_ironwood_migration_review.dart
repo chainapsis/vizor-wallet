@@ -498,10 +498,24 @@ String _mobilePrivateMigrationStartErrorMessage(Object error) {
   return "Couldn't start migration. Try again.";
 }
 
+String _mobileImmediateMigrationStartErrorMessage(Object error) {
+  final message = error.toString().toLowerCase();
+  if (message.contains('plan changed')) {
+    return 'The amount or fee changed. Review the updated details.';
+  }
+  return _mobilePrivateMigrationStartErrorMessage(error);
+}
+
 class _MobileMigrationFastReview extends ConsumerStatefulWidget {
-  const _MobileMigrationFastReview({required this.data});
+  const _MobileMigrationFastReview({
+    required this.data,
+    required this.previewPlan,
+    required this.isHardware,
+  });
 
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationImmediatePlan? previewPlan;
+  final bool isHardware;
 
   @override
   ConsumerState<_MobileMigrationFastReview> createState() =>
@@ -510,10 +524,13 @@ class _MobileMigrationFastReview extends ConsumerStatefulWidget {
 
 class _MobileMigrationFastReviewState
     extends ConsumerState<_MobileMigrationFastReview> {
+  bool _acknowledged = false;
   bool _isBroadcasting = false;
   String? _broadcastError;
 
-  Future<void> _startImmediateMigration() async {
+  Future<void> _startImmediateMigration(
+    rust_sync.OrchardMigrationImmediatePlan plan,
+  ) async {
     if (_isBroadcasting) return;
     setState(() {
       _isBroadcasting = true;
@@ -528,23 +545,17 @@ class _MobileMigrationFastReviewState
       }
 
       if (accountState.activeAccount?.isHardware ?? false) {
-        final plan = await ref.read(
-          ironwoodMigrationPrivatePlanProvider.future,
+        throw UnsupportedError(
+          'Immediate migration is not available with Keystone.',
         );
-        if (plan == null) {
-          throw StateError('Migration plan is not available yet.');
-        }
-        if (!mounted) return;
-        context.go(
-          '/migration/private/keystone/denominations/sign',
-          extra: plan.scheduledTransfers,
-        );
-        return;
       }
 
       await ref
           .read(ironwoodMigrationServiceProvider)
-          .startSoftwareImmediateMigration(accountUuid: accountUuid);
+          .startSoftwareImmediateMigration(
+            accountUuid: accountUuid,
+            approvedPlan: plan,
+          );
       if (!mounted) return;
 
       try {
@@ -557,8 +568,12 @@ class _MobileMigrationFastReviewState
       context.go('/home');
     } catch (error) {
       if (!mounted) return;
+      if (error.toString().toLowerCase().contains('plan changed')) {
+        ref.invalidate(ironwoodMigrationImmediatePlanProvider);
+      }
       setState(() {
-        _broadcastError = _mobilePrivateMigrationStartErrorMessage(error);
+        _acknowledged = false;
+        _broadcastError = _mobileImmediateMigrationStartErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -572,6 +587,24 @@ class _MobileMigrationFastReviewState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final planAsync = widget.previewPlan != null
+        ? AsyncValue<rust_sync.OrchardMigrationImmediatePlan?>.data(
+            widget.previewPlan,
+          )
+        : ref.watch(ironwoodMigrationImmediatePlanProvider);
+    final plan = planAsync.asData?.value;
+    final planUnavailable = planAsync.asData != null && plan == null;
+    final canBroadcast =
+        !widget.isHardware && plan != null && _acknowledged && !_isBroadcasting;
+    final totalInputText = plan == null
+        ? (planUnavailable ? 'Unavailable' : 'Calculating…')
+        : '${ZecAmount.fromZatoshi(plan.totalInputZatoshi).balance.amountText} ZEC';
+    final feeText = plan == null
+        ? (planUnavailable ? 'Unavailable' : 'Calculating…')
+        : '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC';
+    final migratedText = plan == null
+        ? (planUnavailable ? 'Unavailable' : 'Calculating…')
+        : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).balance.amountText} ZEC';
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
       bottom: Column(
@@ -603,7 +636,9 @@ class _MobileMigrationFastReviewState
             variant: AppButtonVariant.destructive,
             expand: true,
             height: 50,
-            onPressed: _isBroadcasting ? null : _startImmediateMigration,
+            onPressed: canBroadcast
+                ? () => _startImmediateMigration(plan)
+                : null,
             leading: _isBroadcasting
                 ? const SizedBox(
                     width: 20,
@@ -627,20 +662,16 @@ class _MobileMigrationFastReviewState
               child: Column(
                 children: [
                   _ReviewRow(
-                    label: 'Amount',
-                    value: '${widget.data.amountText} ZEC',
+                    label: 'Orchard amount',
+                    value: totalInputText,
                     height: 32,
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  const _ReviewRow(
-                    label: 'Fees (estimate)',
-                    value: 'shown before send',
-                  ),
+                  _ReviewRow(label: 'Network fee', value: feeText),
                   const SizedBox(height: AppSpacing.xs),
-                  const _ReviewRow(
-                    label: 'Migration complete in',
-                    value: '~5 mins',
-                    showInfo: true,
+                  _ReviewRow(
+                    label: 'Ironwood received',
+                    value: migratedText,
                     height: 32,
                   ),
                 ],
@@ -726,6 +757,77 @@ class _MobileMigrationFastReviewState
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          Semantics(
+            checked: _acknowledged,
+            button: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_ironwood_fast_acknowledgement'),
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.isHardware
+                  ? null
+                  : () => setState(() => _acknowledged = !_acknowledged),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: _acknowledged
+                          ? colors.button.destructive.bg
+                          : colors.background.ground,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: _acknowledged
+                            ? colors.button.destructive.bg
+                            : colors.border.regular,
+                      ),
+                    ),
+                    child: _acknowledged
+                        ? AppIcon(
+                            AppIcons.check,
+                            size: 14,
+                            color: colors.button.destructive.label,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: Text(
+                      widget.isHardware
+                          ? 'Immediate migration is not available with Keystone.'
+                          : 'I understand that this migration’s amount and '
+                                'timing will be visible on the Zcash network.',
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (planAsync.hasError) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              "Couldn't calculate the Immediate migration fee. Sync and try again.",
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ] else if (planUnavailable) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              'No spendable Orchard balance is available for Immediate migration.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -77,6 +77,10 @@ void main() {
 
       logE2e('stopping lightwalletd to hold the Immediate broadcast');
       await postDriver('/lightwalletd/stop', const {});
+      await tapWidget(
+        tester,
+        const ValueKey('mobile_ironwood_fast_acknowledgement'),
+      );
       await tapAppButton(
         tester,
         const ValueKey('mobile_ironwood_immediate_broadcast_button'),

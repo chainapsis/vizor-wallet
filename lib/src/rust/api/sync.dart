@@ -327,12 +327,30 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodImmediately(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
+Future<OrchardMigrationImmediatePlan?> getOrchardMigrationImmediatePlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationImmediatePlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
 );
 
 Future<void> retireUnbroadcastOrchardMigration({
@@ -1540,6 +1558,37 @@ class MigrationStatus {
           nextActionPartIndex == other.nextActionPartIndex &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
           parts == other.parts;
+}
+
+class OrchardMigrationImmediatePlan {
+  final BigInt totalInputZatoshi;
+  final BigInt feeZatoshi;
+  final BigInt migratedZatoshi;
+  final int inputNoteCount;
+
+  const OrchardMigrationImmediatePlan({
+    required this.totalInputZatoshi,
+    required this.feeZatoshi,
+    required this.migratedZatoshi,
+    required this.inputNoteCount,
+  });
+
+  @override
+  int get hashCode =>
+      totalInputZatoshi.hashCode ^
+      feeZatoshi.hashCode ^
+      migratedZatoshi.hashCode ^
+      inputNoteCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OrchardMigrationImmediatePlan &&
+          runtimeType == other.runtimeType &&
+          totalInputZatoshi == other.totalInputZatoshi &&
+          feeZatoshi == other.feeZatoshi &&
+          migratedZatoshi == other.migratedZatoshi &&
+          inputNoteCount == other.inputNoteCount;
 }
 
 class OrchardMigrationPrivatePlan {

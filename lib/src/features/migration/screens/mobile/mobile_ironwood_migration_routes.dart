@@ -5,6 +5,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
+    this.previewImmediatePlan,
     this.previewStatus,
     this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
     this.previewParts,
@@ -14,6 +15,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final MobileIronwoodMigrationStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final rust_sync.MigrationStatus? previewStatus;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
@@ -27,6 +29,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         data: preview,
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
+        previewImmediatePlan: previewImmediatePlan,
         previewReviewStage: previewReviewStage,
         previewParts: previewParts,
         status: previewStatus,
@@ -40,6 +43,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       data: data,
       previewMode: false,
       previewPrivatePlan: previewPrivatePlan,
+      previewImmediatePlan: previewImmediatePlan,
       previewReviewStage: previewReviewStage,
       previewParts: previewParts,
       status: null,
@@ -53,6 +57,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.data,
     required this.previewMode,
     required this.previewPrivatePlan,
+    required this.previewImmediatePlan,
     required this.previewReviewStage,
     required this.previewParts,
     this.status,
@@ -62,6 +67,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final IronwoodMigrationFlowData data;
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
@@ -75,7 +81,9 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
-      MobileIronwoodMigrationStep.options => const _MobileMigrationOptions(),
+      MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        immediateEnabled: !isHardware,
+      ),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,
@@ -85,6 +93,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
+        previewPlan: previewImmediatePlan,
+        isHardware: isHardware,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,

@@ -111,6 +111,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  OrchardMigrationImmediatePlan
+  dco_decode_box_autoadd_orchard_migration_immediate_plan(dynamic raw);
+
+  @protected
   OrchardMigrationPrivatePlan
   dco_decode_box_autoadd_orchard_migration_private_plan(dynamic raw);
 
@@ -477,6 +481,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  OrchardMigrationImmediatePlan?
+  dco_decode_opt_box_autoadd_orchard_migration_immediate_plan(dynamic raw);
+
+  @protected
   OrchardMigrationPrivatePlan?
   dco_decode_opt_box_autoadd_orchard_migration_private_plan(dynamic raw);
 
@@ -501,6 +509,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  OrchardMigrationImmediatePlan dco_decode_orchard_migration_immediate_plan(
+    dynamic raw,
+  );
 
   @protected
   OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
@@ -784,6 +797,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationImmediatePlan
+  sse_decode_box_autoadd_orchard_migration_immediate_plan(
     SseDeserializer deserializer,
   );
 
@@ -1248,6 +1267,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  OrchardMigrationImmediatePlan?
+  sse_decode_opt_box_autoadd_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   OrchardMigrationPrivatePlan?
   sse_decode_opt_box_autoadd_orchard_migration_private_plan(
     SseDeserializer deserializer,
@@ -1278,6 +1303,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  OrchardMigrationImmediatePlan sse_decode_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  );
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
@@ -1625,6 +1655,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
     SseSerializer serializer,
   );
 
@@ -2199,6 +2235,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan? self,
     SseSerializer serializer,
@@ -2231,6 +2273,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
     SseSerializer serializer,
   );
 

@@ -135,7 +135,9 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 enum _MobileMigrationOption { private, immediate }
 
 class _MobileMigrationOptions extends StatefulWidget {
-  const _MobileMigrationOptions();
+  const _MobileMigrationOptions({required this.immediateEnabled});
+
+  final bool immediateEnabled;
 
   @override
   State<_MobileMigrationOptions> createState() =>
@@ -146,6 +148,10 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
   var _selectedOption = _MobileMigrationOption.private;
 
   void _select(_MobileMigrationOption option) {
+    if (option == _MobileMigrationOption.immediate &&
+        !widget.immediateEnabled) {
+      return;
+    }
     if (_selectedOption == option) return;
     setState(() => _selectedOption = option);
   }
@@ -188,10 +194,14 @@ class _MobileMigrationOptionsState extends State<_MobileMigrationOptions> {
           _MobileMigrationOptionCard(
             key: const ValueKey('mobile_ironwood_immediate_option'),
             title: 'Immediate',
-            body: 'Sends now in one step.',
+            body: widget.immediateEnabled
+                ? 'Sends now in one step.'
+                : 'Not available with Keystone.',
             selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,
-            onTap: () => _select(_MobileMigrationOption.immediate),
+            onTap: widget.immediateEnabled
+                ? () => _select(_MobileMigrationOption.immediate)
+                : null,
           ),
         ],
       ),

@@ -48,6 +48,12 @@ class _RustApiFake implements RustLibApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _HardwareAccountNotifier extends AccountNotifier {
+  @override
+  Future<AccountState> build() async =>
+      _bootstrap(hardware: true).initialAccountState;
+}
+
 class _RecoveryScreenTestMigrationCoordinator
     extends IronwoodMigrationCoordinator {
   int recoveryCount = 0;
@@ -112,6 +118,13 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
 );
 
 rust_sync.OrchardMigrationPrivatePlan get _plan => _planWith();
+
+final _immediatePlan = rust_sync.OrchardMigrationImmediatePlan(
+  totalInputZatoshi: BigInt.from(14_223_000_000),
+  feeZatoshi: BigInt.from(60_000),
+  migratedZatoshi: BigInt.from(14_222_940_000),
+  inputNoteCount: 12,
+);
 
 rust_sync.MigrationStatus _status({
   required String phase,
@@ -259,6 +272,7 @@ Widget _app({
       step: value,
       previewData: _data,
       previewPrivatePlan: previewPlan ?? _plan,
+      previewImmediatePlan: _immediatePlan,
       previewStatus: previewStatus,
       previewReviewStage: previewReviewStage,
     );
@@ -357,6 +371,12 @@ Widget _productionApp({
         builder: (_, _) => const Text('intro route'),
       ),
       GoRoute(
+        path: '/migration/options',
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.options,
+        ),
+      ),
+      GoRoute(
         path: '/migration/private/review',
         builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.privateReview,
@@ -388,6 +408,7 @@ Widget _productionApp({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
+      if (hardware) accountProvider.overrideWith(_HardwareAccountNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           syncState ??
@@ -404,6 +425,9 @@ Widget _productionApp({
             privatePlanLoader?.call() ??
             privatePlanFuture ??
             Future.value(privatePlan ?? _plan),
+      ),
+      ironwoodMigrationImmediatePlanProvider.overrideWith(
+        (ref) => Future.value(_immediatePlan),
       ),
       ironwoodMigrationRouteCtaProvider.overrideWith(
         (ref) async => ctaBuilder?.call() ?? cta,
@@ -451,6 +475,9 @@ IronwoodMigrationService _migrationService({
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             _plan,
+    getImmediatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _immediatePlan,
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
     getEndpoint: () => defaultRpcEndpointConfig('main'),
     getSessionPassword: () => 'test-password',
@@ -755,6 +782,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('Privacy trade-off'), findsOneWidget);
+  });
+
+  testWidgets('does not offer Immediate migration to Keystone accounts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final immediateOption = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_option'),
+    );
+    final immediateGesture = find.descendant(
+      of: immediateOption,
+      matching: find.byType(GestureDetector),
+    );
+    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNull);
+    await tester.tap(immediateOption);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: immediateOption,
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('renders the private migration review plan', (tester) async {
@@ -1519,22 +1577,29 @@ void main() {
           .height,
       189,
     );
-    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('Orchard amount'), findsOneWidget);
     expect(find.text('142.23 ZEC'), findsOneWidget);
-    expect(find.text('Migration complete in'), findsOneWidget);
-    expect(
-      find.ancestor(
-        of: find.text('Migration complete in'),
-        matching: find.byType(FittedBox),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('~5 mins'), findsOneWidget);
+    expect(find.text('Network fee'), findsOneWidget);
+    expect(find.text('0.0006 ZEC'), findsOneWidget);
+    expect(find.text('Ironwood received'), findsOneWidget);
+    expect(find.text('142.2294 ZEC'), findsOneWidget);
     expect(find.text('Orchard remains'), findsNothing);
     expect(
       find.textContaining('will be visible on the Zcash network.'),
-      findsNothing,
+      findsOneWidget,
     );
+    final acknowledgement = find.byKey(
+      const ValueKey('mobile_ironwood_fast_acknowledgement'),
+    );
+    final continueButton = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_broadcast_button'),
+    );
+    expect(tester.widget<AppButton>(continueButton).onPressed, isNull);
+    await tester.ensureVisible(acknowledgement);
+    await tester.pumpAndSettle();
+    await tester.tap(acknowledgement);
+    await tester.pump();
+    expect(tester.widget<AppButton>(continueButton).onPressed, isNotNull);
     expect(find.text('Continue anyway'), findsOneWidget);
     expect(find.text('Authorise anyway'), findsNothing);
   });

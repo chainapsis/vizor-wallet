@@ -190,6 +190,14 @@ pub struct IronwoodMigrationResult {
     pub migrated_zatoshi: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrchardMigrationImmediatePlan {
+    pub total_input_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+    pub input_note_count: u32,
+}
+
 impl IronwoodMigrationResult {
     pub(crate) async fn prepare_outbox(
         db_path: &str,
@@ -1095,6 +1103,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
+    approved_plan: OrchardMigrationImmediatePlan,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
@@ -1125,6 +1134,34 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
                 .ok_or("Wallet must sync before migrating")?;
             let orchard_notes =
                 select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+            let valued_notes = orchard_notes
+                .into_iter()
+                .map(|note| {
+                    let value = note
+                        .note_value()
+                        .map(u64::from)
+                        .map_err(|e| format!("{e}"))?;
+                    Ok((note, value))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let plan = immediate_migration_plan_for_values(
+                network,
+                target_height.into(),
+                valued_notes.iter().map(|(_, value)| *value),
+            )?
+            .ok_or(
+                "No spendable Orchard notes are available for Immediate migration".to_string(),
+            )?;
+            if plan != approved_plan {
+                return Err(
+                    "Immediate migration plan changed. Review the updated amount and fee."
+                        .to_string(),
+                );
+            }
+            let orchard_notes = valued_notes
+                .into_iter()
+                .filter_map(|(note, value)| (value > 0).then_some(note))
+                .collect::<Vec<_>>();
             if orchard_notes.is_empty() {
                 return Err(
                     "No spendable Orchard notes are available for Immediate migration".to_string(),
@@ -1136,13 +1173,6 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
                 BlockHeight::from(anchor_height),
                 &orchard_notes,
             )?;
-            let input_total = orchard_notes.iter().try_fold(0u64, |total, note| {
-                total
-                    .checked_add(u64::from(
-                        note.note_value().map_err(|e| format!("{e}"))?,
-                    ))
-                    .ok_or_else(|| "Immediate migration input overflow".to_string())
-            })?;
             let fee_rule = ConservativeZip317FeeRule;
             let make_builder = |amount: Zatoshis| {
                 let mut builder = migration_child_builder(
@@ -1174,14 +1204,11 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
             let fee = make_builder(minimum)?
                 .get_fee(&fee_rule)
                 .map_err(|e| format!("Estimate Immediate migration fee failed: {e}"))?;
-            let input_total = Zatoshis::from_u64(input_total)
-                .map_err(|_| "Bad Immediate migration input total")?;
-            if input_total <= fee {
-                return Err(
-                    "Immediate migration amount does not cover the transaction fee".to_string(),
-                );
+            if u64::from(fee) != plan.fee_zatoshi {
+                return Err("Immediate migration fee changed while building".to_string());
             }
-            let amount = (input_total - fee).ok_or("Immediate migration amount underflow")?;
+            let amount = Zatoshis::from_u64(plan.migrated_zatoshi)
+                .map_err(|_| "Bad Immediate migration output amount")?;
             let built = pczt_from_build_result(
                 make_builder(amount)?
                     .build_for_pczt(rand_core::OsRng, &fee_rule)
@@ -1194,29 +1221,72 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
             Ok::<_, String>((
                 built.bytes,
                 built.orchard_spend_action_indices,
-                u64::from(fee),
-                u64::from(amount),
+                plan.fee_zatoshi,
+                plan.migrated_zatoshi,
             ))
         })?;
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
     let signed =
         sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
-    let sigs =
-        super::pczt::extract_required_compact_sigs_from_signed_pczt(&base_pczt, &signed)?;
+    let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(&base_pczt, &signed)?;
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
-    broadcast_raw_transaction(&mut client, &extracted.raw_tx).await?;
+    let response = match crate::wallet::sync_engine::send_transaction_with_status(
+        &mut client,
+        &extracted.raw_tx,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(status) if status.code() == Code::DeadlineExceeded => {
+            let storage_message = match decrypt_and_store_migration_tx(
+                db_path,
+                network,
+                &extracted.raw_tx,
+            ) {
+                Ok(()) => {
+                    "The transaction was stored locally and will retry automatically during sync."
+                        .to_string()
+                }
+                Err(error) => format!("Local tracking also failed: {error}"),
+            };
+            return Ok(IronwoodMigrationResult {
+                txids: extracted.txid.to_string(),
+                status: CreatedBroadcastResult::PENDING_BROADCAST.to_string(),
+                broadcasted_count: 0,
+                total_count: 1,
+                message: Some(format!(
+                    "The Immediate migration broadcast timed out and may already be on the network. {storage_message}"
+                )),
+                fee_zatoshi,
+                migrated_zatoshi,
+            });
+        }
+        Err(status) => {
+            return Err(format!(
+                "Immediate migration broadcast failed before acceptance: {status}"
+            ));
+        }
+    };
+    if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
+        return Err(error);
+    }
+    let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
 
     Ok(IronwoodMigrationResult {
         txids: extracted.txid.to_string(),
         status: super::migration::PHASE_BROADCASTING.to_string(),
         broadcasted_count: 1,
         total_count: 1,
-        message: None,
+        message: storage_error.map(|error| {
+            format!(
+                "The Immediate migration was accepted, but local tracking failed: {error}. Sync will recover the transaction."
+            )
+        }),
         fee_zatoshi,
         migrated_zatoshi,
     })

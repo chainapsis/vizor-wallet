@@ -13,6 +13,38 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn immediate_migration_plan_ignores_zero_value_orchard_notes() {
+    let target_height = BlockHeight::from_u32(500);
+    let with_padding = immediate_migration_plan_for_values(
+        WalletNetwork::Regtest,
+        target_height,
+        [0, 100_000, 0, 200_000, 0],
+    )
+    .unwrap()
+    .unwrap();
+    let without_padding = immediate_migration_plan_for_values(
+        WalletNetwork::Regtest,
+        target_height,
+        [100_000, 200_000],
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(with_padding, without_padding);
+    assert_eq!(with_padding.total_input_zatoshi, 300_000);
+    assert_eq!(with_padding.input_note_count, 2);
+    assert_eq!(
+        with_padding.migrated_zatoshi + with_padding.fee_zatoshi,
+        with_padding.total_input_zatoshi
+    );
+    assert!(
+        immediate_migration_plan_for_values(WalletNetwork::Regtest, target_height, [0, 0, 0],)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn migration_anchor_uses_latest_checkpoint_before_an_empty_bucket_boundary() {
     let checkpoints = [5_318, 5_450, 5_460, 5_500];
 

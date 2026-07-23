@@ -800,6 +800,13 @@ pub struct OrchardMigrationPrivatePlan {
     pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
 }
 
+pub struct OrchardMigrationImmediatePlan {
+    pub total_input_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+    pub input_note_count: u32,
+}
+
 fn to_wallet_migration_schedule(
     schedule: Vec<MigrationScheduledTransfer>,
 ) -> Vec<wallet_sync::MigrationScheduleEntry> {
@@ -1049,6 +1056,10 @@ pub fn migrate_orchard_to_ironwood_immediately(
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
+    approved_total_input_zatoshi: u64,
+    approved_fee_zatoshi: u64,
+    approved_migrated_zatoshi: u64,
+    approved_input_note_count: u32,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
@@ -1062,6 +1073,12 @@ pub fn migrate_orchard_to_ironwood_immediately(
             network,
             &account_uuid,
             seed,
+            wallet_sync::OrchardMigrationImmediatePlan {
+                total_input_zatoshi: approved_total_input_zatoshi,
+                fee_zatoshi: approved_fee_zatoshi,
+                migrated_zatoshi: approved_migrated_zatoshi,
+                input_note_count: approved_input_note_count,
+            },
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,
@@ -1072,6 +1089,26 @@ pub fn migrate_orchard_to_ironwood_immediately(
             fee_zatoshi: r.fee_zatoshi,
             migrated_zatoshi: r.migrated_zatoshi,
         })
+    })
+}
+
+pub fn get_orchard_migration_immediate_plan(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Option<OrchardMigrationImmediatePlan>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_orchard_migration_immediate_plan(&db_path, network, &account_uuid).map(
+            |plan| {
+                plan.map(|plan| OrchardMigrationImmediatePlan {
+                    total_input_zatoshi: plan.total_input_zatoshi,
+                    fee_zatoshi: plan.fee_zatoshi,
+                    migrated_zatoshi: plan.migrated_zatoshi,
+                    input_note_count: plan.input_note_count,
+                })
+            },
+        )
     })
 }
 
