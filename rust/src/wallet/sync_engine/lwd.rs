@@ -109,7 +109,8 @@ where
 /// Ensures the process-wide rustls `CryptoProvider` is installed
 /// before any TLS work. This is normally done by `init_app()` on
 /// the Flutter/FRB path, but the iOS background-sync C FFI
-/// entrypoint (`zcash_run_full_sync`) can reach this function on
+/// entrypoint (`zcash_run_full_sync_for_migration_preparation`) can reach this
+/// function on
 /// a cold background wake *before* `init_app()` ever ran. Without
 /// the `Once` guard here, rustls 0.23+ panics with "no
 /// process-level CryptoProvider installed" on the first handshake.

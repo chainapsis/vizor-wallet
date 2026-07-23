@@ -7,46 +7,37 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
-  func testMigrationPreparationResubmitsOnlyExpiredActiveWork() {
-    XCTAssertTrue(
-      shouldResubmitMigrationPreparationTask(
-        success: false,
-        handedOff: false,
-        expired: true,
-        hasActivePreparation: true
-      )
+  func testMigrationPreparationDefersChainWaitsToProcessingTask() {
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [0]),
+      .waitingForConfirmations
     )
-    XCTAssertFalse(
-      shouldResubmitMigrationPreparationTask(
-        success: false,
-        handedOff: false,
-        expired: false,
-        hasActivePreparation: true
-      )
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [5]),
+      .deferred(BackgroundMigrationOutboxCadence.rollingCheckInterval)
     )
-    XCTAssertFalse(
-      shouldResubmitMigrationPreparationTask(
-        success: false,
-        handedOff: false,
-        expired: true,
-        hasActivePreparation: false
-      )
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [5, 0]),
+      .waitingForConfirmations
     )
-    XCTAssertFalse(
-      shouldResubmitMigrationPreparationTask(
-        success: true,
-        handedOff: false,
-        expired: true,
-        hasActivePreparation: true
-      )
+  }
+
+  func testMigrationPreparationCompletesOnlyTerminalBackgroundStates() {
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: []),
+      .completed
     )
-    XCTAssertFalse(
-      shouldResubmitMigrationPreparationTask(
-        success: false,
-        handedOff: true,
-        expired: true,
-        hasActivePreparation: true
-      )
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [1, 4]),
+      .completed
+    )
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [2]),
+      .needsAction
+    )
+    XCTAssertEqual(
+      migrationPreparationPassResult(states: [3]),
+      .cancelled
     )
   }
 

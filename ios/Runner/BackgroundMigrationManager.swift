@@ -172,12 +172,19 @@ final class BackgroundMigrationManager {
     }
   }
 
+  func schedulePreparationHandoff(after delay: TimeInterval) -> Bool {
+    let effectiveDelay = hasRunnableOutboxWork() ? min(delay, 60) : delay
+    return schedule(
+      earliestBeginDate: Date().addingTimeInterval(effectiveDelay)
+    )
+  }
+
   func cancel() {
     stopActiveWork(quiesceForMutation: false)
   }
 
   func cancelIfNoRunnableWork() {
-    if hasRunnableOutboxWork() {
+    if hasRunnableOutboxWork() || hasResumablePreparationWork() {
       _ = schedule(earliestBeginDate: Date().addingTimeInterval(60))
     } else {
       cancel()
@@ -282,16 +289,35 @@ final class BackgroundMigrationManager {
       self.stateLock.vizorWithLock {
         self.activeCancellation = cancellation
       }
+      let preparationResult: BackgroundMigrationPreparationPassResult
+      if #available(iOS 26.0, *) {
+        preparationResult =
+          BackgroundMigrationPreparationManager.shared.runDeferredPass()
+      } else {
+        preparationResult = .completed
+      }
       let runResult = BackgroundMigrationOutboxRunner.runOnce(
         cancellation: cancellation
       )
       self.stateLock.vizorWithLock {
         self.activeCancellation = nil
       }
-      self.finishWake(runResult) {
+      self.finishWake(
+        runResult,
+        preparationResult: preparationResult
+      ) { rescheduled in
+        let preparationSucceeded: Bool
+        switch preparationResult {
+        case .completed, .waitingForConfirmations, .deferred:
+          preparationSucceeded = true
+        case .needsAction, .cancelled:
+          preparationSucceeded = false
+        }
         task.setTaskCompleted(
           success: runResult.transport != .temporarilyUnavailable
             && runResult.transport != .cancelled
+            && preparationSucceeded
+            && rescheduled
         )
       }
     }
@@ -305,6 +331,10 @@ final class BackgroundMigrationManager {
       if quiesceForMutation {
         mutationQuiesced = true
       }
+    }
+    if #available(iOS 26.0, *), quiesceForMutation {
+      BackgroundMigrationPreparationManager.shared
+        .cancelDeferredPass()
     }
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
@@ -333,16 +363,21 @@ final class BackgroundMigrationManager {
       expired = true
       activeCancellation?.cancel()
     }
+    if #available(iOS 26.0, *) {
+      BackgroundMigrationPreparationManager.shared.expireDeferredPass()
+    }
   }
 
   private func finishWake(
     _ runResult: BackgroundMigrationOutboxRunResult,
-    completion: @escaping () -> Void
+    preparationResult: BackgroundMigrationPreparationPassResult,
+    completion: @escaping (Bool) -> Void
   ) {
     guard let proofReady = runResult.proofReady else {
       reschedule(
         after: runResult.transport,
         retryProofNotification: false,
+        preparationResult: preparationResult,
         completion: completion
       )
       return
@@ -350,7 +385,7 @@ final class BackgroundMigrationManager {
 
     postProofReadyNotification(batchId: proofReady.batchId) { [weak self] delivered in
       guard let self else {
-        completion()
+        completion(false)
         return
       }
       var acknowledged = false
@@ -366,6 +401,7 @@ final class BackgroundMigrationManager {
       self.reschedule(
         after: runResult.transport,
         retryProofNotification: !delivered || !acknowledged,
+        preparationResult: preparationResult,
         completion: completion
       )
     }
@@ -374,7 +410,8 @@ final class BackgroundMigrationManager {
   private func reschedule(
     after transport: BackgroundMigrationTransportOutcome,
     retryProofNotification: Bool,
-    completion: @escaping () -> Void
+    preparationResult: BackgroundMigrationPreparationPassResult,
+    completion: @escaping (Bool) -> Void
   ) {
     if transport == .needsUserAction {
       postNeedsUserActionNotification()
@@ -395,13 +432,36 @@ final class BackgroundMigrationManager {
     if retryProofNotification {
       delay = min(delay ?? 10 * 60, 10 * 60)
     }
+    if preparationResult == .waitingForConfirmations {
+      delay = min(delay ?? 60, 60)
+    } else if case .deferred(let preparationDelay) = preparationResult {
+      delay = min(delay ?? preparationDelay, preparationDelay)
+    }
     if hasRunnableOutboxWork() {
       delay = min(delay ?? 60, 10 * 60)
     }
+    let rescheduled: Bool
     if let delay {
-      _ = schedule(earliestBeginDate: Date().addingTimeInterval(delay))
+      rescheduled = schedule(
+        earliestBeginDate: Date().addingTimeInterval(delay)
+      )
+    } else {
+      rescheduled = true
     }
-    completion()
+    if !rescheduled {
+      let preparationWasDeferred: Bool
+      switch preparationResult {
+      case .waitingForConfirmations, .deferred:
+        preparationWasDeferred = true
+      case .completed, .needsAction, .cancelled:
+        preparationWasDeferred = false
+      }
+      if #available(iOS 26.0, *), preparationWasDeferred {
+        BackgroundMigrationPreparationManager.shared
+          .recordDeferredSchedulingFailure()
+      }
+    }
+    completion(rescheduled)
   }
 
   private func hasRunnableOutboxWork() -> Bool {
@@ -416,6 +476,12 @@ final class BackgroundMigrationManager {
     }
   }
 
+  private func hasResumablePreparationWork() -> Bool {
+    guard #available(iOS 26.0, *) else { return false }
+    return BackgroundMigrationPreparationManager.shared
+      .hasResumablePreparation()
+  }
+
   private func batchIds(network: String, accountUuid: String) -> [String] {
     guard let snapshot = try? BackgroundMigrationOutboxStore.shared.read() else {
       return []
@@ -427,7 +493,7 @@ final class BackgroundMigrationManager {
 
   private func scheduleRemainingWork() {
     endMutationQuiescence()
-    if hasRunnableOutboxWork() {
+    if hasRunnableOutboxWork() || hasResumablePreparationWork() {
       _ = schedule(earliestBeginDate: Date().addingTimeInterval(60))
     }
   }

@@ -1,13 +1,89 @@
-//! C FFI interface for calling sync from Swift (iOS BGContinuedProcessingTask).
+//! C FFI interface for iOS Ironwood migration background work.
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 
-use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
+use crate::api::sync::SYNC_RUNNING;
 use crate::wallet::{keys, sync, sync_engine};
 
-static MIGRATION_PREPARATION_SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
+struct MigrationPreparationControl {
+    cancel: Arc<AtomicBool>,
+    desired_sync_mode: AtomicU8,
+}
+
+impl MigrationPreparationControl {
+    fn new() -> Self {
+        Self {
+            cancel: Arc::new(AtomicBool::new(false)),
+            desired_sync_mode: AtomicU8::new(2),
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        self.desired_sync_mode.store(0, Ordering::SeqCst);
+    }
+}
+
+struct MigrationPreparationOperation {
+    active: Mutex<Option<Arc<MigrationPreparationControl>>>,
+}
+
+impl MigrationPreparationOperation {
+    const fn new() -> Self {
+        Self {
+            active: Mutex::new(None),
+        }
+    }
+
+    fn begin(&self) -> bool {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.is_some() {
+            return false;
+        }
+        *active = Some(Arc::new(MigrationPreparationControl::new()));
+        true
+    }
+
+    fn cancel(&self) -> bool {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(control) = active.as_ref() else {
+            return false;
+        };
+        control.cancel();
+        true
+    }
+
+    fn end(&self) {
+        let control = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        if let Some(control) = control {
+            control.cancel();
+        }
+    }
+
+    fn control(&self) -> Option<Arc<MigrationPreparationControl>> {
+        self.active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .cloned()
+    }
+}
+
+static MIGRATION_PREPARATION_OPERATION: MigrationPreparationOperation =
+    MigrationPreparationOperation::new();
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -49,46 +125,6 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
     }
 }
 
-/// Run full sync from C (Swift). Blocks until complete or cancelled.
-/// Returns 0 on success, 1 on error, 2 on panic, 3 on already running, 4 on mode conflict.
-#[no_mangle]
-pub extern "C" fn zcash_run_full_sync(
-    db_path: *const c_char,
-    lightwalletd_url: *const c_char,
-    network: *const c_char,
-    progress_callback: SyncProgressCallback,
-) -> i32 {
-    if SYNC_RUNNING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        log::warn!("ffi: sync already running");
-        return 3;
-    }
-
-    // Don't force mode — Dart/Swift caller should have set it before calling.
-    // If mode is 0 (stop requested), bail out immediately.
-    if DESIRED_SYNC_MODE.load(Ordering::SeqCst) != 2 {
-        log::warn!(
-            "ffi: mode is not background ({}), aborting",
-            DESIRED_SYNC_MODE.load(Ordering::SeqCst)
-        );
-        SYNC_RUNNING.store(false, Ordering::SeqCst);
-        return 4;
-    }
-
-    let code = run_full_sync_after_acquire(
-        db_path,
-        lightwalletd_url,
-        network,
-        progress_callback,
-        true,
-        true,
-    );
-    SYNC_RUNNING.store(false, Ordering::SeqCst);
-    code
-}
-
 /// Run one sync pass for an active migration preparation task. Pending wallet
 /// transactions are not resubmitted here; denomination advancement owns the
 /// preparation broadcasts explicitly.
@@ -99,6 +135,10 @@ pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
     network: *const c_char,
     progress_callback: SyncProgressCallback,
 ) -> i32 {
+    let Some(control) = MIGRATION_PREPARATION_OPERATION.control() else {
+        log::warn!("ffi: migration preparation sync has no active operation");
+        return 4;
+    };
     if SYNC_RUNNING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -106,36 +146,16 @@ pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
         log::warn!("ffi: migration preparation sync already running");
         return 3;
     }
-    MIGRATION_PREPARATION_SYNC_RUNNING.store(true, Ordering::SeqCst);
-    // Claim the mode only after acquiring the single-sync guard. Setting mode
-    // before this point cancels an in-flight foreground sync and can make that
-    // interrupted run report success without advancing the scan watermark.
-    let previous_mode = DESIRED_SYNC_MODE.swap(2, Ordering::SeqCst);
-    let code = run_full_sync_after_acquire(
+    let code = run_migration_preparation_sync_after_acquire(
         db_path,
         lightwalletd_url,
         network,
         progress_callback,
-        true,
-        false,
+        control.cancel.clone(),
+        &control.desired_sync_mode,
     );
-    let mode_after_sync = DESIRED_SYNC_MODE.load(Ordering::SeqCst);
-    if mode_after_sync == 2 {
-        let _ = DESIRED_SYNC_MODE.compare_exchange(
-            2,
-            previous_mode,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-    }
-    MIGRATION_PREPARATION_SYNC_RUNNING.store(false, Ordering::SeqCst);
     SYNC_RUNNING.store(false, Ordering::SeqCst);
-    if code == 0 && mode_after_sync != 2 {
-        log::warn!("ffi: migration preparation sync lost mode ownership");
-        4
-    } else {
-        code
-    }
+    code
 }
 
 unsafe fn credential_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
@@ -261,6 +281,10 @@ pub extern "C" fn zcash_advance_migration_preparation(
     output: *mut CMigrationPreparationProgress,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
+        let Some(control) = MIGRATION_PREPARATION_OPERATION.control() else {
+            log::error!("ffi: migration preparation advance has no active operation");
+            return 1;
+        };
         let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
             return 1;
         };
@@ -314,7 +338,7 @@ pub extern "C" fn zcash_advance_migration_preparation(
             expected_run_id,
             zeroize::Zeroizing::new(credential.to_vec()),
             salt_base64,
-            SYNC_CANCEL.as_ref(),
+            control.cancel.as_ref(),
         ));
         if let Err(error) = advance {
             log::error!("ffi: advance migration preparation: {error}");
@@ -345,7 +369,7 @@ pub extern "C" fn zcash_advance_migration_preparation(
             }
         };
         fill_migration_preparation_progress(output, &status, scanned_height);
-        if SYNC_CANCEL.load(Ordering::SeqCst) {
+        if control.cancel.load(Ordering::SeqCst) {
             output.state = 3;
         }
         0
@@ -356,13 +380,13 @@ pub extern "C" fn zcash_advance_migration_preparation(
     }
 }
 
-fn run_full_sync_after_acquire(
+fn run_migration_preparation_sync_after_acquire(
     db_path: *const c_char,
     lightwalletd_url: *const c_char,
     network: *const c_char,
     progress_callback: SyncProgressCallback,
-    reset_cancel: bool,
-    allow_resubmit: bool,
+    cancel: Arc<AtomicBool>,
+    desired_mode: &AtomicU8,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let db_path = match unsafe { c_str_to_str(db_path) } {
@@ -395,11 +419,6 @@ fn run_full_sync_after_acquire(
             }
         };
 
-        let cancel = SYNC_CANCEL.clone();
-        if reset_cancel {
-            cancel.store(false, Ordering::Relaxed);
-        }
-
         // current_thread runtime — inherits .utility QoS from iOS dispatch queue
         let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -418,9 +437,9 @@ fn run_full_sync_after_acquire(
                 lightwalletd_url,
                 network,
                 cancel,
-                2, // background mode
-                &DESIRED_SYNC_MODE,
-                allow_resubmit,
+                2,
+                desired_mode,
+                false,
                 |progress| {
                     progress_callback(CSyncProgress {
                         scanned_height: progress.scanned_height,
@@ -462,38 +481,66 @@ fn run_full_sync_after_acquire(
     }
 }
 
-/// Cancel a running sync (shared flag with FRB path).
+/// Begin one migration preparation operation spanning every sync and advance
+/// call made by the Swift task.
 #[no_mangle]
-pub extern "C" fn zcash_cancel_sync() {
-    SYNC_CANCEL.store(true, Ordering::Relaxed);
+pub extern "C" fn zcash_begin_migration_preparation_operation() -> bool {
+    MIGRATION_PREPARATION_OPERATION.begin()
 }
 
-/// Cancel only when the active sync is owned by migration preparation.
-/// Returns false while another foreground/background sync owns the shared
-/// engine, so an expiring preparation task cannot interrupt that work.
+/// End the current migration preparation operation after its serial Swift work
+/// has returned.
+#[no_mangle]
+pub extern "C" fn zcash_end_migration_preparation_operation() {
+    MIGRATION_PREPARATION_OPERATION.end();
+}
+
+/// Cancel the active migration preparation operation without touching the
+/// foreground sync cancellation token.
 #[no_mangle]
 pub extern "C" fn zcash_cancel_migration_preparation_sync() -> bool {
-    if !MIGRATION_PREPARATION_SYNC_RUNNING.load(Ordering::SeqCst) {
-        return false;
-    }
-    SYNC_CANCEL.store(true, Ordering::Relaxed);
-    true
-}
-
-/// Get the current desired sync mode (0=none, 1=foreground, 2=background).
-#[no_mangle]
-pub extern "C" fn zcash_get_sync_mode() -> u8 {
-    DESIRED_SYNC_MODE.load(Ordering::SeqCst)
-}
-
-/// Set the desired sync mode (0=none, 1=foreground, 2=background).
-#[no_mangle]
-pub extern "C" fn zcash_set_sync_mode(mode: u8) {
-    DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
+    MIGRATION_PREPARATION_OPERATION.cancel()
 }
 
 /// Check if a sync is currently running.
 #[no_mangle]
 pub extern "C" fn zcash_is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_preparation_operation_owns_cancel_across_sync_and_advance() {
+        let operation = MigrationPreparationOperation::new();
+        assert!(operation.begin());
+        assert!(!operation.begin());
+
+        let sync_control = operation.control().unwrap();
+        let advance_control = operation.control().unwrap();
+        assert!(Arc::ptr_eq(&sync_control, &advance_control));
+        assert!(!sync_control.cancel.load(Ordering::Relaxed));
+        assert_eq!(sync_control.desired_sync_mode.load(Ordering::SeqCst), 2);
+
+        let unrelated_sync_cancel = AtomicBool::new(false);
+        unrelated_sync_cancel.store(true, Ordering::Relaxed);
+        assert!(!sync_control.cancel.load(Ordering::Relaxed));
+
+        assert!(operation.cancel());
+        assert!(sync_control.cancel.load(Ordering::Relaxed));
+        assert!(advance_control.cancel.load(Ordering::Relaxed));
+        assert_eq!(sync_control.desired_sync_mode.load(Ordering::SeqCst), 0);
+
+        operation.end();
+        assert!(operation.control().is_none());
+        assert!(!operation.cancel());
+
+        assert!(operation.begin());
+        let next_control = operation.control().unwrap();
+        assert!(!Arc::ptr_eq(&sync_control, &next_control));
+        assert!(!next_control.cancel.load(Ordering::Relaxed));
+        operation.end();
+    }
 }

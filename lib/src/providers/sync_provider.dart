@@ -9,12 +9,38 @@ import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
-import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
 import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
+
+class SyncProgressEvent {
+  final int scannedHeight;
+  final int chainTipHeight;
+  final double percentage;
+  final double displayTargetPercentage;
+  final int displayTargetBlocks;
+  final bool isSyncing;
+  final bool isComplete;
+  final bool hasNewTx;
+
+  /// Current sync phase from Rust: `"download"`, `"scan"`,
+  /// `"enhance"`, or `""` (unspecified / completion).
+  final String phase;
+
+  const SyncProgressEvent({
+    required this.scannedHeight,
+    required this.chainTipHeight,
+    required this.percentage,
+    required this.displayTargetPercentage,
+    required this.displayTargetBlocks,
+    required this.isSyncing,
+    required this.isComplete,
+    required this.hasNewTx,
+    this.phase = '',
+  });
+}
 
 enum SpendableBalanceFreshness { authoritative, lastCompletedSync }
 
@@ -399,18 +425,15 @@ class SyncState {
 class WalletMutationSyncPause {
   final bool hadActiveSync;
   final bool hadPolling;
-  final bool hadBackgroundSync;
   final bool hadMempoolObserver;
 
   const WalletMutationSyncPause({
     required this.hadActiveSync,
     required this.hadPolling,
-    required this.hadBackgroundSync,
     required this.hadMempoolObserver,
   });
 
-  bool get hadWorkToPause =>
-      hadActiveSync || hadPolling || hadBackgroundSync || hadMempoolObserver;
+  bool get hadWorkToPause => hadActiveSync || hadPolling || hadMempoolObserver;
 }
 
 @visibleForTesting
@@ -434,7 +457,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ];
 
   final Future<String> Function() _walletDbPathResolver;
-  late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
@@ -471,21 +493,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
     unawaited(ref.read(chainUpgradeStatusProvider.future));
-    _bgDelegate = BackgroundSyncDelegate.create();
-    _bgDelegate.setupListeners(
-      onStopRequested: () => stopSync(),
-      onBackgroundProgress: (event) {
-        _onSyncProgress(event).catchError((e, st) {
-          log('SyncNotifier: background progress handling failed: $e');
-        });
-      },
-    );
-
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
         _refreshBalance();
-        _bgDelegate.onResume();
         _checkAndSync();
       },
       onHide: () {
@@ -509,7 +520,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // subscription alone leaves the tonic stream task alive
       // until the Rust isolate pool tears it down.
       rust_sync.stopMempoolObserver();
-      _bgDelegate.disposeListeners();
       _lifecycleListener?.dispose();
       _pollTimer?.cancel();
     });
@@ -824,9 +834,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // Normal completion (isComplete=true) is handled inside
               // _onSyncProgress, which clears _isSyncing and starts
               // polling. But the stream can also end WITHOUT an
-              // isComplete event — specifically when Rust exits because
-              // DESIRED_SYNC_MODE changed (foreground→background
-              // handoff via enableBackgroundSync). In that case
+              // isComplete event when Rust exits because cancellation or a
+              // sync-owner handoff changed DESIRED_SYNC_MODE. In that case
               // _isSyncing is still true and the mempool observer is
               // still running, both of which block future startSync()
               // calls. Clean up only when no final event arrived; otherwise
@@ -1012,15 +1021,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // loop and the observer have independent Rust cancel flags
     // (SYNC_CANCEL / MEMPOOL_CANCEL), but Dart pairs them so the
     // UX invariant "no sync running → no mempool stream running"
-    // holds, which is what the iOS background-sync / battery
-    // budget story expects.
+    // holds.
     _stopMempoolObserver();
     _isSyncing = false;
     _stopDisplayProgressTimer();
     _stopPolling();
-    if (_bgDelegate.isActive) {
-      unawaited(_bgDelegate.disable());
-    }
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
     final scopedPrev = _previousScopedState(prev, accountUuid);
@@ -1066,7 +1071,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return WalletMutationSyncPause(
       hadActiveSync: _isSyncing || rust_sync.isSyncRunning(),
       hadPolling: _pollTimer != null || _pollCheckInFlight,
-      hadBackgroundSync: _bgDelegate.isActive,
       hadMempoolObserver: rust_sync.isMempoolObserverRunning(),
     );
   }
@@ -1104,16 +1108,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await _syncSub?.cancel();
     _syncSub = null;
 
-    if (_bgDelegate.isActive) {
-      try {
-        await _bgDelegate.shutdownForLock();
-      } catch (e) {
-        log(
-          'SyncNotifier: background shutdown before wallet mutation failed: $e',
-        );
-      }
-    }
-
     final prev = state.value;
     if (prev != null) {
       state = AsyncData(prev.withSyncActivityStopped());
@@ -1139,11 +1133,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     if (_requiresUnlock) return;
 
-    if (pause.hadActiveSync || pause.hadBackgroundSync) {
+    if (pause.hadActiveSync) {
       log('SyncNotifier: resuming sync after wallet DB mutation');
       startSync();
     }
-    if (pause.hadPolling || pause.hadActiveSync || pause.hadBackgroundSync) {
+    if (pause.hadPolling || pause.hadActiveSync) {
       _startPolling();
     }
   }
@@ -1165,20 +1159,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _mempoolRefreshQueued = false;
     state = AsyncData(SyncState());
 
-    // Sign-out should cancel the current Rust run immediately.
-    // Waiting for the iOS background delegate's normal
-    // foreground-handoff path (`setSyncMode(1)`) leaves a window
-    // where unlock can race with a still-running old sync.
+    // Sign-out should cancel the current Rust run immediately so unlock
+    // cannot race with a still-running old sync.
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
-
-    if (_bgDelegate.isActive) {
-      try {
-        await _bgDelegate.shutdownForLock();
-      } catch (e) {
-        log('SyncNotifier: background shutdown during sign-out failed: $e');
-      }
-    }
 
     await _waitForRustTasksToStop(
       timeoutMs: 5000,
@@ -1190,22 +1174,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
-  Future<void> enableBackgroundSync() async {
-    if (_bgDelegate.isActive) return;
-    await _bgDelegate.enable(endpoint: _endpointConfig);
-    _stopDisplayProgressTimer();
-    log('SyncNotifier: background sync enabled');
-  }
-
-  Future<void> disableBackgroundSync() async {
-    if (!_bgDelegate.isActive) return;
-    final needsResync = await _bgDelegate.disable();
-    log('SyncNotifier: background sync disabled');
-    if (needsResync) {
-      startSync();
-    }
-  }
-
   /// Cancels the current sync (if any), waits for the Rust loop to
   /// finish its teardown so `isSyncRunning()` returns `false`, then
   /// starts a fresh sync and restarts the polling loop. This is the
@@ -1215,7 +1183,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
-    final hadBackgroundSync = _bgDelegate.isActive;
     ++_syncGen;
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1225,13 +1192,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     _isSyncing = false;
     _stopPolling();
-    if (hadBackgroundSync) {
-      try {
-        await _bgDelegate.disable();
-      } catch (e) {
-        log('SyncNotifier: background disable before restart failed: $e');
-      }
-    }
     final prev = state.value;
     if (prev != null) {
       state = AsyncData(prev.withSyncActivityStopped());
@@ -1270,29 +1230,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
     startSync();
     _startPolling();
-    if (hadBackgroundSync) {
-      try {
-        await _bgDelegate.enable(endpoint: _endpointConfig);
-      } catch (e) {
-        log('SyncNotifier: background re-enable after restart failed: $e');
-      }
-    }
-  }
-
-  static Future<bool> isBackgroundSyncAvailable() async {
-    try {
-      return await BackgroundSyncDelegate.create().isAvailable();
-    } catch (e) {
-      log('SyncNotifier: background sync availability check failed: $e');
-      return false;
-    }
   }
 
   // ======================== Polling ========================
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _bgDelegate.shouldSuppressPolling) return;
+    if (!_isInForeground) return;
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
         await _checkAndSync();
@@ -1314,7 +1258,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_pollCheckInFlight ||
         _isSyncing ||
         _requiresUnlock ||
-        _bgDelegate.shouldSuppressPolling ||
         !_isInForeground ||
         !hasAccounts) {
       return;
@@ -1522,9 +1465,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         return;
       }
       final current = state.value;
-      if (current == null ||
-          _bgDelegate.isActive ||
-          (!current.isSyncing && !current.isBackgroundMode)) {
+      if (current == null || !current.isSyncing) {
         _stopDisplayProgressTimer();
         return;
       }
@@ -1694,9 +1635,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
 
-    // Update delegate BEFORE state so isActive reflects completion
-    _bgDelegate.onProgress(event);
-
     final syncStartedAt =
         prev?.lastSyncStartedAt ??
         (event.isSyncing || event.isComplete ? DateTime.now() : null);
@@ -1726,8 +1664,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         hasBalanceData: hasBalanceData,
         hasRecentTransactionsData: hasRecentTransactionsData,
         isSyncing: event.isSyncing && !event.isComplete,
-        isBackgroundMode:
-            (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
+        isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
@@ -1785,7 +1722,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ),
     );
 
-    if (event.isComplete || !event.isSyncing || _bgDelegate.isActive) {
+    if (event.isComplete || !event.isSyncing) {
       _stopDisplayProgressTimer();
     } else {
       _startDisplayProgressSmoothing(
@@ -1798,7 +1735,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
       _isSyncing = false;
-      _bgDelegate.onSyncDone();
       _startPolling();
       if (!useFetchedBalance) {
         unawaited(_ensureAuthoritativeBalanceRecovery());
@@ -1821,7 +1757,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (balance != null) {
       ++_authoritativeBalanceVersion;
     }
-    final syncComplete = current.isSyncedToTip && !_bgDelegate.isActive;
+    final syncComplete = current.isSyncedToTip;
     state = AsyncData(
       current.withFetchedAccountData(
         balance: balance,
@@ -2100,8 +2036,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final accountFallback = currentScoped ?? scopedPrev;
     final nextSpendableBalance =
         spendable ?? accountFallback?.spendableBalance ?? BigInt.zero;
-    final syncComplete =
-        (current?.isSyncedToTip ?? false) && !_bgDelegate.isActive;
+    final syncComplete = current?.isSyncedToTip ?? false;
     final spendableDisplay = SyncState.resolveSpendableDisplay(
       previous: accountFallback,
       authoritativeSpendable: nextSpendableBalance,
@@ -2121,7 +2056,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             didFetchRecentTxs ||
             (accountFallback?.hasRecentTransactionsData ?? false),
         isSyncing: current?.isSyncing ?? false,
-        isBackgroundMode: current?.isBackgroundMode ?? _bgDelegate.isActive,
+        isBackgroundMode: current?.isBackgroundMode ?? false,
         isSyncComplete: current?.isSyncComplete ?? false,
         percentage: current?.percentage ?? 0.0,
         displayPercentage:

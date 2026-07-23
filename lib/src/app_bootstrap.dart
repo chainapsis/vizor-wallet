@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart' show log;
@@ -24,9 +22,6 @@ const _networkKey = 'zcash_wallet_network';
 // Mirrors kBiometricUnlockEnabledKey in providers/biometric_unlock_provider.dart;
 // kept local to avoid a bootstrap → provider import cycle.
 const _biometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
-const _backgroundSyncChannel = MethodChannel(
-  'com.zcash.wallet/background_sync',
-);
 const _e2eLightwalletdUrlOverride = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
 );
@@ -235,7 +230,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       await storage.readString(_networkKey),
     );
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
-    await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
@@ -428,23 +422,6 @@ AccountInfo mergeBootstrappedAccountInfo({
     ),
     walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
   );
-}
-
-Future<void> _seedNativeRpcEndpointMirror(RpcEndpointConfig endpoint) async {
-  if (!Platform.isIOS) return;
-  try {
-    final success = await _backgroundSyncChannel
-        .invokeMethod<bool>('updateEndpoint', {
-          'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
-          'network': endpoint.networkName,
-          'presetId': endpoint.effectivePresetId,
-        });
-    if (success != true) {
-      log('bootstrap: iOS RPC endpoint mirror seed returned $success');
-    }
-  } catch (e) {
-    log('bootstrap: failed to seed iOS RPC endpoint mirror: $e');
-  }
 }
 
 Future<RpcEndpointConfig> _readRpcEndpointConfig(

@@ -196,7 +196,6 @@ class _StaleSyncNotifier extends SyncNotifier {
     return const WalletMutationSyncPause(
       hadActiveSync: true,
       hadPolling: false,
-      hadBackgroundSync: false,
       hadMempoolObserver: false,
     );
   }

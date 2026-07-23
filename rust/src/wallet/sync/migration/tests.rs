@@ -3064,6 +3064,37 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         params![run_id, txid_hex],
     )
     .unwrap();
+    let selected_note_json = serde_json::to_string(&PreparedOrchardNoteRef {
+        txid_hex: txid_hex.to_string(),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    })
+    .unwrap();
+    let schedule_json = serde_json::to_string(&[MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000_000,
+        block_offset: 0,
+    }])
+    .unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET schedule_json = ?1 WHERE run_id = ?2"),
+        params![schedule_json, run_id],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+             (run_id, message_id, child_index, encrypted_base_pczt,
+              encrypted_compact_sigs, target_height, expiry_height,
+              value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+             VALUES (?1, 'message-0', 0, 'base', 'sigs', 20, 1000,
+                     99980000, 20000, ?2, '{{}}')"
+        ),
+        params![run_id, selected_note_json],
+    )
+    .unwrap();
 
     let mut txid_blob = hex::decode(txid_hex).unwrap();
     txid_blob.reverse();
@@ -3145,6 +3176,37 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         .unwrap();
     assert_eq!(nullifier_hex, "ab".repeat(32));
     assert!(all_denomination_stages_confirmed(&conn, run_id).unwrap());
+    let retry_height: Option<u32> = conn
+        .query_row(
+            &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(retry_height, Some(290));
+
+    let status = status_for_run(&conn, run.clone()).unwrap();
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
+    assert_eq!(status.signed_child_pczt_count, 1);
+    assert_eq!(status.next_action_height, Some(290));
+
+    // Upgrade recovery: older builds could persist ready_to_migrate before
+    // persisting the proof height, which made iOS classify the run as state 2.
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET proof_retry_height = NULL WHERE run_id = ?1"),
+        params![run_id],
+    )
+    .unwrap();
+    let recovered_status = status_for_run(&conn, run).unwrap();
+    assert_eq!(recovered_status.next_action_height, Some(290));
+    let recovered_retry_height: Option<u32> = conn
+        .query_row(
+            &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(recovered_retry_height, Some(290));
 }
 
 #[test]

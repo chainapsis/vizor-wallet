@@ -3237,7 +3237,6 @@ class _PreviewSyncNotifier extends SyncNotifier {
     return const WalletMutationSyncPause(
       hadActiveSync: false,
       hadPolling: false,
-      hadBackgroundSync: false,
       hadMempoolObserver: false,
     );
   }

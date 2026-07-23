@@ -15,7 +15,11 @@ import UIKit
     BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {
-      BackgroundSyncManager.shared.registerBackgroundTask()
+      // One-release tombstone for requests submitted by the removed general
+      // background-sync feature. Do not register a handler for this identifier.
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: "com.keplr.vizor.sync"
+      )
       // A BGTask cold-launches the app with a background application state.
       // Cancelling here unconditionally removes the very request iOS is
       // launching us to service. Only a user-driven foreground launch should
@@ -131,7 +135,7 @@ import UIKit
       case "resume":
         let resumed = BackgroundMigrationManager.shared.resumeAfterFailedMutation()
         if #available(iOS 26.0, *) {
-          BackgroundMigrationPreparationManager.shared.resumeAfterFailedMutation()
+          BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
         }
         result(resumed)
       case "revokeAccount":
@@ -186,61 +190,6 @@ import UIKit
               .resumeWithoutSchedulingForTesting()
           )
       #endif
-      default:
-        result(FlutterMethodNotImplemented)
-      }
-    }
-
-    // MethodChannel for background sync control
-    let methodChannel = FlutterMethodChannel(
-      name: "com.zcash.wallet/background_sync",
-      binaryMessenger: messenger
-    )
-    methodChannel.setMethodCallHandler { (call, result) in
-      switch call.method {
-      case "isAvailable":
-        #if targetEnvironment(simulator)
-          result(false)
-        #else
-          if #available(iOS 26.0, *) {
-            result(true)
-          } else {
-            result(false)
-          }
-        #endif
-      case "startBackgroundSync":
-        if #available(iOS 26.0, *) {
-          let args = call.arguments as? [String: Any]
-          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-          let network = args?["network"] as? String
-          let presetId = args?["presetId"] as? String
-          let success = BackgroundSyncManager.shared.startBackgroundSync(
-            lightwalletdUrl: lightwalletdUrl,
-            network: network,
-            presetId: presetId
-          )
-          result(success)
-        } else {
-          result(false)
-        }
-      case "stopBackgroundSync":
-        if #available(iOS 26.0, *) {
-          let success = BackgroundSyncManager.shared.stopBackgroundSync()
-          result(success)
-        } else {
-          result(false)
-        }
-      case "updateEndpoint":
-        let args = call.arguments as? [String: Any]
-        let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-        let network = args?["network"] as? String
-        let presetId = args?["presetId"] as? String
-        RpcEndpointConfigStore.save(
-          lightwalletdUrl: lightwalletdUrl,
-          network: network,
-          presetId: presetId
-        )
-        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -371,13 +320,6 @@ import UIKit
         result(FlutterMethodNotImplemented)
       }
     }
-
-    // EventChannel for sync progress (Swift → Dart)
-    let eventChannel = FlutterEventChannel(
-      name: "com.zcash.wallet/sync_progress",
-      binaryMessenger: messenger
-    )
-    eventChannel.setStreamHandler(SyncProgressStreamHandler.shared)
 
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.

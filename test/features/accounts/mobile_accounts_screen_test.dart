@@ -166,7 +166,6 @@ class _FakeWalletMutationSyncNotifier extends FakeSyncNotifier {
     return const WalletMutationSyncPause(
       hadActiveSync: true,
       hadPolling: false,
-      hadBackgroundSync: false,
       hadMempoolObserver: false,
     );
   }

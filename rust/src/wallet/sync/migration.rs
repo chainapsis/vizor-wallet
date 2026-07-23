@@ -2518,6 +2518,15 @@ pub(crate) fn prepared_notes_proof_ready_height(
 ) -> Result<Option<u32>, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    prepared_notes_proof_ready_height_with_conn(&conn, run_id, network, timing_policy)
+}
+
+fn prepared_notes_proof_ready_height_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+) -> Result<Option<u32>, String> {
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT DISTINCT txid_hex
@@ -2982,6 +2991,33 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         && !prepared_note_spend_metadata_available_for_run(conn, &run.run_id)?
     {
         phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
+    }
+    if phase == PHASE_READY_TO_MIGRATE && signed_child_pczt_count > 0 {
+        let proof_retry_height = conn
+            .query_row(
+                &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run.run_id],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .map_err(|e| format!("Read ready migration proof retry height: {e}"))?;
+        if proof_retry_height.is_none() {
+            let ready_height = prepared_notes_proof_ready_height_with_conn(
+                conn,
+                &run.run_id,
+                network,
+                timing_policy,
+            )?
+            .ok_or("Ready migration notes are missing their canonical mined height")?;
+            conn.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET proof_retry_height = ?1, updated_at_ms = ?2
+                     WHERE run_id = ?3 AND proof_retry_height IS NULL"
+                ),
+                params![ready_height, now_ms()?, run.run_id],
+            )
+            .map_err(|e| format!("Backfill ready migration proof retry height: {e}"))?;
+        }
     }
     let denomination_confirmation_target = denomination_confirmations_required();
     let denomination_split_progress = denomination_split_progress_for_run(conn, &run.run_id)?;
@@ -3695,6 +3731,24 @@ fn reconcile_denomination_confirmations(
         stage_identities.push((txid_hex, identity));
     }
 
+    let network = conn
+        .query_row(
+            &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run.run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read denomination run network: {e}"))?;
+    let network = WalletNetwork::from_str(&network)
+        .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
+    let timing_policy = timing_policy_for_run_with_conn(conn, &run.run_id, network)?;
+    let proof_ready_height =
+        confirmed
+            .iter()
+            .try_fold(0u32, |ready_height, (_, _, _, mined_height)| {
+                proof_ready_height_for_note_mined_height(network, timing_policy, *mined_height)
+                    .map(|height| ready_height.max(height))
+            })?;
+
     let now = now_ms()?;
     for (txid_hex, output_index, nf_hex, _) in confirmed {
         conn.execute(
@@ -3728,10 +3782,11 @@ fn reconcile_denomination_confirmations(
     conn.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
+             SET phase = ?1, proof_retry_height = ?2, updated_at_ms = ?3,
+                 last_error = NULL
+             WHERE run_id = ?4"
         ),
-        params![PHASE_READY_TO_MIGRATE, now, run.run_id],
+        params![PHASE_READY_TO_MIGRATE, proof_ready_height, now, run.run_id],
     )
     .map_err(|e| format!("Mark denomination notes ready: {e}"))?;
 
