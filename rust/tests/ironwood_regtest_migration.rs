@@ -227,6 +227,7 @@ fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResu
         PENDING_PASSWORD.to_string(),
         PENDING_SALT_BASE64.to_string(),
         approved_schedule,
+        false,
     )
     .expect("migrate Orchard to Ironwood")
 }

@@ -84,6 +84,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     pending_password: &[u8],
     pending_salt_base64: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
@@ -162,6 +163,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             Vec::new(),
             denomination_stages,
             Some(&approved_schedule),
+            preparation_timing_policy,
             pending_password,
             pending_salt_base64,
         )
@@ -323,6 +325,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
     pending_password: &[u8],
     pending_salt_base64: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
@@ -442,6 +445,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             signed_children,
             denomination_stages,
             None,
+            preparation_timing_policy,
             pending_password,
             pending_salt_base64,
         )

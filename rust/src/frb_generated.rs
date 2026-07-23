@@ -602,6 +602,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
             let api_approved_schedule =
                 <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
+            let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -617,6 +618,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                                 api_password,
                                 api_salt_base64,
                                 api_approved_schedule,
+                                api_space_preparation_broadcasts,
                             )
                             .await?;
                         Ok(output_ok)
@@ -660,6 +662,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                 );
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
+            let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -674,6 +677,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                                 api_signed_messages,
                                 api_password,
                                 api_salt_base64,
+                                api_space_preparation_broadcasts,
                             )
                             .await?;
                         Ok(output_ok)
@@ -3923,6 +3927,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
             let api_approved_schedule =
                 <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
+            let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -3935,6 +3940,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                         api_password,
                         api_salt_base64,
                         api_approved_schedule,
+                        api_space_preparation_broadcasts,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4023,6 +4029,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
             let api_approved_schedule =
                 <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
+            let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4035,6 +4042,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                             api_password,
                             api_salt_base64,
                             api_approved_schedule,
+                            api_space_preparation_broadcasts,
                         )?;
                     Ok(output_ok)
                 })())

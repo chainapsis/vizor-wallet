@@ -308,6 +308,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required String password,
   required String saltBase64,
   required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -317,6 +318,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   password: password,
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 /// User-attended Immediate migration. This directly spends Orchard notes into
@@ -498,6 +500,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String password,
   required String saltBase64,
   required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
 }) =>
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
@@ -509,6 +512,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       password: password,
       saltBase64: saltBase64,
       approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
@@ -530,6 +534,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required List<KeystoneSignedMigrationMessage> signedMessages,
   required String password,
   required String saltBase64,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -539,6 +544,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   signedMessages: signedMessages,
   password: password,
   saltBase64: saltBase64,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({
@@ -592,6 +598,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String password,
   required String saltBase64,
   required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
@@ -601,6 +608,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
       password: password,
       saltBase64: saltBase64,
       approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
 /// Dry-run transparent shielding without creating or broadcasting a transaction.

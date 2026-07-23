@@ -124,6 +124,7 @@ pub(crate) struct DenominationStage {
     pub raw_tx: Option<Vec<u8>>,
     pub expected_txid_hex: String,
     pub target_height: u32,
+    pub scheduled_height: u32,
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
     pub status: DenominationStageStatus,
@@ -142,6 +143,7 @@ pub(crate) struct PendingRawDenominationStage {
     pub expected_txid_hex: String,
     pub raw_tx: Vec<u8>,
     pub target_height: u32,
+    pub scheduled_height: u32,
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
 }
@@ -180,6 +182,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             encrypted_raw_tx TEXT,
             expected_txid_hex TEXT NOT NULL,
             target_height INTEGER NOT NULL,
+            scheduled_height INTEGER NOT NULL DEFAULT 0,
             expiry_height INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
             confirmed_mined_height INTEGER,
@@ -249,6 +252,12 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Initialize migration denomination stage schema: {e}"))?;
 
     migrate_confirmed_stage_without_raw_constraint(conn)?;
+    add_column_if_missing(
+        conn,
+        STAGES_TABLE,
+        "scheduled_height",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     add_column_if_missing(conn, STAGE_OUTPUTS_TABLE, "part_index", "INTEGER")?;
 
     Ok(())
@@ -440,8 +449,8 @@ fn insert_stage(
             "INSERT INTO {STAGES_TABLE}
              (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
               encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
-              fee_zatoshi, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+              fee_zatoshi, status, scheduled_height)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)"
         ),
         params![
             run_id,
@@ -521,7 +530,7 @@ pub(crate) fn denomination_stages_for_run(
         .prepare_cached(&format!(
             "SELECT stage_index, encrypted_base_pczt, encrypted_compact_sigs,
                     encrypted_raw_tx, expected_txid_hex, target_height,
-                    expiry_height, fee_zatoshi, status,
+                    scheduled_height, expiry_height, fee_zatoshi, status,
                     confirmed_mined_height, confirmed_block_hash
              FROM {STAGES_TABLE}
              WHERE run_id = ?1
@@ -538,10 +547,11 @@ pub(crate) fn denomination_stages_for_run(
                 row.get::<_, String>(4)?,
                 row.get::<_, u32>(5)?,
                 row.get::<_, u32>(6)?,
-                row.get::<_, u64>(7)?,
-                row.get::<_, String>(8)?,
-                row.get::<_, Option<u32>>(9)?,
-                row.get::<_, Option<Vec<u8>>>(10)?,
+                row.get::<_, u32>(7)?,
+                row.get::<_, u64>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, Option<u32>>(10)?,
+                row.get::<_, Option<Vec<u8>>>(11)?,
             ))
         })
         .map_err(|e| format!("Query migration denomination stages: {e}"))?;
@@ -555,6 +565,7 @@ pub(crate) fn denomination_stages_for_run(
             encrypted_raw_tx,
             expected_txid_hex,
             target_height,
+            scheduled_height,
             expiry_height,
             fee_zatoshi,
             status,
@@ -585,6 +596,7 @@ pub(crate) fn denomination_stages_for_run(
             raw_tx,
             expected_txid_hex,
             target_height,
+            scheduled_height,
             expiry_height,
             fee_zatoshi,
             status: DenominationStageStatus::parse(&status)?,
@@ -678,10 +690,10 @@ pub(crate) fn pending_raw_denomination_stages(
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT stage_index, expected_txid_hex, encrypted_raw_tx,
-                    target_height, expiry_height, fee_zatoshi
+                    target_height, scheduled_height, expiry_height, fee_zatoshi
              FROM {STAGES_TABLE}
              WHERE run_id = ?1 AND status = 'pending' AND encrypted_raw_tx IS NOT NULL
-             ORDER BY stage_index ASC"
+             ORDER BY scheduled_height ASC, stage_index ASC"
         ))
         .map_err(|e| format!("Prepare pending migration denomination stages query: {e}"))?;
     let rows = stmt
@@ -692,7 +704,8 @@ pub(crate) fn pending_raw_denomination_stages(
                 row.get::<_, String>(2)?,
                 row.get::<_, u32>(3)?,
                 row.get::<_, u32>(4)?,
-                row.get::<_, u64>(5)?,
+                row.get::<_, u32>(5)?,
+                row.get::<_, u64>(6)?,
             ))
         })
         .map_err(|e| format!("Query pending migration denomination stages: {e}"))?;
@@ -703,6 +716,7 @@ pub(crate) fn pending_raw_denomination_stages(
             expected_txid_hex,
             encrypted_raw_tx,
             target_height,
+            scheduled_height,
             expiry_height,
             fee_zatoshi,
         ) = row.map_err(|e| format!("Read pending migration denomination stage: {e}"))?;
@@ -716,6 +730,7 @@ pub(crate) fn pending_raw_denomination_stages(
             expected_txid_hex,
             raw_tx: raw_tx.to_vec(),
             target_height,
+            scheduled_height,
             expiry_height,
             fee_zatoshi,
         });
@@ -731,6 +746,7 @@ pub(crate) fn promote_awaiting_denomination_stage(
     stage_index: u32,
     expected_txid_hex: &str,
     raw_tx: Vec<u8>,
+    scheduled_height: u32,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
@@ -747,13 +763,15 @@ pub(crate) fn promote_awaiting_denomination_stage(
         .execute(
             &format!(
                 "UPDATE {STAGES_TABLE}
-                 SET encrypted_raw_tx = ?1, status = 'pending'
-                 WHERE run_id = ?2 AND stage_index = ?3
-                   AND expected_txid_hex = ?4 AND status = 'awaiting_inputs'
+                 SET encrypted_raw_tx = ?1, status = 'pending',
+                     scheduled_height = ?2
+                 WHERE run_id = ?3 AND stage_index = ?4
+                   AND expected_txid_hex = ?5 AND status = 'awaiting_inputs'
                    AND encrypted_raw_tx IS NULL"
             ),
             params![
                 encrypted_raw_tx,
+                scheduled_height,
                 run_id,
                 stage_index,
                 expected_txid_hex.to_ascii_lowercase(),
@@ -1688,6 +1706,7 @@ mod tests {
             0,
             &expected_txid,
             vec![1, 2, 3, 4],
+            0,
             PASSWORD,
             SALT_BASE64,
         )
@@ -1745,6 +1764,7 @@ mod tests {
             0,
             &expected_txid,
             vec![5, 6, 7, 8],
+            0,
             PASSWORD,
             SALT_BASE64,
         )

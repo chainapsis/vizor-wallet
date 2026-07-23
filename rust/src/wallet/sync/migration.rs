@@ -36,6 +36,7 @@ pub(crate) use stages::{
 use stages::{STAGES_TABLE, STAGE_INPUTS_TABLE, STAGE_OUTPUTS_TABLE};
 
 include!("migration/policy.rs");
+include!("migration/preparation_policy.rs");
 
 const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
@@ -562,7 +563,10 @@ fn adopt_timing_policy_for_active_run(
     let schedule_json = serde_json::to_string(&schedule)
         .map_err(|e| format!("Encode fast Testnet migration schedule: {e}"))?;
     let now = now_ms()?;
-    conn.execute(
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin fast Testnet migration timing adoption: {e}"))?;
+    tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET timing_policy = ?1, schedule_json = ?2, updated_at_ms = ?3
@@ -576,7 +580,9 @@ fn adopt_timing_policy_for_active_run(
         ],
     )
     .map_err(|e| format!("Adopt fast Testnet migration timing: {e}"))?;
-    Ok(())
+    reschedule_pending_preparation_stages_with_tx(&tx, &run.run_id, network, &mut OsRng)?;
+    tx.commit()
+        .map_err(|e| format!("Commit fast Testnet migration timing adoption: {e}"))
 }
 
 pub(crate) fn active_migration_run(
@@ -610,6 +616,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     signed_children: Vec<SignedMigrationPcztInsert>,
     denomination_stages: Vec<DenominationStageInsert>,
     approved_schedule: Option<&[MigrationScheduleEntry]>,
+    preparation_timing_policy: PreparationTimingPolicy,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
@@ -647,8 +654,9 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, target_values_json, timing_policy, schedule_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9)"
+              updated_at_ms, target_values_json, timing_policy, schedule_json,
+              preparation_timing_policy)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
         ),
         params![
             run_id,
@@ -660,11 +668,19 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             target_values_json,
             timing_policy.as_str(),
             schedule_json,
+            preparation_timing_policy.as_str(),
         ],
     )
     .map_err(|e| format!("Create staged migration run: {e}"))?;
     insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
+    initialize_preparation_schedule_with_tx(
+        &tx,
+        &run_id,
+        network,
+        preparation_timing_policy,
+        &mut OsRng,
+    )?;
     insert_signed_child_pczts_with_tx(&tx, &run_id, signed_children, password, salt_base64)?;
     tx.commit()
         .map_err(|e| format!("Commit staged migration run: {e}"))?;

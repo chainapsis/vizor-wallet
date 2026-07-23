@@ -204,6 +204,7 @@ abstract class RustLibApi extends BaseApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<IronwoodMigrationResult>
@@ -216,6 +217,7 @@ abstract class RustLibApi extends BaseApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<void> crateApiSimpleConfigureFastTestnetMigration({
@@ -720,6 +722,7 @@ abstract class RustLibApi extends BaseApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<IronwoodMigrationResult>
@@ -744,6 +747,7 @@ abstract class RustLibApi extends BaseApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   });
 
   List<String> crateApiWalletMnemonicWordList();
@@ -1745,6 +1749,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1765,6 +1770,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             approvedSchedule,
             serializer,
           );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1788,6 +1794,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           password,
           saltBase64,
           approvedSchedule,
+          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -1808,6 +1815,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "password",
           "saltBase64",
           "approvedSchedule",
+          "spacePreparationBroadcasts",
         ],
       );
 
@@ -1822,6 +1830,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1838,6 +1847,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1859,6 +1869,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           signedMessages,
           password,
           saltBase64,
+          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -1878,6 +1889,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "signedMessages",
           "password",
           "saltBase64",
+          "spacePreparationBroadcasts",
         ],
       );
 
@@ -5131,6 +5143,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5147,6 +5160,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             approvedSchedule,
             serializer,
           );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5168,6 +5182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           password,
           saltBase64,
           approvedSchedule,
+          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -5186,6 +5201,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "password",
           "saltBase64",
           "approvedSchedule",
+          "spacePreparationBroadcasts",
         ],
       );
 
@@ -5269,6 +5285,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5284,6 +5301,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             approvedSchedule,
             serializer,
           );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5305,6 +5323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           password,
           saltBase64,
           approvedSchedule,
+          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -5323,6 +5342,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "password",
           "saltBase64",
           "approvedSchedule",
+          "spacePreparationBroadcasts",
         ],
       );
 

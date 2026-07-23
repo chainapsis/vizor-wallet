@@ -932,6 +932,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
@@ -1065,6 +1066,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         signed_children,
         denomination_stages,
         Some(&approved_schedule),
+        preparation_timing_policy,
         pending_password.as_slice(),
         pending_salt_base64,
     )?;
@@ -3274,12 +3276,20 @@ fn finalize_ready_denomination_stages(
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let scheduled_height = super::migration::next_preparation_scheduled_height(
+            &conn,
+            run_id,
+            network,
+            current_migration_scanned_height(db_path, network)?,
+            &mut OsRng,
+        )?;
         super::migration::promote_awaiting_denomination_stage(
             &conn,
             run_id,
             stage.stage_index,
             &stage.expected_txid_hex,
             extracted.raw_tx,
+            scheduled_height,
             pending_password,
             pending_salt_base64,
         )?;
@@ -3309,6 +3319,19 @@ async fn broadcast_pending_denomination_stages(
         )?
     };
     if pending.is_empty() {
+        return Ok(None);
+    }
+    let preparation_timing_policy =
+        super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
+    let observed_height = current_migration_scanned_height(db_path, network)?;
+    let due = pending
+        .iter()
+        .filter(|stage| {
+            preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
+                || stage.scheduled_height <= observed_height
+        })
+        .collect::<Vec<_>>();
+    if due.is_empty() {
         return Ok(None);
     }
 
@@ -3344,7 +3367,13 @@ async fn broadcast_pending_denomination_stages(
     };
 
     let mut broadcasted_count = 0u32;
-    for stage in pending.iter().take(policy.limit(pending.len())) {
+    let broadcast_limit =
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced {
+            1
+        } else {
+            policy.limit(due.len())
+        };
+    for stage in due.into_iter().take(broadcast_limit) {
         if policy.is_cancelled() {
             break;
         }
@@ -3397,6 +3426,18 @@ async fn broadcast_pending_denomination_stages(
             stage.expected_txid_hex
         );
     }
+    if broadcasted_count > 0
+        && preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
+    {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::reschedule_remaining_preparation_stages(
+            &conn,
+            run_id,
+            network,
+            observed_height,
+            &mut OsRng,
+        )?;
+    }
 
     Ok(Some(CreatedBroadcastResult {
         txids,
@@ -3409,8 +3450,12 @@ async fn broadcast_pending_denomination_stages(
         total_count,
         message: Some(if policy.is_cancelled() {
             "Background migration stopped before the next denomination broadcast.".to_string()
-        } else if broadcasted_count < total_count && policy.max_per_step.is_some() {
-            "One denomination stage was submitted. Remaining stages will continue in later background runs."
+        } else if broadcasted_count < total_count
+            && (policy.max_per_step.is_some()
+                || preparation_timing_policy
+                    == super::migration::PreparationTimingPolicy::Zip318Spaced)
+        {
+            "One denomination stage was submitted. Remaining stages will continue on later migration advances."
                 .to_string()
         } else if total_count == 1 {
             "Denomination split stage was created. Migration will continue after confirmation."

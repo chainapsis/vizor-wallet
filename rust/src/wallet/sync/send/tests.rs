@@ -330,6 +330,7 @@ fn create_outbox_receipt_test_run(
             &selected_note_txid,
         )],
         None,
+        migration::PreparationTimingPolicy::Immediate,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -1094,6 +1095,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
             selected_note_txid,
         )],
         None,
+        migration::PreparationTimingPolicy::Immediate,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )

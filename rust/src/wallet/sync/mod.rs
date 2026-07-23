@@ -40,7 +40,7 @@ mod transactions;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    MigrationPartState, MigrationScheduleEntry, MigrationStatus,
+    MigrationPartState, MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{

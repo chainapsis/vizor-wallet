@@ -257,6 +257,44 @@ fn insert_test_stage(
     }
 }
 
+fn insert_preparation_policy_test_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    policy: PreparationTimingPolicy,
+    stage_count: u32,
+    target_height: u32,
+) {
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json,
+              preparation_timing_policy)
+             VALUES (?1, 'account-1', 'test', 'db', ?2, 1, 1, '[]', ?3)"
+        ),
+        params![run_id, PHASE_READY_TO_PREPARE, policy.as_str()],
+    )
+    .unwrap();
+    for stage_index in 0..stage_count {
+        conn.execute(
+            &format!(
+                "INSERT INTO {STAGES_TABLE}
+                 (run_id, stage_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, encrypted_raw_tx, expected_txid_hex,
+                  target_height, expiry_height, fee_zatoshi, status)
+                 VALUES (?1, ?2, 'base', 'sigs', 'raw', ?3, ?4, 0, 1, 'pending')"
+            ),
+            params![
+                run_id,
+                stage_index,
+                format!("{:064x}", u64::from(stage_index) + 1),
+                target_height,
+            ],
+        )
+        .unwrap();
+    }
+}
+
 fn seed_account_migration_rows(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -1095,6 +1133,231 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
+fn preparation_schedule_starts_one_root_immediately_and_spaces_the_rest() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "spaced-roots",
+        PreparationTimingPolicy::Zip318Spaced,
+        8,
+        101,
+    );
+
+    let tx = conn.unchecked_transaction().unwrap();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    initialize_preparation_schedule_with_tx(
+        &tx,
+        "spaced-roots",
+        WalletNetwork::Main,
+        PreparationTimingPolicy::Zip318Spaced,
+        &mut rng,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT scheduled_height FROM {STAGES_TABLE}
+             WHERE run_id = 'spaced-roots'
+             ORDER BY scheduled_height ASC"
+        ))
+        .unwrap();
+    let heights = stmt
+        .query_map([], |row| row.get::<_, u32>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(heights[0], 100);
+    assert!(heights
+        .windows(2)
+        .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));
+}
+
+#[test]
+fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "spaced-descendant",
+        PreparationTimingPolicy::Zip318Spaced,
+        1,
+        101,
+    );
+    conn.execute(
+        &format!(
+            "UPDATE {STAGES_TABLE} SET scheduled_height = 140
+             WHERE run_id = 'spaced-descendant'"
+        ),
+        [],
+    )
+    .unwrap();
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    let after_existing = next_preparation_scheduled_height(
+        &conn,
+        "spaced-descendant",
+        WalletNetwork::Main,
+        100,
+        &mut rng,
+    )
+    .unwrap();
+    assert!((140..=140 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&after_existing));
+
+    let after_observed = next_preparation_scheduled_height(
+        &conn,
+        "spaced-descendant",
+        WalletNetwork::Main,
+        200,
+        &mut rng,
+    )
+    .unwrap();
+    assert!((200..=200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&after_observed));
+}
+
+#[test]
+fn fast_testnet_uses_regtest_preparation_delays() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "fast-testnet-preparation",
+        PreparationTimingPolicy::Zip318Spaced,
+        1,
+        101,
+    );
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET timing_policy = 'fast_testnet'
+             WHERE run_id = 'fast-testnet-preparation'"
+        ),
+        [],
+    )
+    .unwrap();
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    for _ in 0..32 {
+        let scheduled_height = next_preparation_scheduled_height(
+            &conn,
+            "fast-testnet-preparation",
+            WalletNetwork::Test,
+            200,
+            &mut rng,
+        )
+        .unwrap();
+        assert!((200..=200 + REGTEST_PREPARATION_MAX_DELAY_BLOCKS).contains(&scheduled_height));
+    }
+}
+
+#[test]
+fn preparation_delay_rounds_to_nearest_block() {
+    let mut rng = StdRng::seed_from_u64(0x318);
+    let delays = (0..256)
+        .map(|_| {
+            preparation_delay_with_rng(
+                WalletNetwork::Main,
+                MigrationTimingPolicy::Standard,
+                &mut rng,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(delays.contains(&0));
+    assert!(delays
+        .iter()
+        .all(|delay| *delay <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS));
+}
+
+#[test]
+fn all_remaining_preparation_stages_are_rescheduled_after_a_late_broadcast() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "spaced-overdue",
+        PreparationTimingPolicy::Zip318Spaced,
+        4,
+        101,
+    );
+    conn.execute(
+        &format!(
+            "UPDATE {STAGES_TABLE}
+             SET scheduled_height = CASE stage_index
+                     WHEN 0 THEN 100
+                     WHEN 1 THEN 150
+                     WHEN 2 THEN 250
+                     ELSE 1000
+                 END,
+                 status = CASE stage_index
+                     WHEN 0 THEN 'broadcasted'
+                     ELSE 'pending'
+                 END
+             WHERE run_id = 'spaced-overdue'"
+        ),
+        [],
+    )
+    .unwrap();
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    reschedule_remaining_preparation_stages(
+        &conn,
+        "spaced-overdue",
+        WalletNetwork::Main,
+        200,
+        &mut rng,
+    )
+    .unwrap();
+
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT scheduled_height FROM {STAGES_TABLE}
+             WHERE run_id = 'spaced-overdue' AND status = 'pending'
+             ORDER BY scheduled_height ASC"
+        ))
+        .unwrap();
+    let heights = stmt
+        .query_map([], |row| row.get::<_, u32>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(heights.len(), 3);
+    assert!((200..=200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
+    assert!(heights
+        .windows(2)
+        .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));
+    assert!(heights[2] <= 200 + 3 * ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+}
+
+#[test]
+fn legacy_preparation_policy_remains_immediate() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE {RUNS_TABLE} (
+            run_id TEXT PRIMARY KEY,
+            account_uuid TEXT NOT NULL,
+            network TEXT NOT NULL,
+            db_fingerprint TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            target_values_json TEXT NOT NULL DEFAULT '[]'
+        );
+        INSERT INTO {RUNS_TABLE}
+            (run_id, account_uuid, network, db_fingerprint, phase,
+             created_at_ms, updated_at_ms)
+        VALUES ('legacy', 'account-1', 'test', 'db', 'preparing', 1, 1);"
+    ))
+    .unwrap();
+    ensure_schema(&conn).unwrap();
+
+    assert_eq!(
+        preparation_timing_policy_for_run_with_conn(&conn, "legacy").unwrap(),
+        PreparationTimingPolicy::Immediate
+    );
+}
+
+#[test]
 fn planned_schedule_starts_immediately_and_delays_later_transfers() {
     let values = (1..=32).collect::<Vec<_>>();
     let mut rng = StdRng::seed_from_u64(0x318);
@@ -1216,6 +1479,66 @@ fn fast_testnet_adopts_unstarted_run_and_replaces_schedule() {
         MigrationTimingPolicy::FastTestnet,
     )
     .unwrap();
+}
+
+#[test]
+fn fast_testnet_adoption_retimes_pending_preparation_stages() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "run-fast-preparation",
+        PreparationTimingPolicy::Zip318Spaced,
+        3,
+        101,
+    );
+    conn.execute(
+        &format!(
+            "UPDATE {STAGES_TABLE}
+             SET scheduled_height = CASE stage_index
+                 WHEN 0 THEN 100 WHEN 1 THEN 150 ELSE 200 END,
+                 status = CASE stage_index
+                     WHEN 0 THEN 'broadcasted' ELSE 'pending' END
+             WHERE run_id = 'run-fast-preparation'"
+        ),
+        [],
+    )
+    .unwrap();
+
+    adopt_timing_policy_for_active_run(
+        &conn,
+        "account-1",
+        WalletNetwork::Test,
+        MigrationTimingPolicy::FastTestnet,
+    )
+    .unwrap();
+
+    let policy: String = conn
+        .query_row(
+            &format!(
+                "SELECT timing_policy FROM {RUNS_TABLE}
+                 WHERE run_id = 'run-fast-preparation'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(policy, "fast_testnet");
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT scheduled_height FROM {STAGES_TABLE}
+             WHERE run_id = 'run-fast-preparation' AND status = 'pending'
+             ORDER BY scheduled_height ASC, stage_index ASC"
+        ))
+        .unwrap();
+    let heights = stmt
+        .query_map([], |row| row.get::<_, u32>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(heights.len(), 2);
+    assert!((100..=100 + REGTEST_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
+    assert!(heights[1] - heights[0] <= REGTEST_PREPARATION_MAX_DELAY_BLOCKS);
 }
 
 #[test]
@@ -2127,6 +2450,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
         Vec::new(),
         vec![pending_test_stage(&"11".repeat(32), vec![1, 2, 3, 4])],
         None,
+        PreparationTimingPolicy::Immediate,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -2287,6 +2611,7 @@ fn create_staged_run_persists_pending_split_atomically() {
         Vec::new(),
         vec![pending_test_stage(&expected_txid, raw_tx.clone())],
         Some(&approved_schedule),
+        PreparationTimingPolicy::Immediate,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -2364,6 +2689,7 @@ fn create_staged_run_rolls_back_on_encrypt_failure() {
         Vec::new(),
         vec![pending_test_stage(&expected_txid, vec![1, 2, 3, 4])],
         Some(&approved_schedule),
+        PreparationTimingPolicy::Immediate,
         TEST_PASSWORD,
         "not base64",
     )

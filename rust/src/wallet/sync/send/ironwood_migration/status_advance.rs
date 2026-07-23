@@ -111,6 +111,7 @@ fn reconcile_mined_denomination_stages(
             stage.stage_index,
             &stage.expected_txid_hex,
             raw_tx,
+            0,
             pending_password,
             pending_salt_base64,
         )?;
@@ -224,8 +225,15 @@ async fn advance_staged_denomination_run(
                 pending_salt_base64,
                 policy,
             )
-            .await?
-            .ok_or("Finalized denomination stage was not pending broadcast")?;
+            .await?;
+            let Some(broadcast) = broadcast else {
+                return Ok(StagedDenominationAdvance::Waiting(
+                    prepared_notes_not_spendable_result(
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
+                ));
+            };
             return Ok(StagedDenominationAdvance::Waiting(
                 migration_result_from_split_broadcast(
                     broadcast,

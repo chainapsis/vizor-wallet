@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
@@ -241,6 +242,70 @@ typedef IronwoodMigrationKeystoneProofStatusGetter =
 typedef IronwoodMigrationKeystoneRequestDiscarder =
     Future<void> Function({required String requestId});
 
+Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => rust_sync.migrateOrchardToIronwood(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
+Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
+Future<rust_sync.IronwoodMigrationResult>
+_defaultCompleteKeystoneDenominationMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => rust_sync.completeOrchardMigrationDenominationsPczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
 class IronwoodMigrationService {
   IronwoodMigrationService({
     required this.getWalletDbPath,
@@ -314,7 +379,7 @@ class IronwoodMigrationService {
            requestNotificationAuthorization ??
            _defaultRequestNotificationAuthorization,
        startSoftwareMigration =
-           startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
+           startSoftwareMigration ?? _defaultStartSoftwareMigration,
        getImmediatePlan =
            getImmediatePlan ?? rust_sync.getOrchardMigrationImmediatePlan,
        startImmediateMigration =
@@ -324,8 +389,7 @@ class IronwoodMigrationService {
            retireUnbroadcastMigration ??
            rust_sync.retireUnbroadcastOrchardMigration,
        startMacosSoftwareMigration =
-           startMacosSoftwareMigration ??
-           rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic,
+           startMacosSoftwareMigration ?? _defaultStartMacosSoftwareMigration,
        broadcastDueMigration =
            broadcastDueMigration ??
            rust_sync.broadcastDueOrchardMigrationTransactions,
@@ -354,7 +418,7 @@ class IronwoodMigrationService {
            rust_sync.prepareOrchardMigrationDenominationsPczt,
        completeKeystoneDenominationMigration =
            completeKeystoneDenominationMigration ??
-           rust_sync.completeOrchardMigrationDenominationsPczt,
+           _defaultCompleteKeystoneDenominationMigration,
        prepareKeystoneBatchMigration =
            prepareKeystoneBatchMigration ??
            rust_sync.prepareOrchardMigrationBatchPczt,
