@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -45,6 +46,31 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RecoveryScreenTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  int recoveryCount = 0;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState(
+      errors: {
+        'account-1':
+            'Bad state: Ironwood migration credential is missing for the '
+            'active run. Vizor will only continue transactions preserved in '
+            'the verified iOS outbox.',
+      },
+    );
+  }
+
+  @override
+  Future<void> recover(String accountUuid) async {
+    recoveryCount++;
+    state = state.copyWith(
+      errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+    );
+  }
 }
 
 final _data = IronwoodMigrationFlowData(
@@ -306,6 +332,7 @@ Widget _productionApp({
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
   SyncState? syncState,
+  IronwoodMigrationCoordinator Function()? migrationCoordinator,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -380,6 +407,8 @@ Widget _productionApp({
             _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
       ),
       ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
+      if (migrationCoordinator != null)
+        ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
     ],
     child: AppTheme(
       data: AppThemeData.light,
@@ -418,7 +447,10 @@ IronwoodMigrationService _migrationService({
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3],
     isMacOS: () => false,
-    isMobile: () => true,
+    // These screen tests exercise routing and presentation, not the native
+    // iOS outbox credential contract. Credential behavior has dedicated
+    // service tests.
+    isMobile: () => false,
     supportsBackgroundMigration: () => true,
     startSoftwareMigration:
         ({
@@ -2263,6 +2295,52 @@ void main() {
     expect(find.textContaining('4.12 ZEC'), findsNWidgets(3));
     expect(find.text('Part 1'), findsOneWidget);
     expect(find.text('Part 3'), findsOneWidget);
+  });
+
+  testWidgets('requires confirmation before rebuilding a missing credential', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    final coordinator = _RecoveryScreenTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'old-run',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration recovery required.'), findsOneWidget);
+    expect(find.text('Recover'), findsOneWidget);
+    expect(coordinator.recoveryCount, 0);
+
+    final recoveryButton = find.byKey(
+      const ValueKey('mobile_ironwood_credential_recovery_button'),
+    );
+    final buttonTopBeforeScroll = tester.getTopLeft(recoveryButton).dy;
+    await tester.drag(
+      find.byKey(const ValueKey('mobile_ironwood_migration_content_scroll')),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+    expect(tester.getTopLeft(recoveryButton).dy, buttonTopBeforeScroll);
+
+    await tester.tap(find.text('Recover'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rebuild migration?'), findsOneWidget);
+    expect(find.text('Rebuild'), findsOneWidget);
+    expect(coordinator.recoveryCount, 0);
+
+    await tester.ensureVisible(find.text('Rebuild'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rebuild'));
+    await tester.pumpAndSettle();
+    expect(coordinator.recoveryCount, 1);
   });
 
   testWidgets('uses per-part state and confirmation progress from Rust', (

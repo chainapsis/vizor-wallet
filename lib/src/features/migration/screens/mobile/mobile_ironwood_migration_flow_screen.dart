@@ -3,7 +3,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, Divider, Scaffold, VerticalDivider;
+    show
+        CircularProgressIndicator,
+        Dialog,
+        Divider,
+        Scaffold,
+        VerticalDivider,
+        showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';

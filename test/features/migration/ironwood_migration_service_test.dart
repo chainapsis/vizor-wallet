@@ -1250,6 +1250,186 @@ void main() {
   );
 
   test(
+    'confirmed recovery retires the old run and binds a new credential',
+    () async {
+      final events = <String>[];
+      final mnemonic = Uint8List.fromList([1, 2, 3, 4]);
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'old-run',
+          parts: [_migrationPart(txidHex: 'missing-tx')],
+        ),
+        _migrationStatus(
+          phase: 'waiting_denom_confirmations',
+          activeRunId: 'new-run',
+        ),
+      ];
+      final store = _backgroundCredentialStore();
+      String? startedPassword;
+      String? startedSalt;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(statuses.removeAt(0));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async => mnemonic,
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        isHardwareAccount: (_) => false,
+        recoverMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required lightwalletdUrl,
+              required expectedTxids,
+            }) async => false,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke:$network:$accountUuid');
+            },
+        retireUnbroadcastMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+            }) async {
+              events.add('retire:$expectedRunId');
+            },
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              events.add('start');
+              startedPassword = password;
+              startedSalt = saltBase64;
+              expect(mnemonicBytes, [1, 2, 3, 4]);
+              expect(approvedSchedule, isEmpty);
+              return _migrationResult();
+            },
+        startBackgroundPreparation: () async {
+          events.add('prepare-background');
+          return true;
+        },
+        requestNotificationAuthorization: () async => true,
+      );
+
+      await service.recoverSoftwarePrivateMigration(accountUuid: 'account-1');
+
+      expect(events, [
+        'revoke:test:account-1',
+        'retire:old-run',
+        'start',
+        'prepare-background',
+      ]);
+      expect(mnemonic, [0, 0, 0, 0]);
+      final manifest = await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      expect(manifest?.expectedRunId, 'new-run');
+      expect(manifest?.credentialHex, startedPassword);
+      expect(manifest?.saltBase64, startedSalt);
+    },
+  );
+
+  test(
+    'recovery does not create a new credential when network checks fail',
+    () async {
+      final store = _backgroundCredentialStore();
+      var startCalled = false;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            _migrationStatus(
+              phase: 'broadcast_scheduled',
+              activeRunId: 'old-run',
+              parts: [_migrationPart(txidHex: 'missing-tx')],
+            ),
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2]),
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        isHardwareAccount: (_) => false,
+        recoverMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required lightwalletdUrl,
+              required expectedTxids,
+            }) async => false,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {},
+        retireUnbroadcastMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+            }) async => throw StateError('network verification failed'),
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              startCalled = true;
+              return _migrationResult();
+            },
+      );
+
+      await expectLater(
+        service.recoverSoftwarePrivateMigration(accountUuid: 'account-1'),
+        throwsA(isA<StateError>()),
+      );
+      expect(startCalled, isFalse);
+      expect(
+        await store.read(network: 'test', accountUuid: 'account-1'),
+        isNull,
+      );
+    },
+  );
+
+  test(
     'mobile new run stores random credential and binds before outbox staging',
     () async {
       final statuses = <rust_sync.MigrationStatus>[

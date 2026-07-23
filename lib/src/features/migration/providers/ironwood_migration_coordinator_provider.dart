@@ -114,6 +114,45 @@ class IronwoodMigrationCoordinator
     }
   }
 
+  Future<void> recover(String accountUuid) async {
+    final inFlight = _advanceOperations[accountUuid];
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // Recovery intentionally takes over after the automatic attempt.
+      }
+    }
+    if (!ref.mounted) return;
+
+    state = state.copyWith(
+      advancingAccounts: {...state.advancingAccounts, accountUuid},
+    );
+    try {
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .recoverSoftwarePrivateMigration(accountUuid: accountUuid);
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+      );
+      await refreshNow(forceAdvance: true);
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    } finally {
+      if (ref.mounted) {
+        state = state.copyWith(
+          advancingAccounts: {...state.advancingAccounts}..remove(accountUuid),
+        );
+      }
+    }
+  }
+
   Future<void> refreshNow({bool forceAdvance = false}) async {
     if (!ref.mounted) return;
     if (!_foreground) return;

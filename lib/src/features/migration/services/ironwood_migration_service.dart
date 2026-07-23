@@ -17,6 +17,13 @@ import '../models/ironwood_migration_phases.dart';
 import 'ironwood_migration_background_credential_store.dart';
 import 'ironwood_migration_operation_registry.dart';
 
+const _credentialRecoveryRequiredError =
+    'Ironwood migration credential is missing for the active run.';
+
+bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
+  return error?.contains(_credentialRecoveryRequiredError) ?? false;
+}
+
 typedef IronwoodMigrationStatusGetter =
     Future<rust_sync.MigrationStatus> Function({
       required String dbPath,
@@ -39,6 +46,11 @@ typedef IronwoodMigrationMnemonicBytesGetter =
 typedef IronwoodMigrationPlatformCheck = bool Function();
 typedef IronwoodMigrationBackgroundScheduler = Future<bool> Function();
 typedef IronwoodMigrationBackgroundCanceler = Future<void> Function();
+typedef IronwoodMigrationAccountRevoker =
+    Future<void> Function({
+      required String network,
+      required String accountUuid,
+    });
 typedef IronwoodMigrationNotificationAuthorizationRequester =
     Future<bool> Function();
 typedef IronwoodMigrationHardwareAccountCheck =
@@ -53,6 +65,14 @@ typedef IronwoodMigrationSoftwareStarter =
       required String password,
       required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    });
+typedef IronwoodMigrationUnbroadcastRetirer =
+    Future<void> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String expectedRunId,
     });
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -220,9 +240,11 @@ class IronwoodMigrationService {
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
+    IronwoodMigrationAccountRevoker? revokeMigrationAccount,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
+    IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
     IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
@@ -264,11 +286,17 @@ class IronwoodMigrationService {
            startBackgroundPreparation ?? _defaultStartBackgroundPreparation,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
+       revokeMigrationAccount =
+           revokeMigrationAccount ??
+           IronwoodMigrationBackgroundLifecycle.instance.revokeAccount,
        requestNotificationAuthorization =
            requestNotificationAuthorization ??
            _defaultRequestNotificationAuthorization,
        startSoftwareMigration =
            startSoftwareMigration ?? rust_sync.migrateOrchardToIronwood,
+       retireUnbroadcastMigration =
+           retireUnbroadcastMigration ??
+           rust_sync.retireUnbroadcastOrchardMigration,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ??
            rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic,
@@ -331,9 +359,11 @@ class IronwoodMigrationService {
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
+  final IronwoodMigrationAccountRevoker revokeMigrationAccount;
   final IronwoodMigrationNotificationAuthorizationRequester
   requestNotificationAuthorization;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
+  final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
   final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
@@ -655,6 +685,128 @@ class IronwoodMigrationService {
     );
   }
 
+  Future<void> recoverSoftwarePrivateMigration({
+    required String accountUuid,
+  }) async {
+    if (!isIOS() || !isMobile() || isHardwareAccount(accountUuid)) {
+      throw StateError(
+        'Ironwood migration credential recovery is only available for '
+        'software accounts on iOS.',
+      );
+    }
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+
+    await operationRegistry.run(
+      network: context.network,
+      accountUuid: context.accountUuid,
+      operation: () => _serializeCredentialState(context, () async {
+        final oldStatus = await _getStatusForContext(context);
+        final oldRunId = oldStatus.activeRunId;
+        if (oldRunId == null) {
+          throw StateError('There is no active Ironwood migration to recover.');
+        }
+        final existingManifest = await backgroundCredentialStore.read(
+          network: context.network,
+          accountUuid: context.accountUuid,
+        );
+        if (existingManifest != null) {
+          throw StateError(
+            'The active Ironwood migration still has a usable credential.',
+          );
+        }
+        if (await _recoverPersistedMigrationOutbox(
+          context: context,
+          status: oldStatus,
+        )) {
+          return;
+        }
+
+        final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw StateError('Mnemonic not found for the migration account.');
+        }
+
+        try {
+          // Revocation stops native delivery first. Rust then checks every
+          // remaining scheduled transaction against lightwalletd before it
+          // unlocks the old run for a rebuild.
+          await revokeMigrationAccount(
+            network: context.network,
+            accountUuid: context.accountUuid,
+          );
+          await retireUnbroadcastMigration(
+            dbPath: context.dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: context.network,
+            accountUuid: context.accountUuid,
+            expectedRunId: oldRunId,
+          );
+
+          final manifest = await backgroundCredentialStore.prepare(
+            network: context.network,
+            accountUuid: context.accountUuid,
+            dbPath: context.dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          );
+          final credential = _MigrationCredential(
+            password: manifest.credentialHex,
+            saltBase64: manifest.saltBase64,
+          );
+
+          Object? startError;
+          StackTrace? startStackTrace;
+          try {
+            await startSoftwareMigration(
+              dbPath: context.dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: context.network,
+              accountUuid: context.accountUuid,
+              mnemonicBytes: mnemonicBytes,
+              password: credential.password,
+              saltBase64: credential.saltBase64,
+              approvedSchedule: const [],
+            );
+          } catch (error, stackTrace) {
+            startError = error;
+            startStackTrace = stackTrace;
+          }
+
+          final currentStatus = await _getStatusForContext(context);
+          await _reconcileBackgroundCredential(
+            context: context,
+            status: currentStatus,
+          );
+          await _reconcileBackgroundPreparationBestEffort(currentStatus);
+          if (currentStatus.activeRunId != null &&
+              currentStatus.phase !=
+                  kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+            await _refreshMigrationOutbox(
+              context: context,
+              credential: credential,
+              prepare: true,
+            );
+          }
+          if (currentStatus.activeRunId != null) {
+            await _requestNotificationAuthorizationBestEffort();
+          }
+          if (startError != null) {
+            Error.throwWithStackTrace(startError, startStackTrace!);
+          }
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
+      }),
+    );
+  }
+
   Future<rust_sync.KeystoneMigrationSigningRequest>
   prepareKeystoneDenominationPrivateMigration({
     required String accountUuid,
@@ -883,7 +1035,7 @@ class IronwoodMigrationService {
           );
         }
         throw StateError(
-          'Ironwood migration credential is missing for the active run. '
+          '$_credentialRecoveryRequiredError '
           'Vizor will only continue transactions preserved in the verified '
           'iOS outbox.',
         );
