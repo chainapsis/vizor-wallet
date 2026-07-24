@@ -298,6 +298,47 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationResumesOnlyConfirmationWorkAsContinuedTask() {
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [0],
+        inspectionFailed: false
+      ),
+      .continuedProcessing
+    )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [5],
+        inspectionFailed: false
+      ),
+      .backgroundProcessing
+    )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [5, 0],
+        inspectionFailed: false
+      ),
+      .continuedProcessing
+    )
+  }
+
+  func testMigrationPreparationRetriesInspectionFailuresInBackground() {
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [],
+        inspectionFailed: true
+      ),
+      .backgroundProcessing
+    )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [1, 4],
+        inspectionFailed: false
+      ),
+      .idle
+    )
+  }
+
   func testMigrationPreparationCompletesOnlyTerminalBackgroundStates() {
     XCTAssertEqual(
       migrationPreparationPassResult(states: []),

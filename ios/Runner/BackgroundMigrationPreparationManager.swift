@@ -46,6 +46,25 @@ enum BackgroundMigrationPreparationRuntimeState: String, Equatable {
   case foregroundContinuationPending
 }
 
+enum BackgroundMigrationPreparationResumeTarget: Equatable {
+  case idle
+  case continuedProcessing
+  case backgroundProcessing
+}
+
+func migrationPreparationResumeTarget(
+  states: [UInt8],
+  inspectionFailed: Bool
+) -> BackgroundMigrationPreparationResumeTarget {
+  if states.contains(0) {
+    return .continuedProcessing
+  }
+  if inspectionFailed || states.contains(5) {
+    return .backgroundProcessing
+  }
+  return .idle
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
@@ -584,15 +603,39 @@ final class BackgroundMigrationPreparationManager {
       expired = false
       mutationQuiesced = false
     }
-    guard hasResumablePreparation() else {
+    switch preparationResumeTarget() {
+    case .idle:
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("idle_after_mutation")
       cancelWatchdog()
-      return
+    case .continuedProcessing:
+      start { _ in }
+    case .backgroundProcessing:
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("processing_resume_after_mutation")
+      cancelWatchdog()
+      BackgroundMigrationManager.shared.schedulePreparationHandoff(
+        after: 60
+      ) { scheduled in
+        if scheduled {
+          self.recordSchedulingState(
+            "processing_resumed_after_mutation"
+          )
+        } else {
+          self.recordSchedulingState(
+            "processing_resume_after_mutation_failed"
+          )
+          self.scheduleWatchdog()
+          self.postNeedsActionNotification(
+            reason: "processing-resume-after-mutation-failed"
+          )
+        }
+      }
     }
-    start { _ in }
   }
 
   fileprivate func recordSyncProgress(_ progress: CSyncProgress) {
@@ -931,10 +974,18 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func hasResumablePreparation() -> Bool {
+    preparationResumeTarget() != .idle
+  }
+
+  private func preparationResumeTarget()
+    -> BackgroundMigrationPreparationResumeTarget
+  {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return false }
-    return manifests.contains { manifest in
-      guard let runId = manifest.expectedRunId else { return false }
+    else { return .idle }
+    var states: [UInt8] = []
+    var inspectionFailed = false
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
       var preparation = CMigrationPreparationProgress(
         state: 0,
         confirmation_count: 0,
@@ -951,8 +1002,16 @@ final class BackgroundMigrationPreparationManager {
       )
       // An inspection error is not proof that the run is inactive. Schedule a
       // retry so a transient DB lock cannot strand a bound preparation.
-      return code != 0 || preparation.state == 0 || preparation.state == 5
+      if code != 0 {
+        inspectionFailed = true
+      } else {
+        states.append(preparation.state)
+      }
     }
+    return migrationPreparationResumeTarget(
+      states: states,
+      inspectionFailed: inspectionFailed
+    )
   }
 
   private func recordSchedulingState(_ state: String, error: Error? = nil) {
