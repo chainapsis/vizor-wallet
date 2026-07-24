@@ -317,6 +317,39 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationNeedsActionCompletesBackgroundWake() {
+    XCTAssertTrue(
+      migrationPreparationPassNeedsForegroundAction(.needsAction)
+    )
+    XCTAssertTrue(
+      migrationPreparationBackgroundWakeSucceeded(.needsAction)
+    )
+    XCTAssertFalse(
+      migrationPreparationBackgroundWakeSucceeded(.cancelled)
+    )
+  }
+
+  func testMigrationPreparationNeedsActionNotificationDeduplicatesFingerprint() {
+    XCTAssertTrue(
+      shouldPostMigrationPreparationNeedsActionNotification(
+        previousFingerprint: nil,
+        fingerprint: "main:account-1:run-1:sign:0"
+      )
+    )
+    XCTAssertFalse(
+      shouldPostMigrationPreparationNeedsActionNotification(
+        previousFingerprint: "main:account-1:run-1:sign:0",
+        fingerprint: "main:account-1:run-1:sign:0"
+      )
+    )
+    XCTAssertTrue(
+      shouldPostMigrationPreparationNeedsActionNotification(
+        previousFingerprint: "main:account-1:run-1:sign:0",
+        fingerprint: "main:account-1:run-1:sign:1"
+      )
+    )
+  }
+
   func testFreshInstallCleanerMarksInstallWhenNoWalletKeychainExists() {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .missing

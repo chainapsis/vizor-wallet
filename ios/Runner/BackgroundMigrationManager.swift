@@ -699,13 +699,8 @@ final class BackgroundMigrationManager {
           runResult,
           preparationResult: preparationResult
         ) { rescheduled in
-          let preparationSucceeded: Bool
-          switch preparationResult {
-          case .completed, .waitingForConfirmations, .deferred:
-            preparationSucceeded = true
-          case .needsAction, .cancelled:
-            preparationSucceeded = false
-          }
+          let preparationSucceeded =
+            migrationPreparationBackgroundWakeSucceeded(preparationResult)
           self.stopAuthorizationMonitoring()
           if self.wakeDisposition == .finishForegroundOnly {
             task.setTaskCompleted(
