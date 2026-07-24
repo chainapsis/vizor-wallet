@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -26,17 +27,31 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
+final _rustApiFake = _RustApiFake();
+
 class _RustApiFake implements RustLibApi {
+  final encodedRequestIds = <String>[];
+  final decodedRequestIds = <String>[];
+
+  void reset() {
+    encodedRequestIds.clear();
+    decodedRequestIds.clear();
+  }
+
   @override
   void crateApiKeystoneResetUrSession() {}
 
@@ -45,10 +60,103 @@ class _RustApiFake implements RustLibApi {
     required String requestId,
     required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
     required BigInt maxFragmentLen,
-  }) async => ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }) async {
+    encodedRequestIds.add(requestId);
+    return ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }
+
+  @override
+  Future<rust_keystone.KeystoneSigResult>
+  crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) async {
+    decodedRequestIds.add(expectedRequestId);
+    return rust_keystone.KeystoneSigResult(
+      firmwareVersion: Uint8List.fromList([1, 0, 0]),
+      requestId: Uint8List.fromList(utf8.encode(expectedRequestId)),
+      results: [
+        for (final messageId in messageIds)
+          rust_keystone.KeystoneMsgSig(
+            messageId: Uint8List.fromList(utf8.encode(messageId)),
+            sigs: [
+              rust_keystone.KeystoneActionSig(
+                pool: 0,
+                actionIndex: 0,
+                sig: Uint8List(64),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingBindCredentialStore
+    extends IronwoodMigrationBackgroundCredentialStore {
+  _FailingBindCredentialStore({
+    required this.failAtBindCall,
+    String? initialRunId,
+  }) : _manifest = _manifestFor(initialRunId);
+
+  final int failAtBindCall;
+  IronwoodMigrationBackgroundCredentialManifest _manifest;
+  int bindCallCount = 0;
+
+  static IronwoodMigrationBackgroundCredentialManifest _manifestFor(
+    String? runId,
+  ) {
+    return IronwoodMigrationBackgroundCredentialManifest(
+      version: 1,
+      network: 'main',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: defaultRpcEndpointConfig(
+        'main',
+      ).normalizedLightwalletdUrl,
+      credentialHex: List.filled(64, '0').join(),
+      saltBase64: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      expectedRunId: runId,
+    );
+  }
+
+  @override
+  Future<IronwoodMigrationBackgroundCredentialManifest> prepare({
+    required String network,
+    required String accountUuid,
+    required String dbPath,
+    required String lightwalletdUrl,
+  }) async {
+    _manifest = _manifestFor(null);
+    return _manifest;
+  }
+
+  @override
+  Future<IronwoodMigrationBackgroundCredentialManifest?> read({
+    required String network,
+    required String accountUuid,
+  }) async {
+    return _manifest;
+  }
+
+  @override
+  Future<bool> bindExpectedRunId({
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  }) async {
+    bindCallCount++;
+    if (bindCallCount == failAtBindCall) {
+      throw StateError('Injected credential reconciliation failure.');
+    }
+    if (_manifest.expectedRunId == expectedRunId) return false;
+    _manifest = _manifest.bindToRun(expectedRunId);
+    return true;
+  }
 }
 
 class _HardwareAccountNotifier extends AccountNotifier {
@@ -287,6 +395,7 @@ rust_sync.MigrationStatus _status({
   int? nextActionHeight,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
+  List<int>? currentSigningPartIndices,
   int pendingTxCount = 2,
   int signedChildPcztCount = 0,
   int pendingSplitStageCount = 2,
@@ -315,6 +424,9 @@ rust_sync.MigrationStatus _status({
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
+    currentSigningPartIndices: currentSigningPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(currentSigningPartIndices),
     message: message,
     scheduledBroadcasts:
         scheduledBroadcasts ??
@@ -519,6 +631,8 @@ Widget _productionApp({
   SyncState? syncState,
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
+  bool realKeystoneDenominationRoute = false,
+  bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -579,11 +693,15 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, _) => const Text('keystone denomination sign route'),
+        builder: (_, _) => realKeystoneDenominationRoute
+            ? const MobileIronwoodMigrationKeystoneDenominationSignScreen()
+            : const Text('keystone denomination sign route'),
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
-        builder: (_, _) => const Text('keystone batch sign route'),
+        builder: (_, _) => realKeystoneBatchRoute
+            ? const MobileIronwoodMigrationKeystoneBatchSignScreen()
+            : const Text('keystone batch sign route'),
       ),
     ],
   );
@@ -784,12 +902,13 @@ void _useMobileViewport(
 
 void main() {
   setUpAll(() {
-    RustLib.initMock(api: _RustApiFake());
+    RustLib.initMock(api: _rustApiFake);
   });
 
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    _rustApiFake.reset();
     FlutterSecureStorage.setMockInitialValues({});
   });
 
@@ -1969,6 +2088,222 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'leaves signing after a completion error when the migration was committed',
+    (tester) async {
+      _useMobileViewport(tester);
+      var committed = false;
+      var completionCount = 0;
+      final credentialStore = _FailingBindCredentialStore(failAtBindCall: 1);
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                committed
+                ? _status(
+                    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                    activeRunId: 'committed-run',
+                  )
+                : _status(
+                    phase: kIronwoodMigrationReadyPhase,
+                    activeRunId: null,
+                  ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _plan,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        isMobile: () => true,
+        prepareKeystoneDenominationMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'partial-success-request',
+                  messages: [
+                    rust_sync.KeystoneMigrationMessage(
+                      id: 'split-1',
+                      redactedPczt: Uint8List.fromList([1]),
+                    ),
+                  ],
+                  signingBatchLimit: 35,
+                ),
+        completeKeystoneDenominationMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              completionCount++;
+              committed = true;
+              return _migrationResult();
+            },
+        getKeystoneProofStatus: ({required requestId}) async =>
+            const rust_sync.KeystoneMigrationProofStatus(
+              readyCount: 1,
+              totalCount: 1,
+              isReady: true,
+              isFailed: false,
+            ),
+      );
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/keystone/denominations/sign',
+          migrationService: service,
+          hardware: true,
+          realKeystoneDenominationRoute: true,
+          statusLoader: () async => committed
+              ? _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                  activeRunId: 'committed-run',
+                )
+              : _status(phase: kIronwoodMigrationReadyPhase, activeRunId: null),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nextButton = find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_next'),
+      );
+      await tester.ensureVisible(nextButton);
+      await tester.tap(nextButton);
+      await tester.pump();
+      tester
+          .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+          .onComplete(
+            const ScanResult(urType: 'zcash-batch-sig-result', data: [1]),
+          );
+      await tester.pumpAndSettle();
+
+      expect(completionCount, 1);
+      expect(credentialStore.bindCallCount, 1);
+      expect(
+        find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
+        findsNothing,
+      );
+      expect(
+        find.text('This Keystone signing request expired. Prepare it again.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'leaves batch re-signing after a completion error when parts advanced',
+    (tester) async {
+      _useMobileViewport(tester);
+      var committed = false;
+      var completionCount = 0;
+      final credentialStore = _FailingBindCredentialStore(
+        failAtBindCall: 2,
+        initialRunId: 'run-1',
+      );
+      rust_sync.MigrationStatus status() => committed
+          ? _status(
+              phase: kIronwoodMigrationBroadcastScheduledPhase,
+              activeRunId: 'run-1',
+              signedChildPcztCount: 1,
+            )
+          : _status(
+              phase: kIronwoodMigrationReadyToMigratePhase,
+              activeRunId: 'run-1',
+            );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                status(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _plan,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        isMobile: () => true,
+        prepareKeystoneBatchMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'partial-success-batch-request',
+                  messages: [
+                    rust_sync.KeystoneMigrationMessage(
+                      id: 'child-1',
+                      redactedPczt: Uint8List.fromList([1]),
+                    ),
+                  ],
+                  signingBatchLimit: 35,
+                ),
+        completeKeystoneBatchMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) async {
+              completionCount++;
+              committed = true;
+              return _migrationResult();
+            },
+        getKeystoneProofStatus: ({required requestId}) async =>
+            const rust_sync.KeystoneMigrationProofStatus(
+              readyCount: 1,
+              totalCount: 1,
+              isReady: true,
+              isFailed: false,
+            ),
+      );
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/keystone/batch/sign',
+          migrationService: service,
+          hardware: true,
+          realKeystoneBatchRoute: true,
+          statusLoader: () async => status(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nextButton = find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_next'),
+      );
+      await tester.ensureVisible(nextButton);
+      await tester.tap(nextButton);
+      await tester.pump();
+      tester
+          .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+          .onComplete(
+            const ScanResult(urType: 'zcash-batch-sig-result', data: [1]),
+          );
+      await tester.pumpAndSettle();
+
+      expect(completionCount, 1);
+      expect(credentialStore.bindCallCount, 2);
+      expect(
+        find.byType(MobileIronwoodMigrationKeystoneBatchSignScreen),
+        findsNothing,
+      );
+      expect(
+        find.text('This Keystone signing request expired. Prepare it again.'),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('blocks an oversized Keystone signing plan before QR', (
     tester,
   ) async {
@@ -2376,6 +2711,7 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: const [8, 9],
         ),
       ),
     );
@@ -2394,11 +2730,303 @@ void main() {
     final painter = ring.painter as dynamic;
     expect(painter.segments, 10);
     expect(painter.completedSegments, {
-      for (var index = 0; index < 8; index++) index,
+      for (var index = 1; index <= 8; index++) index,
     });
-    expect(painter.highlightedSegments, {8, 9});
+    expect(painter.highlightedSegments, {0, 9});
     expect(painter.visibleSegmentGap, 4);
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+  });
+
+  testWidgets('keeps action batch selection in part-index order', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 10; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index == 8 ? 0 : index + 1,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: index == 2 || index == 8
+              ? rust_sync.MigrationPartState.needsInput
+              : rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: const [2, 8],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Batch #1'), findsOneWidget);
+    expect(find.text('8 ZEC (80%)'), findsOneWidget);
+    expect(find.text('Prepare batch #1'), findsOneWidget);
+  });
+
+  testWidgets('highlights every part in the initial signing request', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 10; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: List<int>.generate(10, (index) => index),
+        ),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+    );
+    final painter = ring.painter as dynamic;
+    expect(painter.highlightedSegments, {
+      for (var index = 0; index < 10; index++) index,
+    });
+  });
+
+  testWidgets(
+    'highlights only the multiple parts marked for the signing request',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 12; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: index == 1 || index == 10
+                ? rust_sync.MigrationPartState.needsInput
+                : rust_sync.MigrationPartState.scheduled,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(12, 100_000_000),
+            currentSigningPartIndices: const [1, 10],
+          ),
+          hardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ring = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+      );
+      final painter = ring.painter as dynamic;
+      expect(painter.highlightedSegments, {1, 10});
+    },
+  );
+
+  testWidgets('pulses only the current migration signing parts', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 12; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: index == 1 || index == 10
+              ? rust_sync.MigrationPartState.needsInput
+              : rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(12, 100_000_000),
+          currentSigningPartIndices: const [1, 10],
+        ),
+        hardware: true,
+        disableAnimations: false,
+      ),
+    );
+
+    final ringFinder = find.byKey(
+      const ValueKey('mobile_ironwood_migration_attention_ring'),
+    );
+    for (var attempt = 0; attempt < 20 && !tester.any(ringFinder); attempt++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    ({Set<int> highlightedSegments, double highlightOpacity}) painter() {
+      final customPaint = tester.widget<CustomPaint>(ringFinder);
+      final ringPainter = customPaint.painter as dynamic;
+      return (
+        highlightedSegments: Set<int>.of(
+          ringPainter.highlightedSegments as Set<int>,
+        ),
+        highlightOpacity: ringPainter.highlightOpacity as double,
+      );
+    }
+
+    expect(painter().highlightedSegments, {1, 10});
+    expect(painter().highlightOpacity, closeTo(0.40, 0.0001));
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(painter().highlightOpacity, closeTo(1, 0.0001));
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(painter().highlightOpacity, closeTo(0.40, 0.0001));
+  });
+
+  testWidgets(
+    'keeps migration signing parts fully visible with reduced motion',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 12; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: index == 1 || index == 10
+                ? rust_sync.MigrationPartState.needsInput
+                : rust_sync.MigrationPartState.scheduled,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(12, 100_000_000),
+            currentSigningPartIndices: const [1, 10],
+          ),
+          hardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ringFinder = find.byKey(
+        const ValueKey('mobile_ironwood_migration_attention_ring'),
+      );
+      double opacity() {
+        final customPaint = tester.widget<CustomPaint>(ringFinder);
+        final painter = customPaint.painter as dynamic;
+        return painter.highlightOpacity as double;
+      }
+
+      final ring = tester.widget<CustomPaint>(ringFinder);
+      final ringPainter = ring.painter as dynamic;
+      expect(ringPainter.highlightedSegments, {1, 10});
+      expect(opacity(), 1);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(opacity(), 1);
+    },
+  );
+
+  testWidgets('orders migration ring by current scheduled execution', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      rust_sync.MigrationPartStatus(
+        partIndex: 2,
+        scheduleOrder: 0,
+        scheduledHeight: 3_000_200,
+        txidHex: 'bb',
+        valueZatoshi: BigInt.from(300_000_000),
+        state: rust_sync.MigrationPartState.completed,
+        confirmationCount: 3,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        scheduleOrder: 2,
+        scheduledHeight: 3_000_100,
+        txidHex: 'cc',
+        valueZatoshi: BigInt.from(100_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 1,
+        scheduleOrder: 1,
+        scheduledHeight: 3_000_200,
+        txidHex: 'aa',
+        valueZatoshi: BigInt.from(200_000_000),
+        state: rust_sync.MigrationPartState.needsInput,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: const [100_000_000, 200_000_000, 300_000_000],
+          currentSigningPartIndices: const [1],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString() == '_MigrationRingPainter',
+      ),
+    );
+    final painter = ring.painter as dynamic;
+    final weights = painter.segmentWeights as List<double>;
+    expect(weights, hasLength(3));
+    expect(weights[0], closeTo(1 / 6, 0.000001));
+    expect(weights[1], closeTo(2 / 6, 0.000001));
+    expect(weights[2], closeTo(3 / 6, 0.000001));
+    expect(weights.reduce((sum, value) => sum + value), closeTo(1, 1e-12));
+    expect(painter.completedSegments, {2});
+    expect(painter.highlightedSegments, {1});
   });
 
   testWidgets('records a Keystone signing action while status is visible', (

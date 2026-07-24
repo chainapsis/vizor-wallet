@@ -7841,6 +7841,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_nextActionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_estimatedCompletionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_nextActionPartIndex = <Option<u32>>::sse_decode(deserializer);
+        let mut var_currentSigningPartIndices = <Option<Vec<u32>>>::sse_decode(deserializer);
         let mut var_scheduledBroadcasts =
             <Vec<crate::api::sync::MigrationScheduledBroadcast>>::sse_decode(deserializer);
         let mut var_parts = <Vec<crate::api::sync::MigrationPartStatus>>::sse_decode(deserializer);
@@ -7867,6 +7868,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             next_action_height: var_nextActionHeight,
             estimated_completion_height: var_estimatedCompletionHeight,
             next_action_part_index: var_nextActionPartIndex,
+            current_signing_part_indices: var_currentSigningPartIndices,
             scheduled_broadcasts: var_scheduledBroadcasts,
             parts: var_parts,
         };
@@ -8020,6 +8022,17 @@ impl SseDecode for Option<u64> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<u64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<Vec<u32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<u32>>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -10323,6 +10336,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
                 .into_into_dart()
                 .into_dart(),
             self.next_action_part_index.into_into_dart().into_dart(),
+            self.current_signing_part_indices
+                .into_into_dart()
+                .into_dart(),
             self.scheduled_broadcasts.into_into_dart().into_dart(),
             self.parts.into_into_dart().into_dart(),
         ]
@@ -12667,6 +12683,7 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <Option<u32>>::sse_encode(self.next_action_height, serializer);
         <Option<u32>>::sse_encode(self.estimated_completion_height, serializer);
         <Option<u32>>::sse_encode(self.next_action_part_index, serializer);
+        <Option<Vec<u32>>>::sse_encode(self.current_signing_part_indices, serializer);
         <Vec<crate::api::sync::MigrationScheduledBroadcast>>::sse_encode(
             self.scheduled_broadcasts,
             serializer,
@@ -12792,6 +12809,16 @@ impl SseEncode for Option<u64> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <u64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<Vec<u32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<u32>>::sse_encode(value, serializer);
         }
     }
 }

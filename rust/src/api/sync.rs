@@ -775,6 +775,7 @@ pub struct MigrationStatus {
     pub next_action_height: Option<u32>,
     pub estimated_completion_height: Option<u32>,
     pub next_action_part_index: Option<u32>,
+    pub current_signing_part_indices: Option<Vec<u32>>,
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
     pub parts: Vec<MigrationPartStatus>,
 }
@@ -1178,6 +1179,7 @@ pub fn get_orchard_migration_status(
             next_action_height: status.next_action_height,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,
+            current_signing_part_indices: Some(status.current_signing_part_indices),
             scheduled_broadcasts: status
                 .scheduled_broadcasts
                 .into_iter()

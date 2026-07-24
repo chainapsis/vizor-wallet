@@ -263,6 +263,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
   bool _requestCompleted = false;
+  Future<void>? _completionOperation;
 
   @override
   void initState() {
@@ -564,11 +565,28 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   Future<void> _completeSignedMessages(
     List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  ) {
+    final existing = _completionOperation;
+    if (existing != null) return existing;
+
+    late final Future<void> tracked;
+    tracked = _runCompleteSignedMessages(signedMessages).whenComplete(() {
+      if (identical(_completionOperation, tracked)) {
+        _completionOperation = null;
+      }
+    });
+    _completionOperation = tracked;
+    return tracked;
+  }
+
+  Future<void> _runCompleteSignedMessages(
+    List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   ) async {
     final request = _request;
     final accountUuid = _accountUuid;
     if (request == null || accountUuid == null || _requestCompleted) return;
 
+    _stopProofPolling();
     setState(() {
       _stage = _KeystoneDenominationSignStage.completing;
       _decoding = true;
@@ -584,34 +602,16 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         approvedSchedule: widget.approvedSchedule,
       );
       if (!mounted) return;
-      final coordinator = ref.read(
-        ironwoodMigrationCoordinatorProvider.notifier,
-      );
-      coordinator.clearChildProofBatchPermit(accountUuid);
-      if (widget.step == _KeystonePrivateSignStep.denominations) {
-        coordinator.grantForegroundProgressPermit(accountUuid);
-      }
-      await coordinator.refreshNow();
-      if (!mounted) return;
-      _stopProofPolling();
-      _requestCompleted = true;
-      _pendingSignedMessages = null;
-      _invalidateIronwoodMigrationStatusState(
-        ref,
-        statusRequest: IronwoodMigrationStatusRequest(
-          network: ref.read(ironwoodMigrationInputsProvider).network,
-          accountUuid: accountUuid,
-        ),
-      );
-      context.go(
-        '/migration/private/status',
-        extra: const MobileIronwoodMigrationStatusEntry(),
-      );
+      _finishCommittedRequest(accountUuid);
     } catch (e, st) {
       log(
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
         'complete error: $e\n$st',
       );
+      if (!mounted) return;
+      if (await _reconcileCommittedRequest(accountUuid, originalError: e)) {
+        return;
+      }
       if (!mounted) return;
       if (_keystoneMigrationProofStillPendingError(e)) {
         _pendingSignedMessages = signedMessages;
@@ -632,6 +632,66 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         _error = _keystoneMigrationSigningErrorMessage(e);
       });
     }
+  }
+
+  Future<bool> _reconcileCommittedRequest(
+    String accountUuid, {
+    required Object originalError,
+  }) async {
+    try {
+      final network = ref.read(ironwoodMigrationInputsProvider).network;
+      final status = await _migrationService.readOnlyStatus(
+        network: network,
+        accountUuid: accountUuid,
+      );
+      if (!mounted || !_isKeystoneRequestCommitted(status)) return false;
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'completion returned an error after the durable migration state '
+        'advanced; treating the request as committed: $originalError',
+      );
+      _finishCommittedRequest(accountUuid);
+      return true;
+    } catch (statusError, st) {
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'failed to reconcile completion error against migration status: '
+        '$statusError\n$st',
+      );
+      return false;
+    }
+  }
+
+  bool _isKeystoneRequestCommitted(rust_sync.MigrationStatus status) {
+    return switch (widget.step) {
+      _KeystonePrivateSignStep.denominations => status.activeRunId != null,
+      _KeystonePrivateSignStep.batch =>
+        !status.parts.any(
+              (part) => part.state == rust_sync.MigrationPartState.needsInput,
+            ) &&
+            (status.phase != kIronwoodMigrationReadyToMigratePhase ||
+                status.signedChildPcztCount > 0),
+    };
+  }
+
+  void _finishCommittedRequest(String accountUuid) {
+    ref
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .grantChildProofBatchPermit(accountUuid);
+    _stopProofPolling();
+    _requestCompleted = true;
+    _pendingSignedMessages = null;
+    _invalidateIronwoodMigrationStatusState(
+      ref,
+      statusRequest: IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      ),
+    );
+    context.go(
+      '/migration/private/status',
+      extra: const MobileIronwoodMigrationStatusEntry(),
+    );
   }
 
   Future<void> _discardRequest(String accountUuid, String requestId) async {

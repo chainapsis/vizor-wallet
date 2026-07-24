@@ -381,7 +381,6 @@ class _MobileMigrationRedesignedStatusState
             kIronwoodMigrationAwaitingDenominationSignaturePhase) {
       return _MigrationPreparationPreview(
         state: _MigrationPreparationState.paused,
-        progress: 0,
         isKeystone: widget.isHardware,
         pausedMessage: widget.isHardware
             ? _keystonePreparationSignatureMessage
@@ -402,7 +401,6 @@ class _MobileMigrationRedesignedStatusState
           kIronwoodMigrationWaitingDenomConfirmationsPhase) {
         return _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
-          progress: _preparationProgress(widget.status),
           onBack: () => context.go('/home'),
         );
       }
@@ -411,6 +409,7 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -422,7 +421,6 @@ class _MobileMigrationRedesignedStatusState
             kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return _MigrationPreparationPreview(
         state: _MigrationPreparationState.paused,
-        progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
         onContinue: accountUuid == null || _actionRunning
@@ -438,10 +436,9 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
-        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-        currentBatchPartCount: batchProgress.currentBatchPartCount,
         completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
@@ -486,10 +483,9 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
-        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-        currentBatchPartCount: batchProgress.currentBatchPartCount,
         completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
@@ -520,7 +516,6 @@ class _MobileMigrationRedesignedStatusState
         state: needsManualResume
             ? _MigrationPreparationState.paused
             : _MigrationPreparationState.active,
-        progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
         onContinue: !needsManualResume || accountUuid == null
@@ -561,13 +556,11 @@ class _MobileMigrationRedesignedStatusState
       onBack: actionInProgress ? null : () => context.go('/home'),
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
+      segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
-      currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-      currentBatchPartCount: batchProgress.currentBatchPartCount,
       completedRingSegments: _completedRingSegments(widget.status),
-      highlightCurrentBatch:
-          !signingAllKeystoneTransactions && !resigningKeystoneTransactions,
+      currentSigningPartIndices: _currentSigningRingSegments(widget.status),
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
       availableAmountText: _availableAmountText(accountUuid),
@@ -862,12 +855,19 @@ class _MobileMigrationRedesignedStatusState
           index,
       };
     }
-    final ordered = [...status.parts]
-      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+    final stateByPartIndex = {
+      for (final part in status.parts) part.partIndex: part.state,
+    };
+    final partOrder = _migrationRingPartOrder(status);
     return {
-      for (var index = 0; index < ordered.length; index++)
-        if (ordered[index].state == rust_sync.MigrationPartState.completed)
-          index,
+      for (
+        var displayIndex = 0;
+        displayIndex < partOrder.length;
+        displayIndex++
+      )
+        if (stateByPartIndex[partOrder[displayIndex]] ==
+            rust_sync.MigrationPartState.completed)
+          displayIndex,
     };
   }
 
@@ -1051,23 +1051,6 @@ class _MobileMigrationRedesignedStatusState
     return '$amount ZEC ($percentage%)';
   }
 
-  double _preparationProgress(rust_sync.MigrationStatus status) {
-    final totalStages = status.denominationSplitTotalCount;
-    if (totalStages <= 0) return 0;
-    final completedStages = status.denominationSplitCompletedCount.clamp(
-      0,
-      totalStages,
-    );
-    final confirmationTarget = status.denominationConfirmationTarget;
-    final currentStageProgress = confirmationTarget <= 0
-        ? 0.0
-        : status.denominationConfirmationCount.clamp(0, confirmationTarget) /
-              confirmationTarget;
-    return ((completedStages + currentStageProgress) / totalStages)
-        .clamp(0.0, 1.0)
-        .toDouble();
-  }
-
   int _totalParts(rust_sync.MigrationStatus status) {
     return math.max(
       1,
@@ -1076,6 +1059,53 @@ class _MobileMigrationRedesignedStatusState
         math.max(status.parts.length, status.targetValuesZatoshi.length),
       ),
     );
+  }
+
+  List<int> _migrationRingPartOrder(rust_sync.MigrationStatus status) {
+    final totalParts = _totalParts(status);
+    final orderedParts = _orderedMobileMigrationParts(status.parts);
+    final partIndices = orderedParts.map((part) => part.partIndex).toSet();
+    final hasCompletePartOrder =
+        orderedParts.length == totalParts &&
+        partIndices.length == totalParts &&
+        partIndices.every((partIndex) => partIndex < totalParts);
+    return hasCompletePartOrder
+        ? [for (final part in orderedParts) part.partIndex]
+        : List<int>.generate(totalParts, (index) => index);
+  }
+
+  Set<int> _currentSigningRingSegments(rust_sync.MigrationStatus status) {
+    final signingPartIndices =
+        status.currentSigningPartIndices?.toSet() ?? const <int>{};
+    final partOrder = _migrationRingPartOrder(status);
+    return {
+      for (
+        var displayIndex = 0;
+        displayIndex < partOrder.length;
+        displayIndex++
+      )
+        if (signingPartIndices.contains(partOrder[displayIndex])) displayIndex,
+    };
+  }
+
+  List<BigInt>? _migrationRingSegmentValues(rust_sync.MigrationStatus status) {
+    final totalParts = _totalParts(status);
+    final targetValues = status.targetValuesZatoshi;
+    final valueByPartIndex = {
+      for (final part in status.parts) part.partIndex: part.valueZatoshi,
+    };
+    final values = <BigInt>[];
+    for (final partIndex in _migrationRingPartOrder(status)) {
+      final partValue = valueByPartIndex[partIndex];
+      if (partValue != null) {
+        values.add(partValue);
+      } else if (partIndex < targetValues.length) {
+        values.add(targetValues[partIndex]);
+      } else {
+        return null;
+      }
+    }
+    return values.length == totalParts ? values : null;
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {

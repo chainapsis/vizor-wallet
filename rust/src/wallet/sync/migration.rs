@@ -312,6 +312,8 @@ pub(crate) struct MigrationStatus {
     pub estimated_completion_height: Option<u32>,
     /// Part associated with `next_action_height`, when it can be identified.
     pub next_action_part_index: Option<u32>,
+    /// Exact migration parts the next signing operation will include.
+    pub current_signing_part_indices: Vec<u32>,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
     pub parts: Vec<MigrationPartStatus>,
 }
@@ -426,6 +428,7 @@ pub(crate) fn migration_status(
         next_action_height: None,
         estimated_completion_height: None,
         next_action_part_index: None,
+        current_signing_part_indices: Vec::new(),
         scheduled_broadcasts: Vec::new(),
         parts: Vec::new(),
     })
@@ -3669,6 +3672,18 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
             }
         }
     }
+    let recovery_part_indices = parts
+        .iter()
+        .filter(|part| part.state == MigrationPartState::NeedsInput)
+        .map(|part| part.part_index)
+        .collect::<Vec<_>>();
+    let current_signing_part_indices = select_migration_batch_signing_part_indices(
+        prepared_note_count,
+        pending_tx_count,
+        signed_child_pczt_count,
+        &recovery_part_indices,
+    )
+    .unwrap_or_default();
 
     Ok(MigrationStatus {
         phase,
@@ -3693,9 +3708,28 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         next_action_height: timing_projection.next_action_height,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,
+        current_signing_part_indices,
         scheduled_broadcasts,
         parts,
     })
+}
+
+pub(crate) fn select_migration_batch_signing_part_indices(
+    prepared_note_count: u32,
+    pending_tx_count: u32,
+    signed_child_pczt_count: u32,
+    recovery_part_indices: &[u32],
+) -> Result<Vec<u32>, String> {
+    if !recovery_part_indices.is_empty() {
+        return Ok(recovery_part_indices.to_vec());
+    }
+    if prepared_note_count == 0 {
+        return Err("Migration run has no prepared denomination notes".to_string());
+    }
+    if pending_tx_count > 0 || signed_child_pczt_count > 0 {
+        return Err("Migration transactions are already signed and scheduled".to_string());
+    }
+    Ok((0..prepared_note_count).collect())
 }
 
 fn migration_parts_for_run(

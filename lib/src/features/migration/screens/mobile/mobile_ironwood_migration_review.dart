@@ -144,7 +144,6 @@ class _MobileMigrationPrivateStartState
       state: paused
           ? _MigrationPreparationState.paused
           : _MigrationPreparationState.active,
-      progress: 0,
       isKeystone: _isKeystone,
       pausedMessage:
           _error ??
