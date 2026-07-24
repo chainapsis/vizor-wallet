@@ -13,6 +13,8 @@ import io.flutter.plugin.common.MethodChannel
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private lateinit var ironwoodMigrationSecureStoreChannel:
+        IronwoodMigrationSecureStoreChannel
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -85,6 +87,16 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        ironwoodMigrationSecureStoreChannel =
+            IronwoodMigrationSecureStoreChannel(applicationContext)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            BACKGROUND_MIGRATION_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            if (!ironwoodMigrationSecureStoreChannel.handle(call, result)) {
+                result.notImplemented()
+            }
+        }
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -126,6 +138,13 @@ class MainActivity : FlutterFragmentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onDestroy() {
+        if (::ironwoodMigrationSecureStoreChannel.isInitialized) {
+            ironwoodMigrationSecureStoreChannel.close()
+        }
+        super.onDestroy()
+    }
+
     private fun openAppSettings(): Boolean {
         return try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -159,6 +178,8 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     companion object {
+        private const val BACKGROUND_MIGRATION_CHANNEL =
+            "com.zcash.wallet/background_migration"
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
