@@ -504,9 +504,7 @@ class _MobileMigrationRedesignedStatusState
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
       return _MigrationCompletePreview(
         amountText: _totalAmountText(widget.status),
-        onDone: accountUuid == null || _actionRunning
-            ? null
-            : () => unawaited(_finishCompletedMigration(accountUuid)),
+        onDone: () => context.go('/home'),
       );
     }
 
@@ -759,27 +757,6 @@ class _MobileMigrationRedesignedStatusState
         !status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
         );
-  }
-
-  Future<void> _finishCompletedMigration(String accountUuid) async {
-    if (_actionRunning) return;
-    setState(() => _actionRunning = true);
-    try {
-      final inputs = ref.read(ironwoodMigrationInputsProvider);
-      await ref
-          .read(ironwoodMigrationCompletionStoreProvider)
-          .markSeen(
-            network: inputs.network,
-            accountUuid: accountUuid,
-            completionId: ironwoodMigrationCompletionId(widget.status),
-          );
-      ref.invalidate(ironwoodMigrationCompletionProvider);
-    } catch (_) {
-      // If acknowledgement persistence fails, the existing Home receipt remains
-      // visible so the user does not lose the completion confirmation.
-    } finally {
-      if (mounted) context.go('/home');
-    }
   }
 
   int _currentHeight() {

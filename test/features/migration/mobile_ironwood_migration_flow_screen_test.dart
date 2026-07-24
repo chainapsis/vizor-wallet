@@ -216,33 +216,6 @@ class _DurablePhaseRetryTestMigrationCoordinator
   }
 }
 
-class _RecordingIronwoodMigrationCompletionStore
-    implements IronwoodMigrationCompletionStore {
-  int markCount = 0;
-  String? markedNetwork;
-  String? markedAccountUuid;
-  String? markedCompletionId;
-
-  @override
-  Future<bool> isSeen({
-    required String network,
-    required String accountUuid,
-    required String completionId,
-  }) async => false;
-
-  @override
-  Future<void> markSeen({
-    required String network,
-    required String accountUuid,
-    required String completionId,
-  }) async {
-    markCount++;
-    markedNetwork = network;
-    markedAccountUuid = accountUuid;
-    markedCompletionId = completionId;
-  }
-}
-
 final _data = IronwoodMigrationFlowData(
   amountZatoshi: BigInt.from(14_223_000_000),
   accountName: 'Wallet 1',
@@ -535,7 +508,6 @@ Widget _productionApp({
   SyncState? syncState,
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
-  IronwoodMigrationCompletionStore? completionStore,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -637,10 +609,6 @@ Widget _productionApp({
       ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
-      if (completionStore != null)
-        ironwoodMigrationCompletionStoreProvider.overrideWithValue(
-          completionStore,
-        ),
     ],
     child: AppTheme(
       data: AppThemeData.light,
@@ -2201,11 +2169,10 @@ void main() {
     }
   });
 
-  testWidgets('acknowledges the completion receipt before Done returns home', (
+  testWidgets('returns home from the full-screen completion state', (
     tester,
   ) async {
     _useMobileViewport(tester);
-    final completionStore = _RecordingIronwoodMigrationCompletionStore();
     final status = _status(
       phase: kIronwoodMigrationCompletePhase,
       targetValues: const [412_000_000],
@@ -2215,7 +2182,6 @@ void main() {
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
         status: status,
-        completionStore: completionStore,
       ),
     );
     await tester.pumpAndSettle();
@@ -2227,13 +2193,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('home route'), findsOneWidget);
-    expect(completionStore.markCount, 1);
-    expect(completionStore.markedNetwork, 'main');
-    expect(completionStore.markedAccountUuid, 'account-1');
-    expect(
-      completionStore.markedCompletionId,
-      ironwoodMigrationCompletionId(status),
-    );
   });
 
   testWidgets('retries a late Keystone broadcast without opening QR', (
