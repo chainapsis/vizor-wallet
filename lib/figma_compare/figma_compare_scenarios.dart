@@ -33,13 +33,6 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-analyzing',
-    description: 'Mobile Ironwood balance analysis screen',
-    builder: buildMobileIronwoodMigrationAnalyzingUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
     id: 'pay-recipient',
     description: 'Pay recipient selection with recent contacts',
     builder: buildPayRecipientUseCase,
@@ -172,20 +165,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-private-review',
-    description: 'Mobile private Ironwood migration review screen',
-    builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-private-review-many-parts',
-    description: 'Mobile private migration review with scrollable parts',
-    builder: buildMobileIronwoodMigrationPrivateManyPartsUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-fast-review',
     description: 'Mobile immediate Ironwood migration review screen',
     builder: buildMobileIronwoodMigrationFastReviewUseCase,
@@ -309,20 +288,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-ironwood-migration-keystone-scan-help',
     description: 'Mobile Keystone QR scan help modal',
     builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-preparing',
-    description: 'Mobile Ironwood migration preparing screen',
-    builder: buildMobileIronwoodMigrationPreparingUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-ironwood-migration-migrating',
-    description: 'Mobile Ironwood migration progress screen',
-    builder: buildMobileIronwoodMigrationMigratingUseCase,
     desktop: false,
     mobile: true,
   ),
