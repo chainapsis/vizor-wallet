@@ -260,6 +260,28 @@ class _DurablePhaseRetryTestMigrationCoordinator
   }
 }
 
+class _ControlledRetryTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  final retryStarted = Completer<void>();
+  final retryFinished = Completer<void>();
+  int retryCount = 0;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState();
+  }
+
+  @override
+  Future<void> retry(String accountUuid) async {
+    retryCount++;
+    retryStarted.complete();
+    await retryFinished.future;
+  }
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
+}
+
 class _RecordingIronwoodMigrationCompletionStore
     implements IronwoodMigrationCompletionStore {
   int markCount = 0;
@@ -3251,6 +3273,52 @@ void main() {
     expect(painter.highlightedSegments, {8, 9});
     expect(painter.visibleSegmentGap, 4);
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+  });
+
+  testWidgets('shows the animated loader while a software batch is signing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _ControlledRetryTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          nextActionHeight: 3_000_000,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final signButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+    );
+    final loader = find.byWidgetPredicate(
+      (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+    );
+    await tester.ensureVisible(signButton);
+    await tester.tap(signButton);
+    await coordinator.retryStarted.future;
+    await tester.pump();
+
+    expect(coordinator.retryCount, 1);
+    expect(loader, findsOneWidget);
+    expect(tester.widget<AppButton>(signButton).onPressed, isNull);
+
+    coordinator.retryFinished.complete();
+    await tester.pumpAndSettle();
+
+    expect(loader, findsNothing);
+    expect(tester.widget<AppButton>(signButton).onPressed, isNotNull);
   });
 
   testWidgets('records a Keystone signing action while status is visible', (

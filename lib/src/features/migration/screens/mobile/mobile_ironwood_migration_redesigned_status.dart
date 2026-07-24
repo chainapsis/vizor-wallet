@@ -566,6 +566,7 @@ class _MobileMigrationRedesignedStatusState
               widget.status,
               batchProgress.currentBatchParts,
             ),
+      actionRunning: _actionRunning,
       onAction: accountUuid == null || _actionRunning
           ? null
           : () => unawaited(_performRequiredAction(accountUuid)),
