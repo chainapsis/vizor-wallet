@@ -86,6 +86,14 @@ def ios_match_git_branch
   branch.empty? ? "main" : branch
 end
 
+def ios_testnet_build?
+  value = ENV.fetch("VIZOR_IOS_TESTNET_BUILD", "false").strip
+  unless ["true", "false"].include?(value)
+    UI.user_error!("VIZOR_IOS_TESTNET_BUILD must be true or false")
+  end
+  value == "true"
+end
+
 def setup_ios_signing_keychain
   keychain_path = ios_keychain_path
   if File.exist?(keychain_path)
@@ -236,6 +244,18 @@ platform :ios do
     configure_ios_code_signing!(profile_mapping)
     configure_ios_extension_version!(metadata)
 
+    dart_defines = [
+      "VIZOR_FORM_FACTOR=mobile",
+      "VIZOR_RELEASE_VERSION=#{metadata.fetch(:asset_version)}",
+      "VIZOR_FORCE_DISABLE_IOS_MOBILE_SWAP=#{force_disable_swap}",
+      "VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}",
+      "VIZOR_WALLET_LINK_BACKEND_URL=#{wallet_link_backend_url}"
+    ]
+    if ios_testnet_build?
+      UI.message("Building the existing iOS App Store Connect app as a Testnet build")
+      dart_defines << "ZCASH_DEFAULT_NETWORK=test"
+    end
+
     with_ios_export_options(profile_mapping) do |export_options_path|
       sh(
         [
@@ -243,11 +263,7 @@ platform :ios do
           "--release",
           # Store builds must compile the mobile token set — release
           # builds have no form-factor guard (see AGENTS.md).
-          "--dart-define=VIZOR_FORM_FACTOR=mobile",
-          "--dart-define=#{shell_escape("VIZOR_RELEASE_VERSION=#{metadata.fetch(:asset_version)}")}",
-          "--dart-define=VIZOR_FORCE_DISABLE_IOS_MOBILE_SWAP=#{force_disable_swap}",
-          "--dart-define=#{shell_escape("VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}")}",
-          "--dart-define=#{shell_escape("VIZOR_WALLET_LINK_BACKEND_URL=#{wallet_link_backend_url}")}",
+          *dart_defines.map { |dart_define| "--dart-define=#{shell_escape(dart_define)}" },
           "--build-name", shell_escape(metadata.fetch(:version)),
           "--build-number", shell_escape(metadata.fetch(:build_number)),
           "--export-options-plist", shell_escape(export_options_path)
