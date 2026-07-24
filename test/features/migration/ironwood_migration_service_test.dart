@@ -67,12 +67,12 @@ void main() {
         estimatedTotalFeeZatoshi: BigInt.from(20000),
         plannedBatchCount: 1,
         denominationSplitStageCount: 1,
-        signingBatchLimit: 50,
+        denominationSplitLayerCount: 1,
+        signingBatchLimit: 35,
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,
         proofReadinessDelayBlocks: 146,
         scheduledTransfers: const [],
-        maxPreparedNotesPerRun: 64,
       );
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -2725,10 +2725,9 @@ rust_sync.MigrationStatus _migrationStatus({
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: parts,
   );
@@ -2894,7 +2893,7 @@ rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {
         redactedPczt: Uint8List.fromList([1, 2, 3]),
       ),
     ],
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
   );
 }
 

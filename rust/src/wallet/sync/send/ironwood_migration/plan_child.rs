@@ -63,7 +63,6 @@ pub(crate) fn get_orchard_migration_private_plan(
         u64::from(split_fee),
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
     )?;
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
@@ -73,15 +72,17 @@ pub(crate) fn get_orchard_migration_private_plan(
         .map_err(|_| "Migration batch count exceeds u32".to_string())?;
     let denomination_split_stage_count = u32::try_from(padded_plan.stages.len())
         .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
+    let denomination_split_layer_count = u32::try_from(padded_plan.layer_count)
+        .map_err(|_| "Denomination split layer count exceeds u32".to_string())?;
     let estimated_final_preparation_mined_height = u32::from(target_height)
         .checked_add(
-            denomination_split_stage_count
+            denomination_split_layer_count
                 .saturating_sub(1)
                 .checked_mul(super::migration::denomination_confirmations_required())
                 .ok_or("Migration preparation height overflow")?,
         )
         .ok_or("Migration preparation height overflow")?;
-    let proof_readiness_delay_blocks = if denomination_split_stage_count == 0 {
+    let proof_readiness_delay_blocks = if denomination_split_layer_count == 0 {
         0
     } else {
         super::migration::proof_readiness_delay_blocks(
@@ -113,11 +114,11 @@ pub(crate) fn get_orchard_migration_private_plan(
         estimated_total_fee_zatoshi,
         planned_batch_count,
         denomination_split_stage_count,
+        denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
         schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
         schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
         proof_readiness_delay_blocks,
-        max_prepared_notes_per_run: super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_transfers,
     }))
 }
@@ -452,7 +453,6 @@ fn create_orchard_to_ironwood_pczt_from_note(
     migration_index: u32,
     schedule_block_offset: u32,
     timing_policy: super::migration::MigrationTimingPolicy,
-    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
     allow_replacing_local_spend: bool,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     if note_ref.note_version != 2 {
@@ -550,20 +550,16 @@ fn create_orchard_to_ironwood_pczt_from_note(
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
     let Some(anchor_boundary_height) =
-        super::migration::zip318_draw_anchor_boundary_for_note_with_cohorts_and_policy(
+        super::migration::zip318_draw_anchor_boundary_for_note_with_policy(
             network,
             timing_policy,
             anchor_height_u32,
             u32::from(mined_height),
             nu6_3_activation_height,
-            anchor_cohort_counts,
         )
     else {
         return Ok(None);
     };
-    *anchor_cohort_counts
-        .entry(anchor_boundary_height)
-        .or_default() += 1;
 
     let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
         &mut db,

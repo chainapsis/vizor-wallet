@@ -193,6 +193,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   rust_sync.KeystoneMigrationSigningRequest? _request;
   String? _accountUuid;
   List<String> _urParts = const [];
+  List<List<rust_sync.KeystoneMigrationMessage>> _signingRounds = const [];
+  List<List<String>> _signingRoundUrParts = const [];
+  List<rust_sync.KeystoneSignedMigrationMessage> _signedPriorRounds = const [];
+  int _signingRoundIndex = 0;
   String? _error;
   Timer? _proofPollTimer;
   rust_sync.KeystoneMigrationProofStatus? _proofStatus;
@@ -209,6 +213,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     if (previewRequest != null) {
       _request = previewRequest;
       _accountUuid = 'preview-account';
+      _signingRounds = _keystoneSigningRounds(
+        previewRequest.messages,
+        previewRequest.signingBatchLimit,
+      );
+      _signingRoundUrParts = [
+        for (var index = 0; index < _signingRounds.length; index++)
+          index == 0 ? widget.previewUrParts : const <String>[],
+      ];
       _urParts = widget.previewUrParts;
       _stage = _KeystoneDenominationSignStage.showQr;
       _requestCompleted = true;
@@ -237,6 +249,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _request = null;
       _accountUuid = null;
       _urParts = const [];
+      _signingRounds = const [];
+      _signingRoundUrParts = const [];
+      _signedPriorRounds = const [];
+      _signingRoundIndex = 0;
       _error = null;
       _proofStatus = null;
       _pendingSignedMessages = null;
@@ -267,29 +283,48 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         await _discardRequest(accountUuid, request.requestId);
         return;
       }
-      if (request.messages.isEmpty) {
-        throw StateError('Keystone migration request has no messages.');
-      }
       _request = request;
       _accountUuid = accountUuid;
+      final signingRounds = _keystoneSigningRounds(
+        request.messages,
+        request.signingBatchLimit,
+      );
+      _signingRounds = signingRounds;
+      if (request.messages.isEmpty) {
+        if (widget.step != _KeystonePrivateSignStep.denominations) {
+          throw StateError('Keystone migration request has no messages.');
+        }
+        await _completeSignedMessages(const []);
+        return;
+      }
       _startProofPolling(request.requestId);
 
-      final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
-        requestId: request.requestId,
-        messages: request.messages
-            .map(
-              (message) => rust_keystone_wallet.ZcashBatchMessageInput(
-                id: message.id,
-                pcztBytes: message.redactedPczt,
-              ),
-            )
-            .toList(),
-        maxFragmentLen: BigInt.from(140),
-      );
+      final signingRoundUrParts = <List<String>>[];
+      for (var index = 0; index < signingRounds.length; index++) {
+        signingRoundUrParts.add(
+          await rust_keystone.encodeZcashSignBatchUrParts(
+            requestId: _keystoneSigningRoundRequestId(
+              request.requestId,
+              index,
+              signingRounds.length,
+            ),
+            messages: signingRounds[index]
+                .map(
+                  (message) => rust_keystone_wallet.ZcashBatchMessageInput(
+                    id: message.id,
+                    pcztBytes: message.redactedPczt,
+                  ),
+                )
+                .toList(),
+            maxFragmentLen: BigInt.from(140),
+          ),
+        );
+      }
       if (!mounted) return;
       setState(() {
         _stage = _KeystoneDenominationSignStage.showQr;
-        _urParts = urParts;
+        _signingRoundUrParts = signingRoundUrParts;
+        _urParts = signingRoundUrParts.first;
       });
     } catch (e, st) {
       log(
@@ -302,6 +337,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _accountUuid = null;
       _proofStatus = null;
       _pendingSignedMessages = null;
+      _signingRounds = const [];
+      _signingRoundUrParts = const [];
+      _signedPriorRounds = const [];
+      _signingRoundIndex = 0;
       if (requestId != null && requestAccountUuid != null) {
         unawaited(_discardRequest(requestAccountUuid, requestId));
       }
@@ -313,6 +352,17 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     }
   }
 
+  List<rust_sync.KeystoneMigrationMessage>? get _currentSigningRound {
+    if (_signingRoundIndex < 0 || _signingRoundIndex >= _signingRounds.length) {
+      return null;
+    }
+    return _signingRounds[_signingRoundIndex];
+  }
+
+  String? get _signingRoundLabel => _signingRounds.length <= 1
+      ? null
+      : 'Keystone round ${_signingRoundIndex + 1} of ${_signingRounds.length}';
+
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding ||
         _stage != _KeystoneDenominationSignStage.scanning ||
@@ -321,7 +371,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     }
     final request = _request;
     final accountUuid = _accountUuid;
-    if (request == null || accountUuid == null) return;
+    final signingRound = _currentSigningRound;
+    if (request == null || accountUuid == null || signingRound == null) return;
+    final signingRoundIndex = _signingRoundIndex;
 
     setState(() {
       _decoding = true;
@@ -332,10 +384,17 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     try {
       final decoded = await rust_keystone.decodeZcashBatchSignResponse(
         cbor: result.data,
-        expectedRequestId: request.requestId,
-        messageIds: request.messages.map((message) => message.id).toList(),
+        expectedRequestId: _keystoneSigningRoundRequestId(
+          request.requestId,
+          signingRoundIndex,
+          _signingRounds.length,
+        ),
+        messageIds: signingRound.map((message) => message.id).toList(),
       );
-      final signedMessages = _signedMigrationMessagesFor(request, decoded);
+      final signedMessages = [
+        ..._signedPriorRounds,
+        ..._signedMigrationMessagesFor(signingRound, decoded),
+      ];
       final proofStatus = _proofStatus;
       if (ironwoodMigrationKeystoneProofFailed(proofStatus)) {
         if (!mounted) return;
@@ -343,6 +402,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _stage = _KeystoneDenominationSignStage.scanning;
           _decoding = false;
           _error = ironwoodMigrationKeystoneProofFailureMessage(proofStatus);
+        });
+        return;
+      }
+      if (signingRoundIndex + 1 < _signingRounds.length) {
+        setState(() {
+          _signedPriorRounds = signedMessages;
+          _signingRoundIndex = signingRoundIndex + 1;
+          _urParts = _signingRoundUrParts[_signingRoundIndex];
+          _stage = _KeystoneDenominationSignStage.showQr;
+          _scannerControls = null;
+          _decoding = false;
+          _error = null;
         });
         return;
       }
@@ -401,7 +472,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _pendingSignedMessages = null;
           _error = ironwoodMigrationKeystoneProofFailureMessage(status);
           if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
-            _stage = _KeystoneDenominationSignStage.scanning;
+            _stage = (_request?.messages.isEmpty ?? true)
+                ? _KeystoneDenominationSignStage.failed
+                : _KeystoneDenominationSignStage.scanning;
           }
         } else if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
           _error = status.isReady
@@ -480,7 +553,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         return;
       }
       setState(() {
-        _stage = _KeystoneDenominationSignStage.scanning;
+        _stage = request.messages.isEmpty
+            ? _KeystoneDenominationSignStage.failed
+            : _KeystoneDenominationSignStage.scanning;
         _pendingSignedMessages = null;
         _decoding = false;
         _error = _keystoneMigrationSigningErrorMessage(e);
@@ -627,6 +702,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     return MobileIronwoodKeystoneSigningView(
       state: MobileIronwoodKeystoneSigningViewState.ready,
       round: round,
+      signingRoundLabel: _signingRoundLabel,
       qrCode: KeystonePcztQrStage(
         key: const ValueKey('mobile_ironwood_keystone_qr'),
         phase: KeystonePcztQrStagePhase.ready,
@@ -689,7 +765,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               ? 'Applying the Keystone signature.'
               : waitingForProofs
               ? 'Signature captured. Waiting for local proofs.'
-              : null),
+              : _signingRoundLabel == null
+              ? null
+              : '$_signingRoundLabel. Scan the signed QR from Keystone.'),
       onToggleFlashlight:
           completing || waitingForProofs || scannerControls == null
           ? null
@@ -762,6 +840,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Widget _buildQrContent(BuildContext context) {
     final colors = context.colors;
     final request = _request;
+    final signingRound = _currentSigningRound;
+    final signingRoundLabel = _signingRoundLabel;
     final proofStatusText = _proofStatusText;
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
     return Padding(
@@ -796,15 +876,25 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            request == null
+            request == null || signingRound == null
                 ? 'Preparing migration request'
-                : '${request.messages.length} ${widget.step.messageUnit}'
-                      '${request.messages.length == 1 ? '' : 's'} to sign',
+                : '${signingRound.length} ${widget.step.messageUnit}'
+                      '${signingRound.length == 1 ? '' : 's'} to sign',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
           ),
+          if (signingRoundLabel != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              signingRoundLabel,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ],
           if (proofStatusText != null) ...[
             const SizedBox(height: AppSpacing.xs),
             SizedBox(
@@ -874,6 +964,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                   ? 'Applying the Keystone signature to your migration plan.'
                   : waitingForProofs
                   ? 'Signature captured. Vizor will continue when local proofs are ready.'
+                  : _signingRoundLabel != null
+                  ? '$_signingRoundLabel. Show the signed QR on Keystone and scan it here.'
                   : 'Show the signed migration QR on Keystone and scan it here.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
@@ -978,7 +1070,7 @@ Widget _keystoneDenominationToolbar({
 }
 
 List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
-  rust_sync.KeystoneMigrationSigningRequest request,
+  List<rust_sync.KeystoneMigrationMessage> messages,
   rust_keystone.KeystoneSigResult decoded,
 ) {
   final signedById = <String, List<rust_keystone.KeystoneActionSig>>{};
@@ -987,7 +1079,7 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
   }
 
   return [
-    for (final message in request.messages)
+    for (final message in messages)
       rust_sync.KeystoneSignedMigrationMessage(
         id: message.id,
         sigs:
@@ -997,6 +1089,26 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
             )),
       ),
   ];
+}
+
+List<List<T>> _keystoneSigningRounds<T>(List<T> messages, int limit) {
+  if (messages.isEmpty) return <List<T>>[];
+  if (limit <= 0) {
+    throw StateError('Keystone signing batch limit must be positive.');
+  }
+  return [
+    for (var start = 0; start < messages.length; start += limit)
+      messages.sublist(start, math.min(start + limit, messages.length)),
+  ];
+}
+
+String _keystoneSigningRoundRequestId(
+  String requestId,
+  int roundIndex,
+  int roundCount,
+) {
+  if (roundCount <= 1) return requestId;
+  return '$requestId-round-${roundIndex + 1}-of-$roundCount';
 }
 
 @visibleForTesting

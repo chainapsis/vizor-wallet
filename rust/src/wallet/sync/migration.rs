@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rand::{rngs::OsRng, seq::SliceRandom, Rng};
+use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
@@ -15,10 +15,12 @@ use crate::wallet::secret_payload;
 
 use super::READ_DB_BUSY_TIMEOUT;
 
+#[allow(dead_code)]
+mod preparation_plan;
 mod split_plan;
 mod stages;
 pub(crate) use split_plan::{
-    plan_padded_denominations, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
+    plan_padded_denominations, SplitStageInput, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
 };
 #[allow(unused_imports)]
 pub(crate) use stages::{
@@ -300,7 +302,6 @@ pub(crate) struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
-    pub max_prepared_notes_per_run: u32,
     /// Earliest block height at which the wallet can make more progress.
     pub next_action_height: Option<u32>,
     /// Projected height at which every migration part reaches trusted depth.
@@ -418,7 +419,6 @@ pub(crate) fn migration_status(
             configured_timing_policy(network),
         )
         .1,
-        max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         next_action_height: None,
         estimated_completion_height: None,
         next_action_part_index: None,
@@ -479,7 +479,7 @@ pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<
     }
 
     let progress = denomination_split_progress_for_run(&conn, run_id)?;
-    Ok(progress.total_count > 0 && progress.completed_count == progress.total_count)
+    Ok(progress.total_count == 0 || progress.completed_count == progress.total_count)
 }
 
 fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
@@ -625,8 +625,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
-    if denomination_stages.is_empty() {
-        return Err("Staged migration has no denomination transactions".to_string());
+    if denomination_stages.is_empty() && prepared_notes.is_empty() {
+        return Err("Migration run has no prepared funding notes".to_string());
     }
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -639,6 +639,11 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
+    let initial_phase = if denomination_stages.is_empty() {
+        PHASE_READY_TO_MIGRATE
+    } else {
+        PHASE_WAITING_DENOM_CONFIRMATIONS
+    };
     let schedule_json = match approved_schedule {
         Some(schedule) => {
             validate_schedule_with_policy(
@@ -668,7 +673,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             account_uuid,
             network_name(network),
             db_path,
-            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            initial_phase,
             now,
             target_values_json,
             timing_policy.as_str(),
@@ -679,13 +684,15 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     .map_err(|e| format!("Create staged migration run: {e}"))?;
     insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
-    initialize_preparation_schedule_with_tx(
-        &tx,
-        &run_id,
-        network,
-        preparation_timing_policy,
-        &mut OsRng,
-    )?;
+    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        initialize_preparation_schedule_with_tx(
+            &tx,
+            &run_id,
+            network,
+            preparation_timing_policy,
+            &mut OsRng,
+        )?;
+    }
     insert_signed_child_pczts_with_tx(
         &tx,
         &run_id,
@@ -1548,30 +1555,6 @@ pub(crate) fn pending_migration_note_outpoints(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     pending_migration_note_outpoints_with_conn(&conn, run_id)
-}
-
-pub(crate) fn pending_anchor_cohort_counts(
-    db_path: &str,
-    run_id: &str,
-) -> Result<BTreeMap<u32, u32>, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let mut stmt = conn
-        .prepare_cached(&format!(
-            "SELECT anchor_boundary_height, COUNT(*)
-             FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND anchor_boundary_height IS NOT NULL
-               AND status != 'needs_resign'
-             GROUP BY anchor_boundary_height"
-        ))
-        .map_err(|e| format!("Prepare migration anchor cohort query: {e}"))?;
-    let rows = stmt
-        .query_map(params![run_id], |row| {
-            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-        })
-        .map_err(|e| format!("Query migration anchor cohorts: {e}"))?;
-    rows.collect::<Result<BTreeMap<_, _>, _>>()
-        .map_err(|e| format!("Read migration anchor cohorts: {e}"))
 }
 
 fn pending_migration_note_outpoints_with_conn(
@@ -3537,7 +3520,6 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
-        max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         next_action_height: timing_projection.next_action_height,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,
@@ -4253,9 +4235,7 @@ fn denomination_split_progress_for_run(
 ) -> Result<DenominationSplitProgress, String> {
     let stages = denomination_stage_chain_records(conn, run_id)?;
     if stages.is_empty() {
-        return Err(format!(
-            "Migration run {run_id} has no staged denomination transactions"
-        ));
+        return Ok(DenominationSplitProgress::default());
     }
 
     let total_count = u32::try_from(stages.len())

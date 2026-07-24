@@ -98,9 +98,9 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
 
 int migrationPlanPreparationDelayBlocks(
   rust_sync.OrchardMigrationPrivatePlan plan,
-) => plan.denominationSplitStageCount <= 0
+) => plan.denominationSplitLayerCount <= 0
     ? 0
-    : plan.denominationSplitStageCount * _preparationConfirmationBlocks +
+    : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
           _preparationBroadcastBufferBlocks +
           plan.proofReadinessDelayBlocks;
 

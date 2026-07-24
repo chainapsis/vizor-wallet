@@ -1470,7 +1470,6 @@ class MigrationStatus {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
-  final int maxPreparedNotesPerRun;
   final int? nextActionHeight;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
@@ -1497,7 +1496,6 @@ class MigrationStatus {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
-    required this.maxPreparedNotesPerRun,
     this.nextActionHeight,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
@@ -1526,7 +1524,6 @@ class MigrationStatus {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       nextActionHeight.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
@@ -1560,7 +1557,6 @@ class MigrationStatus {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           nextActionHeight == other.nextActionHeight &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
@@ -1609,6 +1605,7 @@ class OrchardMigrationPrivatePlan {
   final BigInt estimatedTotalFeeZatoshi;
   final int plannedBatchCount;
   final int denominationSplitStageCount;
+  final int denominationSplitLayerCount;
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
@@ -1616,7 +1613,6 @@ class OrchardMigrationPrivatePlan {
   /// Estimated blocks after preparation confirmation, derived from the
   /// projected final prepared-note height rather than a fixed bucket count.
   final int proofReadinessDelayBlocks;
-  final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
   const OrchardMigrationPrivatePlan({
@@ -1629,11 +1625,11 @@ class OrchardMigrationPrivatePlan {
     required this.estimatedTotalFeeZatoshi,
     required this.plannedBatchCount,
     required this.denominationSplitStageCount,
+    required this.denominationSplitLayerCount,
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     required this.proofReadinessDelayBlocks,
-    required this.maxPreparedNotesPerRun,
     required this.scheduledTransfers,
   });
 
@@ -1648,11 +1644,11 @@ class OrchardMigrationPrivatePlan {
       estimatedTotalFeeZatoshi.hashCode ^
       plannedBatchCount.hashCode ^
       denominationSplitStageCount.hashCode ^
+      denominationSplitLayerCount.hashCode ^
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       proofReadinessDelayBlocks.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       scheduledTransfers.hashCode;
 
   @override
@@ -1669,11 +1665,11 @@ class OrchardMigrationPrivatePlan {
           estimatedTotalFeeZatoshi == other.estimatedTotalFeeZatoshi &&
           plannedBatchCount == other.plannedBatchCount &&
           denominationSplitStageCount == other.denominationSplitStageCount &&
+          denominationSplitLayerCount == other.denominationSplitLayerCount &&
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledTransfers == other.scheduledTransfers;
 }
 

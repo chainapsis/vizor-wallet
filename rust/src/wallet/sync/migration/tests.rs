@@ -740,7 +740,7 @@ fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
     .unwrap();
     drop(conn);
 
-    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 34_559).unwrap();
+    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Regtest, 34_560).unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let status = conn
@@ -1162,43 +1162,6 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
 }
 
 #[test]
-fn anchor_bucket_draw_skips_full_wallet_cohorts() {
-    assert_eq!(ZIP318_MAX_PARTS_PER_ANCHOR_COHORT, 8);
-    let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
-    let available = *candidates.last().unwrap();
-    let mut cohort_counts = candidates
-        .iter()
-        .map(|boundary| (*boundary, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT))
-        .collect::<BTreeMap<_, _>>();
-    cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT - 1);
-
-    for _ in 0..16 {
-        assert_eq!(
-            zip318_draw_anchor_boundary_for_note_with_cohorts(
-                WalletNetwork::Test,
-                5700,
-                5000,
-                5000,
-                &cohort_counts,
-            ),
-            Some(available)
-        );
-    }
-
-    cohort_counts.insert(available, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT);
-    assert_eq!(
-        zip318_draw_anchor_boundary_for_note_with_cohorts(
-            WalletNetwork::Test,
-            5700,
-            5000,
-            5000,
-            &cohort_counts,
-        ),
-        None
-    );
-}
-
-#[test]
 fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
     let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
     let available = vec![candidates[1], candidates[3]];
@@ -1209,7 +1172,6 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
             MigrationTimingPolicy::Standard,
             5700,
             &available,
-            &BTreeMap::new(),
         )
         .unwrap();
         assert!(available.contains(&boundary));
@@ -1221,31 +1183,27 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
             MigrationTimingPolicy::Standard,
             5700,
             &[],
-            &BTreeMap::new(),
         ),
         None
     );
 }
 
 #[test]
-fn planner_chunks_more_than_max_prepared_outputs_into_follow_up_run() {
+fn planner_drains_balance_beyond_the_old_run_cap() {
     let input = 1_999_999_950_000_000;
     let migration_fee = 10_000;
     let plan = plan_denominations(input, 0, migration_fee, 1).unwrap();
 
-    assert_eq!(
-        plan.migration_outputs.len(),
-        MIGRATION_MAX_PREPARED_NOTES_PER_RUN
-    );
+    assert!(plan.migration_outputs.len() > 64);
     assert!(plan
         .migration_outputs
         .iter()
         .all(|value| is_zip318_canonical_denomination(*value)));
-    let orchard_change = plan.orchard_change.unwrap();
-    assert!(orchard_balance_can_create_migration_output(orchard_change).unwrap());
+    let orchard_change = plan.orchard_change.unwrap_or(0);
+    assert!(!orchard_balance_can_create_migration_output(orchard_change).unwrap());
     assert_eq!(
         plan.total_migratable_zatoshi
-            + migration_fee * MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u64
+            + migration_fee * plan.migration_outputs.len() as u64
             + orchard_change,
         input
     );
@@ -1652,15 +1610,15 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
     );
 
     assert_eq!(offsets.len(), 32);
-    assert!(offsets[0] >= 1);
+    assert!(offsets[0] <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS);
     assert!(offsets.windows(2).all(|w| {
         let gap = w[1] - w[0];
-        (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+        gap <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS
     }));
 }
 
 #[test]
-fn preparation_schedule_starts_one_root_immediately_and_spaces_the_rest() {
+fn preparation_schedule_delays_every_root() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -1695,7 +1653,8 @@ fn preparation_schedule_starts_one_root_immediately_and_spaces_the_rest() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(heights[0], 100);
+    assert_ne!(heights[0], 100);
+    assert!(heights[0] <= 100 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
     assert!(heights
         .windows(2)
         .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));
@@ -1885,18 +1844,37 @@ fn legacy_preparation_policy_remains_immediate() {
 }
 
 #[test]
-fn planned_schedule_starts_immediately_and_delays_later_transfers() {
+fn planned_schedule_delays_every_transfer() {
     let values = (1..=32).collect::<Vec<_>>();
     let mut rng = StdRng::seed_from_u64(0x318);
     let schedule = planned_transfer_schedule(values.iter().copied(), WalletNetwork::Test, &mut rng);
 
     assert_eq!(schedule.len(), values.len());
-    assert_eq!(schedule[0].block_offset, 0);
+    assert_ne!(schedule[0].block_offset, 0);
+    assert!(schedule[0].block_offset <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS);
     assert!(schedule.windows(2).all(|entries| {
         let gap = entries[1].block_offset - entries[0].block_offset;
-        (1..=ZIP318_TRANSFER_MAX_DELAY_BLOCKS).contains(&gap)
+        gap <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS
     }));
     validate_schedule(&schedule, &values, WalletNetwork::Test).unwrap();
+}
+
+#[test]
+fn schedule_validation_accepts_zero_delay_gaps() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 0,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 0,
+        },
+    ];
+
+    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test).unwrap();
 }
 
 #[test]
@@ -2237,7 +2215,7 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
     .filter(|entry| entry.status == "scheduled")
     .collect::<Vec<_>>();
     assert_eq!(remaining.len(), 2);
-    assert!(remaining.iter().all(|entry| entry.scheduled_height > 503));
+    assert!(remaining.iter().all(|entry| entry.scheduled_height >= 503));
 }
 
 #[test]
@@ -3267,6 +3245,67 @@ fn create_staged_run_persists_pending_split_atomically() {
     assert_eq!(stages[0].expected_txid_hex, expected_txid);
     assert_eq!(stages[0].raw_tx.as_deref(), Some(raw_tx.as_slice()));
     assert_eq!(stages[0].status, DenominationStageStatus::Pending);
+}
+
+#[test]
+fn create_run_with_direct_funding_notes_starts_ready_without_split_stages() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let plan = DenominationPlan {
+        migration_outputs: vec![100_000_000],
+        orchard_change: None,
+        split_fee_zatoshi: 0,
+        migration_fee_zatoshi: 15_000,
+        total_input_zatoshi: 100_015_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 100_015_000,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    }];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000_000,
+        block_offset: 1,
+    }];
+
+    let run_id = create_run_with_staged_denominations_and_signed_children(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &plan,
+        &prepared_notes,
+        Vec::new(),
+        Vec::new(),
+        Some(&approved_schedule),
+        PreparationTimingPolicy::Zip318Spaced,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    assert_eq!(
+        run_phase(&db_path, &run_id).unwrap(),
+        PHASE_READY_TO_MIGRATE
+    );
+    assert!(
+        denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64,)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        denomination_split_progress_for_run(&conn, &run_id).unwrap(),
+        DenominationSplitProgress::default()
+    );
+    assert_eq!(
+        prepared_notes_for_run(&db_path, &run_id).unwrap(),
+        prepared_notes
+    );
 }
 
 #[test]

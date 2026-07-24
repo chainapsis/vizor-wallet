@@ -1,7 +1,9 @@
-fn prepared_refs_from_denomination_stages(
+fn prepared_refs_from_denomination_split(
+    direct_refs: &[super::migration::PreparedOrchardNoteRef],
     stages: &[CreatedDenominationStagePczt],
 ) -> Vec<super::migration::PreparedOrchardNoteRef> {
-    stages
+    let mut prepared_refs = direct_refs.to_vec();
+    prepared_refs.extend(stages
         .iter()
         .flat_map(|stage| {
             stage
@@ -18,7 +20,15 @@ fn prepared_refs_from_denomination_stages(
                     nullifier_hex: None,
                 })
         })
-        .collect()
+    );
+    prepared_refs.sort_by(|left, right| {
+        right
+            .value_zatoshi
+            .cmp(&left.value_zatoshi)
+            .then_with(|| left.txid_hex.cmp(&right.txid_hex))
+            .then_with(|| left.output_index.cmp(&right.output_index))
+    });
+    prepared_refs
 }
 
 fn signed_denomination_stage_inserts(
@@ -313,7 +323,6 @@ fn create_padded_orchard_denomination_pczts(
         u64::from(split_fee),
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
     )?
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
 
@@ -327,45 +336,100 @@ fn create_padded_orchard_denomination_pczts(
     let mut stages = Vec::with_capacity(padded_plan.stages.len());
     let mut predicted_migration_notes =
         Vec::with_capacity(padded_plan.denominations.migration_outputs.len());
-    let mut previous_continuation = None::<PredictedMigrationNote>;
+    let mut direct_prepared_refs =
+        Vec::with_capacity(padded_plan.direct_migration_inputs.len());
+    let mut predicted_stage_outputs = BTreeMap::<(usize, usize), PredictedMigrationNote>::new();
+
+    for direct in &padded_plan.direct_migration_inputs {
+        let received = orchard_notes
+            .get(direct.input_index)
+            .ok_or("Direct migration input index is out of range")?;
+        let value_zatoshi = received
+            .note_value()
+            .map(u64::from)
+            .map_err(|e| format!("Direct migration input value is invalid: {e}"))?;
+        if value_zatoshi != direct.value_zatoshi {
+            return Err("Direct migration input value changed after planning".to_string());
+        }
+        let prepared_ref = input_refs
+            .get(direct.input_index)
+            .ok_or("Direct migration input reference is out of range")?
+            .clone();
+        direct_prepared_refs.push(super::migration::PreparedOrchardNoteRef {
+            txid_hex: prepared_ref.txid_hex.clone(),
+            output_index: prepared_ref.output_index,
+            value_zatoshi: prepared_ref.value_zatoshi,
+            note_version: prepared_ref.note_version,
+            nullifier_hex: prepared_ref.nullifier_hex.clone(),
+        });
+        predicted_migration_notes.push((
+            direct.part_index,
+            PredictedMigrationNote {
+                txid_hex: prepared_ref.txid_hex,
+                output_index: prepared_ref.output_index,
+                value_zatoshi,
+                note: *received.note(),
+            },
+        ));
+    }
 
     for (stage_index, stage_plan) in padded_plan.stages.iter().enumerate() {
         let mut stage_notes = Vec::new();
         let mut stage_input_refs = Vec::new();
-        if stage_plan.spends_previous_continuation {
-            let continuation = previous_continuation
-                .take()
-                .ok_or("Denomination stage is missing its continuation input")?;
-            stage_input_refs.push(super::migration::DenominationStageInputRef {
-                txid_hex: continuation.txid_hex.clone(),
-                output_index: continuation.output_index,
-                value_zatoshi: continuation.value_zatoshi,
-                note_version: 2,
-                nullifier_hex: Some(hex::encode(
-                    continuation.note.nullifier(&orchard_fvk).to_bytes(),
-                )),
-            });
-            stage_notes.push(continuation.note);
-        } else if previous_continuation.is_some() {
-            return Err("Independent denomination root left an unused continuation".to_string());
-        }
-        for input_index in &stage_plan.original_input_indices {
-            let (note, _) = orchard_inputs
-                .get(*input_index)
-                .ok_or("Denomination stage input index is out of range")?;
-            stage_notes.push(*note);
-            stage_input_refs.push(
-                input_refs
-                    .get(*input_index)
-                    .ok_or("Denomination stage input reference is out of range")?
-                    .clone(),
-            );
+        let mut root_inputs = Vec::new();
+        let mut deferred = false;
+        for input in &stage_plan.inputs {
+            match input {
+                super::migration::SplitStageInput::Original {
+                    input_index,
+                    value_zatoshi,
+                } => {
+                    let (note, witness) = orchard_inputs
+                        .get(*input_index)
+                        .ok_or("Denomination stage input index is out of range")?;
+                    let input_ref = input_refs
+                        .get(*input_index)
+                        .ok_or("Denomination stage input reference is out of range")?;
+                    if input_ref.value_zatoshi != *value_zatoshi {
+                        return Err(
+                            "Denomination stage input value changed after planning".to_string()
+                        );
+                    }
+                    stage_notes.push(*note);
+                    root_inputs.push((*note, witness.clone()));
+                    stage_input_refs.push(input_ref.clone());
+                }
+                super::migration::SplitStageInput::Prior {
+                    stage_index: prior_stage_index,
+                    output_index,
+                    value_zatoshi,
+                } => {
+                    deferred = true;
+                    let prior = predicted_stage_outputs
+                        .get(&(*prior_stage_index, *output_index))
+                        .ok_or("Denomination stage references an unknown prior output")?;
+                    if prior.value_zatoshi != *value_zatoshi {
+                        return Err(
+                            "Denomination prior output value changed after planning".to_string()
+                        );
+                    }
+                    stage_notes.push(prior.note);
+                    stage_input_refs.push(super::migration::DenominationStageInputRef {
+                        txid_hex: prior.txid_hex.clone(),
+                        output_index: prior.output_index,
+                        value_zatoshi: prior.value_zatoshi,
+                        note_version: 2,
+                        nullifier_hex: Some(hex::encode(
+                            prior.note.nullifier(&orchard_fvk).to_bytes(),
+                        )),
+                    });
+                }
+            }
         }
         if stage_notes.is_empty() {
             return Err("Denomination stage has no Orchard inputs".to_string());
         }
 
-        let deferred = stage_plan.spends_previous_continuation;
         let (stage_anchor, stage_inputs) = if deferred {
             let (anchor, witnesses) = synthetic_orchard_anchor_and_witnesses(&stage_notes)?;
             (
@@ -377,27 +441,14 @@ fn create_padded_orchard_denomination_pczts(
                     .collect::<Vec<_>>(),
             )
         } else {
-            let inputs = stage_plan
-                .original_input_indices
-                .iter()
-                .map(|index| {
-                    orchard_inputs
-                        .get(*index)
-                        .cloned()
-                        .ok_or("Denomination root input index is out of range")
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            (orchard_anchor, inputs)
+            (orchard_anchor, root_inputs)
         };
 
-        let mut output_values = stage_plan
-            .terminal_outputs
+        let output_values = stage_plan
+            .outputs
             .iter()
             .map(|output| output.value_zatoshi)
             .collect::<Vec<_>>();
-        if let Some(value) = stage_plan.continuation_value_zatoshi {
-            output_values.push(value);
-        }
         let builder = make_orchard_split_builder_with_type(
             network,
             target_height.into(),
@@ -460,10 +511,11 @@ fn create_padded_orchard_denomination_pczts(
         let expected_txid = super::pczt::txid_from_io_finalized_pczt(&built_pczt.bytes)?;
         let expected_txid_hex = expected_txid.to_string();
         let mut stage_output_refs = Vec::with_capacity(predicted_outputs.len());
-        for (terminal, (output_index, value_zatoshi, note)) in stage_plan
-            .terminal_outputs
+        for (logical_output_index, (terminal, (output_index, value_zatoshi, note))) in stage_plan
+            .outputs
             .iter()
             .zip(predicted_outputs.iter())
+            .enumerate()
         {
             let kind = match terminal.kind {
                 super::migration::SplitTerminalKind::Migration => {
@@ -472,54 +524,45 @@ fn create_padded_orchard_denomination_pczts(
                 super::migration::SplitTerminalKind::OrchardChange => {
                     super::migration::DenominationStageOutputKind::Change
                 }
+                super::migration::SplitTerminalKind::Continuation => {
+                    super::migration::DenominationStageOutputKind::Continuation
+                }
             };
+            let part_index = terminal
+                .part_index
+                .map(|part_index| {
+                    u32::try_from(part_index)
+                        .map_err(|_| "Migration denomination part index exceeds u32".to_string())
+                })
+                .transpose()?;
             stage_output_refs.push(super::migration::DenominationStageOutputRef {
                 output_index: *output_index,
                 value_zatoshi: *value_zatoshi,
                 note_version: 2,
                 kind,
-                part_index: if terminal.kind == super::migration::SplitTerminalKind::Migration {
-                    Some(
-                        u32::try_from(terminal.logical_index).map_err(|_| {
-                            "Migration denomination part index exceeds u32".to_string()
-                        })?,
-                    )
-                } else {
-                    None
-                },
+                part_index,
             });
-            if terminal.kind == super::migration::SplitTerminalKind::Migration {
-                predicted_migration_notes.push((
-                    terminal.logical_index,
-                    PredictedMigrationNote {
-                        txid_hex: expected_txid_hex.clone(),
-                        output_index: *output_index,
-                        value_zatoshi: *value_zatoshi,
-                        note: *note,
-                    },
-                ));
-            }
-        }
-        if let Some(continuation_value) = stage_plan.continuation_value_zatoshi {
-            let (output_index, value_zatoshi, note) = predicted_outputs
-                .last()
-                .ok_or("Denomination continuation output missing")?;
-            if *value_zatoshi != continuation_value {
-                return Err("Denomination continuation value changed after build".to_string());
-            }
-            stage_output_refs.push(super::migration::DenominationStageOutputRef {
-                output_index: *output_index,
-                value_zatoshi: *value_zatoshi,
-                note_version: 2,
-                kind: super::migration::DenominationStageOutputKind::Continuation,
-                part_index: None,
-            });
-            previous_continuation = Some(PredictedMigrationNote {
+            let predicted = PredictedMigrationNote {
                 txid_hex: expected_txid_hex.clone(),
                 output_index: *output_index,
                 value_zatoshi: *value_zatoshi,
                 note: *note,
-            });
+            };
+            predicted_stage_outputs.insert(
+                (stage_index, logical_output_index),
+                predicted.clone(),
+            );
+            if let Some(part_index) = terminal.part_index {
+                if terminal.kind != super::migration::SplitTerminalKind::Migration {
+                    return Err(
+                        "Only migration outputs may carry a migration part index".to_string()
+                    );
+                }
+                predicted_migration_notes.push((
+                    part_index,
+                    predicted,
+                ));
+            }
         }
 
         stages.push(CreatedDenominationStagePczt {
@@ -541,9 +584,6 @@ fn create_padded_orchard_denomination_pczts(
             outputs: stage_output_refs,
         });
     }
-    if previous_continuation.is_some() {
-        return Err("Denomination plan left an unspent continuation".to_string());
-    }
     predicted_migration_notes.sort_by_key(|(logical_index, _)| *logical_index);
     let predicted_notes = predicted_migration_notes
         .into_iter()
@@ -556,6 +596,7 @@ fn create_padded_orchard_denomination_pczts(
     Ok(Some(CreatedPaddedDenominationPczts {
         stages,
         predicted_notes,
+        direct_prepared_refs,
         total_migratable_zatoshi: padded_plan.denominations.total_migratable_zatoshi,
         plan: padded_plan.denominations,
     }))

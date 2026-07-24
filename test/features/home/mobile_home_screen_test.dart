@@ -598,7 +598,6 @@ void main() {
       signingBatchLimit: 50,
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
-      maxPreparedNotesPerRun: 64,
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'confirmed',
@@ -679,7 +678,6 @@ void main() {
         signingBatchLimit: 50,
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,
-        maxPreparedNotesPerRun: 64,
         scheduledBroadcasts: const [],
         parts: const [],
       );
@@ -732,7 +730,6 @@ void main() {
       signingBatchLimit: 50,
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
-      maxPreparedNotesPerRun: 64,
       scheduledBroadcasts: const [],
       parts: const [],
     );
@@ -778,7 +775,6 @@ void main() {
       signingBatchLimit: 50,
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
-      maxPreparedNotesPerRun: 64,
       scheduledBroadcasts: [
         rust_sync.MigrationScheduledBroadcast(
           txidHex: 'overdue',
@@ -849,7 +845,6 @@ void main() {
             signingBatchLimit: 0,
             scheduleMeanDelayBlocks: 144,
             scheduleMaxDelayBlocks: 576,
-            maxPreparedNotesPerRun: 0,
             scheduledBroadcasts: const [],
             parts: const [],
           ),
@@ -962,7 +957,6 @@ void main() {
             signingBatchLimit: 0,
             scheduleMeanDelayBlocks: 144,
             scheduleMaxDelayBlocks: 576,
-            maxPreparedNotesPerRun: 0,
             scheduledBroadcasts: const [],
             parts: const [],
           ),

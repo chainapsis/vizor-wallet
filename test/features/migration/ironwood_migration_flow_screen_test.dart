@@ -167,7 +167,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.text('~4 hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
@@ -2569,11 +2569,11 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     estimatedTotalFeeZatoshi: BigInt.from(10_000),
     plannedBatchCount: 1,
     denominationSplitStageCount: 0,
-    signingBatchLimit: 50,
+    denominationSplitLayerCount: 0,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
         partIndex: 0,
@@ -2616,10 +2616,9 @@ rust_sync.MigrationStatus _migrationStatus({
     signedChildPcztCount: 0,
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
   );
@@ -2660,10 +2659,9 @@ rust_sync.MigrationStatus _status() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );

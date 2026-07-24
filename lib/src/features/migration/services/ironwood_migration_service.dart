@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 
 import '../../../core/config/rpc_endpoint_config.dart';
-import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
@@ -260,7 +259,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   password: password,
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  spacePreparationBroadcasts: true,
 );
 
 Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
@@ -279,7 +278,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   password: password,
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  spacePreparationBroadcasts: true,
 );
 
 Future<rust_sync.IronwoodMigrationResult>
@@ -303,7 +302,7 @@ _defaultCompleteKeystoneDenominationMigration({
   password: password,
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
-  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  spacePreparationBroadcasts: true,
 );
 
 class IronwoodMigrationService {

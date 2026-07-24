@@ -75,7 +75,7 @@ fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
 }
 
 #[test]
-fn keystone_migration_signing_rejects_more_than_fifty_messages() {
+fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
     let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
@@ -83,10 +83,7 @@ fn keystone_migration_signing_rejects_more_than_fifty_messages() {
         })
         .collect::<Vec<_>>();
 
-    let error = validate_keystone_migration_messages(&messages).unwrap_err();
-
-    assert!(error.contains("at most 50 PCZTs per round"));
-    assert!(error.contains("needs 51"));
+    validate_keystone_migration_messages(&messages).unwrap();
 }
 
 #[test]
@@ -107,6 +104,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 state: KeystoneMigrationRequestState::ProofReady,
                 proof_error: None,
                 split_stages: vec![],
+                direct_prepared_refs: vec![],
                 total_migratable_zatoshi: plan.total_migratable_zatoshi,
                 plan: plan.clone(),
             },
@@ -146,6 +144,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
                     split_stages: vec![],
+                    direct_prepared_refs: vec![],
                     total_migratable_zatoshi: plan.total_migratable_zatoshi,
                     plan: plan.clone(),
                     child_messages: vec![],

@@ -39,16 +39,23 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             redacted_pczt: stage.redacted_pczt.clone(),
         })
         .collect::<Vec<_>>();
-    validate_keystone_migration_messages(&messages)?;
+    if !messages.is_empty() {
+        validate_keystone_migration_messages(&messages)?;
+    }
     let root_proofs = split
         .stages
         .iter()
         .filter(|stage| !stage.deferred)
         .map(|stage| (stage.id.clone(), stage.base_pczt.clone()))
         .collect::<Vec<_>>();
-    if root_proofs.is_empty() {
+    if root_proofs.is_empty() && !split.stages.is_empty() {
         return Err("Padded denomination plan has no immediately provable root".to_string());
     }
+    let request_state = if root_proofs.is_empty() {
+        KeystoneMigrationRequestState::ProofReady
+    } else {
+        KeystoneMigrationRequestState::Proofing
+    };
     let mut request_store = keystone_denomination_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?;
@@ -57,15 +64,18 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
         StoredDenominationPczt {
             account_uuid: account_uuid.to_string(),
             network,
-            state: KeystoneMigrationRequestState::Proofing,
+            state: request_state,
             proof_error: None,
             split_stages: split.stages,
+            direct_prepared_refs: split.direct_prepared_refs,
             total_migratable_zatoshi: split.total_migratable_zatoshi,
             plan: split.plan,
         },
     );
     drop(request_store);
-    spawn_denomination_proof_worker(request_id.clone(), root_proofs);
+    if !root_proofs.is_empty() {
+        spawn_denomination_proof_worker(request_id.clone(), root_proofs);
+    }
 
     Ok(KeystoneMigrationSigningRequest {
         request_id,
@@ -87,7 +97,11 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
+    let signed_by_id = if signed_messages.is_empty() {
+        HashMap::new()
+    } else {
+        signed_migration_messages_by_id(request_id, signed_messages)?
+    };
     if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
         return Err(
             "Migration already has an active run. Reject this Keystone request.".to_string(),
@@ -139,6 +153,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredDenominationCompletion {
             split_stages: stored.split_stages.clone(),
+            direct_prepared_refs: stored.direct_prepared_refs.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
             plan: stored.plan.clone(),
         }
@@ -150,7 +165,10 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             return Err(format!("Keystone result missing {}", stage.id));
         }
     }
-    let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
+    let prepared_refs = prepared_refs_from_denomination_split(
+        &stored.direct_prepared_refs,
+        &stored.split_stages,
+    );
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
             signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
@@ -177,6 +195,20 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     };
     if let Ok(mut store) = keystone_denomination_requests().lock() {
         store.remove(request_id);
+    }
+
+    if stored.split_stages.is_empty() {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
+            broadcasted_count: 0,
+            total_count: prepared_refs.len() as u32,
+            message: Some(
+                "Existing denomination notes are ready for migration signing.".to_string(),
+            ),
+            fee_zatoshi: 0,
+            migrated_zatoshi: stored.total_migratable_zatoshi,
+        });
     }
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
@@ -244,14 +276,6 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .len()
         .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
-    if total_messages > ZCASH_SIGN_BATCH_MAX_MESSAGES {
-        return Err(format!(
-            "Single Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs, but this plan needs {} split transactions plus {} migration transactions. Reduce the migration amount or use the staged flow.",
-            split.stages.len(),
-            split.predicted_notes.len(),
-        ));
-    }
-
     let approved_schedule = super::migration::planned_transfer_schedule(
         split.plan.migration_outputs.iter().copied(),
         network,
@@ -301,9 +325,14 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .filter(|stage| !stage.deferred)
         .map(|stage| (stage.id.clone(), stage.base_pczt.clone()))
         .collect::<Vec<_>>();
-    if root_proofs.is_empty() {
+    if root_proofs.is_empty() && !split.stages.is_empty() {
         return Err("Padded denomination plan has no immediately provable root".to_string());
     }
+    let request_state = if root_proofs.is_empty() {
+        KeystoneMigrationRequestState::ProofReady
+    } else {
+        KeystoneMigrationRequestState::Proofing
+    };
     let mut request_store = keystone_single_qr_migration_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?;
@@ -312,9 +341,10 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         StoredSingleQrMigrationPczt {
             account_uuid: account_uuid.to_string(),
             network,
-            state: KeystoneMigrationRequestState::Proofing,
+            state: request_state,
             proof_error: None,
             split_stages: split.stages,
+            direct_prepared_refs: split.direct_prepared_refs,
             total_migratable_zatoshi: split.total_migratable_zatoshi,
             plan: split.plan,
             child_messages,
@@ -322,7 +352,9 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         },
     );
     drop(request_store);
-    spawn_single_qr_split_proof_worker(request_id.clone(), root_proofs);
+    if !root_proofs.is_empty() {
+        spawn_single_qr_split_proof_worker(request_id.clone(), root_proofs);
+    }
 
     Ok(KeystoneMigrationSigningRequest {
         request_id,
@@ -398,6 +430,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredSingleQrMigrationCompletion {
             split_stages: stored.split_stages.clone(),
+            direct_prepared_refs: stored.direct_prepared_refs.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
             plan: stored.plan.clone(),
             child_messages: stored.child_messages.clone(),
@@ -417,7 +450,10 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         }
     }
 
-    let prepared_refs = prepared_refs_from_denomination_stages(&stored.split_stages);
+    let prepared_refs = prepared_refs_from_denomination_split(
+        &stored.direct_prepared_refs,
+        &stored.split_stages,
+    );
 
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
@@ -476,6 +512,37 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     };
     if let Ok(mut store) = keystone_single_qr_migration_requests().lock() {
         store.remove(request_id);
+    }
+
+    if stored.split_stages.is_empty() {
+        let fallback_total_count = prepared_refs.len() as u32;
+        let finalized = finalize_presigned_migration_children(
+            db_path,
+            network,
+            account_uuid,
+            &run_id,
+            pending_password,
+            pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )?;
+        if finalized == 0 {
+            return Ok(prepared_notes_not_spendable_result(
+                fallback_total_count,
+                stored.total_migratable_zatoshi,
+            ));
+        }
+        return broadcast_due_scheduled_migration_txs(
+            db_path,
+            lightwalletd_url,
+            network,
+            &run_id,
+            pending_password,
+            pending_salt_base64,
+            fallback_total_count,
+            stored.total_migratable_zatoshi,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )
+        .await;
     }
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
@@ -562,8 +629,6 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     }
 
     let mut created = Vec::with_capacity(prepared_notes.len());
-    let mut anchor_cohort_counts =
-        super::migration::pending_anchor_cohort_counts(db_path, &run.run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
     let approved_schedule =
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
@@ -604,7 +669,6 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     migration_index,
                     schedule_block_offset,
                     timing_policy,
-                    &mut anchor_cohort_counts,
                     true,
                 )
             })
