@@ -59,6 +59,27 @@ enum BackgroundMigrationOutboxChannel {
     return recovered
   }
 
+  static func hasBatch(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    guard let expectedTxids = arguments["expectedTxids"] as? [String] else {
+      throw BackgroundMigrationOutboxChannelError.invalidArguments("expectedTxids")
+    }
+    guard let requiredTxids = arguments["requiredTxids"] as? [String] else {
+      throw BackgroundMigrationOutboxChannelError.invalidArguments("requiredTxids")
+    }
+    return try store.read().hasBatch(
+      batchId: string(arguments, "batchId"),
+      network: string(arguments, "network"),
+      accountUuid: string(arguments, "accountUuid"),
+      runId: string(arguments, "runId"),
+      expectedTxids: Set(expectedTxids),
+      requiredTxids: Set(requiredTxids)
+    )
+  }
+
   static func listReceipts(
     store: BackgroundMigrationOutboxStore = .shared
   ) throws -> [[String: Any]] {

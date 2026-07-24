@@ -4840,7 +4840,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('We will notify you'), findsOneWidget);
+      expect(find.textContaining('Notifications are on'), findsOneWidget);
       authorizationLookupFails = true;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
@@ -4853,7 +4853,7 @@ void main() {
       expect(coordinator.synchronizeCount, 0);
       expect(find.text("Couldn't update migration"), findsNothing);
       expect(find.textContaining('Notifications are disabled'), findsWidgets);
-      expect(find.textContaining('We will notify you'), findsNothing);
+      expect(find.textContaining('Notifications are on'), findsNothing);
     },
   );
 
@@ -4921,7 +4921,7 @@ void main() {
     },
   );
 
-  testWidgets('shows the next signing window while broadcasting', (
+  testWidgets('shows the next migration step while broadcasting', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -4935,11 +4935,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('All is well. Broadcasting notes…'), findsWidgets);
-    expect(find.textContaining('Signing window expected'), findsOneWidget);
-    expect(
-      find.textContaining('We will notify you when it’s ready.'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Next migration step expected'), findsOneWidget);
+    expect(find.textContaining('Notifications are on'), findsOneWidget);
   });
 
   testWidgets('keeps coordinator errors on the redesigned retry surface', (
@@ -5128,6 +5125,41 @@ void main() {
     expect(find.text('0/1 Batch'), findsOneWidget);
   });
 
+  testWidgets('shows a due scheduled transaction as ready, never Soon', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          broadcastStatuses: const ['scheduled'],
+          nextActionHeight: 3_000_000,
+          nextActionPartIndex: 0,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scheduled transaction ready'), findsOneWidget);
+    expect(find.text('Ready now'), findsOneWidget);
+    expect(
+      find.textContaining('ready for automatic submission'),
+      findsOneWidget,
+    );
+    expect(find.text('soon'), findsNothing);
+    expect(find.text('Soon'), findsNothing);
+    expect(find.text('Waiting for signing window'), findsNothing);
+  });
+
   testWidgets('shows safe-block timing without a proof label', (tester) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(
@@ -5156,7 +5188,7 @@ void main() {
     expect(find.textContaining('~25 minutes'), findsOneWidget);
     expect(find.textContaining('Proof'), findsNothing);
     expect(find.text('Sign batch #2'), findsNothing);
-    expect(find.text('Waiting for signing window'), findsOneWidget);
+    expect(find.text('Waiting for next migration step'), findsOneWidget);
   });
 
   testWidgets('shows the real next block when notifications are disabled', (

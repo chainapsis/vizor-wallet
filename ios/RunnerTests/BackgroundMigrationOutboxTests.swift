@@ -80,6 +80,34 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testHasBatchRequiresEveryScheduledTransaction() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a")
+    try snapshot.stage(batch)
+    let expectedTxids = Set(batch.items.map(\.txidHex))
+
+    XCTAssertTrue(
+      try snapshot.hasBatch(
+        batchId: batch.batchId,
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        expectedTxids: expectedTxids,
+        requiredTxids: [batch.items[0].txidHex]
+      )
+    )
+    XCTAssertThrowsError(
+      try snapshot.hasBatch(
+        batchId: batch.batchId,
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        expectedTxids: expectedTxids.union(["missing-txid"]),
+        requiredTxids: ["missing-txid"]
+      )
+    )
+  }
+
   func testRestagingMovesAnIdleBatchToTheCurrentEndpoint() throws {
     let original = makeBatch(
       batchId: "batch-a",
@@ -718,6 +746,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       outcome.transport,
       .waiting(nextHeight: 300, observedHeight: 200, delay: 600)
     )
+    XCTAssertEqual(outcome.transportAccountUuid, "account-a")
     XCTAssertNil(outcome.proofReady)
   }
 
@@ -762,6 +791,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
 
     XCTAssertEqual(sendCount, 0)
     XCTAssertEqual(outcome.transport, .needsUserAction)
+    XCTAssertEqual(outcome.transportAccountUuid, "account-a")
     let snapshot = try harness.store.read()
     XCTAssertNil(snapshot.batches.first?.armedAt)
     XCTAssertEqual(

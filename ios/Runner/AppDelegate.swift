@@ -164,6 +164,12 @@ import UIKit
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
+      case "hasOutboxBatch":
+        do {
+          result(try BackgroundMigrationOutboxChannel.hasBatch(arguments: call.arguments))
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
       case "listOutboxReceipts":
         do {
           result(try BackgroundMigrationOutboxChannel.listReceipts())
@@ -447,6 +453,7 @@ import UIKit
     let transport = backgroundTransportResult(runResult.transport)
     var result = transport
     result["transport"] = transport
+    result["accountUuid"] = runResult.transportAccountUuid
     if let proofReady = runResult.proofReady {
       result["proofReady"] = [
         "batchId": proofReady.batchId,

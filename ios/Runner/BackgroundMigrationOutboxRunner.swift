@@ -111,6 +111,7 @@ enum BackgroundMigrationOutboxRunner {
     }
 
     var proofReady: BackgroundMigrationProofReadyMetadata?
+    var attemptedAccountUuid: String?
     let selection: BackgroundMigrationOutboxSelection
     do {
       var selected: BackgroundMigrationOutboxSelection?
@@ -132,6 +133,7 @@ enum BackgroundMigrationOutboxRunner {
           at: now
         )
         if let selected {
+          attemptedAccountUuid = selected.accountUuid
           try snapshot.validateReschedulingAfterAcceptance(
             itemId: selected.item.itemId,
             remoteHeight: remoteHeight
@@ -148,10 +150,15 @@ enum BackgroundMigrationOutboxRunner {
           ($0.outcome == .expired || $0.outcome == .needsResign)
             && $0.remoteHeight == remoteHeight
         }) {
+          let accountUuid = snapshot.receipts.first(where: {
+            ($0.outcome == .expired || $0.outcome == .needsResign)
+              && $0.remoteHeight == remoteHeight
+          })?.accountUuid
           return BackgroundMigrationOutboxRunResult(
             transport: .needsUserAction,
             proofReady: proofReady,
-            broadcastComplete: broadcastComplete
+            broadcastComplete: broadcastComplete,
+            transportAccountUuid: accountUuid
           )
         }
         let nextHeight = snapshot.nextActionHeight(endpoint: endpoint)
@@ -171,7 +178,10 @@ enum BackgroundMigrationOutboxRunner {
         return BackgroundMigrationOutboxRunResult(
           transport: transport,
           proofReady: proofReady,
-          broadcastComplete: broadcastComplete
+          broadcastComplete: broadcastComplete,
+          transportAccountUuid: nextHeight.flatMap {
+            snapshot.nextActionAccountUuid(endpoint: endpoint, height: $0)
+          }
         )
       }
       selection = selected
@@ -179,7 +189,8 @@ enum BackgroundMigrationOutboxRunner {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
         proofReady: nil,
-        broadcastComplete: broadcastComplete
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: attemptedAccountUuid
       )
     } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
       return BackgroundMigrationOutboxRunResult(
@@ -191,7 +202,8 @@ enum BackgroundMigrationOutboxRunner {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
         proofReady: proofReady,
-        broadcastComplete: broadcastComplete
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: attemptedAccountUuid
       )
     }
 
@@ -205,7 +217,8 @@ enum BackgroundMigrationOutboxRunner {
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
         proofReady: proofReady,
-        broadcastComplete: broadcastComplete
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: selection.accountUuid
       )
     }
 
@@ -224,7 +237,8 @@ enum BackgroundMigrationOutboxRunner {
       return BackgroundMigrationOutboxRunResult(
         transport: error == .cancelled ? .cancelled : .temporarilyUnavailable,
         proofReady: proofReady,
-        broadcastComplete: broadcastComplete
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: selection.accountUuid
       )
     case .success(let response):
       do {
@@ -257,7 +271,8 @@ enum BackgroundMigrationOutboxRunner {
               )
             ),
             proofReady: proofReady,
-            broadcastComplete: broadcastComplete
+            broadcastComplete: broadcastComplete,
+            transportAccountUuid: selection.accountUuid
           )
         }
         _ = try store.update { snapshot in
@@ -272,19 +287,22 @@ enum BackgroundMigrationOutboxRunner {
         return BackgroundMigrationOutboxRunResult(
           transport: .needsUserAction,
           proofReady: nil,
-          broadcastComplete: broadcastComplete
+          broadcastComplete: broadcastComplete,
+          transportAccountUuid: selection.accountUuid
         )
       } catch BackgroundMigrationOutboxStoreError.temporarilyUnavailable {
         return BackgroundMigrationOutboxRunResult(
           transport: .temporarilyUnavailable,
           proofReady: proofReady,
-          broadcastComplete: broadcastComplete
+          broadcastComplete: broadcastComplete,
+          transportAccountUuid: selection.accountUuid
         )
       } catch {
         return BackgroundMigrationOutboxRunResult(
           transport: .needsUserAction,
           proofReady: proofReady,
-          broadcastComplete: broadcastComplete
+          broadcastComplete: broadcastComplete,
+          transportAccountUuid: selection.accountUuid
         )
       }
     }

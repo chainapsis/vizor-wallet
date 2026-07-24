@@ -5,6 +5,19 @@ const _estimatedSecondsPerBlock = 75;
 const _preparationConfirmationBlocks = 3;
 const _preparationBroadcastBufferBlocks = 1;
 
+bool migrationHasDueScheduledBroadcast(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+}) {
+  if (currentHeight <= 0) return false;
+  return status.scheduledBroadcasts.any(
+    (broadcast) =>
+        broadcast.status.toLowerCase() == 'scheduled' &&
+        broadcast.scheduledHeight > 0 &&
+        broadcast.scheduledHeight <= currentHeight,
+  );
+}
+
 bool migrationHasDueProofBatch(
   rust_sync.MigrationStatus status, {
   required int currentHeight,
@@ -353,7 +366,7 @@ String migrationHeightTimingLabel(
   required int currentHeight,
   DateTime? now,
 }) {
-  if (targetHeight <= currentHeight) return 'soon';
+  if (targetHeight <= currentHeight) return 'ready now';
 
   final localNow = (now ?? DateTime.now()).toLocal();
   final nextTime = localNow.add(
@@ -374,7 +387,7 @@ String migrationHeightRemainingDurationLabel(
   int targetHeight, {
   required int currentHeight,
 }) {
-  if (targetHeight <= currentHeight) return 'soon';
+  if (targetHeight <= currentHeight) return 'ready now';
   final remainingBlocks = targetHeight - currentHeight;
   final seconds = remainingBlocks * _estimatedSecondsPerBlock;
   final minutes = (seconds / Duration.secondsPerMinute).ceil();

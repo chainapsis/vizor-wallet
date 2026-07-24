@@ -45,6 +45,7 @@ internal data class IronwoodMigrationOutboxRunResult(
     val observedHeight: Long? = null,
     val delayMs: Long? = null,
     val proofReadyBatchId: String? = null,
+    val transportAccountUuid: String? = null,
 )
 
 internal enum class IronwoodMigrationNotificationDelivery {
@@ -172,13 +173,15 @@ internal class IronwoodMigrationOutboxRunner(
             )
         }
 
-        var needsUserAction = false
+        var needsUserActionAccountUuid: String? = null
         var proofReadyBatchId = pendingProofReadyBatchId
         var selectedBatchId: String? = null
+        var selectedAccountUuid: String? = null
         val submission = try {
             repository.update { snapshot ->
                 val now = clockMs()
-                needsUserAction = IronwoodOutboxState.expireAndMarkNoncanonical(
+                needsUserActionAccountUuid =
+                    IronwoodOutboxState.expireAndMarkNoncanonical(
                     snapshot,
                     endpoint,
                     remoteHeight,
@@ -198,6 +201,7 @@ internal class IronwoodMigrationOutboxRunner(
                 )
                 selected?.let { (batch, item) ->
                     selectedBatchId = batch.batchId
+                    selectedAccountUuid = batch.accountUuid
                     IronwoodOutboxState.validateReschedulingAfterAcceptance(
                         batch,
                         item.itemId,
@@ -216,13 +220,15 @@ internal class IronwoodMigrationOutboxRunner(
             return result(
                 IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                 proofReadyBatchId,
+                selectedAccountUuid,
             )
         }
         if (submission == null) {
-            if (needsUserAction) {
+            if (needsUserActionAccountUuid != null) {
                 return result(
                     IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                     proofReadyBatchId,
+                    needsUserActionAccountUuid,
                 )
             }
             return waiting(endpoint, remoteHeight, proofReadyBatchId)
@@ -232,6 +238,7 @@ internal class IronwoodMigrationOutboxRunner(
             return result(
                 IronwoodMigrationOutboxOutcome.CANCELLED,
                 proofReadyBatchId,
+                selectedAccountUuid,
             )
         }
 
@@ -243,11 +250,13 @@ internal class IronwoodMigrationOutboxRunner(
                 result(
                     IronwoodMigrationOutboxOutcome.CANCELLED,
                     proofReadyBatchId,
+                    selectedAccountUuid,
                 )
             } else {
                 result(
                     IronwoodMigrationOutboxOutcome.RETRY,
                     proofReadyBatchId,
+                    selectedAccountUuid,
                 )
             }
         } finally {
@@ -288,6 +297,7 @@ internal class IronwoodMigrationOutboxRunner(
                         observedHeight = remoteHeight,
                         delayMs = delay,
                         proofReadyBatchId = proofReadyBatchId,
+                        transportAccountUuid = batch.accountUuid,
                     )
                 } else {
                     IronwoodOutboxState.recordRejected(
@@ -302,6 +312,7 @@ internal class IronwoodMigrationOutboxRunner(
                     result(
                         IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                         proofReadyBatchId,
+                        batch.accountUuid,
                     )
                 }
             }
@@ -310,6 +321,7 @@ internal class IronwoodMigrationOutboxRunner(
             result(
                 IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                 proofReadyBatchId,
+                selectedAccountUuid,
             )
         }
     }
@@ -335,6 +347,9 @@ internal class IronwoodMigrationOutboxRunner(
             observedHeight = remoteHeight,
             delayMs = delay,
             proofReadyBatchId = proofReadyBatchId,
+            transportAccountUuid = next?.let {
+                IronwoodOutboxState.nextActionAccountUuid(snapshot, endpoint, it)
+            },
         )
     }
 
@@ -370,9 +385,11 @@ internal class IronwoodMigrationOutboxRunner(
     private fun result(
         outcome: IronwoodMigrationOutboxOutcome,
         proofReadyBatchId: String? = null,
+        transportAccountUuid: String? = null,
     ) = IronwoodMigrationOutboxRunResult(
         outcome = outcome,
         proofReadyBatchId = proofReadyBatchId,
+        transportAccountUuid = transportAccountUuid,
     )
 
     private companion object {
