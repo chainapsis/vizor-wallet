@@ -679,7 +679,7 @@ class _PreviewSendSidebar extends StatelessWidget {
                           bottom: 1,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: colors.sync.lightSuccess,
+                              color: colors.sync.lightSyncing,
                               borderRadius: const BorderRadius.horizontal(
                                 right: Radius.circular(AppRadii.full),
                               ),

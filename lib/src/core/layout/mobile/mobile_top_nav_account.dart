@@ -32,13 +32,9 @@ class MobileTopNavAccount extends ConsumerWidget {
     final status = SyncStatusLabel.from(sync);
 
     final isSyncing = status.kind == SyncStatusKind.syncing;
-    // Synced reads fully green: label `sync.text` (GreenPrimitives.p900) +
-    // vivid green bar `sync.lightSuccess`. Syncing reads muted: the label
-    // rests at the synced green @ 65% (`sync.textSyncing`) and the shimmer
-    // peaks at the bright `sync.lightSuccess`, so the sweep stays visible on a
-    // light background. The bar stays a neutral grey (`text.muted` = p500,
-    // identical in both modes) so it never muddies to olive, and its glow is
-    // tuned down (see `_SyncStatusMotion`) so syncing reads calm, not vibrant.
+    // Synced reads green: label `sync.text` + vivid green bar
+    // `sync.lightSuccess`. Syncing follows the Figma nav sync widget: neutral
+    // grey label and bar, with a white shimmer sweep.
     final (labelColor, indicatorColor, highlightColor) = switch (status.kind) {
       SyncStatusKind.synced => (
         colors.sync.text, // green label
@@ -46,9 +42,9 @@ class MobileTopNavAccount extends ConsumerWidget {
         colors.sync.text,
       ),
       SyncStatusKind.syncing => (
-        colors.sync.textSyncing, // muted green resting (synced green @ 65%)
-        colors.text.muted, // neutral grey bar (subtle glow)
-        colors.sync.lightSuccess, // bright shimmer peak
+        colors.sync.textSyncing, // neutral grey resting label
+        colors.sync.lightSyncing, // neutral grey bar
+        colors.sync.textSyncingHighlight, // white shimmer peak
       ),
       SyncStatusKind.failed => (
         colors.sync.textError,

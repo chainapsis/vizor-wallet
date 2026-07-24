@@ -587,7 +587,10 @@ void main() {
       textLeft - indicatorLeft,
       moreOrLessEquals(AppSpacing.sm + AppSpacing.xs, epsilon: 0.1),
     );
-    expect(_syncIndicatorColor(tester), AppThemeData.light.colors.text.muted);
+    expect(
+      _syncIndicatorColor(tester),
+      AppThemeData.light.colors.sync.lightSyncing,
+    );
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
@@ -613,7 +616,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(_syncIndicatorColor(tester), AppThemeData.light.colors.text.muted);
+    expect(
+      _syncIndicatorColor(tester),
+      AppThemeData.light.colors.sync.lightSyncing,
+    );
     _expectSyncIndicatorGlow(tester);
 
     await tester.pumpWidget(const SizedBox());

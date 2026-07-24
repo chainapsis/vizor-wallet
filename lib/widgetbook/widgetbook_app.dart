@@ -27,6 +27,7 @@ import 'screen_use_cases.dart';
 import 'send_review_status_use_cases.dart';
 import 'send_use_cases.dart';
 import 'swap_use_cases.dart';
+import 'sync_state_widget_use_cases.dart';
 import 'text_field_use_cases.dart';
 import 'token_use_cases.dart';
 import 'toast_use_cases.dart';
@@ -1382,6 +1383,19 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookUseCase(
                   name: 'Surface card and rows',
                   builder: buildMobileSurfaceCardUseCase,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Sync state widget',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Desktop',
+                  builder: buildSyncStateDesktopUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Mobile',
+                  builder: buildSyncStateMobileUseCase,
                 ),
               ],
             ),
