@@ -271,6 +271,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-keystone-sign-all',
+    description: 'Mobile Keystone migration signing all child transactions',
+    builder: buildMobileIronwoodMigrationKeystoneSignAllUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-broadcasting',
     description: 'Mobile migration batch broadcasting',
     builder: buildMobileIronwoodMigrationBroadcastingUseCase,

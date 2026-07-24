@@ -1032,6 +1032,14 @@ Widget buildMobileIronwoodMigrationNeedsInputUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationKeystoneSignAllUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationKeystoneSignAll,
+  );
+}
+
 Widget buildMobileIronwoodMigrationBroadcastingUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.migrationBroadcasting,

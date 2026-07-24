@@ -21,21 +21,25 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
       MobileIronwoodMigrationPreviewSurface.preparationActive =>
         const _MigrationPreparationPreview(
           state: _MigrationPreparationState.active,
+          progress: 5 / 9,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationPaused =>
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
+          progress: 5 / 9,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationPausedKeystone =>
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
+          progress: 5 / 9,
           isKeystone: true,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
         const _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
+          progress: 5 / 9,
         ),
       MobileIronwoodMigrationPreviewSurface.syncing =>
         const _MigrationProgressPreview(state: _MigrationProgressState.syncing),
@@ -55,8 +59,21 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
       MobileIronwoodMigrationPreviewSurface.migrationNeedsInput =>
         const _MigrationProgressPreview(
           state: _MigrationProgressState.needsInput,
+          currentBatchPartCount: _migrationPartsPerBatch,
           migratedAmountText: '777.888 ZEC',
           totalAmountText: '999.999 ZEC',
+        ),
+      MobileIronwoodMigrationPreviewSurface.migrationKeystoneSignAll =>
+        const _MigrationProgressPreview(
+          state: _MigrationProgressState.needsInput,
+          totalParts: 50,
+          currentBatchPartCount: 8,
+          highlightCurrentBatch: false,
+          migratedAmountText: '0 ZEC',
+          totalAmountText: '50 ZEC',
+          actionLabel: 'Sign migration transactions',
+          actionBatchLabel: 'All transactions',
+          actionBatchValue: '50 ZEC (100%)',
         ),
       MobileIronwoodMigrationPreviewSurface.migrationBroadcasting =>
         const _MigrationProgressPreview(
@@ -495,12 +512,14 @@ enum _MigrationPreparationState { active, paused, syncing }
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
+    this.progress = 0,
     this.isKeystone = false,
     this.onBack,
     this.onContinue,
   });
 
   final _MigrationPreparationState state;
+  final double progress;
   final bool isKeystone;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
@@ -533,7 +552,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
           : null,
       child: Column(
         children: [
-          _MigrationPreparationDial(state: state),
+          _MigrationPreparationDial(state: state, progress: progress),
           const SizedBox(height: AppSpacing.base),
           Opacity(
             opacity: paused ? 0.4 : 1,
@@ -546,9 +565,13 @@ class _MigrationPreparationPreview extends StatelessWidget {
 }
 
 class _MigrationPreparationDial extends StatelessWidget {
-  const _MigrationPreparationDial({required this.state});
+  const _MigrationPreparationDial({
+    required this.state,
+    required this.progress,
+  });
 
   final _MigrationPreparationState state;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -560,11 +583,14 @@ class _MigrationPreparationDial extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           CustomPaint(
+            key: const ValueKey('mobile_ironwood_preparation_progress_ring'),
             size: const Size.square(256),
             painter: _MigrationRingPainter(
               trackColor: context.colors.border.subtle,
-              activeColor: context.colors.border.subtle,
+              activeColor: const Color(0xFF00A460),
               segments: 8,
+              progress: progress,
+              segmentGap: 0.15,
             ),
           ),
           SizedBox(
@@ -681,6 +707,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.totalBatches,
     this.currentBatchPartCount,
     this.completedCurrentBatchParts,
+    this.highlightCurrentBatch = true,
     this.migratedAmountText,
     this.totalAmountText,
     this.availableAmountText,
@@ -703,6 +730,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int? totalBatches;
   final int? currentBatchPartCount;
   final int? completedCurrentBatchParts;
+  final bool highlightCurrentBatch;
   final String? migratedAmountText;
   final String? totalAmountText;
   final String? availableAmountText;
@@ -783,6 +811,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                   currentBatchPartCount: resolvedBatchPartCount,
                   completedCurrentBatchParts:
                       resolvedCompletedCurrentBatchParts,
+                  highlightCurrentBatch: highlightCurrentBatch,
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
                   totalAmountText: totalAmountText,
@@ -826,6 +855,7 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.totalBatches,
     required this.currentBatchPartCount,
     required this.completedCurrentBatchParts,
+    this.highlightCurrentBatch = true,
     this.dimension = 256,
     this.migratedAmountText,
     this.totalAmountText,
@@ -836,6 +866,7 @@ class _MigrationBatchDial extends StatelessWidget {
   final int totalBatches;
   final int currentBatchPartCount;
   final int completedCurrentBatchParts;
+  final bool highlightCurrentBatch;
   final double dimension;
   final String? migratedAmountText;
   final String? totalAmountText;
@@ -864,7 +895,7 @@ class _MigrationBatchDial extends StatelessWidget {
       )
         index,
     };
-    final highlightedSegments = needsInput
+    final highlightedSegments = needsInput && highlightCurrentBatch
         ? {
             for (
               var index = 0;
@@ -881,6 +912,7 @@ class _MigrationBatchDial extends StatelessWidget {
         children: [
           _AnimatedMigrationAttentionRing(
             dimension: dimension,
+            segments: currentBatchPartCount.clamp(1, _migrationPartsPerBatch),
             completedSegments: completedSegments,
             highlightedSegments: highlightedSegments,
           ),
@@ -1398,7 +1430,6 @@ class _MigrationNeedsInputCard extends StatelessWidget {
               label: batchLabel ?? 'Batch #1',
               value: batchValue ?? '40 ZEC (30%)',
               emphasized: true,
-              valueFollowsLabel: true,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -1409,7 +1440,6 @@ class _MigrationNeedsInputCard extends StatelessWidget {
               label: 'Batch #1',
               value: '40 ZEC (30%)',
               emphasized: true,
-              valueFollowsLabel: true,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -1420,7 +1450,10 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           constrainContent: true,
           height: 50,
           onPressed: onAction ?? () {},
-          child: Text(actionLabel ?? 'Sign batch #1'),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(actionLabel ?? 'Sign batch #1'),
+          ),
         ),
       ],
     );
@@ -1863,14 +1896,12 @@ class _MigrationValueRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.emphasized = false,
-    this.valueFollowsLabel = false,
   });
 
   final String icon;
   final String label;
   final String value;
   final bool emphasized;
-  final bool valueFollowsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1913,26 +1944,9 @@ class _MigrationValueRow extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textAlign: valueFollowsLabel ? TextAlign.start : TextAlign.end,
+            textAlign: TextAlign.end,
             style: style,
           );
-          if (valueFollowsLabel) {
-            return Row(
-              children: [
-                AppIcon(
-                  icon,
-                  size: 20,
-                  color: emphasized
-                      ? context.colors.text.accent
-                      : context.colors.text.primary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                labelText,
-                const SizedBox(width: AppSpacing.s),
-                Flexible(child: valueText),
-              ],
-            );
-          }
           return Row(
             children: [
               AppIcon(
@@ -1956,11 +1970,13 @@ class _MigrationValueRow extends StatelessWidget {
 class _AnimatedMigrationAttentionRing extends StatefulWidget {
   const _AnimatedMigrationAttentionRing({
     required this.dimension,
+    required this.segments,
     required this.completedSegments,
     required this.highlightedSegments,
   });
 
   final double dimension;
+  final int segments;
   final Set<int> completedSegments;
   final Set<int> highlightedSegments;
 
@@ -2029,7 +2045,7 @@ class _AnimatedMigrationAttentionRingState
         painter: _MigrationRingPainter(
           trackColor: context.colors.border.subtle,
           activeColor: const Color(0xFF00A460),
-          segments: _migrationPartsPerBatch,
+          segments: widget.segments,
           completedSegments: widget.completedSegments,
           highlightedSegments: widget.highlightedSegments,
           highlightColor: context.colors.text.accent,
@@ -2049,6 +2065,8 @@ class _MigrationRingPainter extends CustomPainter {
     this.highlightedSegments = const {},
     this.highlightColor,
     this.highlightOpacity = 1,
+    this.progress,
+    this.segmentGap,
   });
 
   final Color trackColor;
@@ -2058,27 +2076,46 @@ class _MigrationRingPainter extends CustomPainter {
   final Set<int> highlightedSegments;
   final Color? highlightColor;
   final double highlightOpacity;
+  final double? progress;
+  final double? segmentGap;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = math.min(size.width, size.height) / 2 - 7;
     final rect = Rect.fromCircle(center: center, radius: radius);
-    final gap = segments == 1 ? 0.08 : 0.10;
+    final gap = segmentGap ?? (segments == 1 ? 0.08 : 0.10);
     final segmentSweep = (math.pi * 2 / segments) - gap;
+    final clampedProgress = progress?.clamp(0.0, 1.0).toDouble();
     for (var index = 0; index < segments; index++) {
       final start = -math.pi / 2 + index * (math.pi * 2 / segments) + gap / 2;
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
-        ..strokeWidth = 12
-        ..color = completedSegments.contains(index)
-            ? activeColor
-            : highlightedSegments.contains(index)
-            ? (highlightColor ?? activeColor).withValues(
-                alpha: highlightOpacity,
-              )
-            : trackColor;
+        ..strokeWidth = 12;
+      if (clampedProgress != null) {
+        paint.color = trackColor;
+        canvas.drawArc(rect, start, segmentSweep, false, paint);
+        final segmentProgress = (clampedProgress * segments - index)
+            .clamp(0.0, 1.0)
+            .toDouble();
+        if (segmentProgress > 0) {
+          paint.color = activeColor;
+          canvas.drawArc(
+            rect,
+            start,
+            segmentSweep * segmentProgress,
+            false,
+            paint,
+          );
+        }
+        continue;
+      }
+      paint.color = completedSegments.contains(index)
+          ? activeColor
+          : highlightedSegments.contains(index)
+          ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
+          : trackColor;
       canvas.drawArc(rect, start, segmentSweep, false, paint);
     }
   }
@@ -2091,7 +2128,9 @@ class _MigrationRingPainter extends CustomPainter {
         completedSegments != oldDelegate.completedSegments ||
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
-        highlightOpacity != oldDelegate.highlightOpacity;
+        highlightOpacity != oldDelegate.highlightOpacity ||
+        progress != oldDelegate.progress ||
+        segmentGap != oldDelegate.segmentGap;
   }
 }
 

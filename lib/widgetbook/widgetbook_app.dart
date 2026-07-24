@@ -435,6 +435,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationNeedsInputUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Migration - Keystone sign all',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneSignAllUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration - Broadcasting',
                       builder: buildMobileIronwoodMigrationBroadcastingUseCase,
                     ),

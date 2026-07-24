@@ -32,6 +32,7 @@ enum MobileIronwoodMigrationPreviewSurface {
   migrationWaitingNotificationsOn,
   migrationWaitingNotificationsOff,
   migrationNeedsInput,
+  migrationKeystoneSignAll,
   migrationBroadcasting,
   migrationComplete,
   homeAttention,
