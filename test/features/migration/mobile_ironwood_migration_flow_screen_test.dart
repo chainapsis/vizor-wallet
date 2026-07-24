@@ -111,7 +111,7 @@ class _RecoveryScreenTestMigrationCoordinator
         'account-1':
             'Bad state: Ironwood migration credential is missing for the '
             'active run. Vizor will only continue transactions preserved in '
-            'the verified iOS outbox.',
+            'the verified native migration outbox.',
       },
     );
   }

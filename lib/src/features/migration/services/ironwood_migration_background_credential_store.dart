@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -209,19 +210,33 @@ class IronwoodMigrationBackgroundCredentialStore {
   IronwoodMigrationBackgroundCredentialStore({
     FlutterSecureStorage? storage,
     IronwoodMigrationSecureRandomBytes? randomBytes,
+    MethodChannel? channel,
+    bool? isAndroid,
   }) : _storage = storage ?? _defaultStorage(),
-       _randomBytes = randomBytes ?? _defaultRandomBytes;
+       _randomBytes = randomBytes ?? _defaultRandomBytes,
+       _channel =
+           channel ??
+           const MethodChannel('com.zcash.wallet/background_migration'),
+       _isAndroid = isAndroid ?? Platform.isAndroid;
 
   IronwoodMigrationBackgroundCredentialStore.testing({
     required FlutterSecureStorage storage,
     required IronwoodMigrationSecureRandomBytes randomBytes,
+    MethodChannel? channel,
+    bool isAndroid = false,
   }) : _storage = storage,
-       _randomBytes = randomBytes;
+       _randomBytes = randomBytes,
+       _channel =
+           channel ??
+           const MethodChannel('com.zcash.wallet/background_migration'),
+       _isAndroid = isAndroid;
 
   static final instance = IronwoodMigrationBackgroundCredentialStore();
 
   final FlutterSecureStorage _storage;
   final IronwoodMigrationSecureRandomBytes _randomBytes;
+  final MethodChannel _channel;
+  final bool _isAndroid;
 
   static String storageKey({
     required String network,
@@ -232,16 +247,38 @@ class IronwoodMigrationBackgroundCredentialStore {
     required String network,
     required String accountUuid,
   }) async {
-    final raw = await _storage.read(
-      key: storageKey(network: network, accountUuid: accountUuid),
-    );
+    final key = storageKey(network: network, accountUuid: accountUuid);
+    String? raw;
+    if (_isAndroid) {
+      raw = await _channel.invokeMethod<String>('readCredentialManifest', {
+        'network': network,
+        'accountUuid': accountUuid,
+      });
+      if (raw == null) {
+        // One-time upgrade path from the old flutter_secure_storage-backed
+        // Android manifest. Native workers must never depend on decoding that
+        // plugin's private encrypted SharedPreferences format.
+        final legacy = await _storage.read(key: key);
+        if (legacy != null) {
+          final manifest = IronwoodMigrationBackgroundCredentialManifest.decode(
+            legacy,
+          );
+          _validateStoredScope(
+            manifest,
+            network: network,
+            accountUuid: accountUuid,
+          );
+          await _stageNativeManifest(manifest);
+          await _storage.delete(key: key);
+          return manifest;
+        }
+      }
+    } else {
+      raw = await _storage.read(key: key);
+    }
     if (raw == null) return null;
     final manifest = IronwoodMigrationBackgroundCredentialManifest.decode(raw);
-    if (manifest.network != network || manifest.accountUuid != accountUuid) {
-      throw const FormatException(
-        'Ironwood migration manifest does not match its storage scope.',
-      );
-    }
+    _validateStoredScope(manifest, network: network, accountUuid: accountUuid);
     return manifest;
   }
 
@@ -312,22 +349,88 @@ class IronwoodMigrationBackgroundCredentialStore {
     return updated;
   }
 
-  Future<void> delete({required String network, required String accountUuid}) {
-    return _storage.delete(
+  Future<void> delete({
+    required String network,
+    required String accountUuid,
+  }) async {
+    if (_isAndroid) {
+      final deleted = await _channel.invokeMethod<bool>(
+        'deleteCredentialManifest',
+        {'network': network, 'accountUuid': accountUuid},
+      );
+      if (deleted != true) {
+        throw StateError(
+          'Failed to delete the native Ironwood migration manifest.',
+        );
+      }
+    }
+    await _deleteLegacy(network: network, accountUuid: accountUuid);
+  }
+
+  Future<void> _deleteLegacy({
+    required String network,
+    required String accountUuid,
+  }) async {
+    await _storage.delete(
       key: storageKey(network: network, accountUuid: accountUuid),
     );
   }
 
-  Future<void> deleteAll() => _storage.deleteAll();
+  Future<void> deleteAll() async {
+    if (_isAndroid) {
+      final deleted = await _channel.invokeMethod<bool>('revokeAll');
+      if (deleted != true) {
+        throw StateError('Failed to delete native Ironwood migration data.');
+      }
+    }
+    await _deleteAllLegacy();
+  }
 
-  Future<void> _write(IronwoodMigrationBackgroundCredentialManifest manifest) {
-    return _storage.write(
-      key: storageKey(
-        network: manifest.network,
-        accountUuid: manifest.accountUuid,
-      ),
-      value: manifest.encode(),
+  Future<void> _deleteAllLegacy() async {
+    await _storage.deleteAll();
+  }
+
+  Future<void> _write(
+    IronwoodMigrationBackgroundCredentialManifest manifest,
+  ) async {
+    final key = storageKey(
+      network: manifest.network,
+      accountUuid: manifest.accountUuid,
     );
+    if (_isAndroid) {
+      await _stageNativeManifest(manifest);
+      await _storage.delete(key: key);
+      return;
+    }
+    await _storage.write(key: key, value: manifest.encode());
+  }
+
+  Future<void> _stageNativeManifest(
+    IronwoodMigrationBackgroundCredentialManifest manifest,
+  ) async {
+    final staged = await _channel
+        .invokeMethod<bool>('stageCredentialManifest', {
+          'network': manifest.network,
+          'accountUuid': manifest.accountUuid,
+          'manifestJson': manifest.encode(),
+        });
+    if (staged != true) {
+      throw StateError(
+        'Failed to stage the native Ironwood migration manifest.',
+      );
+    }
+  }
+
+  static void _validateStoredScope(
+    IronwoodMigrationBackgroundCredentialManifest manifest, {
+    required String network,
+    required String accountUuid,
+  }) {
+    if (manifest.network != network || manifest.accountUuid != accountUuid) {
+      throw const FormatException(
+        'Ironwood migration manifest does not match its storage scope.',
+      );
+    }
   }
 
   static FlutterSecureStorage _defaultStorage() {
@@ -382,6 +485,7 @@ class IronwoodMigrationBackgroundLifecycle {
   final bool _isIOS;
   final bool _isAndroid;
   final List<Duration> _resumeRetryDelays;
+  final Queue<String> _androidQuiescenceLeaseIds = Queue<String>();
 
   bool get isQuiescenceManagedByCaller =>
       Zone.current[_callerManagedQuiescenceZoneKey] == true;
@@ -394,8 +498,13 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> quiesce() async {
-    if (!_isIOS) return;
-    final quiesced = await _channel.invokeMethod<bool>('quiesce');
+    if (!_isIOS && !_isAndroid) return;
+    final leaseId = _isAndroid ? _newAndroidQuiescenceLeaseId() : null;
+    if (leaseId != null) _androidQuiescenceLeaseIds.addLast(leaseId);
+    final quiesced = await _channel.invokeMethod<bool>(
+      'quiesce',
+      leaseId == null ? null : {'leaseId': leaseId},
+    );
     if (quiesced != true) {
       throw StateError(
         'Failed to pause Ironwood migration before wallet data changed.',
@@ -404,13 +513,26 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> resumeAfterMutation() async {
-    if (!_isIOS) return;
+    if (!_isIOS && !_isAndroid) return;
+    final leaseId = _isAndroid && _androidQuiescenceLeaseIds.isNotEmpty
+        ? _androidQuiescenceLeaseIds.first
+        : null;
     Object? lastError;
     for (final delay in _resumeRetryDelays) {
       if (delay != Duration.zero) await Future<void>.delayed(delay);
       try {
-        final resumed = await _channel.invokeMethod<bool>('resume');
-        if (resumed == true) return;
+        final resumed = await _channel.invokeMethod<bool>(
+          'resume',
+          leaseId == null ? null : {'leaseId': leaseId},
+        );
+        if (resumed == true) {
+          if (leaseId != null &&
+              _androidQuiescenceLeaseIds.isNotEmpty &&
+              _androidQuiescenceLeaseIds.first == leaseId) {
+            _androidQuiescenceLeaseIds.removeFirst();
+          }
+          return;
+        }
         lastError = StateError('Native migration resume returned false.');
       } catch (error) {
         lastError = error;
@@ -423,6 +545,15 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> resumeAfterFailedMutation() => resumeAfterMutation();
+
+  static String _newAndroidQuiescenceLeaseId() {
+    final bytes = Uint8List(16);
+    final random = Random.secure();
+    for (var index = 0; index < bytes.length; index++) {
+      bytes[index] = random.nextInt(256);
+    }
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
 
   Future<void> revokeAccount({
     required String network,
@@ -441,7 +572,19 @@ class IronwoodMigrationBackgroundLifecycle {
       return;
     }
     if (_isAndroid) {
-      await _credentialStore.delete(network: network, accountUuid: accountUuid);
+      final revoked = await _channel.invokeMethod<bool>('revokeAccount', {
+        'network': network,
+        'accountUuid': accountUuid,
+      });
+      if (revoked != true) {
+        throw StateError(
+          'Failed to revoke native Ironwood migration account data.',
+        );
+      }
+      await _credentialStore._deleteLegacy(
+        network: network,
+        accountUuid: accountUuid,
+      );
     }
   }
 
@@ -456,7 +599,11 @@ class IronwoodMigrationBackgroundLifecycle {
       return;
     }
     if (_isAndroid) {
-      await _credentialStore.deleteAll();
+      final revoked = await _channel.invokeMethod<bool>('revokeAll');
+      if (revoked != true) {
+        throw StateError('Failed to revoke native Ironwood migration data.');
+      }
+      await _credentialStore._deleteAllLegacy();
     }
   }
 }

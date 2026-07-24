@@ -434,13 +434,16 @@ rust/src/
 │                        # decode_accounts_ur. Keystone UX is QR-only.
 │                        # Re-exports KeystoneAccountInfo, UrDecodeResult from
 │                        # crate::wallet::keystone via `pub use`.
-├── ffi.rs              # C FFI for Swift Ironwood migration preparation:
-│                        # inspect, operation begin/end, preparation-only sync,
-│                        # advance, cancel, and shared sync-running inspection.
-│                        # Preparation owns a private cancel token and desired mode
-│                        # across sync → advance; only SYNC_RUNNING is shared while
-│                        # the actual sync engine is active.
-│                        # Located outside api/ to avoid FRB codegen picking it up.
+├── ffi.rs              # Thin C adapter for Swift Ironwood migration preparation.
+│                        # Validates native pointers, converts C values, preserves
+│                        # the iOS ABI, and delegates to migration_preparation.rs.
+├── migration_preparation.rs
+│                       # Platform-neutral mobile preparation execution core:
+│                       # operation begin/end/cancel, preparation-only sync,
+│                       # inspect/advance, progress state interpretation, and
+│                       # shared foreground-sync exclusion. Future Android JNI
+│                       # adapters must delegate here instead of duplicating it.
+│                       # Located outside api/ to avoid FRB codegen picking it up.
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
@@ -496,13 +499,14 @@ iOS Ironwood denomination preparation has a separate native path because its
 Swift BackgroundMigrationPreparationManager
     → begin preparation operation
     → wait until foreground sync releases SYNC_RUNNING
-    → preparation-only C FFI sync
-    → inspect / advance denomination preparation
+    → thin C FFI adapter
+    → platform-neutral Rust preparation sync / inspect / advance
     → end preparation operation
 ```
 
-- `MigrationPreparationOperation` owns a private cancel token and desired mode
-  for the whole native operation, including both sync and advance calls.
+- `rust/src/migration_preparation.rs` owns the operation's private cancel token
+  and desired mode for the whole native operation, including both sync and
+  advance calls. The same core is the required entry point for Android JNI.
 - Foreground `cancelFullSync()` cannot cancel migration preparation.
 - The two paths share only `SYNC_RUNNING` while the sync engine is actually
   active, preventing concurrent access to the wallet sync pipeline.
@@ -517,7 +521,8 @@ Swift BackgroundMigrationPreparationManager
   submitted by older builds; no handler is registered for it.
 
 Key files:
-- `rust/src/ffi.rs` — migration-preparation-only C FFI
+- `rust/src/migration_preparation.rs` — platform-neutral preparation core
+- `rust/src/ffi.rs` — migration-preparation-only iOS C adapter
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — native task owner
 - `lib/src/providers/wallet_mutation_guard.dart` — mutation ordering fence
