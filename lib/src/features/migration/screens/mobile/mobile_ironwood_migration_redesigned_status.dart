@@ -47,6 +47,14 @@ class _MobileMigrationRedesignedStatusState
   bool _surfaceRefreshInProgress = false;
   bool _surfaceRefreshRequested = false;
   bool _showSyncSurface = false;
+  bool _walletSyncActive = false;
+
+  // A sync transition invalidates the status shown by this surface. Only a
+  // coordinator refresh and route-status reload from the same epoch can make
+  // it current again.
+  bool _hasCompletedSurfaceRefresh = false;
+  int _statusFreshnessEpoch = 0;
+  int _refreshedStatusEpoch = -1;
   bool _notificationsAuthorized = false;
   IronwoodMigrationPreparationRuntimeState _preparationRuntimeState =
       IronwoodMigrationPreparationRuntimeState.idle;
@@ -107,10 +115,28 @@ class _MobileMigrationRedesignedStatusState
     _surfaceRefreshInProgress = true;
     _surfaceRefreshRequested = false;
     try {
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final refreshEpoch = _statusFreshnessEpoch;
+      final accountUuid = accountState.activeAccountUuid;
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .refreshNow();
       if (!mounted) return;
+      final refreshedCta = await ref.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+      if (!mounted) return;
+      if (!_walletSyncActive &&
+          refreshEpoch == _statusFreshnessEpoch &&
+          accountUuid != null &&
+          ref.read(accountProvider).value?.activeAccountUuid == accountUuid &&
+          refreshedCta.accountUuid == accountUuid) {
+        setState(() {
+          _hasCompletedSurfaceRefresh = true;
+          _refreshedStatusEpoch = refreshEpoch;
+        });
+      }
       try {
         await _refreshNotificationAuthorization();
       } catch (_) {
@@ -133,6 +159,12 @@ class _MobileMigrationRedesignedStatusState
   }
 
   void _handleSyncActivity(bool isSyncing) {
+    if (_walletSyncActive != isSyncing) {
+      setState(() {
+        _walletSyncActive = isSyncing;
+        _statusFreshnessEpoch++;
+      });
+    }
     if (!isSyncing) {
       _syncSurfaceRevealTimer?.cancel();
       _syncSurfaceRevealTimer = null;
@@ -173,6 +205,15 @@ class _MobileMigrationRedesignedStatusState
       _syncSurfaceMinimumElapsed = false;
     });
   }
+
+  bool get _awaitingFreshMigrationStatus =>
+      !_hasCompletedSurfaceRefresh ||
+      _refreshedStatusEpoch != _statusFreshnessEpoch;
+
+  bool get _shouldShowSyncSurface =>
+      _showSyncSurface ||
+      (!_walletSyncActive && _awaitingFreshMigrationStatus) ||
+      !_hasCompletedSurfaceRefresh;
 
   Future<void> _refreshNotificationAuthorization() async {
     final authorized = await ref
@@ -331,7 +372,7 @@ class _MobileMigrationRedesignedStatusState
         coordinator.childProofBatchPermits.contains(accountUuid);
     _recordVisibleAttention(accountUuid);
 
-    if (_showSyncSurface && !_showPreparationComplete) {
+    if (_shouldShowSyncSurface && !_showPreparationComplete) {
       if (widget.status.phase ==
           kIronwoodMigrationWaitingDenomConfirmationsPhase) {
         return _MigrationPreparationPreview(
