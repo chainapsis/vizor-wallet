@@ -1943,6 +1943,79 @@ void main() {
     expect(find.text('Syncing the migration progress.'), findsOneWidget);
   });
 
+  testWidgets(
+    'rotates the preparation orbit while keeping its center content fixed',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _app(
+          step: MobileIronwoodMigrationStep.migrating,
+          previewSurface:
+              MobileIronwoodMigrationPreviewSurface.preparationCompleteModal,
+          disableAnimations: false,
+        ),
+      );
+      await tester.pump();
+
+      final orbitFinder = find.byKey(
+        const ValueKey('mobile_ironwood_preparation_complete_orbit'),
+      );
+      final centerFinder = find.byKey(
+        const ValueKey('mobile_ironwood_preparation_complete_center'),
+      );
+      final initialTurns = tester
+          .widget<RotationTransition>(orbitFinder)
+          .turns
+          .value;
+      final initialCenter = tester.getCenter(centerFinder);
+
+      await tester.pump(const Duration(milliseconds: 7500));
+
+      final updatedTurns = tester
+          .widget<RotationTransition>(orbitFinder)
+          .turns
+          .value;
+      expect(updatedTurns, closeTo(initialTurns + 0.25, 0.01));
+      expect(tester.getCenter(centerFinder), initialCenter);
+    },
+  );
+
+  testWidgets('uses the matching continue icon for each preparation signer', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    Future<String> renderedLeadingIcon(
+      MobileIronwoodMigrationPreviewSurface surface,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          step: MobileIronwoodMigrationStep.migrating,
+          previewSurface: surface,
+        ),
+      );
+      await tester.pump();
+      final button = tester.widget<AppButton>(
+        find.byKey(
+          const ValueKey('mobile_ironwood_preparation_continue_button'),
+        ),
+      );
+      return (button.leading! as AppIcon).name;
+    }
+
+    expect(
+      await renderedLeadingIcon(
+        MobileIronwoodMigrationPreviewSurface.preparationPaused,
+      ),
+      AppIcons.play,
+    );
+    expect(
+      await renderedLeadingIcon(
+        MobileIronwoodMigrationPreviewSurface.preparationPausedKeystone,
+      ),
+      AppIcons.qr,
+    );
+  });
+
   testWidgets('renders the preparing migration state', (tester) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.preparing));
