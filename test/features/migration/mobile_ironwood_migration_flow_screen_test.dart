@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -2832,6 +2833,52 @@ void main() {
     expect(painter.highlightedSegments, {8, 9});
     expect(painter.visibleSegmentGap, 4);
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+  });
+
+  testWidgets('records a Keystone signing action while status is visible', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final status = _status(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      nextActionHeight: 3_000_000,
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: status,
+        hardware: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final context = tester.element(
+      find.byType(MobileIronwoodMigrationPrivateStatusScreen),
+    );
+    final container = ProviderScope.containerOf(context);
+    final attention = mobileIronwoodMigrationAttention(
+      status,
+      currentHeight: 3_000_000,
+      isHardware: true,
+    )!;
+    final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+      accountUuid: 'account-1',
+      runId: status.activeRunId!,
+      status: status,
+      attention: attention,
+    );
+
+    expect(
+      container.read(mobileIronwoodMigrationAttentionSessionProvider),
+      contains(fingerprint),
+    );
   });
 
   testWidgets('shows durable paused and recoverable failures as actionable', (

@@ -38,7 +38,7 @@ import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
-import '../../../migration/models/ironwood_migration_presentation.dart';
+import '../../../migration/models/mobile_ironwood_migration_attention_state.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -174,7 +174,6 @@ class _IronwoodMigrationAttentionHostState
   bool _wasBackgrounded = false;
   bool _resumeRefreshInProgress = false;
   late bool _initialEvaluationPending;
-  String? _shownFingerprint;
 
   @override
   void initState() {
@@ -229,7 +228,7 @@ class _IronwoodMigrationAttentionHostState
     final runId = cta.status?.activeRunId;
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
-    final attention = _mobileIronwoodMigrationAttention(
+    final attention = mobileIronwoodMigrationAttention(
       cta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
       isHardware: ref
@@ -237,11 +236,20 @@ class _IronwoodMigrationAttentionHostState
           .isHardwareAccount(accountUuid),
     );
     if (attention == null) return;
-    final fingerprint =
-        '$accountUuid:$runId:${cta.status?.phase}:'
-        '${attention.kind.name}:${attention.count}';
-    if (_shownFingerprint == fingerprint) return;
-    _shownFingerprint = fingerprint;
+    final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+      accountUuid: accountUuid,
+      runId: runId,
+      status: cta.status!,
+      attention: attention,
+    );
+    if (ref
+        .read(mobileIronwoodMigrationAttentionSessionProvider)
+        .contains(fingerprint)) {
+      return;
+    }
+    ref
+        .read(mobileIronwoodMigrationAttentionSessionProvider.notifier)
+        .markSeen(fingerprint);
     unawaited(_show(attention));
   }
 
@@ -271,11 +279,10 @@ class _IronwoodMigrationAttentionHostState
       _resumeRefreshInProgress = false;
     }
     if (!mounted || !refreshed) return;
-    _shownFingerprint = null;
     _evaluate();
   }
 
-  Future<void> _show(_MobileIronwoodMigrationAttention attention) async {
+  Future<void> _show(MobileIronwoodMigrationAttention attention) async {
     _showing = true;
     try {
       final action = await showAppMobileSheet<_IronwoodAttentionAction>(
@@ -950,7 +957,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         .watch(payIntroductionBadgeClickedProvider)
         .value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
-    final migrationAttention = _mobileIronwoodMigrationAttention(
+    final migrationAttention = mobileIronwoodMigrationAttention(
       widget.ironwoodMigrationCta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
       isHardware:
@@ -1455,72 +1462,6 @@ String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
             .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
   if (remaining == BigInt.zero) return null;
   return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
-}
-
-class _MobileIronwoodMigrationAttention {
-  const _MobileIronwoodMigrationAttention({
-    required this.kind,
-    required this.count,
-  });
-
-  final MobileIronwoodMigrationAttentionKind kind;
-  final int count;
-}
-
-_MobileIronwoodMigrationAttention? _mobileIronwoodMigrationAttention(
-  rust_sync.MigrationStatus? status, {
-  required int currentHeight,
-  required bool isHardware,
-}) {
-  if (status == null) return null;
-  final needsInputCount = status.parts
-      .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
-      .length;
-  if (needsInputCount > 0) {
-    return _MobileIronwoodMigrationAttention(
-      kind: isHardware
-          ? MobileIronwoodMigrationAttentionKind.signature
-          : MobileIronwoodMigrationAttentionKind.continueMigration,
-      count: needsInputCount,
-    );
-  }
-  if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-    final nextActionHeight = status.nextActionHeight;
-    if (nextActionHeight == null ||
-        currentHeight <= 0 ||
-        nextActionHeight <= currentHeight) {
-      if (isHardware && status.signedChildPcztCount <= 0) {
-        return _MobileIronwoodMigrationAttention(
-          kind: MobileIronwoodMigrationAttentionKind.signature,
-          count: math.max(1, status.totalCount),
-        );
-      }
-      return const _MobileIronwoodMigrationAttention(
-        kind: MobileIronwoodMigrationAttentionKind.proof,
-        count: 1,
-      );
-    }
-  }
-  if (migrationHasDueProofBatch(status, currentHeight: currentHeight)) {
-    return const _MobileIronwoodMigrationAttention(
-      kind: MobileIronwoodMigrationAttentionKind.proof,
-      count: 1,
-    );
-  }
-  if (currentHeight <= 0) return null;
-  final hasLateBroadcast = status.scheduledBroadcasts.any(
-    (item) =>
-        item.status.toLowerCase() == 'scheduled' &&
-        item.scheduledHeight > 0 &&
-        currentHeight >=
-            item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
-  );
-  return hasLateBroadcast
-      ? const _MobileIronwoodMigrationAttention(
-          kind: MobileIronwoodMigrationAttentionKind.lateBroadcast,
-          count: 1,
-        )
-      : null;
 }
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {

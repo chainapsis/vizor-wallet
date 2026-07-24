@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
@@ -140,6 +141,16 @@ class _ResumeGateMigrationCoordinator extends IronwoodMigrationCoordinator {
   }
 }
 
+class _SeededMigrationAttentionSession
+    extends MobileIronwoodMigrationAttentionSession {
+  _SeededMigrationAttentionSession(this.fingerprints);
+
+  final Set<String> fingerprints;
+
+  @override
+  Set<String> build() => fingerprints;
+}
+
 class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
   @override
   SyncKeepAwakeSettings build() =>
@@ -202,6 +213,7 @@ Widget _app(
       const IronwoodMigrationCompletionState.hidden(),
   _FakeIronwoodCompletionStore? completionStore,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
+  Set<String> seenMigrationAttentionFingerprints = const {},
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -273,6 +285,11 @@ Widget _app(
       ),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
+      mobileIronwoodMigrationAttentionSessionProvider.overrideWith(
+        () => _SeededMigrationAttentionSession(
+          seenMigrationAttentionFingerprints,
+        ),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -1147,7 +1164,7 @@ void main() {
   });
 
   testWidgets(
-    'waits for resume reconciliation before showing attention again',
+    'does not repeat the same migration attention after resume reconciliation',
     (tester) async {
       final coordinator = _ResumeGateMigrationCoordinator();
       await tester.pumpWidget(
@@ -1186,7 +1203,46 @@ void main() {
       coordinator.refresh.complete();
       await tester.pumpAndSettle();
 
-      expect(find.text('Go to migration page'), findsOneWidget);
+      expect(find.text('Go to migration page'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'does not present an action already seen on the migration status screen',
+    (tester) async {
+      final status = _lateMigrationStatus();
+      const currentHeight = 3000096;
+      final attention = mobileIronwoodMigrationAttention(
+        status,
+        currentHeight: currentHeight,
+        isHardware: false,
+      )!;
+      final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+        accountUuid: 'account-1',
+        runId: status.activeRunId!,
+        status: status,
+        attention: attention,
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: currentHeight,
+            chainTipHeight: currentHeight,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          seenMigrationAttentionFingerprints: {fingerprint},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go to migration page'), findsNothing);
+      expect(find.text('Migration needs attention'), findsOneWidget);
     },
   );
 

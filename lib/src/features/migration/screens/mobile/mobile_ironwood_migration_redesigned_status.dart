@@ -52,6 +52,7 @@ class _MobileMigrationRedesignedStatusState
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
   bool _actionRunning = false;
+  String? _recordedAttentionFingerprint;
 
   @override
   void initState() {
@@ -328,6 +329,7 @@ class _MobileMigrationRedesignedStatusState
     final hasChildProofBatchPermit =
         accountUuid != null &&
         coordinator.childProofBatchPermits.contains(accountUuid);
+    _recordVisibleAttention(accountUuid);
 
     if (_showSyncSurface && !_showPreparationComplete) {
       if (widget.status.phase ==
@@ -746,6 +748,31 @@ class _MobileMigrationRedesignedStatusState
       return math.min(sync.scannedHeight, sync.chainTipHeight);
     }
     return math.max(sync.scannedHeight, sync.chainTipHeight);
+  }
+
+  void _recordVisibleAttention(String? accountUuid) {
+    final runId = widget.status.activeRunId;
+    if (accountUuid == null || runId == null) return;
+    final attention = mobileIronwoodMigrationAttention(
+      widget.status,
+      currentHeight: _currentHeight(),
+      isHardware: widget.isHardware,
+    );
+    if (attention == null) return;
+    final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+      accountUuid: accountUuid,
+      runId: runId,
+      status: widget.status,
+      attention: attention,
+    );
+    if (_recordedAttentionFingerprint == fingerprint) return;
+    _recordedAttentionFingerprint = fingerprint;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(mobileIronwoodMigrationAttentionSessionProvider.notifier)
+          .markSeen(fingerprint);
+    });
   }
 
   int _completedParts(rust_sync.MigrationStatus status) {

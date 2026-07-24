@@ -6,13 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-
-enum MobileIronwoodMigrationAttentionKind {
-  signature,
-  continueMigration,
-  proof,
-  lateBroadcast,
-}
+import '../../models/mobile_ironwood_migration_attention_state.dart';
 
 class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
   const MobileIronwoodMigrationAttentionSheetBody({
