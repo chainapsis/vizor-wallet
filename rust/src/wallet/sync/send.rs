@@ -610,7 +610,7 @@ pub fn propose_send(
         let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
         let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
         let spend_policy = ordinary_send_spend_policy(
-            super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+            super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
         );
         let pass1_proposal = propose_send_with_reserved_notes(
             &db,
@@ -748,7 +748,7 @@ pub fn estimate_fee(
     let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
     let spend_policy = ordinary_send_spend_policy(
-        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
     );
     let pass1_proposal = propose_send_with_reserved_notes(
         &db,
@@ -801,7 +801,7 @@ pub(crate) fn estimate_send_max(
     // version: the version (and its fee shape) is decided when the PCZT is
     // created, so the quote stays aligned with what `propose_send` can build.
     let spend_pools = ordinary_send_spend_pools(
-        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
     );
     let proposal = build_send_max_proposal(
         &mut db,
@@ -1253,9 +1253,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
-    let draft_run = if let Some(run) =
-        super::migration::active_migration_run(db_path, account_uuid, network)?
+    let active_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if active_run.is_none()
+        && super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?
     {
+        return Err("Ironwood migration recovery is still pending".to_string());
+    }
+    let draft_run = if let Some(run) = active_run {
         if run.phase == super::migration::PHASE_AWAITING_PREPARATION
             || run.phase == super::migration::PHASE_AWAITING_DENOMINATION_SIGNATURE
         {
@@ -1495,7 +1499,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     approved_plan: OrchardMigrationImmediatePlan,
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+    if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
         return Err("An Ironwood migration is already in progress for this account".to_string());
     }
 
@@ -2509,8 +2513,8 @@ fn propose_send_with_reserved_notes(
         .map_err(|e| format!("Propose failed: {e}"))
 }
 
-fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedPool> {
-    if migration_active {
+fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {
+    if orchard_reserved_for_migration {
         vec![ShieldedPool::Ironwood]
     } else {
         vec![
@@ -2521,8 +2525,8 @@ fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedPool> {
     }
 }
 
-fn ordinary_send_spend_policy(migration_active: bool) -> SpendPolicy {
-    SpendPolicy::shielded_pools(ordinary_send_spend_pools(migration_active))
+fn ordinary_send_spend_policy(orchard_reserved_for_migration: bool) -> SpendPolicy {
+    SpendPolicy::shielded_pools(ordinary_send_spend_pools(orchard_reserved_for_migration))
 }
 
 pub(super) fn proposal_input_refs(

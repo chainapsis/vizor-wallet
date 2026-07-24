@@ -2196,10 +2196,11 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&db, current_tip_height)?;
-    // Reconcile only after the scan queue is fully drained so denomination
-    // outputs discovered in this run are visible through the generic wallet
-    // API. This is intentionally repeated after every completed sync because
-    // a later block may mine an output that was unresolved in an earlier run.
+    // Reconcile migration chain state only after the scan queue is fully
+    // drained, then update generic wallet locks for denomination outputs that
+    // became visible in this run. This is intentionally repeated after every
+    // completed sync because a later block may mine an output that was
+    // unresolved in an earlier run.
     crate::wallet::sync::reconcile_wallet_locks_after_sync(db_data_path, network)
         .map_err(SyncError::db)?;
     log::info!(

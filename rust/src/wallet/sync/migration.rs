@@ -359,23 +359,9 @@ pub(crate) fn migration_status(
     ironwood_pending: u64,
 ) -> Result<MigrationStatus, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
 
-    if let Some(original_run) = active_run(&conn, account_uuid, network)? {
-        drop(conn);
-        reconcile_denomination_stage_chain_state(db_path, &original_run.run_id)?;
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        ensure_schema(&conn)?;
-        let run = active_run(&conn, account_uuid, network)?.unwrap_or(original_run);
-        reconcile_denomination_confirmations(&conn, &run)?;
-        reconcile_run_confirmations(&conn, &run.run_id)?;
-        let run = active_run(&conn, account_uuid, network)?.unwrap_or(run);
-        let run_id = run.run_id.clone();
-        let status = status_for_run(&conn, run)?;
-        drop(conn);
-        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
-        return Ok(status);
+    if let Some(run) = active_run(&conn, account_uuid, network)? {
+        return status_for_run(&conn, run);
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
@@ -606,13 +592,39 @@ pub(crate) fn active_migration_run(
     network: WalletNetwork,
 ) -> Result<Option<ActiveRun>, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
-    // This predicate is on ordinary send/fee-estimate hot paths. Generic
-    // wallet-lock reconciliation belongs at migration creation, status
-    // advancement, and terminal transitions; doing it here turned every
-    // predicate read into an O(number of migration notes) write pass.
+    // This predicate is on ordinary send/fee-estimate hot paths. Recovery and
+    // wallet-lock reconciliation run after sync, outside the wallet write
+    // mutex, so callers can safely use this while holding that mutex.
     active_run(&conn, account_uuid, network)
+}
+
+/// Returns whether Orchard inputs remain reserved by either an active
+/// migration or a false-terminal run awaiting explicit post-sync recovery.
+///
+/// This is a read-only, fail-closed gate for any operation that could select
+/// those inputs before recovery has restored their generic wallet locks.
+pub(crate) fn migration_reserves_orchard_inputs(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration reservation snapshot: {e}"))?;
+    let reserved = migration_reserves_orchard_inputs_in_snapshot(&tx, account_uuid, network)?;
+    tx.commit()
+        .map_err(|e| format!("Close migration reservation snapshot: {e}"))?;
+    Ok(reserved)
+}
+
+fn migration_reserves_orchard_inputs_in_snapshot(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<bool, String> {
+    Ok(active_run(conn, account_uuid, network)?.is_some()
+        || latest_idempotent_broadcast_failure(conn, account_uuid, network)?.is_some())
 }
 
 fn migration_phase_releases_wallet_locks(phase: &str) -> bool {
@@ -775,10 +787,80 @@ fn reconcile_wallet_locks_for_run_inner(
     Err("Migration phase changed repeatedly during wallet-lock reconciliation".to_string())
 }
 
+/// Applies migration recovery that depends on freshly scanned chain state,
+/// then reconciles the corresponding generic wallet locks.
+///
+/// This explicit post-sync entry point stays outside the wallet write mutex.
+/// Status projection and ordinary-send predicates must not perform any of
+/// these mutations.
 pub(crate) fn reconcile_wallet_locks_after_sync(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut account_stmt = conn
+        .prepare_cached(&format!(
+            "SELECT DISTINCT account_uuid
+             FROM {RUNS_TABLE}
+             WHERE network = ?1
+             ORDER BY account_uuid"
+        ))
+        .map_err(|e| format!("Prepare post-sync migration account query: {e}"))?;
+    let account_uuids = account_stmt
+        .query_map(params![network_name(network)], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|e| format!("Query post-sync migration accounts: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read post-sync migration accounts: {e}"))?;
+    drop(account_stmt);
+
+    for account_uuid in &account_uuids {
+        adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
+        recover_latest_idempotent_broadcast_failure(&conn, account_uuid, network)?;
+    }
+    let active_runs = account_uuids
+        .iter()
+        .map(|account_uuid| active_run(&conn, account_uuid, network))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    drop(conn);
+
+    for run in active_runs {
+        reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let run = conn
+            .query_row(
+                &format!(
+                    "SELECT run_id, phase, target_values_json, last_error
+                     FROM {RUNS_TABLE}
+                     WHERE run_id = ?1"
+                ),
+                params![run.run_id],
+                |row| {
+                    let target_values_json: String = row.get(2)?;
+                    Ok(ActiveRun {
+                        run_id: row.get(0)?,
+                        phase: row.get(1)?,
+                        target_values_zatoshi: serde_json::from_str(&target_values_json)
+                            .unwrap_or_default(),
+                        last_error: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read post-sync migration run: {e}"))?;
+        if let Some(run) = run {
+            reconcile_denomination_confirmations(&conn, &run)?;
+            reconcile_run_confirmations(&conn, &run.run_id)?;
+            backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
+        }
+    }
+
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -961,7 +1043,10 @@ pub(crate) fn create_or_resume_private_migration_draft(
 ) -> Result<String, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    if let Some(run) = active_run(&conn, account_uuid, network)? {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin private migration draft creation: {e}"))?;
+    if let Some(run) = active_run(&tx, account_uuid, network)? {
         if is_private_migration_draft_phase(&run.phase) {
             if run.target_values_zatoshi != target_values_zatoshi {
                 return Err(
@@ -971,6 +1056,9 @@ pub(crate) fn create_or_resume_private_migration_draft(
             return Ok(run.run_id);
         }
         return Err(format!("Migration already active: {}", run.run_id));
+    }
+    if latest_idempotent_broadcast_failure(&tx, account_uuid, network)?.is_some() {
+        return Err("Migration recovery must complete before creating another run".to_string());
     }
 
     let timing_policy = configured_timing_policy(network);
@@ -986,7 +1074,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
         .map_err(|e| format!("Encode Keystone migration targets: {e}"))?;
     let schedule_json = serde_json::to_string(approved_schedule)
         .map_err(|e| format!("Encode Keystone migration schedule: {e}"))?;
-    conn.execute(
+    tx.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
@@ -1008,6 +1096,8 @@ pub(crate) fn create_or_resume_private_migration_draft(
         ],
     )
     .map_err(|e| format!("Create private migration draft: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit private migration draft creation: {e}"))?;
     Ok(run_id)
 }
 
@@ -3812,6 +3902,52 @@ fn migration_timing_projection_or_default(
     }
 }
 
+fn backfill_ready_migration_proof_retry_height(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<(), String> {
+    let (phase, network, proof_retry_height) = conn
+        .query_row(
+            &format!(
+                "SELECT phase, network, proof_retry_height
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("Read ready migration proof retry state: {e}"))?;
+    if phase != PHASE_READY_TO_MIGRATE
+        || proof_retry_height.is_some()
+        || unpromoted_signed_child_pczt_count_with_conn(conn, run_id)? == 0
+    {
+        return Ok(());
+    }
+
+    let network = WalletNetwork::from_str(&network)
+        .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
+    let timing_policy = timing_policy_for_run_with_conn(conn, run_id, network)?;
+    let ready_height =
+        prepared_notes_proof_ready_height_with_conn(conn, run_id, network, timing_policy)?
+            .ok_or("Ready migration notes are missing their canonical mined height")?;
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET proof_retry_height = ?1, updated_at_ms = ?2
+             WHERE run_id = ?3 AND proof_retry_height IS NULL"
+        ),
+        params![ready_height, now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Backfill ready migration proof retry height: {e}"))?;
+    Ok(())
+}
+
 fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
     let network = conn
         .query_row(
@@ -3850,33 +3986,6 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         && !prepared_note_spend_metadata_available_for_run(conn, &run.run_id)?
     {
         phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
-    }
-    if phase == PHASE_READY_TO_MIGRATE && signed_child_pczt_count > 0 {
-        let proof_retry_height = conn
-            .query_row(
-                &format!("SELECT proof_retry_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
-                params![run.run_id],
-                |row| row.get::<_, Option<u32>>(0),
-            )
-            .map_err(|e| format!("Read ready migration proof retry height: {e}"))?;
-        if proof_retry_height.is_none() {
-            let ready_height = prepared_notes_proof_ready_height_with_conn(
-                conn,
-                &run.run_id,
-                network,
-                timing_policy,
-            )?
-            .ok_or("Ready migration notes are missing their canonical mined height")?;
-            conn.execute(
-                &format!(
-                    "UPDATE {RUNS_TABLE}
-                     SET proof_retry_height = ?1, updated_at_ms = ?2
-                     WHERE run_id = ?3 AND proof_retry_height IS NULL"
-                ),
-                params![ready_height, now_ms()?, run.run_id],
-            )
-            .map_err(|e| format!("Backfill ready migration proof retry height: {e}"))?;
-        }
     }
     let denomination_confirmation_target = denomination_confirmations_required();
     // A private-migration draft is persisted before Keystone signs its
@@ -4277,8 +4386,6 @@ fn active_run(
         return Ok(None);
     }
 
-    recover_latest_idempotent_broadcast_failure(conn, account_uuid, network)?;
-
     conn.query_row(
         &format!(
             "SELECT run_id, phase, target_values_json, last_error
@@ -4312,43 +4419,11 @@ fn recover_latest_idempotent_broadcast_failure(
     account_uuid: &str,
     network: WalletNetwork,
 ) -> Result<(), String> {
-    if !table_exists(conn, PENDING_TXS_TABLE)? || !table_exists(conn, PREPARED_NOTES_TABLE)? {
-        return Ok(());
-    }
-
-    let latest = conn
-        .query_row(
-            &format!(
-                "SELECT run_id, phase, last_error
-                 FROM {RUNS_TABLE}
-                 WHERE account_uuid = ?1 AND network = ?2
-                 ORDER BY created_at_ms DESC
-                 LIMIT 1"
-            ),
-            params![account_uuid, network_name(network)],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(|e| format!("Read latest migration run for broadcast recovery: {e}"))?;
-    let Some((run_id, phase, Some(last_error))) = latest else {
+    let Some((run_id, last_error)) =
+        latest_idempotent_broadcast_failure(conn, account_uuid, network)?
+    else {
         return Ok(());
     };
-    if phase != PHASE_FAILED_TERMINAL
-        || !super::broadcast::send_rejection_is_already_accepted(&last_error)
-    {
-        return Ok(());
-    }
-
-    let scheduled_count = count_pending_with_status(conn, &run_id, "scheduled")?;
-    if scheduled_count == 0 {
-        return Ok(());
-    }
 
     let now = now_ms()?;
     let tx = conn
@@ -4386,16 +4461,55 @@ fn recover_latest_idempotent_broadcast_failure(
     .map_err(|e| format!("Restore migration note locks after duplicate broadcast: {e}"))?;
     tx.commit()
         .map_err(|e| format!("Commit idempotent migration broadcast recovery: {e}"))?;
-    // A terminal rebuild releases generic locks. If an "already accepted"
-    // response proves that terminal state was a false negative, reacquire the
-    // run's locks exactly once as part of the recovery transition.
-    if let Some(db_path) = conn.path().filter(|path| !path.is_empty()) {
-        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
-    }
     log::info!(
         "migration: restored run {run_id} after lightwalletd reported an already accepted transaction"
     );
     Ok(())
+}
+
+fn latest_idempotent_broadcast_failure(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<Option<(String, String)>, String> {
+    if !table_exists(conn, PENDING_TXS_TABLE)? || !table_exists(conn, PREPARED_NOTES_TABLE)? {
+        return Ok(None);
+    }
+
+    let latest = conn
+        .query_row(
+            &format!(
+                "SELECT run_id, phase, last_error
+                 FROM {RUNS_TABLE}
+                 WHERE account_uuid = ?1 AND network = ?2
+                 ORDER BY created_at_ms DESC
+                 LIMIT 1"
+            ),
+            params![account_uuid, network_name(network)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read latest migration run for broadcast recovery: {e}"))?;
+    let Some((run_id, phase, Some(last_error))) = latest else {
+        return Ok(None);
+    };
+    if phase != PHASE_FAILED_TERMINAL
+        || !super::broadcast::send_rejection_is_already_accepted(&last_error)
+    {
+        return Ok(None);
+    }
+
+    let scheduled_count = count_pending_with_status(conn, &run_id, "scheduled")?;
+    if scheduled_count == 0 {
+        return Ok(None);
+    }
+    Ok(Some((run_id, last_error)))
 }
 
 fn latest_completed_run(
