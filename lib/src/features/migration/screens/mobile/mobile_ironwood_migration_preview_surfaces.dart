@@ -968,6 +968,7 @@ enum _MigrationProgressState {
   waitingNotificationsOn,
   waitingNotificationsOff,
   needsInput,
+  readyToSubmit,
   broadcasting,
   confirming,
 }
@@ -1063,6 +1064,7 @@ class _MigrationProgressPreview extends StatelessWidget {
       backgroundDecoration: switch (state) {
         _MigrationProgressState.waitingNotificationsOn ||
         _MigrationProgressState.waitingNotificationsOff ||
+        _MigrationProgressState.readyToSubmit ||
         _MigrationProgressState.broadcasting ||
         _MigrationProgressState.confirming => const BoxDecoration(
           gradient: LinearGradient(
@@ -1517,7 +1519,9 @@ class _MigrationProgressSummary extends StatelessWidget {
               _MigrationProgressState.confirming => 'Waiting for confirmations',
               _MigrationProgressState.needsInput =>
                 'Waiting for your confirmation',
-              _ => 'Waiting for signing window',
+              _MigrationProgressState.readyToSubmit =>
+                'Scheduled transaction ready',
+              _ => 'Waiting for next migration step',
             },
       ),
     );
@@ -1562,19 +1566,26 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.waitingNotificationsOn => (
         AppIcons.notificationBell,
         '~2 hrs 15 mins',
-        'Signing window expected in this time.\n'
-            'We will notify you when it’s ready.',
+        'Next migration step expected in this time.\n'
+            'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.waitingNotificationsOff => (
         AppIcons.warningCircle,
-        'Waiting for signing window',
+        'Waiting for next migration step',
         'Notifications are disabled. Open Vizor after block 123456 '
             '(~1 hr 30 mins) and approve the next migration batch.',
+      ),
+      _MigrationProgressState.readyToSubmit => (
+        AppIcons.migrationTimer,
+        'Ready now',
+        'The scheduled transaction is ready for automatic submission. '
+            'Keep Vizor open.',
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         'All is well. Broadcasting notes…',
-        '~2 hrs 15 mins.\nWe will notify you when it’s ready.',
+        '~2 hrs 15 mins.\n'
+            'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
@@ -1635,9 +1646,9 @@ class _MigrationProgressStatus extends StatelessWidget {
             )
           else if (broadcasting)
             Text(
-              'Signing window expected in\n'
+              'Next migration step expected in\n'
               '${_migrationTimingFromBody(bodyOverride) ?? '~2 hrs 15 mins'}.\n'
-              'We will notify you when it’s ready.',
+              'Notifications are on. You can leave Vizor and check back later.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,

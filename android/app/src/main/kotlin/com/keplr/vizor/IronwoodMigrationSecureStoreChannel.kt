@@ -249,6 +249,30 @@ internal class IronwoodMigrationSecureStoreChannel(
                     recovered
                 }
             }
+            "hasOutboxBatch" -> {
+                {
+                    val arguments = arguments(call)
+                    val batchId = string(arguments, "batchId")
+                    val expectedTxids = stringList(
+                        arguments["expectedTxids"],
+                        "expectedTxids",
+                    ).map(String::lowercase).toSet()
+                    val requiredTxids = stringList(
+                        arguments["requiredTxids"],
+                        "requiredTxids",
+                    ).map(String::lowercase).toSet()
+                    val snapshot = outboxRepository.read()
+                    IronwoodOutboxState.hasBatch(
+                        snapshot = snapshot,
+                        batchId = batchId,
+                        network = network(arguments),
+                        accountUuid = string(arguments, "accountUuid"),
+                        runId = string(arguments, "runId"),
+                        expectedTxids = expectedTxids,
+                        requiredTxids = requiredTxids,
+                    )
+                }
+            }
             "listOutboxReceipts" -> {
                 {
                     outboxRepository.read().receipts.map(::receiptMap)
@@ -708,6 +732,7 @@ internal class IronwoodMigrationSecureStoreChannel(
             "nextHeight" to nextHeight,
             "observedHeight" to observedHeight,
             "delaySeconds" to delayMs?.div(1_000.0),
+            "accountUuid" to transportAccountUuid,
         )
 
     private fun arguments(call: MethodCall): Map<String, Any?> =
