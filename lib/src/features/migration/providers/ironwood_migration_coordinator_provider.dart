@@ -372,9 +372,11 @@ class IronwoodMigrationCoordinator
       state.statuses,
     );
     final nextErrors = Map<String, String>.from(state.errors);
+    var activeBalanceMayHaveChanged = false;
 
     for (final account in accountState.accounts) {
       try {
+        final previousStatus = state.statuses[account.uuid];
         var status = await service.status(
           network: endpoint.networkName,
           accountUuid: account.uuid,
@@ -399,6 +401,10 @@ class IronwoodMigrationCoordinator
           if (!ref.mounted) return;
           nextStatuses[account.uuid] = status;
         }
+        if (account.uuid == accountState.activeAccountUuid &&
+            _migrationBalanceMayHaveChanged(previousStatus, status)) {
+          activeBalanceMayHaveChanged = true;
+        }
       } catch (error) {
         nextErrors[account.uuid] = error.toString();
         log(
@@ -408,8 +414,57 @@ class IronwoodMigrationCoordinator
     }
 
     if (!ref.mounted) return;
+    if (activeBalanceMayHaveChanged) {
+      try {
+        // Migration status reads reconcile the database, but the home card
+        // renders SyncState. Refresh that active-account snapshot when a
+        // broadcast or confirmation transition can change its balances.
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (error) {
+        // Status polling must remain available if a best-effort home balance
+        // refresh races with a normal sync.
+        log('Ironwood migration balance refresh failed: $error');
+      }
+      if (!ref.mounted) return;
+    }
     state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
     _invalidateMigrationProviders(accountState.activeAccountUuid);
+  }
+
+  bool _migrationBalanceMayHaveChanged(
+    rust_sync.MigrationStatus? previous,
+    rust_sync.MigrationStatus current,
+  ) {
+    // The first observation is normally paired with bootstrap/re-entry sync,
+    // so do not add an extra balance fetch merely because the coordinator was
+    // mounted. Subsequent child transaction transitions need a fresh snapshot
+    // for the home balance card.
+    if (previous == null) return false;
+
+    if (previous.pendingTxCount != current.pendingTxCount ||
+        previous.broadcastedTxCount != current.broadcastedTxCount ||
+        previous.confirmedTxCount != current.confirmedTxCount ||
+        previous.denominationConfirmationCount !=
+            current.denominationConfirmationCount ||
+        previous.denominationSplitCompletedCount !=
+            current.denominationSplitCompletedCount) {
+      return true;
+    }
+
+    final previousParts = {
+      for (final part in previous.parts) part.partIndex: part,
+    };
+    if (previousParts.length != current.parts.length) return true;
+    for (final part in current.parts) {
+      final before = previousParts[part.partIndex];
+      if (before == null ||
+          before.state != part.state ||
+          before.txidHex != part.txidHex ||
+          before.confirmationCount != part.confirmationCount) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _shouldAdvance(

@@ -149,6 +149,47 @@ void main() {
     },
   );
 
+  test(
+    'refreshes the active home balance after a migration confirmation',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('waiting_migration_confirmations'),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        syncState: SyncState(),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      expect(sync.balanceRefreshes, 0);
+
+      statuses[_softwareUuid] = _status(
+        'waiting_migration_confirmations',
+        confirmedTxCount: 1,
+      );
+      await coordinator.refreshNow();
+      expect(sync.balanceRefreshes, 1);
+
+      await coordinator.refreshNow();
+      expect(sync.balanceRefreshes, 1);
+    },
+  );
+
   test('non-outbox mobile waits until a scheduled migration is due', () async {
     final statuses = {
       _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
@@ -940,8 +981,7 @@ ProviderContainer _container({
         appSecurityProvider.overrideWith(
           () => _MutableSecurityNotifier(initialSecurityState),
         ),
-      if (syncState != null)
-        syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
+      syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
     ],
   );
