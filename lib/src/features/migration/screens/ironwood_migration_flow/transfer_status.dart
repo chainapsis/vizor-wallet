@@ -358,10 +358,123 @@ class _MigrationPreparationInfoRow extends StatelessWidget {
   }
 }
 
-class _MigrationPreparationRing extends StatelessWidget {
+class _MigrationPreparationRing extends StatefulWidget {
   const _MigrationPreparationRing({super.key, required this.color});
 
   final Color color;
+
+  @override
+  State<_MigrationPreparationRing> createState() =>
+      _MigrationPreparationRingState();
+}
+
+class _MigrationPreparationRingState extends State<_MigrationPreparationRing>
+    with TickerProviderStateMixin {
+  static const _minimumWeight = 0.035;
+  static const _maximumWeight = 0.22;
+  static const _stepDuration = Duration(milliseconds: 390);
+  static const _stepBreather = Duration(milliseconds: 105);
+  static const _spinDuration = Duration(milliseconds: 1800);
+  static const _restBetweenBlocks = Duration(milliseconds: 900);
+
+  final math.Random _random = math.Random(704075305);
+  late final AnimationController _stepController = AnimationController(
+    vsync: this,
+    duration: _stepDuration,
+  );
+  late final AnimationController _spinController = AnimationController(
+    vsync: this,
+    duration: _spinDuration,
+  );
+  late List<double> _weights;
+  late List<double> _fromWeights;
+  late List<double> _toWeights;
+  Timer? _idleTimer;
+  bool _reduceMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _weights = List.of(_MigrationPreparationRingPainter.initialSegmentRatios);
+    _fromWeights = List.of(_weights);
+    _toWeights = List.of(_weights);
+    _runIdleLoop();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  }
+
+  Future<void> _runIdleLoop() async {
+    // Keep the Figma-comparison first frame stable before starting idle motion.
+    await _wait(const Duration(milliseconds: 400));
+    try {
+      while (mounted) {
+        if (_reduceMotion) {
+          await _wait(const Duration(seconds: 1));
+          continue;
+        }
+        for (var cycle = 0; cycle < 3 && mounted; cycle++) {
+          await _adjustSegmentWeights();
+          if (!mounted) return;
+          await _spinController.forward(from: 0);
+        }
+        await _wait(_restBetweenBlocks);
+      }
+    } on TickerCanceled {
+      // Disposal can stop either controller while an idle cycle is running.
+    }
+  }
+
+  Future<void> _adjustSegmentWeights() async {
+    final steps = 3 + _random.nextInt(3);
+    for (var step = 0; step < steps; step++) {
+      if (!mounted) return;
+      final fromIndex = _random.nextInt(_weights.length);
+      var toIndex = _random.nextInt(_weights.length - 1);
+      if (toIndex >= fromIndex) toIndex++;
+
+      final availableToGive = math.min(
+        _weights[fromIndex] - _minimumWeight,
+        _maximumWeight - _weights[toIndex],
+      );
+      final availableToTake = math.min(
+        _maximumWeight - _weights[fromIndex],
+        _weights[toIndex] - _minimumWeight,
+      );
+      final gives = availableToGive >= availableToTake;
+      final available = gives ? availableToGive : availableToTake;
+      if (available <= 0.005) continue;
+      final amount = available * (0.4 + _random.nextDouble() * 0.6);
+
+      setState(() {
+        _fromWeights = List.of(_weights);
+        _toWeights = List.of(_weights);
+        _toWeights[fromIndex] += gives ? -amount : amount;
+        _toWeights[toIndex] += gives ? amount : -amount;
+      });
+      await _stepController.forward(from: 0);
+      _weights = List.of(_toWeights);
+      await _wait(_stepBreather);
+    }
+  }
+
+  Future<void> _wait(Duration duration) {
+    final completer = Completer<void>();
+    _idleTimer?.cancel();
+    _idleTimer = Timer(duration, completer.complete);
+    return completer.future;
+  }
+
+  @override
+  void dispose() {
+    _idleTimer?.cancel();
+    _stepController.dispose();
+    _spinController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -369,41 +482,65 @@ class _MigrationPreparationRing extends StatelessWidget {
       container: true,
       excludeSemantics: true,
       label: 'Preparing migration. Estimated time: 10 to 20 minutes.',
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: const Size.square(256),
-            painter: _MigrationPreparationRingPainter(color: color),
-          ),
-          const Column(
-            mainAxisSize: MainAxisSize.min,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_stepController, _spinController]),
+        builder: (context, _) {
+          final eased = Curves.easeOutBack.transform(_stepController.value);
+          final weights = List.generate(
+            _weights.length,
+            (index) =>
+                _fromWeights[index] +
+                ((_toWeights[index] - _fromWeights[index]) * eased),
+          );
+          return Stack(
+            alignment: Alignment.center,
             children: [
-              AppIcon(AppIcons.time, size: 24),
-              SizedBox(height: 8),
-              Text(
-                'Preparation will\ntake 10-20 min',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMediumStrong,
+              CustomPaint(
+                size: const Size.square(256),
+                painter: _MigrationPreparationRingPainter(
+                  color: widget.color,
+                  weights: weights,
+                  rotation: Curves.easeInOutCubic.transform(
+                    _spinController.value,
+                  ),
+                ),
+              ),
+              const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(AppIcons.time, size: 24),
+                  SizedBox(height: 8),
+                  Text(
+                    'Preparation will\ntake 10-20 min',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong,
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
 class _MigrationPreparationRingPainter extends CustomPainter {
-  const _MigrationPreparationRingPainter({required this.color});
+  const _MigrationPreparationRingPainter({
+    required this.color,
+    required this.weights,
+    required this.rotation,
+  });
 
   final Color color;
+  final List<double> weights;
+  final double rotation;
 
   static const _ringOuterDiameter = 220.0;
 
   // Decorative only: the ratios intentionally do not represent note value or
   // confirmation progress, but they still form one complete ring.
-  static const _segmentRatios = <double>[
+  static const initialSegmentRatios = <double>[
     0.11,
     0.08,
     0.12,
@@ -415,9 +552,7 @@ class _MigrationPreparationRingPainter extends CustomPainter {
     0.08,
     0.14,
   ];
-  // This is the gap between arc centre-lines. It must exceed the two rounded
-  // stroke caps (12 px total along the tangent) so a real empty gap remains.
-  static const _gap = 0.18;
+  static const _visibleGap = 0.055;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -432,20 +567,39 @@ class _MigrationPreparationRingPainter extends CustomPainter {
       height: _ringOuterDiameter - paint.strokeWidth,
     );
     final fullSweep = math.pi * 2;
-    final drawableSweep = fullSweep - (_segmentRatios.length * _gap);
-    var angle = -math.pi / 2 - 0.06;
-    for (final ratio in _segmentRatios) {
-      // Ratios are normalized over the painted arcs; `_gap` remains visible
-      // between every segment while the full ring still closes at 360 degrees.
-      final sweep = drawableSweep * ratio;
-      canvas.drawArc(rect, angle, sweep, false, paint);
-      angle += sweep + _gap;
+    final radius = rect.width / 2;
+    // Include round-cap length in the angular gap so adjacent pills never
+    // overlap, while keeping an approximately 6 px empty space between them.
+    final gap = (paint.strokeWidth / radius) + _visibleGap;
+    final drawableSweep = fullSweep - (weights.length * gap);
+
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(rotation * fullSweep);
+    canvas.translate(-size.width / 2, -size.height / 2);
+
+    var angle = -math.pi / 2;
+    for (final weight in weights) {
+      final sweep = math.max(0.01, weight * drawableSweep);
+      canvas.drawArc(rect, angle + (gap / 2), sweep, false, paint);
+      angle += sweep + gap;
     }
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _MigrationPreparationRingPainter oldDelegate) =>
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.rotation != rotation ||
+      !_sameWeights(oldDelegate.weights, weights);
+
+  bool _sameWeights(List<double> otherWeights, List<double> currentWeights) {
+    if (otherWeights.length != currentWeights.length) return false;
+    for (var index = 0; index < otherWeights.length; index++) {
+      if (otherWeights[index] != currentWeights[index]) return false;
+    }
+    return true;
+  }
 }
 
 _MigrationBatchStatus _migrationBatchStatus(
