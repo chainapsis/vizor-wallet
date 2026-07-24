@@ -2,6 +2,136 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 const _mobileMigrationStartVerificationTimeout = Duration(seconds: 2);
 
+class _MobileMigrationPrivateStart extends ConsumerStatefulWidget {
+  const _MobileMigrationPrivateStart();
+
+  @override
+  ConsumerState<_MobileMigrationPrivateStart> createState() =>
+      _MobileMigrationPrivateStartState();
+}
+
+class _MobileMigrationPrivateStartState
+    extends ConsumerState<_MobileMigrationPrivateStart> {
+  bool _starting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_start());
+    });
+  }
+
+  Future<void> _start() async {
+    if (_starting) return;
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+
+    IronwoodMigrationStatusRequest? statusRequest;
+    rust_sync.OrchardMigrationPrivatePlan? activePlan;
+    String? softwareAccountUuid;
+    var softwareStartAttempted = false;
+    try {
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+
+      activePlan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      if (!mounted) return;
+      if (activePlan == null) {
+        throw StateError('Migration plan is unavailable.');
+      }
+
+      final isHardware = accountState.activeAccount?.isHardware ?? false;
+      if (isHardware && !_keystoneTwoRoundPlanSupported(activePlan)) {
+        setState(() {
+          _error =
+              'This migration needs more transactions than one Keystone '
+              'signing request supports.';
+        });
+        return;
+      }
+
+      statusRequest = IronwoodMigrationStatusRequest(
+        network: ref.read(ironwoodMigrationInputsProvider).network,
+        accountUuid: accountUuid,
+      );
+      if (isHardware) {
+        context.go(
+          '/migration/private/keystone/denominations/sign',
+          extra: activePlan.scheduledTransfers,
+        );
+        return;
+      }
+
+      softwareAccountUuid = accountUuid;
+      softwareStartAttempted = true;
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .startSoftwareMigration(
+            accountUuid: accountUuid,
+            approvedSchedule: activePlan.scheduledTransfers,
+          );
+      if (!mounted) return;
+      if (!await _mobilePrivateMigrationMayHaveStarted(ref, statusRequest)) {
+        throw StateError('Migration did not create an active run.');
+      }
+      if (!mounted) return;
+      _openMigrationStatus(activePlan);
+    } catch (error) {
+      if (!mounted) return;
+      final request = statusRequest;
+      final plan = activePlan;
+      if (softwareStartAttempted &&
+          softwareAccountUuid != null &&
+          request != null &&
+          plan != null &&
+          await _mobilePrivateMigrationMayHaveStarted(ref, request)) {
+        unawaited(
+          _recoverMobileBackgroundTrackingBestEffort(ref, softwareAccountUuid),
+        );
+        if (!mounted) return;
+        _openMigrationStatus(plan);
+        return;
+      }
+      setState(() {
+        _error = _mobilePrivateMigrationStartErrorMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
+  }
+
+  void _openMigrationStatus(rust_sync.OrchardMigrationPrivatePlan plan) {
+    ref.invalidate(ironwoodMigrationRouteCtaProvider);
+    ref.invalidate(ironwoodHomeMigrationCtaProvider);
+    ref.invalidate(ironwoodMigrationFlowDataProvider);
+    ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+    context.go(
+      '/migration/private/status',
+      extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MigrationPreparationPreview(
+      state: _error == null
+          ? _MigrationPreparationState.active
+          : _MigrationPreparationState.paused,
+      progress: 0,
+      pausedMessage: _error,
+      onContinue: _starting ? null : () => unawaited(_start()),
+    );
+  }
+}
+
 class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
   const _MobileMigrationPrivateReview({
     required this.data,
@@ -320,30 +450,10 @@ class _MobileMigrationPrivateReviewState
 
   Future<bool> _migrationMayHaveStarted(
     IronwoodMigrationStatusRequest request,
-  ) async {
-    ref.invalidate(ironwoodMigrationStatusProvider(request));
-    try {
-      final status = await ref
-          .read(ironwoodMigrationStatusProvider(request).future)
-          .timeout(_mobileMigrationStartVerificationTimeout);
-      return status.activeRunId != null;
-    } catch (_) {
-      // A status read failure after submission is not proof that no durable
-      // migration run exists. The status route can safely reconcile it.
-      return true;
-    }
-  }
+  ) => _mobilePrivateMigrationMayHaveStarted(ref, request);
 
   Future<void> _recoverBackgroundTrackingBestEffort(String accountUuid) async {
-    try {
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
-    } catch (error) {
-      debugPrint(
-        'Failed to recover Ironwood background migration tracking: $error',
-      );
-    }
+    await _recoverMobileBackgroundTrackingBestEffort(ref, accountUuid);
   }
 
   void _openMigrationStatus(rust_sync.OrchardMigrationPrivatePlan plan) {
@@ -509,6 +619,38 @@ class _MobileMigrationPrivateReviewState
         );
       },
       child: child,
+    );
+  }
+}
+
+Future<bool> _mobilePrivateMigrationMayHaveStarted(
+  WidgetRef ref,
+  IronwoodMigrationStatusRequest request,
+) async {
+  ref.invalidate(ironwoodMigrationStatusProvider(request));
+  try {
+    final status = await ref
+        .read(ironwoodMigrationStatusProvider(request).future)
+        .timeout(_mobileMigrationStartVerificationTimeout);
+    return status.activeRunId != null;
+  } catch (_) {
+    // A status read failure after submission is not proof that no durable
+    // migration run exists. The status route can safely reconcile it.
+    return true;
+  }
+}
+
+Future<void> _recoverMobileBackgroundTrackingBestEffort(
+  WidgetRef ref,
+  String accountUuid,
+) async {
+  try {
+    await ref
+        .read(ironwoodMigrationServiceProvider)
+        .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+  } catch (error) {
+    debugPrint(
+      'Failed to recover Ironwood background migration tracking: $error',
     );
   }
 }

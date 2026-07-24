@@ -5,6 +5,7 @@ enum MobileIronwoodMigrationStep {
   howItWorks,
   options,
   notifications,
+  privateStart,
   privateReview,
   fastReview,
   preparing,

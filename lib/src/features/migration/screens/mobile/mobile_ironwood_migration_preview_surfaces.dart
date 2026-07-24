@@ -211,7 +211,7 @@ class _MobileMigrationNotificationPermissionScreenState
           .notificationAuthorizationStatus();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/review');
+        context.go('/migration/private/start');
       }
     } catch (_) {
       // Native status is fail-closed; keep the explanatory screen visible.
@@ -232,7 +232,7 @@ class _MobileMigrationNotificationPermissionScreenState
           : await service.requestNotificationPermission();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/review');
+        context.go('/migration/private/start');
         return;
       }
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
@@ -274,7 +274,7 @@ class _MobileMigrationNotificationPermissionScreenState
         await _allowNotifications();
         return;
       case _NotificationConfirmationAction.continueWithout:
-        if (mounted) context.go('/migration/private/review');
+        if (mounted) context.go('/migration/private/start');
         return;
     }
   }
@@ -514,6 +514,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
     required this.state,
     this.progress = 0,
     this.isKeystone = false,
+    this.pausedMessage,
     this.onBack,
     this.onContinue,
   });
@@ -521,6 +522,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
   final _MigrationPreparationState state;
   final double progress;
   final bool isKeystone;
+  final String? pausedMessage;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
 
@@ -552,7 +554,11 @@ class _MigrationPreparationPreview extends StatelessWidget {
           : null,
       child: Column(
         children: [
-          _MigrationPreparationDial(state: state, progress: progress),
+          _MigrationPreparationDial(
+            state: state,
+            progress: progress,
+            pausedMessage: pausedMessage,
+          ),
           const SizedBox(height: AppSpacing.base),
           Opacity(
             opacity: paused ? 0.4 : 1,
@@ -568,10 +574,12 @@ class _MigrationPreparationDial extends StatelessWidget {
   const _MigrationPreparationDial({
     required this.state,
     required this.progress,
+    this.pausedMessage,
   });
 
   final _MigrationPreparationState state;
   final double progress;
+  final String? pausedMessage;
 
   @override
   Widget build(BuildContext context) {

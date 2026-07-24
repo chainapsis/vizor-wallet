@@ -95,6 +95,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       ),
       MobileIronwoodMigrationStep.notifications =>
         const _MobileMigrationNotificationPermissionScreen(),
+      MobileIronwoodMigrationStep.privateStart =>
+        const _MobileMigrationPrivateStart(),
       MobileIronwoodMigrationStep.privateReview =>
         _MobileMigrationPrivateReview(
           data: data,

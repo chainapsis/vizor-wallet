@@ -465,6 +465,7 @@ Widget _app({
       MobileIronwoodMigrationStep.options => '/migration/options',
       MobileIronwoodMigrationStep.notifications =>
         '/migration/private/notifications',
+      MobileIronwoodMigrationStep.privateStart => '/migration/private/start',
       MobileIronwoodMigrationStep.privateReview => '/migration/private/review',
       MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
       MobileIronwoodMigrationStep.preparing => '/migration/private/preparing',
@@ -487,6 +488,10 @@ Widget _app({
       GoRoute(
         path: '/migration/private/notifications',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.notifications),
+      ),
+      GoRoute(
+        path: '/migration/private/start',
+        builder: (_, _) => screen(MobileIronwoodMigrationStep.privateStart),
       ),
       GoRoute(
         path: '/migration/private/review',
@@ -569,6 +574,12 @@ Widget _productionApp({
         path: '/migration/private/review',
         builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.privateReview,
+        ),
+      ),
+      GoRoute(
+        path: '/migration/private/start',
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.privateStart,
         ),
       ),
       GoRoute(
@@ -1736,6 +1747,7 @@ void main() {
   ) async {
     _useMobileViewport(tester);
     var authorization = IronwoodMigrationNotificationAuthorizationStatus.denied;
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/options',
@@ -1762,6 +1774,7 @@ void main() {
           ios: true,
           getNotificationAuthorizationStatus: () async => authorization,
         ),
+        privatePlanFuture: planCompleter.future,
       ),
     );
     await tester.pumpAndSettle();
@@ -1769,7 +1782,50 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Review Migration Plan'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    planCompleter.complete(_plan);
+    await tester.pump();
+  });
+
+  testWidgets('starts private preparation without showing the review screen', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var started = false;
+    var startCount = 0;
+    final startedStatus = _status(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/start',
+        migrationService: _migrationService(
+          onStart: (_, _) async {
+            started = true;
+            startCount++;
+            return _migrationResult();
+          },
+        ),
+        startedStatus: startedStatus,
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: startedStatus,
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(startCount, 1);
+    expect(find.text('Review Migration Plan'), findsNothing);
+    expect(find.text('Preparing your migration'), findsOneWidget);
   });
 
   testWidgets('requests notifications only after the explicit allow action', (
@@ -1779,6 +1835,7 @@ void main() {
     var authorization =
         IronwoodMigrationNotificationAuthorizationStatus.notDetermined;
     var requestCount = 0;
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/notifications',
@@ -1792,6 +1849,7 @@ void main() {
             return true;
           },
         ),
+        privatePlanFuture: planCompleter.future,
       ),
     );
     await tester.pumpAndSettle();
@@ -1814,13 +1872,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requestCount, 1);
-    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Review Migration Plan'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    planCompleter.complete(_plan);
+    await tester.pump();
   });
 
   testWidgets('requires confirmation before continuing without notifications', (
     tester,
   ) async {
     _useMobileViewport(tester);
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/notifications',
@@ -1829,6 +1892,7 @@ void main() {
           getNotificationAuthorizationStatus: () async =>
               IronwoodMigrationNotificationAuthorizationStatus.denied,
         ),
+        privatePlanFuture: planCompleter.future,
       ),
     );
     await tester.pumpAndSettle();
@@ -1846,7 +1910,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Continue without notifications'));
     await tester.pumpAndSettle();
-    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Review Migration Plan'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    planCompleter.complete(_plan);
+    await tester.pump();
   });
 
   testWidgets('keeps design label and opens Settings after denial', (
@@ -2260,6 +2328,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 320));
 
       final orbitFinder = find.byKey(
         const ValueKey('mobile_ironwood_preparation_complete_orbit'),

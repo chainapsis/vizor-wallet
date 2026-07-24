@@ -173,7 +173,7 @@ class _MobileMigrationOptionsState
       if (!mounted) return;
       context.go(
         authorization.allowsBackgroundMigration
-            ? '/migration/private/review'
+            ? '/migration/private/start'
             : '/migration/private/notifications',
       );
     } catch (_) {

@@ -308,10 +308,14 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/review',
+      redirect: (_, _) => '/migration/private/start',
+    ),
+    GoRoute(
+      path: '/migration/private/start',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationFlowScreen(
-          step: MobileIronwoodMigrationStep.privateReview,
+          step: MobileIronwoodMigrationStep.privateStart,
         ),
       ),
     ),
