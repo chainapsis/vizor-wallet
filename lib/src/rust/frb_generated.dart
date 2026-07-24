@@ -7764,6 +7764,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
   CompletedVoteDisplayView dco_decode_box_autoadd_completed_vote_display_view(
     dynamic raw,
   ) {
@@ -8745,8 +8751,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 25)
-      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
+    if (arr.length != 26)
+      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -8768,13 +8774,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: dco_decode_u_32(arr[17]),
       scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
       nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[19]),
-      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
-      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[21]),
-      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[22]),
+      proofReady: dco_decode_opt_box_autoadd_bool(arr[20]),
+      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[21]),
+      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[22]),
+      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[23]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[23],
+        arr[24],
       ),
-      parts: dco_decode_list_migration_part_status(arr[24]),
+      parts: dco_decode_list_migration_part_status(arr[25]),
     );
   }
 
@@ -8797,6 +8804,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bool(raw);
   }
 
   @protected
@@ -9964,6 +9977,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_api_voting_round_context(deserializer));
+  }
+
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bool(deserializer));
   }
 
   @protected
@@ -11314,6 +11333,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
     var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
     var var_nextActionHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_proofReady = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_estimatedCompletionHeight = sse_decode_opt_box_autoadd_u_32(
       deserializer,
     );
@@ -11346,6 +11366,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       nextActionHeight: var_nextActionHeight,
+      proofReady: var_proofReady,
       estimatedCompletionHeight: var_estimatedCompletionHeight,
       nextActionPartIndex: var_nextActionPartIndex,
       currentSigningPartIndices: var_currentSigningPartIndices,
@@ -11377,6 +11398,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bool(deserializer));
     } else {
       return null;
     }
@@ -12765,6 +12797,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_completed_vote_display_view(
     CompletedVoteDisplayView self,
     SseSerializer serializer,
@@ -13900,6 +13938,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
     sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
     sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
+    sse_encode_opt_box_autoadd_bool(self.proofReady, serializer);
     sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
     sse_encode_opt_box_autoadd_u_32(self.nextActionPartIndex, serializer);
     sse_encode_opt_list_prim_u_32_strict(
@@ -13930,6 +13969,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bool(self, serializer);
     }
   }
 

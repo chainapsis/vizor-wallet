@@ -785,6 +785,10 @@ pub struct MigrationStatus {
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
     pub next_action_height: Option<u32>,
+    /// Exact foreground proof preflight. `None` means no signed proof action
+    /// is currently applicable; `Some(false)` keeps a height-due action gated
+    /// until its anchor checkpoint and witness are actually available.
+    pub proof_ready: Option<bool>,
     pub estimated_completion_height: Option<u32>,
     pub next_action_part_index: Option<u32>,
     pub current_signing_part_indices: Option<Vec<u32>>,
@@ -1168,6 +1172,12 @@ pub fn get_orchard_migration_status(
             balance.ironwood,
             balance.ironwood_pending,
         )?;
+        let proof_ready = wallet_sync::orchard_migration_proof_readiness(
+            &db_path,
+            network,
+            &account_uuid,
+            &status,
+        )?;
         Ok(MigrationStatus {
             phase: status.phase,
             active_run_id: status.active_run_id,
@@ -1189,6 +1199,7 @@ pub fn get_orchard_migration_status(
             schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
             next_action_height: status.next_action_height,
+            proof_ready,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,
             current_signing_part_indices: Some(status.current_signing_part_indices),

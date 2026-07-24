@@ -58,10 +58,10 @@ pub(crate) use send::{
     create_or_resume_private_migration_draft, discard_all_keystone_migration_requests,
     discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
     keystone_migration_proof_status, migrate_orchard_to_ironwood,
-    migrate_orchard_to_ironwood_immediately, prepare_orchard_migration_batch_pczt,
-    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
-    retire_unbroadcast_orchard_migration, KeystoneSignedMigrationMessage,
-    OrchardMigrationImmediatePlan,
+    migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
+    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    prepare_orchard_migration_single_qr_pczt, retire_unbroadcast_orchard_migration,
+    KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,

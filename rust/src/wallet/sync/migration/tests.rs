@@ -2603,6 +2603,13 @@ fn approved_schedule_supports_incremental_proof_persistence() {
     )
     .unwrap();
     for (part_index, target_height) in [(0, 501), (1, 999)] {
+        let selected_note = PreparedOrchardNoteRef {
+            txid_hex: format!("{:064x}", part_index + 10),
+            output_index: 0,
+            value_zatoshi: if part_index == 0 { 110 } else { 210 },
+            note_version: 2,
+            nullifier_hex: None,
+        };
         conn.execute(
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
@@ -2611,7 +2618,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
                   scheduled_height, value_zatoshi, fee_zatoshi,
                   selected_note_json, metadata_json)
                  VALUES ('run-1', ?1, ?2, 'base', 'sigs', ?3, ?4,
-                         ?5, ?6, 10, '{{}}', '{{}}')"
+                         ?5, ?6, 10, ?7, '{{}}')"
             ),
             params![
                 format!("child-{part_index}"),
@@ -2621,6 +2628,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
                     .unwrap(),
                 if part_index == 0 { 502 } else { 501 },
                 if part_index == 0 { 100 } else { 200 },
+                serde_json::to_string(&selected_note).unwrap(),
             ],
         )
         .unwrap();
@@ -2676,24 +2684,45 @@ fn approved_schedule_supports_incremental_proof_persistence() {
 
     set_proof_retry_height(&db_path, "run-1", 1_200).unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
+    assert_eq!(candidates.len(), 2);
     promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
         vec![pending(0, 100, 501)],
+        1_200,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
+    assert_eq!(
+        candidates,
+        vec![SignedChildProofCandidate {
+            selected_note: PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", 11),
+                output_index: 0,
+                value_zatoshi: 210,
+                note_version: 2,
+                nullifier_hex: None,
+            },
+            anchor_boundary_height: None,
+        }]
+    );
     promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
         vec![pending(1, 200, 999)],
+        1_400,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
+    assert!(signed_child_proof_candidates_for_run(&db_path, "run-1")
+        .unwrap()
+        .is_empty());
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let mut stmt = conn

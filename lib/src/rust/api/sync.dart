@@ -1503,6 +1503,11 @@ class MigrationStatus {
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
   final int? nextActionHeight;
+
+  /// Exact foreground proof preflight. `None` means no signed proof action
+  /// is currently applicable; `Some(false)` keeps a height-due action gated
+  /// until its anchor checkpoint and witness are actually available.
+  final bool? proofReady;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
   final Uint32List? currentSigningPartIndices;
@@ -1530,6 +1535,7 @@ class MigrationStatus {
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     this.nextActionHeight,
+    this.proofReady,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
     this.currentSigningPartIndices,
@@ -1559,6 +1565,7 @@ class MigrationStatus {
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       nextActionHeight.hashCode ^
+      proofReady.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
       currentSigningPartIndices.hashCode ^
@@ -1593,6 +1600,7 @@ class MigrationStatus {
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           nextActionHeight == other.nextActionHeight &&
+          proofReady == other.proofReady &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
           currentSigningPartIndices == other.currentSigningPartIndices &&

@@ -194,6 +194,12 @@ pub(crate) struct SignedMigrationPczt {
     pub metadata: PendingMigrationTxMetadata,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SignedChildProofCandidate {
+    pub selected_note: PreparedOrchardNoteRef,
+    pub anchor_boundary_height: Option<u32>,
+}
+
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
@@ -1325,6 +1331,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     db_path: &str,
     run_id: &str,
     pending_txs: Vec<PendingMigrationTxInsert>,
+    remaining_child_retry_height: u32,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
@@ -1353,13 +1360,13 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
                                  AND p.part_index = c.child_index
                            )
                      )
-                     THEN proof_retry_height
+                     THEN ?3
                      ELSE NULL
                  END,
                  updated_at_ms = ?1
              WHERE run_id = ?2"
         ),
-        params![now_ms()?, run_id],
+        params![now_ms()?, run_id, remaining_child_retry_height],
     )
     .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
     // Retain the compact signatures and base PCZTs until the run completes.
@@ -1994,6 +2001,43 @@ pub(crate) fn signed_child_pczts_for_run(
     }
 
     Ok(signed)
+}
+
+pub(crate) fn signed_child_proof_candidates_for_run(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<SignedChildProofCandidate>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT c.selected_note_json, c.anchor_boundary_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )
+             ORDER BY c.child_index ASC, c.message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare signed migration proof candidate query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<u32>>(1)?))
+        })
+        .map_err(|e| format!("Query signed migration proof candidates: {e}"))?;
+
+    let mut candidates = Vec::new();
+    for row in rows {
+        let (selected_note_json, anchor_boundary_height) =
+            row.map_err(|e| format!("Read signed migration proof candidate: {e}"))?;
+        let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
+            .map_err(|e| format!("Decode signed migration proof candidate note: {e}"))?;
+        candidates.push(SignedChildProofCandidate {
+            selected_note,
+            anchor_boundary_height,
+        });
+    }
+    Ok(candidates)
 }
 
 pub(crate) fn signed_child_message_ids_by_part(

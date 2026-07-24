@@ -7879,6 +7879,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_scheduleMeanDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_nextActionHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_proofReady = <Option<bool>>::sse_decode(deserializer);
         let mut var_estimatedCompletionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_nextActionPartIndex = <Option<u32>>::sse_decode(deserializer);
         let mut var_currentSigningPartIndices = <Option<Vec<u32>>>::sse_decode(deserializer);
@@ -7906,6 +7907,7 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             schedule_mean_delay_blocks: var_scheduleMeanDelayBlocks,
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             next_action_height: var_nextActionHeight,
+            proof_ready: var_proofReady,
             estimated_completion_height: var_estimatedCompletionHeight,
             next_action_part_index: var_nextActionPartIndex,
             current_signing_part_indices: var_currentSigningPartIndices,
@@ -7938,6 +7940,17 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<bool>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -10383,6 +10396,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
             self.schedule_mean_delay_blocks.into_into_dart().into_dart(),
             self.schedule_max_delay_blocks.into_into_dart().into_dart(),
             self.next_action_height.into_into_dart().into_dart(),
+            self.proof_ready.into_into_dart().into_dart(),
             self.estimated_completion_height
                 .into_into_dart()
                 .into_dart(),
@@ -12737,6 +12751,7 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <u32>::sse_encode(self.schedule_mean_delay_blocks, serializer);
         <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
         <Option<u32>>::sse_encode(self.next_action_height, serializer);
+        <Option<bool>>::sse_encode(self.proof_ready, serializer);
         <Option<u32>>::sse_encode(self.estimated_completion_height, serializer);
         <Option<u32>>::sse_encode(self.next_action_part_index, serializer);
         <Option<Vec<u32>>>::sse_encode(self.current_signing_part_indices, serializer);
@@ -12765,6 +12780,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <bool>::sse_encode(value, serializer);
         }
     }
 }

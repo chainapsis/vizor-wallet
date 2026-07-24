@@ -98,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw);
+
+  @protected
   CompletedVoteDisplayView dco_decode_box_autoadd_completed_vote_display_view(
     dynamic raw,
   );
@@ -469,6 +472,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
+
+  @protected
   CompletedVoteDisplayView?
   dco_decode_opt_box_autoadd_completed_vote_display_view(dynamic raw);
 
@@ -789,6 +795,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiVotingRoundContext sse_decode_box_autoadd_api_voting_round_context(
     SseDeserializer deserializer,
   );
+
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   CompletedVoteDisplayView sse_decode_box_autoadd_completed_vote_display_view(
@@ -1256,6 +1265,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
+
+  @protected
   CompletedVoteDisplayView?
   sse_decode_opt_box_autoadd_completed_vote_display_view(
     SseDeserializer deserializer,
@@ -1650,6 +1662,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ApiVotingRoundContext self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_completed_vote_display_view(
@@ -2226,6 +2241,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_completed_vote_display_view(

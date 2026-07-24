@@ -44,7 +44,7 @@ use std::sync::{
 use std::thread;
 use std::time::Instant;
 
-use rand::{rngs::OsRng, Rng};
+use rand::{rngs::OsRng, seq::SliceRandom, Rng};
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::{
     error::{QueryError, ShardTreeError},
@@ -95,7 +95,8 @@ use zcash_protocol::{
 };
 
 use crate::wallet::db::{
-    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
+    open_wallet_db_readonly_with_timeout, open_wallet_raw_conn_with_timeout,
+    with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
@@ -1919,6 +1920,48 @@ async fn prepare_orchard_migration_outbox(
     ))
 }
 
+pub(crate) fn orchard_migration_proof_readiness(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    status: &super::migration::MigrationStatus,
+) -> Result<Option<bool>, String> {
+    if !matches!(
+        status.phase.as_str(),
+        super::migration::PHASE_READY_TO_MIGRATE | super::migration::PHASE_BROADCAST_SCHEDULED
+    ) || status.signed_child_pczt_count == 0
+    {
+        return Ok(None);
+    }
+    let Some(next_action_height) = status.next_action_height else {
+        return Ok(Some(false));
+    };
+    let scanned_height = current_migration_scanned_height(db_path, network)?;
+    if next_action_height > scanned_height {
+        return Ok(Some(false));
+    }
+    let run_id = status
+        .active_run_id
+        .as_deref()
+        .ok_or("Signed migration proof status has no active run")?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    let candidates = super::migration::signed_child_proof_candidates_for_run(db_path, run_id)?;
+    // Finalization uses the same child-index ordering. Probe only the first
+    // child so the five-second status poll remains bounded and conservative.
+    let Some(candidate) = candidates.first() else {
+        return Ok(Some(false));
+    };
+    orchard_witness_is_available_for_prepared_note(
+        db_path,
+        network,
+        account_uuid,
+        &candidate.selected_note,
+        candidate.anchor_boundary_height,
+        timing_policy,
+    )
+    .map(Some)
+}
+
 /// Advances only the denomination preparation graph for an existing migration.
 ///
 /// This deliberately stops at `ready_to_migrate`: child proof creation stays
@@ -2195,6 +2238,35 @@ fn orchard_witnesses(
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok((anchor, inputs))
+    });
+    result.map_err(|e| format!("Read Orchard witnesses: {e:?}"))
+}
+
+fn orchard_witness_is_available(
+    db: &mut WalletDatabase,
+    anchor_height: BlockHeight,
+    orchard_note: &ReceivedNote<ReceivedNoteId, orchard::Note>,
+) -> Result<bool, String> {
+    type WitnessError = WalletError<
+        (),
+        commitment_tree::Error,
+        (),
+        <ConservativeZip317FeeRule as FeeRule>::Error,
+        (),
+        ReceivedNoteId,
+    >;
+
+    let result: Result<bool, WitnessError> = db.with_orchard_tree_mut(|orchard_tree| {
+        if orchard_tree
+            .root_at_checkpoint_id(&anchor_height)?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        orchard_tree
+            .witness_at_checkpoint_id(orchard_note.note_commitment_tree_position(), &anchor_height)
+            .map(|witness| witness.is_some())
+            .map_err(WalletError::from)
     });
     result.map_err(|e| format!("Read Orchard witnesses: {e:?}"))
 }
@@ -3315,40 +3387,6 @@ fn orchard_anchor_and_witness_for_prepared_note(
     );
     let available_anchor_candidates =
         available_orchard_anchor_candidates(&policy_candidates, &checkpoint_heights, mined_height);
-    let available_candidates = available_anchor_candidates
-        .iter()
-        .map(|(boundary, _)| *boundary)
-        .collect::<Vec<_>>();
-    let anchor_boundary_height = preferred_anchor_boundary_height
-        .filter(|boundary| {
-            super::migration::zip318_anchor_boundary_is_candidate_with_policy(
-                network,
-                timing_policy,
-                *boundary,
-                anchor_height_u32,
-                mined_height,
-                nu6_3_activation_height,
-            ) && available_candidates.contains(boundary)
-        })
-        .or_else(|| {
-            super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
-                network,
-                timing_policy,
-                anchor_height_u32,
-                &available_candidates,
-            )
-        });
-    let Some(anchor_boundary_height) = anchor_boundary_height else {
-        return Ok(None);
-    };
-    let checkpoint_height = available_anchor_candidates
-        .iter()
-        .find_map(|(boundary, checkpoint)| {
-            (*boundary == anchor_boundary_height).then_some(*checkpoint)
-        })
-        .ok_or("Orchard migration checkpoint disappeared during anchor selection")?;
-    retain_orchard_checkpoint(&mut db, checkpoint_height)?;
-
     let orchard_selected = ReceivedNote::from_parts(
         *selected.internal_note_id(),
         *selected.txid(),
@@ -3359,16 +3397,135 @@ fn orchard_anchor_and_witness_for_prepared_note(
         selected.mined_height(),
         selected.max_shielding_input_height(),
     );
-    let (orchard_anchor, mut orchard_inputs) = migration_orchard_witnesses(
-        &mut db,
+    let preferred = preferred_anchor_boundary_height.filter(|boundary| {
+        super::migration::zip318_anchor_boundary_is_candidate_with_policy(
+            network,
+            timing_policy,
+            *boundary,
+            anchor_height_u32,
+            mined_height,
+            nu6_3_activation_height,
+        ) && available_anchor_candidates
+            .iter()
+            .any(|(candidate, _)| candidate == boundary)
+    });
+    let mut candidate_order = available_anchor_candidates;
+    candidate_order.shuffle(&mut OsRng);
+    if let Some(preferred) = preferred {
+        if let Some(index) = candidate_order
+            .iter()
+            .position(|(boundary, _)| *boundary == preferred)
+        {
+            candidate_order.swap(0, index);
+        }
+    }
+
+    // Status preflight reports ready when any eligible checkpoint can witness
+    // the note. Finalization must use the same contract: a randomly selected
+    // checkpoint may have retained its root while its witness nodes were
+    // pruned, so keep trying the remaining randomized candidates instead of
+    // consuming the user's one-shot proof action on that checkpoint.
+    for (anchor_boundary_height, checkpoint_height) in candidate_order {
+        retain_orchard_checkpoint(&mut db, checkpoint_height)?;
+        let (orchard_anchor, mut orchard_inputs) = match migration_orchard_witnesses(
+            &mut db,
+            network,
+            BlockHeight::from(checkpoint_height),
+            std::slice::from_ref(&orchard_selected),
+        ) {
+            Ok(result) => result,
+            Err(error) if is_orchard_witness_not_ready_error(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let (_, witness) = orchard_inputs
+            .pop()
+            .ok_or("Prepared migration note witness missing")?;
+        return Ok(Some((anchor_boundary_height, orchard_anchor, witness)));
+    }
+    Ok(None)
+}
+
+fn orchard_witness_is_available_for_prepared_note(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    note_ref: &super::migration::PreparedOrchardNoteRef,
+    preferred_anchor_boundary_height: Option<u32>,
+    timing_policy: super::migration::MigrationTimingPolicy,
+) -> Result<bool, String> {
+    if note_ref.note_version != 2 {
+        return Err("Prepared migration note is not an Orchard V2 note".to_string());
+    }
+
+    // Status polling must stay read-only: unlike proof finalization this path
+    // neither retains checkpoints nor caches witness nodes.
+    let mut db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    db.get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+
+    let Some((_, anchor_height)) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| format!("Failed to read anchor height: {e}"))?
+    else {
+        return Ok(false);
+    };
+    let available_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let Some(selected) = available_notes.iter().find(|selected| {
+        format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
+            && selected.output_index() as u32 == note_ref.output_index
+    }) else {
+        return Ok(false);
+    };
+    let orchard_note = *selected.note();
+    if orchard_note.version() != orchard::note::NoteVersion::V2 {
+        return Err("Prepared note revalidated as non-V2 Orchard".to_string());
+    }
+    let selected_value: Zatoshis = orchard_note
+        .value()
+        .inner()
+        .try_into()
+        .map_err(|e| format!("Prepared note value invalid: {e}"))?;
+    if u64::from(selected_value) != note_ref.value_zatoshi {
+        return Err("Prepared note value changed during revalidation".to_string());
+    }
+
+    let anchor_height_u32 = u32::from(anchor_height);
+    let mined_height = selected
+        .mined_height()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let mined_height = u32::from(mined_height);
+    let checkpoint_heights = orchard_checkpoint_heights(&mut db)?;
+    let policy_candidates = super::migration::zip318_anchor_candidate_boundaries_with_policy(
         network,
-        BlockHeight::from(checkpoint_height),
-        std::slice::from_ref(&orchard_selected),
-    )?;
-    let (_, witness) = orchard_inputs
-        .pop()
-        .ok_or("Prepared migration note witness missing")?;
-    Ok(Some((anchor_boundary_height, orchard_anchor, witness)))
+        timing_policy,
+        anchor_height_u32,
+        mined_height,
+        nu6_3_activation_height_u32(network)?,
+    );
+    let mut available_anchor_candidates =
+        available_orchard_anchor_candidates(&policy_candidates, &checkpoint_heights, mined_height);
+    if let Some(preferred) = preferred_anchor_boundary_height {
+        if let Some(index) = available_anchor_candidates
+            .iter()
+            .position(|(boundary, _)| *boundary == preferred)
+        {
+            available_anchor_candidates.swap(0, index);
+        }
+    }
+
+    for (_, checkpoint_height) in available_anchor_candidates {
+        match orchard_witness_is_available(&mut db, BlockHeight::from(checkpoint_height), selected)
+        {
+            Ok(true) => return Ok(true),
+            Ok(false) => {}
+            Err(error) if is_orchard_witness_not_ready_error(&error) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(false)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3520,6 +3677,20 @@ fn finalize_presigned_migration_children(
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let signed_child_count = signed_children.len();
+    let current_scanned_height = current_migration_scanned_height(db_path, network)?;
+    let mut durable_retry_height = super::migration::next_anchor_retry_height_after(
+        network,
+        timing_policy,
+        current_scanned_height,
+    )?;
+    if let Some(ready_height) = super::migration::prepared_notes_proof_ready_height(
+        db_path,
+        run_id,
+        network,
+        timing_policy,
+    )? {
+        durable_retry_height = durable_retry_height.max(ready_height);
+    }
     let proof_limit = policy.proof_limit(signed_child_count);
     let mut finalized_count = 0usize;
     let mut deferred_child_seen = false;
@@ -3613,18 +3784,29 @@ fn finalize_presigned_migration_children(
                 selected_note: current_note.clone(),
             },
         };
+        let next_finalized_count = finalized_count
+            .checked_add(1)
+            .ok_or("Finalized migration proof count overflow")?;
+        let remaining_child_retry_height = if next_finalized_count >= proof_limit {
+            durable_retry_height
+        } else {
+            // If this foreground attempt is interrupted within its approved
+            // k-max batch, the remaining children are still eligible at the
+            // current anchor. Do not make the user wait for a new bucket.
+            current_scanned_height
+        };
         // Persist each completed proof independently so an OS expiration loses
-        // at most the proof that is currently in flight.
+        // at most the proof that is currently in flight. At the batch boundary,
+        // advance the retry height atomically with the final persisted proof.
         super::migration::promote_signed_child_pczts_to_pending_txs(
             db_path,
             run_id,
             vec![pending_insert],
+            remaining_child_retry_height,
             pending_password,
             pending_salt_base64,
         )?;
-        finalized_count = finalized_count
-            .checked_add(1)
-            .ok_or("Finalized migration proof count overflow")?;
+        finalized_count = next_finalized_count;
     }
 
     let remaining_signed_child_count = super::migration::signed_child_pczt_count(db_path, run_id)?;
