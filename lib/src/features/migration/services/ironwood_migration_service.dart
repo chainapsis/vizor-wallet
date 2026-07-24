@@ -377,6 +377,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPlatformCheck? isMacOS,
     IronwoodMigrationPlatformCheck? isMobile,
     IronwoodMigrationPlatformCheck? isIOS,
+    IronwoodMigrationPlatformCheck? isAndroid,
     IronwoodMigrationPlatformCheck? supportsBackgroundMigration,
     IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
@@ -426,9 +427,12 @@ class IronwoodMigrationService {
        isMacOS = isMacOS ?? _defaultIsMacOS,
        isMobile = isMobile ?? _defaultIsMobile,
        isIOS = isIOS ?? _defaultIsIOS,
+       isAndroid = isAndroid ?? _defaultIsAndroid,
        supportsBackgroundMigration =
            supportsBackgroundMigration ??
-           (scheduleBackgroundMigration == null ? _defaultIsIOS : _alwaysTrue),
+           (scheduleBackgroundMigration == null
+               ? _defaultSupportsNativeMigrationOutbox
+               : _alwaysTrue),
        isHardwareAccount = isHardwareAccount ?? _defaultIsHardwareAccount,
        scheduleBackgroundMigration =
            scheduleBackgroundMigration ?? _defaultScheduleBackgroundMigration,
@@ -519,6 +523,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPlatformCheck isMacOS;
   final IronwoodMigrationPlatformCheck isMobile;
   final IronwoodMigrationPlatformCheck isIOS;
+  final IronwoodMigrationPlatformCheck isAndroid;
   final IronwoodMigrationPlatformCheck supportsBackgroundMigration;
   final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
@@ -567,9 +572,12 @@ class IronwoodMigrationService {
   bool get supportsBackgroundMigrationRetry =>
       isMobile() && supportsBackgroundMigration();
 
+  bool get _usesNativeMigrationOutbox => isIOS() || isAndroid();
+  bool get _usesNativePreparation => isIOS() || isAndroid();
+
   Future<IronwoodMigrationNotificationAuthorizationStatus>
   notificationAuthorizationStatus() {
-    if (!isIOS()) {
+    if (!_usesNativeMigrationOutbox) {
       return Future.value(
         IronwoodMigrationNotificationAuthorizationStatus.denied,
       );
@@ -579,7 +587,7 @@ class IronwoodMigrationService {
 
   Future<IronwoodMigrationNotificationAuthorizationStatus>
   requestNotificationPermission() async {
-    if (!isIOS()) {
+    if (!_usesNativeMigrationOutbox) {
       return IronwoodMigrationNotificationAuthorizationStatus.denied;
     }
     await _requestNotificationAuthorization();
@@ -587,7 +595,7 @@ class IronwoodMigrationService {
   }
 
   Future<bool> openNotificationSystemSettings() async {
-    if (!isIOS()) return false;
+    if (!_usesNativeMigrationOutbox) return false;
     return _openNotificationSettings();
   }
 
@@ -595,7 +603,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required String runId,
   }) {
-    if (!isIOS()) {
+    if (!_usesNativePreparation) {
       return Future.value(IronwoodMigrationPreparationRuntimeState.idle);
     }
     return getPreparationRuntimeState(
@@ -635,7 +643,7 @@ class IronwoodMigrationService {
 
         return _serializeCredentialState(context, () async {
           var status = await _getStatusForContext(context);
-          if (isIOS() && status.activeRunId != null) {
+          if (_usesNativeMigrationOutbox && status.activeRunId != null) {
             final manifest = await backgroundCredentialStore.read(
               network: context.network,
               accountUuid: context.accountUuid,
@@ -668,7 +676,7 @@ class IronwoodMigrationService {
     required String network,
     required String accountUuid,
   }) async {
-    if (!isIOS() || !isMobile()) return;
+    if (!_usesNativePreparation || !isMobile()) return;
 
     final dbPath = await getWalletDbPath();
     final context = _MigrationCredentialContext(
@@ -862,7 +870,7 @@ class IronwoodMigrationService {
     );
 
     final rust_sync.IronwoodMigrationResult broadcastResult;
-    if (isIOS() && isMobile()) {
+    if (_usesNativeMigrationOutbox) {
       broadcastResult = await _runCredentialOperation(
         context: context,
         mayCreateRun: false,
@@ -978,7 +986,7 @@ class IronwoodMigrationService {
           expectedRunId: activeRunId,
         );
 
-        if (isIOS()) {
+        if (_usesNativeMigrationOutbox) {
           final credential = _MigrationCredential(
             password: manifest.credentialHex,
             saltBase64: manifest.saltBase64,
@@ -1004,10 +1012,10 @@ class IronwoodMigrationService {
   Future<void> recoverSoftwarePrivateMigration({
     required String accountUuid,
   }) async {
-    if (!isIOS() || !isMobile() || isHardwareAccount(accountUuid)) {
+    if (!_usesNativeMigrationOutbox || isHardwareAccount(accountUuid)) {
       throw StateError(
         'Ironwood migration credential recovery is only available for '
-        'software accounts on iOS.',
+        'software accounts on mobile.',
       );
     }
 
@@ -1238,7 +1246,7 @@ class IronwoodMigrationService {
             status: initialStatus,
             mayCreateRun: mayCreateRun,
           );
-          if (isIOS()) {
+          if (_usesNativeMigrationOutbox) {
             await _reconcileMigrationOutboxReceipts(context: context);
           }
 
@@ -1252,7 +1260,7 @@ class IronwoodMigrationService {
             operationStackTrace = stackTrace;
           }
 
-          if (isIOS()) {
+          if (_usesNativeMigrationOutbox) {
             try {
               await _reconcileMigrationOutboxReceipts(context: context);
             } catch (error, stackTrace) {
@@ -1288,7 +1296,7 @@ class IronwoodMigrationService {
           final waitingForDenominationConfirmations =
               currentStatus.phase ==
               kIronwoodMigrationWaitingDenomConfirmationsPhase;
-          if (isIOS() &&
+          if (_usesNativeMigrationOutbox &&
               currentStatus.activeRunId != null &&
               !waitingForDenominationConfirmations) {
             try {
@@ -1334,7 +1342,7 @@ class IronwoodMigrationService {
         accountUuid: context.accountUuid,
       );
       if (manifest == null) {
-        if (isIOS()) {
+        if (_usesNativeMigrationOutbox) {
           await _recoverPersistedMigrationOutbox(
             context: context,
             status: status,
@@ -1343,7 +1351,7 @@ class IronwoodMigrationService {
         throw StateError(
           '$_credentialRecoveryRequiredError '
           'Vizor will only continue transactions preserved in the verified '
-          'iOS outbox.',
+          'native migration outbox.',
         );
       }
       final resolvedManifest = await _resolveManifestContext(manifest, context);
@@ -1378,7 +1386,11 @@ class IronwoodMigrationService {
   }) async {
     final runId = status.activeRunId;
     final lightwalletdUrl = context.lightwalletdUrl;
-    if (!isIOS() || runId == null || lightwalletdUrl == null) return false;
+    if (!_usesNativeMigrationOutbox ||
+        runId == null ||
+        lightwalletdUrl == null) {
+      return false;
+    }
 
     final expectedTxids = <String>{
       for (final part in status.parts)
@@ -1732,7 +1744,7 @@ class IronwoodMigrationService {
   Future<void> _reconcileBackgroundPreparationBestEffort(
     rust_sync.MigrationStatus status,
   ) async {
-    if (!isIOS() || !isMobile()) return;
+    if (!_usesNativePreparation || !isMobile()) return;
     if (status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return;
     }
@@ -1834,6 +1846,9 @@ Future<List<int>?> _missingMnemonicBytesForAccount(String accountUuid) {
 bool _defaultIsMacOS() => Platform.isMacOS;
 bool _defaultIsMobile() => Platform.isIOS || Platform.isAndroid;
 bool _defaultIsIOS() => Platform.isIOS;
+bool _defaultIsAndroid() => Platform.isAndroid;
+bool _defaultSupportsNativeMigrationOutbox() =>
+    Platform.isIOS || Platform.isAndroid;
 bool _alwaysTrue() => true;
 bool _defaultIsHardwareAccount(String _) => false;
 
@@ -1848,7 +1863,7 @@ Future<bool> _defaultScheduleBackgroundMigration() async {
 }
 
 Future<bool> _defaultStartBackgroundPreparation() async {
-  if (!Platform.isIOS) return false;
+  if (!Platform.isIOS && !Platform.isAndroid) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>(
         'startPreparation',
       ) ??
@@ -1856,7 +1871,7 @@ Future<bool> _defaultStartBackgroundPreparation() async {
 }
 
 Future<void> _defaultCancelBackgroundMigration() async {
-  if (!Platform.isIOS) return;
+  if (!Platform.isIOS && !Platform.isAndroid) return;
   await _backgroundMigrationChannel.invokeMethod<void>('cancel');
 }
 
@@ -1866,7 +1881,9 @@ _defaultGetPreparationRuntimeState({
   required String accountUuid,
   required String runId,
 }) async {
-  if (!Platform.isIOS) return IronwoodMigrationPreparationRuntimeState.idle;
+  if (!Platform.isIOS && !Platform.isAndroid) {
+    return IronwoodMigrationPreparationRuntimeState.idle;
+  }
   final value = await _backgroundMigrationChannel.invokeMethod<String>(
     'getPreparationRuntimeState',
     {'network': network, 'accountUuid': accountUuid, 'runId': runId},
@@ -1887,6 +1904,7 @@ Future<void> _defaultAcknowledgePreparationForegroundContinuation({
 }
 
 Future<bool> _defaultRequestNotificationAuthorization() async {
+  if (!Platform.isIOS && !Platform.isAndroid) return false;
   final status = await _backgroundMigrationChannel.invokeMethod<String>(
     'requestNotificationAuthorization',
   );
@@ -1897,6 +1915,9 @@ Future<bool> _defaultRequestNotificationAuthorization() async {
 
 Future<IronwoodMigrationNotificationAuthorizationStatus>
 _defaultGetNotificationAuthorizationStatus() async {
+  if (!Platform.isIOS && !Platform.isAndroid) {
+    return IronwoodMigrationNotificationAuthorizationStatus.denied;
+  }
   final status = await _backgroundMigrationChannel.invokeMethod<String>(
     'getNotificationAuthorizationStatus',
   );
@@ -1904,6 +1925,7 @@ _defaultGetNotificationAuthorizationStatus() async {
 }
 
 Future<bool> _defaultOpenNotificationSettings() async {
+  if (!Platform.isIOS && !Platform.isAndroid) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>(
         'openNotificationSettings',
       ) ??

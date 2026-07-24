@@ -177,6 +177,106 @@ void main() {
     );
   });
 
+  test('Android uses the native encrypted manifest channel', () async {
+    const channel = MethodChannel('test/background_migration/android_store');
+    String? nativeManifest;
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          final arguments = call.arguments as Map<Object?, Object?>?;
+          switch (call.method) {
+            case 'stageCredentialManifest':
+              nativeManifest = arguments?['manifestJson'] as String?;
+              return true;
+            case 'readCredentialManifest':
+              return nativeManifest;
+            case 'deleteCredentialManifest':
+              nativeManifest = null;
+              return true;
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final storage = FlutterSecureStorage();
+    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+      storage: storage,
+      randomBytes: (length) => Uint8List(length),
+      channel: channel,
+      isAndroid: true,
+    );
+
+    final prepared = await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+
+    expect(nativeManifest, prepared.encode());
+    expect(await storage.read(key: 'test:account-1'), isNull);
+    expect(
+      await store.read(network: 'test', accountUuid: 'account-1'),
+      prepared,
+    );
+    await store.delete(network: 'test', accountUuid: 'account-1');
+    expect(nativeManifest, isNull);
+    expect(calls.map((call) => call.method), [
+      'stageCredentialManifest',
+      'readCredentialManifest',
+      'deleteCredentialManifest',
+    ]);
+  });
+
+  test('Android migrates a legacy secure-storage manifest once', () async {
+    const channel = MethodChannel('test/background_migration/android_upgrade');
+    final legacy = IronwoodMigrationBackgroundCredentialManifest(
+      version: 1,
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+      credentialHex: List.filled(32, 'ab').join(),
+      saltBase64: base64Encode(List<int>.filled(16, 7)),
+      expectedRunId: 'run-1',
+    );
+    FlutterSecureStorage.setMockInitialValues({
+      'test:account-1': legacy.encode(),
+    });
+    String? nativeManifest;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          switch (call.method) {
+            case 'readCredentialManifest':
+              return nativeManifest;
+            case 'stageCredentialManifest':
+              nativeManifest =
+                  (call.arguments as Map<Object?, Object?>)['manifestJson']
+                      as String;
+              return true;
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final storage = FlutterSecureStorage();
+    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+      storage: storage,
+      randomBytes: (length) => Uint8List(length),
+      channel: channel,
+      isAndroid: true,
+    );
+
+    expect(await store.read(network: 'test', accountUuid: 'account-1'), legacy);
+    expect(nativeManifest, legacy.encode());
+    expect(await storage.read(key: 'test:account-1'), isNull);
+  });
+
   test(
     'iOS account revocation waits for native lifecycle completion',
     () async {
@@ -260,6 +360,46 @@ void main() {
     expect(resumeCalls, 2);
   });
 
+  test(
+    'Android migration resume retries a transient channel failure',
+    () async {
+      const channel = MethodChannel(
+        'test/background_migration/android_resume_retry',
+      );
+      var resumeCalls = 0;
+      final resumeLeaseIds = <String?>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method != 'resume') return true;
+            resumeCalls += 1;
+            resumeLeaseIds.add(
+              (call.arguments as Map<Object?, Object?>?)?['leaseId'] as String?,
+            );
+            if (resumeCalls == 1) {
+              throw PlatformException(code: 'temporarily_unavailable');
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: false,
+        isAndroid: true,
+        resumeRetryDelays: const [Duration.zero, Duration.zero],
+      );
+
+      await lifecycle.quiesce();
+      await lifecycle.resumeAfterMutation();
+
+      expect(resumeCalls, 2);
+      expect(resumeLeaseIds.first, isNotEmpty);
+      expect(resumeLeaseIds.toSet(), hasLength(1));
+    },
+  );
+
   test('caller-managed quiescence stays scoped to its async action', () async {
     final lifecycle = IronwoodMigrationBackgroundLifecycle(
       isIOS: false,
@@ -278,6 +418,17 @@ void main() {
   test(
     'Android quiesce retains the credential until revocation commits',
     () async {
+      const channel = MethodChannel('test/background_migration/android_revoke');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
       final storage = FlutterSecureStorage();
       final store = IronwoodMigrationBackgroundCredentialStore.testing(
         storage: storage,
@@ -285,6 +436,7 @@ void main() {
       );
       final lifecycle = IronwoodMigrationBackgroundLifecycle(
         credentialStore: store,
+        channel: channel,
         isIOS: false,
         isAndroid: true,
       );
@@ -306,8 +458,79 @@ void main() {
         await store.read(network: 'test', accountUuid: 'account-1'),
         isNull,
       );
+      expect(calls.map((call) => call.method), ['quiesce', 'revokeAccount']);
     },
   );
+
+  test('Android quiesce and resume use native lifecycle steps', () async {
+    const channel = MethodChannel(
+      'test/background_migration/android_quiesce_resume',
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: false,
+      isAndroid: true,
+    );
+
+    await lifecycle.quiesce();
+    await lifecycle.resumeAfterMutation();
+
+    expect(calls.map((call) => call.method), ['quiesce', 'resume']);
+    final quiesceLeaseId =
+        (calls.first.arguments as Map<Object?, Object?>)['leaseId'];
+    final resumeLeaseId =
+        (calls.last.arguments as Map<Object?, Object?>)['leaseId'];
+    expect(quiesceLeaseId, isA<String>());
+    expect(resumeLeaseId, quiesceLeaseId);
+  });
+
+  test('overlapping Android quiescence uses distinct native leases', () async {
+    const channel = MethodChannel(
+      'test/background_migration/android_overlapping_quiescence',
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: false,
+      isAndroid: true,
+    );
+
+    await lifecycle.quiesce();
+    await lifecycle.quiesce();
+    await lifecycle.resumeAfterMutation();
+    await lifecycle.resumeAfterMutation();
+
+    final quiesceLeaseIds = calls
+        .where((call) => call.method == 'quiesce')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['leaseId'])
+        .toList();
+    final resumeLeaseIds = calls
+        .where((call) => call.method == 'resume')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['leaseId'])
+        .toList();
+    expect(quiesceLeaseIds, hasLength(2));
+    expect(quiesceLeaseIds.toSet(), hasLength(2));
+    expect(resumeLeaseIds, quiesceLeaseIds);
+  });
 
   test('iOS wallet reset fails closed when native revocation fails', () async {
     const channel = MethodChannel('test/background_migration/revoke_all');
