@@ -431,7 +431,7 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileIronwoodMigrationWaitingNotificationsOffUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Migration - Needs input',
+                      name: 'Migration - Needs input (batch blinking)',
                       builder: buildMobileIronwoodMigrationNeedsInputUseCase,
                     ),
                     WidgetbookUseCase(

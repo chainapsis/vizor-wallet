@@ -55,6 +55,8 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
       MobileIronwoodMigrationPreviewSurface.migrationNeedsInput =>
         const _MigrationProgressPreview(
           state: _MigrationProgressState.needsInput,
+          migratedAmountText: '777.888 ZEC',
+          totalAmountText: '999.999 ZEC',
         ),
       MobileIronwoodMigrationPreviewSurface.migrationBroadcasting =>
         const _MigrationProgressPreview(
@@ -560,7 +562,6 @@ class _MigrationPreparationDial extends StatelessWidget {
           CustomPaint(
             size: const Size.square(256),
             painter: _MigrationRingPainter(
-              progress: 1,
               trackColor: context.colors.border.subtle,
               activeColor: context.colors.border.subtle,
               segments: 8,
@@ -668,12 +669,18 @@ enum _MigrationProgressState {
   confirming,
 }
 
+const _migrationPartsPerBatch = 8;
+
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
     required this.state,
     this.showPreparationCompleteModal = false,
     this.completedParts,
-    this.totalParts = 3,
+    this.totalParts = 24,
+    this.completedBatches,
+    this.totalBatches,
+    this.currentBatchPartCount,
+    this.completedCurrentBatchParts,
     this.migratedAmountText,
     this.totalAmountText,
     this.availableAmountText,
@@ -692,6 +699,10 @@ class _MigrationProgressPreview extends StatelessWidget {
   final bool showPreparationCompleteModal;
   final int? completedParts;
   final int totalParts;
+  final int? completedBatches;
+  final int? totalBatches;
+  final int? currentBatchPartCount;
+  final int? completedCurrentBatchParts;
   final String? migratedAmountText;
   final String? totalAmountText;
   final String? availableAmountText;
@@ -711,6 +722,29 @@ class _MigrationProgressPreview extends StatelessWidget {
     final resolvedCompletedParts =
         completedParts ??
         (state == _MigrationProgressState.broadcasting ? 1 : 0);
+    final resolvedTotalBatches =
+        totalBatches ??
+        math.max(
+          1,
+          (math.max(1, totalParts) + _migrationPartsPerBatch - 1) ~/
+              _migrationPartsPerBatch,
+        );
+    final resolvedCompletedBatches =
+        completedBatches ??
+        (resolvedCompletedParts >= totalParts
+            ? resolvedTotalBatches
+            : resolvedCompletedParts ~/ _migrationPartsPerBatch);
+    final resolvedBatchPartCount =
+        currentBatchPartCount ??
+        (state == _MigrationProgressState.needsInput
+            ? math.min(3, totalParts)
+            : math.min(_migrationPartsPerBatch, totalParts));
+    final resolvedCompletedCurrentBatchParts =
+        completedCurrentBatchParts ??
+        (resolvedCompletedParts % _migrationPartsPerBatch).clamp(
+          0,
+          resolvedBatchPartCount,
+        );
     final body = _MigrationPreviewPage(
       navTitle: 'Migration in progress…',
       onBack: onBack,
@@ -725,7 +759,7 @@ class _MigrationProgressPreview extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [Color(0x00007F49), Color(0x00007F49), Color(0x99005D37)],
-            stops: [0, 0.55, 1],
+            stops: [0, 0.65, 1],
           ),
         ),
         _MigrationProgressState.syncing => const BoxDecoration(
@@ -744,8 +778,11 @@ class _MigrationProgressPreview extends StatelessWidget {
               children: [
                 _MigrationBatchDial(
                   state: state,
-                  completedParts: resolvedCompletedParts,
-                  totalParts: totalParts,
+                  completedBatches: resolvedCompletedBatches,
+                  totalBatches: resolvedTotalBatches,
+                  currentBatchPartCount: resolvedBatchPartCount,
+                  completedCurrentBatchParts:
+                      resolvedCompletedCurrentBatchParts,
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
                   totalAmountText: totalAmountText,
@@ -785,16 +822,20 @@ class _MigrationProgressPreview extends StatelessWidget {
 class _MigrationBatchDial extends StatelessWidget {
   const _MigrationBatchDial({
     required this.state,
-    required this.completedParts,
-    required this.totalParts,
+    required this.completedBatches,
+    required this.totalBatches,
+    required this.currentBatchPartCount,
+    required this.completedCurrentBatchParts,
     this.dimension = 256,
     this.migratedAmountText,
     this.totalAmountText,
   });
 
   final _MigrationProgressState state;
-  final int completedParts;
-  final int totalParts;
+  final int completedBatches;
+  final int totalBatches;
+  final int currentBatchPartCount;
+  final int completedCurrentBatchParts;
   final double dimension;
   final String? migratedAmountText;
   final String? totalAmountText;
@@ -802,77 +843,94 @@ class _MigrationBatchDial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final needsInput = state == _MigrationProgressState.needsInput;
-    final broadcasting = state == _MigrationProgressState.broadcasting;
-    final confirming = state == _MigrationProgressState.confirming;
-    final hasCurrentBatch = broadcasting || confirming || needsInput;
     final migrated = migratedAmountText?.replaceFirst(RegExp(r'\s+ZEC$'), '');
+    final total = totalAmountText ?? '100 ZEC';
+    final combinedAmount = migrated == null ? '0/100 ZEC' : '$migrated/$total';
+    final amountStyle = AppTypography.headlineSmall.copyWith(
+      color: context.colors.text.accent,
+    );
+    final amountPainter = TextPainter(
+      text: TextSpan(text: combinedAmount, style: amountStyle),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+    )..layout();
+    final splitAmount =
+        amountPainter.width > dimension * 0.75 || combinedAmount.length >= 18;
+    final completedSegments = {
+      for (
+        var index = 0;
+        index < completedCurrentBatchParts.clamp(0, _migrationPartsPerBatch);
+        index++
+      )
+        index,
+    };
+    final highlightedSegments = needsInput
+        ? {
+            for (
+              var index = 0;
+              index < currentBatchPartCount.clamp(0, _migrationPartsPerBatch);
+              index++
+            )
+              index,
+          }
+        : const <int>{};
     return SizedBox.square(
       dimension: dimension,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          CustomPaint(
-            size: Size.square(dimension),
-            painter: _MigrationRingPainter(
-              progress: totalParts <= 0 ? 0 : completedParts / totalParts,
-              trackColor: context.colors.border.subtle,
-              activeColor: const Color(0xFF00A460),
-              segments: math.max(1, totalParts),
-              currentSegment: hasCurrentBatch && completedParts < totalParts
-                  ? completedParts
-                  : null,
-              currentColor: hasCurrentBatch ? context.colors.text.accent : null,
-            ),
+          _AnimatedMigrationAttentionRing(
+            dimension: dimension,
+            completedSegments: completedSegments,
+            highlightedSegments: highlightedSegments,
           ),
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (needsInput) ...[
-                Text(
-                  'Migrated:',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
+              Text(
+                'Migrated:',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  migrated ?? '777.888',
-                  style: AppTypography.displayLarge.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-                Text(
-                  totalAmountText == null
-                      ? '/999.999 ZEC'
-                      : '/$totalAmountText',
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              ] else ...[
-                Text(
-                  'Migrated:',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  migrated != null && totalAmountText != null
-                      ? '$migrated/$totalAmountText'
-                      : completedParts == 0
-                      ? '0/100 ZEC'
-                      : '40/100 ZEC',
-                  style: AppTypography.displaySmall.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-              ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              SizedBox(
+                width: dimension * 0.68,
+                child: splitAmount
+                    ? Column(
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              migrated ?? '777.888',
+                              maxLines: 1,
+                              style: amountStyle,
+                            ),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '/$total',
+                              maxLines: 1,
+                              style: amountStyle,
+                            ),
+                          ),
+                        ],
+                      )
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          combinedAmount,
+                          maxLines: 1,
+                          style: amountStyle,
+                        ),
+                      ),
+              ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                '$completedParts/$totalParts batches',
-                style: AppTypography.labelLarge.copyWith(
-                  color: context.colors.text.secondary,
+                '$completedBatches/$totalBatches Batch',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.accent,
                 ),
               ),
             ],
@@ -901,7 +959,6 @@ class _MigrationSyncingContent extends StatelessWidget {
               CustomPaint(
                 size: Size.square(dialDimension),
                 painter: _MigrationRingPainter(
-                  progress: 0,
                   trackColor: context.colors.border.subtle,
                   activeColor: context.colors.border.subtle,
                   segments: 8,
@@ -912,7 +969,7 @@ class _MigrationSyncingContent extends StatelessWidget {
                 children: [
                   Text(
                     'Migrated:',
-                    style: AppTypography.labelLarge.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
                   ),
@@ -925,18 +982,19 @@ class _MigrationSyncingContent extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
-        const _MigrationSkeletonValueRow(
-          icon: AppIcons.shieldKeyhole,
-          label: 'Available in Ironwood',
-          valueWidth: 90,
-          emphasizeIcon: true,
-        ),
-        SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
-        const _MigrationSkeletonValueRow(
-          icon: AppIcons.cog,
-          label: 'Status',
-          valueWidth: 184,
+        SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
+        const _MigrationSummaryRows(
+          first: _MigrationSkeletonValueRow(
+            icon: AppIcons.shieldKeyhole,
+            label: 'Available in Ironwood',
+            valueWidth: 90,
+            emphasized: true,
+          ),
+          second: _MigrationSkeletonValueRow(
+            icon: AppIcons.wrench,
+            label: 'Status',
+            valueWidth: 184,
+          ),
         ),
         const Spacer(),
         Padding(
@@ -971,23 +1029,25 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.valueWidth,
-    this.emphasizeIcon = false,
+    this.emphasized = false,
   });
 
   final String icon;
   final String label;
   final double valueWidth;
-  final bool emphasizeIcon;
+  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = AppTypography.bodyExtraSmall.copyWith(
-      color: context.colors.text.accent,
-      fontWeight: FontWeight.w600,
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      color: emphasized
+          ? context.colors.text.accent
+          : context.colors.text.primary,
+      fontWeight: emphasized ? FontWeight.w500 : FontWeight.w400,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        const fixedWidth = 20 + AppSpacing.xs + AppSpacing.xs;
+        const fixedWidth = 20 + AppSpacing.xs;
         const minimumBarWidth = 48.0;
         final labelPainter = TextPainter(
           text: TextSpan(text: label, style: labelStyle),
@@ -1004,15 +1064,15 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
           math.max(0.0, constraints.maxWidth - fixedWidth - labelWidth),
         );
         return SizedBox(
-          height: 40,
+          height: 20,
           child: Row(
             children: [
               AppIcon(
                 icon,
                 size: 20,
-                color: emphasizeIcon
+                color: emphasized
                     ? context.colors.text.accent
-                    : context.colors.text.secondary,
+                    : context.colors.text.primary,
               ),
               const SizedBox(width: AppSpacing.xs),
               SizedBox(
@@ -1024,7 +1084,6 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
                   style: labelStyle,
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
               const Spacer(),
               _MigrationSkeletonBar(width: barWidth, height: 16),
             ],
@@ -1127,42 +1186,50 @@ class _MigrationProgressSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _MigrationValueRow(
-          icon: AppIcons.shieldKeyhole,
-          label: 'Available in Ironwood',
-          value:
-              availableAmountText ?? (completedParts == 0 ? '0 ZEC' : '40 ZEC'),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (state == _MigrationProgressState.syncing)
-          _MigrationValueRow(
-            icon: AppIcons.migrationSign,
-            label: 'Status',
-            value: 'Syncing',
-          ),
-        if (state == _MigrationProgressState.waitingNotificationsOn ||
-            state == _MigrationProgressState.waitingNotificationsOff ||
-            state == _MigrationProgressState.broadcasting ||
-            state == _MigrationProgressState.confirming ||
-            state == _MigrationProgressState.needsInput)
-          _MigrationValueRow(
-            icon: AppIcons.migrationSign,
-            label: 'Status',
-            value:
-                statusValueOverride ??
-                switch (state) {
-                  _MigrationProgressState.broadcasting =>
-                    'All is well. Broadcasting notes…',
-                  _MigrationProgressState.confirming =>
-                    'Waiting for confirmations',
-                  _MigrationProgressState.needsInput =>
-                    'Waiting for your confirmation',
-                  _ => 'Waiting for signing window',
-                },
-          ),
-      ],
+    return _MigrationSummaryRows(
+      first: _MigrationValueRow(
+        icon: AppIcons.shieldKeyhole,
+        label: 'Available in Ironwood',
+        value:
+            availableAmountText ?? (completedParts == 0 ? '0 ZEC' : '40 ZEC'),
+        emphasized: true,
+      ),
+      second: _MigrationValueRow(
+        icon: AppIcons.wrench,
+        label: 'Status',
+        value:
+            statusValueOverride ??
+            switch (state) {
+              _MigrationProgressState.syncing => 'Syncing',
+              _MigrationProgressState.broadcasting =>
+                'All is well. Broadcasting notes…',
+              _MigrationProgressState.confirming => 'Waiting for confirmations',
+              _MigrationProgressState.needsInput =>
+                'Waiting for your confirmation',
+              _ => 'Waiting for signing window',
+            },
+      ),
+    );
+  }
+}
+
+class _MigrationSummaryRows extends StatelessWidget {
+  const _MigrationSummaryRows({required this.first, required this.second});
+
+  final Widget first;
+  final Widget second;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Column(
+        children: [
+          first,
+          const SizedBox(height: AppSpacing.sm),
+          second,
+        ],
+      ),
     );
   }
 }
@@ -1182,12 +1249,13 @@ class _MigrationProgressStatus extends StatelessWidget {
         'Checking the latest confirmations and migration status.',
       ),
       _MigrationProgressState.waitingNotificationsOn => (
-        AppIcons.migrationTimer,
-        'Waiting for signing window',
-        '~2 hrs 15 mins.\nWe will notify you when it’s ready.',
+        AppIcons.notificationBell,
+        '~2 hrs 15 mins',
+        'Signing window expected in this time.\n'
+            'We will notify you when it’s ready.',
       ),
       _MigrationProgressState.waitingNotificationsOff => (
-        AppIcons.warning,
+        AppIcons.warningCircle,
         'Waiting for signing window',
         'Notifications are disabled. Open Vizor after block 123456 '
             '(~1 hr 30 mins) and approve the next migration batch.',
@@ -1213,25 +1281,54 @@ class _MigrationProgressStatus extends StatelessWidget {
         state == _MigrationProgressState.waitingNotificationsOn;
     final notificationsOff =
         state == _MigrationProgressState.waitingNotificationsOff;
+    final broadcasting = state == _MigrationProgressState.broadcasting;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
       child: Column(
         children: [
-          AppIcon(icon, size: 24, color: context.colors.icon.success),
-          const SizedBox(height: AppSpacing.sm),
-          if (waitingWithNotifications)
+          SizedBox.square(
+            dimension: 24,
+            child: Center(
+              child: AppIcon(
+                icon,
+                size: notificationsOff ? 20 : 24,
+                color: context.colors.icon.success,
+              ),
+            ),
+          ),
+          SizedBox(height: broadcasting ? AppSpacing.sm : AppSpacing.md),
+          if (waitingWithNotifications) ...[
             Text(
-              'Signing window expected in\n${bodyOverride ?? body}',
+              _migrationTimingFromBody(bodyOverride) ?? title,
               textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
+              style: AppTypography.bodyLarge.copyWith(
+                color: context.colors.text.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.accent,
               ),
-            )
-          else if (notificationsOff)
+            ),
+          ] else if (notificationsOff)
             Text(
               bodyOverride ?? body,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.accent,
+              ),
+            )
+          else if (broadcasting)
+            Text(
+              'Signing window expected in\n'
+              '${_migrationTimingFromBody(bodyOverride) ?? '~2 hrs 15 mins'}.\n'
+              'We will notify you when it’s ready.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,
               ),
             )
@@ -1255,6 +1352,12 @@ class _MigrationProgressStatus extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String? _migrationTimingFromBody(String? value) {
+    if (value == null || value.isEmpty) return null;
+    final firstLine = value.split('\n').first.trim();
+    return firstLine.replaceFirst(RegExp(r'\.$'), '');
   }
 }
 
@@ -1294,15 +1397,19 @@ class _MigrationNeedsInputCard extends StatelessWidget {
               icon: AppIcons.checkCircle,
               label: batchLabel ?? 'Batch #1',
               value: batchValue ?? '40 ZEC (30%)',
+              emphasized: true,
+              valueFollowsLabel: true,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
         ] else if (actionLabel == null) ...[
-          const _MigrationPreviewCard(
+          _MigrationPreviewCard(
             child: _MigrationValueRow(
               icon: AppIcons.checkCircle,
               label: 'Batch #1',
               value: '40 ZEC (30%)',
+              emphasized: true,
+              valueFollowsLabel: true,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -1755,53 +1862,89 @@ class _MigrationValueRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.emphasized = false,
+    this.valueFollowsLabel = false,
   });
 
   final String icon;
   final String label;
   final String value;
+  final bool emphasized;
+  final bool valueFollowsLabel;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
+      height: 20,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 340;
+          final style =
+              (emphasized
+                      ? AppTypography.labelLarge
+                      : AppTypography.labelLarge.copyWith(
+                          fontWeight: FontWeight.w400,
+                        ))
+                  .copyWith(
+                    color: emphasized
+                        ? context.colors.text.accent
+                        : context.colors.text.primary,
+                  );
+          final labelPainter = TextPainter(
+            text: TextSpan(text: label, style: style),
+            maxLines: 1,
+            textDirection: Directionality.of(context),
+          )..layout();
+          const fixedWidth = 20 + AppSpacing.xs;
+          const minimumValueWidth = 80.0;
+          final labelWidth = math.min(
+            labelPainter.width,
+            math.max(
+              0.0,
+              constraints.maxWidth - fixedWidth - minimumValueWidth,
+            ),
+          );
           final labelText = Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyExtraSmall.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w600,
-            ),
+            style: style,
           );
           final valueText = Text(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: AppTypography.bodyExtraSmall.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w600,
-            ),
+            textAlign: valueFollowsLabel ? TextAlign.start : TextAlign.end,
+            style: style,
           );
+          if (valueFollowsLabel) {
+            return Row(
+              children: [
+                AppIcon(
+                  icon,
+                  size: 20,
+                  color: emphasized
+                      ? context.colors.text.accent
+                      : context.colors.text.primary,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                labelText,
+                const SizedBox(width: AppSpacing.s),
+                Flexible(child: valueText),
+              ],
+            );
+          }
           return Row(
             children: [
-              AppIcon(icon, size: 20, color: context.colors.icon.success),
+              AppIcon(
+                icon,
+                size: 20,
+                color: emphasized
+                    ? context.colors.text.accent
+                    : context.colors.text.primary,
+              ),
               const SizedBox(width: AppSpacing.xs),
-              if (wide) labelText else Expanded(flex: 3, child: labelText),
-              const SizedBox(width: AppSpacing.s),
-              if (wide)
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: valueText,
-                  ),
-                )
-              else
-                Expanded(flex: 4, child: valueText),
+              SizedBox(width: labelWidth, child: labelText),
+              Expanded(child: valueText),
             ],
           );
         },
@@ -1810,22 +1953,111 @@ class _MigrationValueRow extends StatelessWidget {
   }
 }
 
+class _AnimatedMigrationAttentionRing extends StatefulWidget {
+  const _AnimatedMigrationAttentionRing({
+    required this.dimension,
+    required this.completedSegments,
+    required this.highlightedSegments,
+  });
+
+  final double dimension;
+  final Set<int> completedSegments;
+  final Set<int> highlightedSegments;
+
+  @override
+  State<_AnimatedMigrationAttentionRing> createState() =>
+      _AnimatedMigrationAttentionRingState();
+}
+
+class _AnimatedMigrationAttentionRingState
+    extends State<_AnimatedMigrationAttentionRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  bool _reducedMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+      value: 1,
+    );
+    _opacity = Tween<double>(
+      begin: 0.32,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedMigrationAttentionRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    if (_reducedMotion || widget.highlightedSegments.isEmpty) {
+      _controller.stop();
+      _controller.value = 1;
+      return;
+    }
+    if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _opacity,
+      builder: (context, _) => CustomPaint(
+        size: Size.square(widget.dimension),
+        painter: _MigrationRingPainter(
+          trackColor: context.colors.border.subtle,
+          activeColor: const Color(0xFF00A460),
+          segments: _migrationPartsPerBatch,
+          completedSegments: widget.completedSegments,
+          highlightedSegments: widget.highlightedSegments,
+          highlightColor: context.colors.text.accent,
+          highlightOpacity: _reducedMotion ? 1 : _opacity.value,
+        ),
+      ),
+    );
+  }
+}
+
 class _MigrationRingPainter extends CustomPainter {
   const _MigrationRingPainter({
-    required this.progress,
     required this.trackColor,
     required this.activeColor,
     required this.segments,
-    this.currentSegment,
-    this.currentColor,
+    this.completedSegments = const {},
+    this.highlightedSegments = const {},
+    this.highlightColor,
+    this.highlightOpacity = 1,
   });
 
-  final double progress;
   final Color trackColor;
   final Color activeColor;
   final int segments;
-  final int? currentSegment;
-  final Color? currentColor;
+  final Set<int> completedSegments;
+  final Set<int> highlightedSegments;
+  final Color? highlightColor;
+  final double highlightOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1834,17 +2066,18 @@ class _MigrationRingPainter extends CustomPainter {
     final rect = Rect.fromCircle(center: center, radius: radius);
     final gap = segments == 1 ? 0.08 : 0.10;
     final segmentSweep = (math.pi * 2 / segments) - gap;
-    final completed = (progress * segments).clamp(0.0, segments.toDouble());
     for (var index = 0; index < segments; index++) {
       final start = -math.pi / 2 + index * (math.pi * 2 / segments) + gap / 2;
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeWidth = 12
-        ..color = index < completed
+        ..color = completedSegments.contains(index)
             ? activeColor
-            : index == currentSegment
-            ? currentColor ?? activeColor
+            : highlightedSegments.contains(index)
+            ? (highlightColor ?? activeColor).withValues(
+                alpha: highlightOpacity,
+              )
             : trackColor;
       canvas.drawArc(rect, start, segmentSweep, false, paint);
     }
@@ -1852,12 +2085,13 @@ class _MigrationRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MigrationRingPainter oldDelegate) {
-    return progress != oldDelegate.progress ||
-        trackColor != oldDelegate.trackColor ||
+    return trackColor != oldDelegate.trackColor ||
         activeColor != oldDelegate.activeColor ||
         segments != oldDelegate.segments ||
-        currentSegment != oldDelegate.currentSegment ||
-        currentColor != oldDelegate.currentColor;
+        completedSegments != oldDelegate.completedSegments ||
+        highlightedSegments != oldDelegate.highlightedSegments ||
+        highlightColor != oldDelegate.highlightColor ||
+        highlightOpacity != oldDelegate.highlightOpacity;
   }
 }
 

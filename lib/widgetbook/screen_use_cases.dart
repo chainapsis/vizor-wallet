@@ -1024,8 +1024,11 @@ Widget buildMobileIronwoodMigrationWaitingNotificationsOffUseCase(
 }
 
 Widget buildMobileIronwoodMigrationNeedsInputUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
-    MobileIronwoodMigrationPreviewSurface.migrationNeedsInput,
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(disableAnimations: false),
+    child: _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+      MobileIronwoodMigrationPreviewSurface.migrationNeedsInput,
+    ),
   );
 }
 

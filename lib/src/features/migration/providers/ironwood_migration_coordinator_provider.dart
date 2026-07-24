@@ -30,22 +30,30 @@ class IronwoodMigrationCoordinatorState {
     this.errors = const {},
     this.advancingAccounts = const {},
     this.foregroundProgressPermits = const {},
+    this.childProofBatchPermits = const {},
   });
 
   final Map<String, rust_sync.MigrationStatus> statuses;
   final Map<String, String> errors;
   final Set<String> advancingAccounts;
 
-  /// Accounts whose migration may continue automatically for the current
-  /// foreground session. Mobile grants this only after an explicit user
-  /// action; it is cleared whenever the app backgrounds.
+  /// Accounts whose migration may continue in the current foreground session.
+  ///
+  /// Mobile grants this only after an explicit user action and clears it
+  /// whenever the app backgrounds. Child proofs additionally require the
+  /// one-shot [childProofBatchPermits] gate.
   final Set<String> foregroundProgressPermits;
+
+  /// Accounts for which the user explicitly approved one child-proof batch.
+  /// Unlike [foregroundProgressPermits], this is consumed by one proof attempt.
+  final Set<String> childProofBatchPermits;
 
   IronwoodMigrationCoordinatorState copyWith({
     Map<String, rust_sync.MigrationStatus>? statuses,
     Map<String, String>? errors,
     Set<String>? advancingAccounts,
     Set<String>? foregroundProgressPermits,
+    Set<String>? childProofBatchPermits,
   }) {
     return IronwoodMigrationCoordinatorState(
       statuses: statuses ?? this.statuses,
@@ -53,6 +61,8 @@ class IronwoodMigrationCoordinatorState {
       advancingAccounts: advancingAccounts ?? this.advancingAccounts,
       foregroundProgressPermits:
           foregroundProgressPermits ?? this.foregroundProgressPermits,
+      childProofBatchPermits:
+          childProofBatchPermits ?? this.childProofBatchPermits,
     );
   }
 }
@@ -98,8 +108,12 @@ class IronwoodMigrationCoordinator
         refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
     } else if (kAppFormFactor == AppFormFactor.mobile &&
-        state.foregroundProgressPermits.isNotEmpty) {
-      state = state.copyWith(foregroundProgressPermits: const {});
+        (state.foregroundProgressPermits.isNotEmpty ||
+            state.childProofBatchPermits.isNotEmpty)) {
+      state = state.copyWith(
+        foregroundProgressPermits: const {},
+        childProofBatchPermits: const {},
+      );
     }
   }
 
@@ -120,6 +134,22 @@ class IronwoodMigrationCoordinator
     );
   }
 
+  /// Allows exactly one k-max child-proof batch for [accountUuid].
+  ///
+  /// This also grants the general foreground permit required to enter the
+  /// migration operation. The proof-specific permit is consumed before the
+  /// batch attempt starts.
+  void grantChildProofBatchPermit(String accountUuid) {
+    if (kAppFormFactor != AppFormFactor.mobile) return;
+    state = state.copyWith(
+      foregroundProgressPermits: {
+        ...state.foregroundProgressPermits,
+        accountUuid,
+      },
+      childProofBatchPermits: {...state.childProofBatchPermits, accountUuid},
+    );
+  }
+
   /// Performs the one foreground sync required when a migration status flow is
   /// entered from a cold launch or after returning from background, then
   /// reconciles status without advancing migration work.
@@ -128,8 +158,12 @@ class IronwoodMigrationCoordinator
   /// must not call this API or use its Future as a full-screen loading signal.
   Future<void> synchronizeAndReconcileAfterReentry() async {
     if (kAppFormFactor == AppFormFactor.mobile &&
-        state.foregroundProgressPermits.isNotEmpty) {
-      state = state.copyWith(foregroundProgressPermits: const {});
+        (state.foregroundProgressPermits.isNotEmpty ||
+            state.childProofBatchPermits.isNotEmpty)) {
+      state = state.copyWith(
+        foregroundProgressPermits: const {},
+        childProofBatchPermits: const {},
+      );
     }
     await ref.read(syncProvider.future);
     if (!ref.mounted) return;
@@ -196,7 +230,12 @@ class IronwoodMigrationCoordinator
   }
 
   Future<void> retry(String accountUuid) async {
-    grantForegroundProgressPermit(accountUuid);
+    final status = state.statuses[accountUuid];
+    if (status != null && _isChildProofBatchAdvance(status)) {
+      grantChildProofBatchPermit(accountUuid);
+    } else {
+      grantForegroundProgressPermit(accountUuid);
+    }
     try {
       final inFlight = _advanceOperations[accountUuid];
       if (inFlight != null) {
@@ -206,7 +245,7 @@ class IronwoodMigrationCoordinator
           // A manual retry must still run after the automatic attempt fails.
         }
       }
-      await _advance(accountUuid);
+      await _advance(accountUuid, status: status);
       if (!ref.mounted) return;
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
@@ -345,16 +384,23 @@ class IronwoodMigrationCoordinator
         !state.foregroundProgressPermits.contains(accountUuid)) {
       return false;
     }
+    final hasChildProofBatchPermit =
+        kAppFormFactor != AppFormFactor.mobile ||
+        state.childProofBatchPermits.contains(accountUuid);
+    final canPrepareNextProof = _canPrepareNextProof(status);
     final phaseCanAdvance =
         (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0) ||
         (status.phase == kIronwoodMigrationReadyToMigratePhase &&
-            (!isHardware || _canPrepareNextProof(status))) ||
+            hasChildProofBatchPermit &&
+            (!isHardware || canPrepareNextProof)) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            ((usesNativeOutbox && _hasScheduledBroadcast(status)) ||
+            ((usesNativeOutbox &&
+                    status.signedChildPcztCount == 0 &&
+                    _hasScheduledBroadcast(status)) ||
                 (!usesNativeOutbox && _hasDueScheduledBroadcast(status)) ||
-                _canPrepareNextProof(status))) ||
+                (hasChildProofBatchPermit && canPrepareNextProof))) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -431,6 +477,17 @@ class IronwoodMigrationCoordinator
     String accountUuid, {
     rust_sync.MigrationStatus? status,
   }) async {
+    final consumesProofBatchPermit =
+        kAppFormFactor == AppFormFactor.mobile &&
+        status != null &&
+        state.childProofBatchPermits.contains(accountUuid) &&
+        _isChildProofBatchAdvance(status);
+    if (consumesProofBatchPermit) {
+      state = state.copyWith(
+        childProofBatchPermits: {...state.childProofBatchPermits}
+          ..remove(accountUuid),
+      );
+    }
     state = state.copyWith(
       advancingAccounts: {...state.advancingAccounts, accountUuid},
     );
@@ -449,6 +506,14 @@ class IronwoodMigrationCoordinator
         );
       }
     }
+  }
+
+  bool _isChildProofBatchAdvance(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
+      return status.signedChildPcztCount <= 0 || _canPrepareNextProof(status);
+    }
+    return status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+        _canPrepareNextProof(status);
   }
 
   String _advanceProgressKey(rust_sync.MigrationStatus status) {

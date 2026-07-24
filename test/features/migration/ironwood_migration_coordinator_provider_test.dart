@@ -59,11 +59,17 @@ void main() {
     final coordinator = container.read(
       ironwoodMigrationCoordinatorProvider.notifier,
     );
-    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
     await coordinator.refreshNow(forceAdvance: true);
 
     expect(softwareStarts, [_softwareUuid]);
     expect(broadcasts, [_softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .childProofBatchPermits,
+      isNot(contains(_softwareUuid)),
+    );
     expect(
       container
           .read(ironwoodMigrationCoordinatorProvider)
@@ -278,10 +284,67 @@ void main() {
     final coordinator = container.read(
       ironwoodMigrationCoordinatorProvider.notifier,
     );
-    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
     await coordinator.refreshNow();
 
     expect(advances, [_softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .childProofBatchPermits,
+      isNot(contains(_softwareUuid)),
+    );
+  });
+
+  test('one explicit action advances only one child proof batch', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'broadcast_scheduled',
+        signedChildPcztCount: 16,
+        nextActionHeight: 1_000,
+        scheduledHeight: 1_100,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final advances = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: advances,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      broadcast: (accountUuid) async {
+        statuses[accountUuid] = _status(
+          'broadcast_scheduled',
+          signedChildPcztCount: 8,
+          nextActionHeight: 1_000,
+          scheduledHeight: 1_100,
+        );
+        return _result('broadcast_scheduled');
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
+    await coordinator.refreshNow();
+    await coordinator.refreshNow(forceAdvance: true);
+
+    expect(advances, [_softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .childProofBatchPermits,
+      isNot(contains(_softwareUuid)),
+    );
   });
 
   test(
@@ -314,7 +377,7 @@ void main() {
       final coordinator = container.read(
         ironwoodMigrationCoordinatorProvider.notifier,
       );
-      coordinator.grantForegroundProgressPermit(_hardwareUuid);
+      coordinator.grantChildProofBatchPermit(_hardwareUuid);
       await coordinator.refreshNow();
 
       expect(advances, [_hardwareUuid]);
@@ -349,7 +412,7 @@ void main() {
     final coordinator = container.read(
       ironwoodMigrationCoordinatorProvider.notifier,
     );
-    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
     await coordinator.refreshNow();
 
     expect(advances, isEmpty);
@@ -551,6 +614,12 @@ void main() {
       container
           .read(ironwoodMigrationCoordinatorProvider)
           .foregroundProgressPermits,
+      isEmpty,
+    );
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .childProofBatchPermits,
       isEmpty,
     );
   });

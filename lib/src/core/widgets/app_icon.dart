@@ -104,6 +104,8 @@ abstract final class AppIcons {
   static const vizor = 'vizor';
   static const wallet = 'wallet';
   static const warning = 'warning';
+  static const warningCircle = 'warning_circle';
+  static const wrench = 'wrench';
   static const zcash = 'zcash';
   static const zcashCurrency = 'zcash_currency';
 }

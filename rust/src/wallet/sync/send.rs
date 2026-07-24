@@ -102,7 +102,7 @@ use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 
-use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
+use super::migration::{MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT};
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
@@ -153,6 +153,13 @@ impl MigrationBroadcastPolicy<'_> {
 
     fn proof_limit(self, total: usize) -> usize {
         self.max_proofs_per_step.unwrap_or(total).min(total)
+    }
+
+    fn child_proof_batch(self) -> Self {
+        Self {
+            max_proofs_per_step: Some(ZIP318_MAX_PARTS_PER_ANCHOR_COHORT as usize),
+            ..self
+        }
     }
 
     fn should_defer_broadcast(self, proofs_created: usize) -> bool {
@@ -1007,7 +1014,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                         &run.run_id,
                         pending_password.as_slice(),
                         pending_salt_base64,
-                        MigrationBroadcastPolicy::FOREGROUND,
+                        MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
                     )?;
                     if finalized == 0 {
                         let result = prepared_notes_not_spendable_result(
@@ -1451,7 +1458,7 @@ async fn prepare_orchard_migration_outbox(
             &run.run_id,
             pending_password,
             pending_salt_base64,
-            MigrationBroadcastPolicy::FOREGROUND,
+            MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
         )?;
     }
 
@@ -1664,7 +1671,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             &run.run_id,
             pending_password.as_slice(),
             pending_salt_base64,
-            policy,
+            policy.child_proof_batch(),
         )?;
         if finalized == 0 || policy.should_defer_broadcast(finalized) {
             return Ok(prepared_notes_not_spendable_result(
@@ -3069,7 +3076,7 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
 
-    let signed_children = super::migration::signed_child_pczts_for_run(
+    let mut signed_children = super::migration::signed_child_pczts_for_run(
         db_path,
         run_id,
         pending_password,
@@ -3078,6 +3085,9 @@ fn finalize_presigned_migration_children(
     if signed_children.is_empty() {
         return Ok(0);
     }
+    let current_batch_index = child_proof_batch_index(signed_children[0].child_index);
+    signed_children
+        .retain(|child| child_proof_batch_index(child.child_index) == current_batch_index);
 
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
@@ -3212,6 +3222,10 @@ fn finalize_presigned_migration_children(
     }
 
     Ok(finalized_count)
+}
+
+fn child_proof_batch_index(part_index: u32) -> u32 {
+    part_index / ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
 }
 
 fn finalize_ready_denomination_stages(

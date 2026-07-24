@@ -114,44 +114,44 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DecoratedBox(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF98F0E),
-            shape: BoxShape.circle,
+        Align(
+          alignment: Alignment.center,
+          child: Image.asset(
+            'assets/illustrations/keystone_qr_scan_error.png',
+            width: 48,
+            height: 48,
+            filterQuality: FilterQuality.high,
           ),
-          child: SizedBox.square(
-            dimension: 48,
-            child: Center(
-              child: AppIcon(
-                AppIcons.keystoneScan,
-                size: 28,
-                color: colors.icon.inverse,
+        ),
+        const SizedBox(height: AppSpacing.base),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 255),
+            child: Text(
+              'Having issues with scanning the QR code?',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.base),
         Text(
-          'Having issues scanning the QR code?',
+          'There may be a newer version of Keystone Cypherpunk firmware '
+          'available. Check if you have the latest version.',
           textAlign: TextAlign.center,
-          style: AppTypography.bodyLarge.copyWith(
+          style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
-            fontWeight: FontWeight.w600,
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'There may be a newer version of Keystone’s Cypherpunk firmware '
-          'available. Check that you have the latest version.',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
         ),
         const SizedBox(height: AppSpacing.base),
         AppButton(
           expand: true,
           height: 50,
           onPressed: onConfirm,
-          child: const Text('OK, I’ll check'),
+          child: const Text('Ok, I will check'),
         ),
       ],
     );
@@ -513,7 +513,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       if (!mounted) return;
       ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .grantForegroundProgressPermit(accountUuid);
+          .grantChildProofBatchPermit(accountUuid);
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;
@@ -719,19 +719,16 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Future<void> _showKeystoneScanHelp() {
     return showAppMobileSheet<void>(
       context: context,
-      builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.base,
-            AppSpacing.base,
-            AppSpacing.base,
-            AppSpacing.s,
-          ),
-          child: MobileIronwoodKeystoneScanHelpBody(
-            onConfirm: () => Navigator.of(sheetContext).pop(),
-          ),
-        );
-      },
+      builder: (sheetContext) => MobileModalScaffold(
+        title: '',
+        showTitle: false,
+        showClose: false,
+        bottomPadding: AppSpacing.base,
+        onClose: () => Navigator.of(sheetContext).pop(),
+        child: MobileIronwoodKeystoneScanHelpBody(
+          onConfirm: () => Navigator.of(sheetContext).pop(),
+        ),
+      ),
     );
   }
 

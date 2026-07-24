@@ -1943,6 +1943,36 @@ void main() {
     expect(find.text('Syncing the migration progress.'), findsOneWidget);
   });
 
+  testWidgets('uses the shared modal layout for Keystone scan help', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.migrating,
+        previewSurface: MobileIronwoodMigrationPreviewSurface.keystoneScanHelp,
+      ),
+    );
+    await tester.pump();
+
+    final illustration = tester.widget<Image>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/illustrations/keystone_qr_scan_error.png',
+      ),
+    );
+    expect(illustration.width, 48);
+    expect(illustration.height, 48);
+    expect(
+      find.text('Having issues with scanning the QR code?'),
+      findsOneWidget,
+    );
+    expect(find.text('Ok, I will check'), findsOneWidget);
+  });
+
   testWidgets(
     'rotates the preparation orbit while keeping its center content fixed',
     (tester) async {
@@ -2619,9 +2649,9 @@ void main() {
     final signButton = find.byKey(
       const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
     );
-    expect(find.text('Batch #2'), findsOneWidget);
-    expect(find.text('4.12 ZEC (50%)'), findsOneWidget);
-    expect(find.text('Sign batch #2'), findsOneWidget);
+    expect(find.text('Batch #1'), findsOneWidget);
+    expect(find.text('8.24 ZEC (100%)'), findsOneWidget);
+    expect(find.text('Sign batch #1'), findsOneWidget);
     await tester.ensureVisible(signButton);
     await tester.pumpAndSettle();
     await tester.tap(signButton);
@@ -2669,6 +2699,41 @@ void main() {
 
     expect(continueCount, greaterThanOrEqualTo(1));
     expect(find.text('keystone batch sign route'), findsNothing);
+  });
+
+  testWidgets('groups migration parts into eight-part action batches', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 10; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index == 8 ? 0 : index + 1,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: index < 8
+              ? rust_sync.MigrationPartState.completed
+              : rust_sync.MigrationPartState.needsInput,
+          confirmationCount: index < 8 ? 3 : 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(10, 100_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1/2 Batch'), findsOneWidget);
+    expect(find.text('Batch #2'), findsOneWidget);
+    expect(find.text('2 ZEC (20%)'), findsOneWidget);
+    expect(find.text('Sign batch #2'), findsOneWidget);
   });
 
   testWidgets('retries a late Keystone broadcast without opening QR', (
@@ -2871,7 +2936,10 @@ void main() {
         matching: find.byType(AppButton),
       ),
     );
-    expect(continueButton.leading, isNull);
+    expect(
+      continueButton.leading,
+      isA<AppIcon>().having((icon) => icon.name, 'icon name', AppIcons.play),
+    );
   });
 
   testWidgets('explains the additional Keystone approval while waiting', (
@@ -3070,8 +3138,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Migration in progress…'), findsOneWidget);
-    expect(find.text('4.12/12.36 ZEC'), findsOneWidget);
-    expect(find.text('1/3 batches'), findsOneWidget);
+    expect(find.text('4.12'), findsOneWidget);
+    expect(find.text('/12.36 ZEC'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('Waiting for confirmations'), findsWidgets);
     expect(
@@ -3251,7 +3320,7 @@ void main() {
     },
   );
 
-  testWidgets('does not label active broadcasting as a signing window', (
+  testWidgets('shows the next signing window while broadcasting', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -3265,7 +3334,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('All is well. Broadcasting notes…'), findsWidgets);
-    expect(find.textContaining('Signing window expected'), findsNothing);
+    expect(find.textContaining('Signing window expected'), findsOneWidget);
+    expect(
+      find.textContaining('We will notify you when it’s ready.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('keeps coordinator errors on the redesigned retry surface', (
@@ -3342,8 +3415,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('4.12/12.36 ZEC'), findsOneWidget);
-    expect(find.text('1/3 batches'), findsOneWidget);
+    expect(find.text('4.12'), findsOneWidget);
+    expect(find.text('/12.36 ZEC'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('1 ZEC'), findsOneWidget);
   });
@@ -3387,7 +3461,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1/3 batches'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
       findsNothing,
@@ -3419,7 +3493,7 @@ void main() {
 
     expect(find.textContaining('~25 minutes'), findsOneWidget);
     expect(find.textContaining('~18:'), findsNothing);
-    expect(find.text('1/3 batches'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
   });
 
   testWidgets('shows safe-block timing without a proof label', (tester) async {
@@ -3582,7 +3656,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('0/6 ZEC'), findsOneWidget);
-    expect(find.text('0/3 batches'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
   });
 
   testWidgets('keeps an all-confirmed waiting run in progress', (tester) async {
@@ -3601,6 +3675,6 @@ void main() {
 
     expect(find.text('Migration in progress…'), findsOneWidget);
     expect(find.text('Migration complete'), findsNothing);
-    expect(find.text('1/3 batches'), findsOneWidget);
+    expect(find.text('0/1 Batch'), findsOneWidget);
   });
 }
