@@ -388,6 +388,9 @@ class _MobileMigrationRedesignedStatusState
         state: _MigrationPreparationState.paused,
         progress: 0,
         isKeystone: widget.isHardware,
+        pausedMessage: widget.isHardware
+            ? _keystonePreparationSignatureMessage
+            : null,
         onBack: () => context.go('/home'),
         onContinue:
             accountUuid == null || !widget.isHardware

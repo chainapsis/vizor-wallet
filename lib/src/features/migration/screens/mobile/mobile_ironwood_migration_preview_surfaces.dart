@@ -2,6 +2,9 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 void _noopMigrationPreviewAction() {}
 
+const _keystonePreparationSignatureMessage =
+    'Sign the preparation transaction on Keystone.';
+
 class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
   const _MobileIronwoodMigrationPreviewSurface({
     required this.surface,
@@ -34,6 +37,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           state: _MigrationPreparationState.paused,
           progress: 5 / 9,
           isKeystone: true,
+          pausedMessage: _keystonePreparationSignatureMessage,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>

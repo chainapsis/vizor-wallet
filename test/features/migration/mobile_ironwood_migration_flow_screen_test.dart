@@ -1851,6 +1851,10 @@ void main() {
 
     expect(find.text('Preparing your migration'), findsOneWidget);
     expect(find.text('Continue preparation'), findsOneWidget);
+    expect(
+      find.text('Sign the preparation transaction on Keystone.'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Continue preparation'));
     await tester.pumpAndSettle();

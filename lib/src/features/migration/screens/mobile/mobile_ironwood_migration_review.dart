@@ -146,7 +146,8 @@ class _MobileMigrationPrivateStartState
           : _MigrationPreparationState.active,
       progress: 0,
       isKeystone: _isKeystone,
-      pausedMessage: _error,
+      pausedMessage: _error ??
+          (keystonePlan == null ? null : _keystonePreparationSignatureMessage),
       onBack: () => context.go('/home'),
       onContinue: _starting
           ? null
