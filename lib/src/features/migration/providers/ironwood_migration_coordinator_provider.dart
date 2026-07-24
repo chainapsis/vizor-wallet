@@ -12,18 +12,18 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/ironwood_migration_presentation.dart';
 import '../models/mobile_ironwood_migration_attention_state.dart';
 import '../services/ironwood_migration_service.dart';
 import 'ironwood_migration_announcement_provider.dart';
 
 const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
-  seconds:
-      String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
-          ? 1
-          : kZcashFastTestnetMigration
-          ? 5
-          : 30,
+  seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
+      ? 1
+      : kZcashFastTestnetMigration
+      ? 5
+      : 30,
 );
 
 class IronwoodMigrationCoordinatorState {
@@ -78,6 +78,8 @@ class IronwoodMigrationCoordinator
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
+  final Map<String, ({String progressKey, DateTime retryAt})>
+  _outboxRecoveryWindows = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
   final Map<String, Future<void>> _advanceOperations = {};
 
@@ -385,6 +387,42 @@ class IronwoodMigrationCoordinator
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
 
+        if (_shouldRecoverDueNativeOutbox(
+          status,
+          usesNativeOutbox: service.supportsBackgroundMigrationRetry,
+          accountUuid: account.uuid,
+        )) {
+          final recovery = await service.recoverDueMigrationOutbox(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+          if (!ref.mounted) return;
+          status = await service.status(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+          if (!ref.mounted) return;
+          nextStatuses[account.uuid] = status;
+          final stillDue = migrationHasDueScheduledBroadcast(
+            status,
+            currentHeight: _safelyObservedProofHeight(),
+          );
+          if (stillDue) {
+            _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
+          }
+          if (!stillDue ||
+              _outboxRecoveryCanWait(recovery, accountUuid: account.uuid)) {
+            if (stillDue) {
+              _outboxRecoveryWindows[account.uuid] = (
+                progressKey: _outboxRecoveryProgressKey(status),
+                retryAt: DateTime.now().add(_outboxRecoveryDelay(recovery)),
+              );
+            } else {
+              _outboxRecoveryWindows.remove(account.uuid);
+            }
+          }
+        }
+
         if (_shouldAdvance(
           status,
           isHardware: account.isHardware,
@@ -465,6 +503,98 @@ class IronwoodMigrationCoordinator
       }
     }
     return false;
+  }
+
+  bool _shouldRecoverDueNativeOutbox(
+    rust_sync.MigrationStatus status, {
+    required bool usesNativeOutbox,
+    required String accountUuid,
+  }) {
+    final due =
+        kAppFormFactor == AppFormFactor.mobile &&
+        usesNativeOutbox &&
+        migrationHasDueScheduledBroadcast(
+          status,
+          currentHeight: _safelyObservedProofHeight(),
+        );
+    if (!due) {
+      _outboxRecoveryWindows.remove(accountUuid);
+      return false;
+    }
+    final window = _outboxRecoveryWindows[accountUuid];
+    final progressKey = _outboxRecoveryProgressKey(status);
+    if (window == null || window.progressKey != progressKey) {
+      _outboxRecoveryWindows.remove(accountUuid);
+      return true;
+    }
+    return !DateTime.now().isBefore(window.retryAt);
+  }
+
+  void _validateDueOutboxRecovery(
+    IronwoodMigrationOutboxRunResult result, {
+    required String accountUuid,
+  }) {
+    switch (result.outcome) {
+      case IronwoodMigrationOutboxRunOutcome.accepted:
+        return;
+      case IronwoodMigrationOutboxRunOutcome.waiting:
+        if (result.accountUuid != accountUuid ||
+            _outboxRecoveryCanWait(result, accountUuid: accountUuid)) {
+          return;
+        }
+        throw StateError('Scheduled migration submission is waiting to retry.');
+      case IronwoodMigrationOutboxRunOutcome.noWork:
+        throw StateError(
+          'The scheduled migration transaction is not available in the '
+          'background outbox.',
+        );
+      case IronwoodMigrationOutboxRunOutcome.needsUserAction:
+        if (result.accountUuid == accountUuid) {
+          throw StateError('Scheduled migration submission needs user action.');
+        }
+        return;
+      case IronwoodMigrationOutboxRunOutcome.temporarilyUnavailable:
+        return;
+      case IronwoodMigrationOutboxRunOutcome.cancelled:
+        return;
+    }
+  }
+
+  bool _outboxRecoveryCanWait(
+    IronwoodMigrationOutboxRunResult result, {
+    required String accountUuid,
+  }) {
+    if (result.outcome != IronwoodMigrationOutboxRunOutcome.waiting ||
+        result.accountUuid != accountUuid) {
+      return false;
+    }
+    final observedHeight = result.observedHeight;
+    final nextHeight = result.nextHeight;
+    return (result.retryDelay?.inMilliseconds ?? 0) > 0 ||
+        (observedHeight != null &&
+            nextHeight != null &&
+            nextHeight > observedHeight);
+  }
+
+  Duration _outboxRecoveryDelay(IronwoodMigrationOutboxRunResult result) {
+    final nativeDelay = result.retryDelay;
+    if (nativeDelay == null || nativeDelay < _migrationAdvanceInterval) {
+      return _migrationAdvanceInterval;
+    }
+    return nativeDelay;
+  }
+
+  String _outboxRecoveryProgressKey(rust_sync.MigrationStatus status) {
+    final scheduled =
+        status.scheduledBroadcasts
+            .where((broadcast) => broadcast.status.toLowerCase() == 'scheduled')
+            .map(
+              (broadcast) =>
+                  '${broadcast.txidHex.toLowerCase()}:${broadcast.scheduledHeight}',
+            )
+            .toList()
+          ..sort();
+    return '${status.activeRunId}:${scheduled.join(',')}';
   }
 
   bool _shouldAdvance(
@@ -653,10 +783,11 @@ class IronwoodMigrationCoordinator
   }
 }
 
-final ironwoodMigrationCoordinatorProvider = NotifierProvider<
-  IronwoodMigrationCoordinator,
-  IronwoodMigrationCoordinatorState
->(IronwoodMigrationCoordinator.new);
+final ironwoodMigrationCoordinatorProvider =
+    NotifierProvider<
+      IronwoodMigrationCoordinator,
+      IronwoodMigrationCoordinatorState
+    >(IronwoodMigrationCoordinator.new);
 
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({required this.child, super.key});
@@ -685,18 +816,15 @@ class _IronwoodMigrationCoordinatorHostState
       );
     });
     _lifecycleListener = AppLifecycleListener(
-      onResume:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(true),
-      onHide:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
-      onPause:
-          () => ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .setForeground(false),
+      onResume: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(true),
+      onHide: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
+      onPause: () => ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .setForeground(false),
     );
   }
 

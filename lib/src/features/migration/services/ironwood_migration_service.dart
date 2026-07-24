@@ -209,12 +209,26 @@ typedef IronwoodMigrationOutboxBatchRecoverer =
       required String lightwalletdUrl,
       required List<String> expectedTxids,
     });
+typedef IronwoodMigrationOutboxBatchChecker =
+    Future<bool> Function({
+      required String batchId,
+      required String network,
+      required String accountUuid,
+      required String runId,
+      required List<String> expectedTxids,
+      required List<String> requiredTxids,
+    });
 typedef IronwoodMigrationOutboxReceiptLister =
     Future<List<Map<Object?, Object?>>> Function();
 typedef IronwoodMigrationOutboxReceiptAcknowledger =
     Future<void> Function(List<String> receiptIds);
 typedef IronwoodMigrationOutboxForegroundRunner =
     Future<IronwoodMigrationOutboxRunResult> Function();
+typedef IronwoodMigrationDueOutboxRecoveryRunner =
+    Future<IronwoodMigrationOutboxRunResult> Function({
+      required String network,
+      required String accountUuid,
+    });
 
 enum IronwoodMigrationOutboxRunOutcome {
   noWork,
@@ -230,6 +244,8 @@ class IronwoodMigrationOutboxRunResult {
     required this.outcome,
     this.nextHeight,
     this.observedHeight,
+    this.accountUuid,
+    this.retryDelay,
   });
 
   factory IronwoodMigrationOutboxRunResult.fromMap(
@@ -251,12 +267,21 @@ class IronwoodMigrationOutboxRunResult {
       outcome: outcome,
       nextHeight: (values['nextHeight'] as num?)?.toInt(),
       observedHeight: (values['observedHeight'] as num?)?.toInt(),
+      accountUuid: values['accountUuid'] as String?,
+      retryDelay: switch (values['delaySeconds']) {
+        final num seconds when seconds > 0 => Duration(
+          milliseconds: (seconds * Duration.millisecondsPerSecond).ceil(),
+        ),
+        _ => null,
+      },
     );
   }
 
   final IronwoodMigrationOutboxRunOutcome outcome;
   final int? nextHeight;
   final int? observedHeight;
+  final String? accountUuid;
+  final Duration? retryDelay;
 }
 
 typedef IronwoodMigrationKeystoneDenominationPreparer =
@@ -424,10 +449,12 @@ class IronwoodMigrationService {
     IronwoodMigrationOutboxBatchStager? stageMigrationOutboxBatch,
     IronwoodMigrationOutboxBatchArmer? armMigrationOutboxBatch,
     IronwoodMigrationOutboxBatchRecoverer? recoverMigrationOutboxBatch,
+    IronwoodMigrationOutboxBatchChecker? hasMigrationOutboxBatch,
     IronwoodMigrationOutboxReceiptLister? listMigrationOutboxReceipts,
     IronwoodMigrationOutboxReceiptAcknowledger?
     acknowledgeMigrationOutboxReceipts,
     IronwoodMigrationOutboxForegroundRunner? runMigrationOutboxOnceNow,
+    IronwoodMigrationDueOutboxRecoveryRunner? recoverDueMigrationOutbox,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
     IronwoodMigrationPrivateDraftCreator? createPrivateMigrationDraft,
@@ -505,6 +532,8 @@ class IronwoodMigrationService {
            armMigrationOutboxBatch ?? _defaultArmMigrationOutboxBatch,
        recoverMigrationOutboxBatch =
            recoverMigrationOutboxBatch ?? _defaultRecoverMigrationOutboxBatch,
+       hasMigrationOutboxBatch =
+           hasMigrationOutboxBatch ?? _defaultHasMigrationOutboxBatch,
        listMigrationOutboxReceipts =
            listMigrationOutboxReceipts ?? _defaultListMigrationOutboxReceipts,
        acknowledgeMigrationOutboxReceipts =
@@ -512,6 +541,7 @@ class IronwoodMigrationService {
            _defaultAcknowledgeMigrationOutboxReceipts,
        runMigrationOutboxOnceNow =
            runMigrationOutboxOnceNow ?? _defaultRunMigrationOutboxOnceNow,
+       _recoverDueMigrationOutboxOverride = recoverDueMigrationOutbox,
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
            rust_sync.prepareOrchardMigrationDenominationsPczt,
@@ -574,10 +604,13 @@ class IronwoodMigrationService {
   final IronwoodMigrationOutboxBatchStager stageMigrationOutboxBatch;
   final IronwoodMigrationOutboxBatchArmer armMigrationOutboxBatch;
   final IronwoodMigrationOutboxBatchRecoverer recoverMigrationOutboxBatch;
+  final IronwoodMigrationOutboxBatchChecker hasMigrationOutboxBatch;
   final IronwoodMigrationOutboxReceiptLister listMigrationOutboxReceipts;
   final IronwoodMigrationOutboxReceiptAcknowledger
   acknowledgeMigrationOutboxReceipts;
   final IronwoodMigrationOutboxForegroundRunner runMigrationOutboxOnceNow;
+  final IronwoodMigrationDueOutboxRecoveryRunner?
+  _recoverDueMigrationOutboxOverride;
   final IronwoodMigrationKeystoneDenominationPreparer
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationPrivateDraftCreator createPrivateMigrationDraft;
@@ -710,6 +743,58 @@ class IronwoodMigrationService {
           return status;
         });
       },
+    );
+  }
+
+  /// Runs only the already-armed native transaction outbox and reconciles this
+  /// account's receipts. The native runner is global and may service a
+  /// different account; callers must re-read this account's status before
+  /// interpreting the result. This never creates proofs or signs another
+  /// migration batch, so it is safe to use without a signing permit.
+  Future<IronwoodMigrationOutboxRunResult> recoverDueMigrationOutbox({
+    required String network,
+    required String accountUuid,
+  }) async {
+    final override = _recoverDueMigrationOutboxOverride;
+    if (override != null) {
+      return override(network: network, accountUuid: accountUuid);
+    }
+    if (!_usesNativeMigrationOutbox) {
+      throw UnsupportedError(
+        'Native migration outbox recovery is not available.',
+      );
+    }
+
+    final dbPath = await getWalletDbPath();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+    );
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () => _serializeCredentialState(context, () async {
+        await _reconcileMigrationOutboxReceipts(context: context);
+        final status = await _getStatusForContext(context);
+        if (status.scheduledBroadcasts.any(
+          (broadcast) => broadcast.status.toLowerCase() == 'scheduled',
+        )) {
+          final available = await _hasPersistedMigrationOutboxBatch(
+            context: context,
+            status: status,
+          );
+          if (!available) {
+            throw StateError(
+              'The scheduled migration transaction is not available in the '
+              'background outbox.',
+            );
+          }
+        }
+        final result = await runMigrationOutboxOnceNow();
+        await _reconcileMigrationOutboxReceipts(context: context);
+        return result;
+      }),
     );
   }
 
@@ -1471,6 +1556,22 @@ class IronwoodMigrationService {
     required _MigrationCredentialContext context,
     required rust_sync.MigrationStatus status,
   }) async {
+    if (!await _recoverPersistedMigrationOutboxBatch(
+      context: context,
+      status: status,
+    )) {
+      return false;
+    }
+
+    await runMigrationOutboxOnceNow();
+    await _reconcileMigrationOutboxReceipts(context: context);
+    return true;
+  }
+
+  Future<bool> _recoverPersistedMigrationOutboxBatch({
+    required _MigrationCredentialContext context,
+    required rust_sync.MigrationStatus status,
+  }) async {
     final runId = status.activeRunId;
     final lightwalletdUrl = context.lightwalletdUrl;
     if (!_usesNativeMigrationOutbox ||
@@ -1479,13 +1580,7 @@ class IronwoodMigrationService {
       return false;
     }
 
-    final expectedTxids = <String>{
-      for (final part in status.parts)
-        if (part.txidHex case final txid? when txid.isNotEmpty)
-          txid.toLowerCase(),
-      for (final scheduled in status.scheduledBroadcasts)
-        if (scheduled.txidHex.isNotEmpty) scheduled.txidHex.toLowerCase(),
-    }.toList(growable: false);
+    final expectedTxids = _migrationOutboxExpectedTxids(status);
     if (expectedTxids.isEmpty) return false;
 
     final recovered = await recoverMigrationOutboxBatch(
@@ -1499,9 +1594,45 @@ class IronwoodMigrationService {
     if (!recovered) return false;
 
     _scheduledBackgroundMigrations.add(_credentialKey(context));
-    await runMigrationOutboxOnceNow();
-    await _reconcileMigrationOutboxReceipts(context: context);
     return true;
+  }
+
+  Future<bool> _hasPersistedMigrationOutboxBatch({
+    required _MigrationCredentialContext context,
+    required rust_sync.MigrationStatus status,
+  }) async {
+    final runId = status.activeRunId;
+    if (!_usesNativeMigrationOutbox || runId == null) return false;
+
+    final expectedTxids = _migrationOutboxExpectedTxids(status);
+    final requiredTxids = status.scheduledBroadcasts
+        .where(
+          (broadcast) =>
+              broadcast.status.toLowerCase() == 'scheduled' &&
+              broadcast.txidHex.isNotEmpty,
+        )
+        .map((broadcast) => broadcast.txidHex.toLowerCase())
+        .toSet()
+        .toList(growable: false);
+    if (expectedTxids.isEmpty || requiredTxids.isEmpty) return false;
+    return hasMigrationOutboxBatch(
+      batchId: _migrationOutboxBatchId(context, runId),
+      network: context.network,
+      accountUuid: context.accountUuid,
+      runId: runId,
+      expectedTxids: expectedTxids,
+      requiredTxids: requiredTxids,
+    );
+  }
+
+  List<String> _migrationOutboxExpectedTxids(rust_sync.MigrationStatus status) {
+    return <String>{
+      for (final part in status.parts)
+        if (part.txidHex case final txid? when txid.isNotEmpty)
+          txid.toLowerCase(),
+      for (final scheduled in status.scheduledBroadcasts)
+        if (scheduled.txidHex.isNotEmpty) scheduled.txidHex.toLowerCase(),
+    }.toList(growable: false);
   }
 
   _MigrationCredentialContext _contextWithCurrentEndpoint(
@@ -2055,6 +2186,26 @@ Future<bool> _defaultRecoverMigrationOutboxBatch({
             'runId': runId,
             'lightwalletdUrl': lightwalletdUrl,
             'expectedTxids': expectedTxids,
+          }) ??
+      false;
+}
+
+Future<bool> _defaultHasMigrationOutboxBatch({
+  required String batchId,
+  required String network,
+  required String accountUuid,
+  required String runId,
+  required List<String> expectedTxids,
+  required List<String> requiredTxids,
+}) async {
+  return await _backgroundMigrationChannel
+          .invokeMethod<bool>('hasOutboxBatch', {
+            'batchId': batchId,
+            'network': network,
+            'accountUuid': accountUuid,
+            'runId': runId,
+            'expectedTxids': expectedTxids,
+            'requiredTxids': requiredTxids,
           }) ??
       false;
 }

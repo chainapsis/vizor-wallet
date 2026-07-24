@@ -613,6 +613,7 @@ class _MigrationPreparationDial extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           _AnimatedMigrationPreparationRing(
+            key: const ValueKey('mobile_ironwood_preparation_ring'),
             animate: state == _MigrationPreparationState.active,
             color: context.colors.border.subtle,
           ),
@@ -659,6 +660,7 @@ class _MigrationPreparationDial extends StatelessWidget {
 
 class _AnimatedMigrationPreparationRing extends StatefulWidget {
   const _AnimatedMigrationPreparationRing({
+    super.key,
     required this.animate,
     required this.color,
   });
@@ -1001,6 +1003,7 @@ enum _MigrationProgressState {
   waitingNotificationsOn,
   waitingNotificationsOff,
   needsInput,
+  readyToSubmit,
   broadcasting,
   confirming,
 }
@@ -1096,6 +1099,7 @@ class _MigrationProgressPreview extends StatelessWidget {
       backgroundDecoration: switch (state) {
         _MigrationProgressState.waitingNotificationsOn ||
         _MigrationProgressState.waitingNotificationsOff ||
+        _MigrationProgressState.readyToSubmit ||
         _MigrationProgressState.broadcasting ||
         _MigrationProgressState.confirming => const BoxDecoration(
           gradient: LinearGradient(
@@ -1165,6 +1169,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     if (!showPreparationCompleteModal) return body;
     return _MigrationModalPreview(
       background: body,
+      animateEntry: true,
       child: _PreparationCompleteModalBody(onDone: onPreparationCompleteDone),
     );
   }
@@ -1550,7 +1555,9 @@ class _MigrationProgressSummary extends StatelessWidget {
               _MigrationProgressState.confirming => 'Waiting for confirmations',
               _MigrationProgressState.needsInput =>
                 'Waiting for your confirmation',
-              _ => 'Waiting for signing window',
+              _MigrationProgressState.readyToSubmit =>
+                'Scheduled transaction ready',
+              _ => 'Waiting for next migration step',
             },
       ),
     );
@@ -1595,19 +1602,26 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.waitingNotificationsOn => (
         AppIcons.notificationBell,
         '~2 hrs 15 mins',
-        'Signing window expected in this time.\n'
-            'We will notify you when it’s ready.',
+        'Next migration step expected in this time.\n'
+            'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.waitingNotificationsOff => (
         AppIcons.warningCircle,
-        'Waiting for signing window',
+        'Waiting for next migration step',
         'Notifications are disabled. Open Vizor after block 123456 '
             '(~1 hr 30 mins) and approve the next migration batch.',
+      ),
+      _MigrationProgressState.readyToSubmit => (
+        AppIcons.migrationTimer,
+        'Ready now',
+        'The scheduled transaction is ready for automatic submission. '
+            'Keep Vizor open.',
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         'All is well. Broadcasting notes…',
-        '~2 hrs 15 mins.\nWe will notify you when it’s ready.',
+        '~2 hrs 15 mins.\n'
+            'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
@@ -1668,9 +1682,9 @@ class _MigrationProgressStatus extends StatelessWidget {
             )
           else if (broadcasting)
             Text(
-              'Signing window expected in\n'
+              'Next migration step expected in\n'
               '${_migrationTimingFromBody(bodyOverride) ?? '~2 hrs 15 mins'}.\n'
-              'We will notify you when it’s ready.',
+              'Notifications are on. You can leave Vizor and check back later.',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,
@@ -2139,23 +2153,40 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
 }
 
 class _MigrationModalPreview extends StatelessWidget {
-  const _MigrationModalPreview({required this.background, required this.child});
+  const _MigrationModalPreview({
+    required this.background,
+    required this.child,
+    this.animateEntry = false,
+  });
 
   final Widget background;
   final Widget child;
+  final bool animateEntry;
 
   @override
   Widget build(BuildContext context) {
+    final modal = MobileModalScaffold(
+      title: '',
+      showTitle: false,
+      showClose: false,
+      bottomPadding: AppSpacing.base,
+      onClose: _noopMigrationPreviewAction,
+      child: child,
+    );
     return MobileModalOverlay(
       background: background,
-      child: MobileModalScaffold(
-        title: '',
-        showTitle: false,
-        showClose: false,
-        bottomPadding: AppSpacing.base,
-        onClose: _noopMigrationPreviewAction,
-        child: child,
-      ),
+      child: !animateEntry || MediaQuery.disableAnimationsOf(context)
+          ? modal
+          : TweenAnimationBuilder<double>(
+              tween: Tween(begin: 1, end: 0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              builder: (context, progress, child) => Transform.translate(
+                offset: Offset(0, 96 * progress),
+                child: child,
+              ),
+              child: modal,
+            ),
     );
   }
 }

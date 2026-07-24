@@ -53,6 +53,19 @@ void main() {
     },
   );
 
+  test('outbox result parses native account scope and retry delay', () {
+    final result = IronwoodMigrationOutboxRunResult.fromMap({
+      'outcome': 'waiting',
+      'nextHeight': 1_000,
+      'observedHeight': 1_000,
+      'accountUuid': 'account-1',
+      'delaySeconds': 60.5,
+    });
+
+    expect(result.accountUuid, 'account-1');
+    expect(result.retryDelay, const Duration(milliseconds: 60_500));
+  });
+
   test(
     'Android reads preparation runtime state from the native worker',
     () async {
@@ -119,6 +132,195 @@ void main() {
       expect(seenDbPath, '/tmp/wallet.db');
       expect(seenNetwork, 'test');
       expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
+    'foreground due-outbox recovery runs only native outbox reconciliation',
+    () async {
+      final events = <String>[];
+      var receiptReadCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async {
+              events.add('has');
+              expect(requiredTxids, ['tx-1']);
+              return true;
+            },
+        listMigrationOutboxReceipts: () async {
+          events.add('list');
+          receiptReadCount++;
+          return receiptReadCount == 1
+              ? const []
+              : [_outboxReceipt(receiptId: 'receipt-1', txidHex: 'tx-1')];
+        },
+        reconcileMigrationOutboxReceipt:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required runId,
+              required txidHex,
+              required outcome,
+              required remoteHeight,
+              responseMessage,
+              required scheduleUpdates,
+              acceptedRawTransaction,
+            }) async {
+              events.add('receipt');
+            },
+        acknowledgeMigrationOutboxReceipts: (_) async {
+          events.add('ack');
+        },
+        runMigrationOutboxOnceNow: () async {
+          events.add('run');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+            observedHeight: 1_000,
+          );
+        },
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.accepted);
+      expect(events, ['list', 'has', 'run', 'list', 'receipt', 'ack']);
+    },
+  );
+
+  test(
+    'foreground recovery allows the global outbox to accept another account',
+    () async {
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => true,
+        listMigrationOutboxReceipts: () async => const [],
+        runMigrationOutboxOnceNow: () async =>
+            const IronwoodMigrationOutboxRunResult(
+              outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+              observedHeight: 1_000,
+            ),
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.accepted);
+    },
+  );
+
+  test(
+    'foreground recovery rejects a missing requested-account outbox batch',
+    () async {
+      var foregroundRuns = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => false,
+        runMigrationOutboxOnceNow: () async {
+          foregroundRuns++;
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+            nextHeight: 1_001,
+            observedHeight: 1_000,
+          );
+        },
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('not available in the background outbox'),
+          ),
+        ),
+      );
+      expect(foregroundRuns, 0);
     },
   );
 
@@ -2969,6 +3171,7 @@ rust_sync.MigrationStatus _migrationStatus({
   String phase = 'ready_to_prepare',
   String? activeRunId,
   List<rust_sync.MigrationPartStatus> parts = const [],
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -2989,8 +3192,20 @@ rust_sync.MigrationStatus _migrationStatus({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    scheduledBroadcasts: const [],
+    scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
+  );
+}
+
+rust_sync.MigrationScheduledBroadcast _scheduledBroadcast({
+  required String txidHex,
+}) {
+  return rust_sync.MigrationScheduledBroadcast(
+    txidHex: txidHex,
+    valueZatoshi: BigInt.from(100000),
+    scheduledAtMs: 0,
+    scheduledHeight: 1_000,
+    status: 'scheduled',
   );
 }
 

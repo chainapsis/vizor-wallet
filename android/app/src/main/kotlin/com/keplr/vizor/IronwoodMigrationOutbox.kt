@@ -108,6 +108,32 @@ internal class IronwoodMigrationOutboxRepository(
 }
 
 internal object IronwoodOutboxState {
+    fun hasBatch(
+        snapshot: IronwoodOutboxSnapshot,
+        batchId: String,
+        network: String,
+        accountUuid: String,
+        runId: String,
+        expectedTxids: Set<String>,
+        requiredTxids: Set<String>,
+    ): Boolean {
+        val batch = snapshot.batches.firstOrNull { it.batchId == batchId }
+            ?: return false
+        require(
+            batch.network == network &&
+                batch.accountUuid == accountUuid &&
+                batch.runId == runId &&
+                expectedTxids.isNotEmpty() &&
+                requiredTxids.isNotEmpty() &&
+                batch.items.isNotEmpty() &&
+                batch.items.all { it.txidHex in expectedTxids } &&
+                requiredTxids.all { required ->
+                    batch.items.any { it.txidHex == required }
+                },
+        ) { "Conflicting outbox batch." }
+        return true
+    }
+
     fun recoverInterrupted(snapshot: IronwoodOutboxSnapshot, nowMs: Long) {
         snapshot.batches.flatMap { it.items }
             .filter { it.status == IronwoodOutboxItemStatus.SUBMITTING }
@@ -147,9 +173,9 @@ internal object IronwoodOutboxState {
         endpoint: String,
         remoteHeight: Long,
         nowMs: Long,
-    ): Boolean {
+    ): String? {
         val canonicalExpiry = canonicalExpiryHeight(remoteHeight)
-        var needsUserAction = false
+        var needsUserActionAccountUuid: String? = null
         snapshot.batches.filter { it.lightwalletdUrl == endpoint }.forEach { batch ->
             var terminal = false
             batch.items.filter { it.status == IronwoodOutboxItemStatus.ARMED }.forEach { item ->
@@ -180,14 +206,15 @@ internal object IronwoodOutboxState {
                 )
                 batch.needsUserActionNotificationPending = true
                 terminal = true
-                needsUserAction = true
+                needsUserActionAccountUuid =
+                    needsUserActionAccountUuid ?: batch.accountUuid
             }
             if (terminal) {
                 batch.armedAtMs = null
                 batch.nextProofHeight = null
             }
         }
-        return needsUserAction
+        return needsUserActionAccountUuid
     }
 
     fun markProofReadyIfNeeded(
@@ -406,6 +433,22 @@ internal object IronwoodOutboxState {
                 }
             }
             .minOrNull()
+
+    fun nextActionAccountUuid(
+        snapshot: IronwoodOutboxSnapshot,
+        endpoint: String,
+        height: Long,
+    ): String? = snapshot.batches.filter { batch ->
+        if (batch.lightwalletdUrl != endpoint) return@filter false
+        val hasTransaction = batch.items.any {
+            it.status == IronwoodOutboxItemStatus.ARMED &&
+                it.scheduledHeight == height
+        }
+        val hasProof = batch.armedAtMs != null &&
+            batch.proofReadyObservedHeight == null &&
+            batch.nextProofHeight == height
+        hasTransaction || hasProof
+    }.minByOrNull { it.batchId }?.accountUuid
 
     fun hasDeliveryWork(snapshot: IronwoodOutboxSnapshot): Boolean =
         snapshot.batches.any { batch ->

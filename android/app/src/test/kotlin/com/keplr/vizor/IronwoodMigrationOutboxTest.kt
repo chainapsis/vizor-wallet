@@ -50,6 +50,7 @@ class IronwoodMigrationOutboxTest {
         ).runOnce()
 
         assertEquals(IronwoodMigrationOutboxOutcome.WAITING, result.outcome)
+        assertEquals("account-1", result.transportAccountUuid)
         val recovered = repository.read().batches.single().items.single()
         assertEquals(IronwoodOutboxItemStatus.ARMED, recovered.status)
         assertEquals(1, recovered.attemptCount)
@@ -74,6 +75,7 @@ class IronwoodMigrationOutboxTest {
         ).runOnce()
 
         assertEquals(IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION, result.outcome)
+        assertEquals("account-1", result.transportAccountUuid)
         val snapshot = repository.read()
         assertEquals(
             IronwoodOutboxItemStatus.NEEDS_RESIGN_AWAITING_RECONCILIATION,
@@ -97,6 +99,36 @@ class IronwoodMigrationOutboxTest {
         assertNull(
             IronwoodOutboxState.pendingNeedsUserActionBatchId(repository.read()),
         )
+    }
+
+    @Test
+    fun hasBatchRequiresEveryScheduledTransaction() {
+        val batch = batch(item(expiryHeight = 69_120))
+        val snapshot = IronwoodOutboxSnapshot(batches = mutableListOf(batch))
+        val expectedTxids = batch.items.map { it.txidHex }.toSet()
+
+        assertTrue(
+            IronwoodOutboxState.hasBatch(
+                snapshot = snapshot,
+                batchId = batch.batchId,
+                network = batch.network,
+                accountUuid = batch.accountUuid,
+                runId = batch.runId,
+                expectedTxids = expectedTxids,
+                requiredTxids = expectedTxids,
+            ),
+        )
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            IronwoodOutboxState.hasBatch(
+                snapshot = snapshot,
+                batchId = batch.batchId,
+                network = batch.network,
+                accountUuid = batch.accountUuid,
+                runId = batch.runId,
+                expectedTxids = expectedTxids + "missing-txid",
+                requiredTxids = setOf("missing-txid"),
+            )
+        }
     }
 
     @Test

@@ -122,6 +122,7 @@ struct BackgroundMigrationOutboxReceipt: Codable, Equatable {
 
 struct BackgroundMigrationOutboxSelection: Equatable {
   let batchId: String
+  let accountUuid: String
   let scopeKey: String
   let lightwalletdUrl: String
   let item: BackgroundMigrationOutboxItem
@@ -149,15 +150,18 @@ struct BackgroundMigrationOutboxRunResult: Equatable {
   let transport: BackgroundMigrationTransportOutcome
   let proofReady: BackgroundMigrationProofReadyMetadata?
   let broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
+  let transportAccountUuid: String?
 
   init(
     transport: BackgroundMigrationTransportOutcome,
     proofReady: BackgroundMigrationProofReadyMetadata?,
-    broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata? = nil
+    broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata? = nil,
+    transportAccountUuid: String? = nil
   ) {
     self.transport = transport
     self.proofReady = proofReady
     self.broadcastComplete = broadcastComplete
+    self.transportAccountUuid = transportAccountUuid
   }
 }
 
@@ -325,6 +329,35 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     return true
   }
 
+  func hasBatch(
+    batchId: String,
+    network: String,
+    accountUuid: String,
+    runId: String,
+    expectedTxids: Set<String>,
+    requiredTxids: Set<String>
+  ) throws -> Bool {
+    guard !expectedTxids.isEmpty, !requiredTxids.isEmpty else {
+      throw BackgroundMigrationOutboxError.invalidArmRequest
+    }
+    guard let batch = batches.first(where: { $0.batchId == batchId }) else {
+      return false
+    }
+    let normalizedExpectedTxids = Set(expectedTxids.map { $0.lowercased() })
+    let normalizedRequiredTxids = Set(requiredTxids.map { $0.lowercased() })
+    let batchTxids = Set(batch.items.map(\.txidHex))
+    guard batch.network == network,
+      batch.accountUuid == accountUuid,
+      batch.runId == runId,
+      !batch.items.isEmpty,
+      batchTxids.isSubset(of: normalizedExpectedTxids),
+      normalizedRequiredTxids.isSubset(of: batchTxids)
+    else {
+      throw BackgroundMigrationOutboxError.conflictingBatch
+    }
+    return true
+  }
+
   mutating func recoverInterruptedSubmissions(at date: Date) {
     for batchIndex in batches.indices {
       for itemIndex in batches[batchIndex].items.indices
@@ -376,6 +409,25 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         && $0.proofReadyNotificationPendingAt == nil
     }.compactMap(\.nextProofHeight).min()
     return [transactionHeight, proofHeight].compactMap { $0 }.min()
+  }
+
+  func nextActionAccountUuid(endpoint: String, height: UInt64) -> String? {
+    return batches
+      .filter { batch in
+        guard batch.lightwalletdUrl == endpoint else { return false }
+        let hasTransaction = batch.items.contains {
+          $0.status == .armed && $0.scheduledHeight == height
+        }
+        let hasProof =
+          batch.armedAt != nil
+          && batch.proofReadyNotifiedAt == nil
+          && batch.proofReadyNotificationPendingAt == nil
+          && batch.nextProofHeight == height
+        return hasTransaction || hasProof
+      }
+      .sorted(by: { $0.batchId < $1.batchId })
+      .first?
+      .accountUuid
   }
 
   mutating func markProofReadyIfNeeded(
@@ -585,6 +637,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     lastAttemptedScopeKey = selectedScope
     return BackgroundMigrationOutboxSelection(
       batchId: batch.batchId,
+      accountUuid: batch.accountUuid,
       scopeKey: batch.scopeKey,
       lightwalletdUrl: batch.lightwalletdUrl,
       item: item

@@ -609,6 +609,12 @@ class _MobileMigrationRedesignedStatusState
     if (confirming) return _MigrationProgressState.confirming;
     final broadcasting = status.phase == kIronwoodMigrationBroadcastingPhase;
     if (broadcasting) return _MigrationProgressState.broadcasting;
+    if (migrationHasDueScheduledBroadcast(
+      status,
+      currentHeight: _currentHeight(),
+    )) {
+      return _MigrationProgressState.readyToSubmit;
+    }
     return _notificationsAuthorized
         ? _MigrationProgressState.waitingNotificationsOn
         : _MigrationProgressState.waitingNotificationsOff;
@@ -679,16 +685,25 @@ class _MobileMigrationRedesignedStatusState
     }
     if (state == _MigrationProgressState.broadcasting) {
       if (_notificationsAuthorized) {
-        return '$timing.\nWe will notify you when it’s ready.';
+        return '$timing until the next migration step. Notifications are on; '
+            'you can leave Vizor and check back later.';
       }
       return '$timing until the next migration step. Open Vizor again to '
           'continue because notifications are disabled.';
+    }
+    if (state == _MigrationProgressState.readyToSubmit) {
+      return 'The scheduled transaction is ready for automatic submission. '
+          'Keep Vizor open while Vizor continues trying.';
     }
     if (state == _MigrationProgressState.confirming) {
       return 'Confirmations are still arriving. You can leave Vizor and '
           'check again later.';
     }
-    return '$timing.\nWe will notify you when it’s ready.';
+    if (timing == 'ready now') {
+      return 'The next migration step is ready. Keep Vizor open to continue.';
+    }
+    return '$timing until the next migration step.\n'
+        'Notifications are on; you can leave Vizor and check back later.';
   }
 
   Future<void> _continuePreparation(String accountUuid) async {

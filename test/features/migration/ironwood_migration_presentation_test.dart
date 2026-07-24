@@ -338,7 +338,25 @@ void main() {
     );
     expect(
       migrationHeightRemainingDurationLabel(1_000, currentHeight: 1_000),
-      'soon',
+      'ready now',
+    );
+  });
+
+  test('detects a scheduled broadcast as soon as its height is due', () {
+    final status = _status(
+      phase: 'broadcast_scheduled',
+      broadcasts: [
+        _broadcast('scheduled', DateTime(2026), scheduledHeight: 1_000),
+      ],
+    );
+
+    expect(
+      migrationHasDueScheduledBroadcast(status, currentHeight: 999),
+      isFalse,
+    );
+    expect(
+      migrationHasDueScheduledBroadcast(status, currentHeight: 1_000),
+      isTrue,
     );
   });
 }

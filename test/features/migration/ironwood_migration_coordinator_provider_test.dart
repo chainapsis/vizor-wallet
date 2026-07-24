@@ -558,6 +558,512 @@ void main() {
     expect(broadcasts, [_hardwareUuid]);
   });
 
+  test(
+    'due native outbox recovers in foreground without a signing permit',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final outboxRecoveries = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        outboxRecoveries: outboxRecoveries,
+        recoverOutbox: (accountUuid) async {
+          statuses[accountUuid] = _status('waiting_migration_confirmations');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+            observedHeight: 1_000,
+          );
+        },
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(outboxRecoveries, [_softwareUuid]);
+      expect(broadcasts, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .foregroundProgressPermits,
+        isEmpty,
+      );
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .statuses[_softwareUuid]
+            ?.phase,
+        'waiting_migration_confirmations',
+      );
+    },
+  );
+
+  test(
+    'global outbox acceptance for another account retries the due account',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+          observedHeight: 1_000,
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      await coordinator.refreshNow();
+
+      expect(recoveries, [_softwareUuid, _softwareUuid]);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'noWork is successful when reconciliation cleared the due status',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        recoverOutbox: (accountUuid) async {
+          statuses[accountUuid] = _status('waiting_migration_confirmations');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+            observedHeight: 1_000,
+          );
+        },
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        isNull,
+      );
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .statuses[_softwareUuid]
+            ?.phase,
+        'waiting_migration_confirmations',
+      );
+    },
+  );
+
+  test(
+    'temporary native contention retries without showing an error',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.temporarilyUnavailable,
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      await coordinator.refreshNow();
+
+      expect(recoveries, [_softwareUuid, _softwareUuid]);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'global needs-user-action outcome is not attached to the due account',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.needsUserAction,
+          accountUuid: _hardwareUuid,
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      await coordinator.refreshNow();
+
+      expect(recoveries, [_softwareUuid, _softwareUuid]);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'matching needs-user-action outcome becomes immediately actionable',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.needsUserAction,
+          accountUuid: _softwareUuid,
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        contains('needs user action'),
+      );
+    },
+  );
+
+  test('global waiting outcome does not throttle the due account', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final recoveries = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      outboxRecoveries: recoveries,
+      recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+        outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+        nextHeight: 1_001,
+        observedHeight: 1_000,
+        accountUuid: _hardwareUuid,
+      ),
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    await coordinator.refreshNow();
+    await coordinator.refreshNow();
+
+    expect(recoveries, [_softwareUuid, _softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      isNull,
+    );
+  });
+
+  test('matching waiting outcome throttles the due account', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final recoveries = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      outboxRecoveries: recoveries,
+      recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+        outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+        nextHeight: 1_001,
+        observedHeight: 1_000,
+        accountUuid: _softwareUuid,
+      ),
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    await coordinator.refreshNow();
+    await coordinator.refreshNow();
+
+    expect(recoveries, [_softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      isNull,
+    );
+  });
+
+  test(
+    'matching native retry delay does not become a due-account error',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          nextHeight: 1_000,
+          observedHeight: 1_000,
+          accountUuid: _softwareUuid,
+          retryDelay: Duration(minutes: 1),
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      await coordinator.refreshNow();
+
+      expect(recoveries, [_softwareUuid]);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'a new scheduled batch is not throttled by the previous batch',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'broadcast_scheduled',
+          scheduledHeight: 1_000,
+          scheduledTxid: 'scheduled-tx-1',
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          nextHeight: 1_000,
+          observedHeight: 1_000,
+          accountUuid: _softwareUuid,
+          retryDelay: Duration(minutes: 10),
+        ),
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      statuses[_softwareUuid] = _status(
+        'broadcast_scheduled',
+        scheduledHeight: 1_000,
+        scheduledTxid: 'scheduled-tx-2',
+      );
+      await coordinator.refreshNow();
+
+      expect(recoveries, [_softwareUuid, _softwareUuid]);
+    },
+  );
+
+  test('due native outbox failure becomes immediately actionable', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final recoveries = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      outboxRecoveries: recoveries,
+      recoverOutbox: (_) async => const IronwoodMigrationOutboxRunResult(
+        outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+        observedHeight: 1_000,
+      ),
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
+
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      contains('not available in the background outbox'),
+    );
+
+    await container
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .refreshNow();
+
+    expect(recoveries, [_softwareUuid, _softwareUuid]);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      contains('not available in the background outbox'),
+    );
+  });
+
   test('one account failure does not block another account recovery', () async {
     final statuses = {
       _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
@@ -904,6 +1410,9 @@ ProviderContainer _container({
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
   broadcast,
+  Future<IronwoodMigrationOutboxRunResult> Function(String accountUuid)?
+  recoverOutbox,
+  List<String>? outboxRecoveries,
   bool usesNativeOutbox = true,
   SyncState? syncState,
   bool isIOS = false,
@@ -938,6 +1447,17 @@ ProviderContainer _container({
             return true;
           },
     scheduleBackgroundMigration: () async => true,
+    recoverDueMigrationOutbox:
+        ({required network, required accountUuid}) async {
+          outboxRecoveries?.add(accountUuid);
+          if (recoverOutbox != null) return recoverOutbox(accountUuid);
+          return IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+            nextHeight: 1_001,
+            observedHeight: 1_000,
+            accountUuid: accountUuid,
+          );
+        },
     broadcastDueMigration:
         ({
           required dbPath,
@@ -981,7 +1501,9 @@ ProviderContainer _container({
         appSecurityProvider.overrideWith(
           () => _MutableSecurityNotifier(initialSecurityState),
         ),
-      syncProvider.overrideWith(() => FakeSyncNotifier(syncState)),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(syncState ?? SyncState()),
+      ),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
     ],
   );
@@ -1101,6 +1623,7 @@ rust_sync.MigrationStatus _status(
   String? activeRunId = 'run-1',
   int confirmedTxCount = 0,
   int? scheduledHeight,
+  String scheduledTxid = 'scheduled-tx',
   int signedChildPcztCount = 0,
   int? nextActionHeight,
 }) {
@@ -1128,7 +1651,7 @@ rust_sync.MigrationStatus _status(
         ? const []
         : [
             rust_sync.MigrationScheduledBroadcast(
-              txidHex: 'scheduled-tx',
+              txidHex: scheduledTxid,
               valueZatoshi: BigInt.from(100000000),
               scheduledAtMs: 0,
               scheduledHeight: scheduledHeight,
