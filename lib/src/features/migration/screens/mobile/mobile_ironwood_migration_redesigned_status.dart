@@ -370,9 +370,33 @@ class _MobileMigrationRedesignedStatusState
     final hasChildProofBatchPermit =
         accountUuid != null &&
         coordinator.childProofBatchPermits.contains(accountUuid);
+    final actionInProgress =
+        _actionRunning ||
+        (accountUuid != null &&
+            coordinator.advancingAccounts.contains(accountUuid));
     _recordVisibleAttention(accountUuid);
 
-    if (_shouldShowSyncSurface && !_showPreparationComplete) {
+    if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
+        widget.status.phase ==
+            kIronwoodMigrationAwaitingDenominationSignaturePhase) {
+      return _MigrationPreparationPreview(
+        state: _MigrationPreparationState.paused,
+        isKeystone: widget.isHardware,
+        pausedMessage: widget.isHardware
+            ? _keystonePreparationSignatureMessage
+            : null,
+        onBack: () => context.go('/home'),
+        onContinue: accountUuid == null || !widget.isHardware
+            ? null
+            : () => context.push(
+                '/migration/private/keystone/denominations/sign',
+              ),
+      );
+    }
+
+    if (_shouldShowSyncSurface &&
+        !_showPreparationComplete &&
+        !actionInProgress) {
       if (widget.status.phase ==
           kIronwoodMigrationWaitingDenomConfirmationsPhase) {
         return _MigrationPreparationPreview(
@@ -425,7 +449,10 @@ class _MobileMigrationRedesignedStatusState
         actionMessage: needsHardwareCredentialAttention
             ? 'Reconnect or re-import your Keystone account to continue this '
                   'migration.'
-            : null,
+            : needsSoftwareCredentialRecovery
+            ? 'Your migration credentials need to be restored before '
+                  'continuing.'
+            : "Couldn't continue this migration. Try again.",
         actionLabel: needsHardwareCredentialAttention
             ? 'Back to home'
             : needsSoftwareCredentialRecovery
@@ -500,9 +527,7 @@ class _MobileMigrationRedesignedStatusState
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
       return _MigrationCompletePreview(
         amountText: _totalAmountText(widget.status),
-        onDone: accountUuid == null || _actionRunning
-            ? null
-            : () => unawaited(_finishCompletedMigration(accountUuid)),
+        onDone: () => context.go('/home'),
       );
     }
 
@@ -528,7 +553,7 @@ class _MobileMigrationRedesignedStatusState
       state: state,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
-      onBack: () => context.go('/home'),
+      onBack: actionInProgress ? null : () => context.go('/home'),
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
       segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -544,6 +569,7 @@ class _MobileMigrationRedesignedStatusState
         widget.status,
         batchNumber: batchNumber,
         hasLateScheduledBroadcast: hasLateScheduledBroadcast,
+        actionInProgress: actionInProgress,
       ),
       actionBatchLabel: signingAllKeystoneTransactions
           ? 'All transactions'
@@ -603,21 +629,26 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return true;
     }
+    if (widget.isHardware &&
+        status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        status.signedChildPcztCount <= 0) {
+      return true;
+    }
     final currentHeight = _currentHeight();
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
     if (_hasLateScheduledBroadcast(status)) return true;
-    final nextHeight = status.nextActionHeight;
-    if (nextHeight != null && currentHeight > 0 && nextHeight > currentHeight) {
-      return false;
-    }
     if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-      return !hasChildProofBatchPermit;
+      final nextHeight = status.nextActionHeight;
+      return nextHeight != null &&
+          currentHeight > 0 &&
+          nextHeight <= currentHeight &&
+          !hasChildProofBatchPermit;
     }
     return false;
   }
 
   bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) {
-    final currentHeight = _currentHeight();
+    final currentHeight = _currentBroadcastHeight();
     return currentHeight > 0 &&
         status.scheduledBroadcasts.any(
           (broadcast) =>
@@ -725,11 +756,18 @@ class _MobileMigrationRedesignedStatusState
       context.push('/migration/private/keystone/batch/sign');
       return;
     }
-    setState(() => _actionRunning = true);
+    setState(() {
+      _actionRunning = true;
+    });
     try {
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .retry(accountUuid);
+          .retry(accountUuid, status: widget.status);
+      if (!mounted) return;
+      await ref.read(ironwoodMigrationRouteCtaProvider.future);
+    } catch (_) {
+      // The coordinator records the error for this screen to render. Avoid an
+      // unawaited tap future escaping after the action button returns idle.
     } finally {
       if (mounted) setState(() => _actionRunning = false);
     }
@@ -749,9 +787,15 @@ class _MobileMigrationRedesignedStatusState
     rust_sync.MigrationStatus status, {
     required int batchNumber,
     required bool hasLateScheduledBroadcast,
+    required bool actionInProgress,
   }) {
+    if (actionInProgress) {
+      return hasLateScheduledBroadcast
+          ? 'Retrying broadcast...'
+          : 'Preparing batch #$batchNumber...';
+    }
     if (hasLateScheduledBroadcast) return 'Retry broadcast';
-    if (!widget.isHardware) return 'Sign batch #$batchNumber';
+    if (!widget.isHardware) return 'Prepare batch #$batchNumber';
     if (_requiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
@@ -771,34 +815,13 @@ class _MobileMigrationRedesignedStatusState
         );
   }
 
-  Future<void> _finishCompletedMigration(String accountUuid) async {
-    if (_actionRunning) return;
-    setState(() => _actionRunning = true);
-    try {
-      final inputs = ref.read(ironwoodMigrationInputsProvider);
-      await ref
-          .read(ironwoodMigrationCompletionStoreProvider)
-          .markSeen(
-            network: inputs.network,
-            accountUuid: accountUuid,
-            completionId: ironwoodMigrationCompletionId(widget.status),
-          );
-      ref.invalidate(ironwoodMigrationCompletionProvider);
-    } catch (_) {
-      // If acknowledgement persistence fails, the existing Home receipt remains
-      // visible so the user does not lose the completion confirmation.
-    } finally {
-      if (mounted) context.go('/home');
-    }
-  }
-
   int _currentHeight() {
     final sync = ref.read(syncProvider).value;
     if (sync == null) return 0;
-    if (sync.scannedHeight > 0 && sync.chainTipHeight > 0) {
-      return math.min(sync.scannedHeight, sync.chainTipHeight);
-    }
-    return math.max(sync.scannedHeight, sync.chainTipHeight);
+    return mobileIronwoodSafelyObservedHeight(
+      scannedHeight: sync.scannedHeight,
+      chainTipHeight: sync.chainTipHeight,
+    );
   }
 
   void _recordVisibleAttention(String? accountUuid) {
@@ -807,6 +830,7 @@ class _MobileMigrationRedesignedStatusState
     final attention = mobileIronwoodMigrationAttention(
       widget.status,
       currentHeight: _currentHeight(),
+      broadcastHeight: _currentBroadcastHeight(),
       isHardware: widget.isHardware,
     );
     if (attention == null) return;
@@ -982,6 +1006,15 @@ class _MobileMigrationRedesignedStatusState
       currentBatchStartIndex: currentBatchStart,
       currentBatchPartCount: currentBatchPartCount,
       currentBatchParts: currentBatchParts,
+    );
+  }
+
+  int _currentBroadcastHeight() {
+    final sync = ref.read(syncProvider).value;
+    if (sync == null) return 0;
+    return mobileIronwoodObservedBroadcastHeight(
+      scannedHeight: sync.scannedHeight,
+      chainTipHeight: sync.chainTipHeight,
     );
   }
 

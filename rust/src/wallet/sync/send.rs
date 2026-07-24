@@ -939,107 +939,121 @@ pub(crate) async fn migrate_orchard_to_ironwood(
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
-    if let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? {
-        match advance_staged_denomination_run(
-            db_path,
-            lightwalletd_url,
-            network,
-            account_uuid,
-            &run,
-            pending_password.as_slice(),
-            pending_salt_base64,
-            MigrationBroadcastPolicy::FOREGROUND,
-        )
-        .await?
+    let draft_run = if let Some(run) =
+        super::migration::active_migration_run(db_path, account_uuid, network)?
+    {
+        if run.phase == super::migration::PHASE_AWAITING_PREPARATION
+            || run.phase == super::migration::PHASE_AWAITING_DENOMINATION_SIGNATURE
         {
-            StagedDenominationAdvance::Waiting(result) => {
-                drop(seed);
-                drop(migration_guard);
-                return Ok(result);
-            }
-            StagedDenominationAdvance::Ready => {
-                let chain_tip_height =
-                    u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
-                        .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-                if let Some(message) = pending_migration_policy_rebuild_message(
-                    db_path,
-                    network,
-                    &run.run_id,
-                    chain_tip_height,
-                )? {
+            Some(run)
+        } else {
+            match advance_staged_denomination_run(
+                db_path,
+                lightwalletd_url,
+                network,
+                account_uuid,
+                &run,
+                pending_password.as_slice(),
+                pending_salt_base64,
+                MigrationBroadcastPolicy::FOREGROUND,
+            )
+            .await?
+            {
+                StagedDenominationAdvance::Waiting(result) => {
                     drop(seed);
-                    super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
-                    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-                    let result = migration_result_from_pending_totals(
-                        totals,
-                        super::migration::PHASE_FAILED_TERMINAL,
-                        Some(message),
-                        run.target_values_zatoshi.len() as u32,
-                        run.target_values_zatoshi.iter().sum(),
-                    );
                     drop(migration_guard);
                     return Ok(result);
                 }
-                super::migration::mark_expired_pending_parts_for_resign(
-                    db_path,
-                    &run.run_id,
-                    chain_tip_height,
-                )?;
-                let recoveries =
-                    super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
-                if recoveries.is_empty() {
-                    drop(seed);
-                } else {
-                    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-                    rebuild_expired_software_migration_parts(
+                StagedDenominationAdvance::Ready => {
+                    let chain_tip_height =
+                        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+                    if let Some(message) = pending_migration_policy_rebuild_message(
                         db_path,
                         network,
-                        account_uuid,
                         &run.run_id,
-                        recoveries,
-                        &usk,
-                        pending_password.as_slice(),
-                        pending_salt_base64,
-                    )?;
-                }
-                if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
-                    let finalized = finalize_presigned_migration_children(
-                        db_path,
-                        network,
-                        account_uuid,
-                        &run.run_id,
-                        pending_password.as_slice(),
-                        pending_salt_base64,
-                        MigrationBroadcastPolicy::FOREGROUND,
-                    )?;
-                    if finalized == 0 {
-                        let result = prepared_notes_not_spendable_result(
+                        chain_tip_height,
+                    )? {
+                        drop(seed);
+                        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+                        let totals =
+                            super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+                        let result = migration_result_from_pending_totals(
+                            totals,
+                            super::migration::PHASE_FAILED_TERMINAL,
+                            Some(message),
                             run.target_values_zatoshi.len() as u32,
                             run.target_values_zatoshi.iter().sum(),
                         );
                         drop(migration_guard);
                         return Ok(result);
                     }
+                    super::migration::mark_expired_pending_parts_for_resign(
+                        db_path,
+                        &run.run_id,
+                        chain_tip_height,
+                    )?;
+                    let recoveries =
+                        super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
+                    if recoveries.is_empty() {
+                        drop(seed);
+                    } else {
+                        let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+                        rebuild_expired_software_migration_parts(
+                            db_path,
+                            network,
+                            account_uuid,
+                            &run.run_id,
+                            recoveries,
+                            &usk,
+                            pending_password.as_slice(),
+                            pending_salt_base64,
+                        )?;
+                    }
+                    if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+                        let finalized = finalize_presigned_migration_children(
+                            db_path,
+                            network,
+                            account_uuid,
+                            &run.run_id,
+                            pending_password.as_slice(),
+                            pending_salt_base64,
+                            MigrationBroadcastPolicy::FOREGROUND,
+                        )?;
+                        if finalized == 0 {
+                            let result = prepared_notes_not_spendable_result(
+                                run.target_values_zatoshi.len() as u32,
+                                run.target_values_zatoshi.iter().sum(),
+                            );
+                            drop(migration_guard);
+                            return Ok(result);
+                        }
+                    }
+                    let result = broadcast_due_scheduled_migration_txs(
+                        db_path,
+                        lightwalletd_url,
+                        network,
+                        &run.run_id,
+                        pending_password.as_slice(),
+                        pending_salt_base64,
+                        run.target_values_zatoshi.len() as u32,
+                        run.target_values_zatoshi.iter().sum(),
+                        MigrationBroadcastPolicy::FOREGROUND,
+                    )
+                    .await;
+                    drop(migration_guard);
+                    return result;
                 }
-                let result = broadcast_due_scheduled_migration_txs(
-                    db_path,
-                    lightwalletd_url,
-                    network,
-                    &run.run_id,
-                    pending_password.as_slice(),
-                    pending_salt_base64,
-                    run.target_values_zatoshi.len() as u32,
-                    run.target_values_zatoshi.iter().sum(),
-                    MigrationBroadcastPolicy::FOREGROUND,
-                )
-                .await;
-                drop(migration_guard);
-                return result;
             }
         }
-    }
+    } else {
+        None
+    };
 
-    let signing_schedule = approved_schedule.clone();
+    let signing_schedule = match &draft_run {
+        Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
+        None => approved_schedule.clone(),
+    };
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
         prepare_software_migration_run(db_path, network, account_uuid, seed, &signing_schedule)
     })?;
@@ -1062,19 +1076,35 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     let prepared_count = u32::try_from(prepared_refs.len())
         .map_err(|_| "Migration output count exceeds u32".to_string())?;
     let has_denomination_stages = !denomination_stages.is_empty();
-    let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
-        db_path,
-        account_uuid,
-        network,
-        &plan,
-        &prepared_refs,
-        signed_children,
-        denomination_stages,
-        Some(&approved_schedule),
-        preparation_timing_policy,
-        pending_password.as_slice(),
-        pending_salt_base64,
-    )?;
+    let run_id = if let Some(draft) = draft_run {
+        super::migration::finalize_private_migration_draft(
+            db_path,
+            &draft.run_id,
+            account_uuid,
+            network,
+            &plan,
+            &prepared_refs,
+            signed_children,
+            denomination_stages,
+            pending_password.as_slice(),
+            pending_salt_base64,
+        )?;
+        draft.run_id
+    } else {
+        super::migration::create_run_with_staged_denominations_and_signed_children(
+            db_path,
+            account_uuid,
+            network,
+            &plan,
+            &prepared_refs,
+            signed_children,
+            denomination_stages,
+            Some(&approved_schedule),
+            preparation_timing_policy,
+            pending_password.as_slice(),
+            pending_salt_base64,
+        )?
+    };
 
     if !has_denomination_stages {
         let finalized = finalize_presigned_migration_children(
@@ -3185,7 +3215,8 @@ fn finalize_presigned_migration_children(
             .ok_or("Finalized migration proof count overflow")?;
     }
 
-    if deferred_child_seen && !stopped_at_proof_limit && !policy.is_cancelled() {
+    let remaining_signed_child_count = super::migration::signed_child_pczt_count(db_path, run_id)?;
+    if remaining_signed_child_count > 0 && !policy.is_cancelled() {
         let mut retry_height = super::migration::next_anchor_retry_height_after(
             network,
             timing_policy,
@@ -3199,7 +3230,11 @@ fn finalize_presigned_migration_children(
         )? {
             retry_height = retry_height.max(ready_height);
         }
-        defer_presigned_proof_until(db_path, run_id, retry_height)?;
+        if deferred_child_seen && !stopped_at_proof_limit {
+            defer_presigned_proof_until(db_path, run_id, retry_height)?;
+        } else if finalized_count > 0 || stopped_at_proof_limit {
+            super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
+        }
     }
 
     Ok(finalized_count)

@@ -2422,14 +2422,18 @@ fn approved_schedule_supports_incremental_proof_persistence() {
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
                   encrypted_compact_sigs, target_height, expiry_height,
-                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
-                 VALUES ('run-1', ?1, ?2, 'base', 'sigs', ?3, 1_000,
-                         ?4, 10, '{{}}', '{{}}')"
+                  scheduled_height, value_zatoshi, fee_zatoshi,
+                  selected_note_json, metadata_json)
+                 VALUES ('run-1', ?1, ?2, 'base', 'sigs', ?3, ?4,
+                         ?5, ?6, 10, '{{}}', '{{}}')"
             ),
             params![
                 format!("child-{part_index}"),
                 part_index,
                 target_height,
+                zip318_canonical_migration_expiry_height(if part_index == 0 { 502 } else { 501 })
+                    .unwrap(),
+                if part_index == 0 { 502 } else { 501 },
                 if part_index == 0 { 100 } else { 200 },
             ],
         )
@@ -2494,8 +2498,8 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         TEST_SALT_BASE64,
     )
     .unwrap();
-    assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
-    insert_pending_txs(
+    assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
         vec![pending(1, 200, 999)],
@@ -2503,6 +2507,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         TEST_SALT_BASE64,
     )
     .unwrap();
+    assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let mut stmt = conn
@@ -3182,6 +3187,172 @@ fn locked_migration_note_refs_without_migration_tables_is_empty() {
     let locks = locked_migration_note_refs(&db_path, "account-1").unwrap();
 
     assert!(locks.is_empty());
+}
+
+#[test]
+fn private_migration_draft_persists_plan_and_finalizes_in_place() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let target_values = vec![100_000_000];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: target_values[0],
+        block_offset: 1,
+    }];
+
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    let resumed_run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    assert_eq!(resumed_run_id, run_id);
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let (phase, schedule_json): (String, String) = conn
+        .query_row(
+            &format!("SELECT phase, schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_AWAITING_PREPARATION);
+    assert_eq!(
+        serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).unwrap(),
+        approved_schedule
+    );
+    drop(conn);
+
+    let draft_status =
+        migration_status(&db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    assert_eq!(draft_status.phase, PHASE_AWAITING_PREPARATION);
+    assert_eq!(draft_status.denomination_split_total_count, 0);
+    assert_eq!(draft_status.denomination_split_completed_count, 0);
+
+    let expected_txid = "11".repeat(32);
+    let plan = DenominationPlan {
+        migration_outputs: target_values,
+        orchard_change: None,
+        split_fee_zatoshi: 80_000,
+        migration_fee_zatoshi: 10_000,
+        total_input_zatoshi: 100_080_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: expected_txid.clone(),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    }];
+    finalize_private_migration_draft(
+        &db_path,
+        &run_id,
+        "account-1",
+        WalletNetwork::Test,
+        &plan,
+        &prepared_notes,
+        Vec::new(),
+        vec![pending_test_stage(&expected_txid, vec![1, 2, 3])],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+    assert_eq!(
+        denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let target_values = vec![100_000_000];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: target_values[0],
+        block_offset: 1,
+    }];
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    let plan = DenominationPlan {
+        migration_outputs: target_values,
+        orchard_change: None,
+        split_fee_zatoshi: 0,
+        migration_fee_zatoshi: 10_000,
+        total_input_zatoshi: 100_010_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    }];
+
+    finalize_private_migration_draft(
+        &db_path,
+        &run_id,
+        "account-1",
+        WalletNetwork::Test,
+        &plan,
+        &prepared_notes,
+        Vec::new(),
+        Vec::new(),
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_READY_TO_MIGRATE);
+    assert!(
+        denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

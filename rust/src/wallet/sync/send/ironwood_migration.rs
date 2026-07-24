@@ -1,10 +1,39 @@
+pub(crate) fn create_or_resume_private_migration_draft(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<String, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let plan = get_orchard_migration_private_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+    )?
+    .ok_or("Migration plan is unavailable")?;
+    super::migration::create_or_resume_private_migration_draft(
+        db_path,
+        account_uuid,
+        network,
+        &plan.target_values_zatoshi,
+        &approved_schedule,
+        preparation_timing_policy,
+    )
+}
+
 pub(crate) fn prepare_orchard_migration_denominations_pczt(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+    let draft_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if draft_run.as_ref().is_some_and(|run| {
+        run.phase != super::migration::PHASE_AWAITING_PREPARATION
+            && run.phase != super::migration::PHASE_AWAITING_DENOMINATION_SIGNATURE
+    }) {
         return Err("Migration already has an active run. Start migration next.".to_string());
     }
     {
@@ -29,6 +58,11 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
                 .to_string(),
         );
     };
+    if let Some(run) = &draft_run {
+        if run.target_values_zatoshi != split.plan.migration_outputs {
+            return Err("Saved Keystone migration plan no longer matches this balance".to_string());
+        }
+    }
 
     let request_id = new_keystone_migration_request_id("denominations");
     let messages = split
@@ -66,6 +100,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             network,
             state: request_state,
             proof_error: None,
+            draft_run_id: draft_run.map(|run| run.run_id),
             split_stages: split.stages,
             direct_prepared_refs: split.direct_prepared_refs,
             total_migratable_zatoshi: split.total_migratable_zatoshi,
@@ -102,12 +137,6 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     } else {
         signed_migration_messages_by_id(request_id, signed_messages)?
     };
-    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
-        return Err(
-            "Migration already has an active run. Reject this Keystone request.".to_string(),
-        );
-    }
-
     let stored = {
         let mut store = keystone_denomination_requests()
             .lock()
@@ -152,6 +181,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         }
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredDenominationCompletion {
+            draft_run_id: stored.draft_run_id.clone(),
             split_stages: stored.split_stages.clone(),
             direct_prepared_refs: stored.direct_prepared_refs.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
@@ -172,19 +202,35 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
             signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
-        super::migration::create_run_with_staged_denominations_and_signed_children(
-            db_path,
-            account_uuid,
-            network,
-            &stored.plan,
-            &prepared_refs,
-            Vec::new(),
-            denomination_stages,
-            Some(&approved_schedule),
-            preparation_timing_policy,
-            pending_password,
-            pending_salt_base64,
-        )
+        if let Some(run_id) = stored.draft_run_id.as_deref() {
+            super::migration::finalize_private_migration_draft(
+                db_path,
+                run_id,
+                account_uuid,
+                network,
+                &stored.plan,
+                &prepared_refs,
+                Vec::new(),
+                denomination_stages,
+                pending_password,
+                pending_salt_base64,
+            )?;
+            Ok(run_id.to_string())
+        } else {
+            super::migration::create_run_with_staged_denominations_and_signed_children(
+                db_path,
+                account_uuid,
+                network,
+                &stored.plan,
+                &prepared_refs,
+                Vec::new(),
+                denomination_stages,
+                Some(&approved_schedule),
+                preparation_timing_policy,
+                pending_password,
+                pending_salt_base64,
+            )
+        }
     })();
     let run_id = match finalize_result {
         Ok(run_id) => run_id,

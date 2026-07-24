@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,7 +42,6 @@ import '../../../migration/providers/ironwood_migration_announcement_provider.da
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
-import '../../../migration/widgets/mobile/mobile_ironwood_migration_complete_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
@@ -116,7 +114,6 @@ class MobileHomeScreen extends ConsumerWidget {
           ),
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
-          const _IronwoodMigrationCompletionHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -231,6 +228,7 @@ class _IronwoodMigrationAttentionHostState
     final attention = mobileIronwoodMigrationAttention(
       cta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
       isHardware: ref
           .read(accountProvider.notifier)
           .isHardwareAccount(accountUuid),
@@ -400,96 +398,6 @@ class _IronwoodMigrationAnnouncementHostState
     } catch (_) {
       // The announcement remains open so the user can retry.
     }
-  }
-}
-
-class _IronwoodMigrationCompletionHost extends ConsumerStatefulWidget {
-  const _IronwoodMigrationCompletionHost();
-
-  @override
-  ConsumerState<_IronwoodMigrationCompletionHost> createState() =>
-      _IronwoodMigrationCompletionHostState();
-}
-
-class _IronwoodMigrationCompletionHostState
-    extends ConsumerState<_IronwoodMigrationCompletionHost> {
-  bool _showing = false;
-  String? _shownFor;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _evaluate(ref.read(ironwoodMigrationCompletionProvider).value);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    ref.listen(ironwoodMigrationCompletionProvider, (_, next) {
-      _evaluate(next.value);
-    });
-    return const SizedBox.shrink();
-  }
-
-  void _evaluate(IronwoodMigrationCompletionState? completion) {
-    if (completion == null || !completion.visible || _showing) return;
-    final network = completion.network;
-    final accountUuid = completion.accountUuid;
-    final completionId = completion.completionId;
-    final transferredZatoshi = completion.transferredZatoshi;
-    if (network == null ||
-        accountUuid == null ||
-        completionId == null ||
-        transferredZatoshi == null) {
-      return;
-    }
-    final key = '$network:$accountUuid:$completionId';
-    if (_shownFor == key) return;
-    _shownFor = key;
-    unawaited(_show(completion, transferredZatoshi));
-  }
-
-  Future<void> _show(
-    IronwoodMigrationCompletionState completion,
-    BigInt transferredZatoshi,
-  ) async {
-    _showing = true;
-    try {
-      final acknowledged = await showAppMobileSheet<bool>(
-        context: context,
-        isDismissible: false,
-        enableDrag: false,
-        builder: (sheetContext) => MobileIronwoodMigrationCompleteSheet(
-          transferredZatoshi: transferredZatoshi,
-          onDone: () => Navigator.of(sheetContext).pop(true),
-        ),
-      );
-      if (!mounted || acknowledged != true) return;
-      await _markSeen(completion);
-    } finally {
-      _showing = false;
-    }
-  }
-
-  Future<void> _markSeen(IronwoodMigrationCompletionState completion) async {
-    final network = completion.network;
-    final accountUuid = completion.accountUuid;
-    final completionId = completion.completionId;
-    if (network == null || accountUuid == null || completionId == null) return;
-    try {
-      await ref
-          .read(ironwoodMigrationCompletionStoreProvider)
-          .markSeen(
-            network: network,
-            accountUuid: accountUuid,
-            completionId: completionId,
-          );
-    } catch (_) {
-      return;
-    }
-    if (mounted) ref.invalidate(ironwoodMigrationCompletionProvider);
   }
 }
 
@@ -951,6 +859,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final sendDisabled =
+        migrationRequired ||
+        (migrationInProgress && sync.ironwoodBalance <= BigInt.zero);
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -981,6 +892,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final migrationAttention = mobileIronwoodMigrationAttention(
       widget.ironwoodMigrationCta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
       isHardware:
           activeAccountUuid != null &&
           ref
@@ -1094,7 +1006,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           key: const ValueKey('mobile_home_send'),
                           expand: true,
                           constrainContent: true,
-                          onPressed: migrationRequired
+                          onPressed: sendDisabled
                               ? null
                               : () => context.push('/send'),
                           leading: const _ButtonIcon(AppIcons.plane),
@@ -1502,10 +1414,18 @@ String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {
   if (sync == null) return 0;
-  if (sync.scannedHeight > 0 && sync.chainTipHeight > 0) {
-    return math.min(sync.scannedHeight, sync.chainTipHeight);
-  }
-  return math.max(sync.scannedHeight, sync.chainTipHeight);
+  return mobileIronwoodSafelyObservedHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
+}
+
+int _mobileIronwoodObservedBroadcastHeight(SyncState? sync) {
+  if (sync == null) return 0;
+  return mobileIronwoodObservedBroadcastHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
 }
 
 class _MobileIronwoodMigrationPill extends StatelessWidget {

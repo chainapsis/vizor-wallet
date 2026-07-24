@@ -718,7 +718,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       await _discardRequest(accountUuid, requestId);
     }
     if (!mounted) return;
-    context.go(widget.step.previousRoute);
+    final previousRoute =
+        widget.mobileLayout &&
+            widget.step == _KeystonePrivateSignStep.denominations
+        ? '/migration/private/start'
+        : widget.step.previousRoute;
+    context.go(previousRoute);
   }
 
   void _handleDecodeError(Object error) {

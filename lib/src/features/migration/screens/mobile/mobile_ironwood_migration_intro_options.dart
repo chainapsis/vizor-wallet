@@ -148,6 +148,7 @@ class _MobileMigrationOptionsState
     extends ConsumerState<_MobileMigrationOptions> {
   var _selectedOption = _MobileMigrationOption.private;
   var _isContinuing = false;
+  String? _continueError;
 
   void _select(_MobileMigrationOption option) {
     if (option == _MobileMigrationOption.immediate &&
@@ -165,22 +166,82 @@ class _MobileMigrationOptionsState
       return;
     }
 
-    setState(() => _isContinuing = true);
+    setState(() {
+      _isContinuing = true;
+      _continueError = null;
+    });
+    rust_sync.OrchardMigrationPrivatePlan? plan;
     try {
-      final authorization = await ref
+      plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      if (!mounted) return;
+      if (plan == null) {
+        throw StateError('Migration plan is unavailable.');
+      }
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      if (accountState.activeAccount?.isHardware ?? false) {
+        if (!_keystoneTwoRoundPlanSupported(plan)) {
+          throw StateError(
+            'This migration needs more transactions than one Keystone '
+            'signing request supports.',
+          );
+        }
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .savePrivateMigrationDraft(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      ref.invalidate(ironwoodHomeMigrationCtaProvider);
+      ref.invalidate(ironwoodPostMigrationStateProvider);
+    } catch (error) {
+      debugPrint('Failed to save private migration draft: $error');
+      if (!mounted) return;
+      setState(() {
+        _continueError = "Couldn't prepare the migration plan. Try again.";
+      });
+      return;
+    }
+
+    IronwoodMigrationNotificationAuthorizationStatus authorization;
+    try {
+      authorization = await ref
           .read(ironwoodMigrationServiceProvider)
           .notificationAuthorizationStatus();
-      if (!mounted) return;
-      context.go(
-        authorization.allowsBackgroundMigration
-            ? '/migration/private/review'
-            : '/migration/private/notifications',
-      );
     } catch (_) {
       if (!mounted) return;
       // Permission status is fail-closed: if native status cannot be read,
       // show the explanation screen and keep background work disabled.
-      context.go('/migration/private/notifications');
+      context.go('/migration/private/notifications', extra: plan);
+      return;
+    }
+
+    try {
+      if (!mounted) return;
+      if (!authorization.allowsBackgroundMigration) {
+        context.go('/migration/private/notifications', extra: plan);
+        return;
+      }
+      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      if (!mounted) return;
+      context.go(
+        plan.denominationSplitStageCount == 0
+            ? '/migration/private/status'
+            : '/migration/private/start',
+        extra: plan,
+      );
+    } catch (error) {
+      debugPrint('Failed to activate direct-note migration: $error');
+      if (!mounted) return;
+      setState(() {
+        _continueError = "Couldn't start the migration. Try again.";
+      });
     } finally {
       if (mounted) setState(() => _isContinuing = false);
     }
@@ -200,10 +261,26 @@ class _MobileMigrationOptionsState
       subtitle:
           'Choose between more privacy over time or a faster migration. '
           'You can review the details before anything moves.',
-      bottom: _MobileMigrationPrimaryButton(
-        key: const ValueKey('mobile_ironwood_options_continue_button'),
-        label: _isContinuing ? 'Checking notifications...' : 'Continue',
-        onPressed: _isContinuing ? null : _continue,
+      bottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_continueError != null) ...[
+            Text(
+              _continueError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
+          _MobileMigrationPrimaryButton(
+            key: const ValueKey('mobile_ironwood_options_continue_button'),
+            label: 'Continue',
+            busy: _isContinuing,
+            onPressed: _isContinuing ? null : _continue,
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -236,4 +313,47 @@ class _MobileMigrationOptionsState
       ),
     );
   }
+}
+
+Future<void> _continuePrivateMigrationAfterNotificationGate(
+  WidgetRef ref,
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) async {
+  if (plan.denominationSplitStageCount != 0) return;
+
+  final accountState = await ref.read(accountProvider.future);
+  final accountUuid = accountState.activeAccountUuid;
+  if (accountUuid == null) {
+    throw StateError('No active account is selected.');
+  }
+
+  if (accountState.activeAccount?.isHardware ?? false) {
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final request = await service.prepareKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+    );
+    if (request.messages.isNotEmpty) {
+      throw StateError(
+        'Direct-note migration unexpectedly requires preparation signatures.',
+      );
+    }
+    await service.completeKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+      requestId: request.requestId,
+      signedMessages: const [],
+      approvedSchedule: plan.scheduledTransfers,
+    );
+  } else {
+    await ref
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .startSoftwareMigration(
+          accountUuid: accountUuid,
+          approvedSchedule: plan.scheduledTransfers,
+        );
+  }
+
+  ref.invalidate(ironwoodMigrationRouteCtaProvider);
+  ref.invalidate(ironwoodHomeMigrationCtaProvider);
+  ref.invalidate(ironwoodMigrationFlowDataProvider);
+  ref.invalidate(ironwoodMigrationPrivatePlanProvider);
 }

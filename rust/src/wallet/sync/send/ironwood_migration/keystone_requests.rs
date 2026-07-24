@@ -58,6 +58,7 @@ struct StoredDenominationPczt {
     network: WalletNetwork,
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
+    draft_run_id: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
     direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
@@ -65,6 +66,7 @@ struct StoredDenominationPczt {
 }
 
 struct StoredDenominationCompletion {
+    draft_run_id: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
     direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,

@@ -87,79 +87,6 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
   }
 }
 
-class _MobilePrivateReviewScaffold extends StatelessWidget {
-  const _MobilePrivateReviewScaffold({
-    required this.onBack,
-    required this.child,
-    required this.bottom,
-  });
-
-  final VoidCallback onBack;
-  final Widget child;
-  final Widget bottom;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact =
-                constraints.maxHeight < _mobileMigrationReviewCompactHeight;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Transform.translate(
-                  offset: const Offset(0, 20),
-                  child: MobileTopNav.back(
-                    title: 'Private Migration',
-                    titleStyle: AppTypography.headlineSmall,
-                    onBack: onBack,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                  ),
-                  child: Text(
-                    'Review Migration Plan',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                SizedBox(height: compact ? 24 : 42),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                    ),
-                    child: child,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.xs,
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                  ),
-                  child: bottom,
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
 class _MobileMigrationReviewScaffold extends StatelessWidget {
   const _MobileMigrationReviewScaffold({
     required this.onBack,
@@ -237,11 +164,13 @@ class _MobileMigrationPrimaryButton extends StatelessWidget {
   const _MobileMigrationPrimaryButton({
     required this.label,
     required this.onPressed,
+    this.busy = false,
     super.key,
   });
 
   final String label;
   final VoidCallback? onPressed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -250,6 +179,13 @@ class _MobileMigrationPrimaryButton extends StatelessWidget {
       constrainContent: true,
       height: 50,
       onPressed: onPressed,
+      leading: busy
+          ? const AppIcon(
+              AppIcons.loader,
+              key: ValueKey('mobile_ironwood_options_continue_loading'),
+              size: 20,
+            )
+          : null,
       trailing: const AppIcon(AppIcons.chevronForward, size: 20),
       child: Text(label),
     );

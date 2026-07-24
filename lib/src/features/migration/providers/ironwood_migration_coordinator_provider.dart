@@ -13,6 +13,7 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/ironwood_migration_presentation.dart';
+import '../models/mobile_ironwood_migration_attention_state.dart';
 import '../services/ironwood_migration_service.dart';
 import 'ironwood_migration_announcement_provider.dart';
 
@@ -153,6 +154,23 @@ class IronwoodMigrationCoordinator
     );
   }
 
+  /// Removes a previously granted child-proof approval without revoking the
+  /// broader foreground continuation permit.
+  ///
+  /// Keystone QR signing and child proof generation are separate user actions.
+  /// Completing a QR round must therefore leave the account waiting until the
+  /// proof window is actually due and the user explicitly approves that batch.
+  void clearChildProofBatchPermit(String accountUuid) {
+    if (kAppFormFactor != AppFormFactor.mobile ||
+        !state.childProofBatchPermits.contains(accountUuid)) {
+      return;
+    }
+    state = state.copyWith(
+      childProofBatchPermits: {...state.childProofBatchPermits}
+        ..remove(accountUuid),
+    );
+  }
+
   /// Performs the one foreground sync required when a migration status flow is
   /// entered from a cold launch or after returning from background, then
   /// reconciles status without advancing migration work.
@@ -232,9 +250,17 @@ class IronwoodMigrationCoordinator
     await refreshNow(forceAdvance: true);
   }
 
-  Future<void> retry(String accountUuid) async {
-    final status = state.statuses[accountUuid];
-    if (status != null && _isChildProofBatchAdvance(status)) {
+  Future<void> retry(
+    String accountUuid, {
+    rust_sync.MigrationStatus? status,
+  }) async {
+    // A status screen can be the first migration surface after a cold launch.
+    // Its route provider may already have a current status while this
+    // coordinator has not completed its first polling pass. Preserve that
+    // observed proof state for the explicit user action.
+    final statusForAdvance = status ?? state.statuses[accountUuid];
+    if (statusForAdvance != null &&
+        _isChildProofBatchAdvance(statusForAdvance)) {
       grantChildProofBatchPermit(accountUuid);
     } else {
       grantForegroundProgressPermit(accountUuid);
@@ -248,7 +274,7 @@ class IronwoodMigrationCoordinator
           // A manual retry must still run after the automatic attempt fails.
         }
       }
-      await _advance(accountUuid, status: status);
+      await _advance(accountUuid, status: statusForAdvance);
       if (!ref.mounted) return;
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
@@ -348,9 +374,11 @@ class IronwoodMigrationCoordinator
       state.statuses,
     );
     final nextErrors = Map<String, String>.from(state.errors);
+    var activeBalanceMayHaveChanged = false;
 
     for (final account in accountState.accounts) {
       try {
+        final previousStatus = state.statuses[account.uuid];
         var status = await service.status(
           network: endpoint.networkName,
           accountUuid: account.uuid,
@@ -377,7 +405,7 @@ class IronwoodMigrationCoordinator
           nextStatuses[account.uuid] = status;
           final stillDue = migrationHasDueScheduledBroadcast(
             status,
-            currentHeight: _safelyObservedHeight(),
+            currentHeight: _safelyObservedProofHeight(),
           );
           if (stillDue) {
             _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
@@ -411,6 +439,10 @@ class IronwoodMigrationCoordinator
           if (!ref.mounted) return;
           nextStatuses[account.uuid] = status;
         }
+        if (account.uuid == accountState.activeAccountUuid &&
+            _migrationBalanceMayHaveChanged(previousStatus, status)) {
+          activeBalanceMayHaveChanged = true;
+        }
       } catch (error) {
         nextErrors[account.uuid] = error.toString();
         log(
@@ -420,8 +452,57 @@ class IronwoodMigrationCoordinator
     }
 
     if (!ref.mounted) return;
+    if (activeBalanceMayHaveChanged) {
+      try {
+        // Migration status reads reconcile the database, but the home card
+        // renders SyncState. Refresh that active-account snapshot when a
+        // broadcast or confirmation transition can change its balances.
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (error) {
+        // Status polling must remain available if a best-effort home balance
+        // refresh races with a normal sync.
+        log('Ironwood migration balance refresh failed: $error');
+      }
+      if (!ref.mounted) return;
+    }
     state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
     _invalidateMigrationProviders(accountState.activeAccountUuid);
+  }
+
+  bool _migrationBalanceMayHaveChanged(
+    rust_sync.MigrationStatus? previous,
+    rust_sync.MigrationStatus current,
+  ) {
+    // The first observation is normally paired with bootstrap/re-entry sync,
+    // so do not add an extra balance fetch merely because the coordinator was
+    // mounted. Subsequent child transaction transitions need a fresh snapshot
+    // for the home balance card.
+    if (previous == null) return false;
+
+    if (previous.pendingTxCount != current.pendingTxCount ||
+        previous.broadcastedTxCount != current.broadcastedTxCount ||
+        previous.confirmedTxCount != current.confirmedTxCount ||
+        previous.denominationConfirmationCount !=
+            current.denominationConfirmationCount ||
+        previous.denominationSplitCompletedCount !=
+            current.denominationSplitCompletedCount) {
+      return true;
+    }
+
+    final previousParts = {
+      for (final part in previous.parts) part.partIndex: part,
+    };
+    if (previousParts.length != current.parts.length) return true;
+    for (final part in current.parts) {
+      final before = previousParts[part.partIndex];
+      if (before == null ||
+          before.state != part.state ||
+          before.txidHex != part.txidHex ||
+          before.confirmationCount != part.confirmationCount) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _shouldRecoverDueNativeOutbox(
@@ -434,7 +515,7 @@ class IronwoodMigrationCoordinator
         usesNativeOutbox &&
         migrationHasDueScheduledBroadcast(
           status,
-          currentHeight: _safelyObservedHeight(),
+          currentHeight: _safelyObservedProofHeight(),
         );
     if (!due) {
       _outboxRecoveryWindows.remove(accountUuid);
@@ -570,7 +651,7 @@ class IronwoodMigrationCoordinator
   }
 
   bool _hasDueScheduledBroadcast(rust_sync.MigrationStatus status) {
-    final currentHeight = _safelyObservedHeight();
+    final currentHeight = _observedBroadcastHeight();
     if (currentHeight <= 0) return false;
 
     return status.scheduledBroadcasts.any(
@@ -586,20 +667,26 @@ class IronwoodMigrationCoordinator
     if (status.signedChildPcztCount <= 0 || nextActionHeight == null) {
       return false;
     }
-    final currentHeight = _safelyObservedHeight();
+    final currentHeight = _safelyObservedProofHeight();
     return currentHeight > 0 && nextActionHeight <= currentHeight;
   }
 
-  int _safelyObservedHeight() {
+  int _safelyObservedProofHeight() {
     final syncState = ref.read(syncProvider).value;
     if (syncState == null) return 0;
+    return mobileIronwoodSafelyObservedHeight(
+      scannedHeight: syncState.scannedHeight,
+      chainTipHeight: syncState.chainTipHeight,
+    );
+  }
 
-    final scannedHeight = syncState.scannedHeight;
-    final chainTipHeight = syncState.chainTipHeight;
-    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
-        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
-        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
-    return currentHeight;
+  int _observedBroadcastHeight() {
+    final syncState = ref.read(syncProvider).value;
+    if (syncState == null) return 0;
+    return mobileIronwoodObservedBroadcastHeight(
+      scannedHeight: syncState.scannedHeight,
+      chainTipHeight: syncState.chainTipHeight,
+    );
   }
 
   Future<void> _advance(

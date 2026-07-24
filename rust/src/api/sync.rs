@@ -1479,6 +1479,27 @@ pub fn prepare_orchard_migration_denominations_pczt(
     })
 }
 
+pub fn create_or_resume_private_migration_draft(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+) -> Result<String, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::create_or_resume_private_migration_draft(
+            &db_path,
+            network,
+            &account_uuid,
+            to_wallet_migration_schedule(approved_schedule),
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
+        )
+    })
+}
+
 /// Convert the FRB-boundary signed messages (compact action signatures with
 /// `Vec<u8>` sigs) into the wallet-layer form (`[u8; 64]` sigs), validating each
 /// signature is exactly 64 bytes. Shared by all three migration completion FRB

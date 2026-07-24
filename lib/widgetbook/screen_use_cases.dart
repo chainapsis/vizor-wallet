@@ -34,7 +34,6 @@ import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
-import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_complete_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -647,19 +646,6 @@ Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileHomeIronwoodMigrationCompleteUseCase(BuildContext context) {
-  return _buildMobileHomeUseCase(
-    accountState: _ironwoodMobileHomeAccountState,
-    syncState: _homeSyncedState(
-      ironwoodBalance: BigInt.from(14_212_300_000),
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
-    ),
-    marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
-    swapEnabled: false,
-    showStaticIronwoodCompletion: true,
-  );
-}
-
 Widget buildMobileHomeIronwoodMigrationInProgressUseCase(BuildContext context) {
   final accountUuid = _ironwoodMobileHomeAccountState.activeAccountUuid!;
   return _buildMobileHomeUseCase(
@@ -895,38 +881,6 @@ Widget buildMobileIronwoodMigrationOptionsUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.privateReview,
-  );
-}
-
-Widget buildMobileIronwoodMigrationPrivateManyPartsUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.privateReview,
-    previewPrivatePlan: _previewMobilePrivateMigrationManyPartsPlan(),
-  );
-}
-
-Widget buildMobileIronwoodMigrationAnalyzingUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.privateReview,
-    reviewPreviewStage: MobileIronwoodMigrationReviewPreviewStage.analyzing,
-  );
-}
-
-Widget buildMobileIronwoodMigrationAnalyzingMotionUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.privateReview,
-    reviewPreviewStage:
-        MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing,
-  );
-}
-
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.fastReview,
@@ -1072,73 +1026,6 @@ Widget buildMobileIronwoodMigrationKeystoneHelpUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileIronwoodMigrationPreparingUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.preparing,
-    previewStatus: _previewMobilePreparingStatus(),
-  );
-}
-
-Widget buildMobileIronwoodMigrationMigratingUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.migrating,
-    previewStatus: _previewMobileMigrationStatus(),
-    previewParts: _previewMobileMigrationParts,
-  );
-}
-
-Widget buildMobileIronwoodMigrationRecoveryRequiredUseCase(
-  BuildContext context,
-) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.migrating,
-    previewStatus: _previewMobileMigrationStatus(),
-    previewParts: _previewMobileMigrationParts,
-    previewCoordinatorError:
-        'Bad state: Ironwood migration credential is missing for the active '
-        'run. Vizor will only continue transactions preserved in the '
-        'verified iOS outbox.',
-  );
-}
-
-const _previewMobileMigrationParts = [
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 1',
-    status: MobileIronwoodMigrationPartStatus.complete,
-    detail: '40 ZEC',
-  ),
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 2',
-    status: MobileIronwoodMigrationPartStatus.needsInput,
-    detail: '5 ZEC',
-    progress: 0.55,
-  ),
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 3',
-    status: MobileIronwoodMigrationPartStatus.active,
-    detail: '80 ZEC',
-    progress: 0.35,
-  ),
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 4',
-    status: MobileIronwoodMigrationPartStatus.pending,
-    detail: '1 ZEC',
-    eta: '~20 hrs',
-  ),
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 5',
-    status: MobileIronwoodMigrationPartStatus.pending,
-    detail: '5 ZEC',
-    eta: '~20 hrs',
-  ),
-  MobileIronwoodMigrationPartPresentation(
-    label: 'Part 6',
-    status: MobileIronwoodMigrationPartStatus.pending,
-    detail: '10 ZEC',
-    eta: '~20 hrs',
-  ),
-];
-
 Widget buildMobileIronwoodMigrationKeystoneLoadingUseCase(
   BuildContext context,
 ) {
@@ -1210,21 +1097,15 @@ class _KeystoneMigrationCameraPreview extends StatelessWidget {
 
 Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
-  rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
-  rust_sync.MigrationStatus? previewStatus,
-  List<MobileIronwoodMigrationPartPresentation>? previewParts,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
-  MobileIronwoodMigrationReviewPreviewStage reviewPreviewStage =
-      MobileIronwoodMigrationReviewPreviewStage.review,
-  String? previewCoordinatorError,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.howItWorks ||
     MobileIronwoodMigrationStep.options => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
-    MobileIronwoodMigrationStep.privateReview ||
+    MobileIronwoodMigrationStep.privateStart ||
     MobileIronwoodMigrationStep.notifications ||
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating => BigInt.from(14_220_000_000),
@@ -1235,20 +1116,6 @@ Widget _buildMobileIronwoodMigrationUseCase({
     _ => 'Username',
   };
   return ProviderScope(
-    overrides: [
-      if (previewCoordinatorError != null) ...[
-        accountProvider.overrideWith(
-          () => _PreviewAccountNotifier(_ironwoodMigrationAccountState()),
-        ),
-        ironwoodMigrationCoordinatorProvider.overrideWith(
-          () => _PreviewMigrationCoordinator(
-            accountUuid: _accountsDesignState.activeAccountUuid,
-            status: previewStatus,
-            error: previewCoordinatorError,
-          ),
-        ),
-      ],
-    ],
     child: _MobilePreviewFrame(
       child: MobileIronwoodMigrationFlowScreen(
         step: step,
@@ -1256,12 +1123,8 @@ Widget _buildMobileIronwoodMigrationUseCase({
           zatoshi: zatoshi,
           accountName: accountName,
         ),
-        previewPrivatePlan:
-            previewPrivatePlan ?? _previewMobilePrivateMigrationPlan(),
+        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
         previewImmediatePlan: previewImmediatePlan,
-        previewStatus: previewStatus,
-        previewReviewStage: reviewPreviewStage,
-        previewParts: previewParts,
         previewSurface: previewSurface,
       ),
     ),
@@ -1328,7 +1191,6 @@ Widget _buildMobileHomeUseCase({
   ),
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
-  bool showStaticIronwoodCompletion = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -1360,15 +1222,11 @@ Widget _buildMobileHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
-      ironwoodMigrationCompletionProvider.overrideWith((ref) async {
-        return const IronwoodMigrationCompletionState.hidden();
-      }),
     ],
     child: _MobilePreviewFrame(
       child: _MobileHomeHarness(
         openAccountsSheet: openAccountsSheet,
         showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
-        showStaticIronwoodCompletion: showStaticIronwoodCompletion,
       ),
     ),
   );
@@ -1942,12 +1800,10 @@ class _MobileHomeHarness extends StatefulWidget {
   const _MobileHomeHarness({
     required this.openAccountsSheet,
     required this.showStaticIronwoodAnnouncement,
-    required this.showStaticIronwoodCompletion,
   });
 
   final bool openAccountsSheet;
   final bool showStaticIronwoodAnnouncement;
-  final bool showStaticIronwoodCompletion;
 
   @override
   State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
@@ -2021,8 +1877,7 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   @override
   Widget build(BuildContext context) {
     final router = Router.withConfig(config: _router);
-    if (!widget.showStaticIronwoodAnnouncement &&
-        !widget.showStaticIronwoodCompletion) {
+    if (!widget.showStaticIronwoodAnnouncement) {
       return router;
     }
 
@@ -2035,15 +1890,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
           child: Align(
             alignment: Alignment.bottomCenter,
             child: MobileModalCard(
-              child: widget.showStaticIronwoodCompletion
-                  ? MobileIronwoodMigrationCompleteSheet(
-                      transferredZatoshi: BigInt.from(14_212_300_000),
-                      onDone: () {},
-                    )
-                  : MobileIronwoodMigrationAnnouncementSheet(
-                      onStartMigration: () {},
-                      onOpenReleaseNotes: () {},
-                    ),
+              child: MobileIronwoodMigrationAnnouncementSheet(
+                onStartMigration: () {},
+                onOpenReleaseNotes: () {},
+              ),
             ),
           ),
         ),
@@ -2926,76 +2776,6 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
   );
 }
 
-rust_sync.OrchardMigrationPrivatePlan
-_previewMobilePrivateMigrationManyPartsPlan() {
-  final values = <int>[
-    4_000_000_000,
-    500_000_000,
-    8_000_000_000,
-    100_000_000,
-    500_000_000,
-    1_000_000_000,
-    ...List<int>.filled(43, 2_700_000),
-    3_900_000,
-  ];
-  return rust_sync.OrchardMigrationPrivatePlan(
-    targetValuesZatoshi: frb.Uint64List.fromList(values),
-    totalInputZatoshi: BigInt.from(14_223_000_000),
-    totalMigratableZatoshi: BigInt.from(14_220_000_000),
-    orchardChangeZatoshi: BigInt.zero,
-    denominationSplitFeeZatoshi: BigInt.from(150_000),
-    migrationFeeZatoshi: BigInt.from(150_000),
-    estimatedTotalFeeZatoshi: BigInt.from(300_000),
-    plannedBatchCount: values.length,
-    denominationSplitStageCount: 1,
-    denominationSplitLayerCount: 1,
-    signingBatchLimit: 35,
-    scheduleMeanDelayBlocks: 144,
-    scheduleMaxDelayBlocks: 960,
-    proofReadinessDelayBlocks: 146,
-    scheduledTransfers: [
-      for (var index = 0; index < values.length; index++)
-        rust_sync.MigrationScheduledTransfer(
-          partIndex: index,
-          valueZatoshi: BigInt.from(values[index]),
-          blockOffset: index == 0 ? 12 : 960,
-        ),
-    ],
-  );
-}
-
-rust_sync.MigrationStatus _previewMobilePreparingStatus() {
-  return rust_sync.MigrationStatus(
-    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-    activeRunId: 'preview-mobile-preparing-run',
-    targetValuesZatoshi: frb.Uint64List.fromList([
-      4_000_000_000,
-      500_000_000,
-      8_000_000_000,
-      100_000_000,
-      500_000_000,
-      1_000_000_000,
-    ]),
-    preparedNoteCount: 6,
-    denominationConfirmationCount: 1,
-    denominationConfirmationTarget: 3,
-    denominationSplitCompletedCount: 1,
-    denominationSplitTotalCount: 1,
-    pendingTxCount: 6,
-    broadcastedTxCount: 0,
-    confirmedTxCount: 0,
-    totalCount: 6,
-    signedChildPcztCount: 0,
-    pendingSplitStageCount: 0,
-    canAbandon: false,
-    signingBatchLimit: 35,
-    scheduleMeanDelayBlocks: 144,
-    scheduleMaxDelayBlocks: 960,
-    scheduledBroadcasts: const [],
-    parts: const [],
-  );
-}
-
 rust_sync.MigrationStatus _previewMobileMigrationStatus() {
   final completion = DateTime(2026, 7, 20, 10);
   const values = [
@@ -3336,15 +3116,10 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
-  _PreviewMigrationCoordinator({
-    required this.accountUuid,
-    this.status,
-    this.error,
-  });
+  _PreviewMigrationCoordinator({required this.accountUuid, this.status});
 
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;
-  final String? error;
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -3354,7 +3129,6 @@ class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
       statuses: uuid == null || previewStatus == null
           ? const {}
           : {uuid: previewStatus},
-      errors: uuid == null || error == null ? const {} : {uuid: error!},
     );
   }
 

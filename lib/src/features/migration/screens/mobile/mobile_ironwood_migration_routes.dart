@@ -7,7 +7,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewPrivatePlan,
     this.previewImmediatePlan,
     this.previewStatus,
-    this.previewReviewStage = MobileIronwoodMigrationReviewPreviewStage.review,
     this.previewParts,
     this.previewSurface,
     super.key,
@@ -18,7 +17,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final rust_sync.MigrationStatus? previewStatus;
-  final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final MobileIronwoodMigrationPreviewSurface? previewSurface;
 
@@ -39,7 +37,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
         previewImmediatePlan: previewImmediatePlan,
-        previewReviewStage: previewReviewStage,
         previewParts: previewParts,
         status: previewStatus,
       );
@@ -53,7 +50,6 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewMode: false,
       previewPrivatePlan: previewPrivatePlan,
       previewImmediatePlan: previewImmediatePlan,
-      previewReviewStage: previewReviewStage,
       previewParts: previewParts,
       status: null,
     );
@@ -67,7 +63,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewMode,
     required this.previewPrivatePlan,
     required this.previewImmediatePlan,
-    required this.previewReviewStage,
     required this.previewParts,
     this.status,
   });
@@ -77,7 +72,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
-  final MobileIronwoodMigrationReviewPreviewStage previewReviewStage;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final rust_sync.MigrationStatus? status;
 
@@ -94,14 +88,12 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         immediateEnabled: !isHardware,
       ),
       MobileIronwoodMigrationStep.notifications =>
-        const _MobileMigrationNotificationPermissionScreen(),
-      MobileIronwoodMigrationStep.privateReview =>
-        _MobileMigrationPrivateReview(
-          data: data,
-          previewPlan: previewPrivatePlan,
-          isHardware: isHardware,
-          previewStage: previewReviewStage,
+        _MobileMigrationNotificationPermissionScreen(
+          privatePlan: previewPrivatePlan,
         ),
+      MobileIronwoodMigrationStep.privateStart => _MobileMigrationPrivateStart(
+        privatePlan: previewPrivatePlan,
+      ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
@@ -146,6 +138,9 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         }
         final status = cta.status;
         final accountUuid = cta.accountUuid;
+        final isHardware =
+            ref.watch(accountProvider).value?.activeAccount?.isHardware ??
+            false;
         if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
             status == null ||
             accountUuid == null ||
@@ -157,12 +152,14 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         if (!_hasRenderableMobileMigrationStatus(status)) {
           return const _MobileMigrationLoadingScreen();
         }
+        if (status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
+            !isHardware) {
+          return const _MobileMigrationRedirectTo('/migration/private/start');
+        }
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
-          isHardware:
-              ref.watch(accountProvider).value?.activeAccount?.isHardware ??
-              false,
+          isHardware: isHardware,
         );
       },
     );
@@ -176,7 +173,9 @@ bool _hasRenderableMobileMigrationStatus(rust_sync.MigrationStatus status) {
 }
 
 bool _hasMobileMigrationStatusDesign(String phase) {
-  return phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+  return phase == kIronwoodMigrationAwaitingPreparationPhase ||
+      phase == kIronwoodMigrationAwaitingDenominationSignaturePhase ||
+      phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
       phase == kIronwoodMigrationReadyToMigratePhase ||
       phase == kIronwoodMigrationBroadcastScheduledPhase ||
       phase == kIronwoodMigrationBroadcastingPhase ||

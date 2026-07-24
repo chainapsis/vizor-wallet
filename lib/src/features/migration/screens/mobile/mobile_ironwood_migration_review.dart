@@ -2,210 +2,42 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 const _mobileMigrationStartVerificationTimeout = Duration(seconds: 2);
 
-class _MobileMigrationPrivateReview extends ConsumerStatefulWidget {
-  const _MobileMigrationPrivateReview({
-    required this.data,
-    required this.previewPlan,
-    required this.isHardware,
-    required this.previewStage,
-  });
+class _MobileMigrationPrivateStart extends ConsumerStatefulWidget {
+  const _MobileMigrationPrivateStart({this.privatePlan});
 
-  final IronwoodMigrationFlowData data;
-  final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
-  final bool isHardware;
-  final MobileIronwoodMigrationReviewPreviewStage previewStage;
+  final rust_sync.OrchardMigrationPrivatePlan? privatePlan;
 
   @override
-  ConsumerState<_MobileMigrationPrivateReview> createState() =>
-      _MobileMigrationPrivateReviewState();
+  ConsumerState<_MobileMigrationPrivateStart> createState() =>
+      _MobileMigrationPrivateStartState();
 }
 
-class _MobileMigrationPrivateReviewState
-    extends ConsumerState<_MobileMigrationPrivateReview> {
-  bool _analysisComplete = false;
-  int _analysisEpoch = 0;
-  bool _isStarting = false;
-  bool _isRefreshingPlan = false;
-  bool _planRefreshFailed = false;
-  String? _startError;
-  String? _planRefreshMessage;
-  rust_sync.OrchardMigrationPrivatePlan? _displayedPlan;
-  String? _displayedPlanFingerprint;
-  ProviderSubscription<({bool isWaiting, bool hasSyncFailure})>?
-  _syncReadinessSubscription;
-  ProviderSubscription<AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>>?
-  _planSubscription;
+class _MobileMigrationPrivateStartState
+    extends ConsumerState<_MobileMigrationPrivateStart> {
+  bool _starting = false;
+  bool _isKeystone = false;
+  String? _error;
+  rust_sync.OrchardMigrationPrivatePlan? _keystonePlan;
 
   @override
   void initState() {
     super.initState();
-    if (widget.previewPlan != null) return;
-    _syncReadinessSubscription = ref.listenManual(
-      ironwoodMigrationInputsProvider.select(
-        (inputs) => (
-          isWaiting:
-              inputs.isSyncing ||
-              inputs.isBackgroundMode ||
-              !inputs.isSyncComplete ||
-              inputs.hasSyncFailure,
-          hasSyncFailure: inputs.hasSyncFailure,
-        ),
-      ),
-      (previous, next) {
-        if (next.hasSyncFailure) {
-          if (_analysisComplete) {
-            setState(() {
-              _isRefreshingPlan = false;
-              _planRefreshFailed = true;
-              _planRefreshMessage =
-                  "Sync didn't finish. Try again before starting migration.";
-            });
-          }
-          return;
-        }
-        if (next.isWaiting) {
-          if (_analysisComplete) _markPlanRefreshing();
-          return;
-        }
-        if (previous?.isWaiting ?? true) {
-          if (_analysisComplete) _markPlanRefreshing();
-          ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-        }
-      },
-    );
-    _planSubscription = ref.listenManual(
-      ironwoodMigrationPrivatePlanProvider,
-      _handlePlanStateChanged,
-      fireImmediately: true,
-    );
-  }
-
-  @override
-  void dispose() {
-    _syncReadinessSubscription?.close();
-    _planSubscription?.close();
-    super.dispose();
-  }
-
-  void _resetAnalysis({bool invalidatePlan = false}) {
-    if (!mounted) return;
-    setState(() {
-      _analysisComplete = false;
-      _analysisEpoch++;
-      _isRefreshingPlan = false;
-      _planRefreshFailed = false;
-      _planRefreshMessage = null;
-      _displayedPlan = null;
-      _displayedPlanFingerprint = null;
-    });
-    if (invalidatePlan) {
-      ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-    }
-  }
-
-  void _retryAnalysis() {
-    if (!mounted) return;
-    _resetAnalysis(invalidatePlan: true);
-
-    final inputs = ref.read(ironwoodMigrationInputsProvider);
-    if ((!inputs.isSyncComplete || inputs.hasSyncFailure) &&
-        !inputs.isSyncing &&
-        !inputs.isBackgroundMode) {
-      unawaited(ref.read(syncProvider.notifier).startSyncAnyway());
-    }
-  }
-
-  void _markPlanRefreshing() {
-    if (!mounted) return;
-    setState(() {
-      _isRefreshingPlan = true;
-      _planRefreshFailed = false;
-      _planRefreshMessage = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_start());
     });
   }
 
-  void _handlePlanStateChanged(
-    AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>? previous,
-    AsyncValue<rust_sync.OrchardMigrationPrivatePlan?> next,
-  ) {
-    if (!mounted) return;
-    if (next is AsyncData<rust_sync.OrchardMigrationPrivatePlan?>) {
-      final refreshedPlan = next.value;
-      if (refreshedPlan == null) {
-        if (_analysisComplete && _isRefreshingPlan) {
-          setState(() {
-            _isRefreshingPlan = false;
-            _planRefreshFailed = true;
-            _planRefreshMessage =
-                'The migration plan is no longer available after sync.';
-          });
-        }
-        return;
-      }
-
-      final refreshedFingerprint = _mobilePrivatePlanFingerprint(refreshedPlan);
-      final displayedPlan = _displayedPlan;
-      final planChanged =
-          _analysisComplete &&
-          displayedPlan != null &&
-          (_displayedPlanFingerprint != refreshedFingerprint ||
-              _mobilePrivatePlanAnchorChanged(displayedPlan, refreshedPlan));
-      setState(() {
-        if (displayedPlan == null || planChanged) {
-          _displayedPlan = refreshedPlan;
-          _displayedPlanFingerprint = refreshedFingerprint;
-        } else {
-          _displayedPlan = _mobilePrivatePlanWithRefreshedTiming(
-            displayedPlan,
-            refreshedPlan,
-          );
-        }
-        _isRefreshingPlan = false;
-        _planRefreshFailed = false;
-        _planRefreshMessage = planChanged
-            ? 'Migration plan updated after sync. Review the changes.'
-            : null;
-      });
-      return;
-    }
-
-    if (next is AsyncError<rust_sync.OrchardMigrationPrivatePlan?> &&
-        _analysisComplete &&
-        _isRefreshingPlan) {
-      setState(() {
-        _isRefreshingPlan = false;
-        _planRefreshFailed = true;
-        _planRefreshMessage =
-            "Couldn't update the migration plan after sync. Try again.";
-      });
-    }
-  }
-
-  void _handleAnalysisCompleted() {
-    if (_analysisComplete || !mounted) return;
-    final plan = ref.read(ironwoodMigrationPrivatePlanProvider).asData?.value;
+  Future<void> _start() async {
+    if (_starting) return;
     setState(() {
-      _analysisComplete = true;
-      if (plan != null) {
-        _displayedPlan = plan;
-        _displayedPlanFingerprint = _mobilePrivatePlanFingerprint(plan);
-      }
+      _starting = true;
+      _error = null;
     });
-  }
 
-  Future<void> _startMigration(
-    rust_sync.OrchardMigrationPrivatePlan plan,
-  ) async {
-    if (_isStarting) return;
     IronwoodMigrationStatusRequest? statusRequest;
+    rust_sync.OrchardMigrationPrivatePlan? activePlan;
     String? softwareAccountUuid;
     var softwareStartAttempted = false;
-    var activePlan = plan;
-    setState(() {
-      _isStarting = true;
-      _startError = null;
-    });
-
     try {
       final accountState = await ref.read(accountProvider.future);
       if (!mounted) return;
@@ -213,21 +45,36 @@ class _MobileMigrationPrivateReviewState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final verifiedPlan = await _verifyPlanBeforeStart(
-        plan,
-        accountUuid: accountUuid,
-      );
-      if (!mounted || verifiedPlan == null) return;
-      activePlan = verifiedPlan;
+
+      activePlan =
+          widget.privatePlan ??
+          await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      if (!mounted) return;
+      if (activePlan == null) {
+        throw StateError('Migration plan is unavailable.');
+      }
+
+      final isHardware = accountState.activeAccount?.isHardware ?? false;
+      setState(() {
+        _isKeystone = isHardware;
+      });
+      if (isHardware && !_keystoneTwoRoundPlanSupported(activePlan)) {
+        setState(() {
+          _error =
+              'This migration needs more transactions than one Keystone '
+              'signing request supports.';
+        });
+        return;
+      }
+
       statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
-      if (accountState.activeAccount?.isHardware ?? false) {
-        context.go(
-          '/migration/private/keystone/denominations/sign',
-          extra: verifiedPlan.scheduledTransfers,
-        );
+      if (isHardware) {
+        setState(() {
+          _keystonePlan = activePlan;
+        });
         return;
       }
 
@@ -237,112 +84,35 @@ class _MobileMigrationPrivateReviewState
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .startSoftwareMigration(
             accountUuid: accountUuid,
-            approvedSchedule: verifiedPlan.scheduledTransfers,
+            approvedSchedule: activePlan.scheduledTransfers,
           );
       if (!mounted) return;
-      if (!await _migrationMayHaveStarted(statusRequest)) {
+      if (!await _mobilePrivateMigrationMayHaveStarted(ref, statusRequest)) {
         throw StateError('Migration did not create an active run.');
       }
       if (!mounted) return;
-      _openMigrationStatus(verifiedPlan);
+      _openMigrationStatus(activePlan);
     } catch (error) {
       if (!mounted) return;
       final request = statusRequest;
+      final plan = activePlan;
       if (softwareStartAttempted &&
           softwareAccountUuid != null &&
           request != null &&
-          await _migrationMayHaveStarted(request)) {
-        unawaited(_recoverBackgroundTrackingBestEffort(softwareAccountUuid));
+          plan != null &&
+          await _mobilePrivateMigrationMayHaveStarted(ref, request)) {
+        unawaited(
+          _recoverMobileBackgroundTrackingBestEffort(ref, softwareAccountUuid),
+        );
         if (!mounted) return;
-        _openMigrationStatus(activePlan);
+        _openMigrationStatus(plan);
         return;
       }
-      if (!mounted) return;
       setState(() {
-        _startError = _mobilePrivateMigrationStartErrorMessage(error);
+        _error = _mobilePrivateMigrationStartErrorMessage(error);
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _isStarting = false;
-        });
-      }
-    }
-  }
-
-  Future<rust_sync.OrchardMigrationPrivatePlan?> _verifyPlanBeforeStart(
-    rust_sync.OrchardMigrationPrivatePlan displayedPlan, {
-    required String accountUuid,
-  }) async {
-    final refreshedPlan = await ref
-        .read(ironwoodMigrationServiceProvider)
-        .privatePlan(
-          network: ref.read(ironwoodMigrationInputsProvider).network,
-          accountUuid: accountUuid,
-        );
-    if (!mounted) return null;
-    if (refreshedPlan == null) {
-      setState(() {
-        _planRefreshFailed = true;
-        _planRefreshMessage =
-            'The migration plan is no longer available. Try again.';
-      });
-      return null;
-    }
-
-    final refreshedFingerprint = _mobilePrivatePlanFingerprint(refreshedPlan);
-    final planChanged =
-        _mobilePrivatePlanFingerprint(displayedPlan) != refreshedFingerprint ||
-        _mobilePrivatePlanAnchorChanged(displayedPlan, refreshedPlan);
-    if (planChanged) {
-      setState(() {
-        _displayedPlan = refreshedPlan;
-        _displayedPlanFingerprint = refreshedFingerprint;
-        _planRefreshFailed = false;
-        _planRefreshMessage =
-            'Migration plan updated. Review the changes before starting.';
-      });
-      return null;
-    }
-
-    final verifiedPlan = _mobilePrivatePlanWithRefreshedTiming(
-      displayedPlan,
-      refreshedPlan,
-    );
-    setState(() {
-      _displayedPlan = verifiedPlan;
-      _displayedPlanFingerprint = refreshedFingerprint;
-      _planRefreshFailed = false;
-      _planRefreshMessage = null;
-    });
-    return verifiedPlan;
-  }
-
-  Future<bool> _migrationMayHaveStarted(
-    IronwoodMigrationStatusRequest request,
-  ) async {
-    ref.invalidate(ironwoodMigrationStatusProvider(request));
-    try {
-      final status = await ref
-          .read(ironwoodMigrationStatusProvider(request).future)
-          .timeout(_mobileMigrationStartVerificationTimeout);
-      return status.activeRunId != null;
-    } catch (_) {
-      // A status read failure after submission is not proof that no durable
-      // migration run exists. The status route can safely reconcile it.
-      return true;
-    }
-  }
-
-  Future<void> _recoverBackgroundTrackingBestEffort(String accountUuid) async {
-    try {
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
-    } catch (error) {
-      debugPrint(
-        'Failed to recover Ironwood background migration tracking: $error',
-      );
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -357,219 +127,70 @@ class _MobileMigrationPrivateReviewState
     );
   }
 
+  void _openKeystoneDenominationSigning(
+    rust_sync.OrchardMigrationPrivatePlan plan,
+  ) {
+    context.go(
+      '/migration/private/keystone/denominations/sign',
+      extra: plan.scheduledTransfers,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final preview = widget.previewPlan;
-    final migrationInputs = preview == null
-        ? ref.watch(ironwoodMigrationInputsProvider)
-        : null;
-    final planAsync = preview != null
-        ? AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(preview)
-        : ref.watch(ironwoodMigrationPrivatePlanProvider);
-    final staticAnalysisPreview =
-        widget.previewStage ==
-        MobileIronwoodMigrationReviewPreviewStage.analyzing;
-    final animatedAnalysisPreview =
-        widget.previewStage ==
-        MobileIronwoodMigrationReviewPreviewStage.animatedAnalyzing;
-    final syncReadyForPlan =
-        preview != null ||
-        (!migrationInputs!.isSyncing &&
-            !migrationInputs.isBackgroundMode &&
-            migrationInputs.isSyncComplete &&
-            !migrationInputs.hasSyncFailure);
-    final currentPlan = planAsync.asData?.value;
-    final plan = preview ?? _displayedPlan ?? currentPlan;
-    final awaitingInitialPlan = planAsync.isLoading && plan == null;
-    final waitingForSync =
-        preview == null &&
-        (migrationInputs!.isSyncing || migrationInputs.isBackgroundMode);
-    final waitingForPlan = awaitingInitialPlan || waitingForSync;
-    final showAnalyzing =
-        staticAnalysisPreview ||
-        (animatedAnalysisPreview && !_analysisComplete) ||
-        (preview == null && !_analysisComplete);
-    final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    final Widget child;
-    if (showAnalyzing) {
-      child = KeyedSubtree(
-        key: ValueKey('mobile_ironwood_analysis_epoch_$_analysisEpoch'),
-        child: _MobileMigrationAnalyzing(
-          key: const ValueKey('mobile_ironwood_migration_analysis_stage'),
-          preview: staticAnalysisPreview,
-          ready: !waitingForPlan,
-          completionSucceeded: syncReadyForPlan && plan != null,
-          onCompleted: staticAnalysisPreview ? null : _handleAnalysisCompleted,
-        ),
-      );
-    } else {
-      final keystonePlanSupported =
-          !widget.isHardware ||
-          plan == null ||
-          _keystoneMultiRoundPlanSupported(plan);
-      final canStart = plan != null && !_isStarting && keystonePlanSupported;
-      final displayedError = _startError ?? _planRefreshMessage;
-      final displayedMessageIsError = _startError != null || _planRefreshFailed;
-      final canStartCurrentPlan =
-          canStart &&
-          syncReadyForPlan &&
-          !_isRefreshingPlan &&
-          !_planRefreshFailed;
-
-      child = KeyedSubtree(
-        key: const ValueKey('mobile_ironwood_migration_review_stage'),
-        child: _MobilePrivateReviewScaffold(
-          onBack: () => context.go('/migration/options'),
-          bottom: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (displayedError != null) ...[
-                Text(
-                  displayedError,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: displayedMessageIsError
-                        ? context.colors.text.destructive
-                        : context.colors.text.warning,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
-              if (!keystonePlanSupported) ...[
-                Text(
-                  'Keystone signing is unavailable for this migration plan.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: context.colors.text.destructive,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
-              _MobileMigrationPrimaryButton(
-                key: const ValueKey('mobile_ironwood_authorize_start_button'),
-                label: _isStarting
-                    ? 'Preparing...'
-                    : _planRefreshFailed
-                    ? 'Try again'
-                    : !syncReadyForPlan
-                    ? 'Syncing...'
-                    : _isRefreshingPlan
-                    ? 'Updating plan...'
-                    : widget.isHardware
-                    ? 'Continue with Keystone'
-                    : 'Start migration',
-                onPressed: _planRefreshFailed
-                    ? _retryAnalysis
-                    : canStartCurrentPlan
-                    ? preview != null
-                          ? () {}
-                          : () => _startMigration(plan)
-                    : null,
-              ),
-            ],
-          ),
-          child: plan == null
-              ? _MobileMigrationUnavailable(onRetry: _retryAnalysis)
-              : _MobilePrivatePlan(
-                  plan: plan,
-                  arrivalLabel: _migrationArrivalLabel(plan),
-                ),
-        ),
-      );
-    }
-
-    return AnimatedSwitcher(
-      duration: disableAnimations
-          ? Duration.zero
-          : _migrationAnalysisTransitionDuration,
-      reverseDuration: disableAnimations
-          ? Duration.zero
-          : const Duration(milliseconds: 280),
-      switchInCurve: _migrationAnalysisEaseOut,
-      switchOutCurve: Curves.easeInCubic,
-      layoutBuilder: (currentChild, previousChildren) {
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            for (final previousChild in previousChildren)
-              IgnorePointer(child: previousChild),
-            ?currentChild,
-          ],
-        );
-      },
-      transitionBuilder: (child, animation) {
-        final offset = Tween<Offset>(
-          begin: const Offset(0, 0.015),
-          end: Offset.zero,
-        ).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(position: offset, child: child),
-        );
-      },
-      child: child,
+    final keystonePlan = _keystonePlan;
+    final paused = _error != null || keystonePlan != null;
+    return _MigrationPreparationPreview(
+      state: paused
+          ? _MigrationPreparationState.paused
+          : _MigrationPreparationState.active,
+      isKeystone: _isKeystone,
+      pausedMessage:
+          _error ??
+          (keystonePlan == null ? null : _keystonePreparationSignatureMessage),
+      onBack: () => context.go('/home'),
+      onContinue: _starting
+          ? null
+          : keystonePlan == null
+          ? () => unawaited(_start())
+          : () => _openKeystoneDenominationSigning(keystonePlan),
     );
   }
 }
 
-String _mobilePrivatePlanFingerprint(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  final transferValues =
-      plan.scheduledTransfers.map((transfer) => transfer.valueZatoshi).toList()
-        ..sort();
-  final targetValues = plan.targetValuesZatoshi.toList()..sort();
-  return [
-    plan.totalInputZatoshi,
-    plan.totalMigratableZatoshi,
-    plan.orchardChangeZatoshi,
-    plan.denominationSplitFeeZatoshi,
-    plan.migrationFeeZatoshi,
-    plan.estimatedTotalFeeZatoshi,
-    plan.plannedBatchCount,
-    plan.denominationSplitStageCount,
-    plan.denominationSplitLayerCount,
-    plan.signingBatchLimit,
-    targetValues.join(','),
-    transferValues.join(','),
-  ].join('|');
+Future<bool> _mobilePrivateMigrationMayHaveStarted(
+  WidgetRef ref,
+  IronwoodMigrationStatusRequest request,
+) async {
+  ref.invalidate(ironwoodMigrationStatusProvider(request));
+  try {
+    final status = await ref
+        .read(ironwoodMigrationStatusProvider(request).future)
+        .timeout(_mobileMigrationStartVerificationTimeout);
+    return status.activeRunId != null;
+  } catch (_) {
+    // A status read failure after submission is not proof that no durable
+    // migration run exists. The status route can safely reconcile it.
+    return true;
+  }
 }
 
-bool _mobilePrivatePlanAnchorChanged(
-  rust_sync.OrchardMigrationPrivatePlan previous,
-  rust_sync.OrchardMigrationPrivatePlan refreshed,
-) {
-  final previousHeight = previous.estimatedProofReadyHeight;
-  final refreshedHeight = refreshed.estimatedProofReadyHeight;
-  if (previousHeight == null && refreshedHeight == null) return false;
-  return previousHeight != refreshedHeight;
+Future<void> _recoverMobileBackgroundTrackingBestEffort(
+  WidgetRef ref,
+  String accountUuid,
+) async {
+  try {
+    await ref
+        .read(ironwoodMigrationServiceProvider)
+        .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+  } catch (error) {
+    debugPrint(
+      'Failed to recover Ironwood background migration tracking: $error',
+    );
+  }
 }
 
-rust_sync.OrchardMigrationPrivatePlan _mobilePrivatePlanWithRefreshedTiming(
-  rust_sync.OrchardMigrationPrivatePlan displayed,
-  rust_sync.OrchardMigrationPrivatePlan refreshed,
-) {
-  return rust_sync.OrchardMigrationPrivatePlan(
-    targetValuesZatoshi: displayed.targetValuesZatoshi,
-    totalInputZatoshi: displayed.totalInputZatoshi,
-    totalMigratableZatoshi: displayed.totalMigratableZatoshi,
-    orchardChangeZatoshi: displayed.orchardChangeZatoshi,
-    denominationSplitFeeZatoshi: displayed.denominationSplitFeeZatoshi,
-    migrationFeeZatoshi: displayed.migrationFeeZatoshi,
-    estimatedTotalFeeZatoshi: displayed.estimatedTotalFeeZatoshi,
-    plannedBatchCount: displayed.plannedBatchCount,
-    denominationSplitStageCount: displayed.denominationSplitStageCount,
-    denominationSplitLayerCount: displayed.denominationSplitLayerCount,
-    signingBatchLimit: displayed.signingBatchLimit,
-    scheduleMeanDelayBlocks: displayed.scheduleMeanDelayBlocks,
-    scheduleMaxDelayBlocks: displayed.scheduleMaxDelayBlocks,
-    proofReadinessDelayBlocks: refreshed.proofReadinessDelayBlocks,
-    estimatedProofReadyHeight: refreshed.estimatedProofReadyHeight,
-    scheduledTransfers: displayed.scheduledTransfers,
-  );
-}
-
-bool _keystoneMultiRoundPlanSupported(
+bool _keystoneTwoRoundPlanSupported(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
   return plan.signingBatchLimit > 0;

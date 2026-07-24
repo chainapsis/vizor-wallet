@@ -1386,6 +1386,59 @@ void main() {
   );
 
   test(
+    'saved unstarted private draft recreates a missing mobile credential',
+    () async {
+      final store = _backgroundCredentialStore();
+      final status = _migrationStatus(
+        phase: 'awaiting_preparation',
+        activeRunId: 'draft-run-1',
+      );
+      var createCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                status,
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        createPrivateMigrationDraft:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async {
+              createCount += 1;
+              return 'draft-run-1';
+            },
+      );
+
+      final runId = await service.savePrivateMigrationDraft(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(runId, 'draft-run-1');
+      expect(createCount, 1);
+      final manifest = await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      expect(manifest, isNotNull);
+      expect(manifest!.expectedRunId, 'draft-run-1');
+    },
+  );
+
+  test(
     'completeKeystoneDenominationPrivateMigration reuses pending tx salt',
     () async {
       final seenSalts = <String>[];

@@ -348,10 +348,6 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileHomeIronwoodAnnouncementUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Home - Migration complete',
-                      builder: buildMobileHomeIronwoodMigrationCompleteUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'About Ironwood',
                       builder: buildMobileIronwoodMigrationIntroUseCase,
                     ),
@@ -362,20 +358,6 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Migration type',
                       builder: buildMobileIronwoodMigrationOptionsUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Private',
-                      builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Private (many parts)',
-                      builder:
-                          buildMobileIronwoodMigrationPrivateManyPartsUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Analyzing',
-                      builder:
-                          buildMobileIronwoodMigrationAnalyzingMotionUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Migration type - Fast',
@@ -459,19 +441,6 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',
                       builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Preparing',
-                      builder: buildMobileIronwoodMigrationPreparingUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Migrating',
-                      builder: buildMobileIronwoodMigrationMigratingUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Migration type - Recovery required',
-                      builder:
-                          buildMobileIronwoodMigrationRecoveryRequiredUseCase,
                     ),
                   ],
                 ),

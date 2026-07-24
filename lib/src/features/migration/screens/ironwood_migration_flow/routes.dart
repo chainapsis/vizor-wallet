@@ -232,6 +232,7 @@ void _invalidateIronwoodMigrationStatusState(
   }
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
+  ref.invalidate(ironwoodPostMigrationStateProvider);
   ref.invalidate(ironwoodMigrationFlowDataProvider);
   ref.invalidate(ironwoodMigrationPrivatePlanProvider);
 }

@@ -290,6 +290,13 @@ typedef IronwoodMigrationKeystoneDenominationPreparer =
       required String network,
       required String accountUuid,
     });
+typedef IronwoodMigrationPrivateDraftCreator =
+    Future<String> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    });
 typedef IronwoodMigrationKeystoneDenominationCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -389,6 +396,19 @@ _defaultCompleteKeystoneDenominationMigration({
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
+Future<String> _defaultCreatePrivateMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => rust_sync.createOrResumePrivateMigrationDraft(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
 class IronwoodMigrationService {
   IronwoodMigrationService({
     required this.getWalletDbPath,
@@ -437,6 +457,7 @@ class IronwoodMigrationService {
     IronwoodMigrationDueOutboxRecoveryRunner? recoverDueMigrationOutbox,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
+    IronwoodMigrationPrivateDraftCreator? createPrivateMigrationDraft,
     IronwoodMigrationKeystoneDenominationCompleter?
     completeKeystoneDenominationMigration,
     IronwoodMigrationKeystoneBatchPreparer? prepareKeystoneBatchMigration,
@@ -524,6 +545,8 @@ class IronwoodMigrationService {
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
            rust_sync.prepareOrchardMigrationDenominationsPczt,
+       createPrivateMigrationDraft =
+           createPrivateMigrationDraft ?? _defaultCreatePrivateMigrationDraft,
        completeKeystoneDenominationMigration =
            completeKeystoneDenominationMigration ??
            _defaultCompleteKeystoneDenominationMigration,
@@ -590,6 +613,7 @@ class IronwoodMigrationService {
   _recoverDueMigrationOutboxOverride;
   final IronwoodMigrationKeystoneDenominationPreparer
   prepareKeystoneDenominationMigration;
+  final IronwoodMigrationPrivateDraftCreator createPrivateMigrationDraft;
   final IronwoodMigrationKeystoneDenominationCompleter
   completeKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneBatchPreparer prepareKeystoneBatchMigration;
@@ -1253,6 +1277,31 @@ class IronwoodMigrationService {
     );
   }
 
+  Future<String> savePrivateMigrationDraft({
+    required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: true,
+      prepareOutboxAfterOperation: false,
+      operation: (_) => createPrivateMigrationDraft(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        approvedSchedule: approvedSchedule,
+      ),
+    );
+  }
+
   Future<rust_sync.IronwoodMigrationResult>
   completeKeystoneDenominationPrivateMigration({
     required String accountUuid,
@@ -1403,7 +1452,11 @@ class IronwoodMigrationService {
           await onCurrentStatus?.call(currentStatus);
           final waitingForDenominationConfirmations =
               currentStatus.phase ==
-              kIronwoodMigrationWaitingDenomConfirmationsPhase;
+                  kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+              currentStatus.phase ==
+                  kIronwoodMigrationAwaitingPreparationPhase ||
+              currentStatus.phase ==
+                  kIronwoodMigrationAwaitingDenominationSignaturePhase;
           if (_usesNativeMigrationOutbox &&
               currentStatus.activeRunId != null &&
               !waitingForDenominationConfirmations) {
@@ -1445,10 +1498,21 @@ class IronwoodMigrationService {
   }) async {
     final activeRunId = status.activeRunId;
     if (activeRunId != null) {
-      final manifest = await backgroundCredentialStore.read(
+      var manifest = await backgroundCredentialStore.read(
         network: context.network,
         accountUuid: context.accountUuid,
       );
+      final isUnstartedDraft =
+          status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
+          status.phase == kIronwoodMigrationAwaitingDenominationSignaturePhase;
+      if (manifest == null && mayCreateRun && isUnstartedDraft) {
+        manifest = await backgroundCredentialStore.prepare(
+          network: context.network,
+          accountUuid: context.accountUuid,
+          dbPath: context.dbPath,
+          lightwalletdUrl: context.lightwalletdUrl!,
+        );
+      }
       if (manifest == null) {
         if (_usesNativeMigrationOutbox) {
           await _recoverPersistedMigrationOutbox(

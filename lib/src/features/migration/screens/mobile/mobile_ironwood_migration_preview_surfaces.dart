@@ -2,6 +2,9 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 void _noopMigrationPreviewAction() {}
 
+const _keystonePreparationSignatureMessage =
+    'Sign the preparation transaction on Keystone.';
+
 class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
   const _MobileIronwoodMigrationPreviewSurface({
     required this.surface,
@@ -31,6 +34,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
           isKeystone: true,
+          pausedMessage: _keystonePreparationSignatureMessage,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
@@ -180,7 +184,9 @@ class _MigrationPreviewPage extends StatelessWidget {
 
 class _MobileMigrationNotificationPermissionScreen
     extends ConsumerStatefulWidget {
-  const _MobileMigrationNotificationPermissionScreen();
+  const _MobileMigrationNotificationPermissionScreen({this.privatePlan});
+
+  final rust_sync.OrchardMigrationPrivatePlan? privatePlan;
 
   @override
   ConsumerState<_MobileMigrationNotificationPermissionScreen> createState() =>
@@ -215,7 +221,7 @@ class _MobileMigrationNotificationPermissionScreenState
           .notificationAuthorizationStatus();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/review');
+        await _continueAfterNotificationGate();
       }
     } catch (_) {
       // Native status is fail-closed; keep the explanatory screen visible.
@@ -236,7 +242,7 @@ class _MobileMigrationNotificationPermissionScreenState
           : await service.requestNotificationPermission();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/review');
+        await _continueAfterNotificationGate();
         return;
       }
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
@@ -278,8 +284,31 @@ class _MobileMigrationNotificationPermissionScreenState
         await _allowNotifications();
         return;
       case _NotificationConfirmationAction.continueWithout:
-        if (mounted) context.go('/migration/private/review');
+        await _continueAfterNotificationGate();
         return;
+    }
+  }
+
+  Future<void> _continueAfterNotificationGate() async {
+    final plan = widget.privatePlan;
+    if (plan == null || plan.denominationSplitStageCount != 0) {
+      if (mounted) {
+        context.go('/migration/private/start', extra: plan);
+      }
+      return;
+    }
+
+    if (!_busy && mounted) setState(() => _busy = true);
+    try {
+      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      if (!mounted) return;
+      context.go('/migration/private/status', extra: plan);
+    } catch (error) {
+      debugPrint('Failed to activate direct-note migration: $error');
+      if (!mounted) return;
+      context.go('/migration/private/start', extra: plan);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -517,12 +546,14 @@ class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
     this.isKeystone = false,
+    this.pausedMessage,
     this.onBack,
     this.onContinue,
   });
 
   final _MigrationPreparationState state;
   final bool isKeystone;
+  final String? pausedMessage;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
 
@@ -554,7 +585,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
           : null,
       child: Column(
         children: [
-          _MigrationPreparationDial(state: state),
+          _MigrationPreparationDial(state: state, pausedMessage: pausedMessage),
           const SizedBox(height: AppSpacing.base),
           Opacity(
             opacity: paused ? 0.4 : 1,
@@ -567,9 +598,10 @@ class _MigrationPreparationPreview extends StatelessWidget {
 }
 
 class _MigrationPreparationDial extends StatelessWidget {
-  const _MigrationPreparationDial({required this.state});
+  const _MigrationPreparationDial({required this.state, this.pausedMessage});
 
   final _MigrationPreparationState state;
+  final String? pausedMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -581,6 +613,7 @@ class _MigrationPreparationDial extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           _AnimatedMigrationPreparationRing(
+            key: const ValueKey('mobile_ironwood_preparation_ring'),
             animate: state == _MigrationPreparationState.active,
             color: context.colors.border.subtle,
           ),
@@ -606,7 +639,8 @@ class _MigrationPreparationDial extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   paused
-                      ? 'Preparation was paused because you left.'
+                      ? pausedMessage ??
+                            'Preparation was paused because you left.'
                       : syncing
                       ? 'Syncing your wallet…'
                       : 'Preparation will\ntake 10–20 min',
@@ -626,6 +660,7 @@ class _MigrationPreparationDial extends StatelessWidget {
 
 class _AnimatedMigrationPreparationRing extends StatefulWidget {
   const _AnimatedMigrationPreparationRing({
+    super.key,
     required this.animate,
     required this.color,
   });
@@ -1134,6 +1169,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     if (!showPreparationCompleteModal) return body;
     return _MigrationModalPreview(
       background: body,
+      animateEntry: true,
       child: _PreparationCompleteModalBody(onDone: onPreparationCompleteDone),
     );
   }
@@ -2117,23 +2153,40 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
 }
 
 class _MigrationModalPreview extends StatelessWidget {
-  const _MigrationModalPreview({required this.background, required this.child});
+  const _MigrationModalPreview({
+    required this.background,
+    required this.child,
+    this.animateEntry = false,
+  });
 
   final Widget background;
   final Widget child;
+  final bool animateEntry;
 
   @override
   Widget build(BuildContext context) {
+    final modal = MobileModalScaffold(
+      title: '',
+      showTitle: false,
+      showClose: false,
+      bottomPadding: AppSpacing.base,
+      onClose: _noopMigrationPreviewAction,
+      child: child,
+    );
     return MobileModalOverlay(
       background: background,
-      child: MobileModalScaffold(
-        title: '',
-        showTitle: false,
-        showClose: false,
-        bottomPadding: AppSpacing.base,
-        onClose: _noopMigrationPreviewAction,
-        child: child,
-      ),
+      child: !animateEntry || MediaQuery.disableAnimationsOf(context)
+          ? modal
+          : TweenAnimationBuilder<double>(
+              tween: Tween(begin: 1, end: 0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              builder: (context, progress, child) => Transform.translate(
+                offset: Offset(0, 96 * progress),
+                child: child,
+              ),
+              child: modal,
+            ),
     );
   }
 }
