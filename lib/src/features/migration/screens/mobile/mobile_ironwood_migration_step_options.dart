@@ -161,7 +161,6 @@ class _MobileMigrationOptionCard extends StatelessWidget {
 }
 
 const _mobileMigrationPlanRevealDuration = Duration(milliseconds: 2000);
-const _mobileMigrationReviewCompactHeight = 760.0;
 const _mobileMigrationReviewCompactContentHeight = 430.0;
 const _mobileMigrationPlanBarMorphStartMilliseconds = 420;
 const _mobileMigrationPlanBarMorphMilliseconds = 700;

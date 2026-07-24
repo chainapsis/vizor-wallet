@@ -1,30 +1,5 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
-class _MobileMigrationUnavailable extends StatelessWidget {
-  const _MobileMigrationUnavailable({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _MobileReviewCard(
-          child: Text(
-            'Vizor needs an up-to-date balance to prepare this plan.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        _MobileMigrationPrimaryButton(label: 'Try again', onPressed: onRetry),
-      ],
-    );
-  }
-}
-
 class _MobileMigrationLoadingScreen extends StatelessWidget {
   const _MobileMigrationLoadingScreen();
 
