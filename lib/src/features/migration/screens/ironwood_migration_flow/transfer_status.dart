@@ -152,12 +152,6 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     if (_shouldShowPreparingStatusContent(status, statuses)) {
       return _MigrationPreparingStatusContent(
         key: ValueKey('ironwood_migration_preparing_${status.activeRunId}'),
-        status: status,
-        values: values,
-        totalZatoshi: total,
-        statuses: statuses,
-        progresses: progresses,
-        progressKeys: progressKeys,
       );
     }
 
@@ -258,39 +252,13 @@ bool _shouldShowPreparingStatusContent(
   rust_sync.MigrationStatus status,
   List<_MigrationBatchStatus> statuses,
 ) {
-  if (statuses.isEmpty) return false;
-  final hasLaterStatus = statuses.any(
-    (status) =>
-        status == _MigrationBatchStatus.scheduled ||
-        status == _MigrationBatchStatus.migrating ||
-        status == _MigrationBatchStatus.confirming ||
-        status == _MigrationBatchStatus.complete ||
-        status == _MigrationBatchStatus.needsInput,
-  );
-  if (hasLaterStatus) return false;
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-    return true;
-  }
-  return false;
+  // Note-split preparation is represented by one intentionally indeterminate
+  // visual, even while individual split transactions are confirming.
+  return status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase;
 }
 
 class _MigrationPreparingStatusContent extends StatelessWidget {
-  const _MigrationPreparingStatusContent({
-    super.key,
-    required this.status,
-    required this.values,
-    required this.totalZatoshi,
-    required this.statuses,
-    required this.progresses,
-    required this.progressKeys,
-  });
-
-  final rust_sync.MigrationStatus status;
-  final List<BigInt> values;
-  final BigInt totalZatoshi;
-  final List<_MigrationBatchStatus> statuses;
-  final List<double> progresses;
-  final List<String> progressKeys;
+  const _MigrationPreparingStatusContent({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -301,79 +269,56 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 61,
             left: 12,
+            top: 78.5,
             width: 396,
-            child: Column(
-              children: [
-                Text(
-                  'Migration in Progress',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _migrationPreparingDurationLabel(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+            child: Text(
+              'Preparing your migration',
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 82,
+            top: 130.5,
+            width: 256,
+            height: 256,
+            child: _MigrationPreparationRing(
+              key: const ValueKey('ironwood_migration_preparation_ring'),
+              color: colors.text.accent.withValues(alpha: 0.20),
             ),
           ),
           Positioned(
             left: 12,
-            top: 164,
+            top: 418.5,
             width: 396,
-            height: 65,
-            child: _MigrationStatusBatchChart(
-              values: values,
-              totalZatoshi: totalZatoshi,
-              statuses: statuses,
-              progresses: progresses,
-              progressKeys: progressKeys,
-            ),
-          ),
-          Positioned(
-            left: 12,
-            top: 264,
-            width: 396,
-            child: _MigrationPreparingStepsCard(
-              status: status,
-              partCount: values.length,
-            ),
-          ),
-          const Positioned(
-            left: 83,
-            top: 460,
-            width: 254,
-            child: _MigrationPreparingInfo(),
-          ),
-          Positioned(
-            left: 95,
-            top: 596,
-            width: 230,
-            child: Center(
-              child: AppButton(
-                key: const ValueKey('ironwood_migration_status_action_button'),
-                onPressed: () => context.go('/home'),
-                variant: AppButtonVariant.secondary,
-                height: 36,
-                minWidth: 96,
-                expand: false,
-                child: const SizedBox(
-                  width: 64,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Go home'),
-                  ),
+            height: 127,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.ground,
+                borderRadius: BorderRadius.circular(AppRadii.large),
+                boxShadow: appSurfaceShadow(colors),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.fromLTRB(16, 24, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _MigrationPreparationInfoRow(
+                      icon: AppIcons.wallet,
+                      message:
+                          'We’re organizing your balance into common-sized\n'
+                          'parts. This makes your migration harder to link.',
+                    ),
+                    SizedBox(height: 16),
+                    _MigrationPreparationInfoRow(
+                      icon: AppIcons.history,
+                      message:
+                          'Once preparation finishes, your migration can begin.',
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -384,122 +329,27 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
   }
 }
 
-class _MigrationPreparingStepsCard extends StatelessWidget {
-  const _MigrationPreparingStepsCard({
-    required this.status,
-    required this.partCount,
+class _MigrationPreparationInfoRow extends StatelessWidget {
+  const _MigrationPreparationInfoRow({
+    required this.icon,
+    required this.message,
   });
 
-  final rust_sync.MigrationStatus status;
-  final int partCount;
+  final String icon;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final splitComplete = _migrationPreparingSplitComplete(status);
-    final confirmationsComplete = _migrationPreparingConfirmationsComplete(
-      status,
-    );
-    final remainingBlocks = _migrationPreparingRemainingConfirmationBlocks(
-      status,
-    );
-    final effectivePartCount = math.max(1, partCount);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.md,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Note split',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _MigrationPreparingStepRow(
-              stepKey: 'split',
-              state: splitComplete
-                  ? _MigrationPreparationStepState.complete
-                  : _MigrationPreparationStepState.active,
-              label:
-                  'Split notes into $effectivePartCount migration '
-                  '${effectivePartCount == 1 ? 'part' : 'parts'}',
-            ),
-            const _MigrationPreparingStepConnector(),
-            _MigrationPreparingStepRow(
-              stepKey: 'confirmations',
-              state: confirmationsComplete
-                  ? _MigrationPreparationStepState.complete
-                  : splitComplete
-                  ? _MigrationPreparationStepState.active
-                  : _MigrationPreparationStepState.pending,
-              showPendingLoader: true,
-              stepNumber: 2,
-              label: remainingBlocks <= 0
-                  ? 'Waiting for confirmation'
-                  : 'Wait $remainingBlocks '
-                        '${remainingBlocks == 1 ? 'block' : 'blocks'} '
-                        'for confirmation',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _MigrationPreparationStepState { complete, active, pending }
-
-class _MigrationPreparingStepRow extends StatelessWidget {
-  const _MigrationPreparingStepRow({
-    required this.stepKey,
-    required this.state,
-    required this.label,
-    this.stepNumber,
-    this.showPendingLoader = false,
-  });
-
-  final String stepKey;
-  final _MigrationPreparationStepState state;
-  final String label;
-  final int? stepNumber;
-  final bool showPendingLoader;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
     return Row(
-      key: ValueKey('ironwood_migration_prepare_step_${stepKey}_${state.name}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _MigrationPreparingStepBadge(
-          state: state,
-          stepNumber: stepNumber,
-          showPendingLoader: showPendingLoader,
-        ),
-        const SizedBox(width: AppSpacing.sm),
+        AppIcon(icon, size: 20, color: context.colors.icon.accent),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(
-              color: state == _MigrationPreparationStepState.pending
-                  ? colors.text.secondary
-                  : colors.text.accent,
+            message,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.accent,
             ),
           ),
         ),
@@ -508,184 +358,95 @@ class _MigrationPreparingStepRow extends StatelessWidget {
   }
 }
 
-class _MigrationPreparingStepBadge extends StatelessWidget {
-  const _MigrationPreparingStepBadge({
-    required this.state,
-    required this.stepNumber,
-    this.showPendingLoader = false,
-  });
-
-  final _MigrationPreparationStepState state;
-  final int? stepNumber;
-  final bool showPendingLoader;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final animateLoader =
-        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
-    final backgroundColor = switch (state) {
-      _MigrationPreparationStepState.complete => GreenPrimitives.p500Light,
-      _MigrationPreparationStepState.active => colors.background.inverse,
-      _MigrationPreparationStepState.pending => colors.background.raised,
-    };
-    final foregroundColor = switch (state) {
-      _MigrationPreparationStepState.complete => Colors.white,
-      _MigrationPreparationStepState.active => colors.icon.inverse,
-      _MigrationPreparationStepState.pending => colors.text.secondary,
-    };
-
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: backgroundColor,
-          shape: const OvalBorder(),
-        ),
-        child: Center(
-          child: switch (state) {
-            _MigrationPreparationStepState.complete => AppIcon(
-              AppIcons.check,
-              size: 14,
-              color: foregroundColor,
-            ),
-            _MigrationPreparationStepState.active => AppIcon(
-              AppIcons.loader,
-              size: 15,
-              color: foregroundColor,
-              animated: animateLoader,
-            ),
-            _MigrationPreparationStepState.pending =>
-              showPendingLoader
-                  ? AppIcon(
-                      AppIcons.loader,
-                      size: 15,
-                      color: foregroundColor,
-                      animated: animateLoader,
-                    )
-                  : Text(
-                      '${stepNumber ?? ''}',
-                      style: AppTypography.labelMedium.copyWith(
-                        color: foregroundColor,
-                      ),
-                    ),
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _MigrationPreparingStepConnector extends StatelessWidget {
-  const _MigrationPreparingStepConnector();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 34,
-      child: CustomPaint(
-        painter: _MigrationPreparingStepConnectorPainter(
-          color: context.colors.border.regular,
-        ),
-      ),
-    );
-  }
-}
-
-class _MigrationPreparingStepConnectorPainter extends CustomPainter {
-  const _MigrationPreparingStepConnectorPainter({required this.color});
+class _MigrationPreparationRing extends StatelessWidget {
+  const _MigrationPreparationRing({super.key, required this.color});
 
   final Color color;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.65)
-      ..strokeWidth = 1
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    var y = 4.0;
-    const dash = 3.5;
-    const gap = 3.0;
-    final x = size.width / 2;
-    while (y < size.height - 4) {
-      final nextY = math.min(y + dash, size.height - 4);
-      canvas.drawLine(Offset(x, y), Offset(x, nextY), paint);
-      y = nextY + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(
-    covariant _MigrationPreparingStepConnectorPainter oldDelegate,
-  ) => oldDelegate.color != color;
-}
-
-class _MigrationPreparingInfo extends StatelessWidget {
-  const _MigrationPreparingInfo();
-
-  @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      children: [
-        Text(
-          'Migration will start automatically once note split is complete.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.accent,
-            fontWeight: FontWeight.w500,
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: 'Preparing migration. Estimated time: 10 to 20 minutes.',
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: const Size.square(256),
+            painter: _MigrationPreparationRingPainter(color: color),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'You can leave this screen, but keep Vizor open & running.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.secondary,
+          const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(AppIcons.time, size: 24),
+              SizedBox(height: 8),
+              Text(
+                'Preparation will\ntake 10-20 min',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMediumStrong,
+              ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-bool _migrationPreparingSplitComplete(rust_sync.MigrationStatus status) {
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-    return true;
+class _MigrationPreparationRingPainter extends CustomPainter {
+  const _MigrationPreparationRingPainter({required this.color});
+
+  final Color color;
+
+  static const _ringOuterDiameter = 220.0;
+
+  // Decorative only: the ratios intentionally do not represent note value or
+  // confirmation progress, but they still form one complete ring.
+  static const _segmentRatios = <double>[
+    0.11,
+    0.08,
+    0.12,
+    0.07,
+    0.10,
+    0.11,
+    0.09,
+    0.10,
+    0.08,
+    0.14,
+  ];
+  // This is the gap between arc centre-lines. It must exceed the two rounded
+  // stroke caps (12 px total along the tangent) so a real empty gap remains.
+  static const _gap = 0.18;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: _ringOuterDiameter - paint.strokeWidth,
+      height: _ringOuterDiameter - paint.strokeWidth,
+    );
+    final fullSweep = math.pi * 2;
+    final drawableSweep = fullSweep - (_segmentRatios.length * _gap);
+    var angle = -math.pi / 2 - 0.06;
+    for (final ratio in _segmentRatios) {
+      // Ratios are normalized over the painted arcs; `_gap` remains visible
+      // between every segment while the full ring still closes at 360 degrees.
+      final sweep = drawableSweep * ratio;
+      canvas.drawArc(rect, angle, sweep, false, paint);
+      angle += sweep + _gap;
+    }
   }
 
-  final total = status.denominationSplitTotalCount;
-  if (total > 0) {
-    return status.denominationSplitCompletedCount >= total &&
-        status.pendingSplitStageCount <= 0;
-  }
-  return status.pendingSplitStageCount <= 0;
+  @override
+  bool shouldRepaint(covariant _MigrationPreparationRingPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
-
-bool _migrationPreparingConfirmationsComplete(
-  rust_sync.MigrationStatus status,
-) {
-  final target = status.denominationConfirmationTarget;
-  return target > 0 && status.denominationConfirmationCount >= target;
-}
-
-int _migrationPreparingRemainingConfirmationBlocks(
-  rust_sync.MigrationStatus status,
-) {
-  final target = status.denominationConfirmationTarget > 0
-      ? status.denominationConfirmationTarget
-      : _migrationPrepareConfirmationBlocks;
-  return math.max(0, target - status.denominationConfirmationCount);
-}
-
-String _migrationPreparingDurationLabel() => 'This will take 10-20 min';
 
 _MigrationBatchStatus _migrationBatchStatus(
   rust_sync.MigrationPartState state,

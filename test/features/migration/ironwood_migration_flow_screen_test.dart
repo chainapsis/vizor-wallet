@@ -238,7 +238,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
   });
 
   testWidgets(
@@ -313,7 +313,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -475,40 +475,25 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
-    expect(find.text('Note split'), findsOneWidget);
-    expect(find.text('Split notes into 1 migration part'), findsOneWidget);
-    expect(find.text('Wait 1 block for confirmation'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
     expect(
-      find.byKey(
-        const ValueKey('ironwood_migration_prepare_step_split_complete'),
-      ),
+      find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(
-        const ValueKey('ironwood_migration_prepare_step_confirmations_active'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Preparation will\ntake 10-20 min'), findsOneWidget);
     expect(
       find.text(
-        'Migration will start automatically once note split is complete.',
+        'We’re organizing your balance into common-sized\n'
+        'parts. This makes your migration harder to link.',
       ),
       findsOneWidget,
     );
     expect(
-      find.text('You can leave this screen, but keep Vizor open & running.'),
+      find.text('Once preparation finishes, your migration can begin.'),
       findsOneWidget,
     );
-    expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('2'), findsNothing);
-    expect(find.text('Currently Spendable Balance'), findsNothing);
-    expect(find.text('You can leave this screen.'), findsNothing);
-    expect(find.text('But keep Vizor open & running.'), findsNothing);
-    expect(find.text('shown before send'), findsNothing);
-    expect(find.text('Shown before each send'), findsNothing);
-    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+    expect(find.text('Note split'), findsNothing);
+    expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
   });
 
   testWidgets(
@@ -544,26 +529,17 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Split notes into 6 migration parts'), findsOneWidget);
-      expect(find.text('Wait 3 blocks for confirmation'), findsOneWidget);
+      expect(find.text('Preparing your migration'), findsOneWidget);
       expect(
-        find.byKey(
-          const ValueKey('ironwood_migration_prepare_step_split_complete'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(
-          const ValueKey(
-            'ironwood_migration_prepare_step_confirmations_active',
-          ),
+        find.bySemanticsLabel(
+          'Preparing migration. Estimated time: 10 to 20 minutes.',
         ),
         findsOneWidget,
       );
     },
   );
 
-  testWidgets('private preparing status uses independent part progress', (
+  testWidgets('private preparing status does not expose note progress', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -603,31 +579,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    final firstTrackWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
-        )
-        .width;
-    final secondTrackWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_track_1')),
-        )
-        .width;
-    final firstFillWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-        )
-        .width;
-    final secondFillWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_fill_1')),
-        )
-        .width;
-
-    expect(firstTrackWidth, closeTo(secondTrackWidth, 1));
-    expect(secondFillWidth, greaterThan(firstFillWidth * 4));
-    expect(find.text('Preparing'), findsOneWidget);
-    expect(find.text('Confirming...'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
+      findsOneWidget,
+    );
+    expect(find.text('Preparing'), findsNothing);
+    expect(find.text('Confirming...'), findsNothing);
   });
 
   testWidgets(
@@ -710,7 +667,7 @@ void main() {
     expect(find.text('Currently Spendable Balance'), findsOneWidget);
   });
 
-  testWidgets('status can return home while background migration advances', (
+  testWidgets('preparing status has no in-content navigation action', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -724,17 +681,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    final button = find.byKey(
-      const ValueKey('ironwood_migration_status_action_button'),
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_status_action_button')),
+      findsNothing,
     );
-    expect(button, findsOneWidget);
-    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
-    expect(find.text('Updating...'), findsNothing);
-    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-
-    expect(find.text('home-route'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
+    expect(find.text('Preparing your migration'), findsOneWidget);
   });
 
   testWidgets('status does not return to intro for a stale pre-run response', (
@@ -754,7 +706,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Preparing your migration'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -767,12 +719,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final cases = [
-      _StatusUiCase(
-        status: _status(),
-        title: 'Migration in Progress',
-        buttonLabel: 'Go home',
-        buttonEnabled: true,
-      ),
+      _StatusUiCase(status: _status(), title: 'Preparing your migration'),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationReadyToMigratePhase,
