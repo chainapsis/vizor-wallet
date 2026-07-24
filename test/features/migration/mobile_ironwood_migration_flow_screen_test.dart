@@ -111,7 +111,7 @@ class _RecoveryScreenTestMigrationCoordinator
         'account-1':
             'Bad state: Ironwood migration credential is missing for the '
             'active run. Vizor will only continue transactions preserved in '
-            'the verified iOS outbox.',
+            'the verified native migration outbox.',
       },
     );
   }
@@ -258,6 +258,28 @@ class _DurablePhaseRetryTestMigrationCoordinator
   Future<void> retry(String accountUuid) async {
     retryCount++;
   }
+}
+
+class _ControlledRetryTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  final retryStarted = Completer<void>();
+  final retryFinished = Completer<void>();
+  int retryCount = 0;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState();
+  }
+
+  @override
+  Future<void> retry(String accountUuid) async {
+    retryCount++;
+    retryStarted.complete();
+    await retryFinished.future;
+  }
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
 }
 
 class _RecordingIronwoodMigrationCompletionStore
@@ -3548,6 +3570,52 @@ void main() {
     expect(weights.reduce((sum, value) => sum + value), closeTo(1, 1e-12));
     expect(painter.completedSegments, {2});
     expect(painter.highlightedSegments, {1});
+  });
+
+  testWidgets('shows the animated loader while a software batch is signing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _ControlledRetryTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          nextActionHeight: 3_000_000,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final signButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+    );
+    final loader = find.byWidgetPredicate(
+      (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+    );
+    await tester.ensureVisible(signButton);
+    await tester.tap(signButton);
+    await coordinator.retryStarted.future;
+    await tester.pump();
+
+    expect(coordinator.retryCount, 1);
+    expect(loader, findsOneWidget);
+    expect(tester.widget<AppButton>(signButton).onPressed, isNull);
+
+    coordinator.retryFinished.complete();
+    await tester.pumpAndSettle();
+
+    expect(loader, findsNothing);
+    expect(tester.widget<AppButton>(signButton).onPressed, isNotNull);
   });
 
   testWidgets('records a Keystone signing action while status is visible', (
