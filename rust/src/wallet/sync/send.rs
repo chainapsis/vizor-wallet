@@ -312,7 +312,6 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
-    pub max_prepared_notes_per_run: u32,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
 }
 

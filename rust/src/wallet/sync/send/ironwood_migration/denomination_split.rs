@@ -323,7 +323,6 @@ fn create_padded_orchard_denomination_pczts(
         u64::from(split_fee),
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
     )?
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
 

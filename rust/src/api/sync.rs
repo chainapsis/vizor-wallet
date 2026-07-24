@@ -772,7 +772,6 @@ pub struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
-    pub max_prepared_notes_per_run: u32,
     pub next_action_height: Option<u32>,
     pub estimated_completion_height: Option<u32>,
     pub next_action_part_index: Option<u32>,
@@ -800,7 +799,6 @@ pub struct OrchardMigrationPrivatePlan {
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
-    pub max_prepared_notes_per_run: u32,
     pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
 }
 
@@ -1177,7 +1175,6 @@ pub fn get_orchard_migration_status(
             signing_batch_limit: status.signing_batch_limit,
             schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
-            max_prepared_notes_per_run: status.max_prepared_notes_per_run,
             next_action_height: status.next_action_height,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,
@@ -1248,7 +1245,6 @@ pub fn get_orchard_migration_private_plan(
                     schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
                     proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
                     estimated_proof_ready_height: plan.estimated_proof_ready_height,
-                    max_prepared_notes_per_run: plan.max_prepared_notes_per_run,
                     scheduled_transfers: plan
                         .scheduled_transfers
                         .into_iter()

@@ -1470,7 +1470,6 @@ class MigrationStatus {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
-  final int maxPreparedNotesPerRun;
   final int? nextActionHeight;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
@@ -1497,7 +1496,6 @@ class MigrationStatus {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
-    required this.maxPreparedNotesPerRun,
     this.nextActionHeight,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
@@ -1526,7 +1524,6 @@ class MigrationStatus {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       nextActionHeight.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
@@ -1560,7 +1557,6 @@ class MigrationStatus {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           nextActionHeight == other.nextActionHeight &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
@@ -1621,7 +1617,6 @@ class OrchardMigrationPrivatePlan {
   /// Estimated absolute height at which the projected final prepared note
   /// can first use a valid migration anchor.
   final int? estimatedProofReadyHeight;
-  final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
   const OrchardMigrationPrivatePlan({
@@ -1640,7 +1635,6 @@ class OrchardMigrationPrivatePlan {
     required this.scheduleMaxDelayBlocks,
     required this.proofReadinessDelayBlocks,
     this.estimatedProofReadyHeight,
-    required this.maxPreparedNotesPerRun,
     required this.scheduledTransfers,
   });
 
@@ -1661,7 +1655,6 @@ class OrchardMigrationPrivatePlan {
       scheduleMaxDelayBlocks.hashCode ^
       proofReadinessDelayBlocks.hashCode ^
       estimatedProofReadyHeight.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       scheduledTransfers.hashCode;
 
   @override
@@ -1684,7 +1677,6 @@ class OrchardMigrationPrivatePlan {
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledTransfers == other.scheduledTransfers;
 }
 

@@ -530,7 +530,6 @@ String _mobilePrivatePlanFingerprint(
     plan.denominationSplitStageCount,
     plan.denominationSplitLayerCount,
     plan.signingBatchLimit,
-    plan.maxPreparedNotesPerRun,
     targetValues.join(','),
     transferValues.join(','),
   ].join('|');
@@ -566,7 +565,6 @@ rust_sync.OrchardMigrationPrivatePlan _mobilePrivatePlanWithRefreshedTiming(
     scheduleMaxDelayBlocks: displayed.scheduleMaxDelayBlocks,
     proofReadinessDelayBlocks: refreshed.proofReadinessDelayBlocks,
     estimatedProofReadyHeight: refreshed.estimatedProofReadyHeight,
-    maxPreparedNotesPerRun: displayed.maxPreparedNotesPerRun,
     scheduledTransfers: displayed.scheduledTransfers,
   );
 }

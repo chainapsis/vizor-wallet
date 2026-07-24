@@ -32,7 +32,7 @@ pub(crate) fn plan_denominations(
         .ok_or("Denomination split fee underflow")?;
     let mut outputs = Vec::new();
 
-    while outputs.len() < MIGRATION_MAX_PREPARED_NOTES_PER_RUN {
+    loop {
         let Some(spendable_after_fee) = remaining.checked_sub(migration_fee_zatoshi) else {
             break;
         };

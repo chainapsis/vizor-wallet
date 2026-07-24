@@ -2785,7 +2785,6 @@ rust_sync.MigrationStatus _previewMigrationStatus(
     signingBatchLimit: 0,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
     parts: parts,
   );
@@ -2825,7 +2824,6 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
         partIndex: 1,
@@ -2893,7 +2891,6 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
         partIndex: 0,
@@ -2956,7 +2953,6 @@ _previewMobilePrivateMigrationManyPartsPlan() {
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       for (var index = 0; index < values.length; index++)
         rust_sync.MigrationScheduledTransfer(
@@ -2995,7 +2991,6 @@ rust_sync.MigrationStatus _previewMobilePreparingStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );
@@ -3038,7 +3033,6 @@ rust_sync.MigrationStatus _previewMobileMigrationStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -3082,7 +3076,6 @@ rust_sync.MigrationStatus _previewMobileHomeMigrationStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -3124,7 +3117,6 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );
@@ -3157,7 +3149,6 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       rust_sync.MigrationScheduledBroadcast(
         txidHex: 'preview-txid',
@@ -3229,7 +3220,6 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: [
       _previewMigrationPart(

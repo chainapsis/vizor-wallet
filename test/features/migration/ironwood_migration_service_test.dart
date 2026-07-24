@@ -105,7 +105,6 @@ void main() {
         scheduleMaxDelayBlocks: 576,
         proofReadinessDelayBlocks: 146,
         scheduledTransfers: const [],
-        maxPreparedNotesPerRun: 64,
       );
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -2819,7 +2818,6 @@ rust_sync.MigrationStatus _migrationStatus({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: parts,
   );

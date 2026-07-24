@@ -302,7 +302,6 @@ pub(crate) struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
-    pub max_prepared_notes_per_run: u32,
     /// Earliest block height at which the wallet can make more progress.
     pub next_action_height: Option<u32>,
     /// Projected height at which every migration part reaches trusted depth.
@@ -420,7 +419,6 @@ pub(crate) fn migration_status(
             configured_timing_policy(network),
         )
         .1,
-        max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         next_action_height: None,
         estimated_completion_height: None,
         next_action_part_index: None,
@@ -3522,7 +3520,6 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
-        max_prepared_notes_per_run: MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         next_action_height: timing_projection.next_action_height,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,

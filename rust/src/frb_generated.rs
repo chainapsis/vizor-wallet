@@ -7792,7 +7792,6 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_signingBatchLimit = <u32>::sse_decode(deserializer);
         let mut var_scheduleMeanDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
-        let mut var_maxPreparedNotesPerRun = <u32>::sse_decode(deserializer);
         let mut var_nextActionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_estimatedCompletionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_nextActionPartIndex = <Option<u32>>::sse_decode(deserializer);
@@ -7819,7 +7818,6 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             signing_batch_limit: var_signingBatchLimit,
             schedule_mean_delay_blocks: var_scheduleMeanDelayBlocks,
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
-            max_prepared_notes_per_run: var_maxPreparedNotesPerRun,
             next_action_height: var_nextActionHeight,
             estimated_completion_height: var_estimatedCompletionHeight,
             next_action_part_index: var_nextActionPartIndex,
@@ -8027,7 +8025,6 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
         let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_proofReadinessDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_estimatedProofReadyHeight = <Option<u32>>::sse_decode(deserializer);
-        let mut var_maxPreparedNotesPerRun = <u32>::sse_decode(deserializer);
         let mut var_scheduledTransfers =
             <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(deserializer);
         return crate::api::sync::OrchardMigrationPrivatePlan {
@@ -8046,7 +8043,6 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             proof_readiness_delay_blocks: var_proofReadinessDelayBlocks,
             estimated_proof_ready_height: var_estimatedProofReadyHeight,
-            max_prepared_notes_per_run: var_maxPreparedNotesPerRun,
             scheduled_transfers: var_scheduledTransfers,
         };
     }
@@ -10275,7 +10271,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
             self.signing_batch_limit.into_into_dart().into_dart(),
             self.schedule_mean_delay_blocks.into_into_dart().into_dart(),
             self.schedule_max_delay_blocks.into_into_dart().into_dart(),
-            self.max_prepared_notes_per_run.into_into_dart().into_dart(),
             self.next_action_height.into_into_dart().into_dart(),
             self.estimated_completion_height
                 .into_into_dart()
@@ -10376,7 +10371,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::OrchardMigrationPrivate
             self.estimated_proof_ready_height
                 .into_into_dart()
                 .into_dart(),
-            self.max_prepared_notes_per_run.into_into_dart().into_dart(),
             self.scheduled_transfers.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -12623,7 +12617,6 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <u32>::sse_encode(self.signing_batch_limit, serializer);
         <u32>::sse_encode(self.schedule_mean_delay_blocks, serializer);
         <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
-        <u32>::sse_encode(self.max_prepared_notes_per_run, serializer);
         <Option<u32>>::sse_encode(self.next_action_height, serializer);
         <Option<u32>>::sse_encode(self.estimated_completion_height, serializer);
         <Option<u32>>::sse_encode(self.next_action_part_index, serializer);
@@ -12794,7 +12787,6 @@ impl SseEncode for crate::api::sync::OrchardMigrationPrivatePlan {
         <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
         <u32>::sse_encode(self.proof_readiness_delay_blocks, serializer);
         <Option<u32>>::sse_encode(self.estimated_proof_ready_height, serializer);
-        <u32>::sse_encode(self.max_prepared_notes_per_run, serializer);
         <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_encode(
             self.scheduled_transfers,
             serializer,
