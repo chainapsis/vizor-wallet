@@ -30,6 +30,15 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let draft_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if draft_run.is_none()
+        && super::migration::migration_reserves_orchard_inputs(
+            db_path,
+            account_uuid,
+            network,
+        )?
+    {
+        return Err("Migration recovery must complete before preparing a new run".to_string());
+    }
     if draft_run.as_ref().is_some_and(|run| {
         run.phase != super::migration::PHASE_AWAITING_PREPARATION
             && run.phase != super::migration::PHASE_AWAITING_DENOMINATION_SIGNATURE
@@ -291,7 +300,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     account_uuid: &str,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+    if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
         return Err("Migration already has an active run.".to_string());
     }
     {
@@ -422,7 +431,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
 ) -> Result<IronwoodMigrationResult, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let signed_by_id = signed_migration_messages_by_id(request_id, signed_messages)?;
-    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+    if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
         return Err(
             "Migration already has an active run. Reject this Keystone request.".to_string(),
         );
@@ -633,7 +642,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     if let Some(message) =
         pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
     {
-        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         return Err(message);
     }
     super::migration::mark_expired_pending_parts_for_resign(
@@ -711,6 +720,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     db_path,
                     network,
                     account_uuid,
+                    &run.run_id,
                     note_ref,
                     migration_index,
                     schedule_block_offset,

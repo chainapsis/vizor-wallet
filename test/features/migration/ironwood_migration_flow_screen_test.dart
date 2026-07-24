@@ -1991,7 +1991,10 @@ class _ScreenTestMigrationCoordinator extends IronwoodMigrationCoordinator {
   }
 
   @override
-  Future<void> retry(String accountUuid) async {
+  Future<void> retry(
+    String accountUuid, {
+    rust_sync.MigrationStatus? status,
+  }) async {
     await service?.continueSoftwarePrivateMigration(accountUuid: accountUuid);
   }
 }

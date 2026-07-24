@@ -40,6 +40,7 @@ class _SwapKeystoneSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
@@ -61,6 +62,7 @@ class _SwapKeystoneSigningOverlayState
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
+    unawaited(_discardDraft());
     super.dispose();
   }
 
@@ -72,10 +74,12 @@ class _SwapKeystoneSigningOverlayState
       }
 
       final service = ref.read(swapHardwareSigningServiceProvider);
+      _signingService = service;
       final draft = await service.createZecDepositPczt(
         accountUuid: accountUuid,
         intent: widget.intent,
       );
+      _draft = draft;
 
       SaplingParamsStatus? saplingParams;
       if (draft.needsSaplingParams) {
@@ -83,6 +87,7 @@ class _SwapKeystoneSigningOverlayState
         if (!saplingParams.complete) {
           final confirmed = await _showDownloadPrompt();
           if (!confirmed) {
+            await _discardDraft();
             if (!mounted) return;
             setState(() {
               _phase = _SwapKeystonePhase.failed;
@@ -119,6 +124,7 @@ class _SwapKeystoneSigningOverlayState
       });
     } catch (e, st) {
       log('SwapKeystoneSigning._preparePczt: ERROR: $e\n$st');
+      await _discardDraft();
       if (!mounted) return;
       setState(() {
         _phase = _SwapKeystonePhase.failed;
@@ -173,18 +179,25 @@ class _SwapKeystoneSigningOverlayState
     });
 
     try {
-      final result = await ref
-          .read(swapHardwareSigningServiceProvider)
-          .broadcastSignedPczt(
-            pcztWithProofsBytes: pcztWithProofs,
-            pcztWithSignaturesBytes: signatures,
-            spendParamsPath: draft.needsSaplingParams
-                ? saplingParams!.spendPath
-                : null,
-            outputParamsPath: draft.needsSaplingParams
-                ? saplingParams!.outputPath
-                : null,
-          );
+      final service = _signingService;
+      if (service == null) {
+        throw StateError('Keystone signing service is unavailable.');
+      }
+      // The service owns proposal-lock cleanup from this point onward. Clear
+      // the overlay's reference before awaiting network I/O so dispose cannot
+      // concurrently release a lock whose broadcast result is still unknown.
+      _draft = null;
+      final result = await service.broadcastSignedPczt(
+        draft: draft,
+        pcztWithProofsBytes: pcztWithProofs,
+        pcztWithSignaturesBytes: signatures,
+        spendParamsPath: draft.needsSaplingParams
+            ? saplingParams!.spendPath
+            : null,
+        outputParamsPath: draft.needsSaplingParams
+            ? saplingParams!.outputPath
+            : null,
+      );
       log(
         'SwapKeystoneSigning: broadcast complete kind=zecDeposit '
         'tx=${_shortSwapValue(result.txid)} status=${result.status}',
@@ -233,7 +246,15 @@ class _SwapKeystoneSigningOverlayState
 
   void _cancel() {
     if (_phase == _SwapKeystonePhase.broadcasting) return;
+    unawaited(_discardDraft());
     widget.onCancel();
+  }
+
+  Future<void> _discardDraft() async {
+    final draft = _draft;
+    _draft = null;
+    if (draft == null) return;
+    await _signingService?.discardPcztDraft(draft: draft);
   }
 
   @override

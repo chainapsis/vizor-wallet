@@ -1364,6 +1364,10 @@ async fn run_sync_impl(
         })
     })?;
 
+    // Retained send-lock expiry requires a usable target height.
+    crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
+        .map_err(SyncError::db)?;
+
     // Match the cancellation granularity we already use for
     // `run_enhancement`: let this stage run to completion once it has
     // started, but don't enter it (or continue past it) after a
@@ -2192,6 +2196,13 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&db, current_tip_height)?;
+    // Reconcile migration chain state only after the scan queue is fully
+    // drained, then update generic wallet locks for denomination outputs that
+    // became visible in this run. This is intentionally repeated after every
+    // completed sync because a later block may mine an output that was
+    // unresolved in an earlier run.
+    crate::wallet::sync::reconcile_wallet_locks_after_sync(db_data_path, network)
+        .map_err(SyncError::db)?;
     log::info!(
         "[{}] sync: completed (fully_scanned={}, chain_tip={})",
         elapsed(),

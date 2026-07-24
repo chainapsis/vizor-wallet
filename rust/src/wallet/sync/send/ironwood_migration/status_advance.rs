@@ -245,7 +245,13 @@ async fn advance_staged_denomination_run(
         ));
     }
 
-    if super::migration::reconcile_denomination_run(db_path, &run.run_id)? {
+    let denomination_ready =
+        super::migration::reconcile_denomination_run(db_path, &run.run_id)?;
+    // Denomination outputs become lockable only after sync has discovered
+    // them. Reconcile here, at that state transition, instead of making every
+    // ordinary-send migration predicate perform a full lock write pass.
+    super::migration::reconcile_wallet_locks_for_run(db_path, network, &run.run_id)?;
+    if denomination_ready {
         return Ok(StagedDenominationAdvance::Ready);
     }
     Ok(StagedDenominationAdvance::Waiting(

@@ -461,8 +461,7 @@ void main() {
   });
 
   testWidgets(
-    'Keystone reject after PCZT creation does not discard the consumed '
-    'proposal',
+    'Keystone reject after PCZT creation releases the retained input lock',
     (tester) async {
       await _setDesktopViewport(tester);
       await tester.pumpWidget(
@@ -486,9 +485,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('send-route'), findsOneWidget);
-      // createPcztFromProposal is consume-on-entry in Rust; a discard here
-      // would be a replayable-ID regression.
-      expect(rustApi.discardCalls, isEmpty);
+      // createPcztFromProposal consumes the replayable proposal but retains
+      // its owner-scoped DB input lock until the hardware flow finishes.
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
     },
   );
 }
@@ -756,6 +755,7 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<Uint8List> crateApiSyncCreatePcztFromProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required BigInt proposalId,
     required String sendFlowId,

@@ -777,6 +777,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   final Completer<List<int>>? proofCompleter;
   final depositDrafts = <String>[];
   final proofDrafts = <List<int>>[];
+  final discardedDrafts = <BigInt>[];
   final broadcasts = <_HardwareBroadcastRequest>[];
 
   @override
@@ -789,6 +790,8 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),
+      proposalId: BigInt.one,
+      sendFlowId: 'test-swap-hardware',
     );
   }
 
@@ -812,7 +815,13 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }
 
   @override
+  Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
+    discardedDrafts.add(draft.proposalId);
+  }
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,

@@ -61,24 +61,30 @@
 //!    keep it that way.
 //!
 //! 4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths,
-//!    plus explicit discard on cancel.** `create_pczt_from_proposal`
-//!    calls `PROPOSAL_STORE.remove()` at the top (dropping the lock
-//!    before any DB work). A second call with the same `proposal_id`
+//!    while its wallet-input lock remains releasable until the flow
+//!    finishes.** `create_pczt_from_proposal` removes the replayable
+//!    proposal at the top. A second call with the same `proposal_id`
 //!    returns "Proposal not found (expired or already consumed)".
-//!    `discard_proposal` is idempotent; the Dart `finally` cleanup
-//!    calls it when the consume path was never reached (user
-//!    cancelled, exception before the consume call, etc.).
+//!    `discard_proposal` is idempotent and releases the retained
+//!    owner-scoped input lock after hardware cancel, definite failure,
+//!    or successful transaction storage. An uncertain broadcast retains
+//!    the wallet lock until expiry via
+//!    `retain_proposal_lock_until_expiry`.
 
 use std::convert::Infallible;
 use std::sync::OnceLock;
 
+use zcash_client_backend::data_api::WalletWrite;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
-use super::{consume_stored_proposal, discard_stored_proposal, open_wallet_db};
+use super::{
+    consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
+    retain_stored_proposal_lock_until_expiry, stored_proposal_lock,
+};
 
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
@@ -222,9 +228,12 @@ fn ironwood_orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion
 /// replayable proposal ID behind. If the caller aborts the send flow
 /// before reaching this function (e.g. the confirmation dialog is
 /// cancelled), Dart is expected to call [`discard_proposal`]
-/// explicitly to release the stored proposal.
-pub fn create_pczt_from_proposal(
+/// explicitly to release the stored proposal. After this function succeeds,
+/// the caller must also discard when the hardware flow ends so the retained
+/// owner-scoped wallet lock is released.
+pub async fn create_pczt_from_proposal(
     db_path: &str,
+    lightwalletd_url: &str,
     network: WalletNetwork,
     proposal_id: u64,
     send_flow_id: &str,
@@ -240,8 +249,65 @@ pub fn create_pczt_from_proposal(
         "Proposal not found (expired or already consumed)",
     )?;
 
-    let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
+    let proposal_lock = match stored_proposal_lock(stored.proposal_id, &stored.send_flow_id) {
+        Ok(lock) => lock,
+        Err(error) => {
+            return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    if proposal_lock.db_path != db_path || proposal_lock.network != network {
+        let error = "Proposal belongs to a different wallet database or network".to_string();
+        return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!(
+                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+            )),
+        };
+    }
+    let live_expiry_height = match super::send::live_send_expiry_height(
+        lightwalletd_url,
+        zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
+    )
+    .await
+    {
+        Ok(height) => height,
+        Err(error) => {
+            return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+
+    let result = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
+        // The live-tip request above yields to Dart. A concurrent cancel may
+        // have released this proposal while it was in flight, so re-check the
+        // process-local capability after acquiring the wallet write lock and
+        // before recreating any DB lock.
+        let current_lock = stored_proposal_lock(stored.proposal_id, &stored.send_flow_id)?;
+        if current_lock.owner != proposal_lock.owner
+            || current_lock.db_path != proposal_lock.db_path
+            || current_lock.network != proposal_lock.network
+        {
+            return Err(
+                "Hardware proposal input lock changed while refreshing chain tip".to_string(),
+            );
+        }
         let mut db = open_wallet_db(db_path, network)?;
+        db.lock_outputs(
+            &super::send::proposal_input_refs(&stored.proposal),
+            current_lock.owner,
+            live_expiry_height,
+        )
+        .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
+        super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
         // Build with the bundle type the proposal was fee-counted against
         // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
         // builder's balance check matches the proposal's fee.
@@ -250,27 +316,46 @@ pub fn create_pczt_from_proposal(
         } else {
             ::orchard::builder::BundleType::DEFAULT
         };
-        // The transaction version rides on the proposal now; `None` builds at
-        // the version implied by the target height.
+        // The transaction version rides on the proposal; expiry is pinned to
+        // the live chain tip obtained immediately before this DB operation.
         let proposal_for_pczt = stored
             .proposal
             .clone()
             .with_proposed_version(stored.proposed_tx_version);
-        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             stored.account_id,
             OvkPolicy::Sender,
             &proposal_for_pczt,
-            // Keep the builder-derived expiry height.
-            None,
+            Some(live_expiry_height),
             bundle_type,
         )
-        .map_err(|e| format!("Create PCZT failed: {e}"))
-    })?;
+        .map_err(|e| format!("Create PCZT failed: {e}"))?;
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT: {e:?}"))?;
 
-    pczt.serialize()
-        .map_err(|e| format!("Serialize PCZT: {e:?}"))
+        // From this point the PCZT may leave the process and later be
+        // broadcast. Persist the conservative restart policy before releasing
+        // the wallet write lock, closing both the cancel/re-lock race and the
+        // crash window before a follow-up retain FFI call. The in-memory
+        // capability remains, so ordinary cancellation can still unlock it.
+        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
+        Ok(pczt_bytes)
+    });
+
+    match result {
+        Ok(pczt_bytes) => Ok(pczt_bytes),
+        Err(error) => {
+            match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            }
+        }
+    }
 }
 
 /// Release a stored proposal without executing it. Called from the
@@ -279,8 +364,20 @@ pub fn create_pczt_from_proposal(
 /// dialog, cancels the Sapling params download prompt). Idempotent:
 /// safe to call for a proposal that has already been consumed or
 /// never existed.
-pub fn discard_proposal(proposal_id: u64, send_flow_id: &str) {
-    discard_stored_proposal(proposal_id, send_flow_id);
+pub fn discard_proposal(proposal_id: u64, send_flow_id: &str) -> Result<(), String> {
+    discard_stored_proposal(proposal_id, send_flow_id)
+}
+
+/// Forget the in-memory proposal capability while leaving its wallet input
+/// lock in place until the proposal's original expiry height.
+///
+/// Call this after a broadcast result that may have reached the network but
+/// could not be stored locally. It prevents an immediate conflicting send.
+pub fn retain_proposal_lock_until_expiry(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<(), String> {
+    retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id)
 }
 
 /// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.
@@ -923,36 +1020,18 @@ pub async fn extract_and_broadcast_pczt(
     .await
     {
         Ok(resp) => resp,
-        Err(status) if status.code() == tonic::Code::DeadlineExceeded => {
-            let mut message = format!(
-                "Broadcast response timed out for txid={txid}. The transaction may already \
-                 be on the network. Do not send again until sync or an explorer confirms \
-                 whether this transaction was accepted."
-            );
-            match store_locally() {
-                Ok(()) => {
-                    message.push_str(
-                        " It was stored locally and will retry automatically during sync until \
-                         it is confirmed or expires.",
-                    );
-                }
-                Err(storage_err) => {
-                    log::error!(
-                        "keystone: failed to store tx after ambiguous broadcast timeout \
-                         (txid={txid}): {storage_err}"
-                    );
-                    message.push_str(&format!(
-                        " Local tracking also failed: {storage_err}. Check an explorer before \
-                         retrying this send."
-                    ));
-                }
-            }
-            return Ok(ExtractAndBroadcastPcztResult::broadcast_unknown(
-                txid.to_string(),
-                message,
+        // Once SendTransaction has started, a gRPC status is not proof that
+        // the server rejected the transaction. The server may have accepted
+        // and relayed it before the response or connection was lost. Treat
+        // every transport status conservatively; explicit SendResponse
+        // rejection below remains the only definite rejection path.
+        Err(status) => {
+            return Ok(handle_pczt_transport_failure(
+                &txid.to_string(),
+                &status,
+                store_locally,
             ));
         }
-        Err(status) => return Err(format!("Broadcast: {status}")),
     };
 
     handle_pczt_send_response(&txid.to_string(), &resp, store_locally)
@@ -1008,6 +1087,40 @@ where
     }
 
     Ok(ExtractAndBroadcastPcztResult::broadcasted(txid.to_string()))
+}
+
+fn handle_pczt_transport_failure<F>(
+    txid: &str,
+    status: &tonic::Status,
+    store_locally: F,
+) -> ExtractAndBroadcastPcztResult
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    let mut message = format!(
+        "Broadcast response was unavailable for txid={txid} ({status}). The transaction may \
+         already be on the network. Do not send again until sync or an explorer confirms \
+         whether this transaction was accepted."
+    );
+    match store_locally() {
+        Ok(()) => {
+            message.push_str(
+                " It was stored locally and will retry automatically during sync until it is \
+                 confirmed or expires.",
+            );
+        }
+        Err(storage_err) => {
+            log::error!(
+                "keystone: failed to store tx after ambiguous broadcast transport failure \
+                 (txid={txid}): {storage_err}"
+            );
+            message.push_str(&format!(
+                " Local tracking also failed: {storage_err}. Check an explorer before retrying \
+                 this send."
+            ));
+        }
+    }
+    ExtractAndBroadcastPcztResult::broadcast_unknown(txid.to_string(), message)
 }
 
 #[cfg(test)]
@@ -1071,6 +1184,30 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("The transaction is on the network"));
+    }
+
+    #[test]
+    fn pczt_non_deadline_transport_failure_remains_ambiguous() {
+        let store_calls = Cell::new(0);
+        let result = handle_pczt_transport_failure(
+            "txid",
+            &tonic::Status::unavailable("connection reset after request"),
+            || {
+                store_calls.set(store_calls.get() + 1);
+                Ok(())
+            },
+        );
+
+        assert_eq!(
+            result.status,
+            ExtractAndBroadcastPcztResult::BROADCAST_UNKNOWN
+        );
+        assert!(result
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stored locally"));
+        assert_eq!(store_calls.get(), 1);
     }
 
     #[test]

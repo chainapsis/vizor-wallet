@@ -641,10 +641,12 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
 /// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
+  required String lightwalletdUrl,
   required String network,
   required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncCreateShieldTransparentPczt(
   dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
 );
@@ -790,11 +792,13 @@ String getBlocksDir({required String cachePath}) =>
 /// Create a PCZT from a stored proposal for hardware wallet signing.
 Future<Uint8List> createPcztFromProposal({
   required String dbPath,
+  required String lightwalletdUrl,
   required String network,
   required BigInt proposalId,
   required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncCreatePcztFromProposal(
   dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
   network: network,
   proposalId: proposalId,
   sendFlowId: sendFlowId,
@@ -807,6 +811,18 @@ Future<void> discardProposal({
   required BigInt proposalId,
   required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncDiscardProposal(
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+);
+
+/// Remove the replayable proposal capability but keep its owner-scoped wallet
+/// input lock until the original expiry height. Use this when broadcast
+/// acceptance is uncertain or the accepted transaction could not be persisted
+/// locally, so a conflicting send cannot be created immediately.
+Future<void> retainProposalLockUntilExpiry({
+  required BigInt proposalId,
+  required String sendFlowId,
+}) => RustLib.instance.api.crateApiSyncRetainProposalLockUntilExpiry(
   proposalId: proposalId,
   sendFlowId: sendFlowId,
 );
@@ -2141,6 +2157,10 @@ class WalletBalance {
   final BigInt sapling;
   final BigInt orchard;
   final BigInt ironwood;
+  final BigInt transparentLocked;
+  final BigInt saplingLocked;
+  final BigInt orchardLocked;
+  final BigInt ironwoodLocked;
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
@@ -2158,7 +2178,10 @@ class WalletBalance {
   /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
 
-  /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
+  /// Sum of owner-locked balances across all pools.
+  final BigInt locked;
+
+  /// Sum of spendable + locked + pending balances across all pools.
   final BigInt total;
 
   const WalletBalance({
@@ -2167,6 +2190,10 @@ class WalletBalance {
     required this.sapling,
     required this.orchard,
     required this.ironwood,
+    required this.transparentLocked,
+    required this.saplingLocked,
+    required this.orchardLocked,
+    required this.ironwoodLocked,
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
@@ -2175,6 +2202,7 @@ class WalletBalance {
     required this.valuePendingSpendability,
     required this.uneconomicValue,
     required this.spendable,
+    required this.locked,
     required this.total,
   });
 
@@ -2185,6 +2213,10 @@ class WalletBalance {
       sapling.hashCode ^
       orchard.hashCode ^
       ironwood.hashCode ^
+      transparentLocked.hashCode ^
+      saplingLocked.hashCode ^
+      orchardLocked.hashCode ^
+      ironwoodLocked.hashCode ^
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
@@ -2193,6 +2225,7 @@ class WalletBalance {
       valuePendingSpendability.hashCode ^
       uneconomicValue.hashCode ^
       spendable.hashCode ^
+      locked.hashCode ^
       total.hashCode;
 
   @override
@@ -2205,6 +2238,10 @@ class WalletBalance {
           sapling == other.sapling &&
           orchard == other.orchard &&
           ironwood == other.ironwood &&
+          transparentLocked == other.transparentLocked &&
+          saplingLocked == other.saplingLocked &&
+          orchardLocked == other.orchardLocked &&
+          ironwoodLocked == other.ironwoodLocked &&
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
@@ -2213,6 +2250,7 @@ class WalletBalance {
           valuePendingSpendability == other.valuePendingSpendability &&
           uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
+          locked == other.locked &&
           total == other.total;
 }
 

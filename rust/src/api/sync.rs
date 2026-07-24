@@ -347,6 +347,10 @@ pub struct WalletBalance {
     pub sapling: u64,
     pub orchard: u64,
     pub ironwood: u64,
+    pub transparent_locked: u64,
+    pub sapling_locked: u64,
+    pub orchard_locked: u64,
+    pub ironwood_locked: u64,
     pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
@@ -359,7 +363,9 @@ pub struct WalletBalance {
     pub uneconomic_value: u64,
     /// Sum of spendable shielded balances. Use this for "available to send".
     pub spendable: u64,
-    /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
+    /// Sum of owner-locked balances across all pools.
+    pub locked: u64,
+    /// Sum of spendable + locked + pending balances across all pools.
     pub total: u64,
 }
 
@@ -586,6 +592,7 @@ pub fn get_balance(
         };
         let spendable = b.sapling + b.orchard + b.ironwood;
         let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
+        let locked = b.transparent_locked + b.sapling_locked + b.orchard_locked + b.ironwood_locked;
         let pending =
             b.transparent_pending + b.sapling_pending + b.orchard_pending + b.ironwood_pending;
         Ok(WalletBalance {
@@ -594,6 +601,10 @@ pub fn get_balance(
             sapling: b.sapling,
             orchard: b.orchard,
             ironwood: b.ironwood,
+            transparent_locked: b.transparent_locked,
+            sapling_locked: b.sapling_locked,
+            orchard_locked: b.orchard_locked,
+            ironwood_locked: b.ironwood_locked,
             transparent_pending: b.transparent_pending,
             sapling_pending: b.sapling_pending,
             orchard_pending: b.orchard_pending,
@@ -602,7 +613,8 @@ pub fn get_balance(
             value_pending_spendability: b.value_pending_spendability,
             uneconomic_value: b.uneconomic_value,
             spendable,
-            total: total_spendable + pending,
+            locked,
+            total: total_spendable + locked + pending,
         })
     })
 }
@@ -1802,12 +1814,19 @@ pub fn get_shield_transparent_status(
 /// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
+    lightwalletd_url: String,
     network: String,
     account_uuid: String,
 ) -> Result<ShieldTransparentPcztResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let r = wallet_sync::create_shield_transparent_pczt(&db_path, network, &account_uuid)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::create_shield_transparent_pczt(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+        ))?;
         Ok(ShieldTransparentPcztResult {
             pczt_bytes: r.pczt_bytes,
             fee_zatoshi: r.fee_zatoshi,
@@ -2121,21 +2140,40 @@ pub fn get_blocks_dir(cache_path: String) -> String {
 /// Create a PCZT from a stored proposal for hardware wallet signing.
 pub fn create_pczt_from_proposal(
     db_path: String,
+    lightwalletd_url: String,
     network: String,
     proposal_id: u64,
     send_flow_id: String,
 ) -> Result<Vec<u8>, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        wallet_sync::create_pczt_from_proposal(&db_path, network, proposal_id, &send_flow_id)
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(wallet_sync::create_pczt_from_proposal(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            proposal_id,
+            &send_flow_id,
+        ))
     })
 }
 
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
-pub fn discard_proposal(proposal_id: u64, send_flow_id: String) {
-    wallet_sync::discard_proposal(proposal_id, &send_flow_id);
+pub fn discard_proposal(proposal_id: u64, send_flow_id: String) -> Result<(), String> {
+    wallet_sync::discard_proposal(proposal_id, &send_flow_id)
+}
+
+/// Remove the replayable proposal capability but keep its owner-scoped wallet
+/// input lock until the original expiry height. Use this when broadcast
+/// acceptance is uncertain or the accepted transaction could not be persisted
+/// locally, so a conflicting send cannot be created immediately.
+pub fn retain_proposal_lock_until_expiry(
+    proposal_id: u64,
+    send_flow_id: String,
+) -> Result<(), String> {
+    wallet_sync::retain_proposal_lock_until_expiry(proposal_id, &send_flow_id)
 }
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output

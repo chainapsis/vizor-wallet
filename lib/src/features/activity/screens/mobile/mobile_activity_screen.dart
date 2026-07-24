@@ -136,7 +136,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     } catch (e, st) {
       log('MobileActivity: transaction detail load failed: $e\n$st');
     }
-    if (!mounted ||
+    if (!context.mounted ||
         accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
       return;
     }

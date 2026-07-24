@@ -302,7 +302,7 @@ void main() {
         status: 'Completed',
       );
 
-      final receiveDetail = rust_sync.getTransactionDetail(
+      final receiveDetail = await rust_sync.getTransactionDetail(
         dbPath: dbPath,
         network: 'regtest',
         accountUuid: secondAccount.uuid,

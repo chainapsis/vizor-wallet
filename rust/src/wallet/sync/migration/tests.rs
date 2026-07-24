@@ -1,8 +1,75 @@
 use super::*;
 use rand::{rngs::StdRng, SeedableRng};
+use std::cell::Cell;
 
 const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+
+#[test]
+fn wallet_lock_reconciliation_retries_when_terminal_disposition_changes() {
+    assert!(migration_phase_releases_wallet_locks(PHASE_COMPLETE));
+    assert!(migration_phase_releases_wallet_locks(PHASE_FAILED_TERMINAL));
+    assert!(migration_phase_releases_wallet_locks(PHASE_ABANDONED));
+    assert!(!migration_phase_releases_wallet_locks(
+        PHASE_READY_TO_MIGRATE
+    ));
+
+    assert!(!wallet_lock_reconciliation_is_stable(false, true));
+    assert!(!wallet_lock_reconciliation_is_stable(true, false));
+    assert!(wallet_lock_reconciliation_is_stable(false, false));
+    assert!(wallet_lock_reconciliation_is_stable(true, true));
+}
+
+#[test]
+fn wallet_lock_reconciliation_propagates_storage_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("missing-parent")
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let network = WalletNetwork::Test;
+
+    assert!(reconcile_wallet_locks_for_run(&db_path, network, "run-1").is_err());
+}
+
+#[test]
+fn failed_run_creation_preserves_durable_run_when_unlock_fails() {
+    let delete_called = Cell::new(false);
+    let error = cleanup_failed_created_run(
+        "reconciliation failed".to_string(),
+        || Err("wallet database busy".to_string()),
+        || {
+            delete_called.set(true);
+            Ok(())
+        },
+    );
+
+    assert!(!delete_called.get());
+    assert!(error.contains("durable run was preserved for recovery"));
+    assert!(error.contains("wallet database busy"));
+}
+
+#[test]
+fn failed_run_creation_deletes_run_only_after_unlock_succeeds() {
+    let unlock_completed = Cell::new(false);
+    let delete_saw_unlock = Cell::new(false);
+    let error = cleanup_failed_created_run(
+        "reconciliation failed".to_string(),
+        || {
+            unlock_completed.set(true);
+            Ok(())
+        },
+        || {
+            delete_saw_unlock.set(unlock_completed.get());
+            Ok(())
+        },
+    );
+
+    assert!(delete_saw_unlock.get());
+    assert_eq!(error, "reconciliation failed");
+}
 
 fn create_outbox_test_run(
     db_path: &str,
@@ -294,9 +361,7 @@ fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
     assert_eq!(status, "needs_resign");
 }
 
-#[test]
-fn active_run_recovers_latest_duplicate_broadcast_terminal_failure() {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
+fn insert_duplicate_broadcast_terminal_failure(conn: &rusqlite::Connection) {
     ensure_schema(&conn).unwrap();
     conn.execute(
         &format!(
@@ -334,11 +399,127 @@ fn active_run_recovers_latest_duplicate_broadcast_terminal_failure() {
         params!["22".repeat(32), "11".repeat(32)],
     )
     .unwrap();
+}
 
+#[test]
+fn active_run_does_not_recover_latest_duplicate_broadcast_terminal_failure() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    insert_duplicate_broadcast_terminal_failure(&conn);
+
+    assert!(active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .is_none());
+    let (phase, lock_state): (String, String) = conn
+        .query_row(
+            &format!(
+                "SELECT r.phase, n.lock_state
+                 FROM {RUNS_TABLE} r
+                 JOIN {PREPARED_NOTES_TABLE} n ON n.run_id = r.run_id
+                 WHERE r.run_id = 'duplicate-run'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_FAILED_TERMINAL);
+    assert_eq!(lock_state, "unlocked");
+}
+
+#[test]
+fn reservation_snapshot_keeps_false_terminal_visible_during_recovery() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let setup_conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_duplicate_broadcast_terminal_failure(&setup_conn);
+    drop(setup_conn);
+
+    let reader = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let snapshot = reader.unchecked_transaction().unwrap();
+    assert!(active_run(&snapshot, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .is_none());
+
+    let writer = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    recover_latest_idempotent_broadcast_failure(&writer, "account-1", WalletNetwork::Test).unwrap();
+    assert_eq!(
+        active_run(&writer, "account-1", WalletNetwork::Test)
+            .unwrap()
+            .unwrap()
+            .phase,
+        PHASE_BROADCAST_SCHEDULED
+    );
+
+    assert!(migration_reserves_orchard_inputs_in_snapshot(
+        &snapshot,
+        "account-1",
+        WalletNetwork::Test,
+    )
+    .unwrap());
+    snapshot.commit().unwrap();
+}
+
+#[test]
+fn migration_status_does_not_recover_latest_duplicate_broadcast_terminal_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    insert_duplicate_broadcast_terminal_failure(&conn);
+    drop(conn);
+
+    assert!(
+        migration_reserves_orchard_inputs(&db_path, "account-1", WalletNetwork::Test,).unwrap()
+    );
+    migration_status(&db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    assert!(
+        migration_reserves_orchard_inputs(&db_path, "account-1", WalletNetwork::Test,).unwrap()
+    );
+    assert_eq!(
+        create_or_resume_private_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &[100_000],
+            &[],
+            PreparationTimingPolicy::Immediate,
+        )
+        .unwrap_err(),
+        "Migration recovery must complete before creating another run"
+    );
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let (phase, lock_state): (String, String) = conn
+        .query_row(
+            &format!(
+                "SELECT r.phase, n.lock_state
+                 FROM {RUNS_TABLE} r
+                 JOIN {PREPARED_NOTES_TABLE} n ON n.run_id = r.run_id
+                 WHERE r.run_id = 'duplicate-run'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_FAILED_TERMINAL);
+    assert_eq!(lock_state, "unlocked");
+}
+
+#[test]
+fn post_sync_recovery_restores_latest_duplicate_broadcast_terminal_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    insert_duplicate_broadcast_terminal_failure(&conn);
+    drop(conn);
+
+    reconcile_wallet_locks_after_sync(&db_path, WalletNetwork::Test).unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
     let run = active_run(&conn, "account-1", WalletNetwork::Test)
         .unwrap()
         .unwrap();
-
     assert_eq!(run.run_id, "duplicate-run");
     assert_eq!(run.phase, PHASE_BROADCAST_SCHEDULED);
     assert_eq!(run.last_error, None);
@@ -376,6 +557,11 @@ fn active_run_does_not_recover_other_terminal_broadcast_failures() {
     assert!(active_run(&conn, "account-1", WalletNetwork::Test)
         .unwrap()
         .is_none());
+    assert!(
+        latest_idempotent_broadcast_failure(&conn, "account-1", WalletNetwork::Test)
+            .unwrap()
+            .is_none()
+    );
     let phase: String = conn
         .query_row(
             &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'rejected-run'"),
@@ -4441,13 +4627,17 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
     assert_eq!(status.parts[0].state, MigrationPartState::Preparing);
     assert_eq!(status.parts[0].scheduled_height, Some(290));
 
-    // Upgrade recovery: older builds could persist ready_to_migrate before
-    // persisting the proof height, which made iOS classify the run as state 2.
+    // Post-sync upgrade recovery: older builds could persist ready_to_migrate
+    // before persisting the proof height, which made iOS classify the run as
+    // state 2. Status projection itself must not repair the row.
     conn.execute(
         &format!("UPDATE {RUNS_TABLE} SET proof_retry_height = NULL WHERE run_id = ?1"),
         params![run_id],
     )
     .unwrap();
+    let stale_status = status_for_run(&conn, run.clone()).unwrap();
+    assert_eq!(stale_status.next_action_height, None);
+    backfill_ready_migration_proof_retry_height(&conn, run_id).unwrap();
     let recovered_status = status_for_run(&conn, run).unwrap();
     assert_eq!(recovered_status.next_action_height, Some(290));
     let recovered_retry_height: Option<u32> = conn
@@ -5054,6 +5244,7 @@ fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_depende
     .unwrap();
     drop(conn);
 
+    reconcile_wallet_locks_after_sync(db_path, WalletNetwork::Test).unwrap();
     let status = migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
     assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
 

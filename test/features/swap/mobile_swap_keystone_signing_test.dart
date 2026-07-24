@@ -381,6 +381,7 @@ void main() {
     tester,
   ) async {
     late _PendingSigningSwapNotifier swapNotifier;
+    final hardwareSigningService = _FakeSwapHardwareSigningService();
     final router = GoRouter(
       initialLocation: '/swap/keystone-sign',
       routes: [
@@ -406,7 +407,7 @@ void main() {
           swapNotifier = _PendingSigningSwapNotifier(_hardwareIntent);
           return swapNotifier;
         },
-        hardwareSigningService: _FakeSwapHardwareSigningService(),
+        hardwareSigningService: hardwareSigningService,
       ),
     );
     await tester.pumpAndSettle();
@@ -417,6 +418,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapNotifier.pendingCleared, isTrue);
+    expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.byKey(const ValueKey('mobile_swap_route')), findsOneWidget);
     expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
   });
@@ -1091,6 +1093,8 @@ class _FakeSwapDepositSender implements SwapDepositSender {
 }
 
 class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
+  final discardedDrafts = <BigInt>[];
+
   @override
   Future<SwapHardwarePcztDraft> createZecDepositPczt({
     required String accountUuid,
@@ -1100,6 +1104,8 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),
+      proposalId: BigInt.one,
+      sendFlowId: 'test-swap-hardware',
     );
   }
 
@@ -1120,7 +1126,13 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }
 
   @override
+  Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
+    discardedDrafts.add(draft.proposalId);
+  }
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
